@@ -203,6 +203,46 @@ paths:
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
         '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+  /underwriting/cases/{caseId}/annuity-choice:
+    get:
+      summary: An annuity case's chosen form, frequency and joint life
+      description: 404 ANNUITY_CHOICE_NOT_FOUND when none is recorded -- also the answer for any case that is not an annuity's.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The choice
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnnuityChoice' }
+        '404':
+          description: No annuity choice on this case
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    put:
+      summary: Record or change an annuity case's choice, before it is decided
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnuityChoiceRequest' }
+      responses:
+        '200':
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnnuityChoice' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
   /underwriting/cases/{caseId}/beneficiaries:
     get:
       summary: The beneficiary nominations taken on this proposal
@@ -485,6 +525,15 @@ components:
             must total exactly 100, the same rule the policy side applies.
           type: array
           items: { $ref: '#/components/schemas/BeneficiaryNomination' }
+        annuityChoice:
+          description: >-
+            On an ANNUITY product only (product step 5): the chosen form, frequency and joint life,
+            recorded with the case in the same transaction -- a refused choice opens no case. May
+            also be recorded afterwards with PUT .../annuity-choice. The case's sumAssured is the
+            purchase price.
+          anyOf:
+            - { $ref: '#/components/schemas/AnnuityChoiceRequest' }
+            - { type: "null" }
         # medicalDisclosure is deliberately NOT a field here. It was once declared on this
         # request and never existed in OpenCaseRequest.java, so a client sending one got a 201
         # and had it silently discarded. Disclosures are now real, but as their own resource --
@@ -629,6 +678,28 @@ components:
             eventually told.
           type: string
           maxLength: 500
+        ageEvidenceConfirmed:
+          description: >-
+            An annuity's light path (product step 5): proof of age was seen. Required true to ACCEPT
+            an annuity, which needs no assessment and is accepted or declined only. Ignored on every
+            other case.
+          type: [boolean, "null"]
+    AnnuityChoiceRequest:
+      type: object
+      properties:
+        formCode: { type: [string, "null"], maxLength: 30 }
+        frequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL, null] }
+        jointLifePartyId: { type: [string, "null"], format: uuid, description: "Required on a joint-life form, refused otherwise" }
+    AnnuityChoice:
+      type: object
+      additionalProperties: false
+      required: [formCode, frequency]
+      properties:
+        formCode: { type: string }
+        frequency: { type: string, enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL] }
+        jointLifePartyId: { type: [string, "null"], format: uuid }
+        ageEvidenceConfirmedBy: { type: [string, "null"], description: "Who confirmed proof of age on acceptance" }
+        ageEvidenceConfirmedAt: { type: [string, "null"], format: date-time }
     UnderwritingCaseView:
       type: object
       # The decision is intentionally flattened to decisionOutcome/decisionLoadingPercent/

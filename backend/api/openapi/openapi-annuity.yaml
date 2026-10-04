@@ -1,0 +1,125 @@
+openapi: 3.1.0
+info:
+  title: Annuity API
+  version: "0.1.0-draft"
+  description: >
+    External REST surface of the `annuity` module (product step 5, D1) -- immediate annuities. A
+    single premium buys an income for life, priced from the version's rate table as configurable
+    forms; the income locks when the premium is collected, and benefitpayout pays it.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /annuity-quotes:
+    post:
+      summary: Price an annuity purchase without storing anything
+      description: >
+        The case form's live quote. Lives are party ids, so the date of birth and sex used are the
+        recorded ones. A purchase the version cannot price is a 422 ANNUITY_NOT_PRICEABLE in the
+        pricer's words (an unrecorded sex on a BY_SEX form, an age outside the grid, a form or
+        frequency the version does not offer).
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnuityQuoteRequest' }
+      responses:
+        '200':
+          description: The priced purchase
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnnuityQuote' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Not priceable, in the pricer's words
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/annuity:
+    get:
+      summary: A policy's annuity contract and its locked figures
+      description: Any staff member. 404 NOT_AN_ANNUITY for a policy that is not an annuity -- the console reads it as "no Annuity tab".
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The contract
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnnuityContract' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404':
+          description: Not an annuity
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+components:
+  schemas:
+    AnnuityQuoteRequest:
+      type: object
+      properties:
+        productVersionId: { type: [string, "null"], format: uuid }
+        formCode: { type: [string, "null"] }
+        frequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL, null] }
+        purchasePrice: { type: [number, "null"], exclusiveMinimum: 0 }
+        annuitantPartyId: { type: [string, "null"], format: uuid }
+        jointLifePartyId: { type: [string, "null"], format: uuid }
+    AnnuityQuote:
+      type: object
+      additionalProperties: false
+      required: [formCode, frequency, paymentsPerYear, timing, instalment, annualIncome, annuitantAge, annualRatePerMille, factor]
+      properties:
+        formCode: { type: string }
+        frequency: { type: string, enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL] }
+        paymentsPerYear: { type: integer }
+        timing: { type: string, enum: [ARREARS, ADVANCE] }
+        instalment: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        annualIncome: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        annuitantAge: { type: integer }
+        jointAge: { type: [integer, "null"] }
+        ageDifference: { type: [integer, "null"], description: "Annuitant age minus joint-life age" }
+        rateSex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+        annualRatePerMille: { type: string, description: "Decimal string, no trailing zeros" }
+        factor: { type: string, description: "Decimal string, no trailing zeros" }
+    AnnuityContract:
+      type: object
+      additionalProperties: false
+      required: [policyNumber, status, joint, capitalProtected, annuitantPartyId, purchasePrice, overpaymentOwed]
+      properties:
+        policyNumber: { type: string }
+        status: { type: string, enum: [AWAITING_PAYMENT, IN_PAYMENT, SURVIVOR, GUARANTEE, ENDED, CANCELLED, LOCK_FAILED] }
+        formCode: { type: [string, "null"] }
+        guaranteeYears: { type: [integer, "null"] }
+        joint: { type: boolean }
+        survivorPercent: { type: [string, "null"] }
+        escalationPercent: { type: [string, "null"] }
+        capitalProtected: { type: boolean }
+        timing: { type: [string, "null"], enum: [ARREARS, ADVANCE, null] }
+        frequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL, null] }
+        annuitantPartyId: { type: string, format: uuid }
+        jointLifePartyId: { type: [string, "null"], format: uuid }
+        purchasePrice: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        lockedOn: { type: [string, "null"], format: date }
+        annuitantAge: { type: [integer, "null"] }
+        jointAge: { type: [integer, "null"] }
+        rateSex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+        annualRatePerMille: { type: [string, "null"] }
+        factor: { type: [string, "null"] }
+        annualIncome:
+          anyOf:
+            - { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+            - { type: "null" }
+        instalment:
+          anyOf:
+            - { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+            - { type: "null" }
+        firstDueDate: { type: [string, "null"], format: date }
+        guaranteeEndDate: { type: [string, "null"], format: date }
+        firstDeathDate: { type: [string, "null"], format: date }
+        lastDeathDate: { type: [string, "null"], format: date }
+        overpaymentOwed: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        lockFailureReason: { type: [string, "null"] }

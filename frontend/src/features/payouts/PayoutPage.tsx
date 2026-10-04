@@ -24,6 +24,7 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { useBenefitPayoutStore } from '@/store/benefitPayoutStore';
 import {
   blankPayoutReview,
+  needsProofOfLife as needsProofOfLifeFor,
   payoutReviewSchema,
   PROOF_OF_LIFE_METHODS,
   type PayoutReviewValues,
@@ -40,6 +41,7 @@ const KIND_LABEL: Record<PayoutKind, string> = {
   MATURITY: 'Maturity',
   INCOME: 'Income',
   RETURN_OF_PREMIUM: 'Premium return',
+  ANNUITY: 'Annuity income',
 };
 
 /**
@@ -108,6 +110,17 @@ export function PayoutPage() {
                 note={payout.restatementReason}
               />
             )}
+            {/* Set at approval (product step 5): the rail is paid the net, and the tax goes to 2230. */}
+            {payout.grossAmount && payout.netAmount && (
+              <>
+                <Field label="Gross" value={formatMoney(payout.grossAmount)} />
+                <Field
+                  label="Tax withheld"
+                  value={payout.withheldAmount ? formatMoney(payout.withheldAmount) : '—'}
+                />
+                <Field label="Net paid" value={formatMoney(payout.netAmount)} emphasis />
+              </>
+            )}
             {payout.statusReason && <Field label="Why" value={payout.statusReason} />}
             <Field label="Payee" value={payout.payeeRef ?? '—'} />
             <Field label="Reviewed by" value={payout.reviewedBy ?? '—'} />
@@ -157,7 +170,8 @@ function ReviewAction({ payout }: { payout: PayoutInstalmentView }) {
   const acting = useBenefitPayoutStore((s) => s.acting[payout.instalmentId]);
   const gates = reviewGates(payout);
   const refused = gates.some((g) => !g.ok && g.hard);
-  const needsProofOfLife = payout.kind === 'SURVIVAL' || payout.kind === 'INCOME';
+  // The server's own answer, so the form asks exactly when review will insist.
+  const needsProofOfLife = needsProofOfLifeFor(payout);
 
   const form = useForm<PayoutReviewValues>({
     resolver: zodResolver(payoutReviewSchema(needsProofOfLife)),
@@ -237,8 +251,8 @@ function ApproveAction({
             heading="Approve this payout?"
             consequence={
               <>
-                {formatMoney(payout.currentAmount)} is requested from the payment provider and sent
-                to <strong>{payout.payeeRef}</strong>.
+                {formatMoney(payout.currentAmount)}, less any tax an approved withholding rule takes,
+                is requested from the payment provider and sent to <strong>{payout.payeeRef}</strong>.
               </>
             }
             /* The rail has no cancel. Once the disbursement is accepted the only remedy is to

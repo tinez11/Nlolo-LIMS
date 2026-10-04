@@ -6,6 +6,7 @@ import { ConfirmAct } from '@/components/ConfirmAct';
 import { FormField } from '@/components/FormField';
 import { Panel } from '@/components/Panel';
 import { Button } from '@/components/ui/button';
+import { CheckboxField } from '@/components/ui/checkbox';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import type { Resource } from '@/store/createResourceSlice';
@@ -75,6 +76,7 @@ export function DecisionPanel({
   isSenior,
   callerSubject,
   onDecide,
+  annuity = false,
 }: {
   view: UnderwritingCaseView;
   deciding: Resource<UnderwritingCaseView>;
@@ -84,6 +86,11 @@ export function DecisionPanel({
   /** The signed-in user's subject, compared with who opened and assessed the case. */
   callerSubject: string | null;
   onDecide: (request: ReturnType<typeof toApiRequest>) => void;
+  /**
+   * An annuity case (product step 5): the light path. Accepted or declined only, on proof of age,
+   * with no assessment -- the risk is the annuitant living long, which no medical evidence prices.
+   */
+  annuity?: boolean;
 }) {
   const {
     register,
@@ -92,7 +99,7 @@ export function DecisionPanel({
     formState: { errors },
   } = useForm<DecideFormInput, unknown, DecideFormValues>({
     resolver: zodResolver(decideFormSchema),
-    defaultValues: blankDecideForm(),
+    defaultValues: blankDecideForm(annuity),
   });
 
   /*
@@ -127,7 +134,8 @@ export function DecisionPanel({
     beside it: "identity-provider subjects of everyone who recorded an assessment on the case".
     Empty means nothing has been assessed, which is the one thing `decide` actually refuses.
   */
-  const awaitingAssessment = (view.assessedBy ?? []).length === 0;
+  // An annuity needs no assessment: decide accepts it on proof of age alone.
+  const awaitingAssessment = !annuity && (view.assessedBy ?? []).length === 0;
 
   if (!canDecide) return null;
 
@@ -162,7 +170,9 @@ export function DecisionPanel({
             </>
           ) : (
             <p className="text-xs text-muted-foreground">
-              {awaitingAssessment
+              {annuity
+                ? 'No engine opinion on an annuity — it is accepted on proof of age, and the income is priced from the rate table when the premium arrives.'
+                : awaitingAssessment
                 ? 'No recommendation yet — the engine runs when an assessment is submitted.'
                 : /*
                      Assessed, and still no advice: this is a group scheme, where the engine
@@ -211,7 +221,12 @@ export function DecisionPanel({
               <Select {...register('outcome')}>
                 {/* No loading on a member's evidence case -- one member of a scheme has no
                     premium of their own, and the server refuses it. */}
-                {DECISION_OUTCOMES.filter((o) => !(view.evidenceForPolicyNumber && o.value === 'LOADED')).map((o) => (
+                {DECISION_OUTCOMES.filter(
+                  (o) =>
+                    !(view.evidenceForPolicyNumber && o.value === 'LOADED') &&
+                    // An annuity is accepted or declined; its premium is the purchase price.
+                    !(annuity && (o.value === 'LOADED' || o.value === 'POSTPONED')),
+                ).map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>
@@ -222,6 +237,15 @@ export function DecisionPanel({
             {outcome === 'LOADED' && (
               <FormField label="Loading (%)" error={errors.loadingPercent?.message}>
                 <Input className="w-32" placeholder="25" {...register('loadingPercent')} />
+              </FormField>
+            )}
+
+            {annuity && outcome === 'ACCEPT' && (
+              <FormField label="Proof of age" error={errors.ageEvidenceConfirmed?.message}>
+                <CheckboxField
+                  label="Age evidence confirmed — I have seen the annuitant's proof of age"
+                  {...register('ageEvidenceConfirmed')}
+                />
               </FormField>
             )}
 

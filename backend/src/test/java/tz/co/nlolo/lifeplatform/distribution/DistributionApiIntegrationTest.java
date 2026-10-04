@@ -106,6 +106,9 @@ class DistributionApiIntegrationTest {
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
+            "db-migrations/benefitpayout/V2__annuity_streams.sql",
+            "db-migrations/benefitpayout/V3__withholding.sql",
+            "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");

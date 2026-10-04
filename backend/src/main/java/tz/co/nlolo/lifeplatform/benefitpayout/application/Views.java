@@ -9,11 +9,13 @@ final class Views {
 
     private Views() {}
 
-    static PayoutInstalmentView of(PayoutInstalment i) {
+    /** {@code proofOfLifeRequired} is the caller's: it needs the stream, which this mapper does not load. */
+    static PayoutInstalmentView of(PayoutInstalment i, boolean proofOfLifeRequired) {
         return new PayoutInstalmentView(i.getInstalmentId(), i.getPolicyNumber(), i.kind(), i.getDueDate(),
             i.getOriginalAmount(), i.getCurrentAmount(), i.getCurrency(), i.getRestatementReason(), i.status(),
             i.getStatusReason(), i.getStreamId(), i.getPayeeRef(),
             i.getProofOfLifeMethod() != null ? ProofOfLifeMethod.valueOf(i.getProofOfLifeMethod()) : null,
-            i.getReviewedBy(), i.getApprovedBy(), i.getPaymentRunId(), i.getAttempts());
+            i.getReviewedBy(), i.getApprovedBy(), i.getPaymentRunId(), i.getAttempts(),
+            i.getGrossAmount(), i.getWithheldAmount(), i.getNetAmount(), proofOfLifeRequired);
     }
 }

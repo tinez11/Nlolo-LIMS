@@ -60,6 +60,13 @@ public class PayoutInstalment {
     @Column(name = "payment_run_id") private UUID paymentRunId;
     @Column(name = "disbursement_id") private UUID disbursementId;
     @Column(nullable = false) private int attempts;
+    // Tax withheld at approval (product step 5, benefitpayout V3). Null before approval, and on every
+    // instalment approved before this step.
+    @Column(name = "gross_amount") private BigDecimal grossAmount;
+    @Column(name = "withheld_amount") private BigDecimal withheldAmount;
+    @Column(name = "net_amount") private BigDecimal netAmount;
+    @Column(name = "withholding_rule_id") private UUID withholdingRuleId;
+    @Column(name = "withholding_checked", nullable = false) private boolean withholdingChecked;
 
     /** Exactly-once for the drains: the winning write is exclusive, the loser is a no-op. */
     @Version private long version;
@@ -121,11 +128,19 @@ public class PayoutInstalment {
      * alive; a maturity or premium return does not, because it is owed by the calendar alone.
      */
     public void review(String reviewer, String payeeRef, ProofOfLifeMethod method, UUID documentId) {
+        review(reviewer, payeeRef, method, documentId, needsProofOfLife());
+    }
+
+    /**
+     * The same, saying whether proof of life is owed. An annuity's instalments redirected to its
+     * beneficiaries after the annuitant's death (product step 5) owe none: the life it proved is over.
+     */
+    public void review(String reviewer, String payeeRef, ProofOfLifeMethod method, UUID documentId, boolean proofRequired) {
         require(InstalmentStatus.DUE, "be reviewed");
         if (payeeRef == null || payeeRef.isBlank()) {
             throw new PayoutStateException("A payout needs a payee reference");
         }
-        if (needsProofOfLife() && method == null) {
+        if (proofRequired && method == null) {
             throw new PayoutStateException("A " + kind + " payout needs proof that the life assured is alive");
         }
         this.payeeRef = payeeRef;
@@ -137,7 +152,7 @@ public class PayoutInstalment {
     }
 
     public boolean needsProofOfLife() {
-        return kind() == PayoutKind.SURVIVAL || kind() == PayoutKind.INCOME;
+        return kind() == PayoutKind.SURVIVAL || kind() == PayoutKind.INCOME || kind() == PayoutKind.ANNUITY;
     }
 
     /** REVIEWED -> APPROVED, by someone other than the reviewer (decision Q1). */
@@ -210,6 +225,28 @@ public class PayoutInstalment {
         this.status = InstalmentStatus.SCHEDULED.name();
         this.statusReason = null;
     }
+
+    /**
+     * Tax withheld at approval, when the gross is final (product step 5). Rate zero and no rule when
+     * none is in force -- and it still records that the rules were checked.
+     */
+    public void applyWithholding(BigDecimal ratePercent, UUID ruleId) {
+        this.grossAmount = currentAmount;
+        this.withheldAmount = currentAmount.multiply(ratePercent).divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_EVEN);
+        this.netAmount = grossAmount.subtract(withheldAmount);
+        this.withholdingRuleId = ruleId;
+        this.withholdingChecked = true;
+    }
+
+    /** What leaves the bank: the net once withholding was applied, else the current amount. */
+    public BigDecimal payableAmount() {
+        return netAmount != null ? netAmount : currentAmount;
+    }
+
+    public BigDecimal getGrossAmount() { return grossAmount; }
+    public BigDecimal getWithheldAmount() { return withheldAmount; }
+    public BigDecimal getNetAmount() { return netAmount; }
+    public UUID getWithholdingRuleId() { return withholdingRuleId; }
 
     /** Paid-up: the new figure goes BESIDE the original, never over it. */
     public void restate(BigDecimal newAmount, String reason) {

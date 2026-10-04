@@ -38,6 +38,8 @@ import { AccountPanel } from '@/features/accounts/AccountPanel';
 import { StatementSection } from '@/features/accounts/StatementSection';
 import { useAccumulationStore } from '@/store/accumulationStore';
 import { PolicyBonusesPanel } from '@/features/bonuses/PolicyBonusesPanel';
+import { PolicyAnnuityPanel } from '@/features/annuities/PolicyAnnuityPanel';
+import { useAnnuityStore } from '@/store/annuityStore';
 import { useBonusStore } from '@/store/bonusStore';
 import { ValueActions } from './ValueActions';
 
@@ -102,6 +104,9 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   // null for every other policy, exactly as the account's does.
   const policyBonuses = useBonusStore((s) => s.policy[policyNumber]);
   const loadBonuses = useBonusStore((s) => s.loadPolicy);
+  // An annuity contract exists only for a policy on an ANNUITY product (product step 5); null otherwise.
+  const annuityContract = useAnnuityStore((s) => s.contract[policyNumber]);
+  const loadAnnuity = useAnnuityStore((s) => s.loadContract);
 
   useEffect(() => {
     if (!policyNumber) return;
@@ -110,8 +115,9 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     if (isStaff) {
       void loadAccount(policyNumber);
       void loadBonuses(policyNumber);
+      void loadAnnuity(policyNumber);
     }
-  }, [policyNumber, loadDetail, loadCoverage, loadAccount, loadBonuses, isStaff]);
+  }, [policyNumber, loadDetail, loadCoverage, loadAccount, loadBonuses, loadAnnuity, isStaff]);
 
   const policy = detail.data;
 
@@ -394,6 +400,23 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                   <Panel title="Bonuses" subtitle="Every bonus attached to this policy, why each declaration did or did not attach, and what was paid out">
                     <div className="p-4">
                       <PolicyBonusesPanel policyNumber={policyNumber} />
+                    </div>
+                  </Panel>
+                </div>
+              ),
+            },
+          ]
+        : []),
+      ...(annuityContract?.data
+        ? [
+            {
+              value: 'annuity',
+              label: 'Annuity',
+              content: (
+                <div className="pt-5">
+                  <Panel title="Annuity" subtitle="The income this purchase locked, the rate it came from, and who it pays now">
+                    <div className="p-4">
+                      <PolicyAnnuityPanel policyNumber={policyNumber} />
                     </div>
                   </Panel>
                 </div>

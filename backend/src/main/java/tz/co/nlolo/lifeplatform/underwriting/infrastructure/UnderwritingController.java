@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
 
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.AnnuityChoice;
 import tz.co.nlolo.lifeplatform.underwriting.api.BeneficiaryNomination;
 import tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal;
 import tz.co.nlolo.lifeplatform.underwriting.api.MedicalDisclosureView;
@@ -76,8 +77,11 @@ public class UnderwritingController {
         return ResponseEntity.ok(UnderwritingCaseSearchResponse.from(result));
     }
 
+    // Transactional so an annuity choice refused below rolls back the case it would have opened:
+    // a 422 must not leave a case behind (product step 5). Both service calls join this transaction.
     @PostMapping("/cases")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<UnderwritingCaseView> openCase(@Valid @RequestBody OpenCaseRequest request,
                                                           @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                                           @AuthenticationPrincipal Jwt jwt) {
@@ -93,6 +97,11 @@ public class UnderwritingController {
                 request.beneficiaries() == null ? List.of()
                     : request.beneficiaries().stream().map(OpenCaseRequest.BeneficiaryNominationDto::toApiNomination).toList()),
             jwt.getSubject());
+        // Recorded with the case when the applicant chose up front (product step 5). In the same
+        // request, so a refused choice is a 422 on the request that carried it.
+        if (request.annuityChoice() != null) {
+            underwritingApi.recordAnnuityChoice(view.caseId(), request.annuityChoice().toApi(), jwt.getSubject());
+        }
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
@@ -150,9 +159,30 @@ public class UnderwritingController {
             .map(GrantedAuthority::getAuthority)
             .anyMatch("ROLE_SENIOR_UNDERWRITER"::equals);
         UnderwritingCaseView view = underwritingApi.decide(caseId,
-            new UnderwritingApi.DecisionInput(request.outcome(), request.loadingPercent(), request.reason()),
+            new UnderwritingApi.DecisionInput(request.outcome(), request.loadingPercent(), request.reason(),
+                Boolean.TRUE.equals(request.ageEvidenceConfirmed())),
             jwt.getSubject(), senior);
         return ResponseEntity.ok(view);
+    }
+
+    /**
+     * An annuity case's choice (product step 5). 404 ANNUITY_CHOICE_NOT_FOUND when there is none --
+     * which is also the answer for every case that is not an annuity's.
+     */
+    @GetMapping("/cases/{caseId}/annuity-choice")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<AnnuityChoice> getAnnuityChoice(@PathVariable UUID caseId) {
+        return underwritingApi.annuityChoice(caseId).map(ResponseEntity::ok)
+            .orElseThrow(() -> new AnnuityChoiceNotFoundException(caseId));
+    }
+
+    /** Change an annuity case's choice before it is decided. Whoever may open a case may change it. */
+    @PutMapping("/cases/{caseId}/annuity-choice")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<AnnuityChoice> recordAnnuityChoice(@PathVariable UUID caseId,
+                                                             @RequestBody OpenCaseRequest.AnnuityChoiceDto request,
+                                                             @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(underwritingApi.recordAnnuityChoice(caseId, request.toApi(), jwt.getSubject()));
     }
 
     /**

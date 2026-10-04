@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blankPayoutReview, payoutReviewSchema } from './payoutReviewForm';
+import { blankPayoutReview, needsProofOfLife, payoutReviewSchema } from './payoutReviewForm';
 
 describe('payoutReviewSchema', () => {
   it('requires a payee reference', () => {
@@ -37,5 +37,17 @@ describe('payoutReviewSchema', () => {
   it('starts blank, and a blank form is not submittable either way', () => {
     expect(payoutReviewSchema(false).safeParse(blankPayoutReview()).success).toBe(false);
     expect(payoutReviewSchema(true).safeParse(blankPayoutReview()).success).toBe(false);
+  });
+});
+
+describe('needsProofOfLife', () => {
+  it('follows the server: an annuity redirected to beneficiaries owes none', () => {
+    expect(needsProofOfLife({ kind: 'ANNUITY', proofOfLifeRequired: true })).toBe(true);
+    expect(needsProofOfLife({ kind: 'ANNUITY', proofOfLifeRequired: false })).toBe(false);
+    expect(needsProofOfLife({ kind: 'MATURITY', proofOfLifeRequired: false })).toBe(false);
+  });
+  it('falls back to the kind when the field is absent', () => {
+    expect(needsProofOfLife({ kind: 'ANNUITY' })).toBe(true);
+    expect(needsProofOfLife({ kind: 'RETURN_OF_PREMIUM' })).toBe(false);
   });
 });

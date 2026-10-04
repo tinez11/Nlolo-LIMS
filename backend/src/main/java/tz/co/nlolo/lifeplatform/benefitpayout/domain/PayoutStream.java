@@ -5,6 +5,7 @@ import org.hibernate.annotations.UuidGenerator;
 import tz.co.nlolo.lifeplatform.benefitpayout.api.PayoutStateException;
 import tz.co.nlolo.lifeplatform.benefitpayout.api.StreamStatus;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -33,9 +34,81 @@ public class PayoutStream {
     @Column(nullable = false) private String status = StreamStatus.PENDING_ACTIVATION.name();
     @Column(name = "proof_of_life_interval_months", nullable = false) private int proofOfLifeIntervalMonths;
     @Column(name = "proof_of_life_due_date") private LocalDate proofOfLifeDueDate;
+    // An annuity's open-ended stream (product step 5, benefitpayout V2). Null on every INCOME stream.
+    @Column(name = "open_ended", nullable = false) private boolean openEnded;
+    @Column private String frequency;
+    @Column(name = "first_due_date") private LocalDate firstDueDate;
+    @Column(name = "base_amount") private BigDecimal baseAmount;
+    @Column private String currency;
+    @Column(name = "escalation_percent") private BigDecimal escalationPercent;
+    @Column(name = "amount_multiplier", nullable = false) private BigDecimal amountMultiplier = BigDecimal.ONE;
+    @Column(name = "expanded_through") private LocalDate expandedThrough;
+    @Column(name = "redirect_from") private LocalDate redirectFrom;
+    @Column(name = "redirect_until") private LocalDate redirectUntil;
+    @Column(name = "redirect_payee_ref") private String redirectPayeeRef;
+    @Column(name = "proof_of_life_stopped", nullable = false) private boolean proofOfLifeStopped;
     @Version private long version;
 
     protected PayoutStream() {}
+
+    /**
+     * An annuity's income for life (product step 5): no end date, so it is expanded a horizon at a
+     * time from the locked base. Row 0, because an annuity authors no payout rows.
+     */
+    public static PayoutStream annuity(UUID tenantId, String policyNumber, int proofOfLifeIntervalMonths, String frequency,
+                                       LocalDate firstDueDate, BigDecimal baseAmount, String currency, BigDecimal escalationPercent) {
+        PayoutStream s = new PayoutStream(tenantId, policyNumber, 0, proofOfLifeIntervalMonths);
+        s.openEnded = true;
+        s.frequency = frequency;
+        s.firstDueDate = firstDueDate;
+        s.baseAmount = baseAmount;
+        s.currency = currency;
+        s.escalationPercent = escalationPercent;
+        s.expandedThrough = firstDueDate.minusDays(1);
+        return s;
+    }
+
+    public void expandedThrough(LocalDate horizon) {
+        if (expandedThrough == null || horizon.isAfter(expandedThrough)) {
+            this.expandedThrough = horizon;
+        }
+    }
+
+    /** A joint annuity's first death: every instalment from here pays the survivor percentage. */
+    public void reduceTo(BigDecimal multiplier) {
+        this.amountMultiplier = multiplier;
+    }
+
+    /**
+     * The last death inside a guarantee: from {@code from} to {@code until} the instalments go to the
+     * beneficiaries, and proof of life stops. A null payee means none is known, so the next
+     * instalment waits for a reviewer -- the stream goes back to awaiting activation, and its first
+     * payment to the new payee earns two signatures like the annuitant's first did.
+     */
+    public void redirect(LocalDate from, LocalDate until, String payeeRef) {
+        this.redirectFrom = from;
+        this.redirectUntil = until;
+        this.redirectPayeeRef = payeeRef;
+        this.proofOfLifeStopped = true;
+        if (payeeRef == null && status() != StreamStatus.ENDED) {
+            this.status = StreamStatus.PENDING_ACTIVATION.name();
+            this.proofOfLifeDueDate = null;
+        }
+    }
+
+    public boolean isOpenEnded() { return openEnded; }
+    public String getFrequency() { return frequency; }
+    public LocalDate getFirstDueDate() { return firstDueDate; }
+    public BigDecimal getBaseAmount() { return baseAmount; }
+    public String getCurrency() { return currency; }
+    public BigDecimal getEscalationPercent() { return escalationPercent; }
+    public BigDecimal getAmountMultiplier() { return amountMultiplier; }
+    public LocalDate getExpandedThrough() { return expandedThrough; }
+    public LocalDate getRedirectFrom() { return redirectFrom; }
+    public LocalDate getRedirectUntil() { return redirectUntil; }
+    public String getRedirectPayeeRef() { return redirectPayeeRef; }
+    public boolean isProofOfLifeStopped() { return proofOfLifeStopped; }
+    public UUID getTenantId() { return tenantId; }
 
     public PayoutStream(UUID tenantId, String policyNumber, int rowOrder, int proofOfLifeIntervalMonths) {
         this.tenantId = tenantId;
@@ -52,7 +125,8 @@ public class PayoutStream {
             throw new PayoutStateException("Stream " + streamId + " is " + status + ", not awaiting activation");
         }
         this.status = StreamStatus.ACTIVE.name();
-        this.proofOfLifeDueDate = provenOn.plusMonths(proofOfLifeIntervalMonths);
+        // A redirected annuity's beneficiaries prove nothing: the life it proved is over.
+        this.proofOfLifeDueDate = proofOfLifeStopped ? null : provenOn.plusMonths(proofOfLifeIntervalMonths);
     }
 
     /** Proof of life is overdue. Idempotent, so a drain may say it twice without complaint. */

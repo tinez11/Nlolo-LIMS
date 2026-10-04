@@ -21,8 +21,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ChartOfAccountBlueprintTest {
 
     @Test
-    void seedsThirtySixAccounts() {
-        assertThat(ChartOfAccountBlueprint.accounts()).hasSize(36);
+    void seedsThirtySevenAccounts() {
+        // 36 until product step 5 added 2230 Withholding Tax Payable.
+        assertThat(ChartOfAccountBlueprint.accounts()).hasSize(37);
     }
 
     @Test

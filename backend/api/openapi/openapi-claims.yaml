@@ -435,6 +435,12 @@ components:
         placeOfDeath: { type: string }
         dateOfDeath: { type: string, format: date }
         attendingPhysician: { type: string }
+        deceasedPartyId:
+          description: >-
+            Which life died, on a joint-life annuity (product step 5) -- the annuitant or the joint
+            life. Omitted or null on every other claim, meaning the policy's life assured.
+          type: [string, "null"]
+          format: uuid
     DisabilityClaimDetails:
       type: object
       required: [claimType, disabilityType, onsetDate, permanent, impairmentPercent]

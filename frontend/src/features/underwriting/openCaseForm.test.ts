@@ -221,3 +221,36 @@ describe('what the applicant asks for about the contract', () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe('openCaseFormSchema on an annuity product (product step 5)', () => {
+  const JOINT = '2f0a4f33-6d1b-4a55-9d7e-0f3c1c1f6a10';
+  const annuity = () => ({ ...valid(), isAnnuity: true, annuityFormCode: 'L10', annuityFrequency: 'MONTHLY' });
+  const messages = (input: unknown) => {
+    const r = openCaseFormSchema.safeParse(input);
+    return r.success ? [] : r.error.issues.map((i) => i.message);
+  };
+
+  it('needs a form and a frequency', () => {
+    expect(messages({ ...annuity(), annuityFormCode: '', annuityFrequency: '' })).toEqual([
+      'Choose the annuity form',
+      'Choose how often the income is paid',
+    ]);
+  });
+  it('needs the joint life on a joint-life form, in the server words', () => {
+    expect(messages({ ...annuity(), annuityJointRequired: true })).toContain('Form L10 is joint-life: name the joint life');
+  });
+  it('sends the choice and no term or premium frequency', () => {
+    const values = openCaseFormSchema.parse({ ...annuity(), requestedTermMonths: '120', premiumFrequency: 'MONTHLY' });
+    const request = toApiRequest(values);
+    expect(request.annuityChoice).toEqual({ formCode: 'L10', frequency: 'MONTHLY', jointLifePartyId: null });
+    expect(request).not.toHaveProperty('requestedTermMonths');
+    expect(request).not.toHaveProperty('premiumFrequency');
+  });
+  it('sends the joint life only when the form is joint', () => {
+    const values = openCaseFormSchema.parse({ ...annuity(), annuityJointRequired: true, annuityJointLifePartyId: JOINT });
+    expect(toApiRequest(values).annuityChoice?.jointLifePartyId).toBe(JOINT);
+  });
+  it('ignores the annuity fields on any other product', () => {
+    expect(toApiRequest(openCaseFormSchema.parse(valid()))).not.toHaveProperty('annuityChoice');
+  });
+});

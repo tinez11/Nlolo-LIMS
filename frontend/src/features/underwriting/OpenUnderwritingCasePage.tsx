@@ -26,6 +26,8 @@ import {
 } from './openCaseForm';
 import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
+import { AnnuityPurchaseFields } from '@/features/annuities/AnnuityPurchaseFields';
+import { useAnnuityTerms } from '@/features/annuities/useAnnuityTerms';
 
 /**
  * `POST /underwriting/cases` -- the only entry point onto this domain that
@@ -114,6 +116,18 @@ export function OpenUnderwritingCasePage() {
       setValue('sumAssuredCurrency', selectedProduct.defaultCurrency);
     }
   }, [snapshot.data, selectedProduct, setValue]);
+
+  // An annuity purchase (product step 5): the version's forms, and the choice the applicant makes.
+  const isAnnuity = selectedProduct?.category === 'ANNUITY';
+  const productVersionId = watch('productVersionId');
+  const annuityTerms = useAnnuityTerms(isAnnuity ? productId : '', isAnnuity ? productVersionId : '');
+  const annuityFormCode = watch('annuityFormCode');
+  const annuityFormIsJoint =
+    annuityTerms?.terms?.forms.find((f) => f.formCode === annuityFormCode)?.joint ?? false;
+  useEffect(() => {
+    setValue('isAnnuity', isAnnuity);
+    setValue('annuityJointRequired', isAnnuity && annuityFormIsJoint);
+  }, [isAnnuity, annuityFormIsJoint, setValue]);
 
   async function onSubmit(values: OpenCaseFormValues) {
     await openCase(toApiRequest(values));
@@ -206,7 +220,7 @@ export function OpenUnderwritingCasePage() {
         </FormField>
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
-          <FormField label="Sum assured" error={errors.sumAssuredAmount?.message}>
+          <FormField label={isAnnuity ? 'Purchase price' : 'Sum assured'} error={errors.sumAssuredAmount?.message}>
             <Input
               placeholder="1500000.00"
               {...register('sumAssuredAmount')}
@@ -316,6 +330,26 @@ export function OpenUnderwritingCasePage() {
         <fieldset className="space-y-4">
           <legend className="text-sm font-medium">What the applicant is asking for</legend>
 
+          {isAnnuity && annuityTerms?.error != null && (
+            <InlineError error={annuityTerms.error as Parameters<typeof InlineError>[0]['error']} />
+          )}
+          {isAnnuity && annuityTerms?.terms && (
+            <AnnuityPurchaseFields
+              terms={annuityTerms.terms}
+              productVersionId={productVersionId}
+              formCode={annuityFormCode}
+              frequency={watch('annuityFrequency')}
+              jointLifePartyId={watch('annuityJointLifePartyId')}
+              annuitantPartyId={watch('lifeAssuredPartyId') || applicantPartyId}
+              purchasePrice={watch('sumAssuredAmount')}
+              register={register}
+              control={control}
+              errors={errors}
+            />
+          )}
+
+          {/* An annuity has no term and no premium frequency: one single premium, paid for life. */}
+          {!isAnnuity && (
           <div className="grid grid-cols-2 gap-4">
             <FormField label="Term (months)" error={errors.requestedTermMonths?.message}>
               <Input placeholder="120" {...register('requestedTermMonths')} />
@@ -341,6 +375,7 @@ export function OpenUnderwritingCasePage() {
               </Select>
             </FormField>
           </div>
+          )}
 
           {/*
             The same rows the issue form uses, from the same component and the same schema.

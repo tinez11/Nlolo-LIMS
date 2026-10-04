@@ -73,4 +73,7 @@ public record PublishVersionRequest(
     @Valid DepositRequest deposit,
 
     // Present only on a with-profits version (product step 4). Absent means non-participating.
-    @Valid BonusRequest bonus) {}
+    @Valid BonusRequest bonus,
+
+    // Present only on an ANNUITY version (product step 5), where it is required.
+    @Valid AnnuityRequest annuity) {}

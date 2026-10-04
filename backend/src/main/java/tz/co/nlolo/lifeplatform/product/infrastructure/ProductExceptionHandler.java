@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.product.infrastructure;
 
+import tz.co.nlolo.lifeplatform.product.api.AnnuityPricingRefusedException;
 import tz.co.nlolo.lifeplatform.product.api.DuplicateProductCodeException;
 import tz.co.nlolo.lifeplatform.product.api.InvalidProductVersionException;
 import tz.co.nlolo.lifeplatform.product.api.NoActiveProductVersionException;
@@ -60,6 +61,20 @@ public class ProductExceptionHandler {
     @ExceptionHandler(PremiumNotQuotableException.class)
     public ProblemDetail handleNotQuotable(PremiumNotQuotableException ex) {
         return problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "PREMIUM_NOT_QUOTABLE");
+    }
+
+    /**
+     * A purchase the version cannot price (product step 5), in the pricer's words. Global like the
+     * rest of this advice, so the annuity module's quote endpoint answers it the same way.
+     */
+    @ExceptionHandler(AnnuityPricingRefusedException.class)
+    public ProblemDetail handleAnnuityNotPriceable(AnnuityPricingRefusedException ex) {
+        return problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "ANNUITY_NOT_PRICEABLE");
+    }
+
+    @ExceptionHandler(NotAnAnnuityException.class)
+    public ProblemDetail handleNotAnAnnuity(NotAnAnnuityException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "NOT_AN_ANNUITY");
     }
 
     @ExceptionHandler(DuplicateProductCodeException.class)

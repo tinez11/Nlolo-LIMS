@@ -239,6 +239,38 @@ WP_VERSION_RESP=$(curl -sfi -X POST "$API/products/$WP_PRODUCT_ID/versions" \
   }')
 echo "$WP_VERSION_RESP" | head -1
 
+# An immediate annuity (product step 5): a purchase price bought with one single premium, paid
+# monthly or annually for life. Two forms: life with a 10-year guarantee, and joint life paying 50%
+# to the survivor. The rates are generated, NOT actuarial -- the basis reference says so -- and
+# cover every entry age 55-85 because a gap is refused at publish. No withholding rule is seeded:
+# finance proposes one and a second person approves it, which is what the screen is for.
+ANN_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
+  '{"productCode":"ANN-LIFE-01","productName":"Nlolo Pensheni Annuity","category":"ANNUITY","defaultCurrency":"TZS"}')
+ANN_PRODUCT_ID=$(jsonval "$ANN_PRODUCT_JSON" productId)
+echo "annuityProductId=$ANN_PRODUCT_ID"
+
+ANN_LIFE_RATES=$(awk 'BEGIN{for(a=55;a<=85;a++){printf "%s{\"age\":%d,\"annualRatePerMille\":%.2f}", (a>55?",":""), a, 60+(a-55)*1.5}}')
+ANN_JOINT_RATES=$(awk 'BEGIN{n=split("-10:-1 0:4 5:15",b," ");for(a=55;a<=85;a++){for(i=1;i<=n;i++){split(b[i],r,":");printf "%s{\"age\":%d,\"ageDifferenceFrom\":%d,\"ageDifferenceTo\":%d,\"annualRatePerMille\":%.2f}", (a>55||i>1?",":""), a, r[1], r[2], 55+(a-55)*1.5}}}')
+
+ANN_VERSION_RESP=$(curl -sfi -X POST "$API/products/$ANN_PRODUCT_ID/versions" \
+  -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuid)" -d '{
+    "ifrsMeasurementModel":"GMM","effectiveDate":"2020-01-01",
+    "payoutTerms":{"freeLookDays":15},
+    "tiraFiling":{"reference":"TIRA/DEMO/ANN/0001","approvalDate":"2020-01-01"},
+    "eligibility":{"minEntryAge":55,"maxEntryAge":85,"minSumAssured":5000000,"maxSumAssured":1000000000},
+    "ratingTable":[{"factorType":"AGE","band":"55-85","multiplier":1.0,"ageFrom":55,"ageTo":85},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+    "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
+    "annuity":{"timing":"ARREARS","proofOfLifeIntervalMonths":12,
+               "jointAgeDifferenceMin":-10,"jointAgeDifferenceMax":15,
+               "basisReference":"DEMO-BASIS-NOT-ACTUARIAL","basisDate":"2020-01-01",
+               "forms":[
+                 {"formCode":"LIFE-10G","guaranteeYears":10,"joint":false,"escalationPercent":0,"capitalProtected":false,"rateBasis":"UNISEX","rates":['"$ANN_LIFE_RATES"']},
+                 {"formCode":"JOINT-50","guaranteeYears":0,"joint":true,"survivorPercent":50,"escalationPercent":0,"capitalProtected":false,"rateBasis":"UNISEX","rates":['"$ANN_JOINT_RATES"']}],
+               "frequencies":[{"frequency":"MONTHLY","factor":0.98},{"frequency":"ANNUAL","factor":1}]}
+  }')
+echo "$ANN_VERSION_RESP" | head -1
+
 # A CREDIT_LIFE product, and a lender to hold a scheme on it.
 #
 # Neither existed here, and the consequence was not cosmetic: the console's "Credit-life scheme"

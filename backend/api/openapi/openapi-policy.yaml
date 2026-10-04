@@ -107,7 +107,7 @@ paths:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         - name: status
           in: query
-          schema: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP, CANCELLED_FREE_LOOK] }
+          schema: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP, CANCELLED_FREE_LOOK, ANNUITY_ENDED] }
         - name: q
           in: query
           description: Free-text, case-insensitive substring match against policyNumber.
@@ -1634,7 +1634,7 @@ components:
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
         agentOfRecordId: { type: [string, "null"], format: uuid }
-        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP, CANCELLED_FREE_LOOK] }
+        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP, CANCELLED_FREE_LOOK, ANNUITY_ENDED] }
         issueDate: { type: string, format: date }
         sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         cashValue: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
@@ -1958,7 +1958,7 @@ components:
       properties:
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
         policyholderPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
-        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP, CANCELLED_FREE_LOOK] }
+        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP, CANCELLED_FREE_LOOK, ANNUITY_ENDED] }
         commencementDate: { type: [string, "null"], format: date }
         policyTermMonths: { type: [integer, "null"] }
         # AMORTISING_LOAN is credit life: the member IS a loan and the amount insured is the

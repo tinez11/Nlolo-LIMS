@@ -31,6 +31,7 @@ import {
   type SubmitAssessmentFormValues,
 } from './submitAssessmentForm';
 import { DecisionPanel } from './DecisionPanel';
+import { useAnnuityStore } from '@/store/annuityStore';
 import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
 import { Input, Select, Textarea } from '@/components/ui/input';
@@ -94,10 +95,15 @@ export function UnderwritingCaseDetailPage() {
   const resetReferCase = useUnderwritingStore((s) => s.resetReferCase);
   const referring = useUnderwritingStore(selectReferring(caseId));
 
+  // An annuity case carries its choice (product step 5); null for every other case.
+  const annuityChoice = useAnnuityStore((s) => s.choice[caseId]);
+  const loadAnnuityChoice = useAnnuityStore((s) => s.loadChoice);
+
   useEffect(() => {
     if (!caseId) return;
     void loadCase(caseId);
-  }, [caseId, loadCase]);
+    void loadAnnuityChoice(caseId);
+  }, [caseId, loadCase, loadAnnuityChoice]);
 
   // Same reset-on-mount discipline as every other keyed mutation resource on
   // this console: `submittingAssessment`/`referring` outlive this page's own
@@ -201,6 +207,26 @@ export function UnderwritingCaseDetailPage() {
             </div>
           </Panel>
         )}
+        {annuityChoice?.data && (
+          <Panel
+            title="Annuity purchase"
+            subtitle="The sum assured is the purchase price. The income is locked from the rate table when the premium arrives."
+          >
+            <dl className="px-4 pb-2">
+              <Field label="Form" value={annuityChoice.data.formCode} />
+              <Field label="Frequency" value={annuityChoice.data.frequency} />
+              {annuityChoice.data.jointLifePartyId && (
+                <Field label="Joint life" value={<span className="font-mono text-xs">{annuityChoice.data.jointLifePartyId}</span>} />
+              )}
+              {annuityChoice.data.ageEvidenceConfirmedBy && (
+                <Field
+                  label="Proof of age"
+                  value={`Confirmed by ${annuityChoice.data.ageEvidenceConfirmedBy}, ${formatInstant(annuityChoice.data.ageEvidenceConfirmedAt)}`}
+                />
+              )}
+            </dl>
+          </Panel>
+        )}
         {/*
           THE ACCEPTANCE THAT PRODUCED NOTHING.
 
@@ -273,8 +299,12 @@ export function UnderwritingCaseDetailPage() {
           one, which is a decision in status only. A POSTPONED case can be decided again once
           the evidence it asked for arrives.
         */}
-        {view && (view.status !== 'DECIDED' || isPostponed) && (
+        {/* Waits for the choice read: the form's outcomes and checks differ on an annuity, and a
+            form opened before the answer would keep the wrong ones. Keyed so it rebuilds if it changes. */}
+        {view && (view.status !== 'DECIDED' || isPostponed) && annuityChoice && !isInitialLoad(annuityChoice) && (
           <DecisionPanel
+            key={annuityChoice.data ? 'annuity' : 'risk'}
+            annuity={annuityChoice.data != null}
             view={view}
             deciding={deciding}
             canDecide={roles.UNDERWRITER}

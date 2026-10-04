@@ -16,10 +16,13 @@ import java.util.Set;
  */
 public final class PayoutPlanValidator {
 
-    /** Products sold to one person, which carry a statutory free-look window (guide §21.3). */
+    /**
+     * Products sold to one person, which carry a statutory free-look window (guide §21.3). ANNUITY
+     * joined in product step 5 (spec Q9): an annuity is cancellable in free-look, never surrendered.
+     */
     private static final Set<ProductCategory> INDIVIDUAL = EnumSet.of(
         ProductCategory.TERM_LIFE, ProductCategory.ENDOWMENT, ProductCategory.WHOLE_LIFE,
-        ProductCategory.EDUCATION_SAVINGS);
+        ProductCategory.EDUCATION_SAVINGS, ProductCategory.ANNUITY);
 
     /** The two that pay while the life assured lives, and so carry a schedule at all. */
     private static final Set<ProductCategory> SCHEDULED = EnumSet.of(
@@ -43,6 +46,9 @@ public final class PayoutPlanValidator {
     public static void validate(ProductCategory category, PayoutPlan plan, AccumulationPlan accumulation, boolean deposit) {
         if (plan == null || !plan.authored()) {
             return;
+        }
+        if (plan.rows().stream().anyMatch(r -> r.kind() == PayoutKind.ANNUITY)) {
+            fail("ANNUITY payouts are set by an annuity's forms, not authored as rows");
         }
         checkAccountRules(plan, accumulation);
         PayoutTerms terms = plan.terms();

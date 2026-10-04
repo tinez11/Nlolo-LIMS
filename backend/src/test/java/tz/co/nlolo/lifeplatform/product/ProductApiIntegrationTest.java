@@ -78,7 +78,11 @@ class ProductApiIntegrationTest {
             "db-migrations/product/V19__accumulation_terms.sql",
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
+            "db-migrations/product/V22__annuity_terms.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
+            "db-migrations/benefitpayout/V2__annuity_streams.sql",
+            "db-migrations/benefitpayout/V3__withholding.sql",
+            "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql");
     }
 
@@ -1702,9 +1706,9 @@ class ProductApiIntegrationTest {
             .toList();
         // Nine: step 1 added the cash-value overload, step 2 the payout-plan one, step 3 the
         // accumulation-plan one, the fixed-term deposit the deposit-grid one, step 4 the with-profits
-        // one. A new overload must raise this count AND pass both checks below -- that is the point
-        // of counting.
-        assertEquals(9, declared.size(), "expected nine publishVersion overloads");
+        // one, step 5 the annuity one. A new overload must raise this count AND pass both checks
+        // below -- that is the point of counting.
+        assertEquals(10, declared.size(), "expected ten publishVersion overloads");
         declared.forEach(m -> assertFalse(m.isDefault(),
             "publishVersion must not be a default method: Spring's proxy cannot apply "
                 + "@Transactional to one, so its delegation runs untransacted"));
@@ -1712,7 +1716,7 @@ class ProductApiIntegrationTest {
         List<Method> implementations = Arrays.stream(ProductApiImpl.class.getDeclaredMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        assertEquals(9, implementations.size(), "every overload must be implemented here");
+        assertEquals(10, implementations.size(), "every overload must be implemented here");
         implementations.forEach(m -> assertNotNull(m.getAnnotation(Transactional.class),
             "every publishVersion implementation must carry @Transactional, including the "
                 + "convenience overloads -- the retire-then-insert sequence must be atomic"));
@@ -1857,5 +1861,95 @@ class ProductApiIntegrationTest {
 
     private static List<ProductApi.BenefitInput> payoutDeathOnly() {
         return List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED));
+    }
+
+    // ---- Step 5: an annuity version ----
+
+    private static final EligibilityBounds ANNUITY_AGES = new EligibilityBounds(60, 62, null, null, null, null);
+    private static final PayoutPlan FREE_LOOK_15 = PayoutPlan.authored(new PayoutTerms(15, null, null, null), List.of());
+
+    private static AnnuityPlan lifeOnlyAnnuity() {
+        return new AnnuityPlan(true, AnnuityTiming.ARREARS, 12, null, null, "ACT/ANN/2026", LocalDate.of(2026, 1, 1),
+            List.of(new AnnuityForm("LIFE-0G", 0, false, null, BigDecimal.ZERO, false, AnnuityRateBasis.UNISEX, List.of(
+                new AnnuityRateRow(null, 60, null, null, new BigDecimal("72")),
+                new AnnuityRateRow(null, 61, null, null, new BigDecimal("74")),
+                new AnnuityRateRow(null, 62, null, null, new BigDecimal("76"))))),
+            List.of(new AnnuityFrequencyFactor("MONTHLY", new BigDecimal("0.9800")),
+                    new AnnuityFrequencyFactor("ANNUAL", BigDecimal.ONE)));
+    }
+
+    private UUID publishAnnuity(String code, AnnuityPlan plan) {
+        ProductSummaryView product = productApi.createProduct(code, "Immediate annuity", ProductCategory.ANNUITY, "TZS",
+            "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.GMM, LocalDate.now(), null,
+            payoutRatingTable(), payoutDeathOnly(), null, List.of(), ANNUITY_AGES, FrequencyLoading.none(),
+            ANY_FILING, CashValuePlan.none(), FREE_LOOK_15, AccumulationPlan.none(), DepositPlan.none(), BonusPlan.none(),
+            plan, "actuary@nlolo.co.tz");
+        return productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+    }
+
+    @Test
+    void anAnnuityVersionRoundTripsItsFormsGridAndFrequencies() {
+        UUID versionId = publishAnnuity("ANN-1", lifeOnlyAnnuity());
+        AnnuityPlan read = productApi.resolveAnnuityPlan(versionId);
+        assertThat(read.annuity()).isTrue();
+        assertThat(read.timing()).isEqualTo(AnnuityTiming.ARREARS);
+        assertThat(read.proofOfLifeIntervalMonths()).isEqualTo(12);
+        assertThat(read.basisReference()).isEqualTo("ACT/ANN/2026");
+        assertThat(read.forms()).singleElement().satisfies(f -> {
+            assertThat(f.formCode()).isEqualTo("LIFE-0G");
+            assertThat(f.rates()).extracting(AnnuityRateRow::age).containsExactly(60, 61, 62);
+        });
+        assertThat(read.frequency("MONTHLY")).get().extracting(AnnuityFrequencyFactor::factor)
+            .satisfies(f -> assertThat(f).isEqualByComparingTo("0.98"));
+    }
+
+    @Test
+    void anAnnuityIsPricedFromItsOwnVersion() {
+        UUID versionId = publishAnnuity("ANN-2", lifeOnlyAnnuity());
+        AnnuityPrice price = productApi.priceAnnuity(versionId, new AnnuityPricingInput("LIFE-0G", "MONTHLY",
+            new BigDecimal("50000000.00"), LocalDate.now().minusYears(60).minusDays(1), "FEMALE", null, null, LocalDate.now()));
+        assertThat(price.annuitantAge()).isEqualTo(60);
+        assertThat(price.instalment()).isEqualByComparingTo("294000.00");
+    }
+
+    @Test
+    void anOrdinaryVersionIsNotAnAnnuityAndCannotBePricedAsOne() {
+        ProductSummaryView product = productApi.createProduct("ANN-NOT", "An endowment", ProductCategory.ENDOWMENT, "TZS",
+            "actuary@nlolo.co.tz");
+        publishWithPayoutPlan(product.productId(), SA_MATURITY);
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+        assertThat(productApi.resolveAnnuityPlan(versionId).annuity()).isFalse();
+        assertThat(productApi.resolveAnnuityPlan(UUID.randomUUID()).annuity()).isFalse();
+        assertThatThrownBy(() -> productApi.priceAnnuity(versionId, new AnnuityPricingInput("LIFE-0G", "MONTHLY",
+                BigDecimal.TEN, LocalDate.of(1960, 1, 1), null, null, null, LocalDate.now())))
+            .isInstanceOf(AnnuityPricingRefusedException.class).hasMessage("This product version is not an annuity");
+    }
+
+    @Test
+    void anAnnuityVersionWithACashValueTableIsRefused() {
+        ProductSummaryView product = productApi.createProduct("ANN-CV", "Annuity with cash value", ProductCategory.ANNUITY,
+            "TZS", "actuary@nlolo.co.tz");
+        CashValuePlan scale = new CashValuePlan("ACT/1", LocalDate.of(2026, 1, 1), "PROPORTIONATE", 2,
+            List.of(new CashValueRowInput(2, null, null, new BigDecimal("200"), null)));
+        assertThatThrownBy(() -> productApi.publishVersion(product.productId(), IfrsMeasurementModel.GMM, LocalDate.now(), null,
+                payoutRatingTable(), payoutDeathOnly(), null, List.of(), ANNUITY_AGES, FrequencyLoading.none(),
+                ANY_FILING, scale, FREE_LOOK_15, AccumulationPlan.none(), DepositPlan.none(), BonusPlan.none(),
+                lifeOnlyAnnuity(), "actuary@nlolo.co.tz"))
+            // CashValuePlanValidator runs first and already refuses the category in its own words.
+            .isInstanceOf(InvalidProductVersionException.class)
+            .hasMessage("A ANNUITY product cannot carry a cash-value table");
+    }
+
+    @Test
+    void anAnnuityVersionNeedsAFreeLookPeriod() {
+        ProductSummaryView product = productApi.createProduct("ANN-FL", "Annuity, no free look", ProductCategory.ANNUITY,
+            "TZS", "actuary@nlolo.co.tz");
+        assertThatThrownBy(() -> productApi.publishVersion(product.productId(), IfrsMeasurementModel.GMM, LocalDate.now(), null,
+                payoutRatingTable(), payoutDeathOnly(), null, List.of(), ANNUITY_AGES, FrequencyLoading.none(),
+                ANY_FILING, CashValuePlan.none(), PayoutPlan.authored(PayoutTerms.none(), List.of()),
+                AccumulationPlan.none(), DepositPlan.none(), BonusPlan.none(), lifeOnlyAnnuity(), "actuary@nlolo.co.tz"))
+            .isInstanceOf(InvalidProductVersionException.class)
+            .hasMessage("A free-look period in days is required on an individual product");
     }
 }

@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.product.infrastructure;
 
 import tz.co.nlolo.lifeplatform.product.api.AccumulationPlan;
+import tz.co.nlolo.lifeplatform.product.api.AnnuityPlan;
 import tz.co.nlolo.lifeplatform.product.api.BonusPlan;
 import tz.co.nlolo.lifeplatform.product.api.DepositPlan;
 import tz.co.nlolo.lifeplatform.product.api.CashValuePlan;
@@ -130,6 +131,7 @@ public class ProductController {
             request.accumulation() != null ? request.accumulation().toPlan() : AccumulationPlan.none(),
             request.deposit() != null ? request.deposit().toPlan() : DepositPlan.none(),
             request.bonus() != null ? request.bonus().toPlan() : BonusPlan.none(),
+            request.annuity() != null ? request.annuity().toPlan() : AnnuityPlan.none(),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
@@ -195,6 +197,21 @@ public class ProductController {
     public ResponseEntity<ProductApi.VersionRatingView> getVersionRating(@PathVariable UUID productId,
                                                                          @PathVariable UUID versionId) {
         return ResponseEntity.ok(productApi.getVersionRating(productId, versionId));
+    }
+
+    /**
+     * An ANNUITY version's forms and frequencies, for the case form (product step 5). 404
+     * NOT_AN_ANNUITY for any other version -- an answer the console reads as "no annuity fields".
+     * Agents open cases too, so they may read it; the rate rows are not here (see the response).
+     */
+    @GetMapping("/products/{productId}/versions/{versionId}/annuity")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<AnnuityTermsResponse> getAnnuityTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {
+        AnnuityPlan plan = productApi.resolveAnnuityPlan(versionId);
+        if (!plan.annuity()) {
+            throw new NotAnAnnuityException(versionId);
+        }
+        return ResponseEntity.ok(AnnuityTermsResponse.from(plan));
     }
 
     /**

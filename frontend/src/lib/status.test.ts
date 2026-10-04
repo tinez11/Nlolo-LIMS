@@ -112,6 +112,8 @@ describe('STATUS_MAPS coverage', () => {
         'PAID_UP',
         // The customer changed their mind inside the free-look window (product step 2).
         'CANCELLED_FREE_LOOK',
+        // An annuity whose last payable life died, or whose guarantee ran out (product step 5).
+        'ANNUITY_ENDED',
         'PROPOSED',
         'REINSTATED',
         'SURRENDERED',

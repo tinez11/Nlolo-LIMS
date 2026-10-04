@@ -364,6 +364,114 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /withholding-rules:
+    get:
+      summary: Every tax-withholding rule, newest effective date first
+      description: Product step 5. FINANCE_OFFICER or ADMIN. Includes proposals awaiting a second person.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The rules
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/WithholdingRule' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Propose a tax-withholding rule
+      description: >
+        The rule is the law's, so it is data: payout kinds, a rate, effective dates and the legal
+        reference. Only an APPROVED rule withholds, and a second person approves it. Once per
+        Idempotency-Key: a retry returns the rule it created.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 200 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WithholdingRuleRequest' }
+      responses:
+        '201':
+          description: Proposed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WithholdingRule' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused -- a rate out of range, no legal reference, or a key reused for a different rule
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /withholding-rules/{ruleId}/approve:
+    post:
+      summary: Approve a proposed withholding rule, by someone other than its proposer
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: ruleId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Approved; it withholds from every payout of its kinds due in its dates
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WithholdingRule' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused -- the proposer approving, not a proposal, or an overlapping approved rule
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /withholding-rules/{ruleId}/end:
+    post:
+      summary: End an approved withholding rule on its last day
+      description: >-
+        One finance officer may do it alone. The last day must be today or later (withholding is fixed
+        at approval, so a backdated end would drop tax from payouts already due), on or after the
+        rule's start, and never after an end date it already has -- a later period is a new rule,
+        proposed and approved by two people.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: ruleId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WithholdingRuleEndRequest' }
+      responses:
+        '200':
+          description: Ended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WithholdingRule' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused, in the rule's words
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /withholding-rules/{ruleId}/withdraw:
+    post:
+      summary: Withdraw a proposed withholding rule
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: ruleId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Withdrawn
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WithholdingRule' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused -- not a proposal
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   schemas:
     FreeLookCancellation:
@@ -416,7 +524,7 @@ components:
       properties:
         instalmentId: { type: string, format: uuid }
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
-        kind: { type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM] }
+        kind: { type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM, ANNUITY] }
         dueDate: { type: string, format: date }
         originalAmount:
           description: What the contract authored. Null on a premium return until it falls due.
@@ -443,3 +551,54 @@ components:
         approvedBy: { type: [string, "null"] }
         paymentRunId: { type: [string, "null"], format: uuid }
         attempts: { type: integer }
+        grossAmount:
+          description: What was owed when approved (product step 5). Null before approval.
+          anyOf:
+            - { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+            - { type: 'null' }
+        withheldAmount:
+          description: Tax withheld at approval by the approved rule in force for this kind and due date; zero when none was.
+          anyOf:
+            - { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+            - { type: 'null' }
+        netAmount:
+          description: What the payment rail is asked to pay -- the gross less any tax withheld.
+          anyOf:
+            - { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+            - { type: 'null' }
+        proofOfLifeRequired:
+          type: boolean
+          description: >-
+            Whether a review must say how the life assured was confirmed alive. True for SURVIVAL,
+            INCOME and ANNUITY instalments, except on an annuity stream redirected to beneficiaries
+            after the annuitant's death (product step 5), which owes none. The same rule review enforces.
+    WithholdingRule:
+      type: object
+      additionalProperties: false
+      required: [ruleId, payoutKinds, ratePercent, effectiveFrom, legalReference, status, proposedBy, proposedAt]
+      properties:
+        ruleId: { type: string, format: uuid }
+        payoutKinds: { type: array, items: { type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM, ANNUITY] } }
+        ratePercent: { type: string, description: "Decimal string, no trailing zeros" }
+        effectiveFrom: { type: string, format: date }
+        effectiveTo: { type: [string, "null"], format: date }
+        legalReference: { type: string }
+        status: { type: string, enum: [PROPOSED, APPROVED, WITHDRAWN] }
+        proposedBy: { type: string }
+        proposedAt: { type: string, format: date-time }
+        approvedBy: { type: [string, "null"] }
+        approvedAt: { type: [string, "null"], format: date-time }
+        endedBy: { type: [string, "null"], description: "Who ended an approved rule early; null until then" }
+        endedAt: { type: [string, "null"], format: date-time }
+    WithholdingRuleEndRequest:
+      type: object
+      properties:
+        effectiveTo: { type: [string, "null"], format: date, description: "The rule's last day. Today or later, never after an existing end date." }
+    WithholdingRuleRequest:
+      type: object
+      properties:
+        payoutKinds: { type: [array, "null"], items: { type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM, ANNUITY] } }
+        ratePercent: { type: [number, "null"], exclusiveMinimum: 0, exclusiveMaximum: 100 }
+        effectiveFrom: { type: [string, "null"], format: date }
+        effectiveTo: { type: [string, "null"], format: date }
+        legalReference: { type: [string, "null"], maxLength: 200 }

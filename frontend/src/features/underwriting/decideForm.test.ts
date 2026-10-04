@@ -120,3 +120,34 @@ describe('toApiRequest', () => {
     expect(request.reason).toBe('Adverse history');
   });
 });
+
+describe('decideFormSchema on an annuity case (product step 5)', () => {
+  const messages = (input: DecideFormInput) => {
+    const r = decideFormSchema.safeParse(input);
+    return r.success ? [] : r.error.issues.map((i) => i.message);
+  };
+  const annuity = (over: Partial<DecideFormInput>): DecideFormInput => ({
+    ...blankDecideForm(true),
+    reason: 'Proof of age seen',
+    ...over,
+  });
+
+  it('refuses an acceptance until proof of age is confirmed, in the server words', () => {
+    expect(messages(annuity({ outcome: 'ACCEPT' }))).toContain('An annuity is accepted only once proof of age is confirmed');
+    expect(messages(annuity({ outcome: 'ACCEPT', ageEvidenceConfirmed: true }))).toEqual([]);
+  });
+  it('declines without the confirmation', () => {
+    expect(messages(annuity({ outcome: 'DECLINED' }))).toEqual([]);
+  });
+  it('refuses a loading or a postponement', () => {
+    expect(messages(annuity({ outcome: 'POSTPONED' }))).toContain(
+      'An annuity is accepted or declined; it is not loaded or postponed',
+    );
+  });
+  it('sends ageEvidenceConfirmed only on an annuity case', () => {
+    const accepted = decideFormSchema.parse(annuity({ outcome: 'ACCEPT', ageEvidenceConfirmed: true }));
+    expect(toApiRequest(accepted)).toEqual({ outcome: 'ACCEPT', reason: 'Proof of age seen', ageEvidenceConfirmed: true });
+    const ordinary = decideFormSchema.parse({ ...blankDecideForm(), reason: 'Standard' });
+    expect(toApiRequest(ordinary)).not.toHaveProperty('ageEvidenceConfirmed');
+  });
+});
