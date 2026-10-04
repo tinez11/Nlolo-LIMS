@@ -17,7 +17,7 @@ public interface CoveredLifeRepository extends JpaRepository<CoveredLife, UUID> 
 
     Optional<CoveredLife> findByCoveredLifeIdAndTenantId(UUID coveredLifeId, UUID tenantId);
 
-    /** Every policy with a life still active -- the nightly sweep's work list. */
-    @Query("SELECT DISTINCT l.policyNumber FROM CoveredLife l WHERE l.tenantId = :tenantId AND l.status = 'ACTIVE'")
-    List<String> policiesWithActiveLives(@Param("tenantId") UUID tenantId);
+    /** [policy_number, tenant_id] of every funeral policy with a life still active, across tenants (policy V35). */
+    @Query(value = "SELECT policy_number, tenant_id FROM policy.funeral_policies_with_active_lives()", nativeQuery = true)
+    List<Object[]> policiesWithActiveLives();
 }

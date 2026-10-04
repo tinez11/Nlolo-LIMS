@@ -493,6 +493,24 @@ public class PolicyApiImpl implements PolicyApi {
         return coveredLives.remove(funeralPolicyOrThrow(policyNumber), coveredLifeId, reason, removedBy);
     }
 
+    /**
+     * The nightly covered-life sweep's work on one funeral policy (CoveredLifeSweep), inside the sweep's own
+     * transaction. Only a policy in force is swept; when its last life has ended it closes as a scheme does
+     * when its last member leaves. Public, not on PolicyApi: this bean is proxied, and a package-private
+     * call on a proxy is the kind that can run against the proxy's own empty fields.
+     */
+    public void sweepFuneralPolicy(String policyNumber, LocalDate today) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        if (!"ACTIVE".equals(policy.getStatus()) && !"REINSTATED".equals(policy.getStatus())) {
+            return;
+        }
+        if (!coveredLives.sweep(policy, today)) {
+            closeAsSurrendered(policy, null, tenantId);
+        }
+        policyRepository.save(policy);
+    }
+
     private Policy funeralPolicyOrThrow(String policyNumber) {
         Policy policy = findPolicyOrThrow(policyNumber, TenantContext.get());
         if (!coveredLives.isFuneral(policy)) {

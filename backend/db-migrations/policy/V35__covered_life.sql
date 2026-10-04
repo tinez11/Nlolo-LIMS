@@ -58,6 +58,20 @@ ALTER TABLE policy.funeral_policy
     ADD CONSTRAINT fk_funeral_policy_takeover_life
     FOREIGN KEY (awaiting_takeover_life_id) REFERENCES policy.covered_life(covered_life_id);
 
+-- The nightly covered-life sweep's work list, across tenants (ids only; the sweep sets the tenant per
+-- policy and works under RLS) -- annuity.vestings_due's pattern. Every funeral policy with a life still
+-- on cover: each is looked at daily for scheduled ends, ageing out and its anniversary.
+CREATE OR REPLACE FUNCTION policy.funeral_policies_with_active_lives()
+RETURNS TABLE (policy_number VARCHAR, tenant_id UUID)
+LANGUAGE sql SECURITY DEFINER AS $$
+    SELECT DISTINCT l.policy_number, l.tenant_id
+      FROM policy.covered_life l
+     WHERE l.status = 'ACTIVE'
+     ORDER BY l.policy_number;
+$$;
+REVOKE EXECUTE ON FUNCTION policy.funeral_policies_with_active_lives() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION policy.funeral_policies_with_active_lives() TO app_role;
+
 ALTER TABLE policy.funeral_policy ENABLE ROW LEVEL SECURITY;
 CREATE POLICY funeral_policy_tenant_isolation ON policy.funeral_policy
     USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);

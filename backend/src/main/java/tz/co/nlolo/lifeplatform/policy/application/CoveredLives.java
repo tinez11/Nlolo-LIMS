@@ -40,6 +40,7 @@ import java.util.UUID;
 class CoveredLives {
 
     private static final ZoneId CIVIL_ZONE = ZoneId.of("Africa/Dar_es_Salaam");
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(CoveredLives.class);
 
     private final CoveredLifeRepository lives;
     private final FuneralPolicyRepository funeralPolicies;
@@ -169,6 +170,68 @@ class CoveredLives {
         payload.put("effectiveFrom", effective.toString());
         payload.put("reason", reason);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PremiumRestated", TenantContext.get(), payload));
+    }
+
+    /**
+     * One funeral policy's nightly work, in this order: lives whose scheduled end has come end; dependants
+     * past their role's stop age end AGED_OUT; on a policy anniversary every remaining life is re-priced at
+     * its age today. One restatement covers all of it, from the next premium date (the anniversary's own
+     * instalment is the first at the new rate). Returns whether any life is still on cover.
+     */
+    boolean sweep(Policy policy, LocalDate today) {
+        FuneralPlan plan = productApi.resolveFuneralPlan(policy.getProductVersionId());
+        List<CoveredLife> active = lives.findByPolicy(TenantContext.get(), policy.getPolicyNumber()).stream()
+            .filter(CoveredLife::isActive).toList();
+        boolean changed = false;
+        for (CoveredLife life : active) {
+            if (life.getCoverEnd() != null && !life.getCoverEnd().isAfter(today)) {
+                String reason = life.getPendingEndReason();
+                LocalDate endedOn = life.getCoverEnd();
+                life.end(reason, endedOn);
+                lives.save(life);
+                publishLife("policy.CoveredLifeEnded", policy, life, Map.of("endReason", reason, "endedOn", endedOn.toString()));
+                continue;
+            }
+            Integer stopAge = FuneralRole.MAIN_MEMBER.name().equals(life.getRole()) ? null
+                : plan.stopAge(FuneralRole.valueOf(life.getRole()), life.isStudent());
+            if (stopAge != null && !life.getDateOfBirth().plusYears(stopAge).isAfter(today)) {
+                LocalDate endedOn = life.getDateOfBirth().plusYears(stopAge);
+                life.end("AGED_OUT", endedOn);
+                lives.save(life);
+                publishLife("policy.CoveredLifeEnded", policy, life, Map.of("endReason", "AGED_OUT", "endedOn", endedOn.toString()));
+                changed = true;
+            }
+        }
+        LocalDate issued = policy.getIssueDate();
+        // By calendar year, not Period.between: a policy issued on 29 February has its anniversary on 28
+        // February in a common year (plusYears' own rule), where Period.between counts no whole year yet.
+        int years = today.getYear() - issued.getYear();
+        boolean anniversary = years >= 1 && issued.plusYears(years).equals(today);
+        if (anniversary) {
+            FuneralPolicy funeral = funeralPolicy(policy);
+            for (CoveredLife life : active) {
+                if (!life.isActive()) {
+                    continue;
+                }
+                int age = java.time.Period.between(life.getDateOfBirth(), today).getYears();
+                try {
+                    life.reprice(productApi.funeralYearlyPremium(policy.getProductVersionId(), funeral.getPlanCode(),
+                        FuneralRole.valueOf(life.getRole()), age), age);
+                    lives.save(life);
+                    changed = true;
+                } catch (FuneralQuoteRefusedException e) {
+                    // Unreachable for a version that published: every age a role can reach is priced. The log is the alarm.
+                    log.warn("Anniversary re-pricing of {} on policy {} (age {}) was refused and keeps its old premium: {}",
+                        life.getCoveredLifeId(), policy.getPolicyNumber(), age, e.getMessage());
+                }
+            }
+        }
+        boolean anyLeft = active.stream().anyMatch(CoveredLife::isActive);
+        if (changed && anyLeft) {
+            restate(policy, InstalmentDates.nextAfter(issued, policy.getPremiumFrequency(), today.minusDays(1)),
+                anniversary ? "Anniversary re-pricing" : "A life aged out");
+        }
+        return anyLeft;
     }
 
     /** Lives that will still be covered on {@code day}: active, and not scheduled off by then. */
