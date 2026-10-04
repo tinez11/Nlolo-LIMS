@@ -339,6 +339,23 @@ public interface ProductApi {
                          AnnuityPlan annuityPlan, String publishedBy);
 
     /**
+     * The fullest form (family funeral cover): also a FUNERAL version's plans, premium table, role rules
+     * and claim rules. Every other overload delegates here with {@link FuneralPlan#none()}. Eleven now.
+     */
+    void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                         List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                         TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
+                         AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
+                         AnnuityPlan annuityPlan, FuneralPlan funeralPlan, String publishedBy);
+
+    /**
+     * A FUNERAL version's terms; {@link FuneralPlan#none()} for every other version. Asks the product's
+     * category before reading any funeral table, so callers on ordinary policies touch none.
+     */
+    FuneralPlan resolveFuneralPlan(UUID productVersionId);
+
+    /**
      * An ANNUITY version's terms; {@link AnnuityPlan#none()} for every other version. Asks the
      * product's category before reading any annuity table, so callers on ordinary policies touch none.
      */

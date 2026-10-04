@@ -20,7 +20,7 @@ paths:
       parameters:
         - name: category
           in: query
-          schema: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE] }
+          schema: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE, FUNERAL] }
       responses:
         '200':
           description: OK
@@ -275,6 +275,32 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /products/{productId}/versions/{versionId}/funeral:
+    get:
+      summary: A funeral plan version's plans, premium table, role rules and claim rules
+      description: >-
+        Family funeral cover. Everything staff configured on the version, including the premium table,
+        which the application screen shows per life. 404 NOT_A_FUNERAL_PRODUCT for any other version.
+        Agents sell this product, so they may read it.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The funeral terms
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FuneralTerms' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404':
+          description: Not a funeral plan version
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /products/{productId}/versions/{versionId}/exclusion-periods:
     put:
       summary: Set or clear a version's policy-term exclusion windows
@@ -336,7 +362,7 @@ components:
       properties:
         productCode: { type: string }
         productName: { type: string }
-        category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE] }
+        category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE, FUNERAL] }
         defaultCurrency: { type: string, example: TZS }
     EligibilityBounds:
       description: >-
@@ -555,6 +581,59 @@ components:
                 defaultFrequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL, null] }
                 maxCommutationPercent: { type: [number, "null"], minimum: 0, maximum: 100 }
                 surrenderBeforeVesting: { type: [boolean, "null"] }
+        funeral:
+          description: >-
+            Required on a FUNERAL version and refused on every other (family funeral cover). The plans a
+            customer picks from, each plan's benefit per role (no row = the plan does not cover that role),
+            a FIXED yearly premium per plan, role and age band, the role rules, and the claim rules. Every
+            age a covered role can reach -- from its youngest entry age to the age its cover stops (a
+            student child's, if later), or to maxPricedAge where it never stops -- must be priced exactly
+            once, or publishing is refused. A FUNERAL version carries no rating factors or base rates: the
+            premium table is its whole price. One main member and one spouse per policy.
+          type: [object, "null"]
+          properties:
+            plans:
+              type: array
+              items:
+                type: object
+                properties:
+                  planCode: { type: [string, "null"], maxLength: 20 }
+                  name: { type: [string, "null"], maxLength: 100 }
+            benefits:
+              type: array
+              items:
+                type: object
+                properties:
+                  planCode: { type: [string, "null"], maxLength: 20 }
+                  role: { type: [string, "null"], enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED, null] }
+                  benefit: { type: [number, "null"], exclusiveMinimum: 0 }
+            premiums:
+              type: array
+              items:
+                type: object
+                properties:
+                  planCode: { type: [string, "null"], maxLength: 20 }
+                  role: { type: [string, "null"], enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED, null] }
+                  ageFrom: { type: [integer, "null"], minimum: 0 }
+                  ageTo: { type: [integer, "null"], minimum: 0 }
+                  yearlyPremium: { type: [number, "null"], exclusiveMinimum: 0 }
+            roles:
+              type: array
+              items:
+                type: object
+                properties:
+                  role: { type: [string, "null"], enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED, null] }
+                  maxLives: { type: [integer, "null"], minimum: 1 }
+                  minEntryAge: { type: [integer, "null"], minimum: 0 }
+                  maxEntryAge: { type: [integer, "null"], minimum: 0 }
+                  coverStopAge: { type: [integer, "null"], description: "Null = cover never stops for age" }
+                  studentStopAge: { type: [integer, "null"], description: "CHILD only: a student child's stop age" }
+            maxPricedAge: { type: [integer, "null"], minimum: 1, maximum: 120 }
+            waitingPeriodMonths: { type: [integer, "null"], minimum: 1, description: "Null = no waiting period" }
+            accidentWaivesWaiting: { type: [boolean, "null"] }
+            dependantClaimPayee: { type: [string, "null"], enum: [MAIN_MEMBER, MAIN_MEMBER_BENEFICIARY, null] }
+            onMainMemberDeath: { type: [string, "null"], enum: [POLICY_ENDS, SPOUSE_TAKES_OVER, null] }
+            freeCoverToPaidDate: { type: [boolean, "null"] }
         tiraFiling:
           description: >-
             The TIRA filing that authorises this version. Required: in Tanzania a product and
@@ -781,6 +860,66 @@ components:
             defaultFrequency: { type: string, enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL] }
             maxCommutationPercent: { type: string, description: "Decimal string, no trailing zeros" }
             surrenderBeforeVesting: { type: boolean }
+    FuneralTerms:
+      description: A funeral plan version's terms (family funeral cover), premium table included.
+      type: object
+      additionalProperties: false
+      required: [plans, benefits, premiums, roles, maxPricedAge, waitingPeriodMonths, accidentWaivesWaiting,
+                 dependantClaimPayee, onMainMemberDeath, freeCoverToPaidDate]
+      properties:
+        plans:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [planCode, name]
+            properties:
+              planCode: { type: string }
+              name: { type: string }
+        benefits:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [planCode, role, benefit]
+            properties:
+              planCode: { type: string }
+              role: { $ref: '#/components/schemas/FuneralRole' }
+              benefit: { type: number }
+        premiums:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [planCode, role, ageFrom, ageTo, yearlyPremium]
+            properties:
+              planCode: { type: string }
+              role: { $ref: '#/components/schemas/FuneralRole' }
+              ageFrom: { type: integer }
+              ageTo: { type: integer }
+              yearlyPremium: { type: number }
+        roles:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [role, maxLives, minEntryAge, maxEntryAge, coverStopAge, studentStopAge]
+            properties:
+              role: { $ref: '#/components/schemas/FuneralRole' }
+              maxLives: { type: integer }
+              minEntryAge: { type: integer }
+              maxEntryAge: { type: integer }
+              coverStopAge: { type: [integer, "null"] }
+              studentStopAge: { type: [integer, "null"] }
+        maxPricedAge: { type: integer }
+        waitingPeriodMonths: { type: [integer, "null"] }
+        accidentWaivesWaiting: { type: boolean }
+        dependantClaimPayee: { type: string, enum: [MAIN_MEMBER, MAIN_MEMBER_BENEFICIARY] }
+        onMainMemberDeath: { type: string, enum: [POLICY_ENDS, SPOUSE_TAKES_OVER] }
+        freeCoverToPaidDate: { type: boolean }
+    FuneralRole:
+      type: string
+      enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED]
     VersionRatingView:
       description: The rating basis for one version, for actuarial and product review.
       type: object
@@ -855,7 +994,7 @@ components:
         ifrsMeasurementModel: { type: string, enum: [GMM, PAA] }
         gracePeriodDays: { type: integer }
         maxLoanToValuePercent: { type: number }
-        category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE] }
+        category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE, FUNERAL] }
         surrenderChargeScheduleJson: { type: [string, "null"], description: Raw JSON surrender-charge schedule from product_version.surrender_charge_schedule; null until a future milestone adds a way to author it. }
         suicideExclusionMonths:
           type: [integer, "null"]

@@ -77,6 +77,11 @@ public class ProductExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "NOT_AN_ANNUITY");
     }
 
+    @ExceptionHandler(NotAFuneralProductException.class)
+    public ProblemDetail handleNotAFuneralProduct(NotAFuneralProductException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "NOT_A_FUNERAL_PRODUCT");
+    }
+
     @ExceptionHandler(DuplicateProductCodeException.class)
     public ProblemDetail handleDuplicateProductCode(DuplicateProductCodeException ex) {
         return problem(HttpStatus.CONFLICT, ex.getMessage(), "DUPLICATE_PRODUCT_CODE");

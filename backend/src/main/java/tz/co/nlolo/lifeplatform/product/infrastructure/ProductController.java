@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.product.infrastructure;
 import tz.co.nlolo.lifeplatform.product.api.AccumulationPlan;
 import tz.co.nlolo.lifeplatform.product.api.AnnuityPlan;
 import tz.co.nlolo.lifeplatform.product.api.BonusPlan;
+import tz.co.nlolo.lifeplatform.product.api.FuneralPlan;
 import tz.co.nlolo.lifeplatform.product.api.DepositPlan;
 import tz.co.nlolo.lifeplatform.product.api.CashValuePlan;
 import tz.co.nlolo.lifeplatform.product.api.PayoutPlan;
@@ -132,6 +133,7 @@ public class ProductController {
             request.deposit() != null ? request.deposit().toPlan() : DepositPlan.none(),
             request.bonus() != null ? request.bonus().toPlan() : BonusPlan.none(),
             request.annuity() != null ? request.annuity().toPlan() : AnnuityPlan.none(),
+            request.funeral() != null ? request.funeral().toPlan() : FuneralPlan.none(),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
@@ -212,6 +214,20 @@ public class ProductController {
             throw new NotAnAnnuityException(versionId);
         }
         return ResponseEntity.ok(AnnuityTermsResponse.from(plan));
+    }
+
+    /**
+     * A FUNERAL version's plans, premium table, role rules and claim rules, for the product screen and the
+     * case form. 404 NOT_A_FUNERAL_PRODUCT for any other version. Agents sell this product, so they may read it.
+     */
+    @GetMapping("/products/{productId}/versions/{versionId}/funeral")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<FuneralTermsResponse> getFuneralTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {
+        FuneralPlan plan = productApi.resolveFuneralPlan(versionId);
+        if (!plan.funeral()) {
+            throw new NotAFuneralProductException(versionId);
+        }
+        return ResponseEntity.ok(FuneralTermsResponse.from(plan));
     }
 
     /**
