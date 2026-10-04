@@ -1065,6 +1065,19 @@ public class ProductApiImpl implements ProductApi {
         return FuneralQuoter.yearlyPremiumAt(resolveFuneralPlan(productVersionId), planCode, role, age);
     }
 
+    @Override
+    @Transactional(readOnly = true, noRollbackFor = FuneralQuoteRefusedException.class)
+    public FuneralQuoteLine admitFuneralLife(UUID productVersionId, String planCode, FuneralLifeInput life, int alreadyInRole,
+                                             LocalDate asOf) {
+        return FuneralQuoter.admit(resolveFuneralPlan(productVersionId), planCode, life, alreadyInRole, asOf);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal funeralInstalment(UUID productVersionId, BigDecimal totalYearlyPremium, PremiumFrequency frequency) {
+        return FuneralQuoter.instalment(totalYearlyPremium, resolveFrequencyLoading(productVersionId), frequency);
+    }
+
     /**
      * A refusal is an answer, not a failure: callers catch it and record it -- the D1 lock as
      * LOCK_FAILED, the D2 vesting as a hold -- inside their own transaction. Without noRollbackFor the

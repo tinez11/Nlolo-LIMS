@@ -523,6 +523,22 @@ public interface PolicyApi {
 
     /** A funeral policy's lives, main member first; empty for every other policy -- asked of product first. */
     List<CoveredLifeView> coveredLives(String policyNumber);
+
+    /**
+     * Add a life to an in-force funeral policy, covered from the next premium date with its own waiting period,
+     * checked against the version's role rules on that date. Restates the premium from then
+     * ({@code policy.PremiumRestated}).
+     *
+     * @throws InvalidPolicyStateException in the product's words, or when the policy is not in force
+     */
+    CoveredLifeView addCoveredLife(String policyNumber, tz.co.nlolo.lifeplatform.underwriting.api.FuneralApplication.Life life,
+                                   String addedBy);
+
+    /**
+     * Take a dependant off cover at the next premium date (covered to the period already paid for), and
+     * restate the premium from then. The main member cannot be removed.
+     */
+    CoveredLifeView removeCoveredLife(String policyNumber, UUID coveredLifeId, String reason, String removedBy);
     SurrenderQuoteView quoteSurrenderValue(String policyNumber);
     PolicyView getPolicy(String policyNumber);
 

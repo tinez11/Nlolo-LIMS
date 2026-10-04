@@ -95,6 +95,57 @@ class FuneralPolicyContractTest {
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 
+    @Autowired private AnnuityTestFixtures annuityFixtures;
+
+    @Test
+    void staffAddAndRemoveALifeToSpec() throws Exception {
+        var product = fixtures.publishFamilia(TENANT);
+        UUID juma = fixtures.person(TENANT, 40, Sex.MALE);
+        String policyNumber = fixtures.issueFamilyInForce(TENANT, product, juma, family(), annuityFixtures);
+
+        String added = mockMvc.perform(post("/policies/" + policyNumber + "/covered-lives")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", TENANT.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"role":"CHILD","fullName":"Imani","dateOfBirth":"%s","sex":"FEMALE","student":false}
+                    """.formatted(AnnuityTestFixtures.TODAY.minusMonths(2))))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.role").value("CHILD"))
+            .andExpect(jsonPath("$.fullName").value("Imani"))
+            .andExpect(jsonPath("$.yearlyPremium").value(6000.0))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andReturn().getResponse().getContentAsString();
+        String imani = com.jayway.jsonpath.JsonPath.read(added, "$.coveredLifeId");
+
+        mockMvc.perform(post("/policies/" + policyNumber + "/covered-lives/" + imani + "/removal")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", TENANT.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"Registered with the other parent's plan\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.coverEnd").isNotEmpty())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        mockMvc.perform(post("/policies/" + policyNumber + "/covered-lives")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", TENANT.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"role\":\"SPOUSE\",\"fullName\":\"Mwanaisha\",\"dateOfBirth\":\"1990-01-01\"}"))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("INVALID_POLICY_STATE"))
+            .andExpect(jsonPath("$.detail").value("At most 1 spouse may be covered"));
+
+        // An agent may read a family, never change one.
+        mockMvc.perform(post("/policies/" + policyNumber + "/covered-lives")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", TENANT.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"role\":\"CHILD\",\"fullName\":\"X\",\"dateOfBirth\":\"2025-01-01\"}"))
+            .andExpect(status().isForbidden());
+    }
+
     @Test
     void aFuneralPlanCannotBeIssuedByHand() throws Exception {
         var product = fixtures.publishFamilia(TENANT);

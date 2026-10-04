@@ -502,6 +502,48 @@ public class BillingApiImpl implements BillingApi {
     }
 
     /**
+     * The premium changed from {@code effectiveFrom} (policy.PremiumRestated, family funeral cover: a life
+     * added or ended, the anniversary re-pricing).
+     *
+     * <p>Every instalment falling due on or after {@code effectiveFrom} that is still untouched is restated
+     * IN PLACE, and the difference posted on its own event -- increased or reduced -- keyed on a fresh id,
+     * so a second change to the same instalment posts again. One already paid in advance keeps its amount
+     * and the new one starts after it (plan R4). The schedule is replaced, never mutated (V1's rule): the
+     * old one TERMINATED, a new ACTIVE one at the new amount carrying the same next due date and paying end,
+     * so the roll-forward raises every later instalment at the new amount.
+     *
+     * <p>A schedule that is not ACTIVE (suspended, ended) is left alone: nothing is being billed.
+     */
+    @Transactional
+    void restatePremium(UUID tenantId, String policyNumber, BigDecimal amount, LocalDate effectiveFrom, String reason) {
+        BillingSchedule active = billingScheduleRepository.findByPolicyNumberAndTenantIdAndStatus(policyNumber, tenantId, "ACTIVE")
+            .orElse(null);
+        if (active == null) {
+            return;
+        }
+        for (PremiumInvoice invoice : premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId)) {
+            if (invoice.getDueDate().isBefore(effectiveFrom) || !invoice.isUntouched()) {
+                continue;
+            }
+            BigDecimal delta = amount.subtract(invoice.getAmount());
+            if (delta.signum() == 0) {
+                continue;
+            }
+            invoice.restateAmount(amount);
+            premiumInvoiceRepository.save(invoice);
+            eventPublisher.publishEvent(DomainEventEnvelope.of(
+                delta.signum() > 0 ? "billing.PremiumInvoiceIncreased" : "billing.PremiumInvoiceReduced", tenantId,
+                Map.of("restatementId", UUID.randomUUID().toString(), "invoiceId", invoice.getInvoiceId(),
+                       "policyNumber", policyNumber, "dueDate", invoice.getDueDate().toString(), "reason", reason,
+                       "amount", Map.of("amount", delta.abs().toPlainString(), "currencyCode", invoice.getCurrency()))));
+        }
+        active.terminate();
+        billingScheduleRepository.saveAndFlush(active);
+        billingScheduleRepository.save(new BillingSchedule(tenantId, policyNumber, active.getPremiumFrequency(), amount,
+            active.getPremiumCurrency(), active.getNextDueDate(), active.getPremiumPayingUntil()));
+    }
+
+    /**
      * A deferral with contributions continuing (policy.PremiumPayingTermRestated, D2): the ACTIVE
      * schedule's paying end moves, and the roll-forward drain raises the invoices up to it.
      */

@@ -181,6 +181,37 @@ channels:
       listed here as a design placeholder only.
     publish:
       message: { $ref: '#/components/messages/PolicyMatured' }
+  policy.PremiumRestated:
+    description: >-
+      Producer: policy (family funeral cover -- a life added or ended, the anniversary re-pricing).
+      Consumers: billing (restates every untouched instalment due on or after effectiveFrom IN PLACE and
+      replaces the schedule; an instalment already paid keeps its amount), communication, audit. Only a
+      FUNERAL policy's premium moves this way.
+    publish:
+      message: { $ref: '#/components/messages/PremiumRestated' }
+  policy.CoveredLifeAdded:
+    description: "Producer: policy (family funeral cover). Consumers: communication (FUNERAL_LIFE_ADDED), audit."
+    publish:
+      message: { $ref: '#/components/messages/CoveredLifeAdded' }
+  policy.CoveredLifeEnded:
+    description: >-
+      Producer: policy (family funeral cover -- removed, aged out, free cover ended, the main member's
+      death). Consumers: communication (FUNERAL_LIFE_ENDED, never for a DECEASED life), audit.
+    publish:
+      message: { $ref: '#/components/messages/CoveredLifeEnded' }
+  billing.PremiumInvoiceIncreased:
+    description: >-
+      Producer: billing (an untouched instalment restated upward). Consumers: finaccounting (DR premium
+      receivable / CR unearned premium for the DIFFERENCE, keyed on restatementId), audit.
+    publish:
+      message: { $ref: '#/components/messages/PremiumInvoiceRestated' }
+  billing.PremiumInvoiceReduced:
+    description: >-
+      Producer: billing (an untouched instalment restated downward). Consumers: finaccounting (the reverse,
+      for the difference, keyed on restatementId), audit. Not PremiumRefundDue: nothing was collected, so
+      distribution has no commission to claw back.
+    publish:
+      message: { $ref: '#/components/messages/PremiumInvoiceRestated' }
   policy.BeneficiaryChanged:
     description: "Producer: policy. Consumers: claims (refresh any open claim's beneficiary snapshot), communication, audit."
     publish:
@@ -651,6 +682,10 @@ components:
     PolicySuspended: { messageId: PolicySuspended, name: PolicySuspended, payload: { $ref: '#/components/schemas/PolicySuspendedPayload' } }
     PolicyMatured: { messageId: PolicyMatured, name: PolicyMatured, payload: { $ref: '#/components/schemas/PolicyMaturedPayload' } }
     BeneficiaryChanged: { messageId: BeneficiaryChanged, name: BeneficiaryChanged, payload: { $ref: '#/components/schemas/BeneficiaryChangedPayload' } }
+    PremiumRestated: { messageId: PremiumRestated, name: PremiumRestated, payload: { $ref: '#/components/schemas/PremiumRestatedPayload' } }
+    CoveredLifeAdded: { messageId: CoveredLifeAdded, name: CoveredLifeAdded, payload: { $ref: '#/components/schemas/CoveredLifePayload' } }
+    CoveredLifeEnded: { messageId: CoveredLifeEnded, name: CoveredLifeEnded, payload: { $ref: '#/components/schemas/CoveredLifePayload' } }
+    PremiumInvoiceRestated: { messageId: PremiumInvoiceRestated, name: PremiumInvoiceRestated, payload: { $ref: '#/components/schemas/PremiumInvoiceRestatedPayload' } }
     SurrenderValueCalculated: { messageId: SurrenderValueCalculated, name: SurrenderValueCalculated, payload: { $ref: '#/components/schemas/SurrenderValueCalculatedPayload' } }
     PolicySurrenderInitiated: { messageId: PolicySurrenderInitiated, name: PolicySurrenderInitiated, payload: { $ref: '#/components/schemas/PolicySurrenderInitiatedPayload' } }
     PolicyMaturityInitiated: { messageId: PolicyMaturityInitiated, name: PolicyMaturityInitiated, payload: { $ref: '#/components/schemas/PolicyMaturityInitiatedPayload' } }
@@ -844,6 +879,53 @@ components:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
           properties: { policyNumber: {type: string}, reinstatedAt: {type: string, format: date-time} }
+    PremiumRestatedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          required: [policyNumber, policyholderPartyId, productVersionId, premiumAmount, effectiveFrom, reason]
+          properties:
+            policyNumber: { type: string }
+            policyholderPartyId: { type: string, format: uuid }
+            productVersionId: { type: string, format: uuid }
+            premiumAmount:
+              type: object
+              properties:
+                amount: { type: string }
+                currencyCode: { type: string }
+            effectiveFrom: { type: string, format: date, description: "The next premium date: the first instalment at the new amount" }
+            reason: { type: string }
+    CoveredLifePayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          required: [policyNumber, policyholderPartyId, coveredLifeId, fullName, role]
+          properties:
+            policyNumber: { type: string }
+            policyholderPartyId: { type: string, format: uuid }
+            coveredLifeId: { type: string, format: uuid }
+            fullName: { type: string }
+            role: { type: string, enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED] }
+            coverStart: { type: string, format: date, description: "CoveredLifeAdded only" }
+            endReason: { type: string, description: "CoveredLifeEnded only" }
+            endedOn: { type: string, format: date, description: "CoveredLifeEnded only" }
+    PremiumInvoiceRestatedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          required: [restatementId, invoiceId, policyNumber, dueDate, reason, amount]
+          properties:
+            restatementId: { type: string, format: uuid, description: "One per restatement of one instalment: the ledger's idempotency key" }
+            invoiceId: { type: string, format: uuid }
+            policyNumber: { type: string }
+            dueDate: { type: string, format: date }
+            reason: { type: string }
+            amount:
+              type: object
+              description: The difference, always positive; the event type says which way it moved.
+              properties:
+                amount: { type: string }
+                currencyCode: { type: string }
     PolicySuspendedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

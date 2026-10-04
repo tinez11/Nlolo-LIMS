@@ -481,6 +481,27 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
+    @Transactional
+    public CoveredLifeView addCoveredLife(String policyNumber, tz.co.nlolo.lifeplatform.underwriting.api.FuneralApplication.Life life,
+                                          String addedBy) {
+        return coveredLives.add(funeralPolicyOrThrow(policyNumber), life, addedBy);
+    }
+
+    @Override
+    @Transactional
+    public CoveredLifeView removeCoveredLife(String policyNumber, UUID coveredLifeId, String reason, String removedBy) {
+        return coveredLives.remove(funeralPolicyOrThrow(policyNumber), coveredLifeId, reason, removedBy);
+    }
+
+    private Policy funeralPolicyOrThrow(String policyNumber) {
+        Policy policy = findPolicyOrThrow(policyNumber, TenantContext.get());
+        if (!coveredLives.isFuneral(policy)) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " is not a funeral plan, so it covers no family");
+        }
+        return policy;
+    }
+
+    @Override
     public List<BeneficiaryOfView> beneficiaryOf(UUID partyId) {
         return beneficiaryRepository.findActiveBeneficiaryOf(TenantContext.get(), partyId);
     }

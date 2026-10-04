@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.funeral;
 
 import org.springframework.boot.test.context.TestComponent;
+import tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures;
 import tz.co.nlolo.lifeplatform.party.api.Address;
 import tz.co.nlolo.lifeplatform.party.api.IdentityDocument;
 import tz.co.nlolo.lifeplatform.party.api.IndividualRegistration;
@@ -128,6 +129,15 @@ public class FuneralTestFixtures {
         decide(tenant, caseId, DecisionOutcome.ACCEPT, null);
         return asTenant(tenant, () -> policyApi.searchPolicies(mainMember, null, null, null, null,
             org.springframework.data.domain.PageRequest.of(0, 5)).getContent().get(0).policyNumber());
+    }
+
+    /** {@link #issueFamily} and then the first premium collected, which puts the policy in force. */
+    public String issueFamilyInForce(UUID tenant, Product product, UUID mainMember, List<FuneralApplication.Life> dependants,
+                                     AnnuityTestFixtures annuityFixtures) {
+        String policyNumber = issueFamily(tenant, product, mainMember, dependants);
+        String premium = asTenant(tenant, () -> policyApi.getPolicy(policyNumber)).premiumAmount().toPlainString();
+        annuityFixtures.collect(tenant, policyNumber, premium, TODAY);
+        return policyNumber;
     }
 
     /** An assessment by one underwriter, then {@code outcome} by another (separation of duties). */

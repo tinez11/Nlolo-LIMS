@@ -489,6 +489,27 @@ public class PolicyController {
         return ResponseEntity.ok(policyApi.coveredLives(policyNumber));
     }
 
+    /**
+     * Add a life to an in-force funeral policy, covered from the next premium date. Staff only: it changes
+     * what the family pays, so it is an act on the contract, not a self-service edit.
+     */
+    @PostMapping("/policies/{policyNumber}/covered-lives")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<CoveredLifeView> addCoveredLife(@PathVariable String policyNumber,
+            @RequestBody CoveredLifeRequests.Add request, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(policyApi.addCoveredLife(policyNumber, request.toLife(), jwt.getSubject()));
+    }
+
+    /** Take a dependant off cover at the next premium date. Staff only, as adding is. */
+    @PostMapping("/policies/{policyNumber}/covered-lives/{coveredLifeId}/removal")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<CoveredLifeView> removeCoveredLife(@PathVariable String policyNumber, @PathVariable UUID coveredLifeId,
+            @RequestBody(required = false) CoveredLifeRequests.Remove request, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(policyApi.removeCoveredLife(policyNumber, coveredLifeId,
+            request != null ? request.reason() : null, jwt.getSubject()));
+    }
+
     @GetMapping("/policies/{policyNumber}/in-force")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<Map<String, Boolean>> isInForce(@PathVariable String policyNumber, @RequestParam(required = false) LocalDate asOf) {

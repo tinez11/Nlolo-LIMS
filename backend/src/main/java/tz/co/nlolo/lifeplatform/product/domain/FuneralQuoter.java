@@ -13,6 +13,7 @@ import tz.co.nlolo.lifeplatform.product.api.PremiumFrequency;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.Period;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -48,32 +49,53 @@ public final class FuneralQuoter {
         List<FuneralQuoteLine> lines = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;
         for (FuneralLifeInput life : in.lives()) {
-            FuneralRole role = life.role();
-            FuneralRoleRule rule = plan.rule(role).orElseThrow(() ->
-                new FuneralQuoteRefusedException("This product does not cover " + withArticle(role)));
-            if (counts.get(role) > rule.maxLives()) {
-                throw new FuneralQuoteRefusedException("At most " + rule.maxLives() + " "
-                    + (rule.maxLives() == 1 ? role.label() : role.plural()) + " may be covered");
-            }
-            BigDecimal benefit = plan.benefit(in.planCode(), role).orElseThrow(() ->
-                new FuneralQuoteRefusedException("Plan " + in.planCode() + " does not cover " + role.plural()));
-            if (life.dateOfBirth() == null) {
-                throw new FuneralQuoteRefusedException(life.name() + ": the date of birth is required");
-            }
-            int age = Period.between(life.dateOfBirth(), in.asOf()).getYears();
-            if (age < rule.minEntryAge() || age > rule.maxEntryAge()) {
-                throw new FuneralQuoteRefusedException(life.name() + ": " + withArticle(role) + " must be "
-                    + rule.minEntryAge() + " to " + rule.maxEntryAge() + " at entry, not " + age);
-            }
-            if (life.student() && role != FuneralRole.CHILD) {
-                throw new FuneralQuoteRefusedException(life.name() + ": only a child can be marked as a student");
-            }
-            BigDecimal yearly = yearlyPremiumAt(plan, in.planCode(), role, age);
-            lines.add(new FuneralQuoteLine(role, life.name(), age, benefit, yearly));
-            total = total.add(yearly);
+            FuneralQuoteLine line = priced(plan, in.planCode(), life, counts.get(life.role()), in.asOf());
+            lines.add(line);
+            total = total.add(line.yearlyPremium());
         }
         return new FuneralQuote(in.planCode(), in.frequency(), lines, total, instalment(total, loading, in.frequency()),
             plan.benefit(in.planCode(), FuneralRole.MAIN_MEMBER).orElseThrow());
+    }
+
+    /**
+     * One life joining a family already on cover: the same rules a whole-family quote applies to each life,
+     * with {@code alreadyInRole} the lives that will still hold that role. The existing lives are NOT re-checked
+     * against entry ages -- a main member who has turned 66 is still covered, and must not block a new baby.
+     */
+    public static FuneralQuoteLine admit(FuneralPlan plan, String planCode, FuneralLifeInput life, int alreadyInRole,
+                                         LocalDate asOf) {
+        if (life.role() == FuneralRole.MAIN_MEMBER) {
+            throw new FuneralQuoteRefusedException("A funeral plan covers exactly one main member");
+        }
+        return priced(plan, planCode, life, alreadyInRole + 1, asOf);
+    }
+
+    /** {@code inRole}: how many lives will hold this life's role, this one included. */
+    private static FuneralQuoteLine priced(FuneralPlan plan, String planCode, FuneralLifeInput life, int inRole, LocalDate asOf) {
+        FuneralRole role = life.role();
+        if (role == null) {
+            throw new FuneralQuoteRefusedException(life.name() + ": the role is required");
+        }
+        FuneralRoleRule rule = plan.rule(role).orElseThrow(() ->
+            new FuneralQuoteRefusedException("This product does not cover " + withArticle(role)));
+        if (inRole > rule.maxLives()) {
+            throw new FuneralQuoteRefusedException("At most " + rule.maxLives() + " "
+                + (rule.maxLives() == 1 ? role.label() : role.plural()) + " may be covered");
+        }
+        BigDecimal benefit = plan.benefit(planCode, role).orElseThrow(() ->
+            new FuneralQuoteRefusedException("Plan " + planCode + " does not cover " + role.plural()));
+        if (life.dateOfBirth() == null) {
+            throw new FuneralQuoteRefusedException(life.name() + ": the date of birth is required");
+        }
+        int age = Period.between(life.dateOfBirth(), asOf).getYears();
+        if (age < rule.minEntryAge() || age > rule.maxEntryAge()) {
+            throw new FuneralQuoteRefusedException(life.name() + ": " + withArticle(role) + " must be "
+                + rule.minEntryAge() + " to " + rule.maxEntryAge() + " at entry, not " + age);
+        }
+        if (life.student() && role != FuneralRole.CHILD) {
+            throw new FuneralQuoteRefusedException(life.name() + ": only a child can be marked as a student");
+        }
+        return new FuneralQuoteLine(role, life.name(), age, benefit, yearlyPremiumAt(plan, planCode, role, age));
     }
 
     /**

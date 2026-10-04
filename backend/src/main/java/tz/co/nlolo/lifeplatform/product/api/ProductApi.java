@@ -372,6 +372,19 @@ public interface ProductApi {
     BigDecimal funeralYearlyPremium(UUID productVersionId, String planCode, FuneralRole role, int age);
 
     /**
+     * One life joining a family already on cover: the quote's rules for that life (role covered, the role's
+     * count with {@code alreadyInRole} lives already in it, entry age on {@code asOf}), priced. The family's
+     * other lives are not re-checked.
+     *
+     * @throws FuneralQuoteRefusedException in the quote's words
+     */
+    FuneralQuoteLine admitFuneralLife(UUID productVersionId, String planCode, FuneralLifeInput life, int alreadyInRole,
+                                      LocalDate asOf);
+
+    /** A family's instalment from its yearly total: loaded for the frequency, divided once, rounded once. */
+    BigDecimal funeralInstalment(UUID productVersionId, BigDecimal totalYearlyPremium, PremiumFrequency frequency);
+
+    /**
      * An ANNUITY version's terms; {@link AnnuityPlan#none()} for every other version. Asks the
      * product's category before reading any annuity table, so callers on ordinary policies touch none.
      */
