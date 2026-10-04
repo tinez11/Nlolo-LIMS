@@ -5,6 +5,7 @@ import {
   ClipboardCheck,
   FileText,
   HandCoins,
+  Hourglass,
   Landmark,
   MessageSquare,
   Package,
@@ -68,6 +69,7 @@ import {
   PaymentRunPage,
   MaturitiesPage,
   WithholdingRulesPage,
+  HeldVestingsPage,
 } from '@/lazyPages';
 
 /**
@@ -238,6 +240,12 @@ const STAFF_SCREENS: Screen[] = [
   },
   { path: 'policies/new', element: <IssuePolicyPage />, reach: 'drill-in' },
   { path: 'policies/:policyNumber', element: <PolicyDetailPage />, reach: 'drill-in' },
+  // Pensions the daily vesting sweep could not vest (product step 5 D2).
+  {
+    path: 'held-vestings',
+    element: <HeldVestingsPage />,
+    reach: { group: 'policies-claims', label: 'Held vestings', icon: Hourglass },
+  },
 
   // Setting up a scheme is a NEW-BUSINESS act, so unlike the scheme record below
   // it earns a nav item: nobody arrives at it by drilling into something that

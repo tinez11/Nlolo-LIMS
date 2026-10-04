@@ -1,6 +1,15 @@
 import { get, post, put } from '@/lib/http';
 import type { ApiError } from '@/lib/apiError';
-import type { AnnuityChoiceView, AnnuityContractView, AnnuityQuoteRequest, AnnuityQuoteView, AnnuityTermsView } from './types';
+import type {
+  AnnuityChoiceView,
+  AnnuityContractView,
+  AnnuityQuoteRequest,
+  AnnuityQuoteView,
+  AnnuityTermsView,
+  DeferredAnnuityChoiceView,
+  VestingInstructionInput,
+  VestingView,
+} from './types';
 
 /**
  * Immediate annuities (product step 5): a version's forms, a live quote, a case's choice, and a
@@ -50,4 +59,36 @@ export function getAnnuityChoice(caseId: string): Promise<AnnuityChoiceView | nu
 
 export function recordAnnuityChoice(caseId: string, body: AnnuityChoiceBody): Promise<AnnuityChoiceView> {
   return put<AnnuityChoiceView>(`/underwriting/cases/${encodeURIComponent(caseId)}/annuity-choice`, body);
+}
+
+// ---- Deferred annuities and pensions (product step 5 D2) ----
+
+/** A deferred annuity case's retirement age and target date; null for any other case. */
+export function getDeferredAnnuityChoice(caseId: string): Promise<DeferredAnnuityChoiceView | null> {
+  return orNull(() =>
+    get<DeferredAnnuityChoiceView>(`/underwriting/cases/${encodeURIComponent(caseId)}/deferred-annuity-choice`),
+  );
+}
+
+export function recordDeferredAnnuityChoice(caseId: string, retirementAge: number): Promise<DeferredAnnuityChoiceView> {
+  return put<DeferredAnnuityChoiceView>(`/underwriting/cases/${encodeURIComponent(caseId)}/deferred-annuity-choice`, {
+    retirementAge,
+  });
+}
+
+/** A pension's vesting, or null for a policy that is not a deferred annuity. */
+export function getPolicyVesting(policyNumber: string): Promise<VestingView | null> {
+  return orNull(() => get<VestingView>(`/policies/${encodeURIComponent(policyNumber)}/annuity/vesting`));
+}
+
+export function recordVestingInstruction(policyNumber: string, body: VestingInstructionInput): Promise<VestingView> {
+  return put<VestingView>(`/policies/${encodeURIComponent(policyNumber)}/annuity/vesting/instruction`, body);
+}
+
+export function reconfirmVestingAge(policyNumber: string): Promise<VestingView> {
+  return post<VestingView>(`/policies/${encodeURIComponent(policyNumber)}/annuity/vesting/reconfirm-age`);
+}
+
+export function listHeldVestings(): Promise<VestingView[]> {
+  return get<VestingView[]>('/annuity-vestings/held');
 }

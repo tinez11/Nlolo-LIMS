@@ -3,6 +3,7 @@ import type { ProductCategory, ProductVersionSpec } from '@/api/types';
 import { AMOUNT_PATTERN } from '@/lib/money';
 import { ISO_DATE_PATTERN } from '@/lib/patterns';
 import { annuityFieldsShape, blankAnnuityFields, toAnnuityRequest, validateAnnuity } from './annuitySchema';
+import { isDeferred, validateVesting } from './vestingSchema';
 
 /**
  * Zod schema for publishing a product version, mirroring `ProductApiImpl.publishVersion`
@@ -560,10 +561,14 @@ export function blankAccountChargeRow(): AccountChargeRowValues {
   return { fromPolicyYear: '', toPolicyYear: '', contributionAllocationPercent: '', transferAllocationPercent: '0', monthlyPolicyFee: '' };
 }
 
-/** `AccumulationPlanValidator.ACCOUNT_CATEGORIES`. ANNUITY waits for vesting (sub-project D). */
+/**
+ * `AccumulationPlanValidator.ACCOUNT_CATEGORIES`. ANNUITY takes an account only as a deferred annuity
+ * (D2), which the annuity kind decides -- see `isDeferred`.
+ */
 export const ACCOUNT_CATEGORIES: readonly ProductCategory[] = ['ENDOWMENT', 'WHOLE_LIFE', 'EDUCATION_SAVINGS'];
 
 interface AccumulationFields {
+  annuityKind: string;
   valueBasis: string;
   guaranteedRatePercent: string;
   minimumBalance: string;
@@ -600,7 +605,7 @@ function validateAccumulation(category: ProductCategory, v: AccumulationFields &
   });
 
   if (!account) return;
-  if (!ACCOUNT_CATEGORIES.includes(category)) {
+  if (!ACCOUNT_CATEGORIES.includes(category) && !isDeferred(category, v)) {
     issue(['valueBasis'], `A ${category} product cannot use an account value basis`);
     return;
   }
@@ -1036,6 +1041,7 @@ export function publishVersionFormSchema(category: ProductCategory) {
     validateDeposit(category, values, ctx);
     validateBonus(category, values, ctx);
     validateAnnuity(category, values, ctx);
+    validateVesting(category, values, ctx);
 
     /*
       The two modes, mirroring ProductApiImpl.publishVersion exactly.

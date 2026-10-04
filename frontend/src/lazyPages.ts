@@ -145,3 +145,6 @@ export const MaturitiesPage = lazy(() =>
 export const WithholdingRulesPage = lazy(() =>
   import('@/features/finance/WithholdingRulesPage').then((m) => ({ default: m.WithholdingRulesPage })),
 );
+export const HeldVestingsPage = lazy(() =>
+  import('@/features/annuities/HeldVestingsPage').then((m) => ({ default: m.HeldVestingsPage })),
+);

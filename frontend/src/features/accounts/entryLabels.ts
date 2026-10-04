@@ -18,4 +18,5 @@ export const ENTRY_LABEL: Record<EntryType, string> = {
   FREE_LOOK_REFUND: 'Free-look cancellation',
   ADJUSTMENT: 'Adjustment',
   REVERSAL: 'Reversal',
+  VESTING: 'Pension vested',
 };

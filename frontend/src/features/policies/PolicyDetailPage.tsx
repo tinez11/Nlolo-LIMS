@@ -39,6 +39,7 @@ import { StatementSection } from '@/features/accounts/StatementSection';
 import { useAccumulationStore } from '@/store/accumulationStore';
 import { PolicyBonusesPanel } from '@/features/bonuses/PolicyBonusesPanel';
 import { PolicyAnnuityPanel } from '@/features/annuities/PolicyAnnuityPanel';
+import { PolicyVestingPanel } from '@/features/annuities/PolicyVestingPanel';
 import { useAnnuityStore } from '@/store/annuityStore';
 import { useBonusStore } from '@/store/bonusStore';
 import { ValueActions } from './ValueActions';
@@ -412,15 +413,25 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             {
               value: 'annuity',
               label: 'Annuity',
-              content: (
-                <div className="pt-5">
-                  <Panel title="Annuity" subtitle="The income this purchase locked, the rate it came from, and who it pays now">
-                    <div className="p-4">
-                      <PolicyAnnuityPanel policyNumber={policyNumber} />
-                    </div>
-                  </Panel>
-                </div>
-              ),
+              // A deferred annuity still saving (D2) shows its vesting; once it vests, the income it bought.
+              content:
+                annuityContract.data.status === 'ACCUMULATING' ? (
+                  <div className="pt-5">
+                    <Panel title="Pension" subtitle="When it vests, into what, and with what balance">
+                      <div className="p-4">
+                        <PolicyVestingPanel policyNumber={policyNumber} productId={policy?.productId ?? ''} />
+                      </div>
+                    </Panel>
+                  </div>
+                ) : (
+                  <div className="pt-5">
+                    <Panel title="Annuity" subtitle="The income this purchase locked, the rate it came from, and who it pays now">
+                      <div className="p-4">
+                        <PolicyAnnuityPanel policyNumber={policyNumber} />
+                      </div>
+                    </Panel>
+                  </div>
+                ),
             },
           ]
         : []),

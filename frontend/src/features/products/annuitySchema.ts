@@ -1,6 +1,14 @@
 import { z } from 'zod';
 import type { ProductCategory, ProductVersionSpec } from '@/api/types';
 import { ISO_DATE_PATTERN } from '@/lib/patterns';
+import {
+  blankVestingFields,
+  isDeferred,
+  toVestingRequest,
+  vestingFieldsShape,
+  vestingWindow,
+  type VestingFields,
+} from './vestingSchema';
 
 /**
  * An ANNUITY version's terms as the publish form holds them (product step 5), and
@@ -39,9 +47,11 @@ export const annuityFieldsShape = {
   annuityForms: z.array(annuityFormSchema),
   /** One per frequency, in ANNUITY_FREQUENCIES order. A blank factor means the frequency is not offered. */
   annuityFactors: z.array(z.object({ frequency: z.enum(ANNUITY_FREQUENCIES), factor: z.string().trim() })),
+  // A deferred annuity's vesting terms (D2); see vestingSchema.
+  ...vestingFieldsShape,
 };
 
-export interface AnnuityFields {
+export interface AnnuityFields extends Omit<VestingFields, 'annuityForms' | 'annuityFactors' | 'maxEntryAge'> {
   annuityTiming: string;
   annuityProofOfLifeMonths: string;
   annuityJointDiffMin: string;
@@ -65,6 +75,7 @@ export function blankAnnuityFields(): Omit<AnnuityFields, 'minEntryAge' | 'maxEn
     annuityForms: [],
     // ANNUAL is offered at 1 by default -- it is the grid's own frequency; the rest start unoffered.
     annuityFactors: ANNUITY_FREQUENCIES.map((frequency) => ({ frequency, factor: frequency === 'ANNUAL' ? '1' : '' })),
+    ...blankVestingFields(),
   };
 }
 
@@ -209,10 +220,14 @@ export function validateAnnuity(category: ProductCategory, v: AnnuityFields, ctx
     issue(['annuityJointDiffMin'], "A joint-life form needs the version's range of age differences");
   }
 
-  // checkCoverage: the first gap per form, which is the one the server would name.
-  if (bounded) {
-    const minAge = Number(v.minEntryAge);
-    const maxAge = Number(v.maxEntryAge);
+  // checkCoverage: the first gap per form, which is the one the server would name. An immediate
+  // annuity is priced at purchase, so its grid covers the entry ages; a deferred one (D2) is priced at
+  // vesting, so it covers the vesting window -- and a malformed window is the vesting rule's to name.
+  const deferred = isDeferred(category, v);
+  const window = deferred ? vestingWindow(v) : null;
+  if (deferred ? window !== null : bounded) {
+    const minAge = window ? window[0] : Number(v.minEntryAge);
+    const maxAge = window ? window[1] : Number(v.maxEntryAge);
     v.annuityForms.forEach((form, i) => {
       const path = ['annuityForms', i, 'ratesText'];
       const { rates, error } = parseRates(form);
@@ -290,5 +305,7 @@ export function toAnnuityRequest(v: AnnuityFields): NonNullable<ProductVersionSp
     frequencies: v.annuityFactors
       .filter((f) => f.factor !== '')
       .map((f) => ({ frequency: f.frequency, factor: Number(f.factor) })),
+    // Sent only on a deferred annuity; its absence is what makes a version immediate.
+    vesting: v.annuityKind === 'DEFERRED' ? toVestingRequest(v) : null,
   };
 }

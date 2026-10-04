@@ -529,6 +529,12 @@ export type AnnuitySpec = NonNullable<ProductVersionSpec['annuity']>;
 export type AnnuityChoiceView = UnderwritingComponents['schemas']['AnnuityChoice'];
 export type WithholdingRuleView = BenefitPayoutComponents['schemas']['WithholdingRule'];
 
+// Deferred annuities and pensions (product step 5 D2).
+export type VestingTermsSpec = NonNullable<AnnuitySpec['vesting']>;
+export type VestingView = AnnuityComponents['schemas']['Vesting'];
+export type VestingInstructionInput = AnnuityComponents['schemas']['VestingInstructionRequest'];
+export type DeferredAnnuityChoiceView = UnderwritingComponents['schemas']['DeferredAnnuityChoice'];
+
 /** The payout register's status filter, in the order a queue is worked. */
 export const INSTALMENT_STATUSES: readonly InstalmentStatus[] = [
   'DUE',

@@ -195,6 +195,8 @@ export function PublishVersionForm({
   // table -- the server refuses both on one version, so choosing ACCOUNT hides the table.
   const accountCharges = useFieldArray({ control, name: 'accountCharges' });
   const valueBasis = useWatch({ control, name: 'valueBasis' });
+  const annuityKind = useWatch({ control, name: 'annuityKind' });
+  const deferredAnnuity = category === 'ANNUITY' && annuityKind === 'DEFERRED';
   const payoutRows = useFieldArray({ control, name: 'payoutRows' });
   // Which kinds are on the form right now, so the two conditional terms appear the moment a row
   // needs them. Watched rather than read off `payoutRows.fields`, which useFieldArray only
@@ -891,18 +893,23 @@ export function PublishVersionForm({
         ACCOUNT is a savings account: contributions in, charges out, interest credited at the higher
         of a declared rate and this version's guarantee. Only on the three savings categories.
       */}
-      {ACCOUNT_CATEGORIES.includes(category) && (
+      {(ACCOUNT_CATEGORIES.includes(category) || deferredAnnuity) && (
         <div className="rounded-md border border-border p-3">
-          <p className="text-xs font-medium text-muted-foreground">How the policy&apos;s value is defined</p>
-          <div className="mt-2 grid grid-cols-2 gap-3">
-            <FormField label="Value basis" error={errors.valueBasis?.message}>
-              <Select inputSize="sm" {...register('valueBasis')}>
-                <option value="SCALE">Cash-value table (scale)</option>
-                <option value="ACCOUNT">Savings account</option>
-                <option value="DEPOSIT">Fixed-term deposit</option>
-              </Select>
-            </FormField>
-          </div>
+          <p className="text-xs font-medium text-muted-foreground">
+            {deferredAnnuity ? 'The account it saves in before it vests' : "How the policy's value is defined"}
+          </p>
+          {/* A deferred annuity (D2) is always a savings account: the annuity kind chose it. */}
+          {!deferredAnnuity && (
+            <div className="mt-2 grid grid-cols-2 gap-3">
+              <FormField label="Value basis" error={errors.valueBasis?.message}>
+                <Select inputSize="sm" {...register('valueBasis')}>
+                  <option value="SCALE">Cash-value table (scale)</option>
+                  <option value="ACCOUNT">Savings account</option>
+                  <option value="DEPOSIT">Fixed-term deposit</option>
+                </Select>
+              </FormField>
+            </div>
+          )}
           {valueBasis === 'ACCOUNT' && (
             <div className="mt-3 space-y-3">
               <div className="grid grid-cols-2 gap-3">
@@ -1064,7 +1071,9 @@ export function PublishVersionForm({
         must state.
       */}
       {/* Product step 5: required on an ANNUITY product, and offered on no other. */}
-      {category === 'ANNUITY' && <AnnuityTermsSection register={register} control={control} errors={errors} />}
+      {category === 'ANNUITY' && (
+        <AnnuityTermsSection register={register} control={control} errors={errors} setValue={setValue} />
+      )}
 
       {WITH_PROFITS_CATEGORIES.includes(category) && valueBasis === 'SCALE' && (
         <div className="rounded-md border border-border p-3">

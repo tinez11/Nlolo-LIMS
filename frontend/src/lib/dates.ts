@@ -57,6 +57,21 @@ export function formatInstant(iso: string | null | undefined): string {
   }).format(parsed);
 }
 
+/**
+ * A calendar date `years` later, by string arithmetic -- as Java's `LocalDate.plusYears`, which the
+ * server uses: 29 February in a year with none becomes 28 February.
+ */
+export function addYears(iso: string, years: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!match) return iso;
+  const year = Number(match[1]) + years;
+  const month = match[2]!;
+  let day = match[3]!;
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  if (month === '02' && day === '29' && !leap) day = '28';
+  return `${String(year).padStart(4, '0')}-${month}-${day}`;
+}
+
 /** Today as `YYYY-MM-DD` in local terms, for `asOf` query parameters. */
 export function todayIso(): string {
   const now = new Date();

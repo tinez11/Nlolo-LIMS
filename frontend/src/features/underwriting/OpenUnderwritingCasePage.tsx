@@ -28,6 +28,7 @@ import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { AnnuityPurchaseFields } from '@/features/annuities/AnnuityPurchaseFields';
 import { useAnnuityTerms } from '@/features/annuities/useAnnuityTerms';
+import { addYears, formatDate } from '@/lib/dates';
 
 /**
  * `POST /underwriting/cases` -- the only entry point onto this domain that
@@ -118,16 +119,31 @@ export function OpenUnderwritingCasePage() {
   }, [snapshot.data, selectedProduct, setValue]);
 
   // An annuity purchase (product step 5): the version's forms, and the choice the applicant makes.
-  const isAnnuity = selectedProduct?.category === 'ANNUITY';
+  // A deferred annuity (D2) is told apart by its vesting terms: it records a retirement age instead.
+  const isAnnuityProduct = selectedProduct?.category === 'ANNUITY';
   const productVersionId = watch('productVersionId');
-  const annuityTerms = useAnnuityTerms(isAnnuity ? productId : '', isAnnuity ? productVersionId : '');
+  const annuityTerms = useAnnuityTerms(isAnnuityProduct ? productId : '', isAnnuityProduct ? productVersionId : '');
+  const vestingTerms = annuityTerms?.terms?.vesting ?? null;
+  const isDeferredAnnuity = isAnnuityProduct && vestingTerms != null;
+  const isAnnuity = isAnnuityProduct && !isDeferredAnnuity;
   const annuityFormCode = watch('annuityFormCode');
   const annuityFormIsJoint =
     annuityTerms?.terms?.forms.find((f) => f.formCode === annuityFormCode)?.joint ?? false;
   useEffect(() => {
     setValue('isAnnuity', isAnnuity);
+    setValue('isDeferredAnnuity', isDeferredAnnuity);
     setValue('annuityJointRequired', isAnnuity && annuityFormIsJoint);
-  }, [isAnnuity, annuityFormIsJoint, setValue]);
+  }, [isAnnuity, isDeferredAnnuity, annuityFormIsJoint, setValue]);
+
+  // The vesting date the retirement age gives: the life assured's date of birth plus that age.
+  const lifeAssuredPartyId = watch('lifeAssuredPartyId');
+  const lifeAssured = usePartyStore(selectParty(lifeAssuredPartyId));
+  useEffect(() => {
+    if (lifeAssuredPartyId) void loadParty(lifeAssuredPartyId);
+  }, [lifeAssuredPartyId, loadParty]);
+  const annuitantBorn = (lifeAssuredPartyId ? lifeAssured.data : applicant.data)?.dateOfBirth ?? null;
+  const retirementAge = watch('retirementAge');
+  const vestsOn = annuitantBorn && /^\d+$/.test(retirementAge) ? addYears(annuitantBorn, Number(retirementAge)) : null;
 
   async function onSubmit(values: OpenCaseFormValues) {
     await openCase(toApiRequest(values));
@@ -220,7 +236,10 @@ export function OpenUnderwritingCasePage() {
         </FormField>
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
-          <FormField label={isAnnuity ? 'Purchase price' : 'Sum assured'} error={errors.sumAssuredAmount?.message}>
+          <FormField
+            label={isDeferredAnnuity ? 'Contribution per payment' : isAnnuity ? 'Purchase price' : 'Sum assured'}
+            error={errors.sumAssuredAmount?.message}
+          >
             <Input
               placeholder="1500000.00"
               {...register('sumAssuredAmount')}
@@ -348,21 +367,45 @@ export function OpenUnderwritingCasePage() {
             />
           )}
 
+          {/* A deferred annuity (D2): saves to the retirement age; its form is chosen when it vests. */}
+          {isDeferredAnnuity && vestingTerms && (
+            <div className="grid grid-cols-2 gap-4">
+              <FormField label="Retirement age" error={errors.retirementAge?.message}>
+                <Input inputMode="numeric" placeholder={String(vestingTerms.minVestingAge)} {...register('retirementAge')} />
+                <p className="mt-1 text-xs text-subtle-foreground">
+                  Between {vestingTerms.minVestingAge} and {vestingTerms.maxVestingAge}.{' '}
+                  {vestsOn
+                    ? `Vests on ${formatDate(vestsOn)}`
+                    : annuitantBorn
+                      ? ''
+                      : "Record the applicant's date of birth to see the vesting date"}
+                </p>
+              </FormField>
+            </div>
+          )}
+
           {/* An annuity has no term and no premium frequency: one single premium, paid for life. */}
           {!isAnnuity && (
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Term (months)" error={errors.requestedTermMonths?.message}>
-              <Input placeholder="120" {...register('requestedTermMonths')} />
-            </FormField>
+            {!isDeferredAnnuity && (
+              <>
+                <FormField label="Term (months)" error={errors.requestedTermMonths?.message}>
+                  <Input placeholder="120" {...register('requestedTermMonths')} />
+                </FormField>
+
+                <FormField
+                  label="Premium-paying term (months)"
+                  error={errors.premiumPayingTermMonths?.message}
+                >
+                  <Input placeholder="Same as the term" {...register('premiumPayingTermMonths')} />
+                </FormField>
+              </>
+            )}
 
             <FormField
-              label="Premium-paying term (months)"
-              error={errors.premiumPayingTermMonths?.message}
+              label={isDeferredAnnuity ? 'Contribution frequency' : 'Premium frequency'}
+              error={errors.premiumFrequency?.message}
             >
-              <Input placeholder="Same as the term" {...register('premiumPayingTermMonths')} />
-            </FormField>
-
-            <FormField label="Premium frequency" error={errors.premiumFrequency?.message}>
               <Select {...register('premiumFrequency')}>
                 {/* Blank first and selected by default: a frequency the applicant did not
                     state is not monthly, and it is what the issued policy is billed on. */}
