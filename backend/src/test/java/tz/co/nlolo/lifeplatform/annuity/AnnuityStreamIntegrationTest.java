@@ -87,6 +87,31 @@ class AnnuityStreamIntegrationTest {
         assertThat(rows.get(11).dueDate()).isEqualTo(TODAY.plusMonths(12));
     }
 
+    /**
+     * An ADVANCE annuity's first instalment is due the day the premium arrives -- and the due drain can
+     * reach it before the policy's own activation on that premium has committed. Found by the D1 e2e:
+     * the row was cancelled "Policy is PROPOSED on the due date" and the annuitant was never paid.
+     * PROPOSED is not over; the row waits for the next drain.
+     */
+    @Test
+    void anInstalmentDueBeforeThePolicyIsActiveWaitsRatherThanBeingCancelled() {
+        var product = fixtures.publish(TENANT, AnnuityTestFixtures.plan(AnnuityTiming.ADVANCE, AnnuityTestFixtures.lifeOnly()));
+        String policy = fixtures.buy(TENANT, product, fixtures.person(TENANT, 61, null), "50000000.00",
+            tz.co.nlolo.lifeplatform.underwriting.api.AnnuityChoice.of("LIFE-0G", "MONTHLY", null));
+        asTenant(TENANT, () -> payouts.openAnnuityStream(policy, TODAY, "MONTHLY", BASE, "TZS", BigDecimal.ZERO, 12));
+        UUID first = annuityRows(policy).get(0).instalmentId();
+        asTenant(TENANT, () -> {
+            engine.recordPremium(policy, new BigDecimal("50000000.00"), TODAY);
+            engine.fallDue(first);
+            return null;
+        });
+        assertThat(annuityRows(policy).get(0).status()).isEqualTo(InstalmentStatus.SCHEDULED);
+
+        fixtures.collect(TENANT, policy, "50000000.00", TODAY);
+        asTenant(TENANT, () -> { engine.fallDue(first); return null; });
+        assertThat(annuityRows(policy).get(0).status()).isEqualTo(InstalmentStatus.DUE);
+    }
+
     @Test
     void openingTwiceOpensOnce() {
         String policy = withStream("0");

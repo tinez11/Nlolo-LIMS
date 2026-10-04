@@ -196,6 +196,14 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
         }
         PolicyView policy = policyApi.getPolicy(i.getPolicyNumber());
         String policyStatus = policy.status().name();
+        if ("PROPOSED".equals(policyStatus)) {
+            // Not in force YET, which is not the same as over. An ADVANCE annuity's first instalment is
+            // due the day its premium arrives, and this drain can reach it before the policy's own
+            // activation on that premium commits -- cancelling here left the annuitant unpaid. It
+            // stays SCHEDULED for the next drain; a policy never taken up turns NOT_TAKEN_UP, and
+            // the drain cancels it then.
+            return;
+        }
         if (!PAYABLE.contains(policyStatus)) {
             // Lapsed, surrendered, cancelled: nothing is owed and nothing will be.
             i.cancel("Policy is " + policyStatus + " on the due date");
