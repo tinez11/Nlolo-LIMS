@@ -47,6 +47,9 @@ public class AnnuityVesting {
     private static final Logger log = LoggerFactory.getLogger(AnnuityVesting.class);
 
     static final String DEATH_REPORTED = "A death has been reported on this policy; it vests only if that claim is rejected";
+    /** The statuses a pension may vest from -- benefitpayout's payable set (a paid-up pension still vests). */
+    private static final java.util.Set<String> IN_FORCE = java.util.Set.of("ACTIVE", "REINSTATED", "PAID_UP", "SUSPENDED");
+
     static final String AGE_CHANGED =
         "Age re-confirmation needed: the date of birth or sex on record has changed since it was confirmed";
 
@@ -113,6 +116,12 @@ public class AnnuityVesting {
             return held(vesting, e.getMessage());
         }
         PolicyView policy = policyApi.getPolicy(policyNumber);
+        // Only a policy in force vests. A lapsed one (its account ran out) or one not yet in force is
+        // held, not vested: buying an annuity with whatever is left would be a decision nobody made.
+        // A reinstatement clears it on the next sweep, since a hold is judged afresh every day.
+        if (!IN_FORCE.contains(policy.status().name())) {
+            return held(vesting, "The policy is " + policy.status().name() + "; it vests only once it is in force");
+        }
         // Spec Q7: the annuity terms are the product's CURRENT version's on the vesting date.
         UUID currentVersion = productApi.getActiveSnapshot(policy.productId(), choice.vestingDate()).productVersionId();
         BigDecimal balance = accumulationApi.findAccount(policyNumber).orElseThrow().balance();

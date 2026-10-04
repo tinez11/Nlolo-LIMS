@@ -434,9 +434,15 @@ public class AnnuityApiImpl implements AnnuityApi {
      */
     @Transactional
     public void onNotTakenUp(String policyNumber) {
-        contracts.findById(policyNumber).filter(c -> c.status() == ContractStatus.AWAITING_PAYMENT).ifPresent(c -> {
-            c.cancel();
-            contracts.save(c);
+        contracts.findById(policyNumber).ifPresent(c -> {
+            if (c.status() == ContractStatus.AWAITING_PAYMENT) {
+                c.cancel();
+                contracts.save(c);
+            } else if (c.status() == ContractStatus.ACCUMULATING) {
+                // A pension whose first contribution never came (D2): it never saved, so it never vests.
+                c.cancelledBeforeVesting("Not taken up: the first contribution was never paid");
+                contracts.save(c);
+            }
         });
     }
 

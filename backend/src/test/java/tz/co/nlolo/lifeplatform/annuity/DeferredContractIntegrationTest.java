@@ -131,6 +131,15 @@ class DeferredContractIntegrationTest {
     }
 
     @Test
+    void aPensionNeverTakenUpIsCancelledAndNeverVests() {
+        String policy = pension();
+        fixtures.publish(TENANT, "policy.PolicyNotTakenUp", Map.of("policyNumber", policy));
+        AnnuityContractView c = contract(policy);
+        assertThat(c.status()).isEqualTo(ContractStatus.CANCELLED);
+        assertThat(c.endReason()).isEqualTo("Not taken up: the first contribution was never paid");
+    }
+
+    @Test
     void aFreeLookCancellationCancelsAContractWithNoStream() {
         String policy = pension();
         asTenant(TENANT, () -> { engine.onFreeLookCancelled(policy); return null; });

@@ -272,6 +272,17 @@ class VestingIntegrationTest {
     }
 
     @Test
+    void aPolicyNotInForceIsHeldNotVested() {
+        // Issued, but its first contribution never collected: PROPOSED on the target date.
+        var product = fixtures.publishDeferred(TENANT, false);
+        String policy = fixtures.issueDeferred(TENANT, product, fixtures.personBorn(TENANT, BORN, null), 56);
+        LocalDate target = vestingOf(policy).targetDate();
+        assertThat(vest(policy, target)).isEqualTo("held: The policy is PROPOSED; it vests only once it is in force");
+        assertThat(accountStatus(policy)).isEqualTo(AccountStatus.OPEN);
+        assertThat(asTenant(TENANT, () -> annuityApi.contract(policy)).orElseThrow().status()).isEqualTo(ContractStatus.ACCUMULATING);
+    }
+
+    @Test
     void itVestsOnceAndTheClosedAccountIsNeverLapsedAsExhausted() {
         Sold s = sold();
         LocalDate target = vestingOf(s.policy()).targetDate();
