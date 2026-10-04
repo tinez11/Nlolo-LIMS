@@ -96,6 +96,15 @@ class PayoutPlanValidatorTest {
     }
 
     @Test
+    void aCommutationIsNeverAnAuthoredRow() {
+        PayoutRowInput lumpSum = new PayoutRowInput(PayoutKind.COMMUTATION, null, null, PayoutAmountBasis.PERCENT_OF_SA,
+            new BigDecimal("25"), null);
+        assertThatThrownBy(() -> PayoutPlanValidator.validate(ProductCategory.ENDOWMENT,
+                PayoutPlan.authored(FREE_LOOK_15, List.of(MATURITY_100, lumpSum))))
+            .hasMessage("COMMUTATION is a pension's lump sum at vesting, not an authored payout row");
+    }
+
+    @Test
     void wholeLifeAnnuityAndUnitLinkedTakeNoRows() {
         // Whole life has no term to mature at; an annuity's income is set by its forms (step 5), never
         // authored as rows; unit-linked arrives with step 6.

@@ -30,6 +30,7 @@ class PolicyApiImplSurrenderChargeTest {
         null,                               // policy value (cash-value / paid-to-date)
         null,                               // surrender request
         null,                               // attached-bonus projection (product step 4)
+        null,                               // annuity vesting (product step 5 D2)
         null, null, null, null, null, null, // party, product, refdata, distribution, underwriting, events
         new ObjectMapper());
 

@@ -18,6 +18,8 @@ import tz.co.nlolo.lifeplatform.product.api.AnnuityPlan;
 import tz.co.nlolo.lifeplatform.product.api.AnnuityPricingInput;
 import tz.co.nlolo.lifeplatform.product.api.AnnuityPricingRefusedException;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.AnnuityChoiceRepository;
+import tz.co.nlolo.lifeplatform.underwriting.infrastructure.DeferredAnnuityChoiceRepository;
+import tz.co.nlolo.lifeplatform.product.api.VestingTerms;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.MedicalDisclosureRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.ProposalBeneficiaryRepository;
 import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
@@ -62,6 +64,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     private final ProposalGroupGradeRepository proposalGroupGradeRepository;
     private final ProposalGroupMemberRepository proposalGroupMemberRepository;
     private final AnnuityChoiceRepository annuityChoiceRepository;
+    private final DeferredAnnuityChoiceRepository deferredAnnuityChoiceRepository;
     /** "Today" is the civil date here, never UTC's (the UTC-vs-civil day bug). */
     private static final java.time.ZoneId CIVIL_ZONE = java.time.ZoneId.of("Africa/Dar_es_Salaam");
     /** Serialises the disclosure Q&A set into its JSONB column -- see recordDisclosures. */
@@ -76,8 +79,10 @@ public class UnderwritingApiImpl implements UnderwritingApi {
                                 ProposalGroupSchemeRepository proposalGroupSchemeRepository,
                                 ProposalGroupGradeRepository proposalGroupGradeRepository,
                                 ProposalGroupMemberRepository proposalGroupMemberRepository,
-                                AnnuityChoiceRepository annuityChoiceRepository) {
+                                AnnuityChoiceRepository annuityChoiceRepository,
+                                DeferredAnnuityChoiceRepository deferredAnnuityChoiceRepository) {
         this.annuityChoiceRepository = annuityChoiceRepository;
+        this.deferredAnnuityChoiceRepository = deferredAnnuityChoiceRepository;
         this.proposalBeneficiaryRepository = proposalBeneficiaryRepository;
         this.proposalGroupSchemeRepository = proposalGroupSchemeRepository;
         this.proposalGroupGradeRepository = proposalGroupGradeRepository;
@@ -512,7 +517,16 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         underwritingCase.recordDecision(decision.outcome().name(), decision.loadingPercent(),
             declineReason, decidedBy, overrode);
         underwritingCaseRepository.save(underwritingCase);
-        if (annuity && decision.outcome() == DecisionOutcome.ACCEPT) {
+        if (annuity && annuityPlan.deferred() && decision.outcome() == DecisionOutcome.ACCEPT) {
+            // Spec Q8: the date of birth and sex whose proof was seen, so vesting re-confirms age
+            // only if the party record has changed since.
+            PartyDetailView lifeAssured = partyApi.getPartyDetail(lifeAssuredPartyId(underwritingCase));
+            deferredAnnuityChoiceRepository.findById(caseId).ifPresent(choice -> {
+                choice.confirmAgeEvidence(decidedBy, lifeAssured.dateOfBirth(),
+                    lifeAssured.sex() != null ? lifeAssured.sex().name() : null);
+                deferredAnnuityChoiceRepository.save(choice);
+            });
+        } else if (annuity && decision.outcome() == DecisionOutcome.ACCEPT) {
             annuityChoiceRepository.findById(caseId).ifPresent(choice -> {
                 choice.confirmAgeEvidence(decidedBy);
                 annuityChoiceRepository.save(choice);
@@ -606,6 +620,10 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         if (decision.outcome() == DecisionOutcome.DECLINED) {
             return;
         }
+        if (plan.deferred()) {
+            checkDeferredAcceptance(underwritingCase, decision);
+            return;
+        }
         AnnuityChoiceEntity choice = annuityChoiceRepository.findById(underwritingCase.getCaseId())
             .orElseThrow(() -> new UnderwritingValidationException(
                 "An annuity case must record the chosen form and frequency before it is decided"));
@@ -626,6 +644,69 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         }
     }
 
+    /**
+     * A deferred annuity is accepted on proof of age alone and is NOT priced now (spec Q7): it prices
+     * at vesting, at the rates in force that day. What it needs is a retirement age, so it has a
+     * vesting date, and a recorded date of birth to measure it from. The confirmed date of birth and
+     * sex are stored once the decision is recorded (decide), beside D1's own confirmation.
+     */
+    private void checkDeferredAcceptance(UnderwritingCase underwritingCase, DecisionInput decision) {
+        if (deferredAnnuityChoiceRepository.findById(underwritingCase.getCaseId()).isEmpty()) {
+            throw new UnderwritingValidationException(
+                "A deferred annuity case must record the retirement age before it is decided");
+        }
+        if (!decision.ageEvidenceConfirmed()) {
+            throw new UnderwritingValidationException("An annuity is accepted only once proof of age is confirmed");
+        }
+        if (partyApi.getPartyDetail(lifeAssuredPartyId(underwritingCase)).dateOfBirth() == null) {
+            throw new UnderwritingValidationException("The applicant's date of birth is not recorded, so there is no vesting date");
+        }
+    }
+
+    @Override
+    @Transactional
+    public DeferredAnnuityChoice recordDeferredAnnuityChoice(UUID caseId, int retirementAge, String recordedBy) {
+        UUID tenantId = TenantContext.get();
+        UnderwritingCase underwritingCase = findOrThrow(caseId, tenantId);
+        AnnuityPlan plan = productApi.resolveAnnuityPlan(underwritingCase.getProductVersionId());
+        if (!plan.deferred()) {
+            throw new UnderwritingValidationException("Only a deferred annuity case records a retirement age");
+        }
+        if (isDecided(underwritingCase)) {
+            throw new UnderwritingCaseAlreadyDecidedException(caseId);
+        }
+        LocalDate dateOfBirth = partyApi.getPartyDetail(lifeAssuredPartyId(underwritingCase)).dateOfBirth();
+        if (dateOfBirth == null) {
+            throw new UnderwritingValidationException("The applicant's date of birth is not recorded, so there is no vesting date");
+        }
+        VestingTerms vesting = plan.vesting();
+        if (retirementAge < vesting.minVestingAge() || retirementAge > vesting.maxVestingAge()) {
+            throw new UnderwritingValidationException("The retirement age must be within the vesting window, "
+                + vesting.minVestingAge() + " to " + vesting.maxVestingAge());
+        }
+        if (!dateOfBirth.plusYears(retirementAge).isAfter(LocalDate.now(CIVIL_ZONE))) {
+            throw new UnderwritingValidationException("A retirement age of " + retirementAge + " has already been reached");
+        }
+        DeferredAnnuityChoiceEntity entity = deferredAnnuityChoiceRepository.findById(caseId)
+            .orElseGet(() -> new DeferredAnnuityChoiceEntity(tenantId, caseId));
+        entity.choose(retirementAge, recordedBy);
+        return deferredAnnuityChoiceRepository.save(entity).toChoice(dateOfBirth);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Optional<DeferredAnnuityChoice> deferredAnnuityChoice(UUID caseId) {
+        // Empty, never a throw -- annuityChoice's reason: callers ask inside their own transaction.
+        java.util.Optional<UnderwritingCase> underwritingCase =
+            underwritingCaseRepository.findByCaseIdAndTenantId(caseId, TenantContext.get());
+        if (underwritingCase.isEmpty()
+                || !productApi.resolveAnnuityPlan(underwritingCase.get().getProductVersionId()).deferred()) {
+            return java.util.Optional.empty();
+        }
+        return deferredAnnuityChoiceRepository.findById(caseId).map(choice -> choice.toChoice(
+            partyApi.getPartyDetail(lifeAssuredPartyId(underwritingCase.get())).dateOfBirth()));
+    }
+
     @Override
     @Transactional
     public AnnuityChoice recordAnnuityChoice(UUID caseId, AnnuityChoice choice, String recordedBy) {
@@ -634,6 +715,9 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         AnnuityPlan plan = productApi.resolveAnnuityPlan(underwritingCase.getProductVersionId());
         if (!plan.annuity()) {
             throw new UnderwritingValidationException("Only an annuity case records an annuity choice");
+        }
+        if (plan.deferred()) {
+            throw new UnderwritingValidationException("A deferred annuity records a retirement age; its form is chosen when it vests");
         }
         if (isDecided(underwritingCase)) {
             throw new UnderwritingCaseAlreadyDecidedException(caseId);

@@ -26,6 +26,7 @@ import java.util.UUID;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.TODAY;
@@ -148,6 +149,87 @@ class AnnuityContractTest {
         mockMvc.perform(get("/policies/POL-NOPE0001/annuity").with(as("ROLE_REALM_STAFF")))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("NOT_AN_ANNUITY"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    // ---- D2: a pension's vesting ----
+
+    private static final java.time.LocalDate BORN = java.time.LocalDate.of(1980, 6, 15);
+
+    private String pension() {
+        var product = fixtures.publishDeferred(TENANT, false);
+        return fixtures.issueDeferred(TENANT, product, fixtures.personBorn(TENANT, BORN, Sex.FEMALE), 60);
+    }
+
+    @Test
+    void aSavingPensionsContractAndVestingAreReadToSpec() throws Exception {
+        String policy = pension();
+        mockMvc.perform(get("/policies/" + policy + "/annuity").with(as("ROLE_REALM_STAFF")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("ACCUMULATING"))
+            .andExpect(jsonPath("$.purchasePrice").doesNotExist())
+            .andExpect(jsonPath("$.endReason").doesNotExist())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        mockMvc.perform(get("/policies/" + policy + "/annuity/vesting").with(as("ROLE_REALM_STAFF")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.policyNumber").value(policy))
+            .andExpect(jsonPath("$.targetDate").value("2040-06-15"))
+            .andExpect(jsonPath("$.earliestVestingDate").value("2035-06-15"))
+            .andExpect(jsonPath("$.latestVestingDate").value("2050-06-15"))
+            .andExpect(jsonPath("$.vestingDate").value("2040-06-15"))
+            .andExpect(jsonPath("$.formCode").value("LIFE-0G"))
+            .andExpect(jsonPath("$.frequency").value("MONTHLY"))
+            .andExpect(jsonPath("$.jointLifePartyId").doesNotExist())
+            .andExpect(jsonPath("$.lumpSumPercent").value("0"))
+            .andExpect(jsonPath("$.maxCommutationPercent").value("25"))
+            .andExpect(jsonPath("$.instructed").value(false))
+            .andExpect(jsonPath("$.contributions").doesNotExist())
+            .andExpect(jsonPath("$.holdReason").doesNotExist())
+            .andExpect(jsonPath("$.heldAt").doesNotExist())
+            .andExpect(jsonPath("$.vestedOn").doesNotExist())
+            .andExpect(jsonPath("$.vestedBalance").doesNotExist())
+            .andExpect(jsonPath("$.lumpSum").doesNotExist())
+            .andExpect(jsonPath("$.ageConfirmedBy").value("senior-two"))
+            .andExpect(jsonPath("$.confirmedDateOfBirth").value("1980-06-15"))
+            .andExpect(jsonPath("$.confirmedSex").value("FEMALE"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void anInstructionIsRecordedToSpecAndARefusalIsA422InItsOwnWords() throws Exception {
+        String policy = pension();
+        mockMvc.perform(put("/policies/" + policy + "/annuity/vesting/instruction").with(as("ROLE_REALM_STAFF", "staff-one"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"vestingDate\":\"2042-06-15\",\"formCode\":\"LIFE-0G\",\"frequency\":\"ANNUAL\","
+                    + "\"lumpSumPercent\":10,\"contributions\":\"STOP\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.vestingDate").value("2042-06-15"))
+            .andExpect(jsonPath("$.frequency").value("ANNUAL"))
+            .andExpect(jsonPath("$.lumpSumPercent").value("10"))
+            .andExpect(jsonPath("$.instructed").value(true))
+            .andExpect(jsonPath("$.contributions").value("STOP"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        mockMvc.perform(put("/policies/" + policy + "/annuity/vesting/instruction").with(as("ROLE_REALM_STAFF", "staff-one"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"formCode\":\"LIFE-0G\",\"frequency\":\"MONTHLY\",\"lumpSumPercent\":30}"))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.errorCode").value("VESTING_REFUSED"))
+            .andExpect(jsonPath("$.detail").value("The lump sum can be from 0% to 25% of the balance"));
+        mockMvc.perform(post("/policies/" + policy + "/annuity/vesting/reconfirm-age").with(as("ROLE_REALM_STAFF")))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("Policy " + policy + " is not held for age re-confirmation"));
+        mockMvc.perform(get("/annuity-vestings/held").with(as("ROLE_REALM_STAFF")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void anImmediateAnnuityHasNoVesting() throws Exception {
+        var product = fixtures.publish(TENANT, AnnuityTestFixtures.everyForm());
+        String policy = fixtures.issueInForce(TENANT, product, fixtures.person(TENANT, 61, null), "1000000.00");
+        mockMvc.perform(get("/policies/" + policy + "/annuity/vesting").with(as("ROLE_REALM_STAFF")))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("NOT_A_DEFERRED_ANNUITY"))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 }

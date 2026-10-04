@@ -77,6 +77,7 @@ class ProductContractTest {
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/product/V22__annuity_terms.sql",
+            "db-migrations/product/V23__vesting_terms.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -1053,6 +1054,68 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("NOT_AN_ANNUITY"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    // ---- Step 5 D2: a deferred annuity over the wire ----
+
+    @Test
+    void aDeferredAnnuityIsPublishedAndItsVestingTermsReadBackToSpec() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProductOfCategory(tenantId, "DEF-CONTRACT-01", "ANNUITY");
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ifrsMeasurementModel":"GMM","effectiveDate":"2026-01-01",
+                     "payoutTerms":{"freeLookDays":15},"tiraFiling":{"reference":"TIRA/CONTRACT/DEF","approvalDate":"2026-01-15"},
+                     "eligibility":{"minEntryAge":50,"maxEntryAge":55},
+                     "ratingTable":[{"factorType":"AGE","band":"50-55","multiplier":1.0,"ageFrom":50,"ageTo":55},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
+                     "accumulation":{"guaranteedRatePercent":3,"minimumBalance":0,
+                                     "charges":[{"fromPolicyYear":1,"contributionAllocationPercent":0,
+                                                 "transferAllocationPercent":0,"monthlyPolicyFee":0}]},
+                     "annuity":{"timing":"ARREARS","proofOfLifeIntervalMonths":12,"basisReference":"ACT/ANN/2026","basisDate":"2026-01-01",
+                       "forms":[{"formCode":"LIFE-10G","guaranteeYears":10,"joint":false,"escalationPercent":3,
+                                 "capitalProtected":false,"rateBasis":"UNISEX","rates":%s}],
+                       "frequencies":[{"frequency":"MONTHLY","factor":0.98},{"frequency":"ANNUAL","factor":1}],
+                       "vesting":{"minVestingAge":60,"maxVestingAge":62,"defaultFormCode":"LIFE-10G","defaultFrequency":"MONTHLY",
+                                  "maxCommutationPercent":25,"surrenderBeforeVesting":false}}}
+                    """.formatted(ANNUITY_RATES)))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        UUID versionId = activeVersion(tenantId, productId);
+        mockMvc.perform(get("/products/" + productId + "/versions/" + versionId + "/annuity")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.vesting.minVestingAge").value(60))
+            .andExpect(jsonPath("$.vesting.maxVestingAge").value(62))
+            .andExpect(jsonPath("$.vesting.defaultFormCode").value("LIFE-10G"))
+            .andExpect(jsonPath("$.vesting.defaultFrequency").value("MONTHLY"))
+            .andExpect(jsonPath("$.vesting.maxCommutationPercent").value("25"))
+            .andExpect(jsonPath("$.vesting.surrenderBeforeVesting").value(false))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void anImmediateAnnuityReadsBackWithNoVesting() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProductOfCategory(tenantId, "DEF-CONTRACT-02", "ANNUITY");
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(annuityVersion(ANNUITY_RATES)))
+            .andExpect(status().isCreated());
+        UUID versionId = activeVersion(tenantId, productId);
+        mockMvc.perform(get("/products/" + productId + "/versions/" + versionId + "/annuity")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.vesting").value(org.hamcrest.Matchers.nullValue()))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 

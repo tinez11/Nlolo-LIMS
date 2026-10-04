@@ -12,6 +12,8 @@ import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.policy.domain.*;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.*;
+import tz.co.nlolo.lifeplatform.product.api.AnnuityPlan;
+import tz.co.nlolo.lifeplatform.product.api.VestingTerms;
 import tz.co.nlolo.lifeplatform.product.api.BenefitType;
 import tz.co.nlolo.lifeplatform.product.api.BonusPlan;
 import tz.co.nlolo.lifeplatform.product.api.BonusSurrenderBasis;
@@ -55,11 +57,15 @@ import java.util.stream.Collectors;
 public class PolicyApiImpl implements PolicyApi {
 
     private static final Logger log = LoggerFactory.getLogger(PolicyApiImpl.class);
+    /** "Today" is the civil date, never UTC's (the UTC-vs-civil day bug). */
+    private static final java.time.ZoneId CIVIL_ZONE = java.time.ZoneId.of("Africa/Dar_es_Salaam");
 
     private final PolicyRepository policyRepository;
     private final PolicyAccountRepository policyAccountRepository;
     /** Product step 4. Read and written only for with-profits policies -- see V32. */
     private final PolicyBonusRepository policyBonusRepository;
+    /** Product step 5 D2. Read only after product says the version is a deferred annuity -- see V34. */
+    private final AnnuityVestingRepository annuityVestingRepository;
     private final EndorsementRepository endorsementRepository;
     private final BeneficiaryRepository beneficiaryRepository;
     private final CoverageRepository coverageRepository;
@@ -93,10 +99,12 @@ public class PolicyApiImpl implements PolicyApi {
                           PolicyValueRepository policyValueRepository,
                           SurrenderRequestRepository surrenderRequestRepository,
                           PolicyBonusRepository policyBonusRepository,
+                          AnnuityVestingRepository annuityVestingRepository,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
                           DistributionApi distributionApi, UnderwritingApi underwritingApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
         this.policyRepository = policyRepository;
+        this.annuityVestingRepository = annuityVestingRepository;
         this.policyBonusRepository = policyBonusRepository;
         this.policyAccountRepository = policyAccountRepository;
         this.endorsementRepository = endorsementRepository;
@@ -891,6 +899,9 @@ public class PolicyApiImpl implements PolicyApi {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
 
+        if (vestedPension(policy)) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " is a pension in payment; it has no contributions to stop");
+        }
         if (productApi.resolveDepositPlan(policy.getProductVersionId()).isDeposit()) {
             throw new InvalidPolicyStateException("Policy " + policyNumber
                 + " is a fixed-term deposit: it was paid once and has no premiums to stop");
@@ -1025,6 +1036,15 @@ public class PolicyApiImpl implements PolicyApi {
         }
         if (!policy.canSurrender()) {
             throw new InvalidPolicyStateException("Policy " + policyNumber + " cannot be surrendered from its current status");
+        }
+        // A deferred annuity (D2): after vesting it is an annuity in payment; before, the version's
+        // lock decides (spec Q9) -- in accumulation's words, since it is the same rule.
+        if (vestedPension(policy)) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " is a pension in payment; it cannot be surrendered");
+        }
+        VestingTerms vesting = productApi.resolveAnnuityPlan(policy.getProductVersionId()).vesting();
+        if (vesting != null && !Boolean.TRUE.equals(vesting.surrenderBeforeVesting())) {
+            throw new InvalidPolicyStateException("This pension cannot be surrendered or withdrawn from before it vests");
         }
         if (surrenderRequestRepository.findLive(policyNumber, tenantId).isPresent()) {
             throw new InvalidPolicyStateException("A surrender is already in flight for policy " + policyNumber);
@@ -1241,6 +1261,37 @@ public class PolicyApiImpl implements PolicyApi {
 
     @Override
     @Transactional
+    public void recordVesting(String policyNumber, LocalDate vestedOn) {
+        UUID tenantId = TenantContext.get();
+        findPolicyOrThrow(policyNumber, tenantId);
+        if (annuityVestingRepository.existsById(policyNumber)) {
+            return; // idempotent -- no second event
+        }
+        annuityVestingRepository.save(new AnnuityVestingEntity(tenantId, policyNumber, vestedOn));
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.AnnuityVested", tenantId,
+            Map.of("policyNumber", policyNumber, "vestedOn", vestedOn.toString())));
+    }
+
+    @Override
+    @Transactional
+    public LocalDate extendPremiumPayingTerm(String policyNumber, LocalDate until) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        LocalDate payingUntil = policy.extendPremiumPayingTerm(until, LocalDate.now(CIVIL_ZONE));
+        policyRepository.save(policy);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PremiumPayingTermRestated", tenantId,
+            Map.of("policyNumber", policyNumber, "premiumPayingUntil", payingUntil.toString())));
+        return payingUntil;
+    }
+
+    /** A deferred annuity that has vested (D2): an annuity in payment, not an account. Product first. */
+    private boolean vestedPension(Policy policy) {
+        return productApi.resolveAnnuityPlan(policy.getProductVersionId()).deferred()
+            && annuityVestingRepository.existsById(policy.getPolicyNumber());
+    }
+
+    @Override
+    @Transactional
     public void restateAttachedBonus(String policyNumber, BigDecimal total) {
         UUID tenantId = TenantContext.get();
         findPolicyOrThrow(policyNumber, tenantId);
@@ -1342,7 +1393,12 @@ public class PolicyApiImpl implements PolicyApi {
      * so SINGLE, premium equal to the sum assured (the price), and no term. Product is asked first.
      */
     private void refuseUnlessAValidAnnuity(IssueRequest request) {
-        if (!productApi.resolveAnnuityPlan(request.productVersionId()).annuity()) {
+        AnnuityPlan plan = productApi.resolveAnnuityPlan(request.productVersionId());
+        if (!plan.annuity()) {
+            return;
+        }
+        if (plan.deferred()) {
+            refuseUnlessAValidDeferredAnnuity(request);
             return;
         }
         if (!"SINGLE".equals(request.premiumFrequency()) || request.premiumAmount() == null
@@ -1351,6 +1407,23 @@ public class PolicyApiImpl implements PolicyApi {
         }
         if (request.policyTermMonths() != null || request.premiumPayingTermMonths() != null) {
             throw new IllegalArgumentException("An annuity has no term; it pays for life");
+        }
+    }
+
+    /**
+     * A deferred annuity (D2) saves to its vesting date and then pays for life, so it has a
+     * premium-paying term but no policy term (plan R2), and its sum assured is its contribution (R3).
+     */
+    private static void refuseUnlessAValidDeferredAnnuity(IssueRequest request) {
+        if (request.premiumAmount() == null || request.sumAssuredAmount() == null
+                || request.premiumAmount().compareTo(request.sumAssuredAmount()) != 0) {
+            throw new IllegalArgumentException("A deferred annuity's sum assured is its contribution: the two must be equal");
+        }
+        if (request.policyTermMonths() != null) {
+            throw new IllegalArgumentException("A deferred annuity has no policy term: it saves to its vesting date and then pays for life");
+        }
+        if (!"SINGLE".equals(request.premiumFrequency()) && request.premiumPayingTermMonths() == null) {
+            throw new IllegalArgumentException("A deferred annuity pays contributions to its vesting date: state the premium-paying term");
         }
     }
 
@@ -1567,8 +1640,10 @@ public class PolicyApiImpl implements PolicyApi {
         // An annuity is NOT closed by a settled death claim (product step 5): a guarantee may still
         // pay the beneficiaries for years, and a joint annuity pays the survivor -- closing it here
         // would make every one of those instalments unpayable. The annuity module ends the policy
-        // (endAnnuity) when nothing further is owed.
-        if (productApi.resolveAnnuityPlan(policy.getProductVersionId()).annuity()) {
+        // (endAnnuity) when nothing further is owed. A deferred annuity that has not vested is an
+        // account policy, and a death closes it like one (D2 spec Q6).
+        AnnuityPlan annuityPlan = productApi.resolveAnnuityPlan(policy.getProductVersionId());
+        if (annuityPlan.annuity() && (!annuityPlan.deferred() || vestedPension(policy))) {
             return;
         }
         // Either terminal status, not just SURRENDERED -- same M6 final-review C1 part 2 reasoning

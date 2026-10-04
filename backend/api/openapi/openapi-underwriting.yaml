@@ -243,6 +243,51 @@ paths:
               schema: { $ref: '#/components/schemas/AnnuityChoice' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
         '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+  /underwriting/cases/{caseId}/deferred-annuity-choice:
+    get:
+      summary: A deferred annuity case's retirement age and target vesting date
+      description: >-
+        Product step 5 D2. 404 DEFERRED_ANNUITY_CHOICE_NOT_FOUND when none is recorded -- also the
+        answer for any case that is not a deferred annuity's.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The choice
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeferredAnnuityChoice' }
+        '404':
+          description: No retirement age on this case
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    put:
+      summary: Record or change a deferred annuity case's retirement age, before it is decided
+      description: >-
+        The age must lie inside the version's vesting window and must not already have been
+        reached; the applicant's date of birth must be recorded. A 422 otherwise.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeferredAnnuityRequest' }
+      responses:
+        '200':
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeferredAnnuityChoice' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
   /underwriting/cases/{caseId}/beneficiaries:
     get:
       summary: The beneficiary nominations taken on this proposal
@@ -534,6 +579,14 @@ components:
           anyOf:
             - { $ref: '#/components/schemas/AnnuityChoiceRequest' }
             - { type: "null" }
+        deferredAnnuity:
+          description: >-
+            On a deferred ANNUITY product only (product step 5 D2): the retirement age, recorded
+            with the case in the same transaction. May also be recorded afterwards with PUT
+            .../deferred-annuity-choice. The case's sumAssured is the contribution per payment.
+          anyOf:
+            - { $ref: '#/components/schemas/DeferredAnnuityRequest' }
+            - { type: "null" }
         # medicalDisclosure is deliberately NOT a field here. It was once declared on this
         # request and never existed in OpenCaseRequest.java, so a client sending one got a 201
         # and had it silently discarded. Disclosures are now real, but as their own resource --
@@ -700,6 +753,24 @@ components:
         jointLifePartyId: { type: [string, "null"], format: uuid }
         ageEvidenceConfirmedBy: { type: [string, "null"], description: "Who confirmed proof of age on acceptance" }
         ageEvidenceConfirmedAt: { type: [string, "null"], format: date-time }
+    DeferredAnnuityRequest:
+      type: object
+      properties:
+        retirementAge: { type: [integer, "null"], minimum: 0, maximum: 120 }
+    DeferredAnnuityChoice:
+      type: object
+      additionalProperties: false
+      required: [retirementAge, targetDate, ageEvidenceConfirmedBy, ageEvidenceConfirmedAt, confirmedDateOfBirth, confirmedSex]
+      properties:
+        retirementAge: { type: integer }
+        targetDate:
+          type: [string, "null"]
+          format: date
+          description: Date of birth plus the retirement age -- the confirmed date of birth once accepted
+        ageEvidenceConfirmedBy: { type: [string, "null"], description: "Who confirmed proof of age on acceptance" }
+        ageEvidenceConfirmedAt: { type: [string, "null"], format: date-time }
+        confirmedDateOfBirth: { type: [string, "null"], format: date, description: "The date of birth whose proof was seen at acceptance" }
+        confirmedSex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
     UnderwritingCaseView:
       type: object
       # The decision is intentionally flattened to decisionOutcome/decisionLoadingPercent/

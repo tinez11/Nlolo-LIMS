@@ -110,7 +110,23 @@ export const openCaseFormSchema = z.object({
     .string()
     .trim()
     .refine((v) => v === '' || UUID_PATTERN.test(v), 'Not a valid party id'),
+
+  /**
+   * A deferred annuity (product step 5 D2): set by the page from the version's vesting terms. Its
+   * form is chosen when it vests, so the case records only the retirement age, and the sum assured
+   * above is the contribution per payment.
+   */
+  isDeferredAnnuity: z.boolean(),
+  retirementAge: z.string().trim(),
 }).superRefine((values, ctx) => {
+  if (values.isDeferredAnnuity) {
+    if (values.retirementAge === '' || !Number.isInteger(Number(values.retirementAge))) {
+      ctx.addIssue({ code: 'custom', path: ['retirementAge'], message: 'Enter the retirement age in whole years' });
+    }
+    if (values.premiumFrequency === '') {
+      ctx.addIssue({ code: 'custom', path: ['premiumFrequency'], message: 'Choose how often contributions are paid' });
+    }
+  }
   // Mirrors UnderwritingApiImpl.recordAnnuityChoice, in its words where it has them.
   if (values.isAnnuity) {
     if (values.annuityFormCode === '') {
@@ -173,10 +189,21 @@ export function blankOpenCaseForm(): OpenCaseFormInput {
     annuityFormCode: '',
     annuityFrequency: '',
     annuityJointLifePartyId: '',
+    isDeferredAnnuity: false,
+    retirementAge: '',
   };
 }
 
 export function toApiRequest(values: OpenCaseFormValues): OpenCaseRequest {
+  // A deferred annuity (D2) pays contributions to its vesting date and has no term: the issue
+  // listener derives the paying term from the retirement age.
+  if (values.isDeferredAnnuity) {
+    return {
+      ...baseRequest(values),
+      ...(values.premiumFrequency ? { premiumFrequency: values.premiumFrequency } : {}),
+      deferredAnnuity: { retirementAge: Number(values.retirementAge) },
+    };
+  }
   // An annuity has no term and no premium frequency: it is bought with one single premium, the
   // purchase price, and pays until death. The choice travels instead, and only then.
   if (values.isAnnuity) {

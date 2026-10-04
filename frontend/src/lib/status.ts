@@ -153,6 +153,8 @@ export const STATUS_MAPS = {
 
   // annuity/api/ContractStatus.java (product step 5).
   annuityContract: {
+    // A deferred annuity still saving in its account (product step 5 D2).
+    ACCUMULATING: 'active',
     AWAITING_PAYMENT: 'pending',
     IN_PAYMENT: 'active',
     SURVIVOR: 'active',

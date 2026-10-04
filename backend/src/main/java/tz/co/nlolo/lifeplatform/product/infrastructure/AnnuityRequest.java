@@ -7,6 +7,7 @@ import tz.co.nlolo.lifeplatform.product.api.AnnuityPlan;
 import tz.co.nlolo.lifeplatform.product.api.AnnuityRateBasis;
 import tz.co.nlolo.lifeplatform.product.api.AnnuityRateRow;
 import tz.co.nlolo.lifeplatform.product.api.AnnuityTiming;
+import tz.co.nlolo.lifeplatform.product.api.VestingTerms;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -20,7 +21,19 @@ import java.util.List;
 public record AnnuityRequest(AnnuityTiming timing, Integer proofOfLifeIntervalMonths,
                              Integer jointAgeDifferenceMin, Integer jointAgeDifferenceMax,
                              String basisReference, LocalDate basisDate,
-                             @Valid List<Form> forms, @Valid List<Frequency> frequencies) {
+                             @Valid List<Form> forms, @Valid List<Frequency> frequencies,
+                             @Valid Vesting vesting) {
+
+    /** A deferred annuity's vesting terms (D2); absent on an immediate annuity. */
+    public record Vesting(Integer minVestingAge, Integer maxVestingAge, String defaultFormCode, String defaultFrequency,
+                          BigDecimal maxCommutationPercent, Boolean surrenderBeforeVesting) {
+
+        /** A missing age becomes -1, so the window rule refuses it in its own words rather than an NPE. */
+        VestingTerms toTerms() {
+            return new VestingTerms(minVestingAge != null ? minVestingAge : -1, maxVestingAge != null ? maxVestingAge : -1,
+                defaultFormCode, defaultFrequency, maxCommutationPercent, surrenderBeforeVesting);
+        }
+    }
 
     public record Form(String formCode, Integer guaranteeYears, Boolean joint, BigDecimal survivorPercent,
                        BigDecimal escalationPercent, Boolean capitalProtected, AnnuityRateBasis rateBasis,
@@ -36,7 +49,8 @@ public record AnnuityRequest(AnnuityTiming timing, Integer proofOfLifeIntervalMo
             jointAgeDifferenceMin, jointAgeDifferenceMax, basisReference, basisDate,
             forms == null ? List.of() : forms.stream().map(AnnuityRequest::toForm).toList(),
             frequencies == null ? List.of() : frequencies.stream()
-                .map(f -> new AnnuityFrequencyFactor(f.frequency(), f.factor())).toList());
+                .map(f -> new AnnuityFrequencyFactor(f.frequency(), f.factor())).toList(),
+            vesting != null ? vesting.toTerms() : null);
     }
 
     private static int orZero(Integer value) {

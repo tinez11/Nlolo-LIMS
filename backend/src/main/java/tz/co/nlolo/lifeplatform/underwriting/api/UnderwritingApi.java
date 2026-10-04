@@ -111,6 +111,16 @@ public interface UnderwritingApi {
     java.util.Optional<AnnuityChoice> annuityChoice(UUID caseId);
 
     /**
+     * Record (or change, until decided) a deferred annuity case's retirement age (product step 5 D2).
+     * Refused on any version that is not a deferred annuity, outside the version's vesting window, and
+     * for an age the applicant has already reached.
+     */
+    DeferredAnnuityChoice recordDeferredAnnuityChoice(UUID caseId, int retirementAge, String recordedBy);
+
+    /** A deferred annuity case's choice; empty for every other case, and for one not yet chosen -- never a throw. */
+    java.util.Optional<DeferredAnnuityChoice> deferredAnnuityChoice(UUID caseId);
+
+    /**
      * Record a human underwriting decision, and publish {@code UnderwritingDecisionMade}.
      *
      * <p>The only thing that settles a case, and therefore the only thing that puts a policy in

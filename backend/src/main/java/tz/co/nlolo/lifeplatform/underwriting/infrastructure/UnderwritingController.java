@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
 
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.AnnuityChoice;
+import tz.co.nlolo.lifeplatform.underwriting.api.DeferredAnnuityChoice;
 import tz.co.nlolo.lifeplatform.underwriting.api.BeneficiaryNomination;
 import tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal;
 import tz.co.nlolo.lifeplatform.underwriting.api.MedicalDisclosureView;
@@ -102,6 +103,9 @@ public class UnderwritingController {
         if (request.annuityChoice() != null) {
             underwritingApi.recordAnnuityChoice(view.caseId(), request.annuityChoice().toApi(), jwt.getSubject());
         }
+        if (request.deferredAnnuity() != null) {
+            underwritingApi.recordDeferredAnnuityChoice(view.caseId(), request.deferredAnnuity().age(), jwt.getSubject());
+        }
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
@@ -183,6 +187,26 @@ public class UnderwritingController {
                                                              @RequestBody OpenCaseRequest.AnnuityChoiceDto request,
                                                              @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(underwritingApi.recordAnnuityChoice(caseId, request.toApi(), jwt.getSubject()));
+    }
+
+    /**
+     * A deferred annuity case's retirement age and target date (product step 5 D2). 404
+     * DEFERRED_ANNUITY_CHOICE_NOT_FOUND when there is none -- also the answer for every other case.
+     */
+    @GetMapping("/cases/{caseId}/deferred-annuity-choice")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<DeferredAnnuityChoice> getDeferredAnnuityChoice(@PathVariable UUID caseId) {
+        return underwritingApi.deferredAnnuityChoice(caseId).map(ResponseEntity::ok)
+            .orElseThrow(() -> new DeferredAnnuityChoiceNotFoundException(caseId));
+    }
+
+    /** Change a deferred annuity case's retirement age before it is decided. Whoever may open a case may change it. */
+    @PutMapping("/cases/{caseId}/deferred-annuity-choice")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<DeferredAnnuityChoice> recordDeferredAnnuityChoice(@PathVariable UUID caseId,
+                                                                             @RequestBody OpenCaseRequest.DeferredAnnuityDto request,
+                                                                             @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(underwritingApi.recordDeferredAnnuityChoice(caseId, request.age(), jwt.getSubject()));
     }
 
     /**

@@ -15,7 +15,10 @@ import java.util.Set;
  */
 public final class AccumulationPlanValidator {
 
-    /** Q9. ANNUITY waits for D: a pension must not be sellable before it can vest. */
+    /**
+     * Q9. ANNUITY only as a deferred annuity, which can vest (D2) -- a pension must not be sellable
+     * before it can vest, so an ANNUITY account needs the version's vesting terms.
+     */
     private static final Set<ProductCategory> ACCOUNT_CATEGORIES =
         EnumSet.of(ProductCategory.ENDOWMENT, ProductCategory.WHOLE_LIFE, ProductCategory.EDUCATION_SAVINGS);
 
@@ -24,10 +27,15 @@ public final class AccumulationPlanValidator {
     private AccumulationPlanValidator() {}
 
     public static void validate(ProductCategory category, AccumulationPlan plan, CashValuePlan cashValue) {
+        validate(category, plan, cashValue, false);
+    }
+
+    public static void validate(ProductCategory category, AccumulationPlan plan, CashValuePlan cashValue,
+                                boolean deferredAnnuity) {
         if (plan == null || !plan.isAccount()) {
             return;
         }
-        if (!ACCOUNT_CATEGORIES.contains(category)) {
+        if (!ACCOUNT_CATEGORIES.contains(category) && !(deferredAnnuity && category == ProductCategory.ANNUITY)) {
             fail("A " + category + " product cannot use an account value basis");
         }
         if (cashValue != null && cashValue.isPresent()) {

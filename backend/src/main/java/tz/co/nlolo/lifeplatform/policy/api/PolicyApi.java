@@ -643,6 +643,19 @@ public interface PolicyApi {
     void endAnnuity(String policyNumber);
 
     /**
+     * A deferred annuity vested on this date (product step 5 D2): recorded on the policy so it is never
+     * again treated as an account, and {@code policy.AnnuityVested} published so billing stops.
+     * Idempotent: a second call records and publishes nothing.
+     */
+    void recordVesting(String policyNumber, LocalDate vestedOn);
+
+    /**
+     * A deferral with contributions continuing (D2): the premium-paying term runs to {@code until}.
+     * Publishes {@code policy.PremiumPayingTermRestated}. Returns the new paying end.
+     */
+    LocalDate extendPremiumPayingTerm(String policyNumber, LocalDate until);
+
+    /**
      * Recompute a savings policy's cash value from the product's cash-value table, given premiums
      * are paid to {@code paidToDate} (null = nothing paid yet). A no-op for a policy whose version
      * carries no cash-value config -- pure protection has no cash value. Called on each collected

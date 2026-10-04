@@ -1,5 +1,13 @@
 import { Plus, X } from 'lucide-react';
-import { Controller, useFieldArray, useWatch, type Control, type FieldErrors, type UseFormRegister } from 'react-hook-form';
+import {
+  Controller,
+  useFieldArray,
+  useWatch,
+  type Control,
+  type FieldErrors,
+  type UseFormRegister,
+  type UseFormSetValue,
+} from 'react-hook-form';
 import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
@@ -29,24 +37,87 @@ export function AnnuityTermsSection({
   register,
   control,
   errors,
+  setValue,
 }: {
   register: UseFormRegister<PublishVersionFormInput>;
   control: Control<PublishVersionFormInput, unknown, PublishVersionFormValues>;
   errors: FieldErrors<PublishVersionFormInput>;
+  setValue: UseFormSetValue<PublishVersionFormInput>;
 }) {
   const forms = useFieldArray({ control, name: 'annuityForms' });
   const formValues = useWatch({ control, name: 'annuityForms' });
   const anyJoint = (formValues ?? []).some((f) => f.joint);
+  const annuityKind = useWatch({ control, name: 'annuityKind' });
+  const deferred = annuityKind === 'DEFERRED';
+  const kindField = register('annuityKind');
 
   return (
     <div className="space-y-3 rounded-md border border-border p-3">
       <div>
         <p className="text-xs font-medium text-muted-foreground">Annuity terms</p>
         <p className="mt-0.5 text-xs text-subtle-foreground">
-          The income each 1,000 of purchase price buys a year, by form and age. Every entry age this version accepts
-          must have a rate in every form — a gap is refused here, never defaulted at purchase.
+          {deferred
+            ? 'The income each 1,000 of the balance buys a year at vesting, by form and age. Every vesting age in the window must have a rate in every form.'
+            : 'The income each 1,000 of purchase price buys a year, by form and age. Every entry age this version accepts must have a rate in every form — a gap is refused here, never defaulted at purchase.'}
         </p>
       </div>
+      <FormField label="Annuity kind">
+        <Select
+          inputSize="sm"
+          {...kindField}
+          onChange={(e) => {
+            void kindField.onChange(e);
+            // A deferred annuity saves in an account first; an immediate one never does.
+            setValue('valueBasis', e.target.value === 'DEFERRED' ? 'ACCOUNT' : 'SCALE');
+          }}
+        >
+          <option value="IMMEDIATE">Immediate (bought with a single premium)</option>
+          <option value="DEFERRED">Deferred (saves in an account, then vests)</option>
+        </Select>
+      </FormField>
+      {deferred && (
+        <fieldset className="space-y-2 rounded-md border border-border p-3">
+          <legend className="text-xs font-medium text-muted-foreground">Vesting</legend>
+          <p className="text-xs text-subtle-foreground">
+            The pension vests on the retirement age chosen at sale, or as staff instruct inside this window. With no
+            instruction it vests into the default form and frequency with no lump sum, at the rates in force that day.
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            <FormField label="Minimum vesting age" error={errors.vestingMinAge?.message}>
+              <Input inputSize="sm" inputMode="numeric" {...register('vestingMinAge')} />
+            </FormField>
+            <FormField label="Maximum vesting age" error={errors.vestingMaxAge?.message}>
+              <Input inputSize="sm" inputMode="numeric" {...register('vestingMaxAge')} />
+            </FormField>
+            <FormField label="Lump-sum cap (%)" error={errors.vestingCap?.message}>
+              <Input inputSize="sm" inputMode="decimal" placeholder="25" {...register('vestingCap')} />
+            </FormField>
+            <FormField label="Default form" error={errors.vestingDefaultForm?.message}>
+              <Select inputSize="sm" {...register('vestingDefaultForm')}>
+                <option value="">Choose…</option>
+                {(formValues ?? []).filter((f) => f.formCode !== '').map((f) => (
+                  <option key={f.formCode} value={f.formCode}>{f.formCode}</option>
+                ))}
+              </Select>
+            </FormField>
+            <FormField label="Default frequency" error={errors.vestingDefaultFrequency?.message}>
+              <Select inputSize="sm" {...register('vestingDefaultFrequency')}>
+                <option value="">Choose…</option>
+                {(['MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL', 'ANNUAL'] as const).map((f) => (
+                  <option key={f} value={f}>{FREQUENCY_LABEL[f]}</option>
+                ))}
+              </Select>
+            </FormField>
+            <FormField label="Locked before vesting" error={errors.vestingLocked?.message}>
+              <Select inputSize="sm" {...register('vestingLocked')}>
+                <option value="">Choose…</option>
+                <option value="YES">Yes — no surrender or withdrawal before it vests</option>
+                <option value="NO">No — it may be surrendered before it vests</option>
+              </Select>
+            </FormField>
+          </div>
+        </fieldset>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <FormField label="Income paid" error={errors.annuityTiming?.message}>
           <Select inputSize="sm" {...register('annuityTiming')}>

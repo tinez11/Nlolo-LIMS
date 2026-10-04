@@ -37,7 +37,7 @@ public final class AnnuityPlanValidator {
         if (!hasTerms) {
             fail("An ANNUITY version must state its annuity terms: forms, rates and frequencies");
         }
-        checkExclusions(cashValue, accumulation, deposit, bonus, payout);
+        checkExclusions(cashValue, accumulation, deposit, bonus, payout, plan.deferred());
         checkTerms(plan, bounds);
         Set<String> codes = new HashSet<>();
         for (AnnuityForm form : plan.forms()) {
@@ -51,18 +51,30 @@ public final class AnnuityPlanValidator {
         if (anyJoint && (plan.jointAgeDifferenceMin() == null || plan.jointAgeDifferenceMax() == null)) {
             fail("A joint-life form needs the version's range of age differences");
         }
+        // An immediate annuity is priced on the day it is bought, so its grid covers the entry ages. A
+        // deferred one is priced on the day it vests (D2), so its grid covers the vesting window and
+        // the entry ages need no rate at all.
+        // A malformed window is VestingPlanValidator's to name; walking it here would only report a
+        // missing rate for an age like -1.
+        int from = plan.deferred() ? plan.vesting().minVestingAge() : bounds.minEntryAge();
+        int to = plan.deferred() ? plan.vesting().maxVestingAge() : bounds.maxEntryAge();
+        if (from < 0 || to > 120) {
+            to = from - 1;
+        }
         for (AnnuityForm form : plan.forms()) {
-            checkCoverage(plan, form, bounds.minEntryAge(), bounds.maxEntryAge());
+            checkCoverage(plan, form, from, to);
         }
         checkFrequencies(plan.frequencies());
     }
 
+    /** A deferred annuity (D2) saves in an account before it vests, so only it may carry one; a deposit never. */
     private static void checkExclusions(CashValuePlan cashValue, AccumulationPlan accumulation, DepositPlan deposit,
-                                        BonusPlan bonus, PayoutPlan payout) {
+                                        BonusPlan bonus, PayoutPlan payout, boolean deferred) {
         if (cashValue != null && cashValue.isPresent()) {
             fail("An ANNUITY version cannot carry a cash-value table");
         }
-        if ((accumulation != null && accumulation.isAccount()) || (deposit != null && deposit.isDeposit())) {
+        // D1's words, unchanged (plan Task 1): the console and D1's tests rely on them.
+        if ((accumulation != null && accumulation.isAccount() && !deferred) || (deposit != null && deposit.isDeposit())) {
             fail("An ANNUITY version cannot be valued by an account or as a deposit");
         }
         if (bonus != null && bonus.participating()) {

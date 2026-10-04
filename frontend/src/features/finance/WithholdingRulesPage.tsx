@@ -27,6 +27,7 @@ const KIND_LABEL: Record<string, string> = {
   MATURITY: 'Maturities',
   INCOME: 'Income payouts',
   RETURN_OF_PREMIUM: 'Premium returns',
+  COMMUTATION: 'Pension lump sums',
 };
 
 /**

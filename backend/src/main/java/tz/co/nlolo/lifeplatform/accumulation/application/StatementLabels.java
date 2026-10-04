@@ -17,6 +17,7 @@ final class StatementLabels {
             case WITHDRAWAL -> "Withdrawals";
             case SURRENDER -> "Surrender";
             case MATURITY -> "Maturity";
+            case VESTING -> "Pension vested";
             case DEATH_CLAIM -> "Death claim";
             case FREE_LOOK_REFUND -> "Free-look cancellation";
             case ADJUSTMENT -> "Adjustments";

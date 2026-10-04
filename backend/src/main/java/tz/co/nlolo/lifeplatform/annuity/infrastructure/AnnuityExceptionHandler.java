@@ -24,4 +24,20 @@ public class AnnuityExceptionHandler {
         problem.setProperty("traceId", UUID.randomUUID().toString());
         return problem;
     }
+
+    @ExceptionHandler(NotADeferredAnnuityException.class)
+    public ProblemDetail handleNotADeferredAnnuity(NotADeferredAnnuityException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problem.setProperty("errorCode", "NOT_A_DEFERRED_ANNUITY");
+        problem.setProperty("traceId", UUID.randomUUID().toString());
+        return problem;
+    }
+
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.annuity.api.VestingRefusedException.class)
+    public ProblemDetail handleVestingRefused(tz.co.nlolo.lifeplatform.annuity.api.VestingRefusedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setProperty("errorCode", "VESTING_REFUSED");
+        problem.setProperty("traceId", UUID.randomUUID().toString());
+        return problem;
+    }
 }

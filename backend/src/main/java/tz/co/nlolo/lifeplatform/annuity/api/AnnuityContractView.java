@@ -13,4 +13,6 @@ public record AnnuityContractView(String policyNumber, ContractStatus status, St
                                   BigDecimal annualRatePerMille, BigDecimal factor, BigDecimal annualIncome,
                                   BigDecimal instalment, LocalDate firstDueDate, LocalDate guaranteeEndDate,
                                   UUID firstDeathPartyId, LocalDate firstDeathDate, LocalDate lastDeathDate,
-                                  BigDecimal overpaymentOwed, String lockFailureReason) {}
+                                  BigDecimal overpaymentOwed, String lockFailureReason,
+                                  /* D2: why a deferred annuity ended or was cancelled before it vested. */
+                                  String endReason) {}

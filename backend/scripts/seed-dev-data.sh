@@ -271,6 +271,38 @@ ANN_VERSION_RESP=$(curl -sfi -X POST "$API/products/$ANN_PRODUCT_ID/versions" \
   }')
 echo "$ANN_VERSION_RESP" | head -1
 
+# A deferred annuity -- a pension (product step 5 D2): contributions save in a 4% account from entry
+# (18-55), and the pension vests between 55 and 70 into a life annuity with a 10-year guarantee, up to
+# 25% taken as a lump sum. Locked: nothing can be surrendered or withdrawn before it vests. Its grid
+# covers the VESTING ages, not the entry ages; the rates are generated, NOT actuarial.
+PEN_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
+  '{"productCode":"PEN-DEF-01","productName":"Nlolo Pensheni Akiba","category":"ANNUITY","defaultCurrency":"TZS"}')
+PEN_PRODUCT_ID=$(jsonval "$PEN_PRODUCT_JSON" productId)
+echo "pensionProductId=$PEN_PRODUCT_ID"
+
+PEN_RATES=$(awk 'BEGIN{for(a=55;a<=70;a++){printf "%s{\"age\":%d,\"annualRatePerMille\":%.2f}", (a>55?",":""), a, 60+(a-55)*1.5}}')
+
+PEN_VERSION_RESP=$(curl -sfi -X POST "$API/products/$PEN_PRODUCT_ID/versions" \
+  -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuid)" -d '{
+    "ifrsMeasurementModel":"GMM","effectiveDate":"2020-01-01",
+    "payoutTerms":{"freeLookDays":15},
+    "tiraFiling":{"reference":"TIRA/DEMO/PEN/0001","approvalDate":"2020-01-01"},
+    "eligibility":{"minEntryAge":18,"maxEntryAge":55,"minSumAssured":50000,"maxSumAssured":10000000},
+    "ratingTable":[{"factorType":"AGE","band":"18-55","multiplier":1.0,"ageFrom":18,"ageTo":55},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+    "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
+    "accumulation":{"guaranteedRatePercent":4,"minimumBalance":0,
+                    "charges":[{"fromPolicyYear":1,"contributionAllocationPercent":0,"transferAllocationPercent":0,"monthlyPolicyFee":0}]},
+    "annuity":{"timing":"ARREARS","proofOfLifeIntervalMonths":12,
+               "basisReference":"DEMO-BASIS-NOT-ACTUARIAL","basisDate":"2020-01-01",
+               "forms":[
+                 {"formCode":"LIFE-10G","guaranteeYears":10,"joint":false,"escalationPercent":0,"capitalProtected":false,"rateBasis":"UNISEX","rates":['"$PEN_RATES"']}],
+               "frequencies":[{"frequency":"MONTHLY","factor":0.98},{"frequency":"ANNUAL","factor":1}],
+               "vesting":{"minVestingAge":55,"maxVestingAge":70,"defaultFormCode":"LIFE-10G","defaultFrequency":"MONTHLY",
+                          "maxCommutationPercent":25,"surrenderBeforeVesting":false}}
+  }')
+echo "$PEN_VERSION_RESP" | head -1
+
 # A CREDIT_LIFE product, and a lender to hold a scheme on it.
 #
 # Neither existed here, and the consequence was not cosmetic: the console's "Credit-life scheme"

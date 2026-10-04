@@ -79,6 +79,7 @@ class ProductApiIntegrationTest {
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/product/V22__annuity_terms.sql",
+            "db-migrations/product/V23__vesting_terms.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -1951,5 +1952,55 @@ class ProductApiIntegrationTest {
                 AccumulationPlan.none(), DepositPlan.none(), BonusPlan.none(), lifeOnlyAnnuity(), "actuary@nlolo.co.tz"))
             .isInstanceOf(InvalidProductVersionException.class)
             .hasMessage("A free-look period in days is required on an individual product");
+    }
+
+    // ---- Step 5 D2: a deferred annuity ----
+
+    private static final EligibilityBounds DEFERRED_ENTRY_AGES = new EligibilityBounds(50, 55, null, null, null, null);
+    private static final AccumulationPlan PENSION_ACCOUNT = new AccumulationPlan(ValueBasis.ACCOUNT, new BigDecimal("3"),
+        BigDecimal.ZERO, List.of(new AccumulationChargeRow(1, null, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)));
+
+    /** Saves from 50..55, vests 60..62 -- the grid covers the vesting window only. */
+    private static AnnuityPlan deferredAnnuity() {
+        AnnuityPlan immediate = lifeOnlyAnnuity();
+        return new AnnuityPlan(true, immediate.timing(), immediate.proofOfLifeIntervalMonths(), null, null,
+            immediate.basisReference(), immediate.basisDate(), immediate.forms(), immediate.frequencies(),
+            new VestingTerms(60, 62, "LIFE-0G", "MONTHLY", new BigDecimal("25"), Boolean.FALSE));
+    }
+
+    private UUID publishDeferred(String code, AccumulationPlan account) {
+        ProductSummaryView product = productApi.createProduct(code, "Deferred annuity", ProductCategory.ANNUITY, "TZS",
+            "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.GMM, LocalDate.now(), null,
+            payoutRatingTable(), payoutDeathOnly(), null, List.of(), DEFERRED_ENTRY_AGES, FrequencyLoading.none(),
+            ANY_FILING, CashValuePlan.none(), FREE_LOOK_15, account, DepositPlan.none(), BonusPlan.none(),
+            deferredAnnuity(), "actuary@nlolo.co.tz");
+        return productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+    }
+
+    @Test
+    void aDeferredAnnuityRoundTripsItsVestingTerms() {
+        AnnuityPlan read = productApi.resolveAnnuityPlan(publishDeferred("DEF-1", PENSION_ACCOUNT));
+        assertThat(read.deferred()).isTrue();
+        assertThat(read.vesting().minVestingAge()).isEqualTo(60);
+        assertThat(read.vesting().maxVestingAge()).isEqualTo(62);
+        assertThat(read.vesting().defaultFormCode()).isEqualTo("LIFE-0G");
+        assertThat(read.vesting().defaultFrequency()).isEqualTo("MONTHLY");
+        assertThat(read.vesting().maxCommutationPercent()).isEqualByComparingTo("25");
+        assertThat(read.vesting().surrenderBeforeVesting()).isFalse();
+    }
+
+    @Test
+    void anImmediateAnnuityHasNoVestingTerms() {
+        AnnuityPlan read = productApi.resolveAnnuityPlan(publishAnnuity("DEF-2", lifeOnlyAnnuity()));
+        assertThat(read.vesting()).isNull();
+        assertThat(read.deferred()).isFalse();
+    }
+
+    @Test
+    void aDeferredAnnuityWithoutAnAccountIsRefused() {
+        assertThatThrownBy(() -> publishDeferred("DEF-3", AccumulationPlan.none()))
+            .isInstanceOf(InvalidProductVersionException.class)
+            .hasMessage("Vesting terms are only for an annuity that saves in an account before it vests");
     }
 }

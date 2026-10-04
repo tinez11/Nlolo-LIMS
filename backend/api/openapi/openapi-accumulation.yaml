@@ -689,7 +689,7 @@ components:
         type:
           type: string
           enum: [CONTRIBUTION, TOP_UP, TRANSFER_IN, ALLOCATION_CHARGE, POLICY_FEE, INTEREST, WITHDRAWAL,
-                 SURRENDER, MATURITY, DEATH_CLAIM, FREE_LOOK_REFUND, ADJUSTMENT, REVERSAL]
+                 SURRENDER, MATURITY, DEATH_CLAIM, FREE_LOOK_REFUND, ADJUSTMENT, REVERSAL, VESTING]
         amount:
           description: Signed -- a charge or a payment out is negative.
           $ref: 'openapi-common.yaml#/components/schemas/Money'

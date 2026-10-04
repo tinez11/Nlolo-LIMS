@@ -41,6 +41,14 @@ public class UnderwritingExceptionHandler {
         return problem;
     }
 
+    @ExceptionHandler(DeferredAnnuityChoiceNotFoundException.class)
+    public ProblemDetail handleNoDeferredAnnuityChoice(DeferredAnnuityChoiceNotFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problem.setProperty("errorCode", "DEFERRED_ANNUITY_CHOICE_NOT_FOUND");
+        problem.setProperty("traceId", UUID.randomUUID().toString());
+        return problem;
+    }
+
     @ExceptionHandler(UnderwritingCaseAlreadyDecidedException.class)
     public ProblemDetail handleAlreadyDecided(UnderwritingCaseAlreadyDecidedException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());

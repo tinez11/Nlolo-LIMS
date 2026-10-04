@@ -45,6 +45,15 @@ class AccumulationPlanValidatorTest {
     }
 
     @Test
+    void aDeferredAnnuityMayUseAnAccountAndAnImmediateOneStillMayNot() {
+        assertThatCode(() -> AccumulationPlanValidator.validate(ProductCategory.ANNUITY,
+            account(List.of(row(1, null))), CashValuePlan.none(), true)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> AccumulationPlanValidator.validate(ProductCategory.ANNUITY,
+                account(List.of(row(1, null))), CashValuePlan.none(), false))
+            .hasMessage("A ANNUITY product cannot use an account value basis");
+    }
+
+    @Test
     void refusesAScaleAndAnAccountTogether() {
         assertThatThrownBy(() -> AccumulationPlanValidator.validate(ProductCategory.ENDOWMENT,
                 account(List.of(row(1, null))), SCALE))

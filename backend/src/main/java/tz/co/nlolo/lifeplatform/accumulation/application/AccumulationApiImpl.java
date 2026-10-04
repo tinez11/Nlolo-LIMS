@@ -23,6 +23,7 @@ import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
 import tz.co.nlolo.lifeplatform.product.api.AccumulationChargeRow;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
+import tz.co.nlolo.lifeplatform.product.api.VestingTerms;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -100,6 +101,7 @@ public class AccumulationApiImpl implements AccumulationApi {
         }
         Account account = loadOpen(policyNumber);
         deposits.refuseMovement(account);
+        refuseIfLockedPension(account);
         if (withdrawals.existsByPolicyNumberAndStatusIn(policyNumber, List.of("REQUESTED", "APPROVED"))) {
             throw new AccumulationStateException("A withdrawal is already in flight on policy " + policyNumber);
         }
@@ -640,6 +642,36 @@ public class AccumulationApiImpl implements AccumulationApi {
             return BigDecimal.ZERO.setScale(2);
         }
         return close(account, source, EntryType.MATURITY, dueDate, "Matured", "MATURED", "system", null);
+    }
+
+    /**
+     * Called by the annuity module as a pension vests, inside its transaction -- so the closing entry,
+     * the lump sum and the annuity it buys commit together or not at all. Keyed on the policy: a
+     * pension vests once.
+     */
+    @Override
+    @Transactional
+    public BigDecimal closeForVesting(String policyNumber, LocalDate vestingDate) {
+        LedgerService.Source source = new LedgerService.Source("vesting", "vesting:" + policyNumber);
+        Optional<Posting> done = postings.findByTenantIdAndSourceTypeAndSourceRef(TenantContext.get(), source.type(), source.ref());
+        if (done.isPresent()) {
+            return entries.findByPostingIdOrderBySeq(done.get().getPostingId()).stream()
+                .filter(e -> e.type() == EntryType.VESTING).map(e -> e.getAmount().negate())
+                .findFirst().orElse(BigDecimal.ZERO.setScale(2));
+        }
+        Account account = accounts.lockForPosting(policyNumber).orElseThrow(() -> new AccountNotFoundException(policyNumber));
+        if (account.status() != AccountStatus.OPEN) {
+            return BigDecimal.ZERO.setScale(2);
+        }
+        return close(account, source, EntryType.VESTING, vestingDate, "Vested", "VESTED", "system", null);
+    }
+
+    /** A locked pension (spec Q9): nothing leaves before it vests. Product first, as everywhere. */
+    private void refuseIfLockedPension(Account account) {
+        VestingTerms vesting = productApi.resolveAnnuityPlan(account.getProductVersionId()).vesting();
+        if (vesting != null && !Boolean.TRUE.equals(vesting.surrenderBeforeVesting())) {
+            throw new AccumulationStateException("This pension cannot be surrendered or withdrawn from before it vests");
+        }
     }
 
     @Override

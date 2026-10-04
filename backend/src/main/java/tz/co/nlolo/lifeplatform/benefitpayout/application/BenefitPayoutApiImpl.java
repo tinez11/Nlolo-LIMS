@@ -248,7 +248,9 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
 
         // An account policy is never held for missed premiums: a missed contribution does not affect
         // it (the account pays its own fee), and its money has just left the account on this date.
-        boolean upToDate = accountValue || tally == null || tally.isPaidUpTo(i.getDueDate());
+        // A pension's lump sum likewise: the account it came from has already closed for vesting (D2).
+        boolean upToDate = accountValue || i.kind() == PayoutKind.COMMUTATION || tally == null
+            || tally.isPaidUpTo(i.getDueDate());
         i.fallDue(upToDate, valued);
         if (i.status() == InstalmentStatus.DUE && "SUSPENDED".equals(policyStatus)) {
             i.hold("Policy is suspended");
@@ -424,6 +426,7 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
             case INCOME -> "INCOME_PAYOUT";
             case RETURN_OF_PREMIUM -> "PREMIUM_RETURN_PAYOUT";
             case ANNUITY -> "ANNUITY_PAYOUT";
+            case COMMUTATION -> "COMMUTATION_PAYOUT";
         };
     }
 
@@ -863,6 +866,26 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
             proofOfLifeIntervalMonths, frequency, firstDue, baseAmount, currency, escalationPercent));
         expand(stream, LocalDate.now(CIVIL_ZONE).plusMonths(ANNUITY_HORIZON_MONTHS));
         return stream.getStreamId();
+    }
+
+    /**
+     * A pension's lump sum's row (D2). Not 0: the annuity stream writes row 0, and an ADVANCE annuity's
+     * first instalment is due on the vesting date -- the lump sum's date -- so (policy, row, date) would
+     * collide. A deferred annuity carries no authored rows (PayoutPlanValidator), so 1 is free.
+     */
+    private static final int COMMUTATION_ROW = 1;
+
+    @Override
+    @Transactional
+    public UUID scheduleCommutation(String policyNumber, LocalDate dueDate, BigDecimal amount, String currency) {
+        java.util.Optional<PayoutInstalment> existing =
+            instalments.findFirstByPolicyNumberAndKind(policyNumber, PayoutKind.COMMUTATION.name());
+        if (existing.isPresent()) {
+            return existing.get().getInstalmentId();
+        }
+        // The payee is named at review, as a maturity's is.
+        return instalments.save(new PayoutInstalment(TenantContext.get(), policyNumber, PayoutKind.COMMUTATION,
+            COMMUTATION_ROW, null, dueDate, amount, currency)).getInstalmentId();
     }
 
     /** The roll-forward drain's per-stream work: row-locked, so two runs cannot both expand it. */

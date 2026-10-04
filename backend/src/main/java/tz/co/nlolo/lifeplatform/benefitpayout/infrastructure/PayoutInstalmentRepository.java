@@ -42,6 +42,9 @@ public interface PayoutInstalmentRepository extends JpaRepository<PayoutInstalme
 
     boolean existsByPolicyNumberAndKindIn(String policyNumber, Collection<String> kinds);
 
+    /** A pension's one lump sum (D2): at most one COMMUTATION per policy. */
+    java.util.Optional<PayoutInstalment> findFirstByPolicyNumberAndKind(String policyNumber, String kind);
+
     /** Gross annuity income paid on a policy (product step 5): the figure a capital refund nets off. */
     @Query("select coalesce(sum(i.currentAmount), 0) from PayoutInstalment i "
         + "where i.policyNumber = :policyNumber and i.kind = 'ANNUITY' and i.status = 'PAID'")

@@ -98,12 +98,18 @@ export function UnderwritingCaseDetailPage() {
   // An annuity case carries its choice (product step 5); null for every other case.
   const annuityChoice = useAnnuityStore((s) => s.choice[caseId]);
   const loadAnnuityChoice = useAnnuityStore((s) => s.loadChoice);
+  // A deferred annuity case carries a retirement age instead (D2); null for every other case.
+  const deferredChoice = useAnnuityStore((s) => s.deferredChoice[caseId]);
+  const loadDeferredChoice = useAnnuityStore((s) => s.loadDeferredChoice);
 
   useEffect(() => {
     if (!caseId) return;
     void loadCase(caseId);
     void loadAnnuityChoice(caseId);
-  }, [caseId, loadCase, loadAnnuityChoice]);
+    void loadDeferredChoice(caseId);
+  }, [caseId, loadCase, loadAnnuityChoice, loadDeferredChoice]);
+  const choicesRead = !!annuityChoice && !isInitialLoad(annuityChoice) && !!deferredChoice && !isInitialLoad(deferredChoice);
+  const annuityCase = annuityChoice?.data != null || deferredChoice?.data != null;
 
   // Same reset-on-mount discipline as every other keyed mutation resource on
   // this console: `submittingAssessment`/`referring` outlive this page's own
@@ -227,6 +233,23 @@ export function UnderwritingCaseDetailPage() {
             </dl>
           </Panel>
         )}
+        {deferredChoice?.data && (
+          <Panel
+            title="Pension"
+            subtitle="The sum assured is the contribution per payment. The form is chosen when it vests, at the rates in force that day."
+          >
+            <dl className="px-4 pb-2">
+              <Field label="Retirement age" value={deferredChoice.data.retirementAge} />
+              <Field label="Vests on" value={formatDate(deferredChoice.data.targetDate)} />
+              {deferredChoice.data.ageEvidenceConfirmedBy && (
+                <Field
+                  label="Proof of age"
+                  value={`Confirmed by ${deferredChoice.data.ageEvidenceConfirmedBy}, ${formatInstant(deferredChoice.data.ageEvidenceConfirmedAt)}`}
+                />
+              )}
+            </dl>
+          </Panel>
+        )}
         {/*
           THE ACCEPTANCE THAT PRODUCED NOTHING.
 
@@ -301,10 +324,10 @@ export function UnderwritingCaseDetailPage() {
         */}
         {/* Waits for the choice read: the form's outcomes and checks differ on an annuity, and a
             form opened before the answer would keep the wrong ones. Keyed so it rebuilds if it changes. */}
-        {view && (view.status !== 'DECIDED' || isPostponed) && annuityChoice && !isInitialLoad(annuityChoice) && (
+        {view && (view.status !== 'DECIDED' || isPostponed) && choicesRead && (
           <DecisionPanel
-            key={annuityChoice.data ? 'annuity' : 'risk'}
-            annuity={annuityChoice.data != null}
+            key={annuityCase ? 'annuity' : 'risk'}
+            annuity={annuityCase}
             view={view}
             deciding={deciding}
             canDecide={roles.UNDERWRITER}

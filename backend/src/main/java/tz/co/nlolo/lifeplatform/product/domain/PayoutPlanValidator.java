@@ -50,6 +50,9 @@ public final class PayoutPlanValidator {
         if (plan.rows().stream().anyMatch(r -> r.kind() == PayoutKind.ANNUITY)) {
             fail("ANNUITY payouts are set by an annuity's forms, not authored as rows");
         }
+        if (plan.rows().stream().anyMatch(r -> r.kind() == PayoutKind.COMMUTATION)) {
+            fail("COMMUTATION is a pension's lump sum at vesting, not an authored payout row");
+        }
         checkAccountRules(plan, accumulation);
         PayoutTerms terms = plan.terms();
         if (INDIVIDUAL.contains(category) && terms.freeLookDays() == null) {
