@@ -38,6 +38,7 @@ public class ProductApiImpl implements ProductApi {
     private final AnnuityFormRepository annuityFormRepository;
     private final AnnuityRateEntryRepository annuityRateEntryRepository;
     private final AnnuityFrequencyEntryRepository annuityFrequencyEntryRepository;
+    private final VersionVestingTermsRepository versionVestingTermsRepository;
 
     public ProductApiImpl(ProductDefinitionRepository productDefinitionRepository, ProductVersionRepository productVersionRepository,
                            RatingFactorRepository ratingFactorRepository, BenefitScheduleEntryRepository benefitScheduleEntryRepository,
@@ -53,7 +54,9 @@ public class ProductApiImpl implements ProductApi {
                            VersionAnnuityTermsRepository versionAnnuityTermsRepository,
                            AnnuityFormRepository annuityFormRepository,
                            AnnuityRateEntryRepository annuityRateEntryRepository,
-                           AnnuityFrequencyEntryRepository annuityFrequencyEntryRepository) {
+                           AnnuityFrequencyEntryRepository annuityFrequencyEntryRepository,
+                           VersionVestingTermsRepository versionVestingTermsRepository) {
+        this.versionVestingTermsRepository = versionVestingTermsRepository;
         this.versionAnnuityTermsRepository = versionAnnuityTermsRepository;
         this.annuityFormRepository = annuityFormRepository;
         this.annuityRateEntryRepository = annuityRateEntryRepository;
@@ -367,12 +370,13 @@ public class ProductApiImpl implements ProductApi {
         // A deposit's account plan is the server's: an account that charges and guarantees nothing,
         // so every ACCOUNT seam (lapse exemption, surrender event, death valuation) applies to it.
         AccumulationPlan effectiveAccumulation = deposit.isDeposit() ? AccumulationPlan.forDeposit() : accumulationPlan;
-        AccumulationPlanValidator.validate(category, effectiveAccumulation, cashValue);
+        AnnuityPlan annuity = annuityPlan != null ? annuityPlan : AnnuityPlan.none();
+        AccumulationPlanValidator.validate(category, effectiveAccumulation, cashValue, annuity.deferred());
         PayoutPlanValidator.validate(category, payoutPlan, effectiveAccumulation, deposit.isDeposit());
         // The EFFECTIVE account plan, so a deposit is told the deposit rule rather than the account one.
         BonusPlanValidator.validate(category, bonusPlan, cashValue, effectiveAccumulation, payoutPlan, deposit);
-        AnnuityPlan annuity = annuityPlan != null ? annuityPlan : AnnuityPlan.none();
         AnnuityPlanValidator.validate(category, annuity, bounds, cashValue, effectiveAccumulation, deposit, bonusPlan, payoutPlan);
+        VestingPlanValidator.validate(category, annuity, effectiveAccumulation, bounds);
 
         // Version rollover: ux_product_version_active permits at most one
         // is_active_for_new_business = true row per product_id. Retire whatever version
@@ -969,6 +973,9 @@ public class ProductApiImpl implements ProductApi {
         for (AnnuityFrequencyFactor f : plan.frequencies()) {
             annuityFrequencyEntryRepository.save(new AnnuityFrequencyEntry(tenantId, productVersionId, f));
         }
+        if (plan.vesting() != null) {
+            versionVestingTermsRepository.save(new VersionVestingTerms(tenantId, productVersionId, plan.vesting()));
+        }
     }
 
     /**
@@ -1000,7 +1007,9 @@ public class ProductApiImpl implements ProductApi {
                         .stream().map(AnnuityRateEntry::toRow).toList()))
                     .toList(),
                 annuityFrequencyEntryRepository.findByProductVersionId(productVersionId).stream()
-                    .map(AnnuityFrequencyEntry::toFactor).toList()))
+                    .map(AnnuityFrequencyEntry::toFactor).toList(),
+                // Still behind the category gate: only an ANNUITY version reads V23 (D2).
+                versionVestingTermsRepository.findById(productVersionId).map(VersionVestingTerms::toTerms).orElse(null)))
             .orElse(AnnuityPlan.none());
     }
 

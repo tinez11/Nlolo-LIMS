@@ -13,4 +13,8 @@ package tz.co.nlolo.lifeplatform.product.api;
  * -- PayoutPlanValidator refuses one -- because its amount comes from the annuity's own locked
  * figures and it has no end date; the annuity module opens its stream.
  */
-public enum PayoutKind { SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM, ANNUITY }
+public enum PayoutKind {
+    SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM, ANNUITY,
+    /** A pension's lump sum at vesting (D2). Never an authored row; the annuity module schedules it. */
+    COMMUTATION
+}

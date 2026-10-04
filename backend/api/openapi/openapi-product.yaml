@@ -539,6 +539,22 @@ components:
                 properties:
                   frequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL, null] }
                   factor: { type: [number, "null"], exclusiveMinimum: 0, maximum: 1 }
+            vesting:
+              description: >-
+                A deferred annuity (product step 5 D2): present only on an ANNUITY version that also
+                carries an ACCOUNT accumulation plan, and required on one. The version saves in an
+                account until it vests inside minVestingAge..maxVestingAge, then pays an income at the
+                rates of the product's current version on that day. Every form's grid must then cover
+                the vesting window rather than the entry ages. The default form may not be joint-life.
+                surrenderBeforeVesting has no default: the version must say whether it is locked.
+              type: [object, "null"]
+              properties:
+                minVestingAge: { type: [integer, "null"], minimum: 0, maximum: 120 }
+                maxVestingAge: { type: [integer, "null"], minimum: 0, maximum: 120 }
+                defaultFormCode: { type: [string, "null"], maxLength: 30 }
+                defaultFrequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL, null] }
+                maxCommutationPercent: { type: [number, "null"], minimum: 0, maximum: 100 }
+                surrenderBeforeVesting: { type: [boolean, "null"] }
         tiraFiling:
           description: >-
             The TIRA filing that authorises this version. Required: in Tanzania a product and
@@ -726,7 +742,7 @@ components:
       description: An annuity version's forms and payment frequencies (product step 5), without rate rows.
       type: object
       additionalProperties: false
-      required: [timing, proofOfLifeIntervalMonths, forms, frequencies]
+      required: [timing, proofOfLifeIntervalMonths, forms, frequencies, vesting]
       properties:
         timing: { type: string, enum: [ARREARS, ADVANCE] }
         proofOfLifeIntervalMonths: { type: integer }
@@ -753,6 +769,18 @@ components:
             properties:
               frequency: { type: string, enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL] }
               factor: { type: string, description: "Decimal string, no trailing zeros" }
+        vesting:
+          description: A deferred annuity's vesting terms (product step 5 D2); null on an immediate annuity.
+          type: [object, "null"]
+          additionalProperties: false
+          required: [minVestingAge, maxVestingAge, defaultFormCode, defaultFrequency, maxCommutationPercent, surrenderBeforeVesting]
+          properties:
+            minVestingAge: { type: integer }
+            maxVestingAge: { type: integer }
+            defaultFormCode: { type: string }
+            defaultFrequency: { type: string, enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL] }
+            maxCommutationPercent: { type: string, description: "Decimal string, no trailing zeros" }
+            surrenderBeforeVesting: { type: boolean }
     VersionRatingView:
       description: The rating basis for one version, for actuarial and product review.
       type: object

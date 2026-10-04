@@ -22,6 +22,8 @@ class AnnuityPlanValidatorTest {
         List.of(new AccumulationChargeRow(1, null, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)));
     private static final PayoutPlan MATURITY = PayoutPlan.authored(new PayoutTerms(15, null, null, null),
         List.of(new PayoutRowInput(PayoutKind.MATURITY, null, null, PayoutAmountBasis.PERCENT_OF_SA, new BigDecimal("100"), null)));
+    private static final DepositPlan DEPOSIT = new DepositPlan(List.of(
+        new DepositRateRow(new BigDecimal("500000"), 3, new BigDecimal("3"))));
     private static final PayoutPlan FREE_LOOK_ONLY = PayoutPlan.authored(new PayoutTerms(15, null, null, null), List.of());
 
     private static AnnuityRateRow unisex(int age, String rate) {
@@ -139,9 +141,54 @@ class AnnuityPlanValidatorTest {
     }
 
     @Test
-    void noAccountOrDeposit() {
+    void anImmediateAnnuityHasNoAccount() {
         refused(ProductCategory.ANNUITY, plan(List.of(lifeOnly())), AGES_60_TO_62, CashValuePlan.none(), ACCOUNT,
             DepositPlan.none(), BonusPlan.none(), FREE_LOOK_ONLY, "An ANNUITY version cannot be valued by an account or as a deposit");
+    }
+
+    @Test
+    void noDeposit() {
+        refused(ProductCategory.ANNUITY, plan(List.of(lifeOnly())), AGES_60_TO_62, CashValuePlan.none(), AccumulationPlan.none(),
+            DEPOSIT, BonusPlan.none(), FREE_LOOK_ONLY, "An ANNUITY version cannot be valued by an account or as a deposit");
+    }
+
+    // ---- Deferred (D2) ----
+
+    /** Vesting 63..65 over entry ages 60..62: the grid must cover 63..65, and 60..62 needs no rate. */
+    private static AnnuityPlan deferred(List<AnnuityForm> forms) {
+        return new AnnuityPlan(true, AnnuityTiming.ARREARS, 12, null, null, "ACT/ANN/2026", LocalDate.of(2026, 1, 1),
+            forms, FREQUENCIES, new VestingTerms(63, 65, "LIFE-0G", "MONTHLY", new BigDecimal("25"), Boolean.FALSE));
+    }
+
+    private static AnnuityForm lifeOnlyAtVesting() {
+        return form("LIFE-0G", 0, false, null, "0", false, AnnuityRateBasis.UNISEX,
+            List.of(unisex(63, "80"), unisex(64, "82"), unisex(65, "84")));
+    }
+
+    @Test
+    void aDeferredAnnuityMaySaveInAnAccount() {
+        assertThatCode(() -> validate(ProductCategory.ANNUITY, deferred(List.of(lifeOnlyAtVesting())), AGES_60_TO_62,
+            CashValuePlan.none(), ACCOUNT, DepositPlan.none(), BonusPlan.none(), FREE_LOOK_ONLY)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void aDeferredAnnuityIsStillNeverADepositACashValueTableOrWithProfits() {
+        refused(ProductCategory.ANNUITY, deferred(List.of(lifeOnlyAtVesting())), AGES_60_TO_62, CashValuePlan.none(),
+            AccumulationPlan.none(), DEPOSIT, BonusPlan.none(), FREE_LOOK_ONLY,
+            "An ANNUITY version cannot be valued by an account or as a deposit");
+        refused(ProductCategory.ANNUITY, deferred(List.of(lifeOnlyAtVesting())), AGES_60_TO_62, SCALE, ACCOUNT,
+            DepositPlan.none(), BonusPlan.none(), FREE_LOOK_ONLY, "An ANNUITY version cannot carry a cash-value table");
+        refused(ProductCategory.ANNUITY, deferred(List.of(lifeOnlyAtVesting())), AGES_60_TO_62, CashValuePlan.none(), ACCOUNT,
+            DepositPlan.none(), new BonusPlan(true, BonusMethod.SIMPLE, false, BonusSurrenderBasis.NONE, List.of()), FREE_LOOK_ONLY,
+            "An ANNUITY version cannot be with-profits");
+    }
+
+    @Test
+    void aDeferredGridCoversTheVestingWindowNotTheEntryAges() {
+        AnnuityForm shortOfTheTop = form("LIFE-0G", 0, false, null, "0", false, AnnuityRateBasis.UNISEX,
+            List.of(unisex(63, "80"), unisex(64, "82")));
+        refused(ProductCategory.ANNUITY, deferred(List.of(shortOfTheTop)), AGES_60_TO_62, CashValuePlan.none(), ACCOUNT,
+            DepositPlan.none(), BonusPlan.none(), FREE_LOOK_ONLY, "Form LIFE-0G has no rate for age 65");
     }
 
     @Test
