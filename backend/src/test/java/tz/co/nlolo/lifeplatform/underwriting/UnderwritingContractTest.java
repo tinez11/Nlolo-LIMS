@@ -181,6 +181,33 @@ class UnderwritingContractTest {
             .andExpect(status().isNotFound());
     }
 
+    /**
+     * Product step 5 D2: an ordinary case has no retirement age -- a 404 with its own code, to spec,
+     * and asked of product first, so this class needs no annuity migration.
+     */
+    @Test
+    void anOrdinaryCaseHasNoDeferredAnnuityChoice() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerTestApplicant(tenantId);
+        ProductFixture product = publishTestProduct(tenantId);
+        String caseId = JsonPath.read(
+            openCaseViaHttp(tenantId, applicantId, product.productId(), product.productVersionId()), "$.caseId");
+
+        mockMvc.perform(get("/underwriting/cases/" + caseId + "/deferred-annuity-choice")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("DEFERRED_ANNUITY_CHOICE_NOT_FOUND"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        mockMvc.perform(put("/underwriting/cases/" + caseId + "/deferred-annuity-choice")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"retirementAge\":60}"))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("Only a deferred annuity case records a retirement age"));
+    }
+
     /** A GROUP_LIFE product, since a group proposal is refused against any other category. */
     private ProductFixture publishGroupTestProduct(UUID tenantId) throws Exception {
         String createResponse = mockMvc.perform(post("/products")

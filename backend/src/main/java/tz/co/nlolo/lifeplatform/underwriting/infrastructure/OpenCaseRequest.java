@@ -89,7 +89,20 @@ public record OpenCaseRequest(
      * recorded with the case. Optional here -- it may also be recorded afterwards, and the decision
      * refuses an annuity case that has none.
      */
-    @Valid AnnuityChoiceDto annuityChoice) {
+    @Valid AnnuityChoiceDto annuityChoice,
+
+    /**
+     * On a deferred ANNUITY product only (product step 5 D2): the retirement age. Optional here, as
+     * annuityChoice is; the decision refuses a deferred case that has none.
+     */
+    @Valid DeferredAnnuityDto deferredAnnuity) {
+
+    /** A deferred annuity applicant's retirement age. Unannotated: a missing age is refused by the window rule. */
+    public record DeferredAnnuityDto(Integer retirementAge) {
+        public int age() {
+            return retirementAge != null ? retirementAge : -1;
+        }
+    }
 
     /** What an annuity applicant chose. Unannotated: the service refuses in the console's words. */
     public record AnnuityChoiceDto(String formCode, String frequency, UUID jointLifePartyId) {
