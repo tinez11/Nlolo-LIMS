@@ -510,6 +510,19 @@ public interface PolicyApi {
      * which is the common case and not an error.
      */
     List<BeneficiaryOfView> beneficiaryOf(UUID partyId);
+
+    /**
+     * Family funeral cover: write a newly issued funeral policy's lives from the application its case was
+     * accepted on -- the main member (the life assured) and each dependant, with the benefit and yearly
+     * premium the quote gave them. Called by issuance, in its transaction, straight after issuePolicy.
+     *
+     * @throws InvalidPolicyStateException if the policy already has lives, or the family no longer prices
+     */
+    void recordCoveredLives(String policyNumber, tz.co.nlolo.lifeplatform.underwriting.api.FuneralApplication application,
+                            String recordedBy);
+
+    /** A funeral policy's lives, main member first; empty for every other policy -- asked of product first. */
+    List<CoveredLifeView> coveredLives(String policyNumber);
     SurrenderQuoteView quoteSurrenderValue(String policyNumber);
     PolicyView getPolicy(String policyNumber);
 

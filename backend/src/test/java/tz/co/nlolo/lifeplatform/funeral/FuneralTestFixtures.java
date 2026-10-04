@@ -52,11 +52,14 @@ public class FuneralTestFixtures {
     private final ProductApi productApi;
     private final PartyApi partyApi;
     private final UnderwritingApi underwritingApi;
+    private final tz.co.nlolo.lifeplatform.policy.api.PolicyApi policyApi;
 
-    public FuneralTestFixtures(ProductApi productApi, PartyApi partyApi, UnderwritingApi underwritingApi) {
+    public FuneralTestFixtures(ProductApi productApi, PartyApi partyApi, UnderwritingApi underwritingApi,
+                               tz.co.nlolo.lifeplatform.policy.api.PolicyApi policyApi) {
         this.productApi = productApi;
         this.partyApi = partyApi;
         this.underwritingApi = underwritingApi;
+        this.policyApi = policyApi;
     }
 
     public record Product(UUID productId, UUID versionId) {}
@@ -114,6 +117,17 @@ public class FuneralTestFixtures {
         UUID caseId = openCase(tenant, product, mainMember, "2000000.00", "MONTHLY");
         asTenant(tenant, () -> underwritingApi.recordFuneralApplication(caseId, "B", dependants, "staff-opener"));
         return caseId;
+    }
+
+    /**
+     * A plan-B monthly family accepted the normal way, which issues the policy with its lives. Returns the
+     * policy number (the main member's only policy).
+     */
+    public String issueFamily(UUID tenant, Product product, UUID mainMember, List<FuneralApplication.Life> dependants) {
+        UUID caseId = openFamilyCase(tenant, product, mainMember, dependants);
+        decide(tenant, caseId, DecisionOutcome.ACCEPT, null);
+        return asTenant(tenant, () -> policyApi.searchPolicies(mainMember, null, null, null, null,
+            org.springframework.data.domain.PageRequest.of(0, 5)).getContent().get(0).policyNumber());
     }
 
     /** An assessment by one underwriter, then {@code outcome} by another (separation of duties). */

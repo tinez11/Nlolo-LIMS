@@ -476,6 +476,33 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CoverageStatusView' }
+  /policies/{policyNumber}/covered-lives:
+    get:
+      summary: A funeral policy's covered lives, main member first
+      description: >-
+        Family funeral cover. Every life on the policy, active and ended, with the benefit a death pays
+        (fixed when cover was set), the yearly premium, the life's own cover start and the day its
+        waiting period ends. An empty array for any policy that is not a funeral plan. Scoped as
+        GET /policies/{policyNumber}.
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CoveredLifeView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /policies/{policyNumber}/in-force:
     get:
       summary: Lightweight boolean in-force check (Deliverable 3 Rev 2, Po3)
@@ -1370,6 +1397,29 @@ paths:
 
 components:
   schemas:
+    CoveredLifeView:
+      type: object
+      additionalProperties: false
+      required: [coveredLifeId, role, fullName, dateOfBirth, sex, idNumber, student, partyId, benefit, yearlyPremium,
+                 pricedAtAge, coverStart, waitingPeriodEnds, coverEnd, status, endReason, endedOn]
+      properties:
+        coveredLifeId: { type: string, format: uuid }
+        role: { type: string, enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED] }
+        fullName: { type: string }
+        dateOfBirth: { type: string, format: date }
+        sex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+        idNumber: { type: [string, "null"] }
+        student: { type: boolean }
+        partyId: { type: [string, "null"], format: uuid, description: "The main member's party; a dependant's once promoted at claim" }
+        benefit: { type: number, description: "What a death pays, fixed when cover was set" }
+        yearlyPremium: { type: number }
+        pricedAtAge: { type: integer, description: "The age the premium was last priced at (issue, or the latest anniversary)" }
+        coverStart: { type: string, format: date, description: "This life's own cover start; its waiting period runs from here" }
+        waitingPeriodEnds: { type: [string, "null"], format: date, description: "First day a natural death is paid; null when there is no waiting period" }
+        coverEnd: { type: [string, "null"], format: date, description: "A scheduled end -- covered up to, not on, this date" }
+        status: { type: string, enum: [ACTIVE, ENDED] }
+        endReason: { type: [string, "null"], enum: [DECEASED, REMOVED, AGED_OUT, MAIN_MEMBER_DIED, FREE_COVER_ENDED, POLICY_ENDED, null] }
+        endedOn: { type: [string, "null"], format: date }
     SurrenderRequest:
       description: A customer surrender in flight.
       type: object

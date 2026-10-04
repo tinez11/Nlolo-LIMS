@@ -84,6 +84,12 @@ public class PolicyController {
         if (snapshot.category() == ProductCategory.GROUP_LIFE || snapshot.category() == ProductCategory.CREDIT_LIFE) {
             throw new NotASingleLifeProductException(snapshot.category().name());
         }
+        // A funeral plan covers a FAMILY, recorded on its case; issued by hand it would be a policy
+        // covering nobody but the main member, priced at whatever premium was typed.
+        if (snapshot.category() == ProductCategory.FUNERAL) {
+            throw new InvalidPolicyStateException("A funeral plan is issued from its underwriting case, which records"
+                + " the family and prices it; it cannot be issued by hand");
+        }
         List<PolicyApi.BeneficiaryInput> beneficiaries = request.beneficiaries() != null
             ? request.beneficiaries().stream().map(BeneficiaryInputDto::toApiInput).toList() : List.of();
         PolicyApi.IssueRequest issueRequest = new PolicyApi.IssueRequest(request.policyholderPartyId(), snapshot.productId(), request.productVersionId(),
@@ -467,6 +473,20 @@ public class PolicyController {
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         enforceCustomerOwnPolicyOnly(policyApi.getPolicy(policyNumber), jwt, authentication);
         return ResponseEntity.ok(CoverageStatusResponseDto.from(policyApi.getCoverageStatus(policyNumber, asOf)));
+    }
+
+    /**
+     * A funeral policy's covered lives, main member first (family funeral cover); an empty list for any
+     * other policy. Scoped exactly as getPolicy: a customer to their own policy, an agent to their team's.
+     */
+    @GetMapping("/policies/{policyNumber}/covered-lives")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<List<CoveredLifeView>> getCoveredLives(@PathVariable String policyNumber,
+            @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        PolicyView view = policyApi.getPolicy(policyNumber);
+        enforceCustomerOwnPolicyOnly(view, jwt, authentication);
+        enforceAgentOwnTeamOnly(view, jwt, authentication);
+        return ResponseEntity.ok(policyApi.coveredLives(policyNumber));
     }
 
     @GetMapping("/policies/{policyNumber}/in-force")

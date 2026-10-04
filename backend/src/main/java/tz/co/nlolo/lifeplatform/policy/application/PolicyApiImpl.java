@@ -87,6 +87,8 @@ public class PolicyApiImpl implements PolicyApi {
     private final ReferenceDataApi referenceDataApi;
     private final DistributionApi distributionApi;
     private final UnderwritingApi underwritingApi;
+    /** A funeral policy's lives (family funeral cover); touched only once the product says FUNERAL. */
+    private final CoveredLives coveredLives;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
@@ -100,10 +102,12 @@ public class PolicyApiImpl implements PolicyApi {
                           SurrenderRequestRepository surrenderRequestRepository,
                           PolicyBonusRepository policyBonusRepository,
                           AnnuityVestingRepository annuityVestingRepository,
+                          CoveredLives coveredLives,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
                           DistributionApi distributionApi, UnderwritingApi underwritingApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
         this.policyRepository = policyRepository;
+        this.coveredLives = coveredLives;
         this.annuityVestingRepository = annuityVestingRepository;
         this.policyBonusRepository = policyBonusRepository;
         this.policyAccountRepository = policyAccountRepository;
@@ -456,6 +460,24 @@ public class PolicyApiImpl implements PolicyApi {
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyEndorsed", tenantId,
             Map.of("policyNumber", policyNumber, "endorsementType", request.endorsementType(), "effectiveDate", request.effectiveDate().toString())));
         return toView(policy);
+    }
+
+    @Override
+    @Transactional
+    public void recordCoveredLives(String policyNumber, tz.co.nlolo.lifeplatform.underwriting.api.FuneralApplication application,
+                                   String recordedBy) {
+        Policy policy = findPolicyOrThrow(policyNumber, TenantContext.get());
+        if (!coveredLives.isFuneral(policy)) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " is not a funeral plan, so it covers no family");
+        }
+        coveredLives.recordAtIssue(policy, application, recordedBy);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CoveredLifeView> coveredLives(String policyNumber) {
+        Policy policy = findPolicyOrThrow(policyNumber, TenantContext.get());
+        return coveredLives.isFuneral(policy) ? coveredLives.list(policy) : List.of();
     }
 
     @Override
