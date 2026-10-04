@@ -467,8 +467,9 @@ public class ClaimsApiImpl implements ClaimsApi {
 
     private BigDecimal ceilingFor(Claim claim, ClaimableCoverView claimable) {
         // An annuity's death (product step 5) pays the capital-protection refund on the last death,
-        // or nothing: the annuity module, which holds the contract, values it as at the death.
-        if (claim.getClaimType() == ClaimType.DEATH && annuityApi.isAnnuity(claim.getPolicyNumber())) {
+        // or nothing: the annuity module, which holds the contract, values it as at the death. A
+        // deferred annuity still saving (D2) is an account policy, so the account is the ceiling.
+        if (claim.getClaimType() == ClaimType.DEATH && annuityApi.decidesDeath(claim.getPolicyNumber())) {
             return annuityApi.deathValue(claim.getPolicyNumber(), deceasedOf(claim), claim.getDateOfEvent()).capitalRefund();
         }
         return claim.getClaimType() == ClaimType.DEATH
@@ -530,7 +531,7 @@ public class ClaimsApiImpl implements ClaimsApi {
             // An annuity's death that pays nothing (product step 5): a verified death on a life-only
             // form, or a guarantee that continues instead of a lump sum. Settled at approval, with no
             // payee and no payment -- asking the rail to pay zero would only fail.
-            boolean annuity = claim.getClaimType() == ClaimType.DEATH && annuityApi.isAnnuity(claim.getPolicyNumber());
+            boolean annuity = claim.getClaimType() == ClaimType.DEATH && annuityApi.decidesDeath(claim.getPolicyNumber());
             boolean nothingToPay = annuity && approvedAmount != null && approvedAmount.signum() == 0;
             if (creditLife) {
                 // ON CREDIT LIFE THERE IS NO PAYEE TO CHOOSE. The insurer deals only with the
@@ -686,8 +687,11 @@ public class ClaimsApiImpl implements ClaimsApi {
             if (claim.getClaimType() == ClaimType.DEATH && claim.getPolicyMemberId() != null) {
                 policyApi.clearOpenDeathClaim(claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId);
             }
+            // policyNumber and claimType are additive (product step 5 D2): a pension held for a
+            // reported death resumes when that death claim is rejected.
             eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimRejected", tenantId,
-                Map.of("claimId", claimId, "reason", rejectionReason == null ? "" : rejectionReason)));
+                Map.of("claimId", claimId, "reason", rejectionReason == null ? "" : rejectionReason,
+                       "policyNumber", claim.getPolicyNumber(), "claimType", claim.getClaimType().name())));
         }
     }
 

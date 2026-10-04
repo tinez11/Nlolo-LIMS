@@ -42,6 +42,15 @@ public class PolicyEventListener {
                     api.onFreeLookCancelled(policyNumber);
                 }
             });
+        } else if ("policy.PolicySurrendered".equals(type)) {
+            // A surrender (D2). A settled claim closes a policy with this event too, carrying its
+            // claimId; a death before vesting is the claim approval's to record, so that one is skipped.
+            runner.run(envelope, e -> {
+                Map<String, Object> p = Payloads.of(e.payload());
+                if (p.get("claimId") == null) {
+                    api.onSurrendered((String) p.get("policyNumber"));
+                }
+            });
         } else if ("policy.PolicyNotTakenUp".equals(type)) {
             runner.run(envelope, e -> api.onNotTakenUp((String) Payloads.of(e.payload()).get("policyNumber")));
         }

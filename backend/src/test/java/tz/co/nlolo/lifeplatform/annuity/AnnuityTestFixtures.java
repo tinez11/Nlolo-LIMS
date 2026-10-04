@@ -149,6 +149,124 @@ public class AnnuityTestFixtures {
         });
     }
 
+    // ---- Deferred annuities (D2): save from 18-55, vest 55-70 ----
+
+    /** LIFE-0G and JOINT-50 with rates over the vesting window 55-70; MONTHLY and ANNUAL. */
+    public static AnnuityPlan deferredPlan(boolean surrenderBeforeVesting) {
+        List<AnnuityRateRow> life = new ArrayList<>();
+        List<AnnuityRateRow> joint = new ArrayList<>();
+        for (int age = 55; age <= 70; age++) {
+            life.add(new AnnuityRateRow(null, age, null, null, new BigDecimal(60 + age - 55)));
+            joint.add(new AnnuityRateRow(null, age, -10, 15, new BigDecimal(50 + age - 55)));
+        }
+        return new AnnuityPlan(true, AnnuityTiming.ARREARS, 12, -10, 15, "ACT/ANN/TEST", LocalDate.of(2026, 1, 1),
+            List.of(new AnnuityForm("LIFE-0G", 0, false, null, BigDecimal.ZERO, false, AnnuityRateBasis.UNISEX, life),
+                    new AnnuityForm("JOINT-50", 0, true, new BigDecimal("50"), BigDecimal.ZERO, false, AnnuityRateBasis.UNISEX, joint)),
+            List.of(new AnnuityFrequencyFactor("MONTHLY", new BigDecimal("0.9800")),
+                    new AnnuityFrequencyFactor("ANNUAL", BigDecimal.ONE)),
+            new VestingTerms(55, 70, "LIFE-0G", "MONTHLY", new BigDecimal("25"), surrenderBeforeVesting));
+    }
+
+    /** A 3% account that charges nothing, so a balance is the contributions plus interest. */
+    public static final AccumulationPlan PENSION_ACCOUNT = new AccumulationPlan(ValueBasis.ACCOUNT, new BigDecimal("3"),
+        BigDecimal.ZERO, List.of(new AccumulationChargeRow(1, null, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)));
+
+    /** A deferred annuity, entry ages 18-55; locked unless {@code surrenderBeforeVesting}. */
+    public Product publishDeferred(UUID tenant, boolean surrenderBeforeVesting) {
+        return asTenant(tenant, () -> {
+            int n = SEQ.incrementAndGet();
+            ProductSummaryView product = productApi.createProduct("DEF-" + n + "-" + tenant.toString().substring(0, 4),
+                "Deferred Annuity Test", ProductCategory.ANNUITY, "TZS", "actuary");
+            return publishDeferredVersion(tenant, product.productId(), deferredPlan(surrenderBeforeVesting));
+        });
+    }
+
+    /** A further version of a deferred product -- the one a later vesting is priced on (spec Q7). */
+    public Product publishDeferredVersion(UUID tenant, UUID productId, AnnuityPlan plan) {
+        return asTenant(tenant, () -> {
+            productApi.publishVersion(productId, IfrsMeasurementModel.GMM, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-80", BigDecimal.ONE, 18, 80),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+                null, List.of(), new EligibilityBounds(18, 55, null, null, null, null), FrequencyLoading.none(), ANY_FILING,
+                CashValuePlan.none(), PayoutPlan.authored(new PayoutTerms(15, null, null, null), List.of()),
+                PENSION_ACCOUNT, DepositPlan.none(), BonusPlan.none(), plan, "actuary");
+            return new Product(productId, productApi.getActiveSnapshot(productId, LocalDate.now()).productVersionId());
+        });
+    }
+
+    /** A single LIFE form named {@code formCode} at {@code rate} per mille for every vesting age, defaulting to it. */
+    public static AnnuityPlan deferredPlanWith(String formCode, int rate) {
+        List<AnnuityRateRow> rows = new ArrayList<>();
+        for (int age = 55; age <= 70; age++) {
+            rows.add(new AnnuityRateRow(null, age, null, null, new BigDecimal(rate)));
+        }
+        return new AnnuityPlan(true, AnnuityTiming.ARREARS, 12, null, null, "ACT/ANN/TEST-2", LocalDate.of(2026, 6, 1),
+            List.of(new AnnuityForm(formCode, 0, false, null, BigDecimal.ZERO, false, AnnuityRateBasis.UNISEX, rows)),
+            List.of(new AnnuityFrequencyFactor("MONTHLY", new BigDecimal("0.9800")),
+                    new AnnuityFrequencyFactor("ANNUAL", BigDecimal.ONE)),
+            new VestingTerms(55, 70, formCode, "MONTHLY", new BigDecimal("25"), Boolean.FALSE));
+    }
+
+    /** The party record corrected to a new sex (null = not recorded), everything else kept. */
+    public void amendSex(UUID tenant, UUID partyId, Sex sex) {
+        asTenant(tenant, () -> {
+            var p = partyApi.getPartyDetail(partyId);
+            return partyApi.amendIndividual(partyId, new IndividualRegistration(p.displayName(), p.dateOfBirth(), p.phoneNumber(),
+                p.email(), sex, null, IdentityDocument.none(), null, null, null, null, Address.none()), "test-staff");
+        });
+    }
+
+    /** The party record corrected to a new date of birth, everything else kept. */
+    public void amendDateOfBirth(UUID tenant, UUID partyId, LocalDate dateOfBirth) {
+        asTenant(tenant, () -> {
+            var p = partyApi.getPartyDetail(partyId);
+            return partyApi.amendIndividual(partyId, new IndividualRegistration(p.displayName(), dateOfBirth, p.phoneNumber(),
+                p.email(), p.sex(), null, IdentityDocument.none(), null, null, null, null, Address.none()), "test-staff");
+        });
+    }
+
+    /** A person born on {@code dateOfBirth}, of the given sex (null = not recorded). */
+    public UUID personBorn(UUID tenant, LocalDate dateOfBirth, Sex sex) {
+        return asTenant(tenant, () -> {
+            int n = SEQ.incrementAndGet();
+            return partyApi.registerIndividual(new IndividualRegistration("Saver " + n, dateOfBirth,
+                "+25571900" + String.format("%04d", n % 10000), null, sex, null, IdentityDocument.none(), null, null, null,
+                null, Address.none()), "test-agent").partyId();
+        });
+    }
+
+    /**
+     * Opens a deferred annuity case: {@code contribution} per {@code frequency} payment from
+     * {@code commencement}, recording the retirement age when given.
+     */
+    public UUID openDeferredCase(UUID tenant, Product product, UUID saver, String contribution, String frequency,
+                                 LocalDate commencement, Integer retirementAge) {
+        return asTenant(tenant, () -> {
+            UUID caseId = underwritingApi.openCase(saver, product.productId(), product.versionId(), new BigDecimal(contribution),
+                "TZS", null, new ProposalDetails(null, null, null, commencement, null, null, frequency, List.of()),
+                "staff-opener").caseId();
+            if (retirementAge != null) {
+                underwritingApi.recordDeferredAnnuityChoice(caseId, retirementAge, "staff-opener");
+            }
+            return caseId;
+        });
+    }
+
+    /**
+     * A deferred annuity bought the normal way: opened from today at 200,000.00 a month, retiring at
+     * {@code retirementAge}, and accepted on proof of age -- which issues the account policy. Returns
+     * the policy number.
+     */
+    public String issueDeferred(UUID tenant, Product product, UUID saver, int retirementAge) {
+        UUID caseId = openDeferredCase(tenant, product, saver, "200000.00", "MONTHLY", TODAY, retirementAge);
+        asTenant(tenant, () -> underwritingApi.decide(caseId,
+            new UnderwritingApi.DecisionInput(tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome.ACCEPT, null,
+                "Age proven by passport", true), "senior-two", true));
+        return asTenant(tenant, () -> policyApi.searchPolicies(saver, null, null, null, null,
+            org.springframework.data.domain.PageRequest.of(0, 5)).getContent().get(0).policyNumber());
+    }
+
     /** An ordinary WHOLE_LIFE product, entry ages 18-80, for "everyone else is unchanged" checks. */
     public Product publishOrdinary(UUID tenant) {
         return asTenant(tenant, () -> {

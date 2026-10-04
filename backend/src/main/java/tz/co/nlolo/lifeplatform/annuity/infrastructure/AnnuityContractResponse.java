@@ -13,7 +13,8 @@ public record AnnuityContractResponse(String policyNumber, String status, String
                                       Integer jointAge, String rateSex, String annualRatePerMille, String factor,
                                       Map<String, String> annualIncome, Map<String, String> instalment,
                                       String firstDueDate, String guaranteeEndDate, String firstDeathDate,
-                                      String lastDeathDate, Map<String, String> overpaymentOwed, String lockFailureReason) {
+                                      String lastDeathDate, Map<String, String> overpaymentOwed, String lockFailureReason,
+                                      String endReason) {
 
     static AnnuityContractResponse from(AnnuityContractView v) {
         String c = v.currency();
@@ -25,7 +26,7 @@ public record AnnuityContractResponse(String policyNumber, String status, String
             AnnuityController.plain(v.annualRatePerMille()), AnnuityController.plain(v.factor()),
             AnnuityController.money(v.annualIncome(), c), AnnuityController.money(v.instalment(), c),
             str(v.firstDueDate()), str(v.guaranteeEndDate()), str(v.firstDeathDate()), str(v.lastDeathDate()),
-            AnnuityController.money(v.overpaymentOwed(), c), v.lockFailureReason());
+            AnnuityController.money(v.overpaymentOwed(), c), v.lockFailureReason(), v.endReason());
     }
 
     private static String str(Object value) {

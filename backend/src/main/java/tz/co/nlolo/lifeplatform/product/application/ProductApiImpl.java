@@ -1013,8 +1013,14 @@ public class ProductApiImpl implements ProductApi {
             .orElse(AnnuityPlan.none());
     }
 
+    /**
+     * A refusal is an answer, not a failure: callers catch it and record it -- the D1 lock as
+     * LOCK_FAILED, the D2 vesting as a hold -- inside their own transaction. Without noRollbackFor the
+     * refusal, thrown through this proxy, marked that transaction rollback-only and the record never
+     * committed.
+     */
     @Override
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, noRollbackFor = AnnuityPricingRefusedException.class)
     public AnnuityPrice priceAnnuity(UUID productVersionId, AnnuityPricingInput input) {
         return AnnuityPricer.price(resolveAnnuityPlan(productVersionId), input);
     }

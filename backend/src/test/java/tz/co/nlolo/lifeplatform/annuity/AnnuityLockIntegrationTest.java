@@ -134,6 +134,25 @@ class AnnuityLockIntegrationTest {
         assertThat(annuityRows(policy)).hasSize(12);
     }
 
+    /**
+     * The lock's refusal is recorded, not lost (found in D2): the pricer's refusal, thrown through its
+     * transactional proxy, used to mark the lock's transaction rollback-only, so LOCK_FAILED never
+     * committed and the contract sat "awaiting payment" on a premium already paid.
+     */
+    @Test
+    void aPremiumThatNoLongerPricesIsRecordedAsLockFailed() {
+        var product = fixtures.publish(TENANT, AnnuityTestFixtures.everyForm());
+        UUID annuitant = fixtures.person(TENANT, 61, tz.co.nlolo.lifeplatform.party.api.Sex.FEMALE);
+        String policy = fixtures.buy(TENANT, product, annuitant, PRICE, AnnuityChoice.of("LIFE-BS", "MONTHLY", null));
+        // The sex the BY_SEX form priced on at acceptance is taken off the record before the premium lands.
+        fixtures.amendSex(TENANT, annuitant, null);
+        fixtures.collect(TENANT, policy, PRICE, TODAY);
+        AnnuityContractView c = contract(policy);
+        assertThat(c.status()).isEqualTo(ContractStatus.LOCK_FAILED);
+        assertThat(c.lockFailureReason()).isEqualTo("Form LIFE-BS is priced by sex and the annuitant's sex is not recorded");
+        assertThat(annuityRows(policy)).isEmpty();
+    }
+
     @Test
     void anAnnuityIssuedWithoutACaseIsVisibleAsLockFailedAndPaysNothing() {
         var product = fixtures.publish(TENANT, AnnuityTestFixtures.everyForm());

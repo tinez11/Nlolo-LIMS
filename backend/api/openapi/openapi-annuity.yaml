@@ -57,6 +57,95 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/annuity/vesting:
+    get:
+      summary: A deferred annuity's vesting -- when and into what it vests, and any hold
+      description: >-
+        Product step 5 D2. Any staff member. 404 NOT_A_DEFERRED_ANNUITY for every other policy -- the
+        console reads it as "no vesting panel". With no instruction, the pension vests on its target
+        date into the sold version's default form and frequency with no lump sum.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The vesting
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Vesting' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404':
+          description: Not a deferred annuity
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/annuity/vesting/instruction:
+    put:
+      summary: Record when and into what a pension vests
+      description: >-
+        Early, on the target date, or deferred -- inside the window the sold version allows. The form
+        and frequency must be offered by the product's CURRENT version, which prices the vesting. A
+        lump sum from 0% to the version's cap. A deferral must say whether contributions continue to
+        the new date or stop at the target. Replaces any earlier instruction and clears a hold. A
+        refusal is a 422 VESTING_REFUSED in words the console shows as they are.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VestingInstructionRequest' }
+      responses:
+        '200':
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Vesting' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/annuity/vesting/reconfirm-age:
+    post:
+      summary: Re-confirm proof of age after the party record changed
+      description: >-
+        Only while the vesting is held for age re-confirmation. The date of birth and sex now on
+        record become the confirmed pair, and the target date and window move with the date of birth.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: Re-confirmed; the hold is cleared
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Vesting' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /annuity-vestings/held:
+    get:
+      summary: Every pension held from vesting, with its reason, oldest hold first
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The held vestings
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Vesting' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
 components:
   schemas:
     AnnuityQuoteRequest:
@@ -91,7 +180,10 @@ components:
       required: [policyNumber, status, joint, capitalProtected, annuitantPartyId, purchasePrice, overpaymentOwed]
       properties:
         policyNumber: { type: string }
-        status: { type: string, enum: [AWAITING_PAYMENT, IN_PAYMENT, SURVIVOR, GUARANTEE, ENDED, CANCELLED, LOCK_FAILED] }
+        status:
+          type: string
+          description: ACCUMULATING is a deferred annuity still saving in its account (product step 5 D2).
+          enum: [ACCUMULATING, AWAITING_PAYMENT, IN_PAYMENT, SURVIVOR, GUARANTEE, ENDED, CANCELLED, LOCK_FAILED]
         formCode: { type: [string, "null"] }
         guaranteeYears: { type: [integer, "null"] }
         joint: { type: boolean }
@@ -102,7 +194,11 @@ components:
         frequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL, null] }
         annuitantPartyId: { type: string, format: uuid }
         jointLifePartyId: { type: [string, "null"], format: uuid }
-        purchasePrice: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        purchasePrice:
+          description: Null on a deferred annuity until it vests -- its price is the balance that day, less any lump sum.
+          anyOf:
+            - { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+            - { type: "null" }
         lockedOn: { type: [string, "null"], format: date }
         annuitantAge: { type: [integer, "null"] }
         jointAge: { type: [integer, "null"] }
@@ -123,3 +219,51 @@ components:
         lastDeathDate: { type: [string, "null"], format: date }
         overpaymentOwed: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         lockFailureReason: { type: [string, "null"] }
+        endReason:
+          type: [string, "null"]
+          description: Why a deferred annuity ended or was cancelled before it vested (product step 5 D2).
+    VestingInstructionRequest:
+      type: object
+      properties:
+        vestingDate: { type: [string, "null"], format: date, description: "Null means the target date" }
+        formCode: { type: [string, "null"] }
+        frequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL, null] }
+        jointLifePartyId: { type: [string, "null"], format: uuid, description: "Required on a joint-life form, refused otherwise" }
+        lumpSumPercent: { type: [number, "null"], minimum: 0, maximum: 100 }
+        contributions:
+          type: [string, "null"]
+          enum: [CONTINUE, STOP, null]
+          description: Required on a deferral (a date after the target), refused otherwise
+    Vesting:
+      type: object
+      additionalProperties: false
+      required: [policyNumber, targetDate, earliestVestingDate, latestVestingDate, vestingDate, formCode, frequency,
+                 jointLifePartyId, lumpSumPercent, maxCommutationPercent, instructed, contributions, holdReason, heldAt,
+                 vestedOn, vestedBalance, lumpSum, ageConfirmedBy, confirmedDateOfBirth, confirmedSex]
+      properties:
+        policyNumber: { type: string }
+        targetDate: { type: string, format: date, description: "The date of birth plus the retirement age" }
+        earliestVestingDate: { type: string, format: date, description: "At the sold version's minimum vesting age" }
+        latestVestingDate: { type: string, format: date, description: "At the sold version's maximum vesting age" }
+        vestingDate: { type: string, format: date, description: "The instruction's date, else the target" }
+        formCode: { type: string, description: "The instruction's form, else the sold version's default" }
+        frequency: { type: string, enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL] }
+        jointLifePartyId: { type: [string, "null"], format: uuid }
+        lumpSumPercent: { type: string, description: "Decimal string, no trailing zeros; 0 with no instruction" }
+        maxCommutationPercent: { type: string, description: "Decimal string, no trailing zeros" }
+        instructed: { type: boolean, description: "Whether a staff instruction stands, or the defaults apply" }
+        contributions: { type: [string, "null"], enum: [CONTINUE, STOP, null] }
+        holdReason: { type: [string, "null"], description: "Why the sweep could not vest it; it retries daily" }
+        heldAt: { type: [string, "null"], format: date-time }
+        vestedOn: { type: [string, "null"], format: date }
+        vestedBalance:
+          anyOf:
+            - { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+            - { type: "null" }
+        lumpSum:
+          anyOf:
+            - { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+            - { type: "null" }
+        ageConfirmedBy: { type: string }
+        confirmedDateOfBirth: { type: string, format: date }
+        confirmedSex: { type: [string, "null"], enum: [FEMALE, MALE, null] }

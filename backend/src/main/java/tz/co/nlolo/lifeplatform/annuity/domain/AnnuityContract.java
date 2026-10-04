@@ -38,7 +38,8 @@ public class AnnuityContract {
     @Column private String frequency;
     @Column(name = "annuitant_party_id", nullable = false) private UUID annuitantPartyId;
     @Column(name = "joint_life_party_id") private UUID jointLifePartyId;
-    @Column(name = "purchase_price", nullable = false) private BigDecimal purchasePrice;
+    /** Null on a deferred annuity until it vests: the price is the balance that day, less any lump sum. */
+    @Column(name = "purchase_price") private BigDecimal purchasePrice;
     @Column(nullable = false) private String currency;
     @Column(name = "locked_on") private LocalDate lockedOn;
     @Column(name = "annuitant_age") private Integer annuitantAge;
@@ -57,9 +58,48 @@ public class AnnuityContract {
     @Column(name = "last_death_claim_id") private UUID lastDeathClaimId;
     @Column(name = "overpayment_owed", nullable = false) private BigDecimal overpaymentOwed = BigDecimal.ZERO;
     @Column(name = "lock_failure_reason") private String lockFailureReason;
+    // D2 (annuity V2): a deferred annuity, the day it vested, the version whose rates priced it, and
+    // why it ended or was cancelled before vesting.
+    @Column(nullable = false) private boolean deferred;
+    @Column(name = "vested_on") private LocalDate vestedOn;
+    @Column(name = "priced_version_id") private UUID pricedVersionId;
+    @Column(name = "end_reason") private String endReason;
     @Version private long version;
 
     protected AnnuityContract() {}
+
+    /**
+     * A deferred annuity at issue (D2): saving in its account, with no form, price or lock until it
+     * vests. {@code soldVersionId} is the version it was SOLD on -- its vesting terms bind; the annuity
+     * it buys is priced on the product's current version at vesting.
+     */
+    public static AnnuityContract accumulating(UUID tenantId, String policyNumber, UUID soldVersionId,
+                                               UUID annuitantPartyId, String currency) {
+        AnnuityContract c = base(tenantId, policyNumber, soldVersionId, annuitantPartyId, null, currency);
+        c.status = ContractStatus.ACCUMULATING.name();
+        c.deferred = true;
+        return c;
+    }
+
+    /** A death approved before vesting: the account pays its balance; the annuity is never bought. */
+    public void endedBeforeVesting(String reason) {
+        requireAccumulating("end before vesting");
+        this.status = ContractStatus.ENDED.name();
+        this.endReason = reason;
+    }
+
+    /** A surrender before vesting, on an unlocked version: the account pays out; the annuity is never bought. */
+    public void cancelledBeforeVesting(String reason) {
+        requireAccumulating("be cancelled before vesting");
+        this.status = ContractStatus.CANCELLED.name();
+        this.endReason = reason;
+    }
+
+    private void requireAccumulating(String action) {
+        if (status() != ContractStatus.ACCUMULATING) {
+            throw new IllegalStateException("Annuity " + policyNumber + " is " + status + "; only one still saving can " + action);
+        }
+    }
 
     /** Issued with its form, frequency and lives; nothing is locked until the premium arrives. */
     public static AnnuityContract issued(UUID tenantId, String policyNumber, UUID productVersionId, AnnuityForm form,
@@ -100,6 +140,32 @@ public class AnnuityContract {
         c.purchasePrice = purchasePrice;
         c.currency = currency;
         return c;
+    }
+
+    /**
+     * A deferred annuity vests (D2): it takes its form from the version CURRENT on the vesting date
+     * (spec Q7), its price is the balance less any lump sum, and the income locks that day -- the
+     * same once-only lock D1 applies when a single premium arrives.
+     */
+    public void vest(AnnuityForm form, String timing, int proofOfLifeIntervalMonths, String frequency, UUID jointLifePartyId,
+                     BigDecimal purchasePrice, AnnuityPrice price, LocalDate vestingDate, LocalDate firstDue,
+                     LocalDate guaranteeEnd, UUID pricedVersionId) {
+        requireAccumulating("vest");
+        this.formCode = form.formCode();
+        this.guaranteeYears = form.guaranteeYears();
+        this.joint = form.joint();
+        this.survivorPercent = form.survivorPercent();
+        this.escalationPercent = form.escalationPercent();
+        this.capitalProtected = form.capitalProtected();
+        this.rateBasis = form.rateBasis().name();
+        this.timing = timing;
+        this.proofOfLifeIntervalMonths = proofOfLifeIntervalMonths;
+        this.frequency = frequency;
+        this.jointLifePartyId = jointLifePartyId;
+        this.purchasePrice = purchasePrice;
+        this.pricedVersionId = pricedVersionId;
+        this.vestedOn = vestingDate;
+        lock(price, vestingDate, firstDue, guaranteeEnd);
     }
 
     /** The lock: once, from the price on the collection date. */
@@ -169,12 +235,16 @@ public class AnnuityContract {
     public UUID getFirstDeathClaimId() { return firstDeathClaimId; }
     public UUID getLastDeathClaimId() { return lastDeathClaimId; }
     public BigDecimal getOverpaymentOwed() { return overpaymentOwed; }
+    public boolean isDeferred() { return deferred; }
+    public LocalDate getVestedOn() { return vestedOn; }
+    public UUID getPricedVersionId() { return pricedVersionId; }
+    public String getEndReason() { return endReason; }
 
     public AnnuityContractView toView() {
         return new AnnuityContractView(policyNumber, status(), formCode, guaranteeYears, joint, survivorPercent,
             escalationPercent, capitalProtected, timing, frequency, annuitantPartyId, jointLifePartyId, purchasePrice,
             currency, lockedOn, annuitantAge, jointAge, rateSex, annualRatePerMille, factor, annualIncome, instalment,
             firstDueDate, guaranteeEndDate, firstDeathPartyId, firstDeathDate, lastDeathDate, overpaymentOwed,
-            lockFailureReason);
+            lockFailureReason, endReason);
     }
 }

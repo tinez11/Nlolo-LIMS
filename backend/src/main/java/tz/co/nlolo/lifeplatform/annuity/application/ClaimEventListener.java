@@ -24,7 +24,24 @@ public class ClaimEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
-        if (!"claims.ClaimApproved".equals(envelope.eventType())) {
+        String type = envelope.eventType();
+        // A death reported before vesting holds the vesting until it is decided (D2, plan R6).
+        if ("claims.ClaimRegistered".equals(type) || "claims.ClaimRejected".equals(type)) {
+            runner.run(envelope, e -> {
+                Map<String, Object> p = Payloads.of(e.payload());
+                String policyNumber = (String) p.get("policyNumber");
+                if (!"DEATH".equals(p.get("claimType")) || !api.isAnnuity(policyNumber)) {
+                    return;
+                }
+                if ("claims.ClaimRegistered".equals(type)) {
+                    api.onDeathReported(policyNumber, Payloads.uuid(p.get("claimId")));
+                } else {
+                    api.onDeathRejected(policyNumber, Payloads.uuid(p.get("claimId")));
+                }
+            });
+            return;
+        }
+        if (!"claims.ClaimApproved".equals(type)) {
             return;
         }
         runner.run(envelope, e -> {
