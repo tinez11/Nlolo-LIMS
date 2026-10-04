@@ -13,6 +13,7 @@ public final class FuneralTestMigrations {
 
     private static final String[] FUNERAL = {
         "db-migrations/product/V24__funeral_terms.sql",
+        "db-migrations/underwriting/V16__funeral_application.sql",
     };
 
     public static final String[] ALL = Stream.concat(Stream.of(AnnuityTestMigrations.ALL), Stream.of(FUNERAL))

@@ -41,6 +41,14 @@ public class UnderwritingExceptionHandler {
         return problem;
     }
 
+    @ExceptionHandler(FuneralApplicationNotFoundException.class)
+    public ProblemDetail handleNoFuneralApplication(FuneralApplicationNotFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problem.setProperty("errorCode", "FUNERAL_APPLICATION_NOT_FOUND");
+        problem.setProperty("traceId", UUID.randomUUID().toString());
+        return problem;
+    }
+
     @ExceptionHandler(DeferredAnnuityChoiceNotFoundException.class)
     public ProblemDetail handleNoDeferredAnnuityChoice(DeferredAnnuityChoiceNotFoundException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());

@@ -288,6 +288,51 @@ paths:
               schema: { $ref: '#/components/schemas/DeferredAnnuityChoice' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
         '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+  /underwriting/cases/{caseId}/funeral-application:
+    get:
+      summary: A funeral case's plan, dependants and a fresh quote of the family
+      description: >-
+        Family funeral cover. 404 FUNERAL_APPLICATION_NOT_FOUND when none is recorded -- also the answer
+        for any case that is not a funeral plan's.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The application
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FuneralApplication' }
+        '404':
+          description: No funeral application on this case
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    put:
+      summary: Record or replace a funeral case's plan and dependants, before it is decided
+      description: >-
+        Replaces any earlier application. The whole family must price on the plan and the case's sum
+        assured must be the main member's benefit on it; a 422 in the quote's words otherwise.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FuneralApplicationRequest' }
+      responses:
+        '200':
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FuneralApplication' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
   /underwriting/cases/{caseId}/beneficiaries:
     get:
       summary: The beneficiary nominations taken on this proposal
@@ -587,6 +632,14 @@ components:
           anyOf:
             - { $ref: '#/components/schemas/DeferredAnnuityRequest' }
             - { type: "null" }
+        funeral:
+          description: >-
+            On a FUNERAL product only (family funeral cover): the plan and the dependants, recorded with the
+            case. May also be recorded afterwards with PUT .../funeral-application. Acceptance refuses a
+            funeral case that has none.
+          anyOf:
+            - { $ref: '#/components/schemas/FuneralApplicationRequest' }
+            - { type: "null" }
         # medicalDisclosure is deliberately NOT a field here. It was once declared on this
         # request and never existed in OpenCaseRequest.java, so a client sending one got a 201
         # and had it silently discarded. Disclosures are now real, but as their own resource --
@@ -771,6 +824,51 @@ components:
         ageEvidenceConfirmedAt: { type: [string, "null"], format: date-time }
         confirmedDateOfBirth: { type: [string, "null"], format: date, description: "The date of birth whose proof was seen at acceptance" }
         confirmedSex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+    FuneralApplicationRequest:
+      description: >-
+        A funeral case's plan and dependants (family funeral cover). The main member is NOT listed: they
+        are the case's life assured. The whole family must price on the plan, and the case's sumAssured
+        must be the main member's benefit on it, or the request is a 422 naming the right figure.
+      type: object
+      properties:
+        planCode: { type: [string, "null"] }
+        dependants:
+          type: array
+          items:
+            type: object
+            properties:
+              role: { type: [string, "null"], enum: [SPOUSE, CHILD, PARENT, EXTENDED, MAIN_MEMBER, null] }
+              fullName: { type: [string, "null"], maxLength: 200 }
+              dateOfBirth: { type: [string, "null"], format: date }
+              sex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+              idNumber: { type: [string, "null"], maxLength: 50 }
+              student: { type: [boolean, "null"], description: "A child only" }
+    FuneralApplication:
+      type: object
+      additionalProperties: false
+      required: [planCode, dependants, quote]
+      properties:
+        planCode: { type: string }
+        dependants:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [role, fullName, dateOfBirth, sex, idNumber, student]
+            properties:
+              role: { type: string, enum: [SPOUSE, CHILD, PARENT, EXTENDED] }
+              fullName: { type: string }
+              dateOfBirth: { type: string, format: date }
+              sex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+              idNumber: { type: [string, "null"] }
+              student: { type: boolean }
+        quote:
+          description: >-
+            The whole family priced today (main member first), re-derived on every read. Null when the
+            family no longer prices -- a life has aged out of entry since it was recorded.
+          anyOf:
+            - { $ref: 'openapi-product.yaml#/components/schemas/FuneralQuote' }
+            - { type: "null" }
     UnderwritingCaseView:
       type: object
       # The decision is intentionally flattened to decisionOutcome/decisionLoadingPercent/

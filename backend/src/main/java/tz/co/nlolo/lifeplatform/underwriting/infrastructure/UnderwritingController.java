@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.AnnuityChoice;
 import tz.co.nlolo.lifeplatform.underwriting.api.DeferredAnnuityChoice;
+import tz.co.nlolo.lifeplatform.underwriting.api.FuneralApplication;
 import tz.co.nlolo.lifeplatform.underwriting.api.BeneficiaryNomination;
 import tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal;
 import tz.co.nlolo.lifeplatform.underwriting.api.MedicalDisclosureView;
@@ -106,6 +107,10 @@ public class UnderwritingController {
         if (request.deferredAnnuity() != null) {
             underwritingApi.recordDeferredAnnuityChoice(view.caseId(), request.deferredAnnuity().age(), jwt.getSubject());
         }
+        if (request.funeral() != null) {
+            underwritingApi.recordFuneralApplication(view.caseId(), request.funeral().planCode(), request.funeral().lives(),
+                jwt.getSubject());
+        }
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
@@ -207,6 +212,27 @@ public class UnderwritingController {
                                                                              @RequestBody OpenCaseRequest.DeferredAnnuityDto request,
                                                                              @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(underwritingApi.recordDeferredAnnuityChoice(caseId, request.age(), jwt.getSubject()));
+    }
+
+    /**
+     * A funeral case's plan, dependants and a fresh quote of the family (family funeral cover). 404
+     * FUNERAL_APPLICATION_NOT_FOUND when there is none -- also the answer for every other case.
+     */
+    @GetMapping("/cases/{caseId}/funeral-application")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<FuneralApplication> getFuneralApplication(@PathVariable UUID caseId) {
+        return underwritingApi.funeralApplication(caseId).map(ResponseEntity::ok)
+            .orElseThrow(() -> new FuneralApplicationNotFoundException(caseId));
+    }
+
+    /** Record or replace a funeral case's plan and dependants before it is decided. Whoever may open a case may change it. */
+    @PutMapping("/cases/{caseId}/funeral-application")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<FuneralApplication> recordFuneralApplication(@PathVariable UUID caseId,
+                                                                       @Valid @RequestBody FuneralApplicationRequest request,
+                                                                       @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(underwritingApi.recordFuneralApplication(caseId, request.planCode(), request.lives(),
+            jwt.getSubject()));
     }
 
     /**
