@@ -59,6 +59,9 @@ public class PolicyEventListener {
             case "policy.PolicyCancelledFreeLook" -> withTenant(envelope, this::handlePolicySurrendered);
             case "policy.EnrolmentAccepted" -> withTenant(envelope, this::handleEnrolmentAccepted);
             case "policy.GroupMemberExited" -> withTenant(envelope, this::handleGroupMemberExited);
+            // A deferred annuity (product step 5 D2): vesting stops contributions; a deferral may extend them.
+            case "policy.AnnuityVested" -> withTenant(envelope, this::handleAnnuityVested);
+            case "policy.PremiumPayingTermRestated" -> withTenant(envelope, this::handlePremiumPayingTermRestated);
             default -> { /* not billing-relevant */ }
         }
     }
@@ -163,6 +166,16 @@ public class PolicyEventListener {
         String policyNumber = (String) payload.get("policyNumber");
         // Paid-up means no premium falls due again -- the same schedule termination as expiry.
         billingApiImpl.terminateScheduleForExpiry(TenantContext.get(), policyNumber);
+    }
+
+    private void handleAnnuityVested(Map<String, Object> payload) {
+        billingApiImpl.endForVesting(TenantContext.get(), (String) payload.get("policyNumber"),
+            LocalDate.parse((String) payload.get("vestedOn")));
+    }
+
+    private void handlePremiumPayingTermRestated(Map<String, Object> payload) {
+        billingApiImpl.restatePremiumPayingUntil(TenantContext.get(), (String) payload.get("policyNumber"),
+            LocalDate.parse((String) payload.get("premiumPayingUntil")));
     }
 
     private void handlePolicySurrendered(Map<String, Object> payload) {

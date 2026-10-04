@@ -480,6 +480,40 @@ public class BillingApiImpl implements BillingApi {
             });
     }
 
+    /** Every invoice status that is not yet settled -- what a vesting waives. */
+    private static final java.util.Set<String> UNSETTLED = java.util.Set.of("DUE", "IN_GRACE", "OVERDUE", "PARTIALLY_PAID");
+
+    /**
+     * A pension vested (policy.AnnuityVested, product step 5 D2): no contribution is due again.
+     * The schedule ends as at expiry, and EVERY unsettled invoice is waived -- not only those after
+     * the vesting date (plan R7): billing raises invoices ahead and has no cancelled status, and one
+     * left DUE could later be paid into an account that has closed. WAIVED is terminal and settled.
+     */
+    @Transactional
+    void endForVesting(UUID tenantId, String policyNumber, LocalDate vestedOn) {
+        terminateScheduleForExpiry(tenantId, policyNumber);
+        String reason = "The pension vested on " + vestedOn + "; no further contributions are due";
+        for (PremiumInvoice invoice : premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId)) {
+            if (UNSETTLED.contains(invoice.getStatus())) {
+                invoice.waive(reason);
+                premiumInvoiceRepository.save(invoice);
+            }
+        }
+    }
+
+    /**
+     * A deferral with contributions continuing (policy.PremiumPayingTermRestated, D2): the ACTIVE
+     * schedule's paying end moves, and the roll-forward drain raises the invoices up to it.
+     */
+    @Transactional
+    void restatePremiumPayingUntil(UUID tenantId, String policyNumber, LocalDate until) {
+        billingScheduleRepository.findByPolicyNumberAndTenantIdAndStatus(policyNumber, tenantId, "ACTIVE")
+            .ifPresent(schedule -> {
+                schedule.restatePremiumPayingUntil(until);
+                billingScheduleRepository.save(schedule);
+            });
+    }
+
     @Transactional
     void resumeScheduleAfterSuspension(UUID tenantId, String policyNumber, UUID productVersionId) {
         billingScheduleRepository.findByPolicyNumberAndTenantIdAndStatus(policyNumber, tenantId, "SUSPENDED")

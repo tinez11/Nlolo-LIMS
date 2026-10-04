@@ -8,6 +8,7 @@ import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
 import tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
+import tz.co.nlolo.lifeplatform.product.api.AnnuityPlan;
 import tz.co.nlolo.lifeplatform.product.api.FrequencyLoading;
 import tz.co.nlolo.lifeplatform.product.api.PremiumFrequency;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
@@ -68,6 +69,9 @@ public class UnderwritingDecisionEventListener {
      * product and the band comes first.
      */
     private static final int MAX_FAILURE_REASON_LENGTH = 1000;
+
+    /** "Today" is the civil date, never UTC's (the UTC-vs-civil day bug). */
+    private static final java.time.ZoneId CIVIL_ZONE = java.time.ZoneId.of("Africa/Dar_es_Salaam");
 
     private final UnderwritingApi underwritingApi;
     private final PolicyApi policyApi;
@@ -360,10 +364,32 @@ public class UnderwritingDecisionEventListener {
                 if (schemeProduct) {
                     throw new NotASingleLifeProductException(category.name());
                 }
+                // A deferred annuity saves first (product step 5 D2): an account policy whose
+                // contributions run to the target date, with no policy term -- after vesting it pays
+                // for life, so it has no maturity (plan R2). The case's sum assured is the
+                // contribution per payment (plan R3).
+                AnnuityPlan annuityPlan = productApi.resolveAnnuityPlan(decidedCase.productVersionId());
+                if (annuityPlan.deferred()) {
+                    LocalDate commencement = decidedCase.proposedCommencementDate() != null
+                        ? decidedCase.proposedCommencementDate() : LocalDate.now(CIVIL_ZONE);
+                    LocalDate target = underwritingApi.deferredAnnuityChoice(caseId).orElseThrow().targetDate();
+                    String frequency = decidedCase.premiumFrequency() != null ? decidedCase.premiumFrequency() : "MONTHLY";
+                    Integer payingMonths = "SINGLE".equals(frequency) ? null
+                        : (int) java.time.temporal.ChronoUnit.MONTHS.between(commencement, target);
+                    policyApi.issuePolicy(caseId, new PolicyApi.IssueRequest(
+                        decidedCase.applicantPartyId(), decidedCase.productId(), decidedCase.productVersionId(),
+                        decidedCase.sumAssuredAmount(), decidedCase.sumAssuredCurrency(),
+                        decidedCase.sumAssuredAmount(), decidedCase.sumAssuredCurrency(), frequency,
+                        decidedCase.agentOfRecordId(), nominationsAsBeneficiaries(decidedCase),
+                        "Automatic issuance on underwriting decision " + outcome,
+                        commencement, null, payingMonths, decidedCase.lifeAssuredPartyId()),
+                        "system:underwriting-decision-listener");
+                    return;
+                }
                 // An annuity is bought, not rated (product step 5): its premium is the purchase
                 // price, paid once, and it has no term. The income is priced by the annuity module
                 // when the money arrives -- underwriting already proved it prices at acceptance.
-                if (productApi.resolveAnnuityPlan(decidedCase.productVersionId()).annuity()) {
+                if (annuityPlan.annuity()) {
                     policyApi.issuePolicy(caseId, new PolicyApi.IssueRequest(
                         decidedCase.applicantPartyId(), decidedCase.productId(), decidedCase.productVersionId(),
                         decidedCase.sumAssuredAmount(), decidedCase.sumAssuredCurrency(),

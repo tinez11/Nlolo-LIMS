@@ -74,6 +74,9 @@ public class BillingSchedule {
 
     public void suspend() { this.status = "SUSPENDED"; }
     public void terminate() { this.status = "TERMINATED"; }
+
+    /** A deferral with contributions continuing (product step 5 D2): the roll-forward raises the rest. */
+    public void restatePremiumPayingUntil(LocalDate until) { this.premiumPayingUntil = until; }
     public void reactivate() { this.status = "ACTIVE"; }
     public void advanceNextDueDate(LocalDate next) { this.nextDueDate = next; }
 

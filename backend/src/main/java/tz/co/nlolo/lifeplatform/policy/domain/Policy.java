@@ -241,6 +241,28 @@ public class Policy {
     }
 
     /**
+     * A deferred annuity's deferral with contributions continuing (product step 5 D2): the
+     * premium-paying term runs to {@code until} instead. Refused once contributions have already
+     * ended -- billing cannot restart a terminated schedule (plan R8). Returns the new paying end.
+     */
+    public LocalDate extendPremiumPayingTerm(LocalDate until, LocalDate today) {
+        if (isClosed()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " is closed; its contributions cannot move");
+        }
+        if ("SINGLE".equals(premiumFrequency)) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " was paid with a single premium; it has no contributions to extend");
+        }
+        LocalDate payingUntil = premiumPayingUntil();
+        if (payingUntil != null && today.isAfter(payingUntil)) {
+            throw new InvalidPolicyStateException("Contributions on policy " + policyNumber + " ended on " + payingUntil
+                + "; a deferral recorded after that cannot restart them -- record it with contributions stopped");
+        }
+        LocalDate start = commencementDate != null ? commencementDate : issueDate;
+        this.premiumPayingTermMonths = (int) java.time.temporal.ChronoUnit.MONTHS.between(start, until);
+        return premiumPayingUntil();
+    }
+
+    /**
      * Restate a group scheme's sum assured after its member schedule changed.
      *
      * <p>A scheme's sum assured <b>is</b> the total of what its members are covered for.
