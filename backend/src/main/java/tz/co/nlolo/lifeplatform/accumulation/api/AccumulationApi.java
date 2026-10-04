@@ -104,6 +104,13 @@ public interface AccumulationApi {
      */
     java.math.BigDecimal closeForMaturity(String policyNumber, java.util.UUID instalmentId, java.time.LocalDate dueDate);
 
+    /**
+     * Closes the account on the vesting date with interest to that day and returns what the VESTING
+     * entry moved (product step 5 D2). Idempotent on the policy: asked again, it returns the same
+     * figure and posts nothing. An account already closed returns zero.
+     */
+    java.math.BigDecimal closeForVesting(String policyNumber, java.time.LocalDate vestingDate);
+
     // ---- Statements (task 8) ---------------------------------------------------------------------
 
     /** Computed and reconciled, not filed. The console's Statement tab. */

@@ -18,7 +18,8 @@ public final class StatementBuilder {
     private static final List<EntryType> ORDER = List.of(
         EntryType.CONTRIBUTION, EntryType.TOP_UP, EntryType.TRANSFER_IN,
         EntryType.ALLOCATION_CHARGE, EntryType.POLICY_FEE, EntryType.INTEREST,
-        EntryType.WITHDRAWAL, EntryType.SURRENDER, EntryType.MATURITY, EntryType.DEATH_CLAIM, EntryType.FREE_LOOK_REFUND,
+        EntryType.WITHDRAWAL, EntryType.SURRENDER, EntryType.MATURITY, EntryType.VESTING, EntryType.DEATH_CLAIM,
+        EntryType.FREE_LOOK_REFUND,
         EntryType.ADJUSTMENT, EntryType.REVERSAL);
 
     public static StatementView build(String policyNumber, String currency, List<LedgerEntryView> entries,

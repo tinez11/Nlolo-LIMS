@@ -22,7 +22,9 @@ public class PayoutPaymentListener {
 
     /** The purposes that close an instalment (ANNUITY_PAYOUT since product step 5). A free-look refund closes a cancellation. */
     static final Set<String> INSTALMENT_PURPOSES = Set.of(
-        "MATURITY_PAYOUT", "SURVIVAL_BENEFIT_PAYOUT", "INCOME_PAYOUT", "PREMIUM_RETURN_PAYOUT", "ANNUITY_PAYOUT");
+        "MATURITY_PAYOUT", "SURVIVAL_BENEFIT_PAYOUT", "INCOME_PAYOUT", "PREMIUM_RETURN_PAYOUT", "ANNUITY_PAYOUT",
+        // A pension's lump sum at vesting (D2).
+        "COMMUTATION_PAYOUT");
 
     static final String FREE_LOOK_PURPOSE = "FREE_LOOK_REFUND";
 

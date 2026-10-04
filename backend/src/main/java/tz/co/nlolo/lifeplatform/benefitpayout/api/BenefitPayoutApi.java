@@ -112,6 +112,12 @@ public interface BenefitPayoutApi {
     // ---- An annuity's income for life (product step 5) ----
 
     /**
+     * A pension's lump sum (D2): one COMMUTATION instalment due on the vesting date, its payee named
+     * at review as a maturity's is. Idempotent per policy: a second call returns the same id.
+     */
+    UUID scheduleCommutation(String policyNumber, java.time.LocalDate dueDate, java.math.BigDecimal amount, String currency);
+
+    /**
      * Open an annuity's stream: no end date, the locked base escalated from the first payment, twelve
      * months expanded ahead and rolled forward from there. Idempotent per policy: a second call
      * returns the stream already open.

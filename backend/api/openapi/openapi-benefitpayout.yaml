@@ -524,7 +524,10 @@ components:
       properties:
         instalmentId: { type: string, format: uuid }
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
-        kind: { type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM, ANNUITY] }
+        kind:
+          type: string
+          description: COMMUTATION is a pension's lump sum at vesting (product step 5 D2).
+          enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM, ANNUITY, COMMUTATION]
         dueDate: { type: string, format: date }
         originalAmount:
           description: What the contract authored. Null on a premium return until it falls due.
@@ -578,7 +581,7 @@ components:
       required: [ruleId, payoutKinds, ratePercent, effectiveFrom, legalReference, status, proposedBy, proposedAt]
       properties:
         ruleId: { type: string, format: uuid }
-        payoutKinds: { type: array, items: { type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM, ANNUITY] } }
+        payoutKinds: { type: array, items: { type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM, ANNUITY, COMMUTATION] } }
         ratePercent: { type: string, description: "Decimal string, no trailing zeros" }
         effectiveFrom: { type: string, format: date }
         effectiveTo: { type: [string, "null"], format: date }
@@ -597,7 +600,7 @@ components:
     WithholdingRuleRequest:
       type: object
       properties:
-        payoutKinds: { type: [array, "null"], items: { type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM, ANNUITY] } }
+        payoutKinds: { type: [array, "null"], items: { type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM, ANNUITY, COMMUTATION] } }
         ratePercent: { type: [number, "null"], exclusiveMinimum: 0, exclusiveMaximum: 100 }
         effectiveFrom: { type: [string, "null"], format: date }
         effectiveTo: { type: [string, "null"], format: date }
