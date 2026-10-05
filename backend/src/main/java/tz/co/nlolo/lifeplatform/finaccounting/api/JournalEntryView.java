@@ -8,4 +8,4 @@ import java.util.UUID;
  * their DR and CR totals are always equal -- see {@code JournalEntry}'s own invariant. */
 public record JournalEntryView(UUID journalEntryId, String sourceEvent, String sourceRef,
                                 String period, String policyNumber, Instant postedAt,
-                                List<GlPostingView> postings) {}
+                                List<GlPostingView> postings, JournalSource sourceType, int policyRegisterVersion) {}

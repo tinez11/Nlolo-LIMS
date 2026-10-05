@@ -94,7 +94,7 @@ public interface FinaccountingApi {
     List<ChartOfAccountView> listChartOfAccounts();
 
     /**
-     * @param accountCode must match the five-block convention ({@code ^[1-5]\d{3}$}) -- enforced
+     * @param accountCode must match the posting guide's nine classes ({@code ^[1-9]\d{3}$}) -- enforced
      *        by the caller (bean validation on the wire DTO), not re-checked here, the same split
      *        {@code ReinsuranceApiImpl.createTreaty} uses between framework- and domain-level rules
      * @param parentCode the parent account, or {@code null} for a block root. Creating a child
@@ -139,4 +139,36 @@ public interface FinaccountingApi {
      * @throws AccountHasChildrenException if the account is a parent
      */
     void deleteAccount(String accountCode);
+
+    // ---- Accounting periods (IFRS 17 spec §5.4) ----
+
+    /** A period (YYYY-MM); one never touched reads OPEN. */
+    AccountingPeriodView period(String period);
+
+    /** Every period that has been moved from OPEN at least once, latest first. */
+    java.util.List<AccountingPeriodView> periods();
+
+    AccountingPeriodView startClosing(String period, String by);
+
+    /** Refused while a clearing account (9xxx) is not at zero in it, or an earlier period with postings is unlocked. */
+    AccountingPeriodView lockPeriod(String period, String by);
+
+    AccountingPeriodView requestReopen(String period, String reason, String by);
+
+    /** A second person approves; the period is OPEN again. */
+    AccountingPeriodView approveReopen(String period, String by);
+
+    // ---- The accounting policy register (IFRS 17 spec §3, decision D7) ----
+
+    /** The elections in force on {@code asOf}, those approved to take effect after it, and every one still proposed. */
+    java.util.List<PolicyElectionView> policyElections(java.time.LocalDate asOf);
+
+    /** The election in force for a key and scope on a date, falling back to scope "*". */
+    java.util.Optional<PolicyElectionView> policyElectionInForce(String key, String scope, java.time.LocalDate on);
+
+    PolicyElectionView proposePolicyElection(PolicyElectionInput input, String by);
+
+    PolicyElectionView approvePolicyElection(java.util.UUID electionId, String signOffRef, String by);
+
+    PolicyElectionView rejectPolicyElection(java.util.UUID electionId, String reason, String by);
 }

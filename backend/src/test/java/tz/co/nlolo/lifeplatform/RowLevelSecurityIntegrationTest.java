@@ -909,6 +909,9 @@ class RowLevelSecurityIntegrationTest {
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            // One transaction with a balanced DR/CR pair per journal: since finaccounting V10 a journal balances at
+            // commit and its lines may only be written by the transaction that wrote it.
+            connection.setAutoCommit(false);
             try (PreparedStatement insertEntry = connection.prepareStatement(
                     "INSERT INTO finaccounting.journal_entry (journal_entry_id, tenant_id, source_event, "
                     + "source_ref, period, policy_number) VALUES (?, ?, 'billing.PremiumInvoiceGenerated', ?, "
@@ -930,7 +933,7 @@ class RowLevelSecurityIntegrationTest {
             // tenants before either tenant's posting can be written.
             try (PreparedStatement insertAccount = connection.prepareStatement(
                     "INSERT INTO finaccounting.chart_of_account (tenant_id, account_code, name, account_type, "
-                    + "normal_balance) VALUES (?, '1000', 'Cash / Mobile Money', 'ASSET', 'DR')")) {
+                    + "normal_balance, posting_mode) VALUES (?, '1000', 'Cash / Mobile Money', 'ASSET', 'DR', 'AUTO')")) {
                 insertAccount.setObject(1, tenantA);
                 assertThat(insertAccount.executeUpdate()).isEqualTo(1);
                 insertAccount.setObject(1, tenantB);
@@ -939,19 +942,24 @@ class RowLevelSecurityIntegrationTest {
             try (PreparedStatement insertPosting = connection.prepareStatement(
                     "INSERT INTO finaccounting.gl_posting (tenant_id, journal_entry_id, account_code, direction, "
                     + "amount, currency, period, policy_number, posting_type, source_event, source_ref) "
-                    + "VALUES (?, ?, '1000', 'DR', 15000.00, 'TZS', '2026-08', ?, "
+                    + "VALUES (?, ?, '1000', ?, 15000.00, 'TZS', '2026-08', ?, "
                     + "'billing.PremiumInvoiceGenerated', 'billing.PremiumInvoiceGenerated', ?)")) {
-                insertPosting.setObject(1, tenantA);
-                insertPosting.setObject(2, journalEntryA);
-                insertPosting.setString(3, "RLS-FA-POL-A");
-                insertPosting.setString(4, "rls-je-a");
-                assertThat(insertPosting.executeUpdate()).isEqualTo(1);
-                insertPosting.setObject(1, tenantB);
-                insertPosting.setObject(2, journalEntryB);
-                insertPosting.setString(3, "RLS-FA-POL-B");
-                insertPosting.setString(4, "rls-je-b");
-                assertThat(insertPosting.executeUpdate()).isEqualTo(1);
+                for (String direction : new String[] {"DR", "CR"}) {
+                    insertPosting.setObject(1, tenantA);
+                    insertPosting.setObject(2, journalEntryA);
+                    insertPosting.setString(3, direction);
+                    insertPosting.setString(4, "RLS-FA-POL-A");
+                    insertPosting.setString(5, "rls-je-a");
+                    assertThat(insertPosting.executeUpdate()).isEqualTo(1);
+                    insertPosting.setObject(1, tenantB);
+                    insertPosting.setObject(2, journalEntryB);
+                    insertPosting.setString(3, direction);
+                    insertPosting.setString(4, "RLS-FA-POL-B");
+                    insertPosting.setString(5, "rls-je-b");
+                    assertThat(insertPosting.executeUpdate()).isEqualTo(1);
+                }
             }
+            connection.commit();
         }
 
         // Negative control: both tenants' rows really are present when RLS is not in play.
@@ -973,7 +981,7 @@ class RowLevelSecurityIntegrationTest {
             selectPostings.setObject(2, tenantB);
             try (ResultSet resultSet = selectPostings.executeQuery()) {
                 resultSet.next();
-                assertThat(resultSet.getInt(1)).isEqualTo(2);
+                assertThat(resultSet.getInt(1)).isEqualTo(4);   // a DR and a CR line per tenant
             }
             selectAccounts.setObject(1, tenantA);
             selectAccounts.setObject(2, tenantB);
@@ -996,8 +1004,10 @@ class RowLevelSecurityIntegrationTest {
             }
             try (ResultSet resultSet = statement.executeQuery(
                     "SELECT policy_number FROM finaccounting.gl_posting")) {
-                assertThat(resultSet.next()).isTrue();
-                assertThat(resultSet.getString(1)).isEqualTo("RLS-FA-POL-A");
+                for (int line = 0; line < 2; line++) {   // tenant A's DR and CR lines
+                    assertThat(resultSet.next()).isTrue();
+                    assertThat(resultSet.getString(1)).isEqualTo("RLS-FA-POL-A");
+                }
                 assertThat(resultSet.next()).as("tenant B's gl_posting must be invisible").isFalse();
             }
             try (ResultSet resultSet = statement.executeQuery(

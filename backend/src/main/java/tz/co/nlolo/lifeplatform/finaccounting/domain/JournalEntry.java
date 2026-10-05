@@ -1,8 +1,12 @@
 package tz.co.nlolo.lifeplatform.finaccounting.domain;
 
+import tz.co.nlolo.lifeplatform.finaccounting.api.JournalSource;
+import tz.co.nlolo.lifeplatform.finaccounting.api.LineDimensions;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -10,6 +14,7 @@ import jakarta.persistence.Transient;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -67,8 +72,46 @@ public class JournalEntry {
     @Column(name = "created_by")
     private String createdBy;
 
+    // IFRS 17 I1 (finaccounting V10): who wrote the journal, the people and reason behind a manual one, what it
+    // reverses, and the accounting policy register version in force when it was posted. created_xid is the
+    // database's own (a default), never written from here.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source_type", nullable = false)
+    private JournalSource sourceType = JournalSource.EVENT;
+
+    @Column(name = "preparer")
+    private String preparer;
+
+    @Column(name = "approver")
+    private String approver;
+
+    @Column(name = "reason")
+    private String reason;
+
+    @Column(name = "reason_code")
+    private String reasonCode;
+
+    @Column(name = "document_refs")
+    private String documentRefs;
+
+    @Column(name = "reverses_journal_id")
+    private UUID reversesJournalId;
+
+    @Column(name = "auto_reverse_on")
+    private LocalDate autoReverseOn;
+
+    @Column(name = "policy_register_version", nullable = false)
+    private int policyRegisterVersion;
+
+    @Column(name = "rule_version")
+    private String ruleVersion;
+
+    @Column(name = "engine_run_id")
+    private UUID engineRunId;
+
     /** One leg's facts, before it becomes a persistent {@link GlPosting} row. */
-    public record Leg(String accountCode, PostingDirection direction, BigDecimal amount, String currency) {}
+    public record Leg(String accountCode, PostingDirection direction, BigDecimal amount, String currency,
+                      LineDimensions dimensions) {}
 
     @Transient
     private final List<Leg> legs = new ArrayList<>();
@@ -92,6 +135,12 @@ public class JournalEntry {
      *         mixed-currency entry could never be meaningfully balanced)
      */
     public void addLeg(String accountCode, PostingDirection direction, BigDecimal amount, String currency) {
+        addLeg(accountCode, direction, amount, currency, LineDimensions.NONE);
+    }
+
+    /** A leg with the guide's line dimensions (2.2). */
+    public void addLeg(String accountCode, PostingDirection direction, BigDecimal amount, String currency,
+                       LineDimensions dimensions) {
         if (amount == null || amount.signum() <= 0) {
             throw new IllegalArgumentException("A posting amount must be a positive magnitude; "
                 + "direction carries the sign. Got: " + amount);
@@ -100,7 +149,7 @@ public class JournalEntry {
             throw new IllegalArgumentException("All legs of one journal entry must share a currency; "
                 + "entry is " + legs.get(0).currency() + ", leg is " + currency);
         }
-        legs.add(new Leg(accountCode, direction, amount, currency));
+        legs.add(new Leg(accountCode, direction, amount, currency, dimensions == null ? LineDimensions.NONE : dimensions));
     }
 
     /**
@@ -135,4 +184,58 @@ public class JournalEntry {
     public String getPolicyNumber() { return policyNumber; }
     public Instant getPostedAt() { return postedAt; }
     public String getCreatedBy() { return createdBy; }
+    public JournalSource getSourceType() { return sourceType; }
+    public String getPreparer() { return preparer; }
+    public String getApprover() { return approver; }
+    public String getReason() { return reason; }
+    public String getReasonCode() { return reasonCode; }
+    public String getDocumentRefs() { return documentRefs; }
+    public UUID getReversesJournalId() { return reversesJournalId; }
+    public LocalDate getAutoReverseOn() { return autoReverseOn; }
+    public int getPolicyRegisterVersion() { return policyRegisterVersion; }
+    public String getRuleVersion() { return ruleVersion; }
+    public UUID getEngineRunId() { return engineRunId; }
+
+    /** A journal the platform or the IFRS 17 engine writes, not an event's. */
+    public JournalEntry withSource(JournalSource source) {
+        this.sourceType = source;
+        return this;
+    }
+
+    /** A manual journal: two people, a reason, and on a BOTH account a reason code (the database checks all of it). */
+    public JournalEntry asManual(String preparer, String approver, String reason, String reasonCode, String documentRefs) {
+        this.sourceType = JournalSource.MANUAL;
+        this.preparer = preparer;
+        this.approver = approver;
+        this.reason = reason;
+        this.reasonCode = reasonCode;
+        this.documentRefs = documentRefs;
+        return this;
+    }
+
+    public JournalEntry reversing(UUID journalEntryId) {
+        this.reversesJournalId = journalEntryId;
+        return this;
+    }
+
+    public JournalEntry autoReverseOn(LocalDate date) {
+        this.autoReverseOn = date;
+        return this;
+    }
+
+    public JournalEntry fromEngineRun(UUID runId) {
+        this.sourceType = JournalSource.ENGINE_RUN;
+        this.engineRunId = runId;
+        return this;
+    }
+
+    public JournalEntry underRuleVersion(String version) {
+        this.ruleVersion = version;
+        return this;
+    }
+
+    /** Stamped when posted: the accounting policy register version the journal was posted under (spec D7). */
+    public void stampPolicyRegisterVersion(int version) {
+        this.policyRegisterVersion = version;
+    }
 }

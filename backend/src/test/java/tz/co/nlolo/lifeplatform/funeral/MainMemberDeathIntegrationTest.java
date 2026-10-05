@@ -166,7 +166,7 @@ class MainMemberDeathIntegrationTest {
         BigDecimal owed = invoices.stream().filter(i -> !i.status().name().equals("WAIVED"))
             .map(InvoiceView::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal receivable = jdbc.queryForObject("SELECT COALESCE(SUM(CASE WHEN direction = 'DR' THEN amount ELSE -amount END), 0)"
-            + " FROM finaccounting.gl_posting WHERE tenant_id = ? AND policy_number = ? AND account_code = '1210'",
+            + " FROM finaccounting.gl_posting WHERE tenant_id = ? AND policy_number = ? AND account_code = '2122'",
             BigDecimal.class, TENANT, policyNumber);
         assertThat(receivable).isEqualByComparingTo(owed.subtract(new BigDecimal("12075.00")));
 

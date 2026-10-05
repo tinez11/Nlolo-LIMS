@@ -54,4 +54,19 @@ public interface GlPostingRepository extends JpaRepository<GlPosting, GlPostingI
         """)
     List<Object[]> sumByAccountAndDirection(@Param("tenantId") UUID tenantId,
                                             @Param("period") String period);
+    /**
+     * Accounts under {@code prefix} whose postings in {@code period} do not net to zero: [accountCode, net DR-CR].
+     * Clearing accounts (9xxx) must return to zero before a period locks (IFRS 17 posting guide, class 9).
+     */
+    @Query("select g.accountCode, sum(case when g.direction = tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection.DR"
+        + " then g.amount else -g.amount end) from GlPosting g where g.tenantId = :tenantId and g.period = :period"
+        + " and g.accountCode like concat(:prefix, '%') group by g.accountCode"
+        + " having sum(case when g.direction = tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection.DR"
+        + " then g.amount else -g.amount end) <> 0 order by g.accountCode")
+    List<Object[]> nonZeroNetByAccountPrefix(@Param("tenantId") UUID tenantId, @Param("period") String period,
+                                             @Param("prefix") String prefix);
+
+    /** Every period before {@code period} that holds postings, earliest first. */
+    @Query("select distinct g.period from GlPosting g where g.tenantId = :tenantId and g.period < :period order by g.period")
+    List<String> periodsWithPostingsBefore(@Param("tenantId") UUID tenantId, @Param("period") String period);
 }

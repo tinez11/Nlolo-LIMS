@@ -881,32 +881,15 @@ class AppRolePrivilegesIntegrationTest {
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
         seedChartAccount(tenantId, "1000", "Cash / Mobile Money", "ASSET", "DR");
+        seedChartAccount(tenantId, "2000", "Premiums", "LIABILITY", "CR");
         UUID journalEntryId = null;
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement insertEntry = connection.prepareStatement(
-                 "INSERT INTO finaccounting.journal_entry (tenant_id, source_event, source_ref, period, policy_number) "
-                 + "VALUES (?, 'billing.PremiumInvoiceGenerated', 'approle-je-01', '2026-08', 'APPROLE-GL-01') "
-                 + "RETURNING journal_entry_id")) {
-            insertEntry.setObject(1, tenantId);
-            try (ResultSet rs = insertEntry.executeQuery()) {
-                assertThat(rs.next()).as("app_role could not insert into finaccounting.journal_entry").isTrue();
-                journalEntryId = (UUID) rs.getObject(1);
-            }
+        try {
+            // One balanced journal in one transaction: since finaccounting V10 a journal balances at commit and its
+            // lines may only be written by the transaction that wrote it.
+            journalEntryId = postBalancedAsAppRole(tenantId, "billing.PremiumInvoiceGenerated", "approle-je-01",
+                "APPROLE-GL-01", "1000", "2000", "15000.00");
         } catch (SQLException e) {
-            fail("app_role could not insert into finaccounting.journal_entry: " + e.getMessage());
-        }
-
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement insertPosting = connection.prepareStatement(
-                 "INSERT INTO finaccounting.gl_posting (tenant_id, journal_entry_id, account_code, direction, "
-                 + "amount, currency, period, policy_number, posting_type, source_event, source_ref) "
-                 + "VALUES (?, ?, '1000', 'DR', 15000.00, 'TZS', '2026-08', 'APPROLE-GL-01', "
-                 + "'billing.PremiumInvoiceGenerated', 'billing.PremiumInvoiceGenerated', 'approle-je-01')")) {
-            insertPosting.setObject(1, tenantId);
-            insertPosting.setObject(2, journalEntryId);
-            assertThat(insertPosting.executeUpdate()).isEqualTo(1);
-        } catch (SQLException e) {
-            fail("app_role could not insert into finaccounting.gl_posting: " + e.getMessage());
+            fail("app_role could not insert into finaccounting.journal_entry and gl_posting: " + e.getMessage());
         }
 
         try (Connection connection = dataSource.getConnection();
@@ -937,28 +920,9 @@ class AppRolePrivilegesIntegrationTest {
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
         seedChartAccount(tenantId, "5000", "Claims Expense", "EXPENSE", "DR");
-        UUID journalEntryId;
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement insertEntry = connection.prepareStatement(
-                 "INSERT INTO finaccounting.journal_entry (tenant_id, source_event, source_ref, period, policy_number) "
-                 + "VALUES (?, 'claims.ClaimSettled', 'approle-je-02', '2026-08', 'APPROLE-GL-02') "
-                 + "RETURNING journal_entry_id")) {
-            insertEntry.setObject(1, tenantId);
-            try (ResultSet rs = insertEntry.executeQuery()) {
-                rs.next();
-                journalEntryId = (UUID) rs.getObject(1);
-            }
-        }
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement insertPosting = connection.prepareStatement(
-                 "INSERT INTO finaccounting.gl_posting (tenant_id, journal_entry_id, account_code, direction, "
-                 + "amount, currency, period, policy_number, posting_type, source_event, source_ref) "
-                 + "VALUES (?, ?, '5000', 'DR', 25000.00, 'TZS', '2026-08', 'APPROLE-GL-02', "
-                 + "'claims.ClaimSettled', 'claims.ClaimSettled', 'approle-je-02')")) {
-            insertPosting.setObject(1, tenantId);
-            insertPosting.setObject(2, journalEntryId);
-            insertPosting.executeUpdate();
-        }
+        seedChartAccount(tenantId, "1000", "Cash / Mobile Money", "ASSET", "DR");
+        UUID journalEntryId = postBalancedAsAppRole(tenantId, "claims.ClaimSettled", "approle-je-02", "APPROLE-GL-02",
+            "5000", "1000", "25000.00");
 
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
             assertThat(connection.getMetaData().getUserName()).isEqualTo("app_role");
@@ -1219,7 +1183,7 @@ class AppRolePrivilegesIntegrationTest {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement insert = connection.prepareStatement(
                  "INSERT INTO finaccounting.chart_of_account (tenant_id, account_code, name, account_type, "
-                 + "normal_balance, created_by) VALUES (?, ?, ?, ?, ?, 'system:test')")) {
+                 + "normal_balance, posting_mode, created_by) VALUES (?, ?, ?, ?, ?, 'AUTO', 'system:test')")) {
             insert.setObject(1, tenantId);
             insert.setString(2, accountCode);
             insert.setString(3, name);
@@ -1228,6 +1192,50 @@ class AppRolePrivilegesIntegrationTest {
             assertThat(insert.executeUpdate()).isEqualTo(1);
         } catch (SQLException e) {
             fail("app_role could not seed finaccounting.chart_of_account: " + e.getMessage());
+        }
+    }
+
+    /**
+     * One balanced two-line journal, written through app_role's own connection in ONE transaction -- the only way
+     * finaccounting V10 accepts a journal (balanced at commit; lines from the journal's own transaction). The accounts
+     * are seeded AUTO, so an event journal may post to them.
+     */
+    private UUID postBalancedAsAppRole(UUID tenantId, String sourceEvent, String sourceRef, String policyNumber,
+                                       String debitCode, String creditCode, String amount) throws SQLException {
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            UUID journalEntryId;
+            try (PreparedStatement insertEntry = connection.prepareStatement(
+                    "INSERT INTO finaccounting.journal_entry (tenant_id, source_event, source_ref, period, policy_number) "
+                    + "VALUES (?, ?, ?, '2026-08', ?) RETURNING journal_entry_id")) {
+                insertEntry.setObject(1, tenantId);
+                insertEntry.setString(2, sourceEvent);
+                insertEntry.setString(3, sourceRef);
+                insertEntry.setString(4, policyNumber);
+                try (ResultSet rs = insertEntry.executeQuery()) {
+                    rs.next();
+                    journalEntryId = (UUID) rs.getObject(1);
+                }
+            }
+            for (String[] leg : new String[][] {{debitCode, "DR"}, {creditCode, "CR"}}) {
+                try (PreparedStatement insertPosting = connection.prepareStatement(
+                        "INSERT INTO finaccounting.gl_posting (tenant_id, journal_entry_id, account_code, direction, "
+                        + "amount, currency, period, policy_number, posting_type, source_event, source_ref) "
+                        + "VALUES (?, ?, ?, ?, ?::numeric, 'TZS', '2026-08', ?, ?, ?, ?)")) {
+                    insertPosting.setObject(1, tenantId);
+                    insertPosting.setObject(2, journalEntryId);
+                    insertPosting.setString(3, leg[0]);
+                    insertPosting.setString(4, leg[1]);
+                    insertPosting.setString(5, amount);
+                    insertPosting.setString(6, policyNumber);
+                    insertPosting.setString(7, sourceEvent);
+                    insertPosting.setString(8, sourceEvent);
+                    insertPosting.setString(9, sourceRef);
+                    assertThat(insertPosting.executeUpdate()).isEqualTo(1);
+                }
+            }
+            connection.commit();
+            return journalEntryId;
         }
     }
 }

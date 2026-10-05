@@ -14,7 +14,7 @@ import java.util.List;
 
 /**
  * The unit-linked reconciliation (product step 6, spec §8, plan R10): every fund's units in issue at its latest
- * price, against what the ledger holds in 2150. The difference should always be zero -- a staff report that says so,
+ * price, against what the ledger holds in 2131 Unit fund value (2150 before IFRS 17 I1; the field keeps its name). The difference should always be zero -- a staff report that says so,
  * or says by how much it is not.
  */
 @RestController
@@ -38,7 +38,7 @@ public class UnitLinkedReconciliationController {
         List<UnitLinkedValuation.FundValuation> funds = source == null ? List.of() : source.valuations();
         BigDecimal total = funds.stream().map(UnitLinkedValuation.FundValuation::value).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal ledger = finaccountingApi.trialBalance(null).accounts().stream()
-            .filter(a -> "2150".equals(a.accountCode())).map(AccountBalanceView::balance).findFirst().orElse(BigDecimal.ZERO);
+            .filter(a -> tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule.UNIT_LINKED_LIABILITY.equals(a.accountCode())).map(AccountBalanceView::balance).findFirst().orElse(BigDecimal.ZERO);
         return new ReconciliationResponse(funds, total, ledger, ledger.subtract(total));
     }
 }

@@ -96,7 +96,7 @@ class UnitLinkedAccountingIntegrationTest {
     }
 
     private void assertLiabilityIsTheUnits(UUID tenant) {
-        assertThat(credit(tenant, "2150")).isEqualByComparingTo(carried(tenant));
+        assertThat(credit(tenant, "2131")).isEqualByComparingTo(carried(tenant));
     }
 
     private void priceOn(UUID tenant, LocalDate date, String eq, String bd) {
@@ -117,8 +117,8 @@ class UnitLinkedAccountingIntegrationTest {
         // A premium bought: 90,000 into units, 10,000 of allocation charge earned.
         fixtures.collectAt(tenant, policy, "100000.00", eat(ISSUED, 9, 0), UUID.randomUUID());
         priceOn(tenant, ISSUED.plusDays(1), "1.000000", "1.000000");
-        assertThat(credit(tenant, "2150")).isEqualByComparingTo("90000.00");
-        assertThat(credit(tenant, "4310")).isEqualByComparingTo("10000.00");
+        assertThat(credit(tenant, "2131")).isEqualByComparingTo("90000.00");
+        assertThat(credit(tenant, "2132")).isEqualByComparingTo("10000.00");
         assertLiabilityIsTheUnits(tenant);
 
         // A price rise on awkward prices: the true-up carries the movement and every sub-cent residue.
@@ -128,7 +128,7 @@ class UnitLinkedAccountingIntegrationTest {
         // A month's fee and cost of insurance: out of the liability, into income.
         sweep.sweepOne(policy, tenant, FIRST_CHARGE);
         priceOn(tenant, FIRST_CHARGE.plusDays(1), "1.300000", "1.000000");
-        assertThat(credit(tenant, "4310")).isGreaterThan(new BigDecimal("12000.00")); // 10,000 + the 2,000 fee + coi
+        assertThat(credit(tenant, "2132")).isGreaterThan(new BigDecimal("12000.00")); // 10,000 + the 2,000 fee + coi
         assertLiabilityIsTheUnits(tenant);
 
         // A surrender: the units sold release the liability, which ends at nothing.
@@ -137,11 +137,11 @@ class UnitLinkedAccountingIntegrationTest {
         priceOn(tenant, TODAY.plusDays(1), "1.250000", "1.010000");
         assertLiabilityIsTheUnits(tenant);
         assertThat(carried(tenant)).isEqualByComparingTo("0.00");
-        assertThat(credit(tenant, "2150")).isEqualByComparingTo("0.00");
+        assertThat(credit(tenant, "2131")).isEqualByComparingTo("0.00");
 
         // ...and the payout's cash leg: the proceeds ExitPriced credited to 5100 leave through cash on the paid
         // disbursement, once -- unitlinked.PayoutPaid, never policy.SurrenderPaid as well, which would pay it twice.
-        assertThat(credit(tenant, "5100")).isEqualByComparingTo("0.00");
+        assertThat(credit(tenant, "5110")).isEqualByComparingTo("0.00");
         assertThat(entries(tenant, "unitlinked.PayoutPaid")).isEqualTo(1);
         assertThat(entries(tenant, "policy.SurrenderPaid")).isZero();
         assertThat(asTenant(tenant, () -> policyApi.findLatestSurrenderRequest(policy)).orElseThrow().status()).isEqualTo("PAID");
@@ -166,15 +166,18 @@ class UnitLinkedAccountingIntegrationTest {
         priceOn(tenant, TODAY.plusDays(1), "1.100000", "1.000000"); // EQ1 should have been 1.000000: paid too much
 
         var wrong = asTenant(tenant, () -> api.listPrices("EQ1", TODAY.plusDays(1), TODAY.plusDays(1))).get(0);
+        // Since IFRS 17 I1 an amount owed by the customer sits in 2122 Premiums due from policyholders, beside the
+        // premiums themselves, so the adjustment is measured as the movement it causes there.
+        BigDecimal dueBefore = credit(tenant, "2122");
         asTenant(tenant, () -> api.approvePrice(
             api.proposeCorrection(wrong.priceId(), new BigDecimal("1.000000"), "Feed typo", UnitLinkedTestFixtures.FINANCE).priceId(),
             UnitLinkedTestFixtures.ADMIN));
         var owed = asTenant(tenant, () -> api.listAdjustments("OPEN")).get(0);
         assertThat(owed.direction()).isEqualTo("OWED_BY_CUSTOMER");
-        assertThat(credit(tenant, "1230").negate()).isEqualByComparingTo(owed.amount()); // the receivable it raised
+        assertThat(dueBefore.subtract(credit(tenant, "2122"))).isEqualByComparingTo(owed.amount()); // the receivable it raised
 
         asTenant(tenant, () -> api.settleAdjustment(owed.adjustmentId(), "RCPT-77", UnitLinkedTestFixtures.FINANCE));
-        assertThat(credit(tenant, "1230")).isEqualByComparingTo("0.00"); // collected: cleared against cash
+        assertThat(credit(tenant, "2122")).isEqualByComparingTo(dueBefore); // collected: cleared against cash
         assertThat(entries(tenant, "unitlinked.AdjustmentCollected")).isEqualTo(1);
         assertLiabilityIsTheUnits(tenant);
     }

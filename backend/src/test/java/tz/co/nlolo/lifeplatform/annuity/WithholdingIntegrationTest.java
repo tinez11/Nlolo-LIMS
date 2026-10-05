@@ -146,17 +146,17 @@ class WithholdingIntegrationTest {
             postings.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(tenant, payout.getJournalEntryId()));
         assertThat(legs).hasSize(3);
         assertThat(legs).anySatisfy(l -> {
-            assertThat(l.getAccountCode()).isEqualTo("5100");
+            assertThat(l.getAccountCode()).isEqualTo("5110");
             assertThat(l.getDirection()).isEqualTo(PostingDirection.DR);
             assertThat(l.getAmount()).isEqualByComparingTo("294000.00");
         });
         assertThat(legs).anySatisfy(l -> {
-            assertThat(l.getAccountCode()).isEqualTo("1120");
+            assertThat(l.getAccountCode()).isEqualTo("1140");
             assertThat(l.getDirection()).isEqualTo(PostingDirection.CR);
             assertThat(l.getAmount()).isEqualByComparingTo("264600.00");
         });
         assertThat(legs).anySatisfy(l -> {
-            assertThat(l.getAccountCode()).isEqualTo("2230");
+            assertThat(l.getAccountCode()).isEqualTo("2615");
             assertThat(l.getDirection()).isEqualTo(PostingDirection.CR);
             assertThat(l.getAmount()).isEqualByComparingTo("29400.00");
         });

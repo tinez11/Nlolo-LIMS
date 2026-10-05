@@ -197,10 +197,10 @@ class EftDisbursementIntegrationTest {
         JournalEntry accrual = singleEntryFor(tenantId, "payment.EftDisbursementAwaitingExecution", claimId.toString());
         List<GlPosting> legs = legsFor(tenantId, accrual);
         assertThat(legs).hasSize(2);
-        assertThat(legFor(legs, "5100").getAmount()).isEqualByComparingTo(MILLIONS);
-        assertThat(legFor(legs, "2110").getAmount()).isEqualByComparingTo(MILLIONS);
-        assertThat(legFor(legs, "5100").getDirection().name()).isEqualTo("DR");
-        assertThat(legFor(legs, "2110").getDirection().name()).isEqualTo("CR");
+        assertThat(legFor(legs, "5110").getAmount()).isEqualByComparingTo(MILLIONS);
+        assertThat(legFor(legs, "2211").getAmount()).isEqualByComparingTo(MILLIONS);
+        assertThat(legFor(legs, "5110").getDirection().name()).isEqualTo("DR");
+        assertThat(legFor(legs, "2211").getDirection().name()).isEqualTo("CR");
 
         // It also shows up on finance's work queue -- which is the only way anyone finds out they
         // owe it. An endpoint nobody can navigate to would make the whole rail unusable.
@@ -240,12 +240,12 @@ class EftDisbursementIntegrationTest {
         // claims expense would be recognised twice -- once here and once by claims.ClaimSettled.
         JournalEntry reversal = singleEntryFor(tenantId, "payment.EftDisbursementExecuted", claimId.toString());
         List<GlPosting> legs = legsFor(tenantId, reversal);
-        assertThat(legFor(legs, "2110").getDirection().name()).isEqualTo("DR");
-        assertThat(legFor(legs, "5100").getDirection().name()).isEqualTo("CR");
+        assertThat(legFor(legs, "2211").getDirection().name()).isEqualTo("DR");
+        assertThat(legFor(legs, "5110").getDirection().name()).isEqualTo("CR");
 
         // Net effect of the pair on the payable: zero. The liability existed exactly as long as
         // the money was owed and not yet paid.
-        assertThat(netMovement(tenantId, "2110")).isEqualByComparingTo("0.00");
+        assertThat(netMovement(tenantId, "2211")).isEqualByComparingTo("0.00");
 
         // Confirming twice is a finance officer clicking twice, not a second payout.
         paymentApiImpl.markEftExecuted(disbursementId, "FT26091200417", "finance-officer-asha");
