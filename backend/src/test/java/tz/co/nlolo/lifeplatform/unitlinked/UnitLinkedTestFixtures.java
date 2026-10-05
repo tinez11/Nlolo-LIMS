@@ -64,6 +64,7 @@ public class UnitLinkedTestFixtures {
     private final FuneralTestFixtures people;
     private final org.springframework.context.ApplicationEventPublisher publisher;
     private final org.springframework.transaction.support.TransactionTemplate tx;
+    @org.springframework.beans.factory.annotation.Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public UnitLinkedTestFixtures(UnitLinkedApi api, ProductApi productApi, UnderwritingApi underwritingApi,
                                   PolicyApi policyApi, FuneralTestFixtures people,
@@ -181,5 +182,40 @@ public class UnitLinkedTestFixtures {
         people.decide(tenant, caseId, DecisionOutcome.ACCEPT, null);
         return asTenant(tenant, () -> policyApi.searchPolicies(life, null, null, null, null,
             org.springframework.data.domain.PageRequest.of(0, 5)).getContent().get(0).policyNumber());
+    }
+
+    /** Moves a policy's issue and commencement to {@code issued}, so its charge dates fall on days that can be priced. */
+    public void backdate(String policyNumber, LocalDate issued) {
+        jdbc.update("UPDATE policy.policy SET issue_date = ?, commencement_date = ? WHERE policy_number = ?", issued, issued, policyNumber);
+    }
+
+    /** EQ1 and BD1 priced on {@code date}, by two people each. */
+    public void priceBoth(UUID tenant, LocalDate date, String eq, String bd) {
+        approvedPrice(tenant, "EQ1", date, eq);
+        approvedPrice(tenant, "BD1", date, bd);
+    }
+
+    /** Any event, committed, so AFTER_COMMIT listeners hear it as they would in production. */
+    public void publish(UUID tenant, String eventType, java.util.Map<String, Object> payload) {
+        tx.executeWithoutResult(status -> publisher.publishEvent(
+            tz.co.nlolo.lifeplatform.DomainEventEnvelope.of(eventType, tenant, payload)));
+    }
+
+    /**
+     * The standard product on funds whose cut-off is one second past midnight: anything that happens today binds to
+     * TOMORROW, whatever the hour -- so a test can know the bound date of a registration stamped with the real now.
+     */
+    public Product publishStandardBindingTomorrow(UUID tenant, UnitLinkedPlan terms) {
+        fund(tenant, "EQ1", LocalTime.of(0, 0, 1));
+        fund(tenant, "BD1", LocalTime.of(0, 0, 1));
+        return publish(tenant, terms);
+    }
+
+    /** {@link #standardTerms} with another death rule. */
+    public static UnitLinkedPlan withDeathRule(UnitLinkedPlan.DeathRule rule) {
+        UnitLinkedPlan t = standardTerms(List.of("EQ1", "BD1"));
+        return UnitLinkedPlan.of(t.fundCodes(), t.allocationBands(), t.monthlyPolicyFee(), t.mortalityBasis(), t.mortality(),
+            rule, t.lapseRule(), t.minimumPremiumYears(), t.minimumSurrenderYears(), t.lowFundWarningMonths(),
+            t.premiumMinimums(), t.sumAssuredMultipleMin(), t.sumAssuredMultipleMax());
     }
 }

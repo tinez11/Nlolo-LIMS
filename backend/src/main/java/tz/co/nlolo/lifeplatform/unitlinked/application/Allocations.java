@@ -171,6 +171,11 @@ class Allocations implements UnitsPricedListener {
         payload.put("allocated", toUnits.toPlainString());
         payload.put("allocationCharge", charge.toPlainString());
         payload.put("currencyCode", fund.getCurrency());
+        payload.put("policyholderPartyId", policyApi.getPolicy(order.getPolicyNumber()).policyholderPartyId().toString());
+        // The first premium ever to buy units on this policy -- the one the customer is told about.
+        long premiumsInvested = entries.findByTenantIdAndPolicyNumberOrderByCreatedAt(tenantId, order.getPolicyNumber()).stream()
+            .filter(e -> e.getType() == UnitEntry.Type.ALLOCATION).map(UnitEntry::getSourceRef).distinct().count();
+        payload.put("firstPremium", premiumsInvested == 1);
         events.publishEvent(DomainEventEnvelope.of("unitlinked.UnitsAllocated", tenantId, payload));
     }
 }

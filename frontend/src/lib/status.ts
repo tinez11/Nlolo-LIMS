@@ -171,6 +171,23 @@ export const STATUS_MAPS = {
     WITHDRAWN: 'neutral',
   },
 
+  // unitlinked fund.status, fund_price.status, price_correction_adjustment.status (product step 6).
+  fund: {
+    OPEN: 'active',
+    CLOSED: 'neutral',
+  },
+  fundPrice: {
+    PROPOSED: 'pending',
+    APPROVED: 'active',
+    SUPERSEDED: 'neutral',
+    WITHDRAWN: 'neutral',
+  },
+  priceAdjustment: {
+    OPEN: 'warning',
+    SETTLED: 'success',
+    WAIVED: 'neutral',
+  },
+
   // claims/api/ClaimStatus.java
   claim: {
     REGISTERED: 'pending',

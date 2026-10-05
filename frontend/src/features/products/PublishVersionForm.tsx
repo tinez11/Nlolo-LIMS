@@ -23,7 +23,6 @@ import {
   blankBenefitRow,
   blankDepositBand,
   blankCashValueRow,
-  blankFundRow,
   CASH_VALUE_CATEGORIES,
   FREE_LOOK_CATEGORIES,
   SCHEDULED_CATEGORIES,
@@ -46,6 +45,8 @@ import { blankAnnuityFields } from './annuitySchema';
 import { AnnuityTermsSection } from './AnnuityTermsSection';
 import { blankFuneralFields } from './funeralSchema';
 import { FuneralTermsSection } from './FuneralTermsSection';
+import { blankUnitLinkedFields } from './unitLinkedSchema';
+import { UnitLinkedTermsSection } from './UnitLinkedTermsSection';
 
 /**
  * An example shaped like the factor it belongs to.
@@ -135,7 +136,8 @@ export function PublishVersionForm({
       effectiveDate: '',
       retirementDate: '',
       // A FUNERAL version carries no rating factors (plan R1); every other starts with the two required.
-      ratingTable: category === 'FUNERAL' ? [] : [blankRatingFactorRow(), { ...blankRatingFactorRow(), factorType: 'SUM_ASSURED_BAND' }],
+      // A UNIT_LINKED version's cost of insurance is its mortality table (product step 6): no rating factors either.
+      ratingTable: category === 'FUNERAL' || category === 'UNIT_LINKED' ? [] : [blankRatingFactorRow(), { ...blankRatingFactorRow(), factorType: 'SUM_ASSURED_BAND' }],
       baseRates: [],
       // One row from the start, like the rating table above: at least one benefit is now
       // required, and a panel that starts empty would make every publish begin with a
@@ -175,6 +177,7 @@ export function PublishVersionForm({
       bonusSurrenderRows: [],
       ...blankAnnuityFields(),
       ...blankFuneralFields(),
+      ...blankUnitLinkedFields(),
     },
   });
   const bonusSurrenderRows = useFieldArray({ control, name: 'bonusSurrenderRows' });
@@ -222,7 +225,6 @@ export function PublishVersionForm({
   // Which amount input a benefit row shows follows the method selected on that row, and
   // `benefitSchedule.fields` will not do it for the reason given above.
   const benefitRows = useWatch({ control, name: 'benefitSchedule' });
-  const fundDefinitions = useFieldArray({ control, name: 'fundDefinitions' });
 
   /*
     Held between the submit and the second, deliberate click. Publishing retires the version
@@ -382,7 +384,7 @@ export function PublishVersionForm({
       </div>
 
       {/* A FUNERAL version is priced by its premium table alone (plan R1): no rating table, no base rates. */}
-      {category !== 'FUNERAL' && (
+      {category !== 'FUNERAL' && category !== 'UNIT_LINKED' && (
       <div className="rounded-md border border-border p-3">
         {/*
           Which factors are required flips with the base rate panel below, so this line
@@ -619,7 +621,7 @@ export function PublishVersionForm({
         version is unpriced ... a rate table has to be supplied at publish time" --
         describing a dead end.
       */}
-      {category !== 'FUNERAL' && (
+      {category !== 'FUNERAL' && category !== 'UNIT_LINKED' && (
       <div className="rounded-md border border-border p-3">
         <p className="text-xs font-medium text-muted-foreground">Base rates (optional)</p>
         <p className="mt-0.5 mb-2.5 text-xs text-subtle-foreground">
@@ -1085,6 +1087,10 @@ export function PublishVersionForm({
       )}
       {/* Family funeral cover: required on a FUNERAL product, and offered on no other. */}
       {category === 'FUNERAL' && <FuneralTermsSection register={register} control={control} errors={errors} />}
+      {/* Product step 6: required on a UNIT_LINKED product, and offered on no other. */}
+      {category === 'UNIT_LINKED' && (
+        <UnitLinkedTermsSection register={register} control={control} errors={errors} currency={undefined} />
+      )}
 
       {WITH_PROFITS_CATEGORIES.includes(category) && valueBasis === 'SCALE' && (
         <div className="rounded-md border border-border p-3">
@@ -1450,51 +1456,6 @@ export function PublishVersionForm({
               </div>
             </>
           )}
-        </div>
-      )}
-
-      {category === 'UNIT_LINKED' && (
-        <div className="rounded-md border border-border p-3">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">
-            Fund definitions -- only valid for UNIT_LINKED products
-          </p>
-          <div className="space-y-2">
-            {fundDefinitions.fields.map((field, index) => (
-              <div key={field.id} className="flex items-center gap-2">
-                <Input
-                  inputSize="sm" className="flex-1"
-                  placeholder="Fund code"
-                  {...register(`fundDefinitions.${index}.fundCode`)}
-                />
-                <Input
-                  type="number"
-                  step="0.01"
-                  inputSize="sm" className="w-28 text-right"
-                  placeholder="Current NAV"
-                  {...register(`fundDefinitions.${index}.currentNav`)}
-                />
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  aria-label="Remove fund"
-                  onClick={() => fundDefinitions.remove(index)}
-                >
-                  <X />
-                </Button>
-              </div>
-            ))}
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="-ml-2 mt-2"
-            onClick={() => fundDefinitions.append(blankFundRow())}
-          >
-            <Plus />
-            Add fund
-          </Button>
         </div>
       )}
 

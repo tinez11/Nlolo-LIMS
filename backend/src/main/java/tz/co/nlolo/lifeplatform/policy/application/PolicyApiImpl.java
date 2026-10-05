@@ -596,6 +596,12 @@ public class PolicyApiImpl implements PolicyApi {
     public SurrenderQuoteView quoteSurrenderValue(String policyNumber) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        // Unit-linked (product step 6, plan R11): the units are sold forward at the first price after approval, so
+        // there is no figure to quote -- the account here holds nothing, and a zero would read as the value.
+        if ("UNIT_LINKED".equals(policy.getProductCategory())) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " is unit-linked: its surrender is valued at"
+                + " the first fund price after approval, so no value can be quoted now");
+        }
         PolicyAccount account = policyAccountRepository.findById(policyNumber)
             .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
         // The version THIS POLICY was sold under, not the one on sale today. A surrender charge is a
@@ -932,6 +938,12 @@ public class PolicyApiImpl implements PolicyApi {
     @Override
     @Transactional
     public boolean lapseExhaustedAccount(String policyNumber, LocalDate exhaustedOn) {
+        return lapseExhaustedAccount(policyNumber, exhaustedOn, "ACCOUNT_EXHAUSTED");
+    }
+
+    @Override
+    @Transactional
+    public boolean lapseExhaustedAccount(String policyNumber, LocalDate exhaustedOn, String reason) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
         if (!policy.canLapseOnExhaustion()) {
@@ -943,7 +955,7 @@ public class PolicyApiImpl implements PolicyApi {
         // already do. The two extra keys are additive and say why.
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyLapsed", tenantId,
             Map.of("policyNumber", policyNumber, "lapsedAt", policy.getLapsedAt().toString(),
-                "reason", "ACCOUNT_EXHAUSTED", "exhaustedOn", exhaustedOn.toString())));
+                "reason", reason, "exhaustedOn", exhaustedOn.toString())));
         return true;
     }
 
@@ -991,6 +1003,11 @@ public class PolicyApiImpl implements PolicyApi {
 
         if (vestedPension(policy)) {
             throw new InvalidPolicyStateException("Policy " + policyNumber + " is a pension in payment; it has no contributions to stop");
+        }
+        // Product step 6 (plan R9): a unit-linked policy's value is its units, and its cover is paid for from them
+        // monthly -- there is no paid-up value to make it into in U1.
+        if ("UNIT_LINKED".equals(policy.getProductCategory())) {
+            throw new InvalidPolicyStateException("A unit-linked policy has no paid-up or loan value in U1; its value is its units");
         }
         if (productApi.resolveDepositPlan(policy.getProductVersionId()).isDeposit()) {
             throw new InvalidPolicyStateException("Policy " + policyNumber
@@ -1154,6 +1171,24 @@ public class PolicyApiImpl implements PolicyApi {
                 + "; it must resolve before the policy can be surrendered");
         }
 
+        // Unit-linked (product step 6, plan R5/R11): the value is the units, sold FORWARD at the first price after
+        // approval, so nothing is quoted -- any figure here would be a price already known. The version's own
+        // minimum years apply; the loan checks above already have.
+        if ("UNIT_LINKED".equals(policy.getProductCategory())) {
+            tz.co.nlolo.lifeplatform.product.api.UnitLinkedPlan unitLinked =
+                productApi.resolveUnitLinkedPlan(policy.getProductVersionId());
+            LocalDate start = policy.getCommencementDate() != null ? policy.getCommencementDate() : policy.getIssueDate();
+            int completedYears = Period.between(start, LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"))).getYears();
+            if (completedYears < unitLinked.minimumSurrenderYears()) {
+                throw new InvalidPolicyStateException("Policy " + policyNumber + " has no surrender value until "
+                    + unitLinked.minimumSurrenderYears() + " years");
+            }
+            SurrenderRequest unitLinkedRequest = SurrenderRequest.forUnitLinked(tenantId, policyNumber,
+                policy.getPremiumCurrency(), payeeRef, requestedBy);
+            surrenderRequestRepository.save(unitLinkedRequest);
+            return toSurrenderView(unitLinkedRequest);
+        }
+
         // Past the minimum term, and with a value. minYears comes from the policy's own version.
         var config = productApi.getCashValueConfig(policy.getProductVersionId());
         if (config.isPresent()) {
@@ -1205,7 +1240,17 @@ public class PolicyApiImpl implements PolicyApi {
         // Billing stops and regreporting projects the surrender.
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicySurrendered", tenantId,
             Map.of("policyNumber", request.getPolicyNumber(), "surrenderedAt", Instant.now().toString())));
-        if (productApi.resolveAccumulationPlan(policy.getProductVersionId()).isAccount()) {
+        if ("UNIT_LINKED".equals(policy.getProductCategory())) {
+            // Product step 6 (plan R5): unitlinked sells the units at the first price after THIS approval and pays
+            // the proceeds under SURRENDER_PAYOUT with the request as the source, so step 1's SurrenderPaymentListener
+            // marks it paid unchanged. Policy cannot call unitlinked (a cycle), so it says what it approved, and when.
+            eventPublisher.publishEvent(DomainEventEnvelope.of("policy.UnitLinkedSurrenderApproved", tenantId,
+                Map.of("surrenderRequestId", surrenderRequestId.toString(),
+                       "policyNumber", request.getPolicyNumber(),
+                       "payeeRef", request.getPayeeRef(),
+                       "approvedBy", approvedBy,
+                       "approvedAt", Instant.now().toString())));
+        } else if (productApi.resolveAccumulationPlan(policy.getProductVersionId()).isAccount()) {
             // Product step 3 (spec §5.4): an account is valued at approval, with interest to the
             // day, and the payment is accumulation's. Policy cannot call accumulation -- that would be
             // a cycle -- so it says what it approved, with the charge it already resolves.
@@ -1269,6 +1314,11 @@ public class PolicyApiImpl implements PolicyApi {
             .ifPresent(r -> {
                 r.markPaid(disbursementId);
                 surrenderRequestRepository.save(r);
+                // A unit-linked surrender has no quoted value (product step 6): unitlinked priced it and books its
+                // own payout on unitlinked.PayoutPaid, so posting it here as well would pay it twice in the ledger.
+                if (r.getQuotedValueAmount() == null) {
+                    return;
+                }
                 // Published only on the real APPROVED -> PAID transition, so a redelivered payment
                 // event cannot post the payout to the ledger twice. finaccounting books it.
                 eventPublisher.publishEvent(DomainEventEnvelope.of("policy.SurrenderPaid", tenantId,
@@ -1322,7 +1372,10 @@ public class PolicyApiImpl implements PolicyApi {
         // nowhere to go. Skipped rather than thrown: the hourly selector offers it again until
         // benefitpayout gets to it, and one unpayable policy must not stop the queue.
         if (productApi.resolvePayoutPlan(policy.getProductVersionId()).hasEndOfTermRow()
-                || productApi.resolveDepositPlan(policy.getProductVersionId()).isDeposit()) {
+                || productApi.resolveDepositPlan(policy.getProductVersionId()).isDeposit()
+                // ...and a unit-linked policy's units mature through unitlinked's own run (plan R4): expiring it
+                // here would end cover on a contract whose units are still owed to the customer.
+                || "UNIT_LINKED".equals(policy.getProductCategory())) {
             // ...and a fixed-term deposit matures through accumulation's own run (pay out or
             // reinvest), never by expiry: its money is still on the account.
             return;

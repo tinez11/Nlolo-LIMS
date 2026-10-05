@@ -50,4 +50,30 @@ public interface UnitLinkedApi {
     List<WaitingCount> waiting(String fundCode);
 
     record WaitingCount(LocalDate boundDate, long orders) {}
+
+    /** A corrected price for a date already approved, with its reason; a second person approves it (spec §3). */
+    FundPriceView proposeCorrection(UUID approvedPriceId, BigDecimal price, String reason, String proposedBy);
+
+    /** {@code status} OPEN, SETTLED or WAIVED; null for all. */
+    List<AdjustmentView> listAdjustments(String status);
+
+    /**
+     * Owed to the customer: paid to {@code payeeRef}. Owed by them: recorded as collected, {@code payeeRef} being the
+     * reference it was collected under. By someone other than whoever approved the correction.
+     */
+    AdjustmentView settleAdjustment(UUID adjustmentId, String payeeRef, String settledBy);
+
+    AdjustmentView waiveAdjustment(UUID adjustmentId, String reason, String waivedBy);
+
+    /** Whether this module decides what a death on this policy pays: a unit-linked policy. */
+    boolean decidesDeath(String policyNumber);
+
+    /**
+     * What the death claim pays, once the units it froze at registration are sold. Throws
+     * {@link UnitsNotYetPricedException} until then (spec §7).
+     */
+    DeathValueView deathValue(java.util.UUID claimId, java.time.LocalDate dateOfDeath);
+
+    /** Staff set the payee of a maturity or lapse payout the policyholder's record could not supply. */
+    void payAwaitingExit(String policyNumber, String payeeRef, String by);
 }

@@ -36,6 +36,12 @@ public interface PendingOrderRepository extends JpaRepository<PendingOrder, UUID
     long countWaiting(@Param("tenantId") UUID tenantId, @Param("sourceType") String sourceType,
                       @Param("sourceRef") String sourceRef);
 
+    /** One charge date's orders: every source ref under {@code prefix} (charge:<policy>:<date>:). */
+    @Query("select o from PendingOrder o where o.tenantId = :tenantId and o.sourceType = :sourceType"
+        + " and o.sourceRef like concat(:prefix, '%')")
+    List<PendingOrder> findBySourcePrefix(@Param("tenantId") UUID tenantId, @Param("sourceType") String sourceType,
+                                          @Param("prefix") String prefix);
+
     /** Waiting orders per bound date for a fund: the console's "waiting for a price" counts. */
     @Query("select o.boundDate, count(o) from PendingOrder o where o.tenantId = :tenantId and o.fundId = :fundId"
         + " and o.status = 'WAITING' group by o.boundDate order by o.boundDate")

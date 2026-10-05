@@ -18,6 +18,8 @@ public final class UnitLinkedTestMigrations {
         "db-migrations/product/V25__unit_linked_terms.sql",
         "db-migrations/underwriting/V17__unit_linked_choice.sql",
         "db-migrations/unitlinked/V2__units.sql",
+        "db-migrations/finaccounting/V9__unit_linked_accounts.sql",
+        "db-migrations/payment/V13__unit_linked_purposes.sql",
     };
 
     public static final String[] ALL = Stream.concat(Stream.of(FuneralTestMigrations.ALL), Stream.of(UNIT_LINKED))

@@ -26,6 +26,13 @@ public interface UnitEntryRepository extends JpaRepository<UnitEntry, UUID> {
     @Query("select coalesce(sum(e.units), 0) from UnitEntry e where e.tenantId = :tenantId and e.fundId = :fundId")
     BigDecimal unitsInIssue(@Param("tenantId") UUID tenantId, @Param("fundId") UUID fundId);
 
+    @Query("select e from UnitEntry e where e.tenantId = :tenantId and e.sourceType = :sourceType"
+        + " and e.sourceRef like concat(:prefix, '%')")
+    List<UnitEntry> findBySourcePrefix(@Param("tenantId") UUID tenantId, @Param("sourceType") String sourceType,
+                                       @Param("prefix") String prefix);
+
+    boolean existsByTenantIdAndPolicyNumberAndEntryType(UUID tenantId, String policyNumber, String entryType);
+
     List<UnitEntry> findByTenantIdAndPolicyNumberOrderByCreatedAt(UUID tenantId, String policyNumber);
 
     List<UnitEntry> findByTenantIdAndPriceId(UUID tenantId, UUID priceId);

@@ -313,7 +313,10 @@ paths:
   /policies/{policyNumber}/surrender-value:
     get:
       summary: Quote current surrender value (does not commit to surrender)
-      description: Produces SurrenderValueCalculated internally — a quote only, per Deliverable 2 Rev 2 event catalog.
+      description: >-
+        Produces SurrenderValueCalculated internally — a quote only, per Deliverable 2 Rev 2 event catalog.
+        A unit-linked policy is refused with 409 (product step 6): its units are sold at the first fund
+        price after the surrender is approved, so no figure exists to quote.
       security:
         - customersAuth: [profile]
         - agentsAuth: [agent]
@@ -341,6 +344,11 @@ paths:
                       version that is not with-profits or whose bonus surrender basis is NONE.
                     allOf:
                       - $ref: 'openapi-common.yaml#/components/schemas/Money'
+        '409':
+          description: A unit-linked policy, which is valued at the first fund price after approval and cannot be quoted
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /policies/{policyNumber}/surrender:
     post:
       summary: Request a customer surrender
@@ -349,7 +357,9 @@ paths:
         surrendered (in force, paid-up or lapsed-with-value, past the minimum term, no outstanding
         loan, no other surrender in flight) and records a REQUESTED surrender for a second person to
         approve. Does not stop cover. Staff-only, because money leaves the company and request and
-        approval must be different people.
+        approval must be different people. A unit-linked policy (product step 6) is not quoted --
+        quotedValue is null -- and must be past its version's minimum surrender years; on approval its
+        units are sold at the first fund price after approval and the proceeds paid.
       security:
         - staffAuth: []
       parameters:
@@ -1557,7 +1567,11 @@ components:
         surrenderRequestId: { type: string, format: uuid }
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
         status: { type: string, enum: [REQUESTED, APPROVED, PAID, FAILED, IN_DOUBT] }
-        quotedValue: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        quotedValue:
+          description: Null on a unit-linked surrender, which is valued at the first fund price after approval.
+          anyOf:
+            - { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+            - { type: "null" }
         payeeRef: { type: string, description: "Where the payout goes — what the approver checks" }
         requestedBy: { type: [string, "null"] }
         approvedBy: { type: [string, "null"] }

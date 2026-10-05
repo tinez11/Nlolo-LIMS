@@ -70,6 +70,12 @@ public interface BenefitPayoutApi {
     /** The policy's most recent cancellation in any status, so a second person can find one. */
     java.util.Optional<FreeLookCancellationView> findFreeLook(String policyNumber);
 
+    /**
+     * A unit-linked free-look's refund, once unitlinked has unwound the policy's entries and sold its units
+     * (product step 6, plan R6): sets the amount on the approved cancellation and pays it, as approval pays any other.
+     */
+    FreeLookCancellationView releaseUnitLinkedFreeLookRefund(UUID cancellationId, java.math.BigDecimal refund);
+
     /** Payment runs, newest first. Runs are few -- one a day per tenant -- so this is not paged. */
     List<PaymentRunView> listRuns();
 

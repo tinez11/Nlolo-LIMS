@@ -144,6 +144,21 @@ paths:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /finance/unit-linked-reconciliation:
+    get:
+      summary: Every fund's units in issue at its latest price, against the 2150 ledger balance
+      description: >-
+        Product step 6. Finance or an admin. The difference should always be zero: every approved price
+        trues 2150 up to units x price, so a non-zero difference is a defect to investigate, not timing.
+      security:
+        - staffAuth: [finance_officer, admin]
+      responses:
+        '200':
+          description: The reconciliation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnitLinkedReconciliation' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /chart-of-accounts/balances:
     get:
       summary: The chart with its balances, and whether the ledger balances
@@ -321,6 +336,27 @@ components:
         application/problem+json:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   schemas:
+    UnitLinkedReconciliation:
+      type: object
+      additionalProperties: false
+      required: [funds, totalValue, ledgerBalance2150, difference]
+      properties:
+        funds:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [fundCode, unitsInIssue, value, currency]
+            properties:
+              fundCode: { type: string }
+              unitsInIssue: { type: string, description: Decimal string }
+              price: { type: [string, "null"], description: "Decimal string; null before the fund's first approved price" }
+              priceDate: { type: [string, "null"], format: date }
+              value: { type: string, description: Decimal string }
+              currency: { type: string }
+        totalValue: { type: string, description: Decimal string }
+        ledgerBalance2150: { type: string, description: Decimal string }
+        difference: { type: string, description: "Decimal string; ledger less units value, zero when reconciled" }
     PostingDirection:
       type: string
       enum: [DR, CR]

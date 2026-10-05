@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import tz.co.nlolo.lifeplatform.unitlinked.api.AdjustmentView;
 import tz.co.nlolo.lifeplatform.unitlinked.api.CreateFund;
 import tz.co.nlolo.lifeplatform.unitlinked.api.FundPriceView;
 import tz.co.nlolo.lifeplatform.unitlinked.api.FundView;
@@ -95,6 +96,13 @@ public class FundController {
         return api.units(policyNumber);
     }
 
+    /** Name the payee of a maturity or lapse payout the policyholder's record could not supply. */
+    @PostMapping("/policies/{policyNumber}/units/payee")
+    @PreAuthorize(FINANCE)
+    public void payAwaitingExit(@PathVariable String policyNumber, @RequestBody SettleRequest r, @AuthenticationPrincipal Jwt jwt) {
+        api.payAwaitingExit(policyNumber, r.payeeRef(), jwt.getSubject());
+    }
+
     @PostMapping("/fund-prices")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize(FINANCE)
@@ -113,6 +121,39 @@ public class FundController {
     @PreAuthorize(FINANCE)
     public FundPriceView approve(@PathVariable UUID priceId, @AuthenticationPrincipal Jwt jwt) {
         return api.approvePrice(priceId, jwt.getSubject());
+    }
+
+    public record CorrectionRequest(BigDecimal price, String reason) {}
+
+    public record SettleRequest(String payeeRef) {}
+
+    public record WaiveRequest(String reason) {}
+
+    /** A corrected price for an approved one; a second person approves it at the usual /approval (spec §3). */
+    @PostMapping("/fund-prices/{priceId}/correction")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(FINANCE)
+    public FundPriceView proposeCorrection(@PathVariable UUID priceId, @RequestBody CorrectionRequest r,
+                                           @AuthenticationPrincipal Jwt jwt) {
+        return api.proposeCorrection(priceId, r.price(), r.reason(), jwt.getSubject());
+    }
+
+    @GetMapping("/price-adjustments")
+    @PreAuthorize(FINANCE)
+    public List<AdjustmentView> adjustments(@RequestParam(required = false) String status) {
+        return api.listAdjustments(status);
+    }
+
+    @PostMapping("/price-adjustments/{adjustmentId}/settlement")
+    @PreAuthorize(FINANCE)
+    public AdjustmentView settle(@PathVariable UUID adjustmentId, @RequestBody SettleRequest r, @AuthenticationPrincipal Jwt jwt) {
+        return api.settleAdjustment(adjustmentId, r.payeeRef(), jwt.getSubject());
+    }
+
+    @PostMapping("/price-adjustments/{adjustmentId}/waiver")
+    @PreAuthorize(FINANCE)
+    public AdjustmentView waive(@PathVariable UUID adjustmentId, @RequestBody WaiveRequest r, @AuthenticationPrincipal Jwt jwt) {
+        return api.waiveAdjustment(adjustmentId, r.reason(), jwt.getSubject());
     }
 
     @PostMapping("/fund-prices/{priceId}/withdrawal")

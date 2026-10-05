@@ -1,0 +1,499 @@
+openapi: 3.1.0
+info:
+  title: Unit-linked API
+  version: "0.1.0-draft"
+  description: >
+    External REST surface of the `unitlinked` module (product step 6, U1). A shared fund register
+    whose prices one person proposes and a second approves; premiums buy units at the first price
+    approved for the date they are bound to (forward pricing, a daily cut-off per fund); every unit
+    movement is an immutable ledger entry. Every decimal -- units, prices, percentages, money -- is
+    a decimal string, never a binary float.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /funds:
+    get:
+      summary: Every fund in the register, open and closed
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The funds
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Fund' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Add a fund to the register
+      description: Finance or an admin. 409 UNIT_LINKED_STATE for a code already used; 422 UNIT_LINKED_INVALID for an invalid field.
+      security:
+        - staffAuth: [finance_officer, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateFundRequest' }
+      responses:
+        '201':
+          description: The fund, OPEN
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Fund' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /funds/{code}:
+    get:
+      summary: One fund
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/FundCode'
+      responses:
+        '200':
+          description: The fund
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Fund' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/FundNotFound' }
+  /funds/{code}/closure:
+    post:
+      summary: Close a fund to new money
+      description: An admin's decision. A closed fund takes no new allocation and no new product version may offer it; units already held keep being priced.
+      security:
+        - staffAuth: [admin]
+      parameters:
+        - $ref: '#/components/parameters/FundCode'
+      responses:
+        '200':
+          description: The fund, CLOSED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Fund' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/FundNotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /funds/{code}/prices:
+    get:
+      summary: A fund's prices, newest valuation date first
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/FundCode'
+        - { name: from, in: query, required: false, schema: { type: string, format: date } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: The prices, every status
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/FundPrice' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/FundNotFound' }
+  /funds/{code}/waiting:
+    get:
+      summary: How many orders are waiting for a price, by the date they are bound to
+      description: What the next approval will price. A missing price is never filled from an older one, so orders wait until one is approved.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/FundCode'
+      responses:
+        '200':
+          description: Waiting orders per bound date
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/WaitingCount' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/FundNotFound' }
+  /fund-prices:
+    post:
+      summary: Propose a price for a fund and valuation date
+      description: >
+        Finance or an admin. A move larger than UL_PRICE_MOVE_ALERT_PERCENT against the last approved
+        price needs a moveReason (422 otherwise). 409 for a date already approved -- that is a
+        correction, proposed at /fund-prices/{priceId}/correction.
+      security:
+        - staffAuth: [finance_officer, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProposePriceRequest' }
+      responses:
+        '201':
+          description: The price, PROPOSED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FundPrice' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/FundNotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /fund-prices/csv:
+    post:
+      summary: Propose many prices from a CSV of fundCode,valuationDate,price[,moveReason]
+      description: All or nothing -- one bad row refuses the file, naming its line.
+      security:
+        - staffAuth: [finance_officer, admin]
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema: { type: string }
+          text/plain:
+            schema: { type: string }
+      responses:
+        '201':
+          description: The prices, PROPOSED
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/FundPrice' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/FundNotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /fund-prices/{priceId}/approval:
+    post:
+      summary: Approve a proposed price, pricing every order waiting for it
+      description: >
+        A second person -- 409 when the proposer approves their own price. Refused (409) before its
+        date's cut-off has passed, and out of date order: an earlier proposed date must be approved
+        first. Approving a correction re-prices what the corrected price priced; money already paid
+        out becomes a price adjustment.
+      security:
+        - staffAuth: [finance_officer, admin]
+      parameters:
+        - $ref: '#/components/parameters/PriceId'
+      responses:
+        '200':
+          description: The price, APPROVED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FundPrice' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/FundNotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /fund-prices/{priceId}/withdrawal:
+    post:
+      summary: Withdraw a proposed price that was wrong
+      security:
+        - staffAuth: [finance_officer, admin]
+      parameters:
+        - $ref: '#/components/parameters/PriceId'
+      responses:
+        '200':
+          description: The price, WITHDRAWN
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FundPrice' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/FundNotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /fund-prices/{priceId}/correction:
+    post:
+      summary: Propose a corrected price for an approved one
+      description: A reason is required. A second person approves it at /approval; until then the approved price stands.
+      security:
+        - staffAuth: [finance_officer, admin]
+      parameters:
+        - $ref: '#/components/parameters/PriceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CorrectionRequest' }
+      responses:
+        '201':
+          description: The correction, PROPOSED, naming the price it supersedes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FundPrice' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/FundNotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /price-adjustments:
+    get:
+      summary: Money a price correction moved on payouts already made
+      security:
+        - staffAuth: [finance_officer, admin]
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [OPEN, SETTLED, WAIVED] } }
+      responses:
+        '200':
+          description: The adjustments
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/PriceAdjustment' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /price-adjustments/{adjustmentId}/settlement:
+    post:
+      summary: Pay an adjustment owed to the customer, or record one owed by them as recovered
+      description: Not by whoever proposed the correction (409).
+      security:
+        - staffAuth: [finance_officer, admin]
+      parameters:
+        - $ref: '#/components/parameters/AdjustmentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayeeRequest' }
+      responses:
+        '200':
+          description: The adjustment, SETTLED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PriceAdjustment' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/FundNotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /price-adjustments/{adjustmentId}/waiver:
+    post:
+      summary: Waive an adjustment, with a reason
+      description: Not by whoever proposed the correction (409).
+      security:
+        - staffAuth: [finance_officer, admin]
+      parameters:
+        - $ref: '#/components/parameters/AdjustmentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WaiveRequest' }
+      responses:
+        '200':
+          description: The adjustment, WAIVED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PriceAdjustment' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/FundNotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /policies/{policyNumber}/units:
+    get:
+      summary: A unit-linked policy's holdings, waiting orders and ledger entries
+      description: >
+        Any staff member. Values are at each fund's latest approved price -- shown, never posted. A
+        policy with no units yet returns empty holdings; the console reads a policy of another
+        category from its own category, not from this call.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The units
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyUnits' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /policies/{policyNumber}/units/payee:
+    post:
+      summary: Name the payee of a maturity or lapse payout the policyholder's record could not supply
+      description: Finance or an admin. 409 when no exit is awaiting a payee.
+      security:
+        - staffAuth: [finance_officer, admin]
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayeeRequest' }
+      responses:
+        '200': { description: The payout was requested }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+components:
+  parameters:
+    FundCode:
+      { name: code, in: path, required: true, schema: { type: string, pattern: '^[A-Z0-9][A-Z0-9_-]{1,19}$' } }
+    PriceId:
+      { name: priceId, in: path, required: true, schema: { type: string, format: uuid } }
+    AdjustmentId:
+      { name: adjustmentId, in: path, required: true, schema: { type: string, format: uuid } }
+  responses:
+    FundNotFound:
+      description: FUND_NOT_FOUND -- no such fund, price or adjustment
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    StateConflict:
+      description: UNIT_LINKED_STATE -- refused in this state, in the service's words
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    Invalid:
+      description: UNIT_LINKED_INVALID -- an invalid field, in the validator's words
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  schemas:
+    Decimal:
+      type: string
+      pattern: '^-?\d+(\.\d+)?$'
+      description: Decimal string -- never a binary float.
+    CreateFundRequest:
+      type: object
+      required: [code, name, currency, assetClass, annualManagementChargePercent, cutOffTime]
+      properties:
+        code: { type: string, pattern: '^[A-Z0-9][A-Z0-9_-]{1,19}$' }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        assetClass: { type: string, enum: [EQUITY, BOND, MONEY_MARKET, BALANCED] }
+        annualManagementChargePercent:
+          type: string
+          description: Decimal string; already built into the price, recorded for disclosure.
+        cutOffTime: { type: string, description: "Local time HH:mm[:ss], East Africa Time" }
+    Fund:
+      type: object
+      additionalProperties: false
+      required: [fundId, code, name, currency, assetClass, annualManagementChargePercent, cutOffTime, status, createdBy, createdAt]
+      properties:
+        fundId: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        currency: { type: string }
+        assetClass: { type: string, enum: [EQUITY, BOND, MONEY_MARKET, BALANCED] }
+        annualManagementChargePercent: { $ref: '#/components/schemas/Decimal' }
+        cutOffTime: { type: string, description: "Local time HH:mm:ss, East Africa Time" }
+        status: { type: string, enum: [OPEN, CLOSED] }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        closedBy: { type: [string, "null"] }
+        closedAt: { type: [string, "null"], format: date-time }
+    ProposePriceRequest:
+      type: object
+      required: [fundCode, valuationDate, price]
+      properties:
+        fundCode: { type: string }
+        valuationDate: { type: string, format: date }
+        price: { type: string, description: "Decimal string, greater than zero, up to 6 places" }
+        moveReason: { type: [string, "null"], description: "Required when the move exceeds the alert percent" }
+    CorrectionRequest:
+      type: object
+      required: [price, reason]
+      properties:
+        price: { type: string, description: "Decimal string, greater than zero, up to 6 places" }
+        reason: { type: string, minLength: 1 }
+    FundPrice:
+      type: object
+      additionalProperties: false
+      required: [priceId, fundId, fundCode, valuationDate, price, status, proposedBy, proposedAt]
+      properties:
+        priceId: { type: string, format: uuid }
+        fundId: { type: string, format: uuid }
+        fundCode: { type: string }
+        valuationDate: { type: string, format: date }
+        price: { $ref: '#/components/schemas/Decimal' }
+        status: { type: string, enum: [PROPOSED, APPROVED, SUPERSEDED, WITHDRAWN] }
+        moveReason: { type: [string, "null"] }
+        supersedesPriceId: { type: [string, "null"], format: uuid, description: "Set on a correction" }
+        proposedBy: { type: string }
+        proposedAt: { type: string, format: date-time }
+        approvedBy: { type: [string, "null"] }
+        approvedAt: { type: [string, "null"], format: date-time }
+    WaitingCount:
+      type: object
+      additionalProperties: false
+      required: [boundDate, orders]
+      properties:
+        boundDate: { type: string, format: date }
+        orders: { type: integer }
+    PayeeRequest:
+      type: object
+      required: [payeeRef]
+      properties:
+        payeeRef: { type: string, minLength: 1, description: "Mobile money number or account the payout goes to" }
+    WaiveRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1 }
+    PriceAdjustment:
+      type: object
+      additionalProperties: false
+      required: [adjustmentId, policyNumber, correctedPriceId, amount, direction, status]
+      properties:
+        adjustmentId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        correctedPriceId: { type: string, format: uuid }
+        amount: { $ref: '#/components/schemas/Decimal' }
+        direction: { type: string, enum: [OWED_TO_CUSTOMER, OWED_BY_CUSTOMER] }
+        status: { type: string, enum: [OPEN, SETTLED, WAIVED] }
+        proposedBy: { type: [string, "null"] }
+        decidedBy: { type: [string, "null"] }
+        decidedAt: { type: [string, "null"], format: date-time }
+        reason: { type: [string, "null"] }
+    PolicyUnits:
+      type: object
+      additionalProperties: false
+      required: [policyNumber, holdings, totalValue, pending, entries, frozen]
+      properties:
+        policyNumber: { type: string }
+        holdings: { type: array, items: { $ref: '#/components/schemas/Holding' } }
+        totalValue: { $ref: '#/components/schemas/Decimal' }
+        currency: { type: [string, "null"] }
+        pending: { type: array, items: { $ref: '#/components/schemas/PendingOrder' } }
+        entries: { type: array, items: { $ref: '#/components/schemas/UnitEntry' } }
+        frozen: { type: boolean, description: "True while an exit is selling the units -- nothing else moves them" }
+        frozenReason: { type: [string, "null"], enum: [DEATH, SURRENDER, MATURITY, FREE_LOOK, LAPSE, EXHAUSTED, null] }
+    Holding:
+      type: object
+      additionalProperties: false
+      required: [fundCode, fundName, units]
+      properties:
+        fundCode: { type: string }
+        fundName: { type: string }
+        units: { $ref: '#/components/schemas/Decimal' }
+        price:
+          anyOf:
+            - { $ref: '#/components/schemas/Decimal' }
+            - { type: "null" }
+        priceDate: { type: [string, "null"], format: date }
+        value:
+          anyOf:
+            - { $ref: '#/components/schemas/Decimal' }
+            - { type: "null" }
+    PendingOrder:
+      type: object
+      additionalProperties: false
+      required: [orderId, fundCode, side, sellAll, purpose, receivedAt, boundDate]
+      properties:
+        orderId: { type: string, format: uuid }
+        fundCode: { type: string }
+        side: { type: string, enum: [BUY, SELL] }
+        amount:
+          description: Null on a sell-all order
+          anyOf:
+            - { $ref: '#/components/schemas/Decimal' }
+            - { type: "null" }
+        sellAll: { type: boolean }
+        purpose: { type: string, enum: [ALLOCATION, CHARGES, DEATH, SURRENDER, MATURITY, LAPSE, FREE_LOOK, REINVESTMENT] }
+        receivedAt: { type: string, format: date-time }
+        boundDate: { type: string, format: date, description: "The valuation date whose price will execute it" }
+    UnitEntry:
+      type: object
+      additionalProperties: false
+      required: [entryId, type, units, amount, sourceRef, createdAt]
+      properties:
+        entryId: { type: string, format: uuid }
+        fundCode: { type: [string, "null"], description: "Null on a money-only entry (allocation charge, charge refund, write-off)" }
+        type:
+          type: string
+          enum: [ALLOCATION, ALLOCATION_CHARGE, POLICY_FEE, COST_OF_INSURANCE, DEATH_SALE, SURRENDER_SALE, MATURITY_SALE,
+                 LAPSE_SALE, FREE_LOOK_SALE, CHARGE_REFUND, REINVESTMENT, PRICE_CORRECTION, WRITE_OFF]
+        units: { $ref: '#/components/schemas/Decimal' }
+        price:
+          anyOf:
+            - { $ref: '#/components/schemas/Decimal' }
+            - { type: "null" }
+        amount: { $ref: '#/components/schemas/Decimal' }
+        valuationDate: { type: [string, "null"], format: date }
+        boundDate: { type: [string, "null"], format: date }
+        sourceRef: { type: string }
+        createdAt: { type: string, format: date-time }

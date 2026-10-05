@@ -165,6 +165,19 @@ CREATE TABLE unitlinked.notice_log (
     UNIQUE (tenant_id, policy_number, kind, month)
 );
 
+-- Every unit-linked policy across tenants, for the nightly sweeps (charges, maturity). SECURITY DEFINER, as
+-- policy.funeral_policies_with_active_lives() is: a sweep runs with no tenant set, which RLS would read as none.
+-- Ids only: each policy is then worked under its own tenant.
+CREATE OR REPLACE FUNCTION unitlinked.unit_linked_policies()
+RETURNS TABLE (policy_number VARCHAR, tenant_id UUID)
+LANGUAGE sql SECURITY DEFINER AS $$
+    SELECT DISTINCT a.policy_number, a.tenant_id
+      FROM unitlinked.policy_allocation a
+     ORDER BY a.policy_number;
+$$;
+REVOKE EXECUTE ON FUNCTION unitlinked.unit_linked_policies() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION unitlinked.unit_linked_policies() TO app_role;
+
 ALTER TABLE unitlinked.policy_allocation ENABLE ROW LEVEL SECURITY;
 CREATE POLICY policy_allocation_tenant_isolation ON unitlinked.policy_allocation
     USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);

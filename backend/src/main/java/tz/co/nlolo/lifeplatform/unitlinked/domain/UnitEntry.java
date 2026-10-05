@@ -95,6 +95,14 @@ public class UnitEntry {
             original.boundDate, original.orderId, original.sourceType, sourceRef, original.entryId, createdBy, now);
     }
 
+    /** {@code original} entered again at a corrected price: same type, order and dates, its own source (Task 5). */
+    public static UnitEntry reEntry(UnitEntry original, BigDecimal units, FundPrice corrected, BigDecimal amount,
+                                    String sourceRef, String createdBy, Instant now) {
+        return new UnitEntry(original.tenantId, original.policyNumber, original.fundId, original.getType(), units,
+            corrected.getPrice(), corrected.getPriceId(), amount, original.valuationDate, original.boundDate,
+            original.orderId, original.sourceType, sourceRef, original.entryId, createdBy, now);
+    }
+
     public UUID getEntryId() { return entryId; }
     public UUID getTenantId() { return tenantId; }
     public String getPolicyNumber() { return policyNumber; }

@@ -62,6 +62,11 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         if (!policyApi.isPolicyInForce(policyNumber, LocalDate.now())) {
             throw new LoanNotEligibleException("Policy " + policyNumber + " must be in force to originate a loan");
         }
+        // Product step 6 (plan R9): a unit-linked policy has no cash value to lend against in U1 -- its value is its
+        // units. Said in words here, rather than left to a zero cash value refusing it obscurely.
+        if ("UNIT_LINKED".equals(policyApi.getPolicy(policyNumber).productCategory())) {
+            throw new LoanNotEligibleException("A unit-linked policy has no paid-up or loan value in U1; its value is its units");
+        }
 
         // Module-Architecture-B1's reserve/persist/confirm sequence below runs in ONE physical
         // DB transaction spanning policy and policyloan, DELIBERATELY -- per this plan's own

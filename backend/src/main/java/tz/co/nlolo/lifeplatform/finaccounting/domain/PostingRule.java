@@ -59,6 +59,12 @@ public final class PostingRule {
     public static final String POLICY_LOAN_RECEIVABLE = "1250";
     public static final String CLAIMS_PAYABLE = "2110";
     public static final String UNEARNED_PREMIUM = "2140";
+    /** Product step 6: what is owed in units (finaccounting V9). */
+    public static final String UNIT_LINKED_LIABILITY = "2150";
+    public static final String POLICYHOLDER_BENEFITS_PAYABLE = "2130";
+    public static final String OTHER_RECEIVABLES = "1230";
+    public static final String UNIT_LINKED_CHARGES_INCOME = "4310";
+    public static final String CHANGE_IN_UNIT_LINKED_LIABILITY = "5600";
     public static final String REINSURANCE_PAYABLE = "2220";
     /** Tax withheld from a payout, owed to the authority (product step 5). */
     public static final String WITHHOLDING_TAX_PAYABLE = "2230";

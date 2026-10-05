@@ -19,10 +19,12 @@ import java.util.UUID;
 class BillingEventListener {
 
     private final Allocations allocations;
+    private final Exits exits;
     private final UnitLinkedEnvelopeRunner runner;
 
-    BillingEventListener(Allocations allocations, UnitLinkedEnvelopeRunner runner) {
+    BillingEventListener(Allocations allocations, Exits exits, UnitLinkedEnvelopeRunner runner) {
         this.allocations = allocations;
+        this.exits = exits;
         this.runner = runner;
     }
 
@@ -33,7 +35,7 @@ class BillingEventListener {
         }
         runner.run(envelope, p -> {
             String policyNumber = (String) p.get("policyNumber");
-            if (!allocations.isUnitLinked(policyNumber)) {
+            if (!exits.isUnitLinked(policyNumber)) {
                 return;
             }
             @SuppressWarnings("unchecked")

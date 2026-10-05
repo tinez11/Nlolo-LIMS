@@ -52,9 +52,13 @@ class FundRegister {
     private final ApplicationEventPublisher events;
     private final Clock clock;
     private final PricingRun pricingRun;
+    // Lazy: Corrections uses PricingRun too, and is only reached for a correction.
+    private final org.springframework.beans.factory.ObjectProvider<Corrections> corrections;
 
     FundRegister(FundRepository funds, FundPriceRepository prices, ReferenceDataApi referenceData,
-                 ApplicationEventPublisher events, @Qualifier("unitLinkedClock") Clock clock, PricingRun pricingRun) {
+                 ApplicationEventPublisher events, @Qualifier("unitLinkedClock") Clock clock, PricingRun pricingRun,
+                 org.springframework.beans.factory.ObjectProvider<Corrections> corrections) {
+        this.corrections = corrections;
         this.funds = funds;
         this.prices = prices;
         this.referenceData = referenceData;
@@ -198,6 +202,16 @@ class FundRegister {
                     + " cannot be approved after the one for " + later.get().getValuationDate()
                     + ": orders waiting on " + price.getValuationDate() + " were already priced at it");
             }
+        } else {
+            // A correction: the wrong price is superseded and every movement priced at it re-run (spec §3).
+            FundPrice wrong = prices.findByTenantIdAndPriceId(tenantId, price.getSupersedesPriceId())
+                .orElseThrow(() -> new FundNotFoundException("Price " + price.getSupersedesPriceId()));
+            if (!"APPROVED".equals(wrong.getStatus())) {
+                throw new UnitLinkedStateException("The price this corrects is " + wrong.getStatus()
+                    + "; only the approved price for a date can be corrected");
+            }
+            corrections.getObject().apply(fund, wrong, price, by);
+            return price;
         }
         price.approve(by, clock.instant(), fund.getCode(), fund.getCutOffTime());
         prices.saveAndFlush(price);
@@ -213,6 +227,36 @@ class FundRegister {
         payload.put("approvedBy", by);
         events.publishEvent(DomainEventEnvelope.of("unitlinked.PriceApproved", tenantId, payload));
         return price;
+    }
+
+    /**
+     * A corrected price for a date that already has an approved one: proposed by one person with a reason, and
+     * approved by a second through {@link #approve}, which re-runs every movement priced at the wrong one.
+     */
+    @Transactional
+    FundPrice proposeCorrection(UUID approvedPriceId, BigDecimal price, String reason, String by) {
+        UUID tenantId = TenantContext.get();
+        FundPrice wrong = prices.findByTenantIdAndPriceId(tenantId, approvedPriceId)
+            .orElseThrow(() -> new FundNotFoundException("Price " + approvedPriceId));
+        if (!"APPROVED".equals(wrong.getStatus())) {
+            throw new UnitLinkedStateException("Only an approved price is corrected; this one is " + wrong.getStatus());
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("A price correction needs a reason");
+        }
+        if (price == null || price.signum() <= 0) {
+            throw new IllegalArgumentException("A fund price must be greater than zero");
+        }
+        if (price.compareTo(wrong.getPrice()) == 0) {
+            throw new IllegalArgumentException("The corrected price is the same as the approved one");
+        }
+        Fund fund = funds.findByTenantIdAndFundId(tenantId, wrong.getFundId()).orElseThrow();
+        if (prices.findProposed(tenantId, fund.getFundId(), wrong.getValuationDate()).isPresent()) {
+            throw new UnitLinkedStateException("A price for " + fund.getCode() + " on " + wrong.getValuationDate()
+                + " is already waiting for approval");
+        }
+        return prices.save(FundPrice.propose(tenantId, fund.getFundId(), wrong.getValuationDate(), price, reason,
+            wrong.getPriceId(), by, clock.instant()));
     }
 
     @Transactional

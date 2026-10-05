@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.unitlinked.application;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.unitlinked.api.AdjustmentView;
 import tz.co.nlolo.lifeplatform.unitlinked.api.CreateFund;
 import tz.co.nlolo.lifeplatform.unitlinked.api.FundPriceView;
 import tz.co.nlolo.lifeplatform.unitlinked.api.FundView;
@@ -36,10 +37,14 @@ public class UnitLinkedApiImpl implements UnitLinkedApi {
     private final UnitEntryRepository entries;
     private final PendingOrderRepository orders;
     private final FrozenPolicyRepository frozen;
+    private final Adjustments adjustments;
+    private final Exits exits;
 
     UnitLinkedApiImpl(FundRegister register, FundRepository funds, FundPriceRepository prices,
                       PolicyAllocationRepository allocations, UnitEntryRepository entries, PendingOrderRepository orders,
-                      FrozenPolicyRepository frozen) {
+                      FrozenPolicyRepository frozen, Adjustments adjustments, Exits exits) {
+        this.adjustments = adjustments;
+        this.exits = exits;
         this.register = register;
         this.funds = funds;
         this.prices = prices;
@@ -101,6 +106,42 @@ public class UnitLinkedApiImpl implements UnitLinkedApi {
         return allocations.findByTenantIdAndPolicyNumber(TenantContext.get(), policyNumber).stream()
             .map(a -> new AllocationView(codes.get(a.getFundId()), a.getPercent()))
             .sorted(java.util.Comparator.comparing(AllocationView::fundCode)).toList();
+    }
+
+    @Override
+    public boolean decidesDeath(String policyNumber) {
+        return exits.isUnitLinked(policyNumber);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.unitlinked.api.DeathValueView deathValue(UUID claimId, LocalDate dateOfDeath) {
+        return exits.deathValue(claimId, dateOfDeath);
+    }
+
+    @Override
+    public void payAwaitingExit(String policyNumber, String payeeRef, String by) {
+        exits.payAwaiting(policyNumber, payeeRef);
+    }
+
+    @Override
+    public FundPriceView proposeCorrection(UUID approvedPriceId, BigDecimal price, String reason, String proposedBy) {
+        FundPrice p = register.proposeCorrection(approvedPriceId, price, reason, proposedBy);
+        return view(p, codes().get(p.getFundId()));
+    }
+
+    @Override
+    public List<AdjustmentView> listAdjustments(String status) {
+        return adjustments.list(status);
+    }
+
+    @Override
+    public AdjustmentView settleAdjustment(UUID adjustmentId, String payeeRef, String settledBy) {
+        return adjustments.settle(adjustmentId, payeeRef, settledBy);
+    }
+
+    @Override
+    public AdjustmentView waiveAdjustment(UUID adjustmentId, String reason, String waivedBy) {
+        return adjustments.waive(adjustmentId, reason, waivedBy);
     }
 
     @Override
