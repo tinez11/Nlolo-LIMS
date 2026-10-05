@@ -388,6 +388,26 @@ public class UnderwritingDecisionEventListener {
                     policyApi.recordCoveredLives(issued.policyNumber(), application, "system:underwriting-decision-listener");
                     return;
                 }
+                // UNIT-LINKED (product step 6): the premium is the customer's own choice and the sum assured is
+                // theirs too, inside the version's multiples -- never the per-mille formula below. The cost of
+                // insurance is taken monthly from units, so nothing here prices the life (plan R3). unitlinked
+                // writes the fund split when it hears policy.PolicyIssued.
+                if (category == ProductCategory.UNIT_LINKED) {
+                    tz.co.nlolo.lifeplatform.underwriting.api.UnitLinkedChoice choice = underwritingApi.unitLinkedChoice(caseId)
+                        .orElseThrow(() -> new IllegalStateException("Unit-linked case " + caseId
+                            + " was accepted with no fund choice"));
+                    policyApi.issuePolicy(caseId, new PolicyApi.IssueRequest(
+                        decidedCase.applicantPartyId(), decidedCase.productId(), decidedCase.productVersionId(),
+                        choice.sumAssured(), decidedCase.sumAssuredCurrency(),
+                        choice.premium(), decidedCase.sumAssuredCurrency(), choice.frequency(),
+                        decidedCase.agentOfRecordId(), nominationsAsBeneficiaries(decidedCase),
+                        "Automatic issuance on underwriting decision " + outcome,
+                        decidedCase.proposedCommencementDate(), decidedCase.requestedTermMonths(), null,
+                        decidedCase.lifeAssuredPartyId(),
+                        null /* issuanceBasis: an offer, PROPOSED until the first premium (plan C2) */),
+                        "system:underwriting-decision-listener");
+                    return;
+                }
                 // A deferred annuity saves first (product step 5 D2): an account policy whose
                 // contributions run to the target date, with no policy term -- after vesting it pays
                 // for life, so it has no maturity (plan R2). The case's sum assured is the

@@ -39,3 +39,7 @@ annuity:
 # Family funeral cover: lives end, age out and are re-priced daily elsewhere; every minute here.
 funeral:
   covered-life-sweep-interval-ms: 60000
+# Unit-linked: monthly charges and maturities are swept hourly elsewhere; every minute here.
+unitlinked:
+  charge-sweep-interval-ms: 60000
+  maturity-sweep-interval-ms: 60000

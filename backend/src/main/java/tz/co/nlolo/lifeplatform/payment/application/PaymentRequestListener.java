@@ -117,6 +117,8 @@ public class PaymentRequestListener {
             case "policy.SurrenderPayoutRequested" -> withTenant(envelope, this::handleSurrenderPayout);
             case "benefitpayout.PayoutRequested" -> withTenant(envelope, this::handleBenefitPayout);
             case "accumulation.PayoutRequested" -> withTenant(envelope, this::handleAccountPayout);
+            // Unit-linked (product step 6): the same shape -- purpose, sourceRef, idempotencyKey, payee, amount.
+            case "unitlinked.PayoutRequested" -> withTenant(envelope, this::handleAccountPayout);
             case "accumulation.TopUpRequested" -> withTenant(envelope, this::handleTopUpCollection);
             default -> { /* not payment-relevant */ }
         }

@@ -357,6 +357,54 @@ FUN_VERSION_RESP=$(curl -sfi -X POST "$API/products/$FUN_PRODUCT_ID/versions" \
   }')
 echo "$FUN_VERSION_RESP" | head -1
 
+# A UNIT_LINKED product (product step 6) and the two register funds it offers. Finance adds the funds and
+# proposes yesterday's prices; the admin -- a second person -- approves them, after their cut-off. Premiums buy
+# units at the first price approved after they arrive, so a policy sold today waits for tomorrow's price.
+# 90% of each premium is allocated in years 1-2 and 98% after, a 2,000 monthly fee, a unisex mortality table
+# for the cost of insurance, and death pays the higher of sum assured and fund value. Illustrative, NOT actuarial.
+api "$STAFF_FINANCE_TOKEN" POST "/funds" \
+  '{"code":"EQ-GROWTH","name":"Nlolo Equity Growth","currency":"TZS","assetClass":"EQUITY","annualManagementChargePercent":"1.5","cutOffTime":"16:00:00"}' >/dev/null
+api "$STAFF_FINANCE_TOKEN" POST "/funds" \
+  '{"code":"MM-CASH","name":"Nlolo Money Market","currency":"TZS","assetClass":"MONEY_MARKET","annualManagementChargePercent":"0.5","cutOffTime":"16:00:00"}' >/dev/null
+UL_PRICE_DATE=$(date -d 'yesterday' +%F 2>/dev/null || date -v-1d +%F)
+for fund_price in EQ-GROWTH:1.000000 MM-CASH:1.000000; do
+  IFS=: read -r fund price <<EOF
+$fund_price
+EOF
+  UL_PRICE_JSON=$(api "$STAFF_FINANCE_TOKEN" POST "/fund-prices" \
+    "{\"fundCode\":\"$fund\",\"valuationDate\":\"$UL_PRICE_DATE\",\"price\":\"$price\"}")
+  api "$STAFF_ADMIN_TOKEN" POST "/fund-prices/$(jsonval "$UL_PRICE_JSON" priceId)/approval" >/dev/null
+done
+echo "unitLinkedFunds=EQ-GROWTH,MM-CASH priced $UL_PRICE_DATE"
+
+UL_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
+  '{"productCode":"UL-INV-01","productName":"Nlolo Wekeza","category":"UNIT_LINKED","defaultCurrency":"TZS"}')
+UL_PRODUCT_ID=$(jsonval "$UL_PRODUCT_JSON" productId)
+echo "unitLinkedProductId=$UL_PRODUCT_ID"
+
+UL_VERSION_RESP=$(curl -sfi -X POST "$API/products/$UL_PRODUCT_ID/versions" \
+  -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuid)" -d '{
+    "ifrsMeasurementModel":"GMM","effectiveDate":"2020-01-01",
+    "payoutTerms":{"freeLookDays":15},
+    "tiraFiling":{"reference":"TIRA/DEMO/UL/0001","approvalDate":"2020-01-01"},
+    "eligibility":{"minEntryAge":18,"maxEntryAge":65},
+    "ratingTable":[],
+    "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
+    "unitLinked":{
+      "fundCodes":["EQ-GROWTH","MM-CASH"],
+      "allocationBands":[{"fromYear":1,"toYear":2,"percent":90},{"fromYear":3,"toYear":null,"percent":98}],
+      "monthlyPolicyFee":2000,
+      "mortalityBasis":"UNISEX",
+      "mortality":[{"ageFrom":18,"ageTo":39,"annualRatePerMille":1.2},{"ageFrom":40,"ageTo":59,"annualRatePerMille":4.5},
+                   {"ageFrom":60,"ageTo":null,"annualRatePerMille":25}],
+      "deathRule":"HIGHER_OF","lapseRule":"EXHAUSTION",
+      "minimumSurrenderYears":2,"lowFundWarningMonths":3,
+      "premiumMinimums":[{"frequency":"MONTHLY","amount":50000},{"frequency":"ANNUALLY","amount":500000}],
+      "sumAssuredMultipleMin":5,"sumAssuredMultipleMax":20}
+  }')
+echo "$UL_VERSION_RESP" | head -1
+
 # A CREDIT_LIFE product, and a lender to hold a scheme on it.
 #
 # Neither existed here, and the consequence was not cosmetic: the console's "Credit-life scheme"

@@ -60,6 +60,8 @@ public final class ChartOfAccountBlueprint {
         post("2120", "Premiums Received in Advance", "2100"),
         post("2130", "Policyholder Benefits Payable", "2100"),
         post("2140", "Unearned Premium", "2100"),
+        // Product step 6: what is owed in units -- always units in issue x current price (finaccounting V9).
+        post("2150", "Unit-Linked Policyholder Liability", "2100"),
         header("2200", "Payables", "2000"),
         post("2210", "Agent Commissions Payable", "2200", "DISTRIBUTION"),
         post("2220", "Reinsurance Payable", "2200", "REINSURANCE"),
@@ -74,12 +76,16 @@ public final class ChartOfAccountBlueprint {
         post("4100", "Premium Income", "4000"),
         post("4200", "Investment Income", "4000"),
         post("4300", "Other Income", "4000"),
+        // Product step 6: the allocation charge, the policy fee and the cost of insurance (finaccounting V9).
+        post("4310", "Unit-Linked Charges Income", "4000"),
         header("5000", "Expenses", null),
         post("5100", "Claims Expense", "5000"),
         post("5200", "Commission Expense", "5000"),
         post("5300", "Operating Expenses", "5000"),
         post("5400", "Other Expenses", "5000"),
-        post("5500", "Reinsurance Ceded Premium", "5000"));
+        post("5500", "Reinsurance Ceded Premium", "5000"),
+        // Product step 6: price movements on the units held (finaccounting V9).
+        post("5600", "Change in Unit-Linked Liability", "5000"));
 
     /** In insertion order: every parent appears before its children, so a caller may insert
      *  straight down the list without violating the self-referencing foreign key. */

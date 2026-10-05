@@ -429,15 +429,18 @@ class ProductApiIntegrationTest {
     }
 
     @Test
-    void publishVersionRejectsFundDefinitionsOnNonUnitLinkedProduct() {
+    void publishVersionRefusesFundDefinitionsNowThatFundsLiveInTheRegister() {
+        // Product step 6 (plan C1): a fund is defined once in unitlinked's register and a UNIT_LINKED version
+        // names it by code -- a per-version fund row is refused on every category.
         ProductSummaryView product = productApi.createProduct("TERM-04", "Term with bad fund", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
-        assertThrows(InvalidProductVersionException.class, () ->
+        InvalidProductVersionException refused = assertThrows(InvalidProductVersionException.class, () ->
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
                 List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 List.of(new ProductApi.FundInput("FUND-A", BigDecimal.TEN)),
                 ANY_FILING, "actuary@nlolo.co.tz"));
+        assertTrue(refused.getMessage().contains("fundDefinitions is replaced by unit-linked terms"), refused.getMessage());
     }
 
     // ---- M13: the base rate table premiums are computed from -------------------
@@ -1725,9 +1728,9 @@ class ProductApiIntegrationTest {
             .toList();
         // Nine: step 1 added the cash-value overload, step 2 the payout-plan one, step 3 the
         // accumulation-plan one, the fixed-term deposit the deposit-grid one, step 4 the with-profits
-        // one, step 5 the annuity one, family funeral cover the funeral one. A new overload must raise
+        // one, step 5 the annuity one, family funeral cover the funeral one, step 6 the unit-linked one. A new overload must raise
         // this count AND pass both checks below -- that is the point of counting.
-        assertEquals(11, declared.size(), "expected eleven publishVersion overloads");
+        assertEquals(12, declared.size(), "expected twelve publishVersion overloads");
         declared.forEach(m -> assertFalse(m.isDefault(),
             "publishVersion must not be a default method: Spring's proxy cannot apply "
                 + "@Transactional to one, so its delegation runs untransacted"));
@@ -1735,7 +1738,7 @@ class ProductApiIntegrationTest {
         List<Method> implementations = Arrays.stream(ProductApiImpl.class.getDeclaredMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        assertEquals(11, implementations.size(), "every overload must be implemented here");
+        assertEquals(12, implementations.size(), "every overload must be implemented here");
         implementations.forEach(m -> assertNotNull(m.getAnnotation(Transactional.class),
             "every publishVersion implementation must carry @Transactional, including the "
                 + "convenience overloads -- the retire-then-insert sequence must be atomic"));

@@ -133,7 +133,41 @@ export const openCaseFormSchema = z.object({
     sex: z.string().trim(),
     student: z.boolean(),
   })),
+
+  /**
+   * A unit-linked case (product step 6): set by the page from the product. The customer chooses the
+   * premium and how it is split across the version's funds; the sum assured above is the cover they
+   * chose, and the premium frequency below is how often they pay. Not rated: issuance uses both verbatim.
+   */
+  isUnitLinked: z.boolean(),
+  ulPremium: z.string().trim(),
+  ulSplit: z.array(z.object({ fundCode: z.string(), percent: z.string().trim() })),
 }).superRefine((values, ctx) => {
+  // Mirrors UnitLinkedChoices.validate, in its words. The minimum premium and the sum-assured range are
+  // the version's, and are checked by the page against the terms it read, then by the server.
+  if (values.isUnitLinked) {
+    if (!/^\d+(\.\d{1,2})?$/.test(values.ulPremium) || !(Number(values.ulPremium) > 0)) {
+      ctx.addIssue({ code: 'custom', path: ['ulPremium'], message: 'The premium the customer chose, as an amount above zero' });
+    }
+    if (values.premiumFrequency === '') {
+      ctx.addIssue({ code: 'custom', path: ['premiumFrequency'], message: 'Choose how often the premium is paid' });
+    }
+    let total = 0;
+    values.ulSplit.forEach((row, i) => {
+      if (row.percent === '') return;
+      const p = Number(row.percent);
+      if (!Number.isInteger(p) || p < 1 || p > 100) {
+        ctx.addIssue({ code: 'custom', path: ['ulSplit', i, 'percent'], message: "Each fund's share is a whole percent from 1 to 100" });
+      } else {
+        total += p;
+      }
+    });
+    if (values.ulSplit.every((r) => r.percent === '')) {
+      ctx.addIssue({ code: 'custom', path: ['ulSplit'], message: 'A unit-linked case says how each premium is split across the funds' });
+    } else if (total !== 100) {
+      ctx.addIssue({ code: 'custom', path: ['ulSplit'], message: `The fund split totals ${total}%; it must total 100%` });
+    }
+  }
   if (values.isFuneral) {
     if (values.funeralPlanCode === '') {
       ctx.addIssue({ code: 'custom', path: ['funeralPlanCode'], message: 'Choose the plan' });
@@ -223,6 +257,9 @@ export function blankOpenCaseForm(): OpenCaseFormInput {
     isFuneral: false,
     funeralPlanCode: '',
     funeralDependants: [],
+    isUnitLinked: false,
+    ulPremium: '',
+    ulSplit: [],
   };
 }
 
@@ -242,6 +279,21 @@ export function toFuneralDependants(values: Pick<OpenCaseFormInput, 'funeralDepe
 }
 
 export function toApiRequest(values: OpenCaseFormValues): OpenCaseRequest {
+  // A unit-linked case: the fund split, premium and sum assured travel with the case, recorded in the
+  // same request. The term is optional -- whole of life when blank, a maturity date when given.
+  if (values.isUnitLinked) {
+    return {
+      ...baseRequest(values),
+      ...(values.requestedTermMonths ? { requestedTermMonths: Number(values.requestedTermMonths) } : {}),
+      ...(values.premiumFrequency ? { premiumFrequency: values.premiumFrequency } : {}),
+      unitLinked: {
+        split: values.ulSplit.filter((r) => r.percent !== '').map((r) => ({ fundCode: r.fundCode, percent: Number(r.percent) })),
+        premium: Number(values.ulPremium),
+        frequency: values.premiumFrequency as NonNullable<OpenCaseRequest['unitLinked']>['frequency'],
+        sumAssured: Number(values.sumAssuredAmount),
+      },
+    };
+  }
   // A funeral plan: the family travels with the case, recorded in the same request. No term -- it
   // renews yearly -- and the frequency it is billed on.
   if (values.isFuneral) {

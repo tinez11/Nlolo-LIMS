@@ -19,11 +19,14 @@ public final class PayoutPlanValidator {
     /**
      * Products sold to one person, which carry a statutory free-look window (guide §21.3). ANNUITY
      * joined in product step 5 (spec Q9): an annuity is cancellable in free-look, never surrendered.
-     * FUNERAL too: a family funeral plan is one policy sold to one person, the main member.
+     * FUNERAL too: a family funeral plan is one policy sold to one person, the main member. UNIT_LINKED
+     * too (product step 6, plan C7): a unit-linked policy is sold to one person, and its free-look refund is
+     * the unwinding of its own entries.
      */
     private static final Set<ProductCategory> INDIVIDUAL = EnumSet.of(
         ProductCategory.TERM_LIFE, ProductCategory.ENDOWMENT, ProductCategory.WHOLE_LIFE,
-        ProductCategory.EDUCATION_SAVINGS, ProductCategory.ANNUITY, ProductCategory.FUNERAL);
+        ProductCategory.EDUCATION_SAVINGS, ProductCategory.ANNUITY, ProductCategory.FUNERAL,
+        ProductCategory.UNIT_LINKED);
 
     /** The two that pay while the life assured lives, and so carry a schedule at all. */
     private static final Set<ProductCategory> SCHEDULED = EnumSet.of(

@@ -90,6 +90,12 @@ public class PolicyController {
             throw new InvalidPolicyStateException("A funeral plan is issued from its underwriting case, which records"
                 + " the family and prices it; it cannot be issued by hand");
         }
+        // A unit-linked policy's fund split is recorded on its case, and unitlinked writes it at issue; issued by
+        // hand it would hold premiums with no fund to buy (product step 6).
+        if (snapshot.category() == ProductCategory.UNIT_LINKED) {
+            throw new InvalidPolicyStateException("A unit-linked policy is issued from its underwriting case, which records"
+                + " the customer's fund split; it cannot be issued by hand");
+        }
         List<PolicyApi.BeneficiaryInput> beneficiaries = request.beneficiaries() != null
             ? request.beneficiaries().stream().map(BeneficiaryInputDto::toApiInput).toList() : List.of();
         PolicyApi.IssueRequest issueRequest = new PolicyApi.IssueRequest(request.policyholderPartyId(), snapshot.productId(), request.productVersionId(),

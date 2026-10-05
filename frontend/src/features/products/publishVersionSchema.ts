@@ -4,6 +4,7 @@ import { AMOUNT_PATTERN } from '@/lib/money';
 import { ISO_DATE_PATTERN } from '@/lib/patterns';
 import { annuityFieldsShape, blankAnnuityFields, toAnnuityRequest, validateAnnuity } from './annuitySchema';
 import { blankFuneralFields, funeralFieldsShape, toFuneralRequest, validateFuneral } from './funeralSchema';
+import { blankUnitLinkedFields, toUnitLinkedRequest, unitLinkedFieldsShape, validateUnitLinked } from './unitLinkedSchema';
 import { isDeferred, validateVesting } from './vestingSchema';
 
 /**
@@ -429,6 +430,8 @@ export const FREE_LOOK_CATEGORIES: readonly ProductCategory[] = [
   'ANNUITY',
   // A family funeral plan is one policy sold to one person, the main member.
   'FUNERAL',
+  // A unit-linked policy is sold to one person; its free-look refund unwinds its own entries.
+  'UNIT_LINKED',
 ];
 
 /** `PayoutPlanValidator.SCHEDULED` -- the two that pay while the life assured lives. */
@@ -994,12 +997,12 @@ export function publishVersionFormSchema(category: ProductCategory) {
     // runs. A contract has to say what it insures before it can be priced or claimed against.
     benefitSchedule: z.array(benefitRowSchema).min(1, 'A product must cover at least one benefit'),
     fundDefinitions: z.array(fundRowSchema).superRefine((rows, ctx) => {
-      // ProductApiImpl.publishVersion: rejected outright for any category other
-      // than UNIT_LINKED, even a well-formed one.
-      if (rows.length > 0 && category !== 'UNIT_LINKED') {
+      // Retired (product step 6): ProductApiImpl.publishVersion refuses any, on every category -- funds live
+      // in the fund register, and a UNIT_LINKED version names them in its unit-linked terms.
+      if (rows.length > 0) {
         ctx.addIssue({
           code: 'custom',
-          message: 'Fund definitions are only valid for UNIT_LINKED products',
+          message: "fundDefinitions is replaced by unit-linked terms' fund codes: funds live in the fund register",
         });
       }
     }),
@@ -1039,8 +1042,11 @@ export function publishVersionFormSchema(category: ProductCategory) {
     ...annuityFieldsShape,
     // A FUNERAL version's plans, premium table, role rules and claim rules; see funeralSchema.
     ...funeralFieldsShape,
+    // A UNIT_LINKED version's funds, allocation, fee, mortality, death and lapse rules (product step 6); see unitLinkedSchema.
+    ...unitLinkedFieldsShape,
   }).superRefine((values, ctx) => {
     validateFuneral(category, values, ctx);
+    validateUnitLinked(category, values, ctx);
     validateCashValue(category, values, ctx);
     validatePayoutPlan(category, values, ctx);
     validateAccumulation(category, values, ctx);
@@ -1140,8 +1146,9 @@ export function publishVersionFormSchema(category: ProductCategory) {
           }
         }
       }
-    } else if (category !== 'FUNERAL' && (!covered.has('AGE') || !covered.has('SUM_ASSURED_BAND'))) {
-      // A FUNERAL version is priced by its premium table alone (plan R1), so it carries no rating table.
+    } else if (category !== 'FUNERAL' && category !== 'UNIT_LINKED' && (!covered.has('AGE') || !covered.has('SUM_ASSURED_BAND'))) {
+      // A FUNERAL version is priced by its premium table alone (plan R1), so it carries no rating table; a
+      // UNIT_LINKED version's cost of insurance is its mortality table (product step 6), so it carries none either.
       ctx.addIssue({
         code: 'custom',
         path: ['ratingTable'],
@@ -1208,6 +1215,7 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
     bonusSurrenderRows: [],
     ...blankAnnuityFields(),
     ...blankFuneralFields(),
+    ...blankUnitLinkedFields(),
   };
 }
 
@@ -1253,6 +1261,8 @@ export function toApiRequest(values: PublishVersionFormValues, category?: Produc
     ...(category === 'ANNUITY' && { annuity: toAnnuityRequest(values) }),
     // Family funeral cover: sent only on a FUNERAL product, where it is required.
     ...(category === 'FUNERAL' && { funeral: toFuneralRequest(values) }),
+    // Product step 6: sent only on a UNIT_LINKED product, where it is required.
+    ...(category === 'UNIT_LINKED' && { unitLinked: toUnitLinkedRequest(values) }),
     ifrsMeasurementModel: values.ifrsMeasurementModel,
     effectiveDate: values.effectiveDate,
     retirementDate: values.retirementDate === '' ? null : values.retirementDate,

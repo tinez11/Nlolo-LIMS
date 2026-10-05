@@ -333,6 +333,54 @@ paths:
               schema: { $ref: '#/components/schemas/FuneralApplication' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
         '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+  /underwriting/cases/{caseId}/unit-linked-choice:
+    get:
+      summary: A unit-linked case's fund split, premium and sum assured
+      description: >-
+        Product step 6. 404 UNIT_LINKED_CHOICE_NOT_FOUND when none is recorded -- also the answer for
+        any case that is not a unit-linked product's.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The choice
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnitLinkedChoice' }
+        '404':
+          description: No unit-linked choice on this case
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    put:
+      summary: Record or replace a unit-linked case's choice, before it is decided
+      description: Replaces any earlier choice. 422 in the rule's words for a split, premium or sum assured the version refuses.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UnitLinkedChoice' }
+      responses:
+        '200':
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnitLinkedChoice' }
+        '404':
+          description: Not a unit-linked case
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
   /underwriting/cases/{caseId}/beneficiaries:
     get:
       summary: The beneficiary nominations taken on this proposal
@@ -640,6 +688,14 @@ components:
           anyOf:
             - { $ref: '#/components/schemas/FuneralApplicationRequest' }
             - { type: "null" }
+        unitLinked:
+          description: >-
+            On a UNIT_LINKED product only (product step 6): the fund split, premium and sum assured,
+            recorded with the case. May also be recorded afterwards with PUT .../unit-linked-choice.
+            Acceptance refuses a unit-linked case that has none, and refuses a LOADED decision.
+          anyOf:
+            - { $ref: '#/components/schemas/UnitLinkedChoice' }
+            - { type: "null" }
         # medicalDisclosure is deliberately NOT a field here. It was once declared on this
         # request and never existed in OpenCaseRequest.java, so a client sending one got a 201
         # and had it silently discarded. Disclosures are now real, but as their own resource --
@@ -824,6 +880,26 @@ components:
         ageEvidenceConfirmedAt: { type: [string, "null"], format: date-time }
         confirmedDateOfBirth: { type: [string, "null"], format: date, description: "The date of birth whose proof was seen at acceptance" }
         confirmedSex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+    UnitLinkedChoice:
+      description: >-
+        What a unit-linked case is being sold (product step 6). The split names funds the version
+        offers, in whole percents totalling 100; the premium meets the version's minimum for the
+        frequency; the sum assured lies within the version's multiples of the annual premium and equals
+        the case's sum assured. Issuance uses the premium and sum assured verbatim -- it is not rated.
+      type: object
+      required: [split, premium, frequency, sumAssured]
+      properties:
+        split:
+          type: array
+          items:
+            type: object
+            required: [fundCode, percent]
+            properties:
+              fundCode: { type: string }
+              percent: { type: integer, minimum: 1, maximum: 100 }
+        premium: { type: number, exclusiveMinimum: 0 }
+        frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
+        sumAssured: { type: number, exclusiveMinimum: 0 }
     FuneralApplicationRequest:
       description: >-
         A funeral case's plan and dependants (family funeral cover). The main member is NOT listed: they

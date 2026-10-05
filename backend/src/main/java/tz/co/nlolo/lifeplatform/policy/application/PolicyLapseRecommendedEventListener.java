@@ -65,6 +65,23 @@ public class PolicyLapseRecommendedEventListener {
                     log.info("Not lapsing policy {} on billing's recommendation: it is valued by its account", policyNumber);
                     return;
                 }
+                // Unit-linked (product step 6, plan R8): a version that lapses on EXHAUSTION keeps its cover paid for
+                // from units while there are any, once its minimum premium-paying years have passed -- unitlinked
+                // lapses it when the fund can no longer meet a month's charges. Inside those years, or under
+                // NON_PAYMENT, billing's recommendation applies as for any policy.
+                tz.co.nlolo.lifeplatform.product.api.UnitLinkedPlan unitLinked = productApi.resolveUnitLinkedPlan(versionId);
+                if (unitLinked.unitLinked()
+                        && unitLinked.lapseRule() == tz.co.nlolo.lifeplatform.product.api.UnitLinkedPlan.LapseRule.EXHAUSTION) {
+                    tz.co.nlolo.lifeplatform.policy.api.PolicyView policy = policyApi.getPolicy(policyNumber);
+                    java.time.LocalDate start = policy.commencementDate() != null ? policy.commencementDate() : policy.issueDate();
+                    boolean pastMinimum = unitLinked.minimumPremiumYears() == null || !java.time.LocalDate
+                        .now(java.time.ZoneId.of("Africa/Dar_es_Salaam")).isBefore(start.plusYears(unitLinked.minimumPremiumYears()));
+                    if (pastMinimum) {
+                        log.info("Not lapsing unit-linked policy {} on billing's recommendation: it lapses only when its"
+                            + " fund is exhausted", policyNumber);
+                        return;
+                    }
+                }
                 policyApi.lapsePolicy(policyNumber, "system:billing-lapse-recommendation");
             });
         } catch (Exception e) {

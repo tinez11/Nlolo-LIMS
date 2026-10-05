@@ -34,7 +34,8 @@ public class SurrenderRequest {
     @Column(nullable = false)
     private String status = "REQUESTED";
 
-    @Column(name = "quoted_value_amount", nullable = false)
+    // Null only on a unit-linked surrender, which is priced forward after approval (policy V36, plan R11).
+    @Column(name = "quoted_value_amount")
     private BigDecimal quotedValueAmount;
 
     @Column(name = "quoted_value_currency", nullable = false)
@@ -76,6 +77,15 @@ public class SurrenderRequest {
     }
 
     /** Approve, by someone other than the requester (two-person rule). Moves REQUESTED -> APPROVED. */
+    /**
+     * A unit-linked surrender (product step 6): no quoted value, because the units are sold at the first price after
+     * approval -- any figure here would be a price already known. Every other surrender keeps the constructor above.
+     */
+    public static SurrenderRequest forUnitLinked(UUID tenantId, String policyNumber, String currency, String payeeRef,
+                                                 String requestedBy) {
+        return new SurrenderRequest(tenantId, policyNumber, null, currency, payeeRef, requestedBy);
+    }
+
     public void approve(String approvedBy) {
         if (!"REQUESTED".equals(status)) {
             throw new InvalidPolicyStateException("Surrender request " + surrenderRequestId

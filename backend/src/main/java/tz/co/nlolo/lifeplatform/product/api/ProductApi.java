@@ -339,8 +339,8 @@ public interface ProductApi {
                          AnnuityPlan annuityPlan, String publishedBy);
 
     /**
-     * The fullest form (family funeral cover): also a FUNERAL version's plans, premium table, role rules
-     * and claim rules. Every other overload delegates here with {@link FuneralPlan#none()}. Eleven now.
+     * Family funeral cover: also a FUNERAL version's plans, premium table, role rules and claim rules.
+     * Delegates to the fullest form with {@link UnitLinkedPlan#none()}.
      */
     void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
                          List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
@@ -348,6 +348,25 @@ public interface ProductApi {
                          TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
                          AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
                          AnnuityPlan annuityPlan, FuneralPlan funeralPlan, String publishedBy);
+
+    /**
+     * The fullest form (product step 6, U1): also a UNIT_LINKED version's terms -- its register funds,
+     * allocation bands, fee, mortality table, death and lapse rules. Every other overload delegates here.
+     * Twelve now. {@code fundDefinitions} is kept for its callers but must be empty: funds live in the
+     * register, named by {@link UnitLinkedPlan#fundCodes()} (plan C1).
+     */
+    void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                         List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                         TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
+                         AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
+                         AnnuityPlan annuityPlan, FuneralPlan funeralPlan, UnitLinkedPlan unitLinkedPlan, String publishedBy);
+
+    /**
+     * A UNIT_LINKED version's terms; {@link UnitLinkedPlan#none()} for every other version. Asks the product's
+     * category before reading any unit-linked table, so callers on other policies touch none.
+     */
+    UnitLinkedPlan resolveUnitLinkedPlan(UUID productVersionId);
 
     /**
      * A FUNERAL version's terms; {@link FuneralPlan#none()} for every other version. Asks the product's

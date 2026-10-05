@@ -1,5 +1,7 @@
 package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
 
+import tz.co.nlolo.lifeplatform.underwriting.api.UnitLinkedChoice;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -101,7 +103,13 @@ public record OpenCaseRequest(
      * On a FUNERAL product only (family funeral cover): the plan and the dependants. Optional here, as the
      * annuity blocks are; acceptance refuses a funeral case that has none.
      */
-    @Valid FuneralApplicationRequest funeral) {
+    @Valid FuneralApplicationRequest funeral,
+
+    /**
+     * On a UNIT_LINKED product only (product step 6): the fund split, premium, frequency and sum assured.
+     * Optional here, as the funeral block is; acceptance refuses a unit-linked case that has none.
+     */
+    UnitLinkedChoice unitLinked) {
 
     /** A deferred annuity applicant's retirement age. Unannotated: a missing age is refused by the window rule. */
     public record DeferredAnnuityDto(Integer retirementAge) {

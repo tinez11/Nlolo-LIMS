@@ -40,6 +40,7 @@ import { StatementSection } from '@/features/accounts/StatementSection';
 import { useAccumulationStore } from '@/store/accumulationStore';
 import { PolicyBonusesPanel } from '@/features/bonuses/PolicyBonusesPanel';
 import { PolicyAnnuityPanel } from '@/features/annuities/PolicyAnnuityPanel';
+import { PolicyUnitsPanel } from '@/features/unitlinked/PolicyUnitsPanel';
 import { PolicyVestingPanel } from '@/features/annuities/PolicyVestingPanel';
 import { useAnnuityStore } from '@/store/annuityStore';
 import { useBonusStore } from '@/store/bonusStore';
@@ -58,6 +59,7 @@ const INDIVIDUAL_CATEGORIES: readonly string[] = [
   'WHOLE_LIFE',
   'EDUCATION_SAVINGS',
   'FUNERAL',
+  'UNIT_LINKED',
 ];
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';
@@ -328,6 +330,23 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             <Panel title="Covered lives" subtitle="The main member and their family: what each death pays, and each life's own waiting period">
               <div className="p-4">
                 <CoveredLivesPanel policyNumber={policyNumber} canChange={isStaff} />
+              </div>
+            </Panel>
+          </div>
+        ),
+      });
+    }
+
+    // Unit-linked (product step 6): the units, their forward-priced orders and ledger, and the surrender.
+    if (policy?.productCategory === 'UNIT_LINKED') {
+      tabs.push({
+        value: 'units',
+        label: 'Units',
+        content: (
+          <div className="pt-5">
+            <Panel title="Units" subtitle="What the policy holds in each fund, what is waiting for a price, and every movement">
+              <div className="p-4">
+                <PolicyUnitsPanel policy={policy} isStaff={isStaff} />
               </div>
             </Panel>
           </div>
