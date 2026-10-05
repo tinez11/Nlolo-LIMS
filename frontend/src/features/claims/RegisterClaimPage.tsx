@@ -2,7 +2,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useRef, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
-import { CLAIM_TYPES, type PolicyMemberView } from '@/api/types';
+import { CLAIM_TYPES, type CoveredLifeView, type PolicyMemberView } from '@/api/types';
+import { getCoveredLives } from '@/api/funeral';
 import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
 import { DatePicker } from '@/components/DatePicker';
@@ -93,6 +94,8 @@ export function RegisterClaimPage() {
       claimantPartyId: '',
       dateOfEvent: '',
       details: blankDetailsFor('DEATH'),
+      coveredLifeId: '',
+      accidental: false,
     },
   });
 
@@ -165,6 +168,15 @@ export function RegisterClaimPage() {
   const insuresManyLives =
     policy.data?.productCategory === 'GROUP_LIFE' ||
     policy.data?.productCategory === 'CREDIT_LIFE';
+  // Family funeral cover: a claim on a funeral plan names which covered life died.
+  const isFuneral = policy.data?.productCategory === 'FUNERAL';
+  const [coveredLives, setCoveredLives] = useState<CoveredLifeView[]>([]);
+  useEffect(() => {
+    if (!isFuneral) return undefined;
+    let live = true;
+    getCoveredLives(policyNumber).then((l) => { if (live) setCoveredLives(l); }, () => undefined);
+    return () => { live = false; };
+  }, [isFuneral, policyNumber]);
   const members = usePolicyStore(selectMembers(policyNumber));
   const loadMembers = usePolicyStore((s) => s.loadMembers);
   const [memberQuery, setMemberQuery] = useState('');
@@ -327,6 +339,22 @@ export function RegisterClaimPage() {
           )}
         </FormField>
 
+        {isFuneral && (
+          <>
+            <FormField label="Who died?" error={errors.coveredLifeId?.message}>
+              {/* A family's policy: the claimant files, but the claim is for one covered life. */}
+              <Select inputSize="sm" {...register('coveredLifeId')}>
+                <option value="">Choose who died…</option>
+                {coveredLives.filter((l) => l.status === 'ACTIVE').map((l) => (
+                  <option key={l.coveredLifeId} value={l.coveredLifeId}>
+                    {l.fullName} ({l.role.replace('_', ' ').toLowerCase()})
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+            <CheckboxField label="Accidental death" {...register('accidental')} />
+          </>
+        )}
         {insuresManyLives && (
           <>
           {/* The search sits OUTSIDE the FormField on purpose. FormField binds its label to the

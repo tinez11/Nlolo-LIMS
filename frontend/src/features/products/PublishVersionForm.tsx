@@ -44,6 +44,8 @@ import { InlineError } from '@/components/InlineError';
 import { humanizeStatus } from '@/lib/status';
 import { blankAnnuityFields } from './annuitySchema';
 import { AnnuityTermsSection } from './AnnuityTermsSection';
+import { blankFuneralFields } from './funeralSchema';
+import { FuneralTermsSection } from './FuneralTermsSection';
 
 /**
  * An example shaped like the factor it belongs to.
@@ -132,7 +134,8 @@ export function PublishVersionForm({
       ifrsMeasurementModel: 'PAA',
       effectiveDate: '',
       retirementDate: '',
-      ratingTable: [blankRatingFactorRow(), { ...blankRatingFactorRow(), factorType: 'SUM_ASSURED_BAND' }],
+      // A FUNERAL version carries no rating factors (plan R1); every other starts with the two required.
+      ratingTable: category === 'FUNERAL' ? [] : [blankRatingFactorRow(), { ...blankRatingFactorRow(), factorType: 'SUM_ASSURED_BAND' }],
       baseRates: [],
       // One row from the start, like the rating table above: at least one benefit is now
       // required, and a panel that starts empty would make every publish begin with a
@@ -171,6 +174,7 @@ export function PublishVersionForm({
       bonusSurrenderBasis: '',
       bonusSurrenderRows: [],
       ...blankAnnuityFields(),
+      ...blankFuneralFields(),
     },
   });
   const bonusSurrenderRows = useFieldArray({ control, name: 'bonusSurrenderRows' });
@@ -377,6 +381,8 @@ export function PublishVersionForm({
         </div>
       </div>
 
+      {/* A FUNERAL version is priced by its premium table alone (plan R1): no rating table, no base rates. */}
+      {category !== 'FUNERAL' && (
       <div className="rounded-md border border-border p-3">
         {/*
           Which factors are required flips with the base rate panel below, so this line
@@ -600,6 +606,7 @@ export function PublishVersionForm({
           <p className="mt-1 text-xs text-status-danger-fg">{errors.ratingTable.root.message}</p>
         )}
       </div>
+      )}
 
       {/*
         The base rate table -- the thing that makes a version quotable at all.
@@ -612,6 +619,7 @@ export function PublishVersionForm({
         version is unpriced ... a rate table has to be supplied at publish time" --
         describing a dead end.
       */}
+      {category !== 'FUNERAL' && (
       <div className="rounded-md border border-border p-3">
         <p className="text-xs font-medium text-muted-foreground">Base rates (optional)</p>
         <p className="mt-0.5 mb-2.5 text-xs text-subtle-foreground">
@@ -770,6 +778,7 @@ export function PublishVersionForm({
           Add age band
         </Button>
       </div>
+      )}
 
       <div className="rounded-md border border-border p-3">
         {/* Not optional any more, and the label has to say so before the submit does: a
@@ -1074,6 +1083,8 @@ export function PublishVersionForm({
       {category === 'ANNUITY' && (
         <AnnuityTermsSection register={register} control={control} errors={errors} setValue={setValue} />
       )}
+      {/* Family funeral cover: required on a FUNERAL product, and offered on no other. */}
+      {category === 'FUNERAL' && <FuneralTermsSection register={register} control={control} errors={errors} />}
 
       {WITH_PROFITS_CATEGORIES.includes(category) && valueBasis === 'SCALE' && (
         <div className="rounded-md border border-border p-3">

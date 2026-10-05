@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
@@ -29,6 +29,9 @@ import { InlineError } from '@/components/InlineError';
 import { AnnuityPurchaseFields } from '@/features/annuities/AnnuityPurchaseFields';
 import { useAnnuityTerms } from '@/features/annuities/useAnnuityTerms';
 import { addYears, formatDate } from '@/lib/dates';
+import { getFuneralTerms } from '@/api/funeral';
+import type { FuneralTermsView } from '@/api/types';
+import { FuneralLivesFields } from './FuneralLivesFields';
 
 /**
  * `POST /underwriting/cases` -- the only entry point onto this domain that
@@ -142,6 +145,23 @@ export function OpenUnderwritingCasePage() {
     if (lifeAssuredPartyId) void loadParty(lifeAssuredPartyId);
   }, [lifeAssuredPartyId, loadParty]);
   const annuitantBorn = (lifeAssuredPartyId ? lifeAssured.data : applicant.data)?.dateOfBirth ?? null;
+
+  // A funeral plan (family funeral cover): the life assured -- else the applicant -- is the main member.
+  const isFuneral = selectedProduct?.category === 'FUNERAL';
+  const [funeralTerms, setFuneralTerms] = useState<FuneralTermsView | null>(null);
+  useEffect(() => {
+    if (!isFuneral || !productId || !productVersionId) return undefined;
+    let live = true;
+    getFuneralTerms(productId, productVersionId).then((t) => { if (live) setFuneralTerms(t); }, () => undefined);
+    return () => { live = false; };
+  }, [isFuneral, productId, productVersionId]);
+  useEffect(() => {
+    setValue('isFuneral', isFuneral);
+  }, [isFuneral, setValue]);
+  const mainMemberParty = (lifeAssuredPartyId ? lifeAssured.data : applicant.data) ?? null;
+  const mainMember = mainMemberParty
+    ? { name: mainMemberParty.displayName ?? 'Main member', dateOfBirth: mainMemberParty.dateOfBirth ?? null }
+    : null;
   const retirementAge = watch('retirementAge');
   const vestsOn = annuitantBorn && /^\d+$/.test(retirementAge) ? addYears(annuitantBorn, Number(retirementAge)) : null;
 
@@ -237,11 +257,13 @@ export function OpenUnderwritingCasePage() {
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <FormField
-            label={isDeferredAnnuity ? 'Contribution per payment' : isAnnuity ? 'Purchase price' : 'Sum assured'}
+            label={isDeferredAnnuity ? 'Contribution per payment' : isAnnuity ? 'Purchase price'
+              : isFuneral ? "Sum assured (the main member's benefit on the plan)" : 'Sum assured'}
             error={errors.sumAssuredAmount?.message}
           >
             <Input
               placeholder="1500000.00"
+              readOnly={isFuneral}
               {...register('sumAssuredAmount')}
             />
           </FormField>
@@ -384,10 +406,17 @@ export function OpenUnderwritingCasePage() {
             </div>
           )}
 
+          {/* A funeral plan: the plan, the family, and the server's quote of it as it is typed. */}
+          {isFuneral && funeralTerms && (
+            <FuneralLivesFields terms={funeralTerms} productId={productId} productVersionId={productVersionId}
+              mainMember={mainMember} register={register} control={control} errors={errors} setValue={setValue} />
+          )}
+
           {/* An annuity has no term and no premium frequency: one single premium, paid for life. */}
           {!isAnnuity && (
           <div className="grid grid-cols-2 gap-4">
-            {!isDeferredAnnuity && (
+            {/* A funeral plan renews yearly: no term. */}
+            {!isDeferredAnnuity && !isFuneral && (
               <>
                 <FormField label="Term (months)" error={errors.requestedTermMonths?.message}>
                   <Input placeholder="120" {...register('requestedTermMonths')} />

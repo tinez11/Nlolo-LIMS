@@ -30,6 +30,7 @@ import {
 import { MessagesPanel } from '@/features/communications/MessagesPanel';
 import { CessionsPanel } from '@/features/reinsurance/CessionsPanel';
 import { BeneficiariesPanel } from './BeneficiariesPanel';
+import { CoveredLivesPanel } from './CoveredLivesPanel';
 import { InvoicesPanel } from './InvoicesPanel';
 import { LoansPanel } from './LoansPanel';
 import { FreeLookPanel } from '@/features/payouts/FreeLookPanel';
@@ -315,6 +316,23 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         content: <div className="space-y-5 pt-5">{overview}</div>,
       },
     ];
+
+    // Family funeral cover: who the policy covers, each life's benefit and premium. Staff change the family.
+    if (policy?.productCategory === 'FUNERAL') {
+      tabs.push({
+        value: 'lives',
+        label: 'Covered lives',
+        content: (
+          <div className="pt-5">
+            <Panel title="Covered lives" subtitle="The main member and their family: what each death pays, and each life's own waiting period">
+              <div className="p-4">
+                <CoveredLivesPanel policyNumber={policyNumber} canChange={isStaff} />
+              </div>
+            </Panel>
+          </div>
+        ),
+      });
+    }
 
     tabs.push(
       {

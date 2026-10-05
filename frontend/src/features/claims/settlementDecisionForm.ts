@@ -17,7 +17,19 @@ const rejectSchema = z.object({
   approved: z.literal(false),
   // No backend validation at all on rejectionReason -- genuinely optional.
   rejectionReason: z.string().trim(),
+  /**
+   * A policy-term reason the platform can check against dates: an exclusion window, or a funeral plan's
+   * waiting period. Optional -- most declines are the assessor's finding alone. The server refuses one
+   * whose window was not open on the date of event.
+   */
+  declineReason: z.string().trim().optional(),
 });
+
+export const DECLINE_REASONS: { value: string; label: string }[] = [
+  { value: 'SUICIDE_WITHIN_EXCLUSION', label: 'Suicide inside the exclusion period' },
+  { value: 'PRE_EXISTING_WITHIN_EXCLUSION', label: 'Pre-existing condition inside the exclusion period' },
+  { value: 'WITHIN_WAITING_PERIOD', label: 'Natural death inside the waiting period (funeral plans)' },
+];
 
 /**
  * The ceiling is a PARAMETER, so the schema is built per claim rather than being a module
@@ -163,5 +175,8 @@ export function toApiRequest(
     approved: false,
     rejectionReason: values.rejectionReason.trim() || null,
     payeeRef: null,
+    ...(values.declineReason
+      ? { declineReason: values.declineReason as 'SUICIDE_WITHIN_EXCLUSION' | 'PRE_EXISTING_WITHIN_EXCLUSION' | 'WITHIN_WAITING_PERIOD' }
+      : {}),
   };
 }

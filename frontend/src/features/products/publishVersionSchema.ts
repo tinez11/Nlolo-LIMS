@@ -3,6 +3,7 @@ import type { ProductCategory, ProductVersionSpec } from '@/api/types';
 import { AMOUNT_PATTERN } from '@/lib/money';
 import { ISO_DATE_PATTERN } from '@/lib/patterns';
 import { annuityFieldsShape, blankAnnuityFields, toAnnuityRequest, validateAnnuity } from './annuitySchema';
+import { blankFuneralFields, funeralFieldsShape, toFuneralRequest, validateFuneral } from './funeralSchema';
 import { isDeferred, validateVesting } from './vestingSchema';
 
 /**
@@ -1034,7 +1035,10 @@ export function publishVersionFormSchema(category: ProductCategory) {
     bonusSurrenderRows: z.array(bonusSurrenderRowSchema),
     // An ANNUITY version's forms, rate grids and frequencies (product step 5); see annuitySchema.
     ...annuityFieldsShape,
+    // A FUNERAL version's plans, premium table, role rules and claim rules; see funeralSchema.
+    ...funeralFieldsShape,
   }).superRefine((values, ctx) => {
+    validateFuneral(category, values, ctx);
     validateCashValue(category, values, ctx);
     validatePayoutPlan(category, values, ctx);
     validateAccumulation(category, values, ctx);
@@ -1134,7 +1138,8 @@ export function publishVersionFormSchema(category: ProductCategory) {
           }
         }
       }
-    } else if (!covered.has('AGE') || !covered.has('SUM_ASSURED_BAND')) {
+    } else if (category !== 'FUNERAL' && (!covered.has('AGE') || !covered.has('SUM_ASSURED_BAND'))) {
+      // A FUNERAL version is priced by its premium table alone (plan R1), so it carries no rating table.
       ctx.addIssue({
         code: 'custom',
         path: ['ratingTable'],
@@ -1200,6 +1205,7 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
     bonusSurrenderBasis: '',
     bonusSurrenderRows: [],
     ...blankAnnuityFields(),
+    ...blankFuneralFields(),
   };
 }
 
@@ -1243,6 +1249,8 @@ export function toApiRequest(values: PublishVersionFormValues, category?: Produc
   return {
     // Product step 5. Sent only on an ANNUITY product, where it is required; refused on any other.
     ...(category === 'ANNUITY' && { annuity: toAnnuityRequest(values) }),
+    // Family funeral cover: sent only on a FUNERAL product, where it is required.
+    ...(category === 'FUNERAL' && { funeral: toFuneralRequest(values) }),
     ifrsMeasurementModel: values.ifrsMeasurementModel,
     effectiveDate: values.effectiveDate,
     retirementDate: values.retirementDate === '' ? null : values.retirementDate,

@@ -20,12 +20,13 @@ import { assessorName } from './assessorName';
 import {
   blankApproveDecision,
   switchDecision,
+  DECLINE_REASONS,
   recommendationExceedsCover,
   settlementDecisionSchema,
   toApiRequest,
   type SettlementDecisionFormValues,
 } from './settlementDecisionForm';
-import { Input, Textarea } from '@/components/ui/input';
+import { Input, Select, Textarea } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 
 /**
@@ -334,13 +335,23 @@ export function ClaimSettlementPanel({
           )}
         </>
       ) : (
-        <FormField label="Rejection reason (optional)">
-          <Textarea
-            className="min-h-16"
-            placeholder="Insufficient evidence"
-            {...register('rejectionReason')}
-          />
-        </FormField>
+        <>
+          <FormField label="Rejection reason (optional)">
+            <Textarea
+              className="min-h-16"
+              placeholder="Insufficient evidence"
+              {...register('rejectionReason')}
+            />
+          </FormField>
+          <FormField label="Policy-term reason (optional)">
+            <Select inputSize="sm" {...register('declineReason')}>
+              <option value="">None — the assessor&rsquo;s finding alone</option>
+              {DECLINE_REASONS.map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </Select>
+          </FormField>
+        </>
       )}
 
       {deciding.status === 'error' && deciding.error && (

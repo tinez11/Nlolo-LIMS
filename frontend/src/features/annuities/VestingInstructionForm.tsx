@@ -126,8 +126,8 @@ export function VestingInstructionForm({
       )}
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <div className="flex gap-2">
-        <Button type="submit" size="sm" disabled={acting?.status === 'loading'}>
-          {acting?.status === 'loading' ? 'Recording…' : 'Record instruction'}
+        <Button type="submit" size="sm" pending={acting?.status === 'loading'}>
+          Record instruction
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onDone}>
           Cancel
