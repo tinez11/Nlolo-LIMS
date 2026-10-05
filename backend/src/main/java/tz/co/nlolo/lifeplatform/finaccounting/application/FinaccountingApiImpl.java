@@ -54,7 +54,7 @@ import java.util.stream.Collectors;
 @Service
 public class FinaccountingApiImpl implements FinaccountingApi {
 
-    private static final Pattern ACCOUNT_CODE_PATTERN = Pattern.compile("^[1-5]\\d{3}$");
+    private static final Pattern ACCOUNT_CODE_PATTERN = Pattern.compile("^[1-9]\\d{3}$");   // the guide's nine classes
     private static final int MAX_ACCOUNT_NAME_LENGTH = 200;
     /** Bound once: the roll-up below reads far better without `BigDecimal.` on every zero. */
     private static final BigDecimal ZERO = BigDecimal.ZERO;
@@ -490,6 +490,6 @@ public class FinaccountingApiImpl implements FinaccountingApi {
             account.getAccountType(), account.getNormalBalance(), account.getParentCode(),
             account.getLevel(), account.isPostingAllowed(), account.getStatus(),
             account.getCurrency(), account.getControlOf(), account.getDescription(),
-            account.getCreatedAt(), account.getCreatedBy());
+            account.getCreatedAt(), account.getCreatedBy(), account.getMode());
     }
 }

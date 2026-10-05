@@ -1,8 +1,7 @@
 package tz.co.nlolo.lifeplatform.finaccounting;
 
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
-import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint;
-import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint.Seed;
+import tz.co.nlolo.lifeplatform.finaccounting.ChartOfAccountV5Legacy.Seed;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -59,7 +58,7 @@ class ChartOfAccountMigrationV5Test {
 
         for (UUID tenant : TENANTS) {
             seedLegacyChart(tenant);
-            for (String oldCode : ChartOfAccountBlueprint.legacyRemap().keySet()) {
+            for (String oldCode : ChartOfAccountV5Legacy.remap().keySet()) {
                 writePosting(tenant, oldCode);
             }
         }
@@ -81,7 +80,7 @@ class ChartOfAccountMigrationV5Test {
                  "INSERT INTO finaccounting.chart_of_account "
                  + "(tenant_id, account_code, name, account_type, normal_balance, created_by) "
                  + "VALUES (?, ?, ?, ?, ?, 'legacy-seed')")) {
-            for (String code : ChartOfAccountBlueprint.legacyRemap().keySet()) {
+            for (String code : ChartOfAccountV5Legacy.remap().keySet()) {
                 ps.setObject(1, tenant);
                 ps.setString(2, code);
                 ps.setString(3, "Legacy " + code);
@@ -134,7 +133,7 @@ class ChartOfAccountMigrationV5Test {
 
     @Test
     void everyLegacyPostingNowCarriesItsNewAccountCode() throws Exception {
-        for (Map.Entry<String, String> remap : ChartOfAccountBlueprint.legacyRemap().entrySet()) {
+        for (Map.Entry<String, String> remap : ChartOfAccountV5Legacy.remap().entrySet()) {
             for (UUID tenant : TENANTS) {
                 try (Connection c = connect();
                      PreparedStatement ps = c.prepareStatement(
@@ -156,7 +155,7 @@ class ChartOfAccountMigrationV5Test {
 
     @Test
     void noPostingWasOrphanedOrLost() throws Exception {
-        int expected = ChartOfAccountBlueprint.legacyRemap().size() * TENANTS.length;
+        int expected = ChartOfAccountV5Legacy.remap().size() * TENANTS.length;
         try (Connection c = connect(); Statement s = c.createStatement();
              ResultSet rs = s.executeQuery("SELECT count(*) FROM finaccounting.gl_posting")) {
             rs.next();
@@ -177,7 +176,7 @@ class ChartOfAccountMigrationV5Test {
     @Test
     void theMigratedChartMatchesTheJavaBlueprintExactly() throws Exception {
         Map<String, Seed> expected = new HashMap<>();
-        ChartOfAccountBlueprint.accounts().forEach(s -> expected.put(s.code(), s));
+        ChartOfAccountV5Legacy.ACCOUNTS.forEach(s -> expected.put(s.code(), s));
 
         for (UUID tenant : TENANTS) {
             Map<String, Seed> actual = new HashMap<>();
@@ -193,7 +192,7 @@ class ChartOfAccountMigrationV5Test {
                     }
                 }
             }
-            assertThat(actual).as("V5's SQL and ChartOfAccountBlueprint must not drift")
+            assertThat(actual).as("V5 to V9 must produce the chart they shipped")
                 .containsExactlyInAnyOrderEntriesOf(expected);
         }
     }

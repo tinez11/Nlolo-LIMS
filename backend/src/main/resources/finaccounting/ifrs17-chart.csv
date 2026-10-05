@@ -1,0 +1,247 @@
+code;name;parent;type;normal;mode;posting;used_for
+1000;Assets;;ASSET;DR;MAN;N;What the company owns or is owed
+1100;Cash and bank;1000;ASSET;DR;MAN;N;
+1110;Main operating bank account;1100;ASSET;DR;BOTH;Y;General receipts and payments.
+1120;Premium collection bank account;1100;ASSET;DR;AUTO;Y;Premiums by bank transfer, standing order, cheque.
+1130;Claims and benefits payment bank account;1100;ASSET;DR;AUTO;Y;Claims, maturities, surrenders, annuities paid out.
+1140;Mobile money wallets (M-Pesa, Tigo Pesa, Airtel Money, HaloPesa);1100;ASSET;DR;AUTO;Y;Premiums collected by mobile money, after settlement.
+1150;Petty cash;1100;ASSET;DR;MAN;Y;
+1160;Unit fund bank accounts (underlying items);1100;ASSET;DR;AUTO;Y;Cash inside unit-linked funds.
+1200;Financial investments (IFRS 9);1000;ASSET;DR;MAN;N;
+1210;Treasury bills – amortised cost;1200;ASSET;DR;MAN;Y;Held to collect contractual cash flows.
+1215;Treasury bonds – amortised cost;1200;ASSET;DR;MAN;Y;
+1216;Treasury bonds – fair value through OCI (FVOCI);1200;ASSET;DR;MAN;Y;Held to collect and sell; often used to match insurance finance OCI option.
+1220;Fixed and term deposits – amortised cost;1200;ASSET;DR;MAN;Y;
+1230;Listed equities – fair value through profit or loss (FVTPL);1200;ASSET;DR;MAN;Y;
+1231;Listed equities – FVOCI (irrevocable election);1200;ASSET;DR;MAN;Y;Gains never recycled to profit or loss.
+1240;Corporate bonds – amortised cost / FVOCI;1200;ASSET;DR;MAN;Y;Use one sub-account per IFRS 9 category.
+1250;Collective investment schemes – FVTPL;1200;ASSET;DR;MAN;Y;
+1260;Investment property (IAS 40);1200;ASSET;DR;MAN;Y;
+1270;Underlying items – unit-linked and participating fund assets (FVTPL);1200;ASSET;DR;AUTO;Y;Assets backing VFA contracts and unit-linked investment contracts.
+1275;Funds placed with external fund manager (not yet invested);1200;ASSET;DR;MAN;Y;
+1280;Accrued investment income;1200;ASSET;DR;BOTH;Y;
+1290;Expected credit loss (ECL) allowance – investments;1200;ASSET;CR;MAN;Y;IFRS 9 impairment on amortised cost investments.
+1300;Receivables outside IFRS 17 (IFRS 9);1000;ASSET;DR;MAN;N;
+1320;Due from agents and brokers (premiums they collected);1300;ASSET;DR;AUTO;Y;Once the policyholder has paid the intermediary, the debt is the intermediary's, not the policyholder's.
+1330;Due from employers – check-off collections on individual policies;1300;ASSET;DR;AUTO;Y;Employer deducted premiums from salaries and must remit them.
+1370;Commission clawback receivable from agents;1300;ASSET;DR;AUTO;Y;
+1375;Agent advances and loans;1300;ASSET;DR;MAN;Y;
+1380;Staff and other receivables;1300;ASSET;DR;MAN;Y;
+1385;Called-up share capital not paid (calls in arrears);1300;ASSET;DR;MAN;Y;
+1390;ECL allowance – receivables;1300;ASSET;CR;MAN;Y;
+1400;Reinsurance contract assets (reinsurance held – IFRS 17);1000;ASSET;DR;MAN;N;
+1410;Asset for remaining coverage – PV of future cash flows;1400;ASSET;DR;MAN;Y;From the IFRS 17 engine.
+1411;Asset for remaining coverage – risk adjustment;1400;ASSET;DR;MAN;Y;Risk transferred to the reinsurer.
+1412;Asset for remaining coverage – CSM (net cost or net gain of reinsurance);1400;ASSET;DR;MAN;Y;Can be a debit or credit balance.
+1413;Loss-recovery component;1400;ASSET;DR;MAN;Y;Recovery of losses on onerous underlying contracts.
+1420;Asset for incurred claims – recoveries on claims incurred;1400;ASSET;DR;AUTO;Y;Reinsurer's share of claims already incurred.
+1421;Asset for incurred claims – risk adjustment and PV adjustment;1400;ASSET;DR;MAN;Y;
+1430;Reinsurance premiums payable (operational);1400;ASSET;CR;AUTO;Y;Credit sub-account inside reinsurance contract balances.
+1431;Reinsurance commission receivable – not contingent on claims;1400;ASSET;DR;AUTO;Y;Treated as a reduction of reinsurance premium (IFRS 17 para 86).
+1433;Reinsurance profit commission receivable – contingent on claims;1400;ASSET;DR;MAN;Y;Treated as part of amounts recovered.
+1434;Reinsurance current account (agreed statement balance);1400;ASSET;DR;MAN;Y;
+1436;Reinsurance premiums ceded – actual cash flows (cleared at period end);1400;ASSET;DR;AUTO;Y;Collects the period's ceded premiums net of non-contingent commission.
+1490;Presentation reclass – reinsurance portfolios in liability position;1400;ASSET;DR;MAN;Y;Auto-reversing reporting-date reclass to 2540.
+1500;Insurance contract assets (presentation only);1000;ASSET;DR;MAN;N;
+1510;Insurance contract assets – portfolios in net asset position;1500;ASSET;DR;MAN;Y;Reporting-date reclass (auto-reversing) from 2190.
+1600;Other assets;1000;ASSET;DR;MAN;N;
+1610;Prepayments;1600;ASSET;DR;MAN;Y;
+1620;Insurance acquisition cash flows asset (pre-recognition);1600;ASSET;DR;AUTO;Y;Commission paid before the group of contracts is recognised (para 28B). Moves into 2123 on recognition.
+1621;Impairment allowance – acquisition cash flows asset;1600;ASSET;CR;MAN;Y;Para 28E impairment test.
+1630;Withholding tax recoverable;1600;ASSET;DR;BOTH;Y;
+1640;Corporate tax paid in advance (provisional tax);1600;ASSET;DR;MAN;Y;
+1650;Deferred tax asset;1600;ASSET;DR;MAN;Y;
+1700;Property, equipment, leases and intangibles;1000;ASSET;DR;MAN;N;
+1710;Land and buildings (own use);1700;ASSET;DR;MAN;Y;
+1715;Right-of-use assets (IFRS 16 leases);1700;ASSET;DR;MAN;Y;Leased offices and branches.
+1720;Motor vehicles;1700;ASSET;DR;MAN;Y;
+1730;Furniture and fittings;1700;ASSET;DR;MAN;Y;
+1740;Computers and IT equipment;1700;ASSET;DR;MAN;Y;
+1750;Software and intangible assets;1700;ASSET;DR;MAN;Y;
+1790;Accumulated depreciation and amortisation;1700;ASSET;CR;BOTH;Y;
+1800;Statutory deposit;1000;ASSET;DR;MAN;N;
+1810;Statutory deposit with the regulator (TIRA);1800;ASSET;DR;MAN;Y;
+2000;Liabilities;;LIABILITY;CR;MAN;N;Accounts 2100–2299 together make up the IFRS 17 insurance contract liability
+2100;Insurance contract liabilities – LRC measurement components (GMM and VFA);2000;LIABILITY;CR;MAN;N;
+2110;LRC – present value of future cash flows (PVFCF);2100;LIABILITY;CR;MAN;Y;Best-estimate discounted future inflows and outflows. From the IFRS 17 engine; can be a debit balance for profitable new business.
+2111;LRC – risk adjustment for non-financial risk;2100;LIABILITY;CR;MAN;Y;Compensation for uncertainty in amount and timing of cash flows.
+2112;LRC – contractual service margin (CSM);2100;LIABILITY;CR;MAN;Y;Unearned profit, released as cover is provided.
+2113;LRC – loss component (tracking);2100;LIABILITY;CR;MAN;Y;For onerous groups, if the engine reports it as a separate balance.
+2120;Insurance contract liabilities – LRC actual cash flow sub-accounts (GMM and VFA);2100;LIABILITY;CR;MAN;N;
+2121;Premiums and other contract inflows (policy fees, penalties, revival fees, loan interest);2120;LIABILITY;CR;AUTO;Y;Every inflow from a policyholder under an insurance contract. The movement-type code tells them apart.
+2122;Premiums due from policyholders (receivable);2120;LIABILITY;DR;AUTO;Y;Debit sub-account: billed but not yet paid. Stays inside the insurance contract liability.
+2123;Insurance acquisition cash flows (commission, brokerage, medical fees);2120;LIABILITY;DR;AUTO;Y;Directly attributable selling costs. Reduce the LRC; recognised over time through 4140 and 5300.
+2124;Investment components transferred to LIC;2120;LIABILITY;DR;AUTO;Y;Amounts repaid to policyholders in all circumstances (surrender value, fund value, maturity). No profit or loss.
+2125;Policy loans – principal;2120;LIABILITY;DR;AUTO;Y;Debit sub-account. Policy loans are generally part of the insurance contract cash flows – confirm with auditors.
+2126;Policy loan interest and charges receivable;2120;LIABILITY;DR;AUTO;Y;
+2127;Automatic premium loans (APL);2120;LIABILITY;DR;AUTO;Y;
+2128;Premiums received in advance;2120;LIABILITY;CR;AUTO;Y;Paid before the due date.
+2130;Insurance contract liabilities – VFA unit-linked and participating;2100;LIABILITY;CR;MAN;N;
+2131;Unit fund value – policyholders' share of underlying items;2130;LIABILITY;CR;AUTO;Y;Must equal units × unit price in the unit sub-ledger. Use fund-level sub-accounts.
+2132;Charges deducted from units (entity's share, cleared at period end);2130;LIABILITY;CR;AUTO;Y;Allocation, administration, fund management, mortality, surrender and switch charges.
+2140;Insurance contract liabilities – LRC under PAA (group life, credit life, short-term);2100;LIABILITY;CR;MAN;N;
+2141;LRC (PAA) – premiums received less revenue recognised;2140;LIABILITY;CR;AUTO;Y;Simple 'unearned premium' style measurement.
+2142;LRC (PAA) – premiums due from group policyholders;2140;LIABILITY;DR;AUTO;Y;
+2143;LRC (PAA) – loss component;2140;LIABILITY;CR;MAN;Y;If facts indicate a group is onerous.
+2144;LRC (PAA) – acquisition cash flows (if not expensed);2140;LIABILITY;DR;AUTO;Y;
+2190;Presentation reclass – insurance portfolios in net asset position;2100;LIABILITY;CR;MAN;Y;Auto-reversing reporting-date reclass to 1510.
+2200;Insurance contract liabilities – liability for incurred claims (LIC);2000;LIABILITY;CR;MAN;N;
+2210;LIC – claims reported, under assessment;2200;LIABILITY;CR;AUTO;Y;
+2211;LIC – death and rider claims admitted, payable;2200;LIABILITY;CR;AUTO;Y;
+2212;LIC – maturities payable;2200;LIABILITY;CR;AUTO;Y;
+2213;LIC – surrenders and withdrawals payable;2200;LIABILITY;CR;AUTO;Y;
+2214;LIC – survival benefits and income instalments payable;2200;LIABILITY;CR;AUTO;Y;
+2215;LIC – annuity instalments payable;2200;LIABILITY;CR;AUTO;Y;
+2216;LIC – IBNR and discounting adjustment;2200;LIABILITY;CR;MAN;Y;From the actuary / engine.
+2217;LIC – risk adjustment for incurred claims;2200;LIABILITY;CR;MAN;Y;
+2218;LIC – claims handling costs (ULAE);2200;LIABILITY;CR;MAN;Y;
+2219;LIC – unclaimed policy benefits;2200;LIABILITY;CR;BOTH;Y;Benefits due but not collected.
+2300;Investment contract liabilities (IFRS 9) and IFRS 15 balances;2000;LIABILITY;CR;MAN;N;
+2310;Unit-linked investment contracts – FVTPL;2300;LIABILITY;CR;AUTO;Y;Unit-linked policies WITHOUT significant insurance risk.
+2320;Deposit administration / pension accumulation – amortised cost;2300;LIABILITY;CR;AUTO;Y;Pension savings before retirement where there is no significant insurance risk.
+2330;Deferred front-end fees (IFRS 15 contract liability);2300;LIABILITY;CR;AUTO;Y;Upfront fees for services to be given in future periods.
+2340;Investment contract withdrawals and benefits payable;2300;LIABILITY;CR;AUTO;Y;
+2400;Pre-recognition and cash-management liabilities;2000;LIABILITY;CR;MAN;N;
+2410;Proposal deposits (before the contract is recognised);2400;LIABILITY;CR;AUTO;Y;
+2420;Unallocated receipts (suspense);2400;LIABILITY;CR;AUTO;Y;
+2430;Refunds payable (declined proposals, free-look cancellations);2400;LIABILITY;CR;AUTO;Y;
+2500;Intermediaries and reinsurance;2000;LIABILITY;CR;MAN;N;
+2510;Commission payable – tied agents;2500;LIABILITY;CR;AUTO;Y;
+2520;Brokerage payable – brokers;2500;LIABILITY;CR;AUTO;Y;
+2530;Commission payable – bancassurance and partners;2500;LIABILITY;CR;AUTO;Y;
+2540;Reinsurance contract liabilities – portfolios in liability position;2500;LIABILITY;CR;MAN;Y;Reporting-date reclass from 1490.
+2550;Funds withheld from reinsurers;2500;LIABILITY;CR;MAN;Y;
+2600;Taxes and statutory payables;2000;LIABILITY;CR;MAN;N;
+2610;Withholding tax payable – commissions;2600;LIABILITY;CR;AUTO;Y;
+2615;Withholding tax payable – benefits and annuities;2600;LIABILITY;CR;AUTO;Y;Where tax law requires.
+2620;Withholding tax payable – dividends;2600;LIABILITY;CR;MAN;Y;
+2630;PAYE and payroll levies payable;2600;LIABILITY;CR;MAN;Y;
+2640;Social security contributions payable (e.g. NSSF);2600;LIABILITY;CR;MAN;Y;
+2650;Regulatory levies payable (e.g. TIRA levy);2600;LIABILITY;CR;AUTO;Y;
+2660;Corporate income tax payable;2600;LIABILITY;CR;MAN;Y;
+2670;Deferred tax liability;2600;LIABILITY;CR;MAN;Y;
+2680;Stamp duty payable;2600;LIABILITY;CR;AUTO;Y;
+2700;Other payables, leases and borrowings;2000;LIABILITY;CR;MAN;N;
+2710;Trade creditors;2700;LIABILITY;CR;MAN;Y;
+2720;Accrued expenses;2700;LIABILITY;CR;MAN;Y;
+2730;Fund manager and custodian fees payable;2700;LIABILITY;CR;MAN;Y;
+2740;Dividends payable;2700;LIABILITY;CR;MAN;Y;
+2750;Borrowings;2700;LIABILITY;CR;MAN;Y;
+2760;Lease liabilities (IFRS 16);2700;LIABILITY;CR;MAN;Y;
+2770;Unclaimed monies (not linked to any policy);2700;LIABILITY;CR;MAN;Y;
+3000;Equity;;EQUITY;CR;MAN;N;The owners' stake in the company
+3100;Share capital;3000;EQUITY;CR;MAN;N;
+3105;Authorised share capital (memorandum only – not posted);3100;EQUITY;CR;MAN;N;Memorandum only – not posted.
+3110;Ordinary share capital – issued and fully paid;3100;EQUITY;CR;MAN;Y;
+3115;Ordinary share capital – called up (partly paid);3100;EQUITY;CR;MAN;Y;
+3120;Share premium;3100;EQUITY;CR;MAN;Y;
+3130;Preference share capital;3100;EQUITY;CR;MAN;Y;
+3140;Share application money pending allotment;3100;EQUITY;CR;MAN;Y;
+3200;Reserves;3000;EQUITY;CR;MAN;N;
+3210;Retained earnings;3200;EQUITY;CR;MAN;Y;
+3215;IFRS 17 transition adjustment (within retained earnings);3200;EQUITY;CR;MAN;Y;Effect of adopting IFRS 17 at the transition date.
+3220;Statutory / contingency reserve;3200;EQUITY;CR;MAN;Y;
+3230;Revaluation reserve;3200;EQUITY;CR;MAN;Y;
+3240;Fair value reserve – debt instruments at FVOCI;3200;EQUITY;CR;MAN;Y;Recycled to profit or loss on sale.
+3245;Fair value reserve – equity instruments at FVOCI;3200;EQUITY;CR;MAN;Y;Never recycled.
+3250;Insurance finance reserve (OCI option, para 88(b));3200;EQUITY;CR;MAN;Y;Only if the company disaggregates insurance finance income/expense.
+3255;Reinsurance finance reserve (OCI option);3200;EQUITY;CR;MAN;Y;
+3260;Capital contribution;3200;EQUITY;CR;MAN;Y;
+3300;Profit for the year and distributions;3000;EQUITY;CR;MAN;N;
+3310;Current year profit or loss (system-calculated);3300;EQUITY;CR;AUTO;Y;
+3320;Dividends declared;3300;EQUITY;DR;MAN;Y;
+4000;Insurance revenue (IFRS 17);;INCOME;CR;MAN;N;Revenue earned as the company provides insurance cover
+4100;Insurance revenue – contracts not measured under PAA (GMM / VFA);4000;INCOME;CR;MAN;N;
+4110;Expected incurred claims released (excluding investment components);4100;INCOME;CR;MAN;Y;Engine output.
+4115;Expected directly attributable expenses released;4100;INCOME;CR;MAN;Y;
+4120;Change in risk adjustment for non-financial risk (release);4100;INCOME;CR;MAN;Y;
+4130;CSM recognised for services provided;4100;INCOME;CR;MAN;Y;Based on coverage units.
+4140;Allocation of premiums to recover insurance acquisition cash flows;4100;INCOME;CR;MAN;Y;Mirrors 5300.
+4150;Experience adjustments – premiums for current and past service;4100;INCOME;CR;MAN;Y;
+4160;Insurance revenue – PAA contracts;4100;INCOME;CR;AUTO;Y;Earned evenly over the cover period (or by expected claims pattern).
+5000;Insurance service expenses (IFRS 17);;EXPENSE;DR;MAN;N;Actual claims and attributable costs of providing cover
+5100;Incurred claims (excluding investment components);5000;EXPENSE;DR;MAN;N;
+5110;Incurred claims – death;5100;EXPENSE;DR;AUTO;Y;Only the part above any investment component.
+5115;Incurred claims – maturity and survival benefits above investment component;5100;EXPENSE;DR;AUTO;Y;
+5120;Incurred claims – annuity and income payments;5100;EXPENSE;DR;AUTO;Y;
+5125;Incurred claims – rider benefits (accident, CI, disability, hospital, funeral, waiver);5100;EXPENSE;DR;AUTO;Y;
+5130;Incurred claims – IBNR and risk adjustment for the current period;5100;EXPENSE;DR;MAN;Y;
+5200;Other insurance service expenses;5000;EXPENSE;DR;MAN;N;
+5210;Directly attributable expenses – policy maintenance (allocated);5200;EXPENSE;DR;MAN;Y;From expense allocation (P-19).
+5215;Directly attributable expenses – claims handling (allocated);5200;EXPENSE;DR;MAN;Y;
+5220;Premium-based levies and taxes;5200;EXPENSE;DR;AUTO;Y;
+5300;Amortisation of insurance acquisition cash flows;5000;EXPENSE;DR;MAN;Y;Mirrors 4140.
+5310;Acquisition cash flows expensed when incurred (PAA option, para 59(a));5000;EXPENSE;DR;AUTO;Y;Only for contracts with cover of one year or less.
+5400;Losses on onerous contracts;5000;EXPENSE;DR;MAN;Y;
+5410;Reversal of losses / allocation of loss component;5000;EXPENSE;CR;MAN;Y;
+5500;Changes relating to past service (changes in LIC fulfilment cash flows);5000;EXPENSE;DR;MAN;Y;
+5600;Impairment of acquisition cash flows asset;5000;EXPENSE;DR;MAN;Y;
+6000;Net result from reinsurance contracts held;;EXPENSE;DR;MAN;N;Cost of reinsurance less what is recovered
+6100;Reinsurance contracts held;6000;EXPENSE;DR;MAN;N;
+6110;Allocation of reinsurance premiums paid;6100;EXPENSE;DR;MAN;Y;Cost of reinsurance cover received in the period (net of non-contingent commission).
+6120;Amounts recovered from reinsurers – incurred claims;6100;INCOME;CR;AUTO;Y;Including profit commission contingent on claims.
+6125;Amounts recovered – changes relating to past service;6100;INCOME;CR;MAN;Y;
+6130;Loss-recovery component income;6100;INCOME;CR;MAN;Y;
+6140;Effect of changes in reinsurer non-performance risk;6100;EXPENSE;DR;MAN;Y;
+7000;Finance and investment result;;INCOME;CR;MAN;N;Insurance finance income/expenses (IFRS 17) and investment income (IFRS 9)
+7100;Insurance finance income and expenses (IFIE);7000;INCOME;CR;MAN;N;
+7110;Interest accreted on insurance contracts;7100;EXPENSE;DR;MAN;Y;Unwinding of discount on PVFCF and RA; CSM accretion at locked-in rates applies to GMM groups only.
+7120;Effect of changes in interest rates and financial assumptions;7100;EXPENSE;DR;MAN;Y;Or to 3250 if the OCI option is used.
+7130;Change in fair value of underlying items – VFA contracts;7100;EXPENSE;DR;AUTO;Y;Mirrors 7235 so there is no accounting mismatch.
+7140;Foreign exchange on insurance contracts;7100;EXPENSE;DR;MAN;Y;
+7150;Reinsurance finance income and expenses;7100;INCOME;CR;MAN;Y;
+7200;Investment income (IFRS 9);7000;INCOME;CR;MAN;N;
+7210;Interest income – amortised cost (effective interest method);7200;INCOME;CR;BOTH;Y;
+7215;Interest income – FVOCI debt instruments;7200;INCOME;CR;BOTH;Y;
+7220;Dividend income;7200;INCOME;CR;MAN;Y;
+7230;Fair value gains and losses – FVTPL (company assets);7200;INCOME;CR;MAN;Y;
+7235;Fair value gains and losses – underlying items (unit and participating funds);7200;INCOME;CR;AUTO;Y;
+7240;Realised gains and losses – amortised cost and FVOCI debt;7200;INCOME;CR;MAN;Y;
+7250;Rental income – investment property;7200;INCOME;CR;MAN;Y;
+7260;Net impairment (expected credit losses) on financial assets;7200;EXPENSE;DR;MAN;Y;
+7300;Investment contracts (IFRS 9 and IFRS 15);7000;INCOME;CR;MAN;N;
+7310;Fee income from investment contracts (IFRS 15);7300;INCOME;CR;AUTO;Y;Charges on unit-linked and pension contracts without significant insurance risk.
+7320;Change in investment contract liabilities (fair value / returns credited);7300;EXPENSE;DR;AUTO;Y;
+7400;Investment expenses;7000;EXPENSE;DR;MAN;N;
+7410;Fund manager fees;7400;EXPENSE;DR;MAN;Y;
+7420;Custodian fees;7400;EXPENSE;DR;MAN;Y;
+7430;Investment transaction costs;7400;EXPENSE;DR;MAN;Y;
+7500;Other income and gains;7000;INCOME;CR;MAN;N;
+7510;Foreign exchange gains and losses (non-insurance);7500;INCOME;CR;BOTH;Y;
+7520;Gain on disposal of property and equipment;7500;INCOME;CR;MAN;Y;
+7590;Miscellaneous income;7500;INCOME;CR;MAN;Y;
+8000;Other operating expenses and tax;;EXPENSE;DR;MAN;N;Expenses by nature; the attributable part is moved into insurance service expenses at period end (8490)
+8100;Expenses by nature (expense pool);8000;EXPENSE;DR;MAN;N;
+8110;Salaries and wages;8100;EXPENSE;DR;MAN;Y;
+8120;Staff benefits and employer pension contributions;8100;EXPENSE;DR;MAN;Y;
+8130;Skills development levy and payroll levies;8100;EXPENSE;DR;MAN;Y;
+8210;Short-term rent and service charges;8000;EXPENSE;DR;MAN;Y;Leases over 12 months go through 1715 / 2760.
+8220;Utilities and communication;8000;EXPENSE;DR;MAN;Y;
+8230;IT, software licences and hosting;8000;EXPENSE;DR;MAN;Y;
+8240;Printing, stationery and policy documents;8000;EXPENSE;DR;MAN;Y;
+8250;Marketing and advertising (not attributable to a portfolio);8000;EXPENSE;DR;MAN;Y;
+8260;Travel and transport;8000;EXPENSE;DR;MAN;Y;
+8270;Training;8000;EXPENSE;DR;MAN;Y;
+8310;Actuarial fees;8000;EXPENSE;DR;MAN;Y;
+8320;Audit fees;8000;EXPENSE;DR;MAN;Y;
+8330;Legal and consultancy fees;8000;EXPENSE;DR;MAN;Y;
+8340;Regulatory licence fees (not premium-based);8000;EXPENSE;DR;MAN;Y;
+8350;Directors' fees;8000;EXPENSE;DR;MAN;Y;
+8410;Bank charges and mobile money fees;8000;EXPENSE;DR;BOTH;Y;
+8420;Interest on borrowings and lease liabilities;8000;EXPENSE;DR;MAN;Y;
+8430;Depreciation;8000;EXPENSE;DR;BOTH;Y;
+8440;Amortisation of intangible assets;8000;EXPENSE;DR;BOTH;Y;
+8450;Impairment of receivables and write-offs;8000;EXPENSE;DR;MAN;Y;
+8490;Attributable expenses allocated to insurance contracts;8000;EXPENSE;CR;MAN;Y;Moves the attributable part of 81xx–84xx into 5210, 5215 and 2123.
+8800;Taxation;8000;EXPENSE;DR;MAN;N;
+8810;Current income tax expense;8800;EXPENSE;DR;MAN;Y;
+8820;Deferred tax expense / (credit);8800;EXPENSE;DR;MAN;Y;
+9000;Clearing and suspense;;CLEARING;DR;MAN;N;Temporary accounts that must return to ZERO
+9100;Clearing and suspense;9000;CLEARING;DR;MAN;N;
+9110;Mobile money / payment gateway clearing;9100;CLEARING;DR;AUTO;Y;
+9120;Bank reconciliation suspense;9100;CLEARING;DR;BOTH;Y;
+9130;Inter-fund clearing (shareholder / policyholder / unit funds);9100;CLEARING;DR;AUTO;Y;
+9140;Unit transaction clearing;9100;CLEARING;DR;AUTO;Y;
+9150;Benefit payment clearing;9100;CLEARING;DR;AUTO;Y;
+9160;IFRS 17 engine upload clearing;9100;CLEARING;DR;AUTO;Y;Engine results must fully post; any balance means an unmapped line.
+9190;Opening balance / data migration suspense;9100;CLEARING;DR;MAN;Y;

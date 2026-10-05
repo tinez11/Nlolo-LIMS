@@ -111,26 +111,28 @@ public final class PostingRule {
         return Optional.ofNullable(RULES.get(eventType));
     }
 
-    /** ASSET/EXPENSE accounts are normally debit-balanced; LIABILITY/EQUITY/INCOME credit. */
+    /** The class's usual balance: LIABILITY/EQUITY/INCOME credit; ASSET/EXPENSE/CLEARING debit. */
     public static PostingDirection normalBalanceFor(String accountCode) {
-        return accountCode.startsWith("2") || accountCode.startsWith("3") || accountCode.startsWith("4")
-            ? PostingDirection.CR : PostingDirection.DR;
+        return switch (accountTypeFor(accountCode)) {
+            case LIABILITY, EQUITY, INCOME -> PostingDirection.CR;
+            default -> PostingDirection.DR;
+        };
     }
 
     /**
-     * Derived from the account code's leading digit, per the conventional five-block scheme
-     * documented in finaccounting/V2 section 5: 1-ASSET, 2-LIABILITY, 3-EQUITY, 4-INCOME,
-     * 5-EXPENSE. Moved here from {@code ChartOfAccountSeeder} (its original, seed-only home) when
-     * {@code createAccount} needed the identical derivation for a hand-authored account code --
-     * one rule, not two copies that could drift apart.
+     * The guide's account classes (2.1) by leading digit: 1 assets, 2 liabilities, 3 equity, 4 insurance revenue,
+     * 5 insurance service expenses, 6 net result from reinsurance held, 7 finance and investment result, 8 other
+     * operating expenses and tax, 9 clearing. Used ONLY for a class root created through the API: the seeded chart
+     * carries every account's type explicitly, and a hand-added child inherits its parent's (IFRS 17 I1, R4).
      */
     public static AccountType accountTypeFor(String accountCode) {
         return switch (accountCode.charAt(0)) {
             case '1' -> AccountType.ASSET;
             case '2' -> AccountType.LIABILITY;
             case '3' -> AccountType.EQUITY;
-            case '4' -> AccountType.INCOME;
-            case '5' -> AccountType.EXPENSE;
+            case '4', '7' -> AccountType.INCOME;
+            case '5', '6', '8' -> AccountType.EXPENSE;
+            case '9' -> AccountType.CLEARING;
             default -> throw new IllegalArgumentException("Unrecognised account code block: " + accountCode);
         };
     }

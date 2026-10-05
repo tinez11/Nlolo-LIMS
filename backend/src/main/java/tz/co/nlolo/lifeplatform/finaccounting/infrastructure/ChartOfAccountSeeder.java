@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Seeds the 36-account chart (see {@link ChartOfAccountBlueprint#accounts()}) for one tenant,
+ * Seeds the IFRS 17 guide's chart (see {@link ChartOfAccountBlueprint#accounts()}) for one tenant,
  * lazily, on first use. EVERY ACCOUNT IS A FINANCE SIGN-OFF PLACEHOLDER -- see V2 section 5,
  * finaccounting/V5 and {@link ChartOfAccountBlueprint}'s class javadoc; no document on this
  * platform specifies real account codes.
@@ -88,12 +88,9 @@ public class ChartOfAccountSeeder {
                 // and fk_chart_of_account_parent holds at every step.
                 Map<String, ChartOfAccount> byCode = new HashMap<>();
                 for (ChartOfAccountBlueprint.Seed seed : ChartOfAccountBlueprint.accounts()) {
-                    ChartOfAccount account = seed.parentCode() == null
-                        ? ChartOfAccount.root(tenantId, seed.code(), seed.name(),
-                            seed.postingAllowed(), ChartOfAccountBlueprint.SEED_CURRENCY, seededBy)
-                        : ChartOfAccount.childOf(byCode.get(seed.parentCode()), seed.code(), seed.name(),
-                            seed.postingAllowed(), ChartOfAccountBlueprint.SEED_CURRENCY,
-                            seed.controlOf(), null, seededBy);
+                    ChartOfAccount account = ChartOfAccount.seeded(tenantId, seed,
+                        seed.parentCode() == null ? null : byCode.get(seed.parentCode()),
+                        ChartOfAccountBlueprint.SEED_CURRENCY, seededBy);
                     // saveAndFlush, not save: the id is application-assigned via an @IdClass, so a
                     // plain save() defers the write past this block and a violation would surface
                     // only at commit -- outside where the catch below could see it. The same reason
