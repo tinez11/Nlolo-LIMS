@@ -109,6 +109,16 @@ class CoveredLives {
         requireInForce(policy);
         UUID tenantId = TenantContext.get();
         FuneralPolicy funeral = funeralPolicy(policy);
+        // The main member's death leaves the family either awaiting a spouse's takeover or covered free to the
+        // next premium date with billing already ended. Neither is a policy a life can join.
+        if (funeral.getAwaitingTakeoverLifeId() != null) {
+            throw new InvalidPolicyStateException("Policy " + policy.getPolicyNumber()
+                + " is awaiting the spouse's takeover; complete it before adding a life");
+        }
+        if (freeCoverRunning(policy)) {
+            throw new InvalidPolicyStateException("Policy " + policy.getPolicyNumber()
+                + " is in free cover after the main member's death and is ending; no life can be added");
+        }
         LocalDate effective = InstalmentDates.nextAfter(policy.getIssueDate(), policy.getPremiumFrequency(), today());
         if (life.fullName() == null || life.fullName().isBlank()) {
             throw new InvalidPolicyStateException("A covered life needs a full name");
@@ -156,6 +166,11 @@ class CoveredLives {
      * billing to restate from that date. Nothing is published when the instalment does not change.
      */
     void restate(Policy policy, LocalDate effective, String reason) {
+        if (freeCoverRunning(policy)) {
+            // Billing ended at the main member's death (policy.PremiumsEnded); a restated premium would be a
+            // notice to the family for an instalment nobody will bill.
+            return;
+        }
         java.math.BigDecimal yearly = remainingOn(policy, effective).stream().map(CoveredLife::getYearlyPremium)
             .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
         if (yearly.signum() == 0) {
@@ -383,6 +398,12 @@ class CoveredLives {
             .orElseGet(() -> partyApi.registerIndividual(new tz.co.nlolo.lifeplatform.party.api.IndividualRegistration(
                 life.getFullName(), life.getDateOfBirth(), identity.phoneNumber(), null, identity.sex(), null,
                 identity.identityDocument(), null, null, null, null, null, null), by).partyId());
+    }
+
+    /** The main member has died and the rest of the family is covered free until its scheduled end (R5). */
+    private boolean freeCoverRunning(Policy policy) {
+        return lives.findByPolicy(TenantContext.get(), policy.getPolicyNumber()).stream()
+            .anyMatch(l -> l.isActive() && "FREE_COVER_ENDED".equals(l.getPendingEndReason()));
     }
 
     /** Lives that will still be covered on {@code day}: active, and not scheduled off by then. */

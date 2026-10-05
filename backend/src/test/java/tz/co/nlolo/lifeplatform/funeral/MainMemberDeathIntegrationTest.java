@@ -27,6 +27,7 @@ import tz.co.nlolo.lifeplatform.party.api.IdentityDocument;
 import tz.co.nlolo.lifeplatform.party.api.Sex;
 import tz.co.nlolo.lifeplatform.payment.domain.PaymentGatewayPort;
 import tz.co.nlolo.lifeplatform.policy.api.CoveredLifeView;
+import tz.co.nlolo.lifeplatform.policy.api.InvalidPolicyStateException;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PromoteMemberRequest;
 import tz.co.nlolo.lifeplatform.policy.application.CoveredLifeSweep;
@@ -43,6 +44,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.TODAY;
@@ -168,10 +170,18 @@ class MainMemberDeathIntegrationTest {
             BigDecimal.class, TENANT, policyNumber);
         assertThat(receivable).isEqualByComparingTo(owed.subtract(new BigDecimal("12075.00")));
 
-        // A child's death during free cover is still paid.
+        // Billing has ended: no life joins a policy that is ending.
+        assertThatThrownBy(() -> asTenant(TENANT, () -> policyApi.addCoveredLife(policyNumber,
+                new FuneralApplication.Life(FuneralRole.CHILD, "Imani", TODAY.minusYears(1), "FEMALE", null, false), "staff")))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("free cover");
+
+        // A child's death during free cover is still paid -- and restates nothing, since nothing is billed.
+        BigDecimal premiumBefore = asTenant(TENANT, () -> policyApi.getPolicy(policyNumber)).premiumAmount();
         settleDeath(policyNumber, life(policyNumber, "Baraka").coveredLifeId(),
             asTenant(TENANT, () -> policyApi.getPolicy(policyNumber)).policyholderPartyId(), "1000000.00");
         assertThat(life(policyNumber, "Baraka").endReason()).isEqualTo("DECEASED");
+        assertThat(asTenant(TENANT, () -> policyApi.getPolicy(policyNumber)).premiumAmount()).isEqualByComparingTo(premiumBefore);
 
         // On the free-cover end the sweep ends the rest, and the policy closes.
         sweep.sweepOne(policyNumber, TENANT, freeCoverEnds);

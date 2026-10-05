@@ -558,6 +558,14 @@ public interface PolicyApi {
      */
     UUID takeOverFuneralPolicy(String policyNumber, PromoteMemberRequest identity, String by);
 
+    /**
+     * The nightly covered-life sweep's work on one funeral policy as of {@code today}: scheduled ends, ageing
+     * out, anniversary re-pricing; closes the policy when no life is left. Called by CoveredLifeSweep inside its
+     * own transaction. On the interface, not only the implementation, so the sweep depends on PolicyApi --
+     * a context that replaces PolicyApi with a mock otherwise fails to start for want of PolicyApiImpl.
+     */
+    void sweepFuneralPolicy(String policyNumber, java.time.LocalDate today);
+
     /** A funeral claim's cover: the named life's stored benefit, if covered on {@code asOf}. */
     ClaimableCoverView claimableCover(String policyNumber, UUID policyMemberId, UUID coveredLifeId, LocalDate asOf,
                                       String benefitType);

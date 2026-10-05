@@ -496,9 +496,10 @@ public class PolicyApiImpl implements PolicyApi {
     /**
      * The nightly covered-life sweep's work on one funeral policy (CoveredLifeSweep), inside the sweep's own
      * transaction. Only a policy in force is swept; when its last life has ended it closes as a scheme does
-     * when its last member leaves. Public, not on PolicyApi: this bean is proxied, and a package-private
-     * call on a proxy is the kind that can run against the proxy's own empty fields.
+     * when its last member leaves. Runs in the caller's transaction (the sweep's REQUIRES_NEW).
      */
+    @Override
+    @Transactional
     public void sweepFuneralPolicy(String policyNumber, LocalDate today) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);

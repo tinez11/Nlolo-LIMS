@@ -386,12 +386,22 @@ public class ClaimsApiImpl implements ClaimsApi {
     /** A claim's full view: on a funeral plan's claim, also the covered life and whether it was an accident. */
     private ClaimView detailView(Claim claim, boolean requiresContestabilityReview) {
         ClaimView view = toView(claim, requiresContestabilityReview);
-        if (!FuneralClaims.isFuneral(policyApi.getPolicy(claim.getPolicyNumber()))) {
+        if (!mayBeFuneral(claim)) {
             return view;
         }
         return funeralClaims.of(claim.getClaimId())
             .map(f -> withFuneral(view, f.getCoveredLifeId(), f.isAccidental()))
             .orElse(view);
+    }
+
+    /**
+     * A funeral plan pays only on a death (CoveredLives.claimable refuses anything else), so only a DEATH claim
+     * can carry a covered life. Checking the type first keeps every other claim's read off the policy:
+     * reading a claim used to fetch its policy on every view, a 500 wherever that policy was not there.
+     */
+    private boolean mayBeFuneral(Claim claim) {
+        return claim.getClaimType() == ClaimType.DEATH
+            && FuneralClaims.isFuneral(policyApi.getPolicy(claim.getPolicyNumber()));
     }
 
     private static ClaimView withFuneral(ClaimView view, UUID coveredLifeId, boolean accidental) {
@@ -505,7 +515,7 @@ public class ClaimsApiImpl implements ClaimsApi {
 
     /** The covered life a funeral claim names; null on every other claim. Policy is asked first (V10 gate). */
     private UUID coveredLifeOf(Claim claim) {
-        if (!FuneralClaims.isFuneral(policyApi.getPolicy(claim.getPolicyNumber()))) {
+        if (!mayBeFuneral(claim)) {
             return null;
         }
         return funeralClaims.of(claim.getClaimId())
@@ -734,8 +744,7 @@ public class ClaimsApiImpl implements ClaimsApi {
                 // plausible-looking declined claim and costs the lender an entire loan.
                 // On a funeral plan, measured from the named LIFE's own cover start, with its waiting period.
                 java.util.Optional<tz.co.nlolo.lifeplatform.claims.domain.FuneralClaim> funeral =
-                    FuneralClaims.isFuneral(policyApi.getPolicy(claim.getPolicyNumber()))
-                        ? funeralClaims.of(claimId) : java.util.Optional.empty();
+                    mayBeFuneral(claim) ? funeralClaims.of(claimId) : java.util.Optional.empty();
                 ExclusionPeriodsView periods = funeral.isPresent()
                     ? funeralClaims.periods(claim, funeral.get())
                     : policyApi.exclusionPeriodsFor(claim.getPolicyNumber(), claim.getPolicyMemberId());

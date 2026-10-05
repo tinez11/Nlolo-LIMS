@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.CoveredLifeRepository;
 
 import java.time.LocalDate;
@@ -27,10 +28,10 @@ public class CoveredLifeSweep {
     private static final ZoneId CIVIL_ZONE = ZoneId.of("Africa/Dar_es_Salaam");
 
     private final CoveredLifeRepository lives;
-    private final PolicyApiImpl policyApi;
+    private final PolicyApi policyApi;
     private final TransactionTemplate requiresNew;
 
-    public CoveredLifeSweep(CoveredLifeRepository lives, PolicyApiImpl policyApi, PlatformTransactionManager transactionManager) {
+    public CoveredLifeSweep(CoveredLifeRepository lives, PolicyApi policyApi, PlatformTransactionManager transactionManager) {
         this.lives = lives;
         this.policyApi = policyApi;
         this.requiresNew = new TransactionTemplate(transactionManager);
