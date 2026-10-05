@@ -115,6 +115,7 @@ class UnitLedger {
             case MATURITY -> UnitEntry.Type.MATURITY_SALE;
             case LAPSE -> UnitEntry.Type.LAPSE_SALE;
             case FREE_LOOK -> UnitEntry.Type.FREE_LOOK_SALE;
+            case WITHDRAWAL -> UnitEntry.Type.WITHDRAWAL_SALE;
             case ALLOCATION, REINVESTMENT -> throw new IllegalStateException("A " + order.getPurpose() + " order buys units");
         };
     }

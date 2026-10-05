@@ -211,6 +211,19 @@ public class UnitLinkedTestFixtures {
         return publish(tenant, terms);
     }
 
+    /**
+     * U2's standard terms: 2 free switches a policy year then 5,000 each; withdrawals from 100,000 leaving at least
+     * 500,000; top-ups at 98% from 50,000; a surrender charge of 10% in year 1, 5% in years 2-5 and nothing after.
+     * Withdrawals leave cover unchanged (spec Q4's default).
+     */
+    public static tz.co.nlolo.lifeplatform.product.api.UnitLinkedOptions standardOptions() {
+        return new tz.co.nlolo.lifeplatform.product.api.UnitLinkedOptions(2, new BigDecimal("5000.00"),
+            new BigDecimal("100000.00"), new BigDecimal("500000.00"), false, new BigDecimal("98"), new BigDecimal("50000.00"),
+            List.of(new tz.co.nlolo.lifeplatform.product.api.UnitLinkedOptions.SurrenderChargeBand(1, 1, new BigDecimal("10")),
+                new tz.co.nlolo.lifeplatform.product.api.UnitLinkedOptions.SurrenderChargeBand(2, 5, new BigDecimal("5")),
+                new tz.co.nlolo.lifeplatform.product.api.UnitLinkedOptions.SurrenderChargeBand(6, null, BigDecimal.ZERO)));
+    }
+
     /** {@link #standardTerms} with another death rule. */
     public static UnitLinkedPlan withDeathRule(UnitLinkedPlan.DeathRule rule) {
         UnitLinkedPlan t = standardTerms(List.of("EQ1", "BD1"));

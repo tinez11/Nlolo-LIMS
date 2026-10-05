@@ -156,6 +156,23 @@ public class FundController {
         return api.waiveAdjustment(adjustmentId, r.reason(), jwt.getSubject());
     }
 
+    public record SplitRequest(List<tz.co.nlolo.lifeplatform.underwriting.api.UnitLinkedChoice.Split> split) {}
+
+    /** Premium redirection (U2): any staff member, audited -- no money moves. */
+    @org.springframework.web.bind.annotation.PutMapping("/policies/{policyNumber}/premium-split")
+    @PreAuthorize(STAFF)
+    public tz.co.nlolo.lifeplatform.unitlinked.api.PremiumSplitView redirect(@PathVariable String policyNumber,
+                                                                          @RequestBody SplitRequest r,
+                                                                          @AuthenticationPrincipal Jwt jwt) {
+        return api.redirect(policyNumber, r.split(), jwt.getSubject());
+    }
+
+    @GetMapping("/policies/{policyNumber}/premium-split")
+    @PreAuthorize(STAFF)
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.PremiumSplitView> splitHistory(@PathVariable String policyNumber) {
+        return api.splitHistory(policyNumber);
+    }
+
     @PostMapping("/fund-prices/{priceId}/withdrawal")
     @PreAuthorize(FINANCE)
     public FundPriceView withdraw(@PathVariable UUID priceId, @AuthenticationPrincipal Jwt jwt) {

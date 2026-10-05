@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
 public class UnitLinkedApiImpl implements UnitLinkedApi {
 
     private final FundRegister register;
+    private final PremiumSplits premiumSplits;
     private final FundRepository funds;
     private final FundPriceRepository prices;
     private final PolicyAllocationRepository allocations;
@@ -42,7 +43,8 @@ public class UnitLinkedApiImpl implements UnitLinkedApi {
 
     UnitLinkedApiImpl(FundRegister register, FundRepository funds, FundPriceRepository prices,
                       PolicyAllocationRepository allocations, UnitEntryRepository entries, PendingOrderRepository orders,
-                      FrozenPolicyRepository frozen, Adjustments adjustments, Exits exits) {
+                      FrozenPolicyRepository frozen, Adjustments adjustments, Exits exits, PremiumSplits premiumSplits) {
+        this.premiumSplits = premiumSplits;
         this.adjustments = adjustments;
         this.exits = exits;
         this.register = register;
@@ -121,6 +123,17 @@ public class UnitLinkedApiImpl implements UnitLinkedApi {
     @Override
     public void payAwaitingExit(String policyNumber, String payeeRef, String by) {
         exits.payAwaiting(policyNumber, payeeRef);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.unitlinked.api.PremiumSplitView redirect(String policyNumber,
+            List<tz.co.nlolo.lifeplatform.underwriting.api.UnitLinkedChoice.Split> split, String by) {
+        return premiumSplits.redirect(policyNumber, split, by);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.PremiumSplitView> splitHistory(String policyNumber) {
+        return premiumSplits.history(policyNumber);
     }
 
     @Override

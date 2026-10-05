@@ -200,7 +200,9 @@ class Exits implements UnitsPricedListener {
             }
             return;
         }
-        if (purpose == PendingOrder.Purpose.ALLOCATION || purpose == PendingOrder.Purpose.CHARGES) {
+        // A withdrawal's sale is Withdrawals' (U2, plan R4), not an exit's.
+        if (purpose == PendingOrder.Purpose.ALLOCATION || purpose == PendingOrder.Purpose.CHARGES
+                || purpose == PendingOrder.Purpose.WITHDRAWAL) {
             return;
         }
         UUID tenantId = TenantContext.get();

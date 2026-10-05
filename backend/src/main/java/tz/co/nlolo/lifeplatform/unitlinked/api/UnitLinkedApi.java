@@ -76,4 +76,14 @@ public interface UnitLinkedApi {
 
     /** Staff set the payee of a maturity or lapse payout the policyholder's record could not supply. */
     void payAwaitingExit(String policyNumber, String payeeRef, String by);
+
+    /**
+     * Premium redirection (U2, spec §4): where premiums received from now on go. One staff member, audited by its own
+     * row; a premium already waiting keeps the split it arrived under, and nothing already bought moves.
+     */
+    PremiumSplitView redirect(String policyNumber, java.util.List<tz.co.nlolo.lifeplatform.underwriting.api.UnitLinkedChoice.Split> split,
+                              String by);
+
+    /** Every split the policy has had, newest first. */
+    java.util.List<PremiumSplitView> splitHistory(String policyNumber);
 }
