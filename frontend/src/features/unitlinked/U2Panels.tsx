@@ -51,6 +51,15 @@ function Heading({ title, note }: { title: string; note?: string }) {
   );
 }
 
+/**
+ * A refinement on a whole list (a split that does not total 100, amounts that do not add up): react-hook-form files it
+ * under the array's `root`, or on the array itself when the resolver reports it there -- read both.
+ */
+function ArrayError({ error }: { error: { message?: string; root?: { message?: string } } | undefined }) {
+  const message = error?.message ?? error?.root?.message;
+  return message ? <p role="alert" className="text-xs text-status-danger-fg">{message}</p> : null;
+}
+
 // ---- Premium redirection ----
 
 export function PremiumSplitPanel({ policyNumber, fundCodes }: { policyNumber: string; fundCodes: string[] }) {
@@ -87,9 +96,7 @@ export function PremiumSplitPanel({ policyNumber, fundCodes }: { policyNumber: s
             </FormField>
           ))}
         </div>
-        {form.formState.errors.shares?.message && (
-          <p role="alert" className="text-xs text-status-danger-fg">{form.formState.errors.shares.message}</p>
-        )}
+        <ArrayError error={form.formState.errors.shares} />
         <Button type="submit" size="sm" disabled={acting?.status === 'loading'}>
           Redirect future premiums
         </Button>
@@ -168,11 +175,8 @@ export function SwitchForm({
               </FormField>
             ))}
           </div>
-          {(form.formState.errors.out?.message || form.formState.errors.into?.message) && (
-            <p role="alert" className="text-xs text-status-danger-fg">
-              {form.formState.errors.out?.message ?? form.formState.errors.into?.message}
-            </p>
-          )}
+          <ArrayError error={form.formState.errors.out} />
+          <ArrayError error={form.formState.errors.into} />
           <Button type="submit" size="sm" disabled={acting?.status === 'loading'}>
             Request switch
           </Button>
@@ -250,9 +254,7 @@ export function WithdrawalPanel({
               </FormField>
             ))}
           </div>
-          {form.formState.errors.funds?.message && (
-            <p role="alert" className="text-xs text-status-danger-fg">{form.formState.errors.funds.message}</p>
-          )}
+          <ArrayError error={form.formState.errors.funds} />
           <Button type="submit" size="sm" disabled={acting?.status === 'loading'}>
             Request withdrawal
           </Button>
@@ -386,9 +388,7 @@ export function TopUpForm({
             </FormField>
           ))}
         </div>
-        {form.formState.errors.split?.message && (
-          <p role="alert" className="text-xs text-status-danger-fg">{form.formState.errors.split.message}</p>
-        )}
+        <ArrayError error={form.formState.errors.split} />
         <Button type="submit" size="sm" disabled={acting?.status === 'loading'}>
           {attempt ? 'Retry top-up' : 'Request top-up'}
         </Button>

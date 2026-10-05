@@ -104,7 +104,7 @@ test.describe('unit-linked U2', () => {
       await admin.getByLabel('Free switches per policy year').fill('2');
       await admin.getByRole('button', { name: 'Publish version' }).click();
       await expect(admin.getByText('Switching needs both the free switches per year and the fee for each switch after them')).toBeVisible();
-      await admin.getByLabel('Fee per extra switch (TZS)').fill('5000');
+      await admin.getByLabel('Fee per extra switch').fill('5000');
       await admin.getByLabel('Minimum withdrawal').fill('100000');
       await admin.getByLabel('Minimum value left after a withdrawal').fill('500000');
       await admin.getByLabel('Top-up allocation (%)').fill('98');

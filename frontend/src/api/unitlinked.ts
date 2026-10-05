@@ -169,6 +169,10 @@ export function fileStatement(policyNumber: string, from: string, to: string): P
   return post<UnitStatementView>(`/policies/${enc(policyNumber)}/statements`, { from, to });
 }
 
+/** Accept overrides the client's default JSON one: the endpoint produces only a PDF and answers JSON with a 406. */
 export function downloadUnitStatement(statementId: string): Promise<Blob> {
-  return get<Blob>(`/unit-statements/${enc(statementId)}/file`, { responseType: 'blob' });
+  return get<Blob>(`/unit-statements/${enc(statementId)}/file`, {
+    responseType: 'blob',
+    headers: { Accept: 'application/pdf' },
+  });
 }
