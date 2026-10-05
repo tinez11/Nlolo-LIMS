@@ -53,14 +53,23 @@ class UnitLinkedSchemaIntegrationTest {
     void aMoneyOnlyMovementCarriesNoFund() {
         UUID tenant = UUID.randomUUID();
         UUID fund = fixtures.fund(tenant, "EQ1").fundId();
+        fixtures.fund(tenant, "BD1");
+        fixtures.priceBoth(tenant, java.time.LocalDate.now().minusDays(1), "1.000000", "1.000000");
+        // A real approved price, so V2's "a fund row is priced" check passes and only the money-only rule can refuse.
+        UUID priceId = jdbc.queryForObject("SELECT price_id FROM unitlinked.fund_price WHERE fund_id = ? AND status = 'APPROVED'",
+            UUID.class, fund);
         String insert = "INSERT INTO unitlinked.unit_entry (entry_id, tenant_id, policy_number, fund_id, entry_type, units,"
-            + " amount, valuation_date, source_type, source_ref, created_by, created_at)"
-            + " VALUES (gen_random_uuid(), ?, 'POL-SCHEMA1', ?, ?, 0, -5000, current_date, 'switch', ?, 'test', now())";
-        assertThatThrownBy(() -> jdbc.update(insert, tenant, fund, "SWITCH_FEE", UUID.randomUUID().toString()))
+            + " price, price_id, amount, valuation_date, source_type, source_ref, created_by, created_at)"
+            + " VALUES (gen_random_uuid(), ?, 'POL-SCHEMA1', ?, ?, 0, ?, ?, -5000, current_date, 'switch', ?, 'test', now())";
+        java.math.BigDecimal one = java.math.BigDecimal.ONE;
+        assertThatThrownBy(() -> jdbc.update(insert, tenant, fund, "SWITCH_FEE", one, priceId, UUID.randomUUID().toString()))
             .hasMessageContaining("unit_entry_money_only_check");
-        assertThatThrownBy(() -> jdbc.update(insert, tenant, fund, "SURRENDER_CHARGE", UUID.randomUUID().toString()))
+        assertThatThrownBy(() -> jdbc.update(insert, tenant, fund, "SURRENDER_CHARGE", one, priceId, UUID.randomUUID().toString()))
             .hasMessageContaining("unit_entry_money_only_check");
-        assertThatCode(() -> jdbc.update(insert, tenant, null, "SWITCH_FEE", UUID.randomUUID().toString()))
+        // ...and the other direction: a unit movement must name its fund.
+        assertThatThrownBy(() -> jdbc.update(insert, tenant, null, "SWITCH_OUT", null, null, UUID.randomUUID().toString()))
+            .hasMessageContaining("unit_entry_money_only_check");
+        assertThatCode(() -> jdbc.update(insert, tenant, null, "SWITCH_FEE", null, null, UUID.randomUUID().toString()))
             .doesNotThrowAnyException();
     }
 

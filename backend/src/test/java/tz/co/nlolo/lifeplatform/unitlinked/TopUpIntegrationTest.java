@@ -138,6 +138,9 @@ class TopUpIntegrationTest {
     @Test
     void aTopUpWhoseMoneyArrivesAfterThePolicyFrozeGoesBackWithTheExit() {
         Sold s = invested(true);
+        // An accepted collection is confirmed on the spot; a rail that times out leaves it in doubt, so the money
+        // can arrive later -- here, after the freeze.
+        when(gateway.submitCollection(any())).thenThrow(new IllegalStateException("rail timed out"));
         TopUpView requested = topUp(s, "200000.00", UUID.randomUUID().toString());
         var surrender = asTenant(s.tenant(), () -> policyApi.requestSurrender(s.policyNumber(), "+255700000555", "staff-one"));
         asTenant(s.tenant(), () -> policyApi.approveSurrender(surrender.surrenderRequestId(), "staff-two"));

@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface WithdrawalRequestRepository extends JpaRepository<WithdrawalRequest, UUID> {
+public interface UnitLinkedWithdrawalRequestRepository extends JpaRepository<WithdrawalRequest, UUID> {
 
     Optional<WithdrawalRequest> findByTenantIdAndWithdrawalId(UUID tenantId, UUID withdrawalId);
 

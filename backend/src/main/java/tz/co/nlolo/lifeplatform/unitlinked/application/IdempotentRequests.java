@@ -9,7 +9,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.unitlinked.api.UnitLinkedStateException;
 import tz.co.nlolo.lifeplatform.unitlinked.domain.RequestKey;
-import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.RequestKeyRepository;
+import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.UnitLinkedRequestKeyRepository;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -25,13 +25,13 @@ import java.util.function.Supplier;
 @Component("unitLinkedIdempotentRequests")
 class IdempotentRequests {
 
-    private final RequestKeyRepository keys;
+    private final UnitLinkedRequestKeyRepository keys;
     private final TransactionTemplate tx;
 
     @PersistenceContext
     private EntityManager entityManager;
 
-    IdempotentRequests(RequestKeyRepository keys, PlatformTransactionManager transactionManager) {
+    IdempotentRequests(UnitLinkedRequestKeyRepository keys, PlatformTransactionManager transactionManager) {
         this.keys = keys;
         this.tx = new TransactionTemplate(transactionManager);
     }

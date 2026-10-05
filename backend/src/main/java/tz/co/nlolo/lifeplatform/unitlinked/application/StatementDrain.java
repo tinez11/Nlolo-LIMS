@@ -21,7 +21,7 @@ import java.util.UUID;
  * policy missed on one day (an outage, a failure) is caught on the next. ChargeSweep's shape: selection is SQL across
  * tenants; each policy under its own tenant in its own transaction, so one failure is logged and the next still files.
  */
-@Component
+@Component("unitLinkedStatementDrain") // accumulation has a StatementDrain bean too
 public class StatementDrain {
 
     private static final Logger log = LoggerFactory.getLogger(StatementDrain.class);

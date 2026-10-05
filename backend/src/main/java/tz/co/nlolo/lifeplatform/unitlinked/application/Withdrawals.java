@@ -26,7 +26,7 @@ import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.FundRepository;
 import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.PendingOrderRepository;
 import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.SwitchRequestRepository;
 import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.UnitEntryRepository;
-import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.WithdrawalRequestRepository;
+import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.UnitLinkedWithdrawalRequestRepository;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -58,7 +58,7 @@ class Withdrawals implements UnitsPricedListener {
     private static final Set<String> LIVE = Set.of("REQUESTED", "APPROVED");
     private static final Map<String, Integer> PERIODS_PER_YEAR = Map.of("MONTHLY", 12, "QUARTERLY", 4, "ANNUALLY", 1, "SINGLE", 1);
 
-    private final WithdrawalRequestRepository withdrawals;
+    private final UnitLinkedWithdrawalRequestRepository withdrawals;
     private final SwitchRequestRepository switches;
     private final PendingOrderRepository orders;
     private final UnitEntryRepository entries;
@@ -71,7 +71,7 @@ class Withdrawals implements UnitsPricedListener {
     private final ApplicationEventPublisher events;
     private final Clock clock;
 
-    Withdrawals(WithdrawalRequestRepository withdrawals, SwitchRequestRepository switches, PendingOrderRepository orders,
+    Withdrawals(UnitLinkedWithdrawalRequestRepository withdrawals, SwitchRequestRepository switches, PendingOrderRepository orders,
                 UnitEntryRepository entries, FundRepository funds, FundPriceRepository prices,
                 @org.springframework.context.annotation.Lazy UnitLedger ledger, SurrenderCharges charges, PolicyApi policyApi,
                 ProductApi productApi, ApplicationEventPublisher events, @Qualifier("unitLinkedClock") Clock clock) {
