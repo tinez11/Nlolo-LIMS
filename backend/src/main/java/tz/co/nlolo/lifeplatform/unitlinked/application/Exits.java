@@ -136,19 +136,41 @@ class Exits implements UnitsPricedListener {
             waiting.cancel();
             orders.save(waiting);
         }
-        exits.saveAndFlush(state);
-        // The allocation charge of a premium that never reached units is still in unearned premium: it is earned now,
-        // so the ledger takes it once, here (the premium's own UnitsAllocated never comes).
+        // A premium that never reached units goes back WHOLE (the user's decision, 2026-10-05): no unit was bought, so
+        // no allocation charge is earned. Each charge not already refunded is refunded here, as its own CHARGE_REFUND
+        // entry, and returned with the premium. A free-look has already refunded every charge before calling this, so
+        // its charges are skipped here and reach the ledger the way they always have: earned on the return, and given
+        // back by their ChargeRefunded.
+        List<UnitEntry> policyEntries = entries.findByTenantIdAndPolicyNumberOrderByCreatedAt(tenantId, policyNumber);
+        java.util.Set<UUID> refunded = policyEntries.stream().filter(e -> e.getType() == UnitEntry.Type.CHARGE_REFUND)
+            .map(UnitEntry::getReversesEntryId).filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        String currency = policyApi.getPolicy(policyNumber).premiumCurrency();
         for (String premium : returnedPremiums) {
-            BigDecimal charge = entries.findByTenantIdAndSourceTypeAndSourceRef(tenantId, Allocations.PREMIUM, premium).stream()
-                .filter(e -> e.getType() == UnitEntry.Type.ALLOCATION_CHARGE).map(e -> e.getAmount().negate())
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal earned = BigDecimal.ZERO;
+            BigDecimal refundedNow = BigDecimal.ZERO;
+            for (UnitEntry charge : entries.findByTenantIdAndSourceTypeAndSourceRef(tenantId, Allocations.PREMIUM, premium)) {
+                if (charge.getType() != UnitEntry.Type.ALLOCATION_CHARGE) {
+                    continue;
+                }
+                BigDecimal amount = charge.getAmount().negate();
+                if (refunded.contains(charge.getEntryId())) {
+                    earned = earned.add(amount);
+                } else {
+                    entries.save(UnitEntry.money(tenantId, policyNumber, UnitEntry.Type.CHARGE_REFUND, amount,
+                        BindingRule.civilDate(at), sourceType, sourceRef + ":premium-refund:" + charge.getEntryId(),
+                        charge.getEntryId(), UnitLedger.SYSTEM, clock.instant()));
+                    refundedNow = refundedNow.add(amount);
+                }
+            }
+            state.addReturnedMoney(refundedNow);
             BigDecimal returned = orders.findByTenantIdAndSourceTypeAndSourceRef(tenantId, Allocations.PREMIUM, premium).stream()
-                .map(PendingOrder::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+                .map(PendingOrder::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add).add(refundedNow);
+            // DR 2140 the whole premium / CR 5100 what goes back / CR 4310 only a charge refunded elsewhere (free-look).
             events.publishEvent(DomainEventEnvelope.of("unitlinked.PremiumReturned", tenantId, Map.of(
                 "policyNumber", policyNumber, "sourceRef", premium, "returned", returned.toPlainString(),
-                "allocationCharge", charge.toPlainString(), "currencyCode", policyApi.getPolicy(policyNumber).premiumCurrency())));
+                "allocationCharge", earned.toPlainString(), "currencyCode", currency)));
         }
+        exits.saveAndFlush(state);
         boolean selling = false;
         for (var held : ledger.holdings(policyNumber).entrySet()) {
             if (held.getValue().signum() <= 0) {
