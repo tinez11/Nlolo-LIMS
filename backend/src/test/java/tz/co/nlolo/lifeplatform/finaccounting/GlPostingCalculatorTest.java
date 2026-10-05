@@ -32,7 +32,7 @@ class GlPostingCalculatorTest {
     @Test
     void everyMappedEventProducesABalancedTwoLeggedEntry() {
         for (String eventType : new String[] {
-                "billing.PremiumInvoiceGenerated", "billing.PremiumCollected", "claims.ClaimSettled",
+                "billing.PremiumInvoiceGenerated", "billing.PremiumCollected", "billing.InvoiceWaived", "claims.ClaimSettled",
                 "distribution.CommissionPaid", "reinsurance.CessionRecorded",
                 "reinsurance.RecoveryConfirmed", "policyloan.LoanDisbursed", "policyloan.LoanRepaid" }) {
             Optional<JournalEntry> entry = calc(eventType, "15000.00");

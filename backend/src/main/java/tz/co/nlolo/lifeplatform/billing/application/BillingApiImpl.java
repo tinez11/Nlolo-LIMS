@@ -277,13 +277,43 @@ public class BillingApiImpl implements BillingApi {
         UUID tenantId = TenantContext.get();
         PremiumInvoice invoice = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoiceId, tenantId)
             .orElseThrow(() -> new InvoiceNotFoundException(invoiceId));
+        waive(tenantId, invoice, reason, waivedBy);
+        return toView(invoice);
+    }
+
+    /**
+     * The one way an invoice is waived. It resolves any arrears case and publishes billing.InvoiceWaived with the
+     * amount still OUTSTANDING, which finaccounting reverses (DR 2140 unearned premium / CR 1210 receivable -- the
+     * exact reverse of the invoice being raised, and premium is never earned out of 2140 before IFRS 17). Until
+     * 2026-10-05 the event carried no amount and no rule booked it, so every waiver -- a finance write-off, a
+     * vesting, a terminated policy's future invoices -- left its receivable on the ledger for good.
+     */
+    private void waive(UUID tenantId, PremiumInvoice invoice, String reason, String waivedBy) {
+        BigDecimal outstanding = invoice.getAmount().subtract(invoice.getAmountPaid());
         invoice.waive(reason);
         premiumInvoiceRepository.save(invoice);
-        arrearsCaseRepository.findByInvoiceIdAndTenantIdAndResolvedAtIsNull(invoiceId, tenantId)
+        arrearsCaseRepository.findByInvoiceIdAndTenantIdAndResolvedAtIsNull(invoice.getInvoiceId(), tenantId)
             .ifPresent(ArrearsCase::resolve);
         eventPublisher.publishEvent(DomainEventEnvelope.of("billing.InvoiceWaived", tenantId,
-            Map.of("invoiceId", invoiceId, "policyNumber", invoice.getPolicyNumber(), "reason", reason, "waivedBy", waivedBy)));
-        return toView(invoice);
+            Map.of("invoiceId", invoice.getInvoiceId(), "policyNumber", invoice.getPolicyNumber(), "reason", reason,
+                   "waivedBy", waivedBy,
+                   "amount", Map.of("amount", outstanding.toPlainString(), "currencyCode", invoice.getCurrency()))));
+    }
+
+    /**
+     * The policy has ended -- surrendered (a settled claim that ends it publishes the same), cancelled in free-look,
+     * expired, matured, or made paid-up. The schedule ends, and every unsettled invoice for cover the policy no
+     * longer gives is waived: those due on or after {@code from}, or every one when {@code from} is null (a free-look
+     * cancels from inception). Invoices due BEFORE {@code from} are arrears for cover that was given, and stay open.
+     */
+    @Transactional
+    void endBillingForTermination(UUID tenantId, String policyNumber, LocalDate from, String reason) {
+        terminateScheduleForExpiry(tenantId, policyNumber);
+        for (PremiumInvoice invoice : premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId)) {
+            if (UNSETTLED.contains(invoice.getStatus()) && (from == null || !invoice.getDueDate().isBefore(from))) {
+                waive(tenantId, invoice, reason, "system");
+            }
+        }
     }
 
     @Override
@@ -495,8 +525,7 @@ public class BillingApiImpl implements BillingApi {
         String reason = "The pension vested on " + vestedOn + "; no further contributions are due";
         for (PremiumInvoice invoice : premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId)) {
             if (UNSETTLED.contains(invoice.getStatus())) {
-                invoice.waive(reason);
-                premiumInvoiceRepository.save(invoice);
+                waive(tenantId, invoice, reason, "system");
             }
         }
     }

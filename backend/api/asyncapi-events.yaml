@@ -225,6 +225,14 @@ channels:
       distribution has no commission to claw back.
     publish:
       message: { $ref: '#/components/messages/PremiumInvoiceRestated' }
+  billing.InvoiceWaived:
+    description: >-
+      Producer: billing -- a finance write-off, a pension vesting, or a policy that ended (surrender, a claim
+      that ends it, free-look from inception, expiry, maturity, paid-up: every unsettled invoice for cover no
+      longer given). Carries the amount still OUTSTANDING. Consumers: finaccounting (DR unearned premium /
+      CR premium receivable for that amount, keyed on the invoice), audit.
+    publish:
+      message: { $ref: '#/components/messages/InvoiceWaived' }
   policy.BeneficiaryChanged:
     description: "Producer: policy. Consumers: claims (refresh any open claim's beneficiary snapshot), communication, audit."
     publish:
@@ -679,6 +687,7 @@ channels:
 
 components:
   messages:
+    InvoiceWaived: { messageId: InvoiceWaived, name: InvoiceWaived, payload: { $ref: '#/components/schemas/InvoiceWaivedPayload' } }
     PartyRegistered: { messageId: PartyRegistered, name: PartyRegistered, payload: { $ref: '#/components/schemas/PartyRegisteredPayload' } }
     PartyKycStatusChanged: { messageId: PartyKycStatusChanged, name: PartyKycStatusChanged, payload: { $ref: '#/components/schemas/PartyKycStatusChangedPayload' } }
     PartyDetailsUpdated: { messageId: PartyDetailsUpdated, name: PartyDetailsUpdated, payload: { $ref: '#/components/schemas/PartyDetailsUpdatedPayload' } }
@@ -764,6 +773,21 @@ components:
     DocumentUploaded: { messageId: DocumentUploaded, name: DocumentUploaded, payload: { $ref: '#/components/schemas/DocumentUploadedPayload' } }
 
   schemas:
+    InvoiceWaivedPayload:
+      type: object
+      required: [invoiceId, policyNumber, reason, waivedBy, amount]
+      properties:
+        invoiceId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        reason: { type: string }
+        waivedBy: { type: string, description: "A user, or system for a waiver the platform made" }
+        amount:
+          type: object
+          description: The amount still outstanding when it was waived
+          required: [amount, currencyCode]
+          properties:
+            amount: { type: string, description: Decimal string }
+            currencyCode: { type: string }
     EventEnvelopeMeta:
       type: object
       description: >
