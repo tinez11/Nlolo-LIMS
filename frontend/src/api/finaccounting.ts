@@ -1,8 +1,11 @@
 import { del, get, post, put } from '@/lib/http';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './policies';
 import type {
+  AccountingPeriodView,
   AccountStatus,
   ChartOfAccountView,
+  PolicyElectionInput,
+  PolicyElectionView,
   CreateAccountRequest,
   JournalEntryView,
   Page,
@@ -97,7 +100,7 @@ export function getTrialBalance(period?: string): Promise<TrialBalanceView> {
 }
 
 /** `POST /chart-of-accounts` -- staff FINANCE_OFFICER/ADMIN only. A duplicate
- *  accountCode 409s; a malformed one (not 4 digits with a leading 1-5 block) 400s. */
+ *  accountCode 409s; a malformed one (not 4 digits in the guide's classes 1-9) 400s. */
 export function createAccount(request: CreateAccountRequest): Promise<ChartOfAccountView> {
   return post<ChartOfAccountView>('/chart-of-accounts', request);
 }
@@ -140,4 +143,50 @@ export function setAccountStatus(
  */
 export function deleteAccount(accountCode: string): Promise<void> {
   return del<void>(`/chart-of-accounts/${encodeURIComponent(accountCode)}`);
+}
+
+// ---- Accounting periods (IFRS 17 spec §5.4) ----
+
+/** `GET /finance/periods` -- the periods that have left OPEN at least once, newest first. */
+export function listPeriods(): Promise<AccountingPeriodView[]> {
+  return get<AccountingPeriodView[]>('/finance/periods');
+}
+
+export type PeriodAction = 'closing' | 'lock' | 'reopen-approval';
+
+/** Start closing, lock, or approve a reopening. A refusal is a 409 carrying the reason. */
+export function actOnPeriod(period: string, action: PeriodAction): Promise<AccountingPeriodView> {
+  return post<AccountingPeriodView>(`/finance/periods/${encodeURIComponent(period)}/${action}`, {});
+}
+
+export function requestReopen(period: string, reason: string): Promise<AccountingPeriodView> {
+  return post<AccountingPeriodView>(`/finance/periods/${encodeURIComponent(period)}/reopen-request`, {
+    reason,
+  });
+}
+
+// ---- The accounting policy register (IFRS 17 spec §3) ----
+
+/** In force on `asOf` (today when omitted), one per key and scope; then those approved to take effect
+ *  later; then every PROPOSED one. */
+export function listPolicyElections(asOf?: string): Promise<PolicyElectionView[]> {
+  return get<PolicyElectionView[]>('/finance/accounting-policies', asOf ? { params: { asOf } } : undefined);
+}
+
+export function proposePolicyElection(input: PolicyElectionInput): Promise<PolicyElectionView> {
+  return post<PolicyElectionView>('/finance/accounting-policies', input);
+}
+
+export function approvePolicyElection(electionId: string, signOffRef: string): Promise<PolicyElectionView> {
+  return post<PolicyElectionView>(
+    `/finance/accounting-policies/${encodeURIComponent(electionId)}/approval`,
+    { signOffRef },
+  );
+}
+
+export function rejectPolicyElection(electionId: string, reason: string): Promise<PolicyElectionView> {
+  return post<PolicyElectionView>(
+    `/finance/accounting-policies/${encodeURIComponent(electionId)}/rejection`,
+    { reason },
+  );
 }

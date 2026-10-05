@@ -20,6 +20,7 @@ public final class FuneralTestMigrations {
         "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
         "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
         "db-migrations/finaccounting/V8__withholding_tax_account.sql",
+        "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
         "db-migrations/product/V24__funeral_terms.sql",
         "db-migrations/underwriting/V16__funeral_application.sql",
         "db-migrations/policy/V35__covered_life.sql",

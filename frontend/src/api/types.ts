@@ -248,10 +248,9 @@ export const TREATY_TYPES: readonly TreatyType[] = ['QUOTA_SHARE', 'SURPLUS', 'X
 export const TREATY_STATUSES: readonly TreatyStatus[] = ['ACTIVE', 'EXPIRED'];
 
 /**
- * `finaccounting` is read-only, permanently: every posting is derived from a
- * domain event by this module's own listeners, and there is no write
- * endpoint here at all, by design -- a correction is a future reversal entry
- * (deferred), never an edit to an existing one.
+ * Journals are read-only here: every one is written by the ledger itself (an
+ * event, the platform, an IFRS 17 engine run, or later a manual journal through
+ * maker-checker), and a correction is a reversing journal, never an edit.
  */
 export type JournalEntryView = FinaccountingComponents['schemas']['JournalEntryView'];
 export type GlPostingView = FinaccountingComponents['schemas']['GlPostingView'];
@@ -273,6 +272,18 @@ export type AccountBalanceView = FinaccountingComponents['schemas']['AccountBala
 export type CreateAccountRequest = FinaccountingComponents['schemas']['CreateAccountRequest'];
 export type UpdateAccountRequest = FinaccountingComponents['schemas']['UpdateAccountRequest'];
 export type AccountStatus = FinaccountingComponents['schemas']['AccountStatus'];
+/** The IFRS 17 posting guide's posting mode: which journal sources an account accepts. */
+export type PostingMode = FinaccountingComponents['schemas']['PostingMode'];
+export type JournalSource = FinaccountingComponents['schemas']['JournalSource'];
+export type LineDimensions = FinaccountingComponents['schemas']['LineDimensions'];
+
+/** Accounting periods (IFRS 17 spec §5.4): OPEN → CLOSING → LOCKED, reopened by a second person. */
+export type AccountingPeriodView = FinaccountingComponents['schemas']['AccountingPeriodView'];
+export type PeriodStatus = FinaccountingComponents['schemas']['PeriodStatus'];
+/** The effective-dated accounting policy register (IFRS 17 spec §3). */
+export type PolicyElectionView = FinaccountingComponents['schemas']['PolicyElectionView'];
+export type PolicyElectionInput = FinaccountingComponents['schemas']['PolicyElectionInput'];
+export type ElectionKey = PolicyElectionInput['key'];
 
 /**
  * `ClaimDetails` has no `discriminator` keyword in the spec (deliberately -- see the

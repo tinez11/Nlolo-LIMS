@@ -88,10 +88,10 @@ class FuneralEndorsementIntegrationTest {
      */
     private static final BigDecimal FIRST_PREMIUM_COLLECTED = new BigDecimal("12075.00");
 
-    /** The ledger's premium receivable for one policy: debits less credits on 1210. */
+    /** The ledger's premium receivable for one policy: debits less credits on 2122 Premiums due from policyholders (1210 before IFRS 17 I1). */
     private BigDecimal receivable(String policyNumber) {
         BigDecimal balance = jdbc.queryForObject("SELECT COALESCE(SUM(CASE WHEN direction = 'DR' THEN amount ELSE -amount END), 0)"
-            + " FROM finaccounting.gl_posting WHERE tenant_id = ? AND policy_number = ? AND account_code = '1210'",
+            + " FROM finaccounting.gl_posting WHERE tenant_id = ? AND policy_number = ? AND account_code = '2122'",
             BigDecimal.class, TENANT, policyNumber);
         return balance;
     }

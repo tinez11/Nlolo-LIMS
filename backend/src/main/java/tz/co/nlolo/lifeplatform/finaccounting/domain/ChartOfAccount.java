@@ -4,6 +4,7 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.AccountStatus;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountType;
 import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingValidationException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
+import tz.co.nlolo.lifeplatform.finaccounting.api.PostingMode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -15,9 +16,8 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Maps {@code finaccounting.chart_of_account} (V2 section 5, V5 hierarchy columns). Every
- * account is a PLACEHOLDER pending Finance sign-off -- no document on this platform specifies
- * account codes. */
+/** Maps {@code finaccounting.chart_of_account} (V2 section 5, V5 hierarchy columns, V10 posting mode). The seeded
+ * chart is the IFRS 17 posting guide's, exactly -- see {@link ChartOfAccountBlueprint}. */
 @Entity
 @Table(name = "chart_of_account", schema = "finaccounting")
 @IdClass(ChartOfAccountId.class)
@@ -57,6 +57,10 @@ public class ChartOfAccount {
 
     @Column(name = "currency", nullable = false)
     private String currency;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "posting_mode", nullable = false)
+    private PostingMode mode = PostingMode.MAN;
 
     @Column(name = "control_of")
     private String controlOf;
@@ -130,8 +134,10 @@ public class ChartOfAccount {
                 + " cannot hang off " + parent.accountCode + ": a child's code must begin with \""
                 + prefix + "\"");
         }
+        // An account added by hand inherits its parent's treatment and is staff-posted (MAN) by default: the
+        // guide's contra accounts mean the leading digit cannot decide a normal balance (IFRS 17 I1, R4).
         ChartOfAccount account = new ChartOfAccount(parent.tenantId, accountCode, name,
-            PostingRule.accountTypeFor(accountCode), PostingRule.normalBalanceFor(accountCode), createdBy);
+            parent.accountType, parent.normalBalance, createdBy);
         account.parentCode = parent.accountCode;
         account.level = (short) (parent.level + 1);
         account.postingAllowed = postingAllowed;
@@ -139,6 +145,20 @@ public class ChartOfAccount {
         account.controlOf = controlOf;
         account.description = description;
         return account;
+    }
+
+    /** A guide account as the seeder writes it: every attribute explicit (IFRS 17 I1, R4). */
+    public static ChartOfAccount seeded(UUID tenantId, ChartOfAccountBlueprint.Seed seed, ChartOfAccount parent,
+                                        String currency, String createdBy) {
+        ChartOfAccount a = new ChartOfAccount(tenantId, seed.code(), seed.name(), seed.type(), seed.normalBalance(),
+            createdBy);
+        a.parentCode = parent == null ? null : parent.accountCode;
+        a.level = parent == null ? 1 : (short) (parent.level + 1);
+        a.postingAllowed = seed.postingAllowed();
+        a.currency = currency;
+        a.mode = seed.mode();
+        a.description = seed.usedFor();
+        return a;
     }
 
     /** The account code with trailing zeros stripped: 1000 -> "1", 1200 -> "12", 1210 -> "121". */
@@ -158,6 +178,7 @@ public class ChartOfAccount {
     public String getParentCode() { return parentCode; }
     public short getLevel() { return level; }
     public boolean isPostingAllowed() { return postingAllowed; }
+    public PostingMode getMode() { return mode; }
     public AccountStatus getStatus() { return status; }
     public String getCurrency() { return currency; }
     public String getControlOf() { return controlOf; }

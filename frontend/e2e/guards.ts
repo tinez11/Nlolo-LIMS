@@ -33,7 +33,9 @@ const STAFF_ANCHOR = 'Policies';
  * proves nothing.
  */
 export async function expectStaffShellReady(page: Page): Promise<void> {
-  await expect(page.getByRole('link', { name: STAFF_ANCHOR })).toBeVisible({ timeout: 30_000 });
+  // `exact`: a role's name match is a case-insensitive substring, and finance and admin also see
+  // "Accounting policies" (IFRS 17 I1), which made this anchor ambiguous for exactly those sessions.
+  await expect(page.getByRole('link', { name: STAFF_ANCHOR, exact: true })).toBeVisible({ timeout: 30_000 });
 }
 
 /**

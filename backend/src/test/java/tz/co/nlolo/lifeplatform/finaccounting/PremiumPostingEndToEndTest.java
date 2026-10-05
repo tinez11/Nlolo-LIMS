@@ -6,6 +6,7 @@ import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
+import tz.co.nlolo.lifeplatform.finaccounting.api.JournalSource;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPosting;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
@@ -179,7 +180,8 @@ class PremiumPostingEndToEndTest {
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
             "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql",
             "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
-            "db-migrations/finaccounting/V7__q4_2026_partitions.sql");
+            "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
+            "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -377,14 +379,14 @@ class PremiumPostingEndToEndTest {
                 + "idempotent write that still re-announces itself would mislead every downstream consumer")
             .isEmpty();
 
-        // ---- Assertion 6: the C1 scope boundary -- csm_ledger, lrc_ledger and lic_ledger are
-        // still all empty. Queried with the container's own superuser credentials (the same ones
-        // used to apply migrations), bypassing RLS entirely, so this is a genuine "no rows exist
-        // anywhere" check rather than one that could pass vacuously because app_role's RLS hid
-        // rows belonging to another tenant. ----
-        assertThat(countAllRows("finaccounting.csm_ledger")).as("csm_ledger must remain empty -- CSM roll-forward is C1-blocked").isZero();
-        assertThat(countAllRows("finaccounting.lrc_ledger")).as("lrc_ledger must remain empty -- LRC release is C1-blocked").isZero();
-        assertThat(countAllRows("finaccounting.lic_ledger")).as("lic_ledger must remain empty -- IFRS 17 measurement is C1-blocked").isZero();
+        // ---- Assertion 6: the journal records what wrote it and the accounting policy register
+        // version it was posted under (IFRS 17 I1). The old csm/lrc/lic ledgers this assertion used
+        // to prove empty are gone (finaccounting V10): IFRS 17 measurement reaches the ledger as
+        // engine-run journals, not as rows in tables of its own. ----
+        assertThat(collectedEntry.getSourceType()).isEqualTo(JournalSource.EVENT);
+        assertThat(collectedEntry.getPolicyRegisterVersion()).isPositive();
+        assertThat(countAllRows("pg_class WHERE relname IN ('csm_ledger', 'lrc_ledger', 'lic_ledger')"))
+            .as("finaccounting V10 drops the pre-IFRS-17 measurement ledgers").isZero();
     }
 
     private static GlPosting legFor(List<GlPosting> legs, String accountCode) {

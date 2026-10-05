@@ -9,15 +9,15 @@ describe('createAccountFormSchema', () => {
   });
 
   it('accepts every valid leading block', () => {
-    for (const block of ['1', '2', '3', '4', '5']) {
+    for (const block of ['1', '2', '3', '4', '5', '6', '7', '8', '9']) {
       expect(
         createAccountFormSchema.safeParse({ ...valid(), accountCode: `${block}234` }).success,
       ).toBe(true);
     }
   });
 
-  it('rejects a leading block outside 1-5', () => {
-    expect(createAccountFormSchema.safeParse({ ...valid(), accountCode: '9000' }).success).toBe(
+  it('rejects a leading 0, which is in no class', () => {
+    expect(createAccountFormSchema.safeParse({ ...valid(), accountCode: '0900' }).success).toBe(
       false,
     );
   });
@@ -53,7 +53,7 @@ describe('createAccountFormSchema', () => {
   });
 
   it('rejects a parent that is not a well-formed account code', () => {
-    expect(createAccountFormSchema.safeParse({ ...valid(), parentCode: '9000' }).success).toBe(
+    expect(createAccountFormSchema.safeParse({ ...valid(), parentCode: '0900' }).success).toBe(
       false,
     );
     expect(createAccountFormSchema.safeParse({ ...valid(), parentCode: '12' }).success).toBe(false);
@@ -61,7 +61,7 @@ describe('createAccountFormSchema', () => {
 });
 
 describe('toApiRequest', () => {
-  /* An empty parentCode would fail the server's own ^[1-5]\d{3}$ pattern with a 400,
+  /* An empty parentCode would fail the server's own ^[1-9]\d{3}$ pattern with a 400,
      rather than creating the block root the user asked for. */
   it('sends an omitted parent and description as absent, not as empty strings', () => {
     const request = toApiRequest({

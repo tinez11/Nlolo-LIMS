@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.finaccounting.domain;
 
+import tz.co.nlolo.lifeplatform.finaccounting.api.LineDimensions;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -74,11 +75,23 @@ public class GlPosting {
     @Column(name = "source_ref", nullable = false)
     private String sourceRef;
 
+    // The guide's line dimensions (2.2, finaccounting V10).
+    @Column(name = "ifrs17_group") private String ifrs17Group;
+    @Column(name = "measurement_model") private String measurementModel;
+    @Column(name = "movement_type") private String movementType;
+    @Column(name = "product_id") private UUID productId;
+    @Column(name = "portfolio") private String portfolio;
+    @Column(name = "channel") private String channel;
+    @Column(name = "branch") private String branch;
+    @Column(name = "fund") private String fund;
+    @Column(name = "reference_type") private String referenceType;
+    @Column(name = "reference") private String reference;
+
     protected GlPosting() {}
 
     public GlPosting(UUID tenantId, UUID journalEntryId, String accountCode, PostingDirection direction,
                       BigDecimal amount, String currency, String period, String policyNumber,
-                      String sourceEvent, String sourceRef) {
+                      String sourceEvent, String sourceRef, LineDimensions dimensions) {
         this.tenantId = tenantId;
         this.journalEntryId = journalEntryId;
         this.accountCode = accountCode;
@@ -94,6 +107,22 @@ public class GlPosting {
         this.postingType = sourceEvent;
         this.sourceEvent = sourceEvent;
         this.sourceRef = sourceRef;
+        LineDimensions d = dimensions == null ? LineDimensions.NONE : dimensions;
+        this.ifrs17Group = d.ifrs17Group();
+        this.measurementModel = d.measurementModel();
+        this.movementType = d.movementType();
+        this.productId = d.productId();
+        this.portfolio = d.portfolio();
+        this.channel = d.channel();
+        this.branch = d.branch();
+        this.fund = d.fund();
+        this.referenceType = d.referenceType();
+        this.reference = d.reference();
+    }
+
+    public LineDimensions getDimensions() {
+        return new LineDimensions(ifrs17Group, measurementModel, movementType, productId, portfolio, channel, branch,
+            fund, referenceType, reference);
     }
 
     public UUID getPostingId() { return postingId; }

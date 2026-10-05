@@ -6,6 +6,9 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.AccountNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.DuplicateAccountCodeException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingValidationException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryNotFoundException;
+import tz.co.nlolo.lifeplatform.finaccounting.api.PeriodStateException;
+import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyElectionNotFoundException;
+import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyRegisterStateException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -64,6 +67,21 @@ public class FinaccountingExceptionHandler {
     @ExceptionHandler(AccountHasChildrenException.class)
     public ProblemDetail handleAccountHasChildren(AccountHasChildrenException ex) {
         return problem(HttpStatus.CONFLICT, ex.getMessage(), "ACCOUNT_HAS_CHILDREN");
+    }
+
+    @ExceptionHandler(PeriodStateException.class)
+    public ProblemDetail handlePeriodState(PeriodStateException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "PERIOD_STATE");
+    }
+
+    @ExceptionHandler(PolicyRegisterStateException.class)
+    public ProblemDetail handlePolicyRegisterState(PolicyRegisterStateException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "POLICY_REGISTER_STATE");
+    }
+
+    @ExceptionHandler(PolicyElectionNotFoundException.class)
+    public ProblemDetail handlePolicyElectionNotFound(PolicyElectionNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "POLICY_ELECTION_NOT_FOUND");
     }
 
     /** {@code traceId} is REQUIRED by openapi-common.yaml's ProblemDetails schema -- an M6 contract

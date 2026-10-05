@@ -151,3 +151,9 @@ export const HeldVestingsPage = lazy(() =>
 export const FundsPage = lazy(() =>
   import('@/features/unitlinked/FundsPage').then((m) => ({ default: m.FundsPage })),
 );
+export const PeriodsPage = lazy(() =>
+  import('@/features/finance/PeriodsPage').then((m) => ({ default: m.PeriodsPage })),
+);
+export const PolicyRegisterPage = lazy(() =>
+  import('@/features/finance/PolicyRegisterPage').then((m) => ({ default: m.PolicyRegisterPage })),
+);

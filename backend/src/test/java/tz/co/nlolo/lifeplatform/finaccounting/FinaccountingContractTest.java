@@ -147,13 +147,15 @@ class FinaccountingContractTest {
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
             "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql",
             "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
-            "db-migrations/finaccounting/V7__q4_2026_partitions.sql");
+            "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
+            "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql");
     }
 
     @Autowired private MockMvc mockMvc;
     @Autowired private JournalEntryRepository journalEntryRepository;
     @Autowired private GlPostingRepository glPostingRepository;
     @Autowired private ChartOfAccountSeeder chartOfAccountSeeder;
+    @Autowired private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     @AfterEach
     void resetAfterEach() {
@@ -166,9 +168,14 @@ class FinaccountingContractTest {
      * there is no finaccounting-specific staff role, mirroring M7's/M8's identical decision for
      * distribution/reinsurance. */
     private static RequestPostProcessor financeStaffOf(UUID tenantId) {
+        return financeStaffOf(tenantId, "finance-officer");
+    }
+
+    /** A named finance officer: the period and register controls need a second person. */
+    private static RequestPostProcessor financeStaffOf(UUID tenantId, String subject) {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
                                  new SimpleGrantedAuthority("ROLE_FINANCE_OFFICER"))
-            .jwt(builder -> builder.subject("finance-officer").claim("tenant_id", tenantId.toString()));
+            .jwt(builder -> builder.subject(subject).claim("tenant_id", tenantId.toString()));
     }
 
     /** Staff, but the WRONG fine-grained role -- proves the gate is on FINANCE_OFFICER/ADMIN and
@@ -202,11 +209,16 @@ class FinaccountingContractTest {
         JournalEntry entry = new JournalEntry(tenantId, sourceEvent, sourceRef, period, policyNumber, "system:test");
         entry.addLeg(PostingRule.CASH, PostingDirection.DR, new BigDecimal(amount), CURRENCY);
         entry.addLeg(PostingRule.PREMIUM_RECEIVABLE, PostingDirection.CR, new BigDecimal(amount), CURRENCY);
-        journalEntryRepository.save(entry);
-        for (JournalEntry.Leg leg : entry.getLegs()) {
-            glPostingRepository.save(new GlPosting(tenantId, entry.getJournalEntryId(), leg.accountCode(),
-                leg.direction(), leg.amount(), leg.currency(), period, policyNumber, sourceEvent, sourceRef));
-        }
+        // One transaction, as finaccounting V10 requires: a journal balances at commit, and its lines may only be
+        // written by the transaction that wrote it.
+        new org.springframework.transaction.support.TransactionTemplate(transactionManager).executeWithoutResult(s -> {
+            journalEntryRepository.save(entry);
+            for (JournalEntry.Leg leg : entry.getLegs()) {
+                glPostingRepository.save(new GlPosting(tenantId, entry.getJournalEntryId(), leg.accountCode(),
+                    leg.direction(), leg.amount(), leg.currency(), period, policyNumber, sourceEvent, sourceRef,
+                    leg.dimensions()));
+            }
+        });
         TenantContext.clear();
         return entry;
     }
@@ -394,7 +406,7 @@ class FinaccountingContractTest {
     void createAccountReturns400ForAMalformedAccountCodeOrABlankName() throws Exception {
         UUID tenantId = UUID.randomUUID();
 
-        // "9000" has no valid block (only 1-5 are defined). Deliberately NOT paired with the
+        // "0900" is in no class (the posting guide defines 1-9). Deliberately NOT paired with the
         // OpenApi request/response matcher here: this request is, by design, itself invalid
         // against the spec's own declared `accountCode` pattern, so the validator's own
         // request-side check would throw before the response could ever be asserted on --
@@ -403,7 +415,7 @@ class FinaccountingContractTest {
         mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"accountCode":"9000","name":"Bogus Block"}"""))
+                    {"accountCode":"0900","name":"Bogus Block"}"""))
             .andExpect(status().isBadRequest());
 
         mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
@@ -486,7 +498,7 @@ class FinaccountingContractTest {
     @Test
     void deleteAccountReturns409WhenARealPostingReferencesIt() throws Exception {
         UUID tenantId = UUID.randomUUID();
-        // seedEntry posts a real DR CASH ("1120") / CR PREMIUM_RECEIVABLE ("1210") leg pair.
+        // seedEntry posts a real DR CASH ("1140") / CR PREMIUM_RECEIVABLE ("2122") leg pair.
         seedEntry(tenantId, "billing.PremiumInvoiceGenerated", "gl-ct-inuse", "2026-08", "POL-GL-INUSE", "1000.00");
 
         mockMvc.perform(delete("/chart-of-accounts/{accountCode}", PostingRule.CASH).with(financeStaffOf(tenantId)))
@@ -526,11 +538,11 @@ class FinaccountingContractTest {
         mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"accountCode":"1260","parentCode":"1200","name":"Sundry Receivables"}"""))
+                    {"accountCode":"1295","parentCode":"1200","name":"Sundry investments"}"""))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.parentCode").value("1200"))
-            // 1200 Receivables is level 2, so its child is level 3.
+            // 1200 Financial investments is level 2, so its child is level 3.
             .andExpect(jsonPath("$.level").value(3))
             .andExpect(jsonPath("$.status").value("ACTIVE"))
             .andExpect(jsonPath("$.currency").value("TZS"))
@@ -560,14 +572,14 @@ class FinaccountingContractTest {
     void rejectsAChildOfAnAccountThatAlreadyCarriesPostings() throws Exception {
         UUID tenantId = UUID.randomUUID();
         seedChart(tenantId);
-        // 1210 Premium Receivables is a real posting target, so it can never become a header.
+        // 1140 Mobile money wallets is a real posting target (CASH), so it can never become a header.
         seedEntry(tenantId, "billing.PremiumInvoiceGenerated", "gl-ct-parent", "2026-08",
             "POL-GL-PARENT", "1000.00");
 
         mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"accountCode":"1211","parentCode":"1210","name":"Under a posted-to account"}"""))
+                    {"accountCode":"1141","parentCode":"1140","name":"Under a posted-to account"}"""))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.errorCode").value("ACCOUNT_IN_USE"));
     }
@@ -579,16 +591,16 @@ class FinaccountingContractTest {
         UUID tenantId = UUID.randomUUID();
         seedChart(tenantId);
 
-        // 1300 Investments seeds as a postable leaf.
+        // 1150 Petty cash seeds as a postable leaf with no children.
         mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"accountCode":"1310","parentCode":"1300","name":"Government Securities"}"""))
+                    {"accountCode":"1151","parentCode":"1150","name":"Branch petty cash"}"""))
             .andExpect(status().isCreated());
 
         mockMvc.perform(get("/chart-of-accounts").with(financeStaffOf(tenantId)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$[?(@.accountCode == '1300')].postingAllowed").value(false));
+            .andExpect(jsonPath("$[?(@.accountCode == '1150')].postingAllowed").value(false));
     }
 
     @Test
@@ -596,13 +608,13 @@ class FinaccountingContractTest {
         UUID tenantId = UUID.randomUUID();
         seedChart(tenantId);
 
-        mockMvc.perform(post("/chart-of-accounts/{accountCode}/deactivate", "1300")
+        mockMvc.perform(post("/chart-of-accounts/{accountCode}/deactivate", "1150")
                 .with(financeStaffOf(tenantId)))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.status").value("INACTIVE"));
 
-        mockMvc.perform(post("/chart-of-accounts/{accountCode}/activate", "1300")
+        mockMvc.perform(post("/chart-of-accounts/{accountCode}/activate", "1150")
                 .with(financeStaffOf(tenantId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("ACTIVE"));
@@ -618,7 +630,7 @@ class FinaccountingContractTest {
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("ACCOUNT_NOT_FOUND"));
 
-        mockMvc.perform(post("/chart-of-accounts/{accountCode}/deactivate", "1300")
+        mockMvc.perform(post("/chart-of-accounts/{accountCode}/deactivate", "1150")
                 .with(underwriterStaffOf(tenantId)))
             .andExpect(status().isForbidden());
     }
@@ -639,7 +651,7 @@ class FinaccountingContractTest {
         UUID tenantId = UUID.randomUUID();
         seedChart(tenantId);
 
-        mockMvc.perform(put("/chart-of-accounts/{accountCode}", "1300").with(financeStaffOf(tenantId))
+        mockMvc.perform(put("/chart-of-accounts/{accountCode}", "1150").with(financeStaffOf(tenantId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"name":"Investments and securities","description":"Long-term holdings"}"""))
@@ -647,5 +659,98 @@ class FinaccountingContractTest {
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.name").value("Investments and securities"))
             .andExpect(jsonPath("$.description").value("Long-term holdings"));
+    }
+
+    // ============================================================================================
+    // Accounting periods and the accounting policy register (IFRS 17 I1)
+    // ============================================================================================
+
+    @Test
+    void aPeriodClosesLocksAndReopensThroughASecondPersonOnTheWire() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String period = "2024-01";
+
+        mockMvc.perform(get("/finance/periods/{period}", period).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("OPEN"));
+        mockMvc.perform(post("/finance/periods/{period}/closing", period).with(financeStaffOf(tenantId, "alice")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("CLOSING"));
+        mockMvc.perform(post("/finance/periods/{period}/lock", period).with(financeStaffOf(tenantId, "alice")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("LOCKED"))
+            .andExpect(jsonPath("$.lockedBy").value("alice"));
+        mockMvc.perform(post("/finance/periods/{period}/reopen-request", period).with(financeStaffOf(tenantId, "alice"))
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"reason":"Late bank statement"}"""))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.reopenRequestedBy").value("alice"));
+        mockMvc.perform(post("/finance/periods/{period}/reopen-approval", period).with(financeStaffOf(tenantId, "alice")))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("PERIOD_STATE"))
+            .andExpect(jsonPath("$.detail").value("A second person approves reopening a period"));
+        mockMvc.perform(post("/finance/periods/{period}/reopen-approval", period).with(financeStaffOf(tenantId, "bob")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("OPEN"))
+            .andExpect(jsonPath("$.reopenedBy").value("bob"));
+        mockMvc.perform(get("/finance/periods").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$[0].period").value(period));
+
+        mockMvc.perform(get("/finance/periods").with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void anElectionIsProposedAndApprovedByASecondPersonOnTheWire() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String today = java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")).toString();
+
+        mockMvc.perform(get("/finance/accounting-policies").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$[?(@.key == 'OCI_OPTION')].value").value(org.hamcrest.Matchers.contains("OFF")));
+
+        String body = mockMvc.perform(post("/finance/accounting-policies").with(financeStaffOf(tenantId, "alice"))
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"key":"OCI_OPTION","scope":"*","value":"ON","effectiveFrom":"%s","rationale":"Match FVOCI assets"}"""
+                    .formatted(today)))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("PROPOSED"))
+            .andReturn().getResponse().getContentAsString();
+        String electionId = com.jayway.jsonpath.JsonPath.read(body, "$.electionId");
+
+        mockMvc.perform(post("/finance/accounting-policies/{id}/approval", electionId).with(financeStaffOf(tenantId, "alice"))
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"signOffRef":"AC-14"}"""))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("POLICY_REGISTER_STATE"));
+        mockMvc.perform(post("/finance/accounting-policies/{id}/approval", electionId).with(financeStaffOf(tenantId, "bob"))
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"signOffRef":"AC-14"}"""))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("APPROVED"))
+            .andExpect(jsonPath("$.registerVersion").value(
+                tz.co.nlolo.lifeplatform.finaccounting.domain.PolicyRegisterBaseline.ROWS.size() + 1));
+
+        mockMvc.perform(post("/finance/accounting-policies").with(financeStaffOf(tenantId, "alice"))
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"key":"OCI_OPTION","scope":"*","value":"MAYBE","effectiveFrom":"%s"}""".formatted(today)))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("MAYBE is not a permitted value for OCI_OPTION"));
+        mockMvc.perform(post("/finance/accounting-policies/{id}/rejection", UUID.randomUUID())
+                .with(financeStaffOf(tenantId, "bob"))
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"reason":"No such thing"}"""))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("POLICY_ELECTION_NOT_FOUND"));
     }
 }

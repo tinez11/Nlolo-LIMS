@@ -2,6 +2,7 @@ import {
   Banknote,
   BookText,
   Building2,
+  CalendarCheck,
   ClipboardCheck,
   FileText,
   HandCoins,
@@ -72,6 +73,8 @@ import {
   WithholdingRulesPage,
   HeldVestingsPage,
   FundsPage,
+  PeriodsPage,
+  PolicyRegisterPage,
 } from '@/lazyPages';
 
 /**
@@ -495,6 +498,17 @@ const STAFF_SCREENS: Screen[] = [
     path: 'chart-of-accounts',
     element: <ChartOfAccountsPage />,
     reach: { group: 'finance', label: 'Chart of accounts', icon: Wallet },
+  },
+  // IFRS 17 I1: closing and locking months, and the accounting policy register -- both two-person.
+  {
+    path: 'periods',
+    element: <PeriodsPage />,
+    reach: { group: 'finance', label: 'Accounting periods', icon: CalendarCheck },
+  },
+  {
+    path: 'accounting-policies',
+    element: <PolicyRegisterPage />,
+    reach: { group: 'finance', label: 'Accounting policies', icon: ScrollText },
   },
   {
     path: 'treaties',

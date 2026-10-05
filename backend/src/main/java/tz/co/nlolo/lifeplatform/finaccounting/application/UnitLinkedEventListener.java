@@ -22,29 +22,31 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Unit-linked business in the ledger (product step 6, spec §8). 2150 carries what is owed in units and is always
+ * Unit-linked business in the ledger (product step 6, spec §8), on the IFRS 17 posting guide's accounts since I1's
+ * interim remap (2131 Unit fund value, 2132 Charges deducted from units, 7130 Change in fair value of underlying items;
+ * I3 replaces these with the guide's F-01 .. F-09). 2131 carries what is owed in units and is always
  * units in issue x current price: premiums go into it, charges and exits come out of it, and every approved price
- * trues it up through 5600. One balanced entry per event, idempotent on (event, source).
+ * trues it up through 7130. One balanced entry per event, idempotent on (event, source).
  *
  * <pre>
- *   UnitsAllocated   DR 2140 premium        / CR 2150 allocated, CR 4310 allocation charge
- *   ChargesTaken     DR 2150 fee + coi      / CR 4310
- *   FundRevalued     DR 5600 / CR 2150 a rise; the reverse a fall
- *   ExitPriced       DR 2150 proceeds       / CR 5100   (the payout's own posting is DR 5100 / CR cash)
- *   PremiumReturned  DR 2140 premium        / CR 5100 returned, CR 4310 its allocation charge
- *   ChargeRefunded   DR 4310 / CR 5100
- *   UnitsReinvested  DR 5100 / CR 2150
- *   PayoutPaid       DR 5100 / CR cash  an exit's or a withdrawal's payout, keyed on the disbursement;
- *                    DR 2130 / CR cash  an adjustment paid to the customer;
- *                    DR 2140 / CR cash  a top-up refunded whole
- *   SwitchExecuted   DR 2150 / CR 4310  the switch fee (the units moved stay inside 2150)
- *   WithdrawalPriced DR 2150 proceeds / CR 5100; DR 5100 / CR 4310 its surrender charge
- *   SurrenderCharged DR 5100 / CR 4310  an exit's surrender charge, out of what ExitPriced put in 5100
- *   TopUpReceived    DR cash / CR 2140  the top-up's money in, before it buys units (UnitsAllocated) or goes back
- *   AdjustmentCollected  DR cash / CR 1230   owed by the customer, collected outside the platform
- *   AdjustmentWaived     DR 2130 / CR 5100 owed to them; DR 5100 / CR 1230 owed by them
- *   PriceCorrected   per re-run exit sale: the liability's difference against 5100; where the exit was already
- *                    paid, the difference owed to the customer (DR 5100 / CR 2130) or by them (DR 1230 / CR 5100)
+ *   UnitsAllocated   DR 2121 premium        / CR 2131 allocated, CR 2132 allocation charge
+ *   ChargesTaken     DR 2131 fee + coi      / CR 2132
+ *   FundRevalued     DR 7130 / CR 2131 a rise; the reverse a fall
+ *   ExitPriced       DR 2131 proceeds       / CR 5110   (the payout's own posting is DR 5110 / CR cash)
+ *   PremiumReturned  DR 2121 premium        / CR 5110 returned, CR 2132 its allocation charge
+ *   ChargeRefunded   DR 2132 / CR 5110
+ *   UnitsReinvested  DR 5110 / CR 2131
+ *   PayoutPaid       DR 5110 / CR cash  an exit's or a withdrawal's payout, keyed on the disbursement;
+ *                    DR 2213 / CR cash  an adjustment paid to the customer;
+ *                    DR 2121 / CR cash  a top-up refunded whole
+ *   SwitchExecuted   DR 2131 / CR 2132  the switch fee (the units moved stay inside 2131)
+ *   WithdrawalPriced DR 2131 proceeds / CR 5110; DR 5110 / CR 2132 its surrender charge
+ *   SurrenderCharged DR 5110 / CR 2132  an exit's surrender charge, out of what ExitPriced put in 5110
+ *   TopUpReceived    DR cash / CR 2121  the top-up's money in, before it buys units (UnitsAllocated) or goes back
+ *   AdjustmentCollected  DR cash / CR 2122   owed by the customer, collected outside the platform
+ *   AdjustmentWaived     DR 2213 / CR 5110 owed to them; DR 5110 / CR 2122 owed by them
+ *   PriceCorrected   per re-run exit sale: the liability's difference against 5110; where the exit was already
+ *                    paid, the difference owed to the customer (DR 5110 / CR 2213) or by them (DR 2122 / CR 5110)
  * </pre>
  */
 @Component

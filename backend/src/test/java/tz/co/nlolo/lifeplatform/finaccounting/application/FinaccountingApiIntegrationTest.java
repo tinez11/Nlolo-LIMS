@@ -10,6 +10,8 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.GlPostingView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.TrialBalanceView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryView;
+import tz.co.nlolo.lifeplatform.finaccounting.api.JournalSource;
+import tz.co.nlolo.lifeplatform.finaccounting.api.LineDimensions;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccount;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint;
@@ -19,6 +21,7 @@ import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountRepos
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountSeeder;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.GlPostingRepository;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.JournalEntryRepository;
+import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.PolicyElectionRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -118,7 +121,8 @@ class FinaccountingApiIntegrationTest {
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
             "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql",
             "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
-            "db-migrations/finaccounting/V7__q4_2026_partitions.sql");
+            "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
+            "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -133,6 +137,7 @@ class FinaccountingApiIntegrationTest {
     @Autowired private GlPostingRepository glPostingRepository;
     @Autowired private ChartOfAccountSeeder chartOfAccountSeeder;
     @Autowired private ChartOfAccountRepository chartOfAccountRepository;
+    @Autowired private PolicyElectionRepository policyElectionRepository;
     @Autowired private org.springframework.context.ApplicationEventPublisher eventPublisher;
     @Autowired private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
@@ -205,6 +210,25 @@ class FinaccountingApiIntegrationTest {
         assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged())).hasSize(1);
         assertThat(glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(tenantId, journalEntryId))
             .hasSize(2);
+    }
+
+    @Test
+    void aJournalRecordsItsSourceItsPolicyRegisterVersionAndItsLineDimensions() {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+        JournalEntry entry = new JournalEntry(tenantId, "billing.PremiumCollected", "dims-1", "2026-10", "POL-0009",
+            "system:test");
+        LineDimensions dims = new LineDimensions("TERM-2026-REM", "GMM", "PRM_REN", UUID.randomUUID(), "TERM",
+            "AGENT", "DSM", null, "POLICY", "POL-0009");
+        entry.addLeg(PostingRule.CASH, PostingDirection.DR, new BigDecimal("1200.00"), "TZS", dims);
+        entry.addLeg(PostingRule.PREMIUM_RECEIVABLE, PostingDirection.CR, new BigDecimal("1200.00"), "TZS", dims);
+        UUID journalEntryId = finaccountingApiImpl.postEntry(entry).orElseThrow().getJournalEntryId();
+
+        TenantContext.set(tenantId);
+        JournalEntryView view = finaccountingApi.getJournalEntry(journalEntryId);
+        assertThat(view.sourceType()).isEqualTo(JournalSource.EVENT);
+        assertThat(view.policyRegisterVersion()).isEqualTo(policyElectionRepository.currentVersion(tenantId));
+        assertThat(view.postings()).extracting(GlPostingView::dimensions).containsOnly(dims);
     }
 
     @Test
@@ -411,16 +435,16 @@ class FinaccountingApiIntegrationTest {
         UUID tenantId = UUID.randomUUID();
         seedChart(tenantId);
 
-        ChartOfAccount investments = chartOfAccountRepository
-            .findByTenantIdAndAccountCode(tenantId, "1300").orElseThrow();
-        investments.deactivate("system:test");
-        chartOfAccountRepository.saveAndFlush(investments);
+        ChartOfAccount pettyCash = chartOfAccountRepository
+            .findByTenantIdAndAccountCode(tenantId, "1150").orElseThrow();
+        pettyCash.deactivate("system:test");
+        chartOfAccountRepository.saveAndFlush(pettyCash);
 
         TenantContext.set(tenantId);
-        JournalEntry entry = balancedEntryAgainst(tenantId, "1300", PostingRule.CASH, "TZS");
+        JournalEntry entry = balancedEntryAgainst(tenantId, "1150", PostingRule.CASH, "TZS");
         assertThatThrownBy(() -> finaccountingApiImpl.postEntry(entry))
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("1300")
+            .hasMessageContaining("1150")
             .hasMessageContaining("does not accept postings");
     }
 

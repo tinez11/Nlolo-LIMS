@@ -61,8 +61,8 @@ paths:
           required: false
           description: >-
             Restricts to entries with at least one leg against this account. Matches the chart's
-            own five-block convention.
-          schema: { type: string, pattern: '^[1-5]\d{3}$' }
+            own nine-class convention (the IFRS 17 posting guide).
+          schema: { type: string, pattern: '^[1-9]\d{3}$' }
         - name: page
           in: query
           required: false
@@ -286,6 +286,201 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /finance/periods:
+    get:
+      summary: The accounting periods that have left OPEN at least once, newest first
+      description: >-
+        IFRS 17 spec 5.4. A period with no row here is OPEN. Finance or an admin.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AccountingPeriodView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /finance/periods/{period}:
+    get:
+      summary: One accounting period's status
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PeriodPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountingPeriodView' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /finance/periods/{period}/closing:
+    post:
+      summary: Start closing an OPEN period -- it then takes only SYSTEM and ENGINE_RUN journals
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PeriodPath'
+      responses:
+        '200':
+          description: The period, now CLOSING
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountingPeriodView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/periods/{period}/lock:
+    post:
+      summary: Lock a CLOSING period
+      description: >-
+        Refused while any earlier period holding postings is not locked, or while a clearing account (9xxx) does
+        not net to zero in this one.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PeriodPath'
+      responses:
+        '200':
+          description: The period, now LOCKED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountingPeriodView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/periods/{period}/reopen-request:
+    post:
+      summary: Ask for a LOCKED period to be reopened, with a reason
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PeriodPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReopenRequest' }
+      responses:
+        '200':
+          description: The period, still LOCKED, with the request on it
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountingPeriodView' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/periods/{period}/reopen-approval:
+    post:
+      summary: A second person approves the reopening; the period is OPEN again
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PeriodPath'
+      responses:
+        '200':
+          description: The period, now OPEN
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountingPeriodView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/accounting-policies:
+    get:
+      summary: The accounting policy elections in force on a date, those scheduled after it, and every one proposed
+      description: >-
+        IFRS 17 spec 3. One election in force per key and scope -- the latest approved one effective on or before
+        asOf -- then the APPROVED ones effective after asOf, then the PROPOSED ones. The baseline is seeded for
+        every tenant.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: asOf
+          in: query
+          required: false
+          description: "Omitted means today (Africa/Dar_es_Salaam)."
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PolicyElectionView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Propose an election, effective today or later
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PolicyElectionInput' }
+      responses:
+        '201':
+          description: The election, PROPOSED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyElectionView' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /finance/accounting-policies/{electionId}/approval:
+    post:
+      summary: A second person approves the election with its sign-off; it becomes the register's next version
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ElectionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PolicyElectionApproval' }
+      responses:
+        '200':
+          description: The election, APPROVED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyElectionView' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/accounting-policies/{electionId}/rejection:
+    post:
+      summary: A second person rejects the election, with a reason
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ElectionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PolicyElectionRejection' }
+      responses:
+        '200':
+          description: The election, REJECTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyElectionView' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
 components:
   parameters:
     JournalEntryId:
@@ -304,11 +499,22 @@ components:
       in: query
       required: false
       schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+    PeriodPath:
+      name: period
+      in: path
+      required: true
+      description: "YYYY-MM"
+      schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+    ElectionId:
+      name: electionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     AccountCode:
       name: accountCode
       in: path
       required: true
-      schema: { type: string, pattern: '^[1-5]\d{3}$' }
+      schema: { type: string, pattern: '^[1-9]\d{3}$' }
   responses:
     BadRequest:
       description: "Malformed request body -- a missing/blank name, or an accountCode that is not 4 digits with a leading 1-5 block"
@@ -317,6 +523,11 @@ components:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
     UnprocessableEntity:
       description: "Well-formed but rejected by a domain rule -- most often an accountCode that falls outside its parent's block"
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    StateConflict:
+      description: "Refused in the current state -- a period or election not in the state the step needs, a lock precondition unmet, or the person who asked trying to approve their own request"
       content:
         application/problem+json:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
@@ -363,7 +574,112 @@ components:
       description: "Carries the SIGN of a posting. gl_posting.amount is always a positive magnitude; a reversal is a new journal entry with the two directions swapped, never a negative amount on the original."
     AccountType:
       type: string
-      enum: [ASSET, LIABILITY, EQUITY, INCOME, EXPENSE]
+      description: "CLEARING is class 9: temporary accounts that must return to zero before a period locks."
+      enum: [ASSET, LIABILITY, EQUITY, INCOME, EXPENSE, CLEARING]
+    PostingMode:
+      type: string
+      description: >-
+        The IFRS 17 posting guide's posting mode. AUTO takes EVENT, SYSTEM and ENGINE_RUN journals; MAN takes
+        SYSTEM, ENGINE_RUN and MANUAL; BOTH takes all four, a MANUAL one with a reason code. The ledger refuses
+        anything else.
+      enum: [AUTO, MAN, BOTH]
+    JournalSource:
+      type: string
+      description: "What wrote the journal: a domain event, the platform itself, an IFRS 17 engine run, or a person."
+      enum: [EVENT, SYSTEM, ENGINE_RUN, MANUAL]
+    LineDimensions:
+      type: object
+      description: >-
+        The dimensions every journal line carries (posting guide 2.2). Each may be null: classification at sale
+        and the posting rules fill them in later sub-projects.
+      properties:
+        ifrs17Group: { type: string, nullable: true }
+        measurementModel: { type: string, nullable: true }
+        movementType: { type: string, nullable: true, description: "PRM_REN, IC_SUR, UL_SWITCH ... (guide 2.4)" }
+        productId: { type: string, format: uuid, nullable: true }
+        portfolio: { type: string, nullable: true }
+        channel: { type: string, nullable: true }
+        branch: { type: string, nullable: true }
+        fund: { type: string, nullable: true }
+        referenceType: { type: string, nullable: true }
+        reference: { type: string, nullable: true }
+    PeriodStatus:
+      type: string
+      description: "OPEN takes journals; CLOSING takes only SYSTEM and ENGINE_RUN ones; LOCKED takes nothing."
+      enum: [OPEN, CLOSING, LOCKED]
+    AccountingPeriodView:
+      type: object
+      required: [period, status]
+      description: "A period never touched reads OPEN with every other field null."
+      properties:
+        period: { type: string, pattern: '^\d{4}-\d{2}$' }
+        status: { $ref: '#/components/schemas/PeriodStatus' }
+        closingStartedBy: { type: string, nullable: true }
+        closingStartedAt: { type: string, format: date-time, nullable: true }
+        lockedBy: { type: string, nullable: true }
+        lockedAt: { type: string, format: date-time, nullable: true }
+        reopenRequestedBy: { type: string, nullable: true }
+        reopenRequestedAt: { type: string, format: date-time, nullable: true }
+        reopenReason: { type: string, nullable: true }
+        reopenedBy: { type: string, nullable: true }
+        reopenedAt: { type: string, format: date-time, nullable: true }
+    ReopenRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1 }
+    PolicyElectionStatus:
+      type: string
+      enum: [PROPOSED, APPROVED, REJECTED]
+    PolicyElectionInput:
+      type: object
+      required: [key, value, effectiveFrom]
+      properties:
+        key:
+          type: string
+          enum: [MEASUREMENT_MODEL, INVESTMENT_COMPONENT_RULE, MODEL_OVERRIDE_ALLOWED, POLICY_LOANS,
+                 ACQUISITION_CASH_FLOWS, OCI_OPTION, RIDERS, PREMIUM_BILLING, CONTRACT_RECOGNITION, COHORT]
+        scope:
+          type: string
+          nullable: true
+          description: "A portfolio code (TERM, ULIP ...), a measurement model for ACQUISITION_CASH_FLOWS, or * (company-wide). Omitted means *."
+        value: { type: string, description: "One of the key's permitted values; refused otherwise." }
+        effectiveFrom:
+          type: string
+          format: date
+          description: "Today or later. A past change is a restatement, made through journals."
+        rationale: { type: string, nullable: true }
+    PolicyElectionView:
+      type: object
+      required: [electionId, key, scope, value, effectiveFrom, status, proposedBy, proposedAt]
+      properties:
+        electionId: { type: string, format: uuid }
+        key: { type: string }
+        scope: { type: string }
+        value: { type: string }
+        effectiveFrom: { type: string, format: date }
+        status: { $ref: '#/components/schemas/PolicyElectionStatus' }
+        rationale: { type: string, nullable: true }
+        signOffRef: { type: string, nullable: true, description: "The memo or minute an approval rests on." }
+        decisionReason: { type: string, nullable: true, description: "Why it was rejected." }
+        proposedBy: { type: string }
+        proposedAt: { type: string, format: date-time }
+        decidedBy: { type: string, nullable: true }
+        decidedAt: { type: string, format: date-time, nullable: true }
+        registerVersion:
+          type: integer
+          nullable: true
+          description: "The register version its approval made current; null until approved. Every journal records the version in force."
+    PolicyElectionApproval:
+      type: object
+      required: [signOffRef]
+      properties:
+        signOffRef: { type: string, minLength: 1 }
+    PolicyElectionRejection:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1 }
     GlPostingView:
       type: object
       required: [postingId, journalEntryId, accountCode, direction, amount, period, sourceEvent, sourceRef]
@@ -389,6 +705,7 @@ components:
         sourceRef:
           type: string
           description: "The source event's own idempotency key -- pairs with sourceEvent and this entry's tenant to make a redelivery a no-op."
+        dimensions: { $ref: '#/components/schemas/LineDimensions' }
     JournalEntrySearchResponse:
       type: object
       required: [items, page]
@@ -399,7 +716,8 @@ components:
         page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
     JournalEntryView:
       type: object
-      required: [journalEntryId, sourceEvent, sourceRef, period, postedAt, postings]
+      required: [journalEntryId, sourceEvent, sourceRef, period, postedAt, postings, sourceType,
+                 policyRegisterVersion]
       properties:
         journalEntryId: { type: string, format: uuid }
         sourceEvent:
@@ -419,8 +737,12 @@ components:
         postedAt: { type: string, format: date-time }
         postings:
           type: array
-          description: "Always exactly two legs in M9, one DR and one CR, with equal totals."
+          description: "Two or more legs whose DR and CR totals are equal; the database refuses an unbalanced journal at commit."
           items: { $ref: '#/components/schemas/GlPostingView' }
+        sourceType: { $ref: '#/components/schemas/JournalSource' }
+        policyRegisterVersion:
+          type: integer
+          description: "The accounting policy register version in force when the journal was posted."
     AccountStatus:
       type: string
       description: >
@@ -479,7 +801,7 @@ components:
             which way the subtraction ran. Unlike a posting's amount, this one is signed.
     ChartOfAccountView:
       type: object
-      required: [accountCode, name, accountType, normalBalance, level, postingAllowed, status, currency]
+      required: [accountCode, name, accountType, normalBalance, level, postingAllowed, status, currency, mode]
       properties:
         accountCode: { type: string }
         name: { type: string }
@@ -508,17 +830,18 @@ components:
         description: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
         createdBy: { type: string, nullable: true }
+        mode: { $ref: '#/components/schemas/PostingMode' }
     CreateAccountRequest:
       type: object
       required: [accountCode, name]
       properties:
         accountCode:
           type: string
-          pattern: '^[1-5]\d{3}$'
-          description: "4 digits, leading block 1=ASSET, 2=LIABILITY, 3=EQUITY, 4=INCOME, 5=EXPENSE -- accountType/normalBalance are derived from it server-side, never accepted here."
+          pattern: '^[1-9]\d{3}$'
+          description: "4 digits in one of the posting guide's nine classes. accountType/normalBalance are derived server-side -- a child takes its parent's, a class root its class's -- and never accepted here."
         parentCode:
           type: string
-          pattern: '^[1-5]\d{3}$'
+          pattern: '^[1-9]\d{3}$'
           nullable: true
           description: >
             Must already exist in this tenant, and accountCode must begin with its significant

@@ -4,7 +4,9 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.AccountStatus;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountType;
 import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingValidationException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
+import tz.co.nlolo.lifeplatform.finaccounting.api.PostingMode;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccount;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -48,15 +50,32 @@ class ChartOfAccountTest {
     }
 
     @Test
-    void typeAndNormalBalanceStayDerivedFromTheLeadingDigit() {
+    void aRootTakesItsClassAndAChildInheritsItsParentsTreatment() {
         ChartOfAccount child = ChartOfAccount.childOf(
             receivables(), "1210", "Premium Receivables", true, "TZS", null, null, "test");
         assertThat(child.getAccountType()).isEqualTo(AccountType.ASSET);
         assertThat(child.getNormalBalance()).isEqualTo(PostingDirection.DR);
+        assertThat(child.getMode()).isEqualTo(PostingMode.MAN);       // hand-added: staff-posted until finance says otherwise
 
         ChartOfAccount liability = ChartOfAccount.root(TENANT, "2000", "Liabilities", false, "TZS", "test");
         assertThat(liability.getAccountType()).isEqualTo(AccountType.LIABILITY);
         assertThat(liability.getNormalBalance()).isEqualTo(PostingDirection.CR);
+        ChartOfAccount clearing = ChartOfAccount.root(TENANT, "9000", "Clearing", false, "TZS", "test");
+        assertThat(clearing.getAccountType()).isEqualTo(AccountType.CLEARING);
+        ChartOfAccount reinsurance = ChartOfAccount.root(TENANT, "6000", "Reinsurance held", false, "TZS", "test");
+        assertThat(reinsurance.getAccountType()).isEqualTo(AccountType.EXPENSE);
+    }
+
+    @Test
+    void aSeededContraAccountKeepsTheGuidesBalanceAndMode() {
+        // 2122 Premiums due is a contra-liability: a LIABILITY with a DEBIT normal balance, posted only by the system
+        // (IFRS 17 I1, R4) -- something the leading digit alone would have got wrong.
+        ChartOfAccount premiumsDue = ChartOfAccount.seeded(TENANT, ChartOfAccountBlueprint.accounts().stream()
+            .filter(s -> s.code().equals("2122")).findFirst().orElseThrow(), null, "TZS", "test");
+        assertThat(premiumsDue.getAccountType()).isEqualTo(AccountType.LIABILITY);
+        assertThat(premiumsDue.getNormalBalance()).isEqualTo(PostingDirection.DR);
+        assertThat(premiumsDue.getMode()).isEqualTo(PostingMode.AUTO);
+        assertThat(premiumsDue.getDescription()).startsWith("Debit sub-account");
     }
 
     @Test

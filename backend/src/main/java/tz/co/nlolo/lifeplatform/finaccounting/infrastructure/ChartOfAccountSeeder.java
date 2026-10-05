@@ -2,6 +2,8 @@ package tz.co.nlolo.lifeplatform.finaccounting.infrastructure;
 
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccount;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.PolicyElection;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.PolicyRegisterBaseline;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -9,15 +11,14 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * Seeds the 36-account chart (see {@link ChartOfAccountBlueprint#accounts()}) for one tenant,
- * lazily, on first use. EVERY ACCOUNT IS A FINANCE SIGN-OFF PLACEHOLDER -- see V2 section 5,
- * finaccounting/V5 and {@link ChartOfAccountBlueprint}'s class javadoc; no document on this
- * platform specifies real account codes.
+ * Seeds the IFRS 17 posting guide's chart (see {@link ChartOfAccountBlueprint#accounts()}) and the accounting policy
+ * register's baseline (see {@link PolicyRegisterBaseline}) for one tenant, lazily, on first use.
  *
  * <p>A real deployment does not call this at all: it seeds a real, Finance-approved chart of
  * accounts per tenant during onboarding. This seeder exists so M9's own tests and any lazily
@@ -33,11 +34,14 @@ public class ChartOfAccountSeeder {
     private static final Logger log = LoggerFactory.getLogger(ChartOfAccountSeeder.class);
 
     private final ChartOfAccountRepository chartOfAccountRepository;
+    private final PolicyElectionRepository policyElectionRepository;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
     public ChartOfAccountSeeder(ChartOfAccountRepository chartOfAccountRepository,
+                                 PolicyElectionRepository policyElectionRepository,
                                  PlatformTransactionManager transactionManager) {
         this.chartOfAccountRepository = chartOfAccountRepository;
+        this.policyElectionRepository = policyElectionRepository;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
@@ -71,6 +75,7 @@ public class ChartOfAccountSeeder {
      * reference-data seeding be able to roll back a journal entry.
      */
     public void seedIfAbsent(UUID tenantId, String seededBy) {
+        seedPolicyRegisterIfAbsent(tenantId);
         if (chartOfAccountRepository.existsByTenantId(tenantId)) {
             return;
         }
@@ -88,12 +93,9 @@ public class ChartOfAccountSeeder {
                 // and fk_chart_of_account_parent holds at every step.
                 Map<String, ChartOfAccount> byCode = new HashMap<>();
                 for (ChartOfAccountBlueprint.Seed seed : ChartOfAccountBlueprint.accounts()) {
-                    ChartOfAccount account = seed.parentCode() == null
-                        ? ChartOfAccount.root(tenantId, seed.code(), seed.name(),
-                            seed.postingAllowed(), ChartOfAccountBlueprint.SEED_CURRENCY, seededBy)
-                        : ChartOfAccount.childOf(byCode.get(seed.parentCode()), seed.code(), seed.name(),
-                            seed.postingAllowed(), ChartOfAccountBlueprint.SEED_CURRENCY,
-                            seed.controlOf(), null, seededBy);
+                    ChartOfAccount account = ChartOfAccount.seeded(tenantId, seed,
+                        seed.parentCode() == null ? null : byCode.get(seed.parentCode()),
+                        ChartOfAccountBlueprint.SEED_CURRENCY, seededBy);
                     // saveAndFlush, not save: the id is application-assigned via an @IdClass, so a
                     // plain save() defers the write past this block and a violation would surface
                     // only at commit -- outside where the catch below could see it. The same reason
@@ -106,6 +108,33 @@ public class ChartOfAccountSeeder {
             // so the outcome we wanted has happened -- log it and let the caller post.
             log.info("Chart of accounts for tenant {} was seeded concurrently by another thread; "
                 + "treating the collision as already-seeded", tenantId);
+        }
+    }
+
+    /**
+     * The accounting policy register's baseline (IFRS 17 spec §3), APPROVED, register versions 1..n -- the same
+     * own-transaction, collision-tolerant shape as the chart above: two first postings for a new tenant at once both
+     * try, the unique register version per tenant lets one win, and the loser's collision is the outcome it wanted.
+     */
+    public void seedPolicyRegisterIfAbsent(UUID tenantId) {
+        if (policyElectionRepository.existsByTenantId(tenantId)) {
+            return;
+        }
+        try {
+            requiresNewTransactionTemplate.executeWithoutResult(status -> {
+                if (policyElectionRepository.existsByTenantId(tenantId)) {
+                    return;
+                }
+                Instant now = Instant.now();
+                int version = 0;
+                for (PolicyRegisterBaseline.Row row : PolicyRegisterBaseline.ROWS) {
+                    policyElectionRepository.saveAndFlush(PolicyElection.baseline(tenantId, row.key(), row.scope(),
+                        row.value(), PolicyRegisterBaseline.EFFECTIVE_FROM, row.rationale(), PolicyRegisterBaseline.SIGN_OFF,
+                        ++version, now));
+                }
+            });
+        } catch (DataIntegrityViolationException e) {
+            log.info("Accounting policy register for tenant {} was seeded concurrently; treating it as seeded", tenantId);
         }
     }
 }

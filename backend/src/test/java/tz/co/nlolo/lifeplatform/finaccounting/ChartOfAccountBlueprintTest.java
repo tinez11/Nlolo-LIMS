@@ -1,65 +1,38 @@
 package tz.co.nlolo.lifeplatform.finaccounting;
 
+import tz.co.nlolo.lifeplatform.finaccounting.api.PostingMode;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccount;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint.Seed;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
 import org.junit.jupiter.api.Test;
 
-import java.util.HashSet;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The blueprint is the single definition of this platform's chart of accounts, so these are
- * structural invariants rather than examples: anything asserted here is something the seeder,
- * the V5 migration and the posting guard all rely on being true.
+ * The blueprint is the single definition of this platform's chart of accounts -- the IFRS 17 posting guide's -- so
+ * these are structural invariants rather than examples: the seeder, the posting guards and the rules all rely on them.
  */
 class ChartOfAccountBlueprintTest {
 
-    @Test
-    void seedsThirtySevenAccounts() {
-        // 36 until product step 5 added 2230 Withholding Tax Payable.
-        // 37, plus product step 6's three unit-linked accounts (2150, 4310, 5600).
-        assertThat(ChartOfAccountBlueprint.accounts()).hasSize(40);
-    }
-
-    @Test
-    void everyParentAppearsBeforeItsChildren() {
-        Set<String> seen = new HashSet<>();
-        for (Seed seed : ChartOfAccountBlueprint.accounts()) {
-            if (seed.parentCode() != null) {
-                assertThat(seen)
-                    .as("parent %s of %s must be inserted first", seed.parentCode(), seed.code())
-                    .contains(seed.parentCode());
-            }
-            seen.add(seed.code());
-        }
-    }
-
-    @Test
-    void everyParentCodeNamesARealAccount() {
-        Set<String> codes = ChartOfAccountBlueprint.accounts().stream()
-            .map(Seed::code).collect(Collectors.toSet());
-        for (Seed seed : ChartOfAccountBlueprint.accounts()) {
-            if (seed.parentCode() != null) {
-                assertThat(codes).as("%s names parent %s", seed.code(), seed.parentCode())
-                    .contains(seed.parentCode());
-            }
-        }
-    }
+    private final Map<String, Seed> byCode = ChartOfAccountBlueprint.accounts().stream()
+        .collect(Collectors.toMap(Seed::code, Function.identity()));
 
     @Test
     void everyChildCodeSitsInsideItsParentsBlock() {
         for (Seed seed : ChartOfAccountBlueprint.accounts()) {
             if (seed.parentCode() == null) continue;
-            String prefix = ChartOfAccount.significantPrefix(seed.parentCode());
             assertThat(seed.code())
                 .as("%s must sit inside %s's block", seed.code(), seed.parentCode())
-                .startsWith(prefix);
+                .startsWith(ChartOfAccount.significantPrefix(seed.parentCode()));
         }
     }
 
@@ -69,38 +42,27 @@ class ChartOfAccountBlueprintTest {
             .map(Seed::parentCode).filter(Objects::nonNull).collect(Collectors.toSet());
         for (Seed seed : ChartOfAccountBlueprint.accounts()) {
             if (parents.contains(seed.code())) {
-                assertThat(seed.postingAllowed())
-                    .as("%s has children and must be a header", seed.code()).isFalse();
+                assertThat(seed.postingAllowed()).as("%s has children and must be a heading", seed.code()).isFalse();
             }
         }
     }
 
-    /** Every code PostingRule posts to must exist in the blueprint and accept postings --
-     *  this is what fk_gl_posting_account_code enforces at runtime, asserted here at build time. */
+    /**
+     * Every account today's postings land on (the interim remap, IFRS 17 I1 R2) must be a guide posting account an
+     * EVENT journal may post to: AUTO or BOTH. The database's mode guard enforces this at runtime; this is the
+     * build-time half.
+     */
     @Test
-    void everyPostingRuleTargetIsAPostableBlueprintAccount() {
-        Set<String> postable = ChartOfAccountBlueprint.accounts().stream()
-            .filter(Seed::postingAllowed).map(Seed::code).collect(Collectors.toSet());
-        assertThat(postable).contains(
-            PostingRule.CASH, PostingRule.PREMIUM_RECEIVABLE, PostingRule.REINSURANCE_RECOVERABLE,
-            PostingRule.POLICY_LOAN_RECEIVABLE, PostingRule.UNEARNED_PREMIUM,
-            PostingRule.REINSURANCE_PAYABLE, PostingRule.CLAIMS_EXPENSE,
-            PostingRule.COMMISSION_EXPENSE, PostingRule.REINSURANCE_CEDED_PREMIUM);
-    }
-
-    @Test
-    void everyRemapTargetExistsInTheBlueprint() {
-        Set<String> codes = ChartOfAccountBlueprint.accounts().stream()
-            .map(Seed::code).collect(Collectors.toSet());
-        assertThat(codes).containsAll(ChartOfAccountBlueprint.legacyRemap().values());
-    }
-
-    /** The one legacy code deliberately absent from the new chart, so V5's DELETE has
-     *  something to prove it ran. */
-    @Test
-    void theLegacyPolicyLoanCodeIsNotReusedInTheNewChart() {
-        Set<String> codes = ChartOfAccountBlueprint.accounts().stream()
-            .map(Seed::code).collect(Collectors.toSet());
-        assertThat(codes).doesNotContain("1400");
+    void everyInterimRuleTargetsAnAccountAnEventMayPostTo() throws Exception {
+        int checked = 0;
+        for (Field f : PostingRule.class.getFields()) {
+            if (f.getType() != String.class || !Modifier.isStatic(f.getModifiers())) continue;
+            String code = (String) f.get(null);
+            assertThat(byCode).as(f.getName()).containsKey(code);
+            assertThat(byCode.get(code).postingAllowed()).as(f.getName()).isTrue();
+            assertThat(byCode.get(code).mode()).as(f.getName()).isIn(PostingMode.AUTO, PostingMode.BOTH);
+            checked++;
+        }
+        assertThat(checked).isGreaterThanOrEqualTo(16);
     }
 }

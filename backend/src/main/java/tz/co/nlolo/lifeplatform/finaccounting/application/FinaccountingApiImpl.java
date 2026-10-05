@@ -22,6 +22,11 @@ import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPosting;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountRepository;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.GlPostingRepository;
+import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.PolicyElectionRepository;
+import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountSeeder;
+import tz.co.nlolo.lifeplatform.finaccounting.api.AccountingPeriodView;
+import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyElectionInput;
+import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyElectionView;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.JournalEntryRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -54,7 +59,7 @@ import java.util.stream.Collectors;
 @Service
 public class FinaccountingApiImpl implements FinaccountingApi {
 
-    private static final Pattern ACCOUNT_CODE_PATTERN = Pattern.compile("^[1-5]\\d{3}$");
+    private static final Pattern ACCOUNT_CODE_PATTERN = Pattern.compile("^[1-9]\\d{3}$");   // the guide's nine classes
     private static final int MAX_ACCOUNT_NAME_LENGTH = 200;
     /** Bound once: the roll-up below reads far better without `BigDecimal.` on every zero. */
     private static final BigDecimal ZERO = BigDecimal.ZERO;
@@ -63,11 +68,23 @@ public class FinaccountingApiImpl implements FinaccountingApi {
     private final GlPostingRepository glPostingRepository;
     private final ChartOfAccountRepository chartOfAccountRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final PolicyElectionRepository elections;
+    private final AccountingPeriods periods;
+    private final PolicyRegister register;
+    private final ChartOfAccountSeeder seeder;
 
     public FinaccountingApiImpl(JournalEntryRepository journalEntryRepository,
                                  GlPostingRepository glPostingRepository,
                                  ChartOfAccountRepository chartOfAccountRepository,
-                                 ApplicationEventPublisher eventPublisher) {
+                                 ApplicationEventPublisher eventPublisher,
+                                 PolicyElectionRepository elections,
+                                 AccountingPeriods periods,
+                                 PolicyRegister register,
+                                 ChartOfAccountSeeder seeder) {
+        this.elections = elections;
+        this.periods = periods;
+        this.register = register;
+        this.seeder = seeder;
         this.journalEntryRepository = journalEntryRepository;
         this.glPostingRepository = glPostingRepository;
         this.chartOfAccountRepository = chartOfAccountRepository;
@@ -107,6 +124,8 @@ public class FinaccountingApiImpl implements FinaccountingApi {
         }
         rejectLegsTheChartRefuses(entry);
 
+        // Every journal records the accounting policy register version it was posted under (IFRS 17 spec D7).
+        entry.stampPolicyRegisterVersion(elections.currentVersion(entry.getTenantId()));
         journalEntryRepository.save(entry);
 
         BigDecimal drTotal = BigDecimal.ZERO;
@@ -114,7 +133,8 @@ public class FinaccountingApiImpl implements FinaccountingApi {
         for (JournalEntry.Leg leg : entry.getLegs()) {
             glPostingRepository.save(new GlPosting(entry.getTenantId(), entry.getJournalEntryId(),
                 leg.accountCode(), leg.direction(), leg.amount(), leg.currency(),
-                entry.getPeriod(), entry.getPolicyNumber(), entry.getSourceEvent(), entry.getSourceRef()));
+                entry.getPeriod(), entry.getPolicyNumber(), entry.getSourceEvent(), entry.getSourceRef(),
+                leg.dimensions()));
             if (leg.direction() == PostingDirection.DR) {
                 drTotal = drTotal.add(leg.amount());
             }
@@ -435,6 +455,70 @@ public class FinaccountingApiImpl implements FinaccountingApi {
         chartOfAccountRepository.deleteByTenantIdAndAccountCode(tenantId, accountCode);
     }
 
+    // ---- Accounting periods (IFRS 17 spec §5.4) ----
+
+    @Override
+    public AccountingPeriodView period(String period) {
+        return periods.view(period);
+    }
+
+    @Override
+    public List<AccountingPeriodView> periods() {
+        return periods.list();
+    }
+
+    @Override
+    public AccountingPeriodView startClosing(String period, String by) {
+        return periods.startClosing(period, by);
+    }
+
+    @Override
+    public AccountingPeriodView lockPeriod(String period, String by) {
+        return periods.lock(period, by);
+    }
+
+    @Override
+    public AccountingPeriodView requestReopen(String period, String reason, String by) {
+        return periods.requestReopen(period, reason, by);
+    }
+
+    @Override
+    public AccountingPeriodView approveReopen(String period, String by) {
+        return periods.approveReopen(period, by);
+    }
+
+    // ---- The accounting policy register (IFRS 17 spec §3) ----
+    // Each entry point seeds the tenant's baseline first, as posting does: a tenant that has posted nothing yet still
+    // has the baseline in force.
+
+    @Override
+    public List<PolicyElectionView> policyElections(java.time.LocalDate asOf) {
+        seeder.seedPolicyRegisterIfAbsent(TenantContext.get());
+        return register.list(asOf);
+    }
+
+    @Override
+    public Optional<PolicyElectionView> policyElectionInForce(String key, String scope, java.time.LocalDate on) {
+        seeder.seedPolicyRegisterIfAbsent(TenantContext.get());
+        return register.inForce(key, scope, on);
+    }
+
+    @Override
+    public PolicyElectionView proposePolicyElection(PolicyElectionInput input, String by) {
+        seeder.seedPolicyRegisterIfAbsent(TenantContext.get());
+        return register.propose(input, by);
+    }
+
+    @Override
+    public PolicyElectionView approvePolicyElection(UUID electionId, String signOffRef, String by) {
+        return register.approve(electionId, signOffRef, by);
+    }
+
+    @Override
+    public PolicyElectionView rejectPolicyElection(UUID electionId, String reason, String by) {
+        return register.reject(electionId, reason, by);
+    }
+
     private static void validateName(String name) {
         if (name == null || name.isBlank()) {
             throw new FinaccountingValidationException("An account name is required");
@@ -460,13 +544,13 @@ public class FinaccountingApiImpl implements FinaccountingApi {
     private JournalEntryView toView(JournalEntry entry, List<GlPosting> legs) {
         return new JournalEntryView(entry.getJournalEntryId(), entry.getSourceEvent(), entry.getSourceRef(),
             entry.getPeriod(), entry.getPolicyNumber(), entry.getPostedAt(),
-            legs.stream().map(this::toView).toList());
+            legs.stream().map(this::toView).toList(), entry.getSourceType(), entry.getPolicyRegisterVersion());
     }
 
     private GlPostingView toView(GlPosting posting) {
         return new GlPostingView(posting.getPostingId(), posting.getJournalEntryId(), posting.getAccountCode(),
             posting.getDirection(), posting.getAmount(), posting.getCurrency(), posting.getPeriod(),
-            posting.getPolicyNumber(), posting.getSourceEvent(), posting.getSourceRef());
+            posting.getPolicyNumber(), posting.getSourceEvent(), posting.getSourceRef(), posting.getDimensions());
     }
 
     /**
@@ -490,6 +574,6 @@ public class FinaccountingApiImpl implements FinaccountingApi {
             account.getAccountType(), account.getNormalBalance(), account.getParentCode(),
             account.getLevel(), account.isPostingAllowed(), account.getStatus(),
             account.getCurrency(), account.getControlOf(), account.getDescription(),
-            account.getCreatedAt(), account.getCreatedBy());
+            account.getCreatedAt(), account.getCreatedBy(), account.getMode());
     }
 }

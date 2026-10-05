@@ -104,7 +104,7 @@ class UnitLinkedU2AccountingIntegrationTest {
     }
 
     private void assertLiabilityIsTheUnits(UUID tenant) {
-        assertThat(credit(tenant, "2150")).isEqualByComparingTo(carried(tenant));
+        assertThat(credit(tenant, "2131")).isEqualByComparingTo(carried(tenant));
     }
 
     private void priceOn(UUID tenant, LocalDate date, String eq, String bd) {
@@ -129,14 +129,14 @@ class UnitLinkedU2AccountingIntegrationTest {
         fixtures.backdate(policy, TODAY.minusYears(3).minusDays(10));               // policy year 4: a 5% charge
         fixtures.collectAt(tenant, policy, "800000.00", eat(TODAY.minusDays(2), 9, 0), UUID.randomUUID());
         priceOn(tenant, TODAY.minusDays(1), "1.000000", "1.000000");
-        BigDecimal income = credit(tenant, "4310");
+        BigDecimal income = credit(tenant, "2132");
         assertLiabilityIsTheUnits(tenant);
 
         // A switch beyond the free ones: its 5,000 fee comes out of the liability into income; the move itself stays in 2150.
         asTenant(tenant, () -> api.requestSwitch(policy, new SwitchInput(List.of(new SwitchInput.Out("EQ1", 50)),
             List.of(new UnitLinkedChoice.Split("BD1", 100))), "staff-one"));
         priceOn(tenant, TODAY.plusDays(1), "1.000000", "1.000000");
-        assertThat(credit(tenant, "4310").subtract(income)).isEqualByComparingTo("5000.00");
+        assertThat(credit(tenant, "2132").subtract(income)).isEqualByComparingTo("5000.00");
         assertThat(entries(tenant, "unitlinked.SwitchExecuted")).isEqualTo(1);
         assertLiabilityIsTheUnits(tenant);
 
@@ -145,23 +145,23 @@ class UnitLinkedU2AccountingIntegrationTest {
             new WithdrawalInput(new BigDecimal("150000.00"), List.of(), "+255700000600"), "staff-one"));
         asTenant(tenant, () -> api.approveWithdrawal(withdrawal.withdrawalId(), FINANCE));
         priceOn(tenant, TODAY.plusDays(2), "1.000000", "1.000000");
-        assertThat(credit(tenant, "4310").subtract(income)).isEqualByComparingTo("12500.00");
-        assertThat(credit(tenant, "5100")).isEqualByComparingTo("0.00");
+        assertThat(credit(tenant, "2132").subtract(income)).isEqualByComparingTo("12500.00");
+        assertThat(credit(tenant, "5110")).isEqualByComparingTo("0.00");
         assertLiabilityIsTheUnits(tenant);
 
         // A 200,000 top-up: cash into 2140, then 196,000 of it into units and 4,000 of allocation charge. The mock rail
         // accepts the collection, so payment confirms it at once; the publish below is a redelivery, posting nothing twice.
-        BigDecimal unearned = credit(tenant, "2140");
+        BigDecimal unearned = credit(tenant, "2121");
         var topUp = asTenant(tenant, () -> api.requestTopUp(policy,
             new TopUpInput(new BigDecimal("200000.00"), "+255700000700", List.of()), "staff-one", UUID.randomUUID().toString()));
-        assertThat(credit(tenant, "2140").subtract(unearned)).isEqualByComparingTo("200000.00");
+        assertThat(credit(tenant, "2121").subtract(unearned)).isEqualByComparingTo("200000.00");
         fixtures.publish(tenant, "payment.PaymentConfirmed", Map.of("paymentRequestId", UUID.randomUUID(),
             "sourceRef", topUp.topUpId().toString(), "purpose", "UL_TOP_UP", "confirmedAt", now.get().toString(),
             "amount", Map.of("amount", "200000.00", "currencyCode", "TZS")));
         assertThat(entries(tenant, "unitlinked.TopUpReceived")).isEqualTo(1);
         priceOn(tenant, TODAY.plusDays(3), "1.000000", "1.000000");
-        assertThat(credit(tenant, "2140")).isEqualByComparingTo(unearned);        // in and straight out again
-        assertThat(credit(tenant, "4310").subtract(income)).isEqualByComparingTo("16500.00");
+        assertThat(credit(tenant, "2121")).isEqualByComparingTo(unearned);        // in and straight out again
+        assertThat(credit(tenant, "2132").subtract(income)).isEqualByComparingTo("16500.00");
         assertLiabilityIsTheUnits(tenant);
 
         // A surrender at 5%: the liability ends at nothing, the charge is income, and 5100 clears through cash.
@@ -170,11 +170,11 @@ class UnitLinkedU2AccountingIntegrationTest {
         asTenant(tenant, () -> policyApi.approveSurrender(surrender.surrenderRequestId(), "staff-two"));
         priceOn(tenant, TODAY.plusDays(4), "1.000000", "1.000000");
         assertThat(carried(tenant)).isEqualByComparingTo("0.00");
-        assertThat(credit(tenant, "2150")).isEqualByComparingTo("0.00");
-        assertThat(credit(tenant, "4310").subtract(income).subtract(new BigDecimal("16500.00")))
+        assertThat(credit(tenant, "2131")).isEqualByComparingTo("0.00");
+        assertThat(credit(tenant, "2132").subtract(income).subtract(new BigDecimal("16500.00")))
             .isEqualByComparingTo(held.multiply(new BigDecimal("0.05")).setScale(2, java.math.RoundingMode.HALF_UP));
         assertThat(entries(tenant, "unitlinked.SurrenderCharged")).isEqualTo(1);
-        assertThat(credit(tenant, "5100")).isEqualByComparingTo("0.00");
+        assertThat(credit(tenant, "5110")).isEqualByComparingTo("0.00");
         assertThat(entries(tenant, "unitlinked.PayoutPaid")).isEqualTo(2);       // the withdrawal's and the surrender's
     }
 }

@@ -1,5 +1,7 @@
 package tz.co.nlolo.lifeplatform.finaccounting.infrastructure;
 
+import tz.co.nlolo.lifeplatform.finaccounting.api.JournalSource;
+import tz.co.nlolo.lifeplatform.finaccounting.api.LineDimensions;
 import tz.co.nlolo.lifeplatform.finaccounting.api.GlPostingView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 
@@ -11,11 +13,11 @@ import java.util.UUID;
 public record GlPostingResponseDto(UUID postingId, UUID journalEntryId, String accountCode,
                                     PostingDirection direction, MoneyDto amount,
                                     String period, String policyNumber,
-                                    String sourceEvent, String sourceRef) {
+                                    String sourceEvent, String sourceRef, LineDimensions dimensions) {
 
     public static GlPostingResponseDto from(GlPostingView view) {
         return new GlPostingResponseDto(view.postingId(), view.journalEntryId(), view.accountCode(),
             view.direction(), new MoneyDto(view.amount().toPlainString(), view.currency()),
-            view.period(), view.policyNumber(), view.sourceEvent(), view.sourceRef());
+            view.period(), view.policyNumber(), view.sourceEvent(), view.sourceRef(), view.dimensions());
     }
 }
