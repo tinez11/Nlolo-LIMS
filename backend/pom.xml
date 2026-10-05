@@ -216,6 +216,23 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
       </plugin>
+      <!--
+        Spring's test context cache keeps up to 32 application contexts alive for reuse. Here almost no two
+        integration classes share one (each starts its own Postgres container and declares its own mocks), so
+        the cache only held memory and connection pools to containers already stopped. On 2026-10-05, with the
+        unit-linked classes added, the fork ran out of heap inside regreporting and ~18 classes after it never ran
+        while the build still reported their absence as ten errors. Three is enough for the consecutive classes that
+        do share a context; an evicted context is closed, which releases its heap and its pool.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables>
+            <spring.test.context.cache.maxSize>3</spring.test.context.cache.maxSize>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
 </project>
