@@ -550,7 +550,7 @@ public class ClaimsApiImpl implements ClaimsApi {
         // after it, decide the figure -- until they are priced, there is no figure, and asking says so (409).
         // The category first, so no claim on any other policy ever touches unitlinked's tables.
         if (claim.getClaimType() == ClaimType.DEATH
-                && "UNIT_LINKED".equals(policyApi.getPolicy(claim.getPolicyNumber()).productCategory())
+                && "UNIT_LINKED".equals(policyApi.productCategoryOf(claim.getPolicyNumber()))
                 && unitLinkedApi.decidesDeath(claim.getPolicyNumber())) {
             return unitLinkedApi.deathValue(claim.getClaimId(), claim.getDateOfEvent()).benefit();
         }

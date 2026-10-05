@@ -528,7 +528,7 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
         // A refund of nothing is not sent to the rail. It happens whenever the deductions used up
         // the premiums exactly, and a zero disbursement would be a payment nobody can reconcile.
         // A unit-linked refund is not known yet: unitlinked releases it once the units are sold (plan R6).
-        boolean unitLinked = "UNIT_LINKED".equals(policyApi.getPolicy(c.getPolicyNumber()).productCategory());
+        boolean unitLinked = "UNIT_LINKED".equals(policyApi.productCategoryOf(c.getPolicyNumber()));
         if (!unitLinked && c.getRefundAmount().signum() > 0) {
             publishFreeLookRefund(c);
         }

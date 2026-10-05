@@ -114,7 +114,7 @@ class Exits implements UnitsPricedListener {
             return false;
         }
         try {
-            if (!"UNIT_LINKED".equals(policyApi.getPolicy(policyNumber).productCategory())) {
+            if (!"UNIT_LINKED".equals(policyApi.productCategoryOf(policyNumber))) {
                 return false;
             }
         } catch (tz.co.nlolo.lifeplatform.policy.api.PolicyNotFoundException e) {
