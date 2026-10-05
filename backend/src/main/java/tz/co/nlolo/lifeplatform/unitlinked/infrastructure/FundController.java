@@ -167,6 +167,60 @@ public class FundController {
         return api.redirect(policyNumber, r.split(), jwt.getSubject());
     }
 
+    /** A fund switch (U2): any staff member, audited -- the customer's money moves between funds, none leaves. */
+    @PostMapping("/policies/{policyNumber}/switches")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(STAFF)
+    public tz.co.nlolo.lifeplatform.unitlinked.api.SwitchView requestSwitch(@PathVariable String policyNumber,
+            @RequestBody tz.co.nlolo.lifeplatform.unitlinked.api.SwitchInput input, @AuthenticationPrincipal Jwt jwt) {
+        return api.requestSwitch(policyNumber, input, jwt.getSubject());
+    }
+
+    @GetMapping("/policies/{policyNumber}/switches")
+    @PreAuthorize(STAFF)
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.SwitchView> listSwitches(@PathVariable String policyNumber) {
+        return api.listSwitches(policyNumber);
+    }
+
+    /** A partial withdrawal (U2): requested by any staff member, approved by a second -- finance or an admin. */
+    @PostMapping("/policies/{policyNumber}/withdrawals")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(STAFF)
+    public tz.co.nlolo.lifeplatform.unitlinked.api.WithdrawalView requestWithdrawal(@PathVariable String policyNumber,
+            @RequestBody tz.co.nlolo.lifeplatform.unitlinked.api.WithdrawalInput input, @AuthenticationPrincipal Jwt jwt) {
+        return api.requestWithdrawal(policyNumber, input, jwt.getSubject());
+    }
+
+    @PostMapping("/withdrawals/{withdrawalId}/approval")
+    @PreAuthorize(FINANCE)
+    public tz.co.nlolo.lifeplatform.unitlinked.api.WithdrawalView approveWithdrawal(@PathVariable UUID withdrawalId,
+                                                                                   @AuthenticationPrincipal Jwt jwt) {
+        return api.approveWithdrawal(withdrawalId, jwt.getSubject());
+    }
+
+    @GetMapping("/policies/{policyNumber}/withdrawals")
+    @PreAuthorize(STAFF)
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.WithdrawalView> listWithdrawals(@PathVariable String policyNumber) {
+        return api.listWithdrawals(policyNumber);
+    }
+
+    /** A top-up (U2): any staff member; the Idempotency-Key header is required, so a retry never collects twice. */
+    @PostMapping("/policies/{policyNumber}/top-ups")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(STAFF)
+    public tz.co.nlolo.lifeplatform.unitlinked.api.TopUpView requestTopUp(@PathVariable String policyNumber,
+            @RequestBody tz.co.nlolo.lifeplatform.unitlinked.api.TopUpInput input,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @AuthenticationPrincipal Jwt jwt) {
+        return api.requestTopUp(policyNumber, input, jwt.getSubject(), key);
+    }
+
+    @GetMapping("/policies/{policyNumber}/top-ups")
+    @PreAuthorize(STAFF)
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.TopUpView> listTopUps(@PathVariable String policyNumber) {
+        return api.listTopUps(policyNumber);
+    }
+
     @GetMapping("/policies/{policyNumber}/premium-split")
     @PreAuthorize(STAFF)
     public List<tz.co.nlolo.lifeplatform.unitlinked.api.PremiumSplitView> splitHistory(@PathVariable String policyNumber) {

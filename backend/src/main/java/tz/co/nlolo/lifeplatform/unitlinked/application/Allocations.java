@@ -156,6 +156,38 @@ class Allocations implements UnitsPricedListener {
         }
     }
 
+    /**
+     * A top-up received (U2, spec §4): its own allocation percent -- not the policy year's band -- and its own split or
+     * the one in force at the instant the money arrived, each fund's share bound FORWARD by its cut-off like any premium.
+     * When its last order is priced, {@link #afterPriced} publishes UnitsAllocated for it as for a premium.
+     */
+    @Transactional
+    void onTopUpReceived(tz.co.nlolo.lifeplatform.unitlinked.domain.TopUp topUp, Instant receivedAt) {
+        UUID tenantId = TenantContext.get();
+        String ref = TopUps.SOURCE + ":" + topUp.getTopUpId();
+        PolicyView policy = policyApi.getPolicy(topUp.getPolicyNumber());
+        UnitLinkedPlan plan = productApi.resolveUnitLinkedPlan(policy.productVersionId());
+        LocalDate receivedOn = BindingRule.civilDate(receivedAt);
+        UnitArithmetic.Allocated allocated = UnitArithmetic.allocate(topUp.getAmount(), plan.options().topUpAllocationPercent());
+        if (allocated.charge().signum() > 0) {
+            entries.save(UnitEntry.money(tenantId, topUp.getPolicyNumber(), UnitEntry.Type.ALLOCATION_CHARGE,
+                allocated.charge().negate(), receivedOn, TopUps.SOURCE, ref, null, UnitLedger.SYSTEM, clock.instant()));
+        }
+        List<PremiumSplit.Share> split = topUp.getSplit().isEmpty()
+            ? premiumSplits.splitAt(topUp.getPolicyNumber(), receivedAt)
+            : topUp.getSplit().stream().sorted(Comparator.comparing(s -> s.getFundId().toString())).toList();
+        List<BigDecimal> parts = UnitArithmetic.split(allocated.allocated(), split.stream()
+            .map(a -> new UnitArithmetic.Weighted(a.getFundId().toString(), BigDecimal.valueOf(a.getPercent()))).toList());
+        for (int i = 0; i < split.size(); i++) {
+            if (parts.get(i).signum() <= 0) {
+                continue;
+            }
+            Fund fund = funds.findByTenantIdAndFundId(tenantId, split.get(i).getFundId()).orElseThrow();
+            orders.save(PendingOrder.buy(tenantId, topUp.getPolicyNumber(), fund.getFundId(), parts.get(i),
+                PendingOrder.Purpose.ALLOCATION, receivedAt, fund.getCutOffTime(), TopUps.SOURCE, ref));
+        }
+    }
+
     /** The premium's last order priced: publish the whole premium once, for the ledger to post as one entry. */
     @Override
     public void afterPriced(PendingOrder order, UnitEntry entry) {

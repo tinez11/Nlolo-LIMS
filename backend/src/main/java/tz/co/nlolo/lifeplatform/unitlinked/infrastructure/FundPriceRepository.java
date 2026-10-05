@@ -42,6 +42,13 @@ public interface FundPriceRepository extends JpaRepository<FundPrice, UUID> {
     List<FundPrice> findApprovedAfter(@Param("tenantId") UUID tenantId, @Param("fundId") UUID fundId,
                                       @Param("date") LocalDate date, Limit limit);
 
+    /** Every approved price dated on or after {@code from}, oldest first (U2, plan D3): where a switch looks for a
+     *  date on which all its funds are priced. */
+    @Query("select p from FundPrice p where p.tenantId = :tenantId and p.fundId = :fundId"
+        + " and p.status = 'APPROVED' and p.valuationDate >= :from order by p.valuationDate asc")
+    List<FundPrice> findApprovedFrom(@Param("tenantId") UUID tenantId, @Param("fundId") UUID fundId,
+                                     @Param("from") LocalDate from);
+
     @Query("select p from FundPrice p where p.tenantId = :tenantId and p.fundId = :fundId"
         + " and p.valuationDate between :from and :to order by p.valuationDate desc, p.proposedAt desc")
     List<FundPrice> findBetween(@Param("tenantId") UUID tenantId, @Param("fundId") UUID fundId,

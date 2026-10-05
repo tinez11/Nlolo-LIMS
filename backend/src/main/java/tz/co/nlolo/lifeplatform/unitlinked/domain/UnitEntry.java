@@ -81,6 +81,16 @@ public class UnitEntry {
             order.getSourceType(), order.getSourceRef(), null, createdBy, now);
     }
 
+    /** One leg of a switch (U2): units out of or into a fund at that date's approved price, with no order behind it. */
+    public static UnitEntry switched(UUID tenantId, String policyNumber, UUID fundId, Type type, BigDecimal units,
+                                     FundPrice price, BigDecimal amount, String sourceRef, String createdBy, Instant now) {
+        if (type != Type.SWITCH_OUT && type != Type.SWITCH_IN) {
+            throw new IllegalArgumentException(type + " is not a switch leg");
+        }
+        return new UnitEntry(tenantId, policyNumber, fundId, type, units, price.getPrice(), price.getPriceId(), amount,
+            price.getValuationDate(), price.getValuationDate(), null, "switch", sourceRef, null, createdBy, now);
+    }
+
     /** Money with no units: the allocation charge, a refunded charge, a written-off shortfall. */
     public static UnitEntry money(UUID tenantId, String policyNumber, Type type, BigDecimal amount, LocalDate valuationDate,
                                   String sourceType, String sourceRef, UUID reversesEntryId, String createdBy, Instant now) {

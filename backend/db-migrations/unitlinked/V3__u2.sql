@@ -126,7 +126,7 @@ CREATE TABLE unitlinked.request_key (
     idempotency_key VARCHAR(100) NOT NULL,
     operation       VARCHAR(30) NOT NULL,
     target          VARCHAR(40) NOT NULL,
-    created_id      UUID NOT NULL,
+    resource_id     UUID NOT NULL,
     created_by      VARCHAR(100) NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, idempotency_key)

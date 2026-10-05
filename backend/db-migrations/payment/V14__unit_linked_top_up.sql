@@ -5,3 +5,20 @@
 ALTER TABLE payment.payment_transaction DROP CONSTRAINT payment_transaction_purpose_check;
 ALTER TABLE payment.payment_transaction
     ADD CONSTRAINT payment_transaction_purpose_check CHECK (purpose IN ('PREMIUM','ACCOUNT_TOP_UP','UL_TOP_UP'));
+
+-- A top-up refunded whole because the policy ended before its money arrived. Not PREMIUM_RETURN_PAYOUT: benefitpayout
+-- closes an instalment on every disbursement of that purpose and would look for a top-up among its instalments.
+ALTER TABLE payment.disbursement_instruction
+    DROP CONSTRAINT disbursement_instruction_purpose_check;
+ALTER TABLE payment.disbursement_instruction
+    ADD CONSTRAINT disbursement_instruction_purpose_check CHECK (purpose IN
+        ('LOAN_DISBURSEMENT','CLAIM_SETTLEMENT','COMMISSION_PAYOUT','SURRENDER_PAYOUT',
+         'MATURITY_PAYOUT','DIVIDEND_PAYOUT',
+         'SURVIVAL_BENEFIT_PAYOUT','INCOME_PAYOUT','PREMIUM_RETURN_PAYOUT','FREE_LOOK_REFUND',
+         'WITHDRAWAL_PAYOUT',
+         'DEPOSIT_MATURITY_PAYOUT',
+         'ANNUITY_PAYOUT',
+         -- A pension's lump sum at vesting.
+         'COMMUTATION_PAYOUT',
+         -- Unit-linked (product step 6).
+         'PRICE_CORRECTION_PAYOUT','LAPSE_SURRENDER_PAYOUT','TOP_UP_REFUND'));

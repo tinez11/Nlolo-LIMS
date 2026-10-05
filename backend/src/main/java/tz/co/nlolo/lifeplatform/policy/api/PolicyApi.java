@@ -634,6 +634,13 @@ public interface PolicyApi {
     String productCategoryOf(String policyNumber);
 
     /**
+     * A unit-linked partial withdrawal cut the cover (product step 6, U2): the sum assured and its DEATH coverage drop by
+     * {@code by}, recorded as a UNIT_LINKED_WITHDRAWAL endorsement. Called only when the version says a withdrawal
+     * reduces the sum assured.
+     */
+    PolicyView reduceUnitLinkedSumAssured(String policyNumber, BigDecimal by, String reason, String appliedBy);
+
+    /**
      * The policy's cash value, for {@code policyloan}'s forced-lapse shortfall test
      * ({@code docs/01-domain-map.md:224}: "loan balance plus interest exceeds cash value"). A
      * pure read -- no event, no charge applied. See {@link CashValueView} for why

@@ -29,6 +29,8 @@ public class ExitState {
     @Column(name = "purpose", nullable = false) private String purpose;
     @Column(name = "returned_money", nullable = false) private BigDecimal returnedMoney;
     @Column(name = "proceeds", nullable = false) private BigDecimal proceeds;
+    // U2 (unitlinked V3): the surrender charge a surrender or a non-payment lapse took from its proceeds.
+    @Column(name = "surrender_charge", nullable = false) private BigDecimal surrenderCharge = BigDecimal.ZERO.setScale(2);
     @Column(name = "status", nullable = false) private String status;
     @Column(name = "payee_ref") private String payeeRef;
     @Column(name = "completed_at") private Instant completedAt;
@@ -51,6 +53,7 @@ public class ExitState {
 
     public void addReturnedMoney(BigDecimal amount) { this.returnedMoney = returnedMoney.add(amount); }
     public void addProceeds(BigDecimal amount) { this.proceeds = proceeds.add(amount); }
+    public void chargeSurrender(BigDecimal charge) { this.surrenderCharge = charge; }
     public void priced(Instant at) { this.status = Status.PRICED.name(); this.completedAt = at; }
     public void awaitingPayee() { this.status = Status.AWAITING_PAYEE.name(); }
     public void paid(Instant at) { this.status = Status.PAID.name(); this.completedAt = at; }
@@ -65,6 +68,9 @@ public class ExitState {
     public String getPurpose() { return purpose; }
     public BigDecimal getReturnedMoney() { return returnedMoney; }
     public BigDecimal getProceeds() { return proceeds; }
+    public BigDecimal getSurrenderCharge() { return surrenderCharge; }
+    /** What the payee is paid: the units' proceeds and any premium returned, less the surrender charge. */
+    public BigDecimal payable() { return proceeds.add(returnedMoney).subtract(surrenderCharge); }
     public Status getStatus() { return Status.valueOf(status); }
     public String getPayeeRef() { return payeeRef; }
     public Instant getCompletedAt() { return completedAt; }

@@ -7,6 +7,7 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 
 import java.math.BigDecimal;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * payment's outcome for a payout this module asked for (surrender, maturity, lapse, a price-correction adjustment): a
@@ -20,9 +21,14 @@ class PaymentEventListener {
 
     private final Exits exits;
     private final Adjustments adjustments;
+    private final Withdrawals withdrawals;
+    private final TopUps topUps;
     private final UnitLinkedEnvelopeRunner runner;
 
-    PaymentEventListener(Exits exits, Adjustments adjustments, UnitLinkedEnvelopeRunner runner) {
+    PaymentEventListener(Exits exits, Adjustments adjustments, UnitLinkedEnvelopeRunner runner, Withdrawals withdrawals,
+                         TopUps topUps) {
+        this.withdrawals = withdrawals;
+        this.topUps = topUps;
         this.exits = exits;
         this.adjustments = adjustments;
         this.runner = runner;
@@ -30,6 +36,23 @@ class PaymentEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
+        // A top-up's collection (U2, plan D6): its purpose decides, before anything is read.
+        if ("payment.PaymentConfirmed".equals(envelope.eventType()) || "payment.PaymentFailed".equals(envelope.eventType())) {
+            if (!TopUps.PURPOSE.equals(((Map<?, ?>) envelope.payload()).get("purpose"))) {
+                return;
+            }
+            boolean confirmed = "payment.PaymentConfirmed".equals(envelope.eventType());
+            runner.run(envelope, p -> {
+                UUID topUpId = UUID.fromString(String.valueOf(p.get("sourceRef")));
+                if (confirmed) {
+                    Object at = p.get("confirmedAt");
+                    topUps.onConfirmed(topUpId, at == null ? java.time.Instant.now() : java.time.Instant.parse(String.valueOf(at)));
+                } else {
+                    topUps.onFailed(topUpId);
+                }
+            });
+            return;
+        }
         if (!"payment.DisbursementCompleted".equals(envelope.eventType())) {
             return;
         }
@@ -53,7 +76,10 @@ class PaymentEventListener {
             if (k.startsWith(Adjustments.KEY_PREFIX)) {
                 adjustments.onPaid(paid);
             } else {
+                // Each takes only its own purpose: an exit's payouts, or a withdrawal's (U2).
                 exits.onPaid(paid);
+                withdrawals.onPaid(paid);
+                topUps.onRefundPaid(paid);
             }
         });
     }

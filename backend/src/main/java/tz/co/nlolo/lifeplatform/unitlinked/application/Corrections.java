@@ -50,10 +50,13 @@ class Corrections {
     private final PricingRun pricingRun;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final org.springframework.beans.factory.ObjectProvider<Switches> switches;
 
     Corrections(FundPriceRepository prices, UnitEntryRepository entries, ExitStateRepository exits,
                 PriceCorrectionAdjustmentRepository adjustments, FundLiabilityRepository liabilities, PricingRun pricingRun,
-                ApplicationEventPublisher events, @Qualifier("unitLinkedClock") Clock clock) {
+                ApplicationEventPublisher events, @Qualifier("unitLinkedClock") Clock clock,
+                org.springframework.beans.factory.ObjectProvider<Switches> switches) {
+        this.switches = switches;
         this.prices = prices;
         this.entries = entries;
         this.exits = exits;
@@ -107,6 +110,20 @@ class Corrections {
         }
         inserts.stream().sorted(java.util.Comparator.comparing(UnitEntry::getUnits).reversed()).forEach(entries::saveAndFlush);
 
+        // A switch's OUT leg sold at the corrected price raises more or less: the difference follows the switch into
+        // its IN funds at their own prices for that date (U2). Before the true-up, which measures from the carried figures.
+        Map<String, BigDecimal> switchDelta = new HashMap<>();
+        for (Redo r : redos) {
+            if (r.original().getType() == UnitEntry.Type.SWITCH_OUT) {
+                switchDelta.merge(r.original().getSourceRef(), r.amount().subtract(r.original().getAmount()).negate(), BigDecimal::add);
+            }
+        }
+        switchDelta.forEach((switchRef, delta) -> {
+            if (delta.signum() != 0) {
+                switches.getObject().followCorrection(UUID.fromString(switchRef), delta, corrected);
+            }
+        });
+
         // The liability is carried at the fund's LATEST price, which may be a later date's than the one corrected.
         FundPrice latest = prices.findLatestApprovedBefore(tenantId, fund.getFundId(), LocalDate.of(9999, 12, 31))
             .orElse(corrected);
@@ -136,7 +153,9 @@ class Corrections {
                 new Redo(e, UnitArithmetic.unitsBought(e.getAmount(), price), e.getAmount());
             case POLICY_FEE, COST_OF_INSURANCE ->
                 new Redo(e, UnitArithmetic.unitsToSell(e.getAmount().negate(), price, new BigDecimal("1E12")).negate(), e.getAmount());
-            case DEATH_SALE, SURRENDER_SALE, MATURITY_SALE, LAPSE_SALE, FREE_LOOK_SALE ->
+            // U2: a switch leg in is a buy of the money it was given; a leg out and a withdrawal sell the same units.
+            case SWITCH_IN -> new Redo(e, UnitArithmetic.unitsBought(e.getAmount(), price), e.getAmount());
+            case DEATH_SALE, SURRENDER_SALE, MATURITY_SALE, LAPSE_SALE, FREE_LOOK_SALE, SWITCH_OUT, WITHDRAWAL_SALE ->
                 new Redo(e, e.getUnits(), UnitArithmetic.proceeds(e.getUnits().negate(), price).negate());
             default -> throw new IllegalStateException(e.getType() + " is not a priced movement");
         };
@@ -167,6 +186,13 @@ class Corrections {
     private boolean settleWithItsExit(UUID tenantId, UnitEntry e, BigDecimal difference, FundPrice corrected, String approvedBy) {
         if (difference.signum() == 0 || e.getUnits().signum() >= 0) {
             return false;
+        }
+        // A withdrawal is paid out as soon as it is priced (U2): its re-priced sale is always an adjustment, on the gross
+        // difference -- the surrender charge it paid stands as charged.
+        if (Withdrawals.SOURCE.equals(e.getSourceType())) {
+            adjustments.save(PriceCorrectionAdjustment.of(tenantId, e.getPolicyNumber(), corrected.getPriceId(),
+                difference.negate(), approvedBy));
+            return true;
         }
         Optional<ExitState> exit = exits.findByTenantIdAndSourceTypeAndSourceRef(tenantId, e.getSourceType(), e.getSourceRef());
         if (exit.isEmpty()) {

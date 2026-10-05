@@ -86,4 +86,31 @@ public interface UnitLinkedApi {
 
     /** Every split the policy has had, newest first. */
     java.util.List<PremiumSplitView> splitHistory(String policyNumber);
+
+    /**
+     * A fund switch (U2, spec §2): one staff member, audited. Both legs are priced on one date, the first after the
+     * request on which every involved fund is priced; beyond the version's free switches a year, its fee applies.
+     */
+    SwitchView requestSwitch(String policyNumber, SwitchInput input, String by);
+
+    java.util.List<SwitchView> listSwitches(String policyNumber);
+
+    /**
+     * A partial withdrawal (U2, spec §3), requested by one person: a gross amount from named funds or pro rata, checked
+     * against the version's minimums. Nothing is sold until a second person approves.
+     */
+    WithdrawalView requestWithdrawal(String policyNumber, WithdrawalInput input, String by);
+
+    /** A second person approves; the sale binds at this instant and is priced at the first price after it. */
+    WithdrawalView approveWithdrawal(java.util.UUID withdrawalId, String by);
+
+    java.util.List<WithdrawalView> listWithdrawals(String policyNumber);
+
+    /**
+     * A top-up (U2, spec §4), once per Idempotency-Key: a repeat of the key answers with the first top-up and collects
+     * nothing again. Allocated at the version's top-up percent when payment confirms the money.
+     */
+    TopUpView requestTopUp(String policyNumber, TopUpInput input, String by, String idempotencyKey);
+
+    java.util.List<TopUpView> listTopUps(String policyNumber);
 }
