@@ -1,16 +1,26 @@
 import { get, post, put } from '@/lib/http';
 import type { ApiError } from '@/lib/apiError';
+import type { MutationAttempt } from '@/lib/idempotency';
 import type {
   CreateFundRequest,
   FundPriceView,
+  FundShare,
   FundView,
   PolicyUnitsView,
+  PremiumSplitView,
   PriceAdjustmentView,
   ProposePriceRequest,
+  SwitchRequestBody,
+  SwitchView,
   UnitLinkedChoiceView,
   UnitLinkedReconciliationView,
   UnitLinkedTermsView,
+  UnitLinkedTopUpRequest,
+  UnitLinkedTopUpView,
+  UnitLinkedWithdrawalView,
+  UnitStatementView,
   WaitingCountView,
+  WithdrawalRequestBody,
 } from './types';
 
 /**
@@ -106,4 +116,59 @@ export function recordUnitLinkedChoice(caseId: string, body: UnitLinkedChoiceVie
 
 export function getUnitLinkedReconciliation(): Promise<UnitLinkedReconciliationView> {
   return get<UnitLinkedReconciliationView>('/finance/unit-linked-reconciliation');
+}
+
+// ---- U2: the premium split, switches, withdrawals, top-ups and statements ----
+
+export function getSplitHistory(policyNumber: string): Promise<PremiumSplitView[]> {
+  return get<PremiumSplitView[]>(`/policies/${enc(policyNumber)}/premium-split`);
+}
+
+export function redirectPremiums(policyNumber: string, split: FundShare[]): Promise<PremiumSplitView> {
+  return put<PremiumSplitView>(`/policies/${enc(policyNumber)}/premium-split`, { split });
+}
+
+export function listSwitches(policyNumber: string): Promise<SwitchView[]> {
+  return get<SwitchView[]>(`/policies/${enc(policyNumber)}/switches`);
+}
+
+export function requestSwitch(policyNumber: string, body: SwitchRequestBody): Promise<SwitchView> {
+  return post<SwitchView>(`/policies/${enc(policyNumber)}/switches`, body);
+}
+
+export function listWithdrawals(policyNumber: string): Promise<UnitLinkedWithdrawalView[]> {
+  return get<UnitLinkedWithdrawalView[]>(`/policies/${enc(policyNumber)}/withdrawals`);
+}
+
+export function requestWithdrawal(policyNumber: string, body: WithdrawalRequestBody): Promise<UnitLinkedWithdrawalView> {
+  return post<UnitLinkedWithdrawalView>(`/policies/${enc(policyNumber)}/withdrawals`, body);
+}
+
+export function approveWithdrawal(withdrawalId: string): Promise<UnitLinkedWithdrawalView> {
+  return post<UnitLinkedWithdrawalView>(`/withdrawals/${enc(withdrawalId)}/approval`);
+}
+
+export function listTopUps(policyNumber: string): Promise<UnitLinkedTopUpView[]> {
+  return get<UnitLinkedTopUpView[]>(`/policies/${enc(policyNumber)}/top-ups`);
+}
+
+/** Once per attempt: the same attempt's key on a retry answers with the first top-up and collects nothing again. */
+export function requestTopUp(
+  policyNumber: string,
+  body: UnitLinkedTopUpRequest,
+  attempt: MutationAttempt,
+): Promise<UnitLinkedTopUpView> {
+  return post<UnitLinkedTopUpView>(`/policies/${enc(policyNumber)}/top-ups`, body, { headers: attempt.headers() });
+}
+
+export function listStatements(policyNumber: string): Promise<UnitStatementView[]> {
+  return get<UnitStatementView[]>(`/policies/${enc(policyNumber)}/statements`);
+}
+
+export function fileStatement(policyNumber: string, from: string, to: string): Promise<UnitStatementView> {
+  return post<UnitStatementView>(`/policies/${enc(policyNumber)}/statements`, { from, to });
+}
+
+export function downloadUnitStatement(statementId: string): Promise<Blob> {
+  return get<Blob>(`/unit-statements/${enc(statementId)}/file`, { responseType: 'blob' });
 }

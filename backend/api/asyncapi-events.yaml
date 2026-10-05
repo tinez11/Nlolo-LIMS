@@ -747,14 +747,16 @@ channels:
   unitlinked.PayoutRequested:
     description: >
       Producer: unitlinked -- an exit's proceeds (SURRENDER_PAYOUT, MATURITY_PAYOUT, LAPSE_SURRENDER_PAYOUT;
-      idempotencyKey unit-linked:<type>:<ref>) or an adjustment owed to the customer (PRICE_CORRECTION_PAYOUT;
-      price-correction:<id>). Consumer: payment.
+      idempotencyKey unit-linked:<type>:<ref>), an adjustment owed to the customer (PRICE_CORRECTION_PAYOUT;
+      price-correction:<id>), a partial withdrawal's net (WITHDRAWAL_PAYOUT; unit-linked:withdrawal:<id>) or a top-up
+      refunded whole because the policy ended first (TOP_UP_REFUND; unit-linked:top-up:<id>). Consumer: payment.
     publish:
       message: { $ref: '#/components/messages/UnitLinkedEvent' }
   unitlinked.PayoutPaid:
     description: >
       Producer: unitlinked -- payment completed one of its payouts; sourceRef is the disbursement id, so a
-      redelivery posts nothing twice. Consumer: finaccounting (DR 5100 / CR cash; DR 2130 / CR cash for an adjustment).
+      redelivery posts nothing twice. Consumer: finaccounting (DR 5100 / CR cash; DR 2130 / CR cash for an adjustment;
+      DR 2140 / CR cash for a refunded top-up).
     publish:
       message: { $ref: '#/components/messages/UnitLinkedEvent' }
   unitlinked.AdjustmentCollected:
@@ -784,6 +786,44 @@ channels:
     description: >
       Producer: unitlinked -- the units could not meet a month's charges; the policy lapses FUND_EXHAUSTED.
       Consumer: communication (UL_LAPSED_EXHAUSTED).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.SwitchExecuted:
+    description: >
+      Producer: unitlinked (U2) -- a switch's two legs priced on one date (switchId, executedOn, moved, fee;
+      sourceRef switch:<id>). Consumer: finaccounting (the fee, DR 2150 / CR 4310; the move stays inside 2150).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.WithdrawalPriced:
+    description: >
+      Producer: unitlinked (U2) -- a partial withdrawal's sale priced (withdrawalId, proceeds, surrenderCharge;
+      sourceRef withdrawal:<id>). Consumer: finaccounting (DR 2150 / CR 5100 the proceeds; DR 5100 / CR 4310 the charge).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.SurrenderCharged:
+    description: >
+      Producer: unitlinked (U2) -- the surrender charge taken from a surrender's or a non-payment lapse's proceeds
+      (amount). Consumer: finaccounting (DR 5100 / CR 4310).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.TopUpRequested:
+    description: >
+      Producer: unitlinked (U2) -- a top-up to collect (topUpId, idempotencyKey ul-topup:<id>, payerRef, amount
+      {amount, currencyCode}). Consumer: payment, which records a COLLECTION with purpose UL_TOP_UP and sourceRef the
+      top-up id.
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.TopUpReceived:
+    description: >
+      Producer: unitlinked (U2) -- payment confirmed a top-up's money (topUpId, amount; sourceRef top-up:<id>).
+      Consumer: finaccounting (DR cash / CR 2140, until it buys units or goes back).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.StatementIssued:
+    description: >
+      Producer: unitlinked (U2) -- a unit statement filed (statementId, policyNumber, policyholderPartyId, annual,
+      year, periodFrom, periodTo, closingValue, currencyCode, priceDate -- null when no fund was priced yet).
+      Consumer: communication, the annual one only (UNIT_LINKED_STATEMENT).
     publish:
       message: { $ref: '#/components/messages/UnitLinkedEvent' }
 
@@ -1528,8 +1568,9 @@ components:
             confirmedAt: {type: string, format: date-time}
             # Payment V9 (product step 3). Whose money this is: billing consumes PREMIUM (sourceRef
             # an invoice id), accumulation consumes ACCOUNT_TOP_UP (sourceRef a top-up id). Absent on
-            # every confirmation published before V9, and read as PREMIUM.
-            purpose: {type: string, enum: [PREMIUM, ACCOUNT_TOP_UP]}
+            # every confirmation published before V9, and read as PREMIUM. UL_TOP_UP (payment V14, unit-linked
+            # U2): unitlinked consumes it, sourceRef a unit-linked top-up id.
+            purpose: {type: string, enum: [PREMIUM, ACCOUNT_TOP_UP, UL_TOP_UP]}
             # The number the money came from (2026-10-02). Billing carries it onto
             # billing.PremiumCollected; a fixed-term deposit is paid back to it by default.
             payerRef: {type: string}
@@ -1542,7 +1583,7 @@ components:
             idempotencyKey: {type: string}
             sourceRef: {type: string}
             reason: {type: string}
-            purpose: {type: string, enum: [PREMIUM, ACCOUNT_TOP_UP], description: "As on PaymentConfirmed"}
+            purpose: {type: string, enum: [PREMIUM, ACCOUNT_TOP_UP, UL_TOP_UP], description: "As on PaymentConfirmed"}
     EftDisbursementLedgerPayload:
       description: >
         One shape for both EFT ledger events, because they carry identical facts and differ only
@@ -1578,13 +1619,15 @@ components:
             # (policyloan checks purpose == "LOAN_DISBURSEMENT" and returns otherwise) or it will
             # try to handle another module's payout. Values match
             # disbursement_instruction.purpose's CHECK constraint (db-migrations/payment/V1:54,
-            # widened by V2 to add DIVIDEND_PAYOUT, by V8 for the payout engine's four, and by V9
-            # for a savings withdrawal).
+            # widened by V2 to add DIVIDEND_PAYOUT, by V8 for the payout engine's four, by V9
+            # for a savings withdrawal, by V10-V12 for deposits, annuities and commutation, by V13
+            # for unit-linked, and by V14 for a refunded unit-linked top-up).
             purpose:
               type: string
               enum: [LOAN_DISBURSEMENT, CLAIM_SETTLEMENT, COMMISSION_PAYOUT, SURRENDER_PAYOUT, MATURITY_PAYOUT,
                      DIVIDEND_PAYOUT, SURVIVAL_BENEFIT_PAYOUT, INCOME_PAYOUT, PREMIUM_RETURN_PAYOUT,
-                     FREE_LOOK_REFUND, WITHDRAWAL_PAYOUT]
+                     FREE_LOOK_REFUND, WITHDRAWAL_PAYOUT, DEPOSIT_MATURITY_PAYOUT, ANNUITY_PAYOUT,
+                     COMMUTATION_PAYOUT, PRICE_CORRECTION_PAYOUT, LAPSE_SURRENDER_PAYOUT, TOP_UP_REFUND]
             gatewayReference: {type: string}
             amount: {type: object}
             completedAt: {type: string, format: date-time}

@@ -558,6 +558,17 @@ export type UnitLinkedTermsView = ProductComponents['schemas']['UnitLinkedTerms'
 export type UnitLinkedSpec = NonNullable<ProductVersionSpec['unitLinked']>;
 export type UnitLinkedChoiceView = UnderwritingComponents['schemas']['UnitLinkedChoice'];
 export type UnitLinkedReconciliationView = FinaccountingComponents['schemas']['UnitLinkedReconciliation'];
+// Unit-linked U2: switches, withdrawals, top-ups, the premium split and statements.
+export type UnitLinkedOptionsView = ProductComponents['schemas']['UnitLinkedOptions'];
+export type FundShare = UnitLinkedComponents['schemas']['FundShare'];
+export type PremiumSplitView = UnitLinkedComponents['schemas']['PremiumSplit'];
+export type SwitchRequestBody = UnitLinkedComponents['schemas']['SwitchRequest'];
+export type SwitchView = UnitLinkedComponents['schemas']['Switch'];
+export type WithdrawalRequestBody = UnitLinkedComponents['schemas']['WithdrawalRequest'];
+export type UnitLinkedWithdrawalView = UnitLinkedComponents['schemas']['Withdrawal'];
+export type UnitLinkedTopUpRequest = UnitLinkedComponents['schemas']['TopUpRequest'];
+export type UnitLinkedTopUpView = UnitLinkedComponents['schemas']['TopUp'];
+export type UnitStatementView = UnitLinkedComponents['schemas']['UnitStatement'];
 
 /** The payout register's status filter, in the order a queue is worked. */
 export const INSTALMENT_STATUSES: readonly InstalmentStatus[] = [
