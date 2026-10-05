@@ -64,7 +64,9 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         }
         // Product step 6 (plan R9): a unit-linked policy has no cash value to lend against in U1 -- its value is its
         // units. Said in words here, rather than left to a zero cash value refusing it obscurely.
-        if ("UNIT_LINKED".equals(policyApi.getPolicy(policyNumber).productCategory())) {
+        // productCategoryOf, never getPolicy: the reservation below locks policy_account, which getPolicy's view would
+        // already have loaded -- turning a racing loan's clean INSUFFICIENT_LOAN_VALUE into a version conflict.
+        if ("UNIT_LINKED".equals(policyApi.productCategoryOf(policyNumber))) {
             throw new LoanNotEligibleException("A unit-linked policy has no paid-up or loan value in U1; its value is its units");
         }
 

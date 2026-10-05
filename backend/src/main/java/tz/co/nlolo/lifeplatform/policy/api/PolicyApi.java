@@ -625,6 +625,15 @@ public interface PolicyApi {
     boolean isPolicyInForce(String policyNumber, LocalDate asOf);
 
     /**
+     * The policy's product category, and nothing else. Read through this -- not {@link #getPolicy} -- anywhere a later
+     * step locks the policy's account: getPolicy's view loads policy_account into the persistence context, and a
+     * PESSIMISTIC_WRITE lock on an entity already loaded returns that stale copy, so a racing request fails with a
+     * version conflict instead of waiting for the lock and getting its real answer (found 2026-10-05 by
+     * ModuleArchitectureB1EndToEndRaceTest, after the unit-linked loan refusal read getPolicy first).
+     */
+    String productCategoryOf(String policyNumber);
+
+    /**
      * The policy's cash value, for {@code policyloan}'s forced-lapse shortfall test
      * ({@code docs/01-domain-map.md:224}: "loan balance plus interest exceeds cash value"). A
      * pure read -- no event, no charge applied. See {@link CashValueView} for why
