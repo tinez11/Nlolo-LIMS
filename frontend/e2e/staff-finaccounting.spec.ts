@@ -274,9 +274,9 @@ test.describe('staff finaccounting', () => {
       timeout: 15_000,
     });
 
-    // Ascending by default, so one click flips to descending and 5500 leads.
+    // Ascending by default, so one click flips to descending and the highest code, unit-linked's 5600, leads.
     await page.getByRole('button', { name: 'Code' }).click();
-    await expect(page.getByRole('row').nth(1)).toContainText('5500');
+    await expect(page.getByRole('row').nth(1)).toContainText('5600');
   });
 
   test('a type filter narrows the table to one block', async ({ page }) => {
