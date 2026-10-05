@@ -755,6 +755,11 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
+    public String productCategoryOf(String policyNumber) {
+        return findPolicyOrThrow(policyNumber, TenantContext.get()).getProductCategory();
+    }
+
+    @Override
     public boolean isPolicyInForce(String policyNumber, LocalDate asOf) {
         // Now genuinely date-bounded: "was this policy on risk on asOf", answered by
         // Policy.wasOnRiskOn. It used to ignore asOf and read today's status, which claims

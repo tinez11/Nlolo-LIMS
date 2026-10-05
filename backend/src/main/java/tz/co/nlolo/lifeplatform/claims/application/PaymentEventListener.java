@@ -191,7 +191,7 @@ public class PaymentEventListener {
      * asked first, so a class that never sells a funeral plan never touches claims.funeral_claim.
      */
     private UUID coveredLifeOf(UUID claimId, String policyNumber) {
-        if (!"FUNERAL".equals(policyApi.getPolicy(policyNumber).productCategory())) {
+        if (!"FUNERAL".equals(policyApi.productCategoryOf(policyNumber))) {
             return null;
         }
         return funeralClaimRepository.findById(claimId)
