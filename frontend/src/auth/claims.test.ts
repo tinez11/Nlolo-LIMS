@@ -40,6 +40,17 @@ describe('readIdentity', () => {
     expect(identity.preferredUsername).toBe('staff.underwriter');
   });
 
+  it('returns the same object for the same token, so an effect depending on it does not re-run every render', () => {
+    // useNavBadges lists the identity in its dependencies; a fresh object per render looped its fetch forever.
+    const token = unsignedToken({ realm_access: { roles: ['ADMIN'] }, sub: 'u-1' });
+    const first = readIdentity(token);
+    expect(readIdentity(token)).toBe(first);
+    const other = readIdentity(unsignedToken({ realm_access: { roles: ['UNDERWRITER'] }, sub: 'u-2' }));
+    expect(other).not.toBe(first);
+    expect(other.roles).toEqual(['UNDERWRITER']);
+    expect(readIdentity(token)).toEqual(first);
+  });
+
   it('reads party_id where the realm issues one', () => {
     expect(readIdentity(unsignedToken({ party_id: 'abc' })).partyId).toBe('abc');
     // Staff and regulator realms have no party_id mapper at all.
