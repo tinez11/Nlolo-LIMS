@@ -53,10 +53,10 @@ public class PolicyEventListener {
             case "policy.PolicyExpired" -> withTenant(envelope, this::handlePolicyExpired);
             case "policy.PolicyMadePaidUp" -> withTenant(envelope, this::handlePolicyMadePaidUp);
             case "policy.PolicySurrendered" -> withTenant(envelope, this::handlePolicySurrendered);
-            // A free-look cancellation ends the billing schedule exactly as a surrender does. The
-            // two differ in what the customer is PAID, which is benefitpayout's business, not
-            // billing's -- so they share a handler rather than having a near-copy each.
-            case "policy.PolicyCancelledFreeLook" -> withTenant(envelope, this::handlePolicySurrendered);
+            // A free-look cancellation ends the billing schedule as a surrender does, but from INCEPTION: every
+            // unsettled invoice is waived, not only the future ones. What the customer is paid back is benefitpayout's.
+            case "policy.PolicyCancelledFreeLook" -> withTenant(envelope, this::handlePolicyCancelledFreeLook);
+            case "policy.PolicyMatured" -> withTenant(envelope, this::handlePolicyMatured);
             case "policy.EnrolmentAccepted" -> withTenant(envelope, this::handleEnrolmentAccepted);
             case "policy.GroupMemberExited" -> withTenant(envelope, this::handleGroupMemberExited);
             // A deferred annuity (product step 5 D2): vesting stops contributions; a deferral may extend them.
@@ -161,15 +161,44 @@ public class PolicyEventListener {
         billingApiImpl.pauseScheduleForSuspension(TenantContext.get(), policyNumber);
     }
 
+    /*
+     * A policy that ends stops being billed, and the invoices rolling billing already raised for cover it will no
+     * longer give are waived (and their receivable reversed): due on or after the day it ended. Until 2026-10-05 only
+     * the schedule was terminated, so a surrendered policy kept up to a year of future invoices DUE.
+     */
+
     private void handlePolicyExpired(Map<String, Object> payload) {
         String policyNumber = (String) payload.get("policyNumber");
-        billingApiImpl.terminateScheduleForExpiry(TenantContext.get(), policyNumber);
+        Object maturityDate = payload.get("maturityDate");
+        LocalDate from = maturityDate != null ? LocalDate.parse((String) maturityDate) : civilDate(payload.get("expiredAt"));
+        billingApiImpl.endBillingForTermination(TenantContext.get(), policyNumber, from,
+            "The policy expired on " + from + "; no further premium is due");
     }
 
     private void handlePolicyMadePaidUp(Map<String, Object> payload) {
         String policyNumber = (String) payload.get("policyNumber");
-        // Paid-up means no premium falls due again -- the same schedule termination as expiry.
-        billingApiImpl.terminateScheduleForExpiry(TenantContext.get(), policyNumber);
+        // Paid-up means no premium falls due again.
+        LocalDate from = civilDate(payload.get("madePaidUpAt"));
+        billingApiImpl.endBillingForTermination(TenantContext.get(), policyNumber, from,
+            "The policy was made paid-up on " + from + "; no further premium is due");
+    }
+
+    private void handlePolicyMatured(Map<String, Object> payload) {
+        String policyNumber = (String) payload.get("policyNumber");
+        LocalDate from = civilDate(payload.get("maturedAt"));
+        billingApiImpl.endBillingForTermination(TenantContext.get(), policyNumber, from,
+            "The policy matured on " + from + "; no further premium is due");
+    }
+
+    private void handlePolicyCancelledFreeLook(Map<String, Object> payload) {
+        billingApiImpl.endBillingForTermination(TenantContext.get(), (String) payload.get("policyNumber"), null,
+            "The policy was cancelled in its free-look period, from inception; no premium is due");
+    }
+
+    /** The East Africa civil date of an event's instant -- never its UTC date, which is a day early from 00:00 to 03:00. */
+    private static LocalDate civilDate(Object instant) {
+        java.time.Instant at = instant != null ? java.time.Instant.parse(String.valueOf(instant)) : java.time.Instant.now();
+        return at.atZone(java.time.ZoneId.of("Africa/Dar_es_Salaam")).toLocalDate();
     }
 
     private void handleAnnuityVested(Map<String, Object> payload) {
@@ -192,9 +221,11 @@ public class PolicyEventListener {
 
     private void handlePolicySurrendered(Map<String, Object> payload) {
         String policyNumber = (String) payload.get("policyNumber");
-        // A surrendered policy is off risk; no further premium is due. Same schedule termination.
-        // Fires for a claim-terminated surrender too, which should equally stop being invoiced.
-        billingApiImpl.terminateScheduleForExpiry(TenantContext.get(), policyNumber);
+        // A surrendered policy is off risk; no further premium is due. Fires for a claim-terminated policy too,
+        // which should equally stop being invoiced.
+        LocalDate from = civilDate(payload.get("surrenderedAt"));
+        billingApiImpl.endBillingForTermination(TenantContext.get(), policyNumber, from,
+            "The policy ended on " + from + "; no further premium is due");
     }
 
     /**

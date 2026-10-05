@@ -78,6 +78,9 @@ public final class PostingRule {
         // distribution claws commission back on -- nothing was collected here, so nothing was earned.
         Map.entry("billing.PremiumInvoiceIncreased", new AccountPair(PREMIUM_RECEIVABLE, UNEARNED_PREMIUM)),
         Map.entry("billing.PremiumInvoiceReduced",   new AccountPair(UNEARNED_PREMIUM, PREMIUM_RECEIVABLE)),
+        // A waived invoice, for what was still outstanding on it: the invoice posting run backwards. A finance
+        // write-off, a vesting, or a policy that ended. It had no rule, so every waiver left its receivable behind.
+        Map.entry("billing.InvoiceWaived",           new AccountPair(UNEARNED_PREMIUM, PREMIUM_RECEIVABLE)),
         Map.entry("claims.ClaimSettled",             new AccountPair(CLAIMS_EXPENSE, CASH)),
         // A surrender value paid out. Against Claims Expense because the chart has no surrender-benefit
         // account and adding one reopens the V5 chart remap -- a placeholder pending FINANCE sign-off,

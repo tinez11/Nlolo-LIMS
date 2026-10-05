@@ -84,6 +84,8 @@ public class BillingEventListener {
         switch (envelope.eventType()) {
             case "billing.PremiumInvoiceGenerated" -> withTenant(envelope, p -> post("billing.PremiumInvoiceGenerated", p));
             case "billing.PremiumCollected" -> withTenant(envelope, p -> post("billing.PremiumCollected", p));
+            // Keyed on the invoice like its generation, so a redelivered waiver posts nothing twice.
+            case "billing.InvoiceWaived" -> withTenant(envelope, p -> post("billing.InvoiceWaived", p));
             case "billing.PremiumRefundDue" -> withTenant(envelope, this::postCredit);
             case "billing.PremiumInvoiceIncreased", "billing.PremiumInvoiceReduced" ->
                 withTenant(envelope, p -> postRestatement(envelope.eventType(), p));

@@ -795,6 +795,74 @@ class BillingApiIntegrationTest {
         assertThat(eventRecorder.ofType("billing.PremiumCollected")).hasSize(1);
     }
 
+    @Autowired private org.springframework.context.ApplicationEventPublisher applicationEventPublisher;
+    @Autowired private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+    /** A policy event, committed, so billing's AFTER_COMMIT listener reacts exactly as it does in production. */
+    private void publishCommitted(UUID tenantId, String type, Map<String, Object> payload) {
+        new org.springframework.transaction.support.TransactionTemplate(transactionManager).executeWithoutResult(s ->
+            applicationEventPublisher.publishEvent(tz.co.nlolo.lifeplatform.DomainEventEnvelope.of(type, tenantId, payload)));
+    }
+
+    private Map<UUID, String> statusById(UUID tenantId, String policyNumber) {
+        TenantContext.set(tenantId);
+        return premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId).stream()
+            .collect(java.util.stream.Collectors.toMap(PremiumInvoice::getInvoiceId, PremiumInvoice::getStatus));
+    }
+
+    @Test
+    void aWaiverCarriesTheAmountStillOutstandingSoTheLedgerCanReverseIt() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-WAIVER-AMOUNT-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+
+        TenantContext.set(tenantId);
+        eventRecorder.clear();
+        billingApi.waiveInvoice(invoice.invoiceId(), "Hardship write-off", "finance-one");
+
+        List<DomainEventEnvelope<?>> waived = eventRecorder.ofType("billing.InvoiceWaived");
+        assertThat(waived).hasSize(1);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) waived.get(0).payload();
+        assertThat(payload.get("amount")).isEqualTo(Map.of("amount", "15000.00", "currencyCode", "TZS"));
+    }
+
+    @Test
+    void aSurrenderWaivesTheInvoicesForCoverItNoLongerGivesButLeavesItsArrears() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-SURRENDER-WAIVE-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        TenantContext.set(tenantId);
+        List<PremiumInvoice> invoices = premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId);
+        assertThat(invoices).as("rolling billing raises instalments ahead, or this proves nothing").hasSizeGreaterThan(1);
+        LocalDate endedOn = invoices.get(1).getDueDate();
+
+        eventRecorder.clear();
+        publishCommitted(tenantId, "policy.PolicySurrendered", Map.of("policyNumber", policyNumber,
+            "surrenderedAt", endedOn.atTime(10, 0).atZone(java.time.ZoneId.of("Africa/Dar_es_Salaam")).toInstant().toString()));
+
+        Map<UUID, String> after = statusById(tenantId, policyNumber);
+        // The first instalment fell due before the policy ended: cover was given for it, so it stays owed.
+        assertThat(after.get(invoices.get(0).getInvoiceId())).isEqualTo("DUE");
+        // Every instalment from the day it ended on is waived, and each one's receivable is published for reversal.
+        invoices.subList(1, invoices.size()).forEach(i -> assertThat(after.get(i.getInvoiceId())).isEqualTo("WAIVED"));
+        assertThat(eventRecorder.ofType("billing.InvoiceWaived")).hasSize(invoices.size() - 1);
+        assertThat(billingScheduleRepository.findByPolicyNumberAndTenantIdAndStatus(policyNumber, tenantId, "TERMINATED")).isPresent();
+    }
+
+    @Test
+    void aFreeLookCancellationWaivesEveryUnsettledInvoiceFromInception() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-FREELOOK-WAIVE-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+
+        publishCommitted(tenantId, "policy.PolicyCancelledFreeLook", Map.of("policyNumber", policyNumber,
+            "cancelledAt", java.time.Instant.now().toString(), "cancelledBy", "staff-two"));
+
+        assertThat(statusById(tenantId, policyNumber).values()).isNotEmpty().allMatch("WAIVED"::equals);
+    }
+
     @Test
     void aLatePaymentAgainstAWaivedInvoicePublishesNoPremiumCollected() {
         UUID tenantId = UUID.randomUUID();
