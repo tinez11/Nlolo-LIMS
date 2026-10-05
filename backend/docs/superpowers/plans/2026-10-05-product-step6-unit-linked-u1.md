@@ -39,6 +39,16 @@
 - **R10. Reconciliation SPI.** The "2150 = units × price" staff report lives in finaccounting, which owns the balance. The units side arrives through `product::api`'s `UnitLinkedValuation` SPI, implemented by unitlinked, because finaccounting may depend only on product and refdata.
 - **R11. A unit-linked surrender request carries no quoted value.** It is priced forward after approval; the console shows an indicative value from the units endpoint, labelled as such.
 
+## Corrections from the pre-start check (2026-10-05, read-only, against the code; user said "proceed")
+
+- **C1.** Do **not** remove `fundDefinitions` / `FundInput` from the publishVersion overloads: 149 call sites in 48 test files pass it. Keep every signature. `ProductApiImpl` refuses a **non-empty** list with `InvalidProductVersionException("fundDefinitions is replaced by unit-linked terms' fund codes")`, and stops persisting it. Drop the `product.fund_definition` table, the `FundDefinition` entity and `FundDefinitionRepository`. Task 2 Step 1's signature-change paragraph is superseded by this.
+- **C2.** `PolicyApi.IssueRequest` has **16** components; the last is `IssuanceBasis issuanceBasis`. Task 3's snippet passes `null` for it as the 16th argument, and the 13th is `policyTermMonths`.
+- **C3.** `PolicyView` already carries `underwritingCaseId`. unitlinked reads it via `policyApi.getPolicy(policyNumber)` on `policy.PolicyIssued`; the PolicyIssued payload is **not** changed.
+- **C4.** `claims.ClaimRegistered` carries no `registeredAt`. Add it (an additive key, `Instant.now()` at publication inside the registering transaction) in `ClaimsApiImpl`, and in `asyncapi-events.yaml`, in Task 7.
+- **C5.** `ReferenceDataApi.getValue` throws `NoSuchElementException` on a missing key. Seed `UL_PRICE_MOVE_ALERT_PERCENT` = `10` (jurisdiction TZ) in `db-migrations/refdata/V7__unit_linked_price_move_alert.sql` (copy V6's insert shape), and add it to `UnitLinkedTestMigrations`. The code does not default it.
+- **C6.** There is no `java.time.Clock` bean. unitlinked declares `@Bean("unitLinkedClock") Clock unitLinkedClock() { return Clock.system(BindingRule.CIVIL_ZONE); }` in a `UnitLinkedConfiguration`. `FundRegister` and the sweeps inject `@Qualifier("unitLinkedClock") Clock`; tests override it with `@MockBean(name = "unitLinkedClock")` or a `@TestConfiguration` returning `Clock.fixed(...)`.
+- **Branch:** `product-step6-unit-linked` was created from `product-family-funeral` at 93072731 (the user chose this over waiting for the funeral merge). Merge `main` in once funeral lands. Task 0 is done. No Maven runs while the funeral e2e suite is running.
+
 ---
 
 ## File map
@@ -400,7 +410,7 @@ Write the five `ENABLE ROW LEVEL SECURITY` / `CREATE POLICY ..._tenant_isolation
 DROP TABLE product.fund_definition;
 ```
 
-Removing `fund_definition` also removes `FundDefinition`, `FundDefinitionRepository`, `FundInput`, and the `fundDefinitions` parameter of every publishVersion overload. **This is a signature change touching every caller:** grep `FundInput` and `fundDefinitions` across `src/main` and `src/test`, pass nothing (delete the argument) in each, and run `./mvnw -o clean test-compile` before moving on. Keep `PublishVersionRequest.fundDefinitions` deserialisable but rejected: a non-empty value returns 422 "fundDefinitions is replaced by unitLinked.fundCodes".
+**Superseded by C1:** keep every signature and refuse a non-empty list. ~~Removing `fund_definition` also removes `FundDefinition`, `FundDefinitionRepository`, `FundInput`, and the `fundDefinitions` parameter of every publishVersion overload.~~ **This is a signature change touching every caller:** grep `FundInput` and `fundDefinitions` across `src/main` and `src/test`, pass nothing (delete the argument) in each, and run `./mvnw -o clean test-compile` before moving on. Keep `PublishVersionRequest.fundDefinitions` deserialisable but rejected: a non-empty value returns 422 "fundDefinitions is replaced by unitLinked.fundCodes".
 
 - [ ] **Step 2: Failing validator tests** (`UnitLinkedPlanValidatorTest`, pure). Each asserts the exact message from Step 3:
   - non-UNIT_LINKED category with terms → "Unit-linked terms are only valid on a UNIT_LINKED product";
@@ -536,7 +546,8 @@ if (category == ProductCategory.UNIT_LINKED) {
         choice.premium(), decidedCase.sumAssuredCurrency(), choice.frequency(),
         decidedCase.agentOfRecordId(), nominationsAsBeneficiaries(decidedCase),
         "Automatic issuance on underwriting decision " + outcome,
-        decidedCase.proposedCommencementDate(), decidedCase.policyTermMonths(), null, decidedCase.lifeAssuredPartyId()),
+        decidedCase.proposedCommencementDate(), decidedCase.policyTermMonths(), null, decidedCase.lifeAssuredPartyId(),
+        null /* issuanceBasis: an offer, PROPOSED until the first premium (C2) */),
         "system:underwriting-decision-listener");
     return;
 }
@@ -701,7 +712,7 @@ for (var s : choice.split()) {
 }
 ```
 
-Read `underwritingCaseId` from the PolicyIssued payload. If the key is absent, add it to the payload in `PolicyApiImpl` (an additive key) and to asyncapi.
+Read the case id from `policyApi.getPolicy(policyNumber).underwritingCaseId()` (C3); the PolicyIssued payload is unchanged.
 
 - [ ] **Step 6: Tests.** `UnitLinkedSaleIntegrationTest`:
   - `aCaseRecordsTheSplitAndRefusesOneNotTotalling100`;
