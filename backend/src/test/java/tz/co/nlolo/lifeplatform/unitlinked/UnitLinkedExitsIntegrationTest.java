@@ -197,7 +197,9 @@ class UnitLinkedExitsIntegrationTest {
     void aMaturitySellsAtTheMaturityDatesOwnPriceAndClosesThePolicyMatured() {
         Sold s = invested(TODAY.minusDays(70), TODAY.minusDays(60));
         LocalDate maturity = TODAY.minusDays(1);
-        jdbc.update("UPDATE policy.policy SET maturity_date = ? WHERE policy_number = ?", maturity, s.policyNumber());
+        // A two-month term ending yesterday: policy_maturity_matches_term pins the date to commencement + term.
+        jdbc.update("UPDATE policy.policy SET commencement_date = ?, policy_term_months = 2, maturity_date = ? WHERE policy_number = ?",
+            maturity.minusMonths(2), maturity, s.policyNumber());
 
         maturitySweep.sweepOne(s.policyNumber(), s.tenant(), TODAY);
         assertThat(units(s).pending()).isNotEmpty().allSatisfy(o -> {

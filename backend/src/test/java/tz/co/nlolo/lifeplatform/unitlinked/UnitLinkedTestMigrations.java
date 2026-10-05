@@ -20,6 +20,8 @@ public final class UnitLinkedTestMigrations {
         "db-migrations/unitlinked/V2__units.sql",
         "db-migrations/finaccounting/V9__unit_linked_accounts.sql",
         "db-migrations/payment/V13__unit_linked_purposes.sql",
+        // A unit-linked surrender request carries no quoted value (plan R11): quoted_value_amount becomes nullable.
+        "db-migrations/policy/V36__unit_linked_policy.sql",
     };
 
     public static final String[] ALL = Stream.concat(Stream.of(FuneralTestMigrations.ALL), Stream.of(UNIT_LINKED))
