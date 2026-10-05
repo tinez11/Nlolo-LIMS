@@ -78,6 +78,11 @@ public class ProductExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "NOT_AN_ANNUITY");
     }
 
+    @ExceptionHandler(NotAUnitLinkedProductException.class)
+    public ProblemDetail handleNotAUnitLinkedProduct(NotAUnitLinkedProductException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "NOT_A_UNIT_LINKED_PRODUCT");
+    }
+
     @ExceptionHandler(NotAFuneralProductException.class)
     public ProblemDetail handleNotAFuneralProduct(NotAFuneralProductException ex) {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "NOT_A_FUNERAL_PRODUCT");

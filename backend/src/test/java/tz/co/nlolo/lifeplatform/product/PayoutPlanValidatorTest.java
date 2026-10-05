@@ -115,6 +115,14 @@ class PayoutPlanValidatorTest {
     }
 
     @Test
+    void aUnitLinkedVersionNeedsAFreeLookPeriod() {
+        // Sold to one person, so it carries the statutory window (product step 6, plan C7).
+        assertThatThrownBy(() -> PayoutPlanValidator.validate(ProductCategory.UNIT_LINKED,
+                PayoutPlan.authored(new PayoutTerms(null, null, null, null), List.of())))
+            .hasMessage("A free-look period in days is required on an individual product");
+    }
+
+    @Test
     void rowShapeIsChecked() {
         PayoutRowInput survivalNoYears = new PayoutRowInput(PayoutKind.SURVIVAL, null, null,
             PayoutAmountBasis.PERCENT_OF_SA, BigDecimal.TEN, PayoutFrequency.ANNUAL);

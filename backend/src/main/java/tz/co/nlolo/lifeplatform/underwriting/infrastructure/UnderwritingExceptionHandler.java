@@ -41,6 +41,14 @@ public class UnderwritingExceptionHandler {
         return problem;
     }
 
+    @ExceptionHandler(UnitLinkedChoiceNotFoundException.class)
+    public ProblemDetail handleNoUnitLinkedChoice(UnitLinkedChoiceNotFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problem.setProperty("errorCode", "UNIT_LINKED_CHOICE_NOT_FOUND");
+        problem.setProperty("traceId", UUID.randomUUID().toString());
+        return problem;
+    }
+
     @ExceptionHandler(FuneralApplicationNotFoundException.class)
     public ProblemDetail handleNoFuneralApplication(FuneralApplicationNotFoundException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());

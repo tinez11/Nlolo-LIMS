@@ -435,7 +435,7 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
      * cancelled under the terms the employer or lender negotiated, not under this window.
      */
     private static final Set<String> INDIVIDUAL_CATEGORIES =
-        Set.of("TERM_LIFE", "ENDOWMENT", "WHOLE_LIFE", "EDUCATION_SAVINGS", "ANNUITY", "FUNERAL");
+        Set.of("TERM_LIFE", "ENDOWMENT", "WHOLE_LIFE", "EDUCATION_SAVINGS", "ANNUITY", "FUNERAL", "UNIT_LINKED");
 
     /** The statuses {@code ux_free_look_live} treats as in flight. */
     private static final Set<String> LIVE_CANCELLATION = Set.of("REQUESTED", "APPROVED");

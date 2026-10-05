@@ -429,6 +429,8 @@ export const FREE_LOOK_CATEGORIES: readonly ProductCategory[] = [
   'ANNUITY',
   // A family funeral plan is one policy sold to one person, the main member.
   'FUNERAL',
+  // A unit-linked policy is sold to one person; its free-look refund unwinds its own entries.
+  'UNIT_LINKED',
 ];
 
 /** `PayoutPlanValidator.SCHEDULED` -- the two that pay while the life assured lives. */

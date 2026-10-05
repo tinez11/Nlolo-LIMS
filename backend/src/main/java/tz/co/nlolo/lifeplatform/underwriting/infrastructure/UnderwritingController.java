@@ -4,6 +4,7 @@ import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.AnnuityChoice;
 import tz.co.nlolo.lifeplatform.underwriting.api.DeferredAnnuityChoice;
 import tz.co.nlolo.lifeplatform.underwriting.api.FuneralApplication;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnitLinkedChoice;
 import tz.co.nlolo.lifeplatform.underwriting.api.BeneficiaryNomination;
 import tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal;
 import tz.co.nlolo.lifeplatform.underwriting.api.MedicalDisclosureView;
@@ -111,6 +112,9 @@ public class UnderwritingController {
             underwritingApi.recordFuneralApplication(view.caseId(), request.funeral().planCode(), request.funeral().lives(),
                 jwt.getSubject());
         }
+        if (request.unitLinked() != null) {
+            underwritingApi.recordUnitLinkedChoice(view.caseId(), request.unitLinked(), jwt.getSubject());
+        }
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
@@ -212,6 +216,26 @@ public class UnderwritingController {
                                                                              @RequestBody OpenCaseRequest.DeferredAnnuityDto request,
                                                                              @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(underwritingApi.recordDeferredAnnuityChoice(caseId, request.age(), jwt.getSubject()));
+    }
+
+    /**
+     * A unit-linked case's fund split, premium and sum assured (product step 6). 404 UNIT_LINKED_CHOICE_NOT_FOUND
+     * when there is none -- also the answer for every other case.
+     */
+    @GetMapping("/cases/{caseId}/unit-linked-choice")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<UnitLinkedChoice> getUnitLinkedChoice(@PathVariable UUID caseId) {
+        return underwritingApi.unitLinkedChoice(caseId).map(ResponseEntity::ok)
+            .orElseThrow(() -> new UnitLinkedChoiceNotFoundException(caseId));
+    }
+
+    /** Record or replace a unit-linked case's choice before it is decided. Whoever may open a case may change it. */
+    @PutMapping("/cases/{caseId}/unit-linked-choice")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<UnitLinkedChoice> recordUnitLinkedChoice(@PathVariable UUID caseId,
+                                                                   @RequestBody UnitLinkedChoice request,
+                                                                   @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(underwritingApi.recordUnitLinkedChoice(caseId, request, jwt.getSubject()));
     }
 
     /**

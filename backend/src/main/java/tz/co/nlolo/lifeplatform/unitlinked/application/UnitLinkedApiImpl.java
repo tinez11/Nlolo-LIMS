@@ -1,0 +1,184 @@
+package tz.co.nlolo.lifeplatform.unitlinked.application;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.unitlinked.api.CreateFund;
+import tz.co.nlolo.lifeplatform.unitlinked.api.FundPriceView;
+import tz.co.nlolo.lifeplatform.unitlinked.api.FundView;
+import tz.co.nlolo.lifeplatform.unitlinked.api.UnitLinkedApi;
+import tz.co.nlolo.lifeplatform.unitlinked.domain.BindingRule;
+import tz.co.nlolo.lifeplatform.unitlinked.domain.Fund;
+import tz.co.nlolo.lifeplatform.unitlinked.domain.FundPrice;
+import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.FundPriceRepository;
+import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.FundRepository;
+import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.FrozenPolicyRepository;
+import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.PendingOrderRepository;
+import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.PolicyAllocationRepository;
+import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.UnitEntryRepository;
+import tz.co.nlolo.lifeplatform.unitlinked.api.PolicyUnitsView;
+import tz.co.nlolo.lifeplatform.unitlinked.domain.UnitArithmetic;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Service
+public class UnitLinkedApiImpl implements UnitLinkedApi {
+
+    private final FundRegister register;
+    private final FundRepository funds;
+    private final FundPriceRepository prices;
+    private final PolicyAllocationRepository allocations;
+    private final UnitEntryRepository entries;
+    private final PendingOrderRepository orders;
+    private final FrozenPolicyRepository frozen;
+
+    UnitLinkedApiImpl(FundRegister register, FundRepository funds, FundPriceRepository prices,
+                      PolicyAllocationRepository allocations, UnitEntryRepository entries, PendingOrderRepository orders,
+                      FrozenPolicyRepository frozen) {
+        this.register = register;
+        this.funds = funds;
+        this.prices = prices;
+        this.allocations = allocations;
+        this.entries = entries;
+        this.orders = orders;
+        this.frozen = frozen;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PolicyUnitsView units(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        Map<UUID, Fund> byId = funds.findByTenantIdOrderByCode(tenantId).stream()
+            .collect(Collectors.toMap(Fund::getFundId, f -> f));
+        LocalDate today = BindingRule.civilDate(register.now());
+        List<PolicyUnitsView.Holding> holdings = new java.util.ArrayList<>();
+        BigDecimal total = BigDecimal.ZERO;
+        String currency = null;
+        for (Object[] row : entries.holdings(tenantId, policyNumber)) {
+            Fund fund = byId.get((UUID) row[0]);
+            BigDecimal units = (BigDecimal) row[1];
+            currency = fund.getCurrency();
+            // Shown at the latest approved price on or before today -- a display, never a posting.
+            var price = prices.findLatestApprovedBefore(tenantId, fund.getFundId(), today.plusDays(1));
+            BigDecimal value = price.map(p -> UnitArithmetic.proceeds(units.max(BigDecimal.ZERO), p.getPrice())).orElse(null);
+            if (value != null) {
+                total = total.add(value);
+            }
+            holdings.add(new PolicyUnitsView.Holding(fund.getCode(), fund.getName(), units,
+                price.map(FundPrice::getPrice).orElse(null), price.map(FundPrice::getValuationDate).orElse(null), value));
+        }
+        holdings.sort(java.util.Comparator.comparing(PolicyUnitsView.Holding::fundCode));
+        List<PolicyUnitsView.Pending> pending = orders
+            .findByTenantIdAndPolicyNumberAndStatusOrderByReceivedAt(tenantId, policyNumber, "WAITING").stream()
+            .map(o -> new PolicyUnitsView.Pending(o.getOrderId(), byId.get(o.getFundId()).getCode(), o.getSide().name(),
+                o.getAmount(), o.isSellAll(), o.getPurpose().name(), o.getReceivedAt(), o.getBoundDate())).toList();
+        List<PolicyUnitsView.Entry> ledger = entries.findByTenantIdAndPolicyNumberOrderByCreatedAt(tenantId, policyNumber).stream()
+            .map(e -> new PolicyUnitsView.Entry(e.getEntryId(), e.getFundId() == null ? null : byId.get(e.getFundId()).getCode(),
+                e.getType().name(), e.getUnits(), e.getPrice(), e.getAmount(), e.getValuationDate(), e.getBoundDate(),
+                e.getSourceRef(), e.getCreatedAt())).toList();
+        var frozenRow = frozen.findByTenantIdAndPolicyNumber(tenantId, policyNumber);
+        return new PolicyUnitsView(policyNumber, holdings, holdings.isEmpty() ? null : total, currency, pending, ledger,
+            frozenRow.isPresent(), frozenRow.map(r -> r.getReason().name()).orElse(null));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<WaitingCount> waiting(String fundCode) {
+        Fund fund = register.fund(fundCode);
+        return orders.waitingByDate(TenantContext.get(), fund.getFundId()).stream()
+            .map(r -> new WaitingCount((LocalDate) r[0], ((Number) r[1]).longValue())).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AllocationView> allocationOf(String policyNumber) {
+        Map<UUID, String> codes = codes();
+        return allocations.findByTenantIdAndPolicyNumber(TenantContext.get(), policyNumber).stream()
+            .map(a -> new AllocationView(codes.get(a.getFundId()), a.getPercent()))
+            .sorted(java.util.Comparator.comparing(AllocationView::fundCode)).toList();
+    }
+
+    @Override
+    public FundView createFund(CreateFund fund, String createdBy) {
+        return view(register.create(fund, createdBy));
+    }
+
+    @Override
+    public FundView closeFund(String code, String closedBy) {
+        return view(register.close(code, closedBy));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<FundView> listFunds() {
+        return funds.findByTenantIdOrderByCode(TenantContext.get()).stream().map(UnitLinkedApiImpl::view).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public FundView getFund(String code) {
+        return view(register.fund(code));
+    }
+
+    @Override
+    public FundPriceView proposePrice(String fundCode, LocalDate valuationDate, BigDecimal price, String moveReason,
+                                      String proposedBy) {
+        FundPrice p = register.propose(fundCode, valuationDate, price, moveReason, proposedBy);
+        return view(p, register.fund(fundCode).getCode());
+    }
+
+    @Override
+    public List<FundPriceView> proposePrices(String csv, String proposedBy) {
+        List<FundPrice> proposed = register.proposeAll(csv, proposedBy);
+        Map<UUID, String> codes = codes();
+        return proposed.stream().map(p -> view(p, codes.get(p.getFundId()))).toList();
+    }
+
+    @Override
+    public FundPriceView approvePrice(UUID priceId, String approvedBy) {
+        FundPrice p = register.approve(priceId, approvedBy);
+        return view(p, codes().get(p.getFundId()));
+    }
+
+    @Override
+    public FundPriceView withdrawPrice(UUID priceId, String withdrawnBy) {
+        FundPrice p = register.withdraw(priceId, withdrawnBy);
+        return view(p, codes().get(p.getFundId()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<FundPriceView> listPrices(String fundCode, LocalDate from, LocalDate to) {
+        Fund fund = register.fund(fundCode);
+        LocalDate end = to != null ? to : BindingRule.civilDate(register.now()).plusDays(7);
+        LocalDate start = from != null ? from : end.minusDays(60);
+        if (start.isAfter(end)) {
+            throw new IllegalArgumentException("A price range needs its from date on or before its to date");
+        }
+        return prices.findBetween(TenantContext.get(), fund.getFundId(), start, end).stream()
+            .map(p -> view(p, fund.getCode())).toList();
+    }
+
+    private Map<UUID, String> codes() {
+        return funds.findByTenantIdOrderByCode(TenantContext.get()).stream()
+            .collect(Collectors.toMap(Fund::getFundId, Fund::getCode, (a, b) -> a));
+    }
+
+    static FundView view(Fund f) {
+        return new FundView(f.getFundId(), f.getCode(), f.getName(), f.getCurrency(), f.getAssetClass(),
+            f.getAnnualManagementChargePercent(), f.getCutOffTime(), f.getStatus(), f.getCreatedBy(), f.getCreatedAt(),
+            f.getClosedBy(), f.getClosedAt());
+    }
+
+    static FundPriceView view(FundPrice p, String fundCode) {
+        return new FundPriceView(p.getPriceId(), p.getFundId(), fundCode, p.getValuationDate(), p.getPrice(),
+            p.getStatus(), p.getMoveReason(), p.getSupersedesPriceId(), p.getProposedBy(), p.getProposedAt(),
+            p.getApprovedBy(), p.getApprovedAt());
+    }
+
+}

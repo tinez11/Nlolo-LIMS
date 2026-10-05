@@ -66,6 +66,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     private final AnnuityChoiceRepository annuityChoiceRepository;
     private final DeferredAnnuityChoiceRepository deferredAnnuityChoiceRepository;
     private final FuneralApplications funeralApplications;
+    private final UnitLinkedChoices unitLinkedChoices;
     /** "Today" is the civil date here, never UTC's (the UTC-vs-civil day bug). */
     private static final java.time.ZoneId CIVIL_ZONE = java.time.ZoneId.of("Africa/Dar_es_Salaam");
     /** Serialises the disclosure Q&A set into its JSONB column -- see recordDisclosures. */
@@ -82,8 +83,9 @@ public class UnderwritingApiImpl implements UnderwritingApi {
                                 ProposalGroupMemberRepository proposalGroupMemberRepository,
                                 AnnuityChoiceRepository annuityChoiceRepository,
                                 DeferredAnnuityChoiceRepository deferredAnnuityChoiceRepository,
-                                FuneralApplications funeralApplications) {
+                                FuneralApplications funeralApplications, UnitLinkedChoices unitLinkedChoices) {
         this.funeralApplications = funeralApplications;
+        this.unitLinkedChoices = unitLinkedChoices;
         this.annuityChoiceRepository = annuityChoiceRepository;
         this.deferredAnnuityChoiceRepository = deferredAnnuityChoiceRepository;
         this.proposalBeneficiaryRepository = proposalBeneficiaryRepository;
@@ -471,6 +473,10 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         if (!annuity && funeralApplications.isFuneral(underwritingCase)) {
             funeralApplications.checkDecision(underwritingCase, decision.outcome());
         }
+        // A unit-linked policy is not loaded, and is accepted only with a choice that still fits the version.
+        if (!annuity && unitLinkedChoices.isUnitLinked(underwritingCase)) {
+            unitLinkedChoices.checkDecision(underwritingCase, decision.outcome());
+        }
         // Evidence first. Nothing structural stopped a case being decided the instant it was
         // opened, and "accepted, nothing assessed" is not a decision anyone can defend later.
         if (!annuity && riskAssessmentRepository.countByTenantIdAndCaseId(tenantId, caseId) == 0) {
@@ -738,6 +744,31 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             return java.util.Optional.empty();
         }
         return funeralApplications.read(underwritingCase.get());
+    }
+
+    @Override
+    @Transactional
+    public UnitLinkedChoice recordUnitLinkedChoice(UUID caseId, UnitLinkedChoice choice, String recordedBy) {
+        UnderwritingCase underwritingCase = findOrThrow(caseId, TenantContext.get());
+        if (!unitLinkedChoices.isUnitLinked(underwritingCase)) {
+            throw new UnderwritingValidationException("Only a unit-linked case records a fund choice");
+        }
+        if (isDecided(underwritingCase)) {
+            throw new UnderwritingCaseAlreadyDecidedException(caseId);
+        }
+        return unitLinkedChoices.record(underwritingCase, choice, recordedBy);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Optional<UnitLinkedChoice> unitLinkedChoice(UUID caseId) {
+        // Empty, never a throw -- funeralApplication's reason: callers ask inside their own transaction.
+        java.util.Optional<UnderwritingCase> underwritingCase =
+            underwritingCaseRepository.findByCaseIdAndTenantId(caseId, TenantContext.get());
+        if (underwritingCase.isEmpty() || !unitLinkedChoices.isUnitLinked(underwritingCase.get())) {
+            return java.util.Optional.empty();
+        }
+        return unitLinkedChoices.read(underwritingCase.get());
     }
 
     @Override

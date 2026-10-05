@@ -1,0 +1,123 @@
+package tz.co.nlolo.lifeplatform.unitlinked.infrastructure;
+
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+import tz.co.nlolo.lifeplatform.unitlinked.api.CreateFund;
+import tz.co.nlolo.lifeplatform.unitlinked.api.FundPriceView;
+import tz.co.nlolo.lifeplatform.unitlinked.api.FundView;
+import tz.co.nlolo.lifeplatform.unitlinked.api.PolicyUnitsView;
+import tz.co.nlolo.lifeplatform.unitlinked.api.UnitLinkedApi;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * The fund register and its prices. Finance (or an admin) creates funds and proposes and approves prices; the
+ * two-person rule and the cut-off are the service's, so they hold whichever role clicks. Closing a fund is an
+ * admin's decision.
+ */
+@RestController
+public class FundController {
+
+    static final String STAFF = "hasRole('REALM_STAFF')";
+    static final String FINANCE = "hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))";
+    static final String ADMIN = "hasRole('REALM_STAFF') and hasRole('ADMIN')";
+
+    private final UnitLinkedApi api;
+
+    public FundController(UnitLinkedApi api) {
+        this.api = api;
+    }
+
+    public record CreateFundRequest(String code, String name, String currency, String assetClass,
+                                    BigDecimal annualManagementChargePercent, LocalTime cutOffTime) {}
+
+    public record ProposePriceRequest(String fundCode, LocalDate valuationDate, BigDecimal price, String moveReason) {}
+
+    @PostMapping("/funds")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(FINANCE)
+    public FundView create(@RequestBody CreateFundRequest r, @AuthenticationPrincipal Jwt jwt) {
+        return api.createFund(new CreateFund(r.code(), r.name(), r.currency(), r.assetClass(),
+            r.annualManagementChargePercent(), r.cutOffTime()), jwt.getSubject());
+    }
+
+    @GetMapping("/funds")
+    @PreAuthorize(STAFF)
+    public List<FundView> list() {
+        return api.listFunds();
+    }
+
+    @GetMapping("/funds/{code}")
+    @PreAuthorize(STAFF)
+    public FundView get(@PathVariable String code) {
+        return api.getFund(code);
+    }
+
+    @PostMapping("/funds/{code}/closure")
+    @PreAuthorize(ADMIN)
+    public FundView close(@PathVariable String code, @AuthenticationPrincipal Jwt jwt) {
+        return api.closeFund(code, jwt.getSubject());
+    }
+
+    @GetMapping("/funds/{code}/prices")
+    @PreAuthorize(STAFF)
+    public List<FundPriceView> prices(@PathVariable String code,
+                                      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return api.listPrices(code, from, to);
+    }
+
+    @GetMapping("/funds/{code}/waiting")
+    @PreAuthorize(STAFF)
+    public List<UnitLinkedApi.WaitingCount> waiting(@PathVariable String code) {
+        return api.waiting(code);
+    }
+
+    /** A unit-linked policy's holdings, waiting orders and ledger entries (spec §10). */
+    @GetMapping("/policies/{policyNumber}/units")
+    @PreAuthorize(STAFF)
+    public PolicyUnitsView units(@PathVariable String policyNumber) {
+        return api.units(policyNumber);
+    }
+
+    @PostMapping("/fund-prices")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(FINANCE)
+    public FundPriceView propose(@RequestBody ProposePriceRequest r, @AuthenticationPrincipal Jwt jwt) {
+        return api.proposePrice(r.fundCode(), r.valuationDate(), r.price(), r.moveReason(), jwt.getSubject());
+    }
+
+    @PostMapping(value = "/fund-prices/csv", consumes = {"text/csv", MediaType.TEXT_PLAIN_VALUE})
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(FINANCE)
+    public List<FundPriceView> proposeCsv(@RequestBody String csv, @AuthenticationPrincipal Jwt jwt) {
+        return api.proposePrices(csv, jwt.getSubject());
+    }
+
+    @PostMapping("/fund-prices/{priceId}/approval")
+    @PreAuthorize(FINANCE)
+    public FundPriceView approve(@PathVariable UUID priceId, @AuthenticationPrincipal Jwt jwt) {
+        return api.approvePrice(priceId, jwt.getSubject());
+    }
+
+    @PostMapping("/fund-prices/{priceId}/withdrawal")
+    @PreAuthorize(FINANCE)
+    public FundPriceView withdraw(@PathVariable UUID priceId, @AuthenticationPrincipal Jwt jwt) {
+        return api.withdrawPrice(priceId, jwt.getSubject());
+    }
+}

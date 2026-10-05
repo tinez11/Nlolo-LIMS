@@ -5,6 +5,7 @@ import tz.co.nlolo.lifeplatform.product.api.AnnuityPlan;
 import tz.co.nlolo.lifeplatform.product.api.BonusPlan;
 import tz.co.nlolo.lifeplatform.product.api.FuneralPlan;
 import tz.co.nlolo.lifeplatform.product.api.FuneralQuote;
+import tz.co.nlolo.lifeplatform.product.api.UnitLinkedPlan;
 import tz.co.nlolo.lifeplatform.product.api.DepositPlan;
 import tz.co.nlolo.lifeplatform.product.api.CashValuePlan;
 import tz.co.nlolo.lifeplatform.product.api.PayoutPlan;
@@ -135,6 +136,7 @@ public class ProductController {
             request.bonus() != null ? request.bonus().toPlan() : BonusPlan.none(),
             request.annuity() != null ? request.annuity().toPlan() : AnnuityPlan.none(),
             request.funeral() != null ? request.funeral().toPlan() : FuneralPlan.none(),
+            request.unitLinked() != null ? request.unitLinked().toPlan() : UnitLinkedPlan.none(),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
@@ -221,6 +223,20 @@ public class ProductController {
      * A FUNERAL version's plans, premium table, role rules and claim rules, for the product screen and the
      * case form. 404 NOT_A_FUNERAL_PRODUCT for any other version. Agents sell this product, so they may read it.
      */
+    /**
+     * A UNIT_LINKED version's terms -- funds, allocation, fee, mortality, death and lapse rules -- for the product
+     * screen and the case form. 404 NOT_A_UNIT_LINKED_PRODUCT for any other version.
+     */
+    @GetMapping("/products/{productId}/versions/{versionId}/unit-linked")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<UnitLinkedPlan> getUnitLinkedTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {
+        UnitLinkedPlan plan = productApi.resolveUnitLinkedPlan(versionId);
+        if (!plan.unitLinked()) {
+            throw new NotAUnitLinkedProductException(versionId);
+        }
+        return ResponseEntity.ok(plan);
+    }
+
     @GetMapping("/products/{productId}/versions/{versionId}/funeral")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<FuneralTermsResponse> getFuneralTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {
