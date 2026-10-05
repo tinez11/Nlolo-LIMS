@@ -35,6 +35,7 @@ public class UnitLinkedApiImpl implements UnitLinkedApi {
     private final Switches switches;
     private final Withdrawals withdrawals;
     private final TopUps topUps;
+    private final Statements statements;
     private final FundRepository funds;
     private final FundPriceRepository prices;
     private final PolicyAllocationRepository allocations;
@@ -47,7 +48,8 @@ public class UnitLinkedApiImpl implements UnitLinkedApi {
     UnitLinkedApiImpl(FundRegister register, FundRepository funds, FundPriceRepository prices,
                       PolicyAllocationRepository allocations, UnitEntryRepository entries, PendingOrderRepository orders,
                       FrozenPolicyRepository frozen, Adjustments adjustments, Exits exits, PremiumSplits premiumSplits,
-                      Switches switches, Withdrawals withdrawals, TopUps topUps) {
+                      Switches switches, Withdrawals withdrawals, TopUps topUps, Statements statements) {
+        this.statements = statements;
         this.topUps = topUps;
         this.switches = switches;
         this.withdrawals = withdrawals;
@@ -180,6 +182,22 @@ public class UnitLinkedApiImpl implements UnitLinkedApi {
     @Override
     public List<tz.co.nlolo.lifeplatform.unitlinked.api.TopUpView> listTopUps(String policyNumber) {
         return topUps.list(policyNumber);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.unitlinked.api.UnitStatementView fileStatement(String policyNumber, LocalDate from,
+                                                                                   LocalDate to, String by) {
+        return statements.file(policyNumber, from, to, tz.co.nlolo.lifeplatform.unitlinked.domain.UnitStatement.Kind.ON_DEMAND, by);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.UnitStatementView> statements(String policyNumber) {
+        return statements.list(policyNumber);
+    }
+
+    @Override
+    public byte[] statementPdf(UUID statementId) {
+        return statements.pdf(statementId);
     }
 
     @Override

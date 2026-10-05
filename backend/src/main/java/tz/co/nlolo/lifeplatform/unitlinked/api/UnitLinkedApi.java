@@ -113,4 +113,16 @@ public interface UnitLinkedApi {
     TopUpView requestTopUp(String policyNumber, TopUpInput input, String by, String idempotencyKey);
 
     java.util.List<TopUpView> listTopUps(String policyNumber);
+
+    /**
+     * An on-demand unit statement for any period ending today at the latest (U2, spec §6): filed beside the annual
+     * ones, never in place of them, and sending the customer nothing.
+     */
+    UnitStatementView fileStatement(String policyNumber, java.time.LocalDate from, java.time.LocalDate to, String by);
+
+    /** Every statement filed for the policy, annual and on demand, newest period first. */
+    java.util.List<UnitStatementView> statements(String policyNumber);
+
+    /** A filed statement's PDF. */
+    byte[] statementPdf(java.util.UUID statementId);
 }

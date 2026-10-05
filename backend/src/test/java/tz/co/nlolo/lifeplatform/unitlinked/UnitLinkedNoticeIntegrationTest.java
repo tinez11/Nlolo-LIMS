@@ -57,6 +57,7 @@ class UnitLinkedNoticeIntegrationTest {
         "db-migrations/communication/V11__vesting_reminder_template.sql",
         "db-migrations/communication/V12__funeral_templates.sql",
         "db-migrations/communication/V13__unit_linked_templates.sql",
+        "db-migrations/communication/V14__unit_linked_statement_template.sql",
     };
 
     @BeforeAll

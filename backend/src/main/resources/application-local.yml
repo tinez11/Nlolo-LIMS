@@ -43,3 +43,5 @@ funeral:
 unitlinked:
   charge-sweep-interval-ms: 60000
   maturity-sweep-interval-ms: 60000
+  # U2: the yearly unit statement runs through January; daily elsewhere, a minute here.
+  statement-interval-ms: 60000

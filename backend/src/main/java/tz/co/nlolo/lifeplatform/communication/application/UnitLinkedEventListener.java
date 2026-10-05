@@ -18,7 +18,8 @@ import java.util.UUID;
 
 /**
  * Unit-linked notices to the policyholder (product step 6, U1): the first premium bought units, the fund is running
- * low, the policy lapsed because the fund was exhausted, and a surrender's or maturity's proceeds are coming.
+ * low, the policy lapsed because the fund was exhausted, and a surrender's or maturity's proceeds are coming; and
+ * (U2) the yearly unit statement is ready.
  * FuneralEventListener's shape. Only the FIRST premium's allocation is told -- one message a month for every
  * premium would be noise the customer learns to ignore.
  */
@@ -50,6 +51,8 @@ public class UnitLinkedEventListener {
             case "unitlinked.LowFund" -> "UNIT_LINKED_LOW_FUND";
             case "unitlinked.FundExhausted" -> "UNIT_LINKED_LAPSED_EXHAUSTED";
             case "unitlinked.ProceedsReady" -> "UNIT_LINKED_PROCEEDS";
+            // U2: the yearly statement only; an on-demand one is staff's and tells the customer nothing.
+            case "unitlinked.StatementIssued" -> Boolean.TRUE.equals(p.get("annual")) ? "UNIT_LINKED_STATEMENT" : null;
             default -> null;
         };
         if (template == null || p.get("policyholderPartyId") == null) {
@@ -66,6 +69,9 @@ public class UnitLinkedEventListener {
                 case "UNIT_LINKED_LOW_FUND" -> Map.of("policyNumber", policyNumber, "fundValue", (String) p.get("fundValue"),
                     "monthsCovered", (String) p.get("monthsCovered"), "currency", (String) p.get("currencyCode"));
                 case "UNIT_LINKED_LAPSED_EXHAUSTED" -> Map.of("policyNumber", policyNumber, "on", day(p.get("on")));
+                case "UNIT_LINKED_STATEMENT" -> Map.of("policyNumber", policyNumber, "year", String.valueOf(p.get("year")),
+                    "closingValue", (String) p.get("closingValue"), "currency", (String) p.get("currencyCode"),
+                    "priceDate", p.get("priceDate") == null ? "-" : day(p.get("priceDate")));
                 default -> Map.of("policyNumber", policyNumber, "amount", (String) p.get("amount"),
                     "currency", (String) p.get("currencyCode"));
             };

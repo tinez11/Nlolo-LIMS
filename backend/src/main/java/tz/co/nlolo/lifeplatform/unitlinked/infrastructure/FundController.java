@@ -221,6 +221,36 @@ public class FundController {
         return api.listTopUps(policyNumber);
     }
 
+    /** The period of an on-demand statement. */
+    public record StatementPeriod(java.time.LocalDate from, java.time.LocalDate to) {}
+
+    /** An on-demand unit statement (U2): any staff member, any period ending today at the latest. */
+    @PostMapping("/policies/{policyNumber}/statements")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(STAFF)
+    public tz.co.nlolo.lifeplatform.unitlinked.api.UnitStatementView fileStatement(@PathVariable String policyNumber,
+            @RequestBody StatementPeriod period, @AuthenticationPrincipal Jwt jwt) {
+        if (period == null) {
+            throw new IllegalArgumentException("A statement needs the first and last day of its period");
+        }
+        return api.fileStatement(policyNumber, period.from(), period.to(), jwt.getSubject());
+    }
+
+    @GetMapping("/policies/{policyNumber}/statements")
+    @PreAuthorize(STAFF)
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.UnitStatementView> statements(@PathVariable String policyNumber) {
+        return api.statements(policyNumber);
+    }
+
+    @GetMapping(value = "/unit-statements/{statementId}/file", produces = "application/pdf")
+    @PreAuthorize(STAFF)
+    public org.springframework.http.ResponseEntity<byte[]> statementFile(@PathVariable UUID statementId) {
+        return org.springframework.http.ResponseEntity.ok()
+            .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"unit-statement-" + statementId + ".pdf\"")
+            .body(api.statementPdf(statementId));
+    }
+
     @GetMapping("/policies/{policyNumber}/premium-split")
     @PreAuthorize(STAFF)
     public List<tz.co.nlolo.lifeplatform.unitlinked.api.PremiumSplitView> splitHistory(@PathVariable String policyNumber) {
