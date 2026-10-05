@@ -266,6 +266,25 @@ class AccountingPeriodAndPolicyRegisterIntegrationTest {
     }
 
     @Test
+    void aSecondElectionForTheSameKeyScopeAndDayIsRefusedNotA500() {
+        as(UUID.randomUUID());
+        LocalDate tomorrow = LocalDate.now(CIVIL).plusDays(1);
+        PolicyElectionView first = api.proposePolicyElection(
+            new PolicyElectionInput("OCI_OPTION", "*", "ON", tomorrow, null), "alice");
+        PolicyElectionView second = api.proposePolicyElection(
+            new PolicyElectionInput("OCI_OPTION", "*", "OFF", tomorrow, null), "alice");
+        api.approvePolicyElection(first.electionId(), "AC-16", "bob");
+
+        String refusal = "An approved OCI_OPTION election for * already takes effect on " + tomorrow
+            + "; propose the change from another date";
+        assertThatThrownBy(() -> api.approvePolicyElection(second.electionId(), "AC-17", "bob"))
+            .isInstanceOf(PolicyRegisterStateException.class).hasMessage(refusal);
+        assertThatThrownBy(() -> api.proposePolicyElection(
+            new PolicyElectionInput("OCI_OPTION", null, "OFF", tomorrow, null), "alice"))
+            .isInstanceOf(PolicyRegisterStateException.class).hasMessage(refusal);
+    }
+
+    @Test
     void aRejectedElectionNeverComesIntoForce() {
         as(UUID.randomUUID());
         LocalDate today = LocalDate.now(CIVIL);

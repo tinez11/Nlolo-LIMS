@@ -154,8 +154,12 @@ BEGIN
     IF acct_mode = 'BOTH' AND j.source_type = 'MANUAL' AND j.reason_code IS NULL THEN
         RAISE EXCEPTION 'LEDGER_MODE: a manual line on BOTH account % needs a reason code', NEW.account_code;
     END IF;
+    -- FOR SHARE: the close action locks the period row FOR UPDATE, so it waits for every journal already writing to
+    -- the period (and its clearing check sees them), and a journal arriving after it waits and reads LOCKED.
+    -- Without it a journal begun while the period was open could commit after the lock.
     SELECT status INTO period_state FROM finaccounting.accounting_period
-     WHERE tenant_id = NEW.tenant_id AND period = j.period;
+     WHERE tenant_id = NEW.tenant_id AND period = j.period
+       FOR SHARE;
     IF period_state = 'LOCKED' THEN
         RAISE EXCEPTION 'LEDGER_PERIOD_LOCKED: period % is locked', j.period;
     END IF;

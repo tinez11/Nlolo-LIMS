@@ -210,6 +210,38 @@ class LedgerGuardsIntegrationTest {
             .doesNotThrowAnyException();
     }
 
+    /**
+     * The lock cannot overtake a journal already writing to the period: the guard reads the period row FOR SHARE, so
+     * the close action's FOR UPDATE waits for that journal (and its clearing check then sees it). Without the share
+     * lock, a journal begun while the period was open committed into a locked one.
+     */
+    @Test
+    void aPeriodCannotBeLockedUnderAJournalStillBeingWritten() throws Exception {
+        sql("INSERT INTO finaccounting.accounting_period (tenant_id, period, status) VALUES ('" + TENANT + "', '2026-03', 'CLOSING')");
+        try (Connection writer = connect(); Connection closer = connect()) {
+            writer.setAutoCommit(false);
+            UUID id = journal(writer, "SYSTEM", "2026-03", null, null, null);
+            line(writer, id, "2122", "DR", "10.00");
+            line(writer, id, "2121", "CR", "10.00");
+
+            closer.setAutoCommit(false);
+            assertThatThrownBy(() -> {
+                try (var s = closer.createStatement()) {
+                    s.execute("SELECT status FROM finaccounting.accounting_period WHERE tenant_id = '" + TENANT
+                        + "' AND period = '2026-03' FOR UPDATE NOWAIT");
+                }
+            }).hasMessageContaining("could not obtain lock");
+            closer.rollback();
+
+            writer.commit();
+            try (var s = closer.createStatement()) {
+                s.execute("SELECT status FROM finaccounting.accounting_period WHERE tenant_id = '" + TENANT
+                    + "' AND period = '2026-03' FOR UPDATE NOWAIT");   // free once the journal is in
+            }
+            closer.rollback();
+        }
+    }
+
     @Test
     void aManualJournalNeedsTwoPeopleAndAReason() {
         assertThatThrownBy(() -> post("MANUAL", PERIOD, "fin-a", "fin-a", "CORRECTION", "DR 1110 10.00", "CR 3110 10.00"))

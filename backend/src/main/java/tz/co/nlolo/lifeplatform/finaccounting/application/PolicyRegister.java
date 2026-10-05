@@ -8,6 +8,7 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingValidationExcepti
 import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyElectionNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyElectionInput;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyElectionView;
+import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyRegisterStateException;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ElectionKey;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.PolicyElection;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.PolicyElectionRepository;
@@ -65,6 +66,7 @@ class PolicyRegister {
         }
         PolicyElection e = new PolicyElection(TenantContext.get(), key.name(), input.scope(), input.value().trim(),
             input.effectiveFrom(), input.rationale(), by, Instant.now());
+        refuseASecondOnTheSameDay(e);
         return view(elections.save(e));
     }
 
@@ -73,6 +75,7 @@ class PolicyRegister {
         UUID tenantId = TenantContext.get();
         lockRegister(tenantId);
         PolicyElection e = load(electionId);
+        refuseASecondOnTheSameDay(e);
         e.approve(by, signOffRef, elections.currentVersion(tenantId) + 1, Instant.now());
         return view(elections.save(e));
     }
@@ -120,6 +123,18 @@ class PolicyRegister {
         out.addAll(scheduled);
         out.addAll(proposed);
         return out;
+    }
+
+    /**
+     * One approved election per key, scope and effective date (the database's ux_policy_election_one_approved): two
+     * on the same day would leave which one applies undefined. Checked at proposal so nobody proposes into a dead end,
+     * and again at approval, under the register lock, for one approved in between.
+     */
+    private void refuseASecondOnTheSameDay(PolicyElection e) {
+        if (elections.approvedOn(e.getTenantId(), e.getKey(), e.getScope(), e.getEffectiveFrom())) {
+            throw new PolicyRegisterStateException("An approved " + e.getKey() + " election for " + e.getScope()
+                + " already takes effect on " + e.getEffectiveFrom() + "; propose the change from another date");
+        }
     }
 
     /** Serialises register versions per tenant: two approvals at once must not take the same number. */

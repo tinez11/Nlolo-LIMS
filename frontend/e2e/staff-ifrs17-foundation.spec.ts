@@ -11,9 +11,14 @@ import { expectNavItemsHidden, expectRouteDenied } from './guards';
  * is reopened at the end, so the next run finds it OPEN again.
  */
 
-function tomorrowIso(): string {
+/**
+ * A future date of this run's own: one approved election per key, scope and day is all the register
+ * takes, so a rerun on the same day must not reuse the last run's date. Minutes since the epoch spread
+ * runs over the next eight years.
+ */
+function runDateIso(): string {
   const d = new Date(`${todayIso()}T00:00:00`);
-  d.setDate(d.getDate() + 1);
+  d.setDate(d.getDate() + 1 + (Math.floor(Date.now() / 60_000) % 3000));
   return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
 }
 
@@ -39,7 +44,7 @@ test.describe('IFRS 17 ledger controls', () => {
     await form.getByLabel('Election').selectOption('OCI_OPTION');
     await form.getByLabel('Scope').fill('*');
     await form.getByLabel('Value').selectOption('ON');
-    await form.getByLabel('Effective from').fill(dmy(tomorrowIso()));
+    await form.getByLabel('Effective from').fill(dmy(runDateIso()));
     await form.getByLabel('Rationale').fill(rationale);
     await form.getByRole('button', { name: 'Propose change' }).click();
 
@@ -61,12 +66,12 @@ test.describe('IFRS 17 ledger controls', () => {
     await adminRow.getByLabel('Sign-off reference').fill(signOff);
     await adminRow.getByRole('button', { name: 'Approve' }).click();
 
-    // Approved for tomorrow: scheduled, with the register's next version beside its sign-off.
+    // Approved for a future date: scheduled, with the register's next version beside its sign-off.
     const scheduled = page.getByRole('table', { name: 'Scheduled elections' }).getByRole('row').filter({ hasText: signOff });
     await expect(scheduled).toBeVisible({ timeout: 15_000 });
     await expect(scheduled).toContainText('ON');
     const version = Number((await scheduled.getByRole('cell').nth(4).innerText()).trim());
-    expect(version).toBeGreaterThan(44);   // the baseline is versions 1-44
+    expect(version).toBeGreaterThan(43);   // the baseline is versions 1-43
   });
 
   test('a period is closed and locked by finance, and reopened only by a second person', async ({ page, browser }) => {

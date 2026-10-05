@@ -28,4 +28,11 @@ public interface PolicyElectionRepository extends JpaRepository<PolicyElection, 
                                             @Param("scope") String scope, @Param("on") LocalDate on);
 
     List<PolicyElection> findByTenantIdOrderByKeyAscScopeAscEffectiveFromDesc(UUID tenantId);
+
+    /** Whether an approved election already takes effect for this key and scope on this date (V10's
+     * ux_policy_election_one_approved allows one). */
+    @Query("select count(e) > 0 from PolicyElection e where e.tenantId = :tenantId and e.key = :key"
+        + " and e.scope = :scope and e.effectiveFrom = :on and e.status = 'APPROVED'")
+    boolean approvedOn(@Param("tenantId") UUID tenantId, @Param("key") String key, @Param("scope") String scope,
+                       @Param("on") LocalDate on);
 }
