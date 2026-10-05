@@ -150,6 +150,27 @@ class UnitLinkedExitsIntegrationTest {
     }
 
     @Test
+    void aPremiumStillWaitingForUnitsIsReturnedWholeOnSurrender() {
+        // The user's decision (2026-10-05): a premium that never bought a unit earns no allocation charge.
+        Sold s = invested(TODAY.minusDays(70), TODAY.minusDays(60));
+        fixtures.collectAt(s.tenant(), s.policyNumber(), "100000.00", now.get(), UUID.randomUUID()); // binds tomorrow
+        var request = asTenant(s.tenant(), () -> policyApi.requestSurrender(s.policyNumber(), "+255700000556", "staff-one"));
+        asTenant(s.tenant(), () -> policyApi.approveSurrender(request.surrenderRequestId(), "staff-two"));
+        priceOn(s.tenant(), TODAY.plusDays(1), "1.000000", "1.000000");
+
+        PolicyUnitsView sold = units(s);
+        assertThat(sold.pending()).isEmpty();
+        // The waiting premium's 10% allocation charge, given back as its own entry...
+        assertThat(sold.entries().stream().filter(e -> e.type().equals("CHARGE_REFUND")
+                && e.sourceRef().contains(":premium-refund:")).map(PolicyUnitsView.Entry::amount)
+            .reduce(BigDecimal.ZERO, BigDecimal::add)).isEqualByComparingTo("10000.00");
+        // ...so the payout is the units sold (90,000 at 1.00) plus the whole waiting premium.
+        BigDecimal paid = jdbc.queryForObject("SELECT amount FROM payment.disbursement_instruction WHERE idempotency_key = ?",
+            BigDecimal.class, "unit-linked:surrender:" + request.surrenderRequestId());
+        assertThat(paid).isEqualByComparingTo("190000.00");
+    }
+
+    @Test
     void aCorrectedSurrenderAlreadyPaidBecomesAnAdjustmentNotAClawback() {
         Sold s = invested(TODAY.minusDays(70), TODAY.minusDays(60));
         var request = asTenant(s.tenant(), () -> policyApi.requestSurrender(s.policyNumber(), "+255700000555", "staff-one"));
@@ -197,7 +218,9 @@ class UnitLinkedExitsIntegrationTest {
     void aMaturitySellsAtTheMaturityDatesOwnPriceAndClosesThePolicyMatured() {
         Sold s = invested(TODAY.minusDays(70), TODAY.minusDays(60));
         LocalDate maturity = TODAY.minusDays(1);
-        jdbc.update("UPDATE policy.policy SET maturity_date = ? WHERE policy_number = ?", maturity, s.policyNumber());
+        // A two-month term ending yesterday: policy_maturity_matches_term pins the date to commencement + term.
+        jdbc.update("UPDATE policy.policy SET commencement_date = ?, policy_term_months = 2, maturity_date = ? WHERE policy_number = ?",
+            maturity.minusMonths(2), maturity, s.policyNumber());
 
         maturitySweep.sweepOne(s.policyNumber(), s.tenant(), TODAY);
         assertThat(units(s).pending()).isNotEmpty().allSatisfy(o -> {

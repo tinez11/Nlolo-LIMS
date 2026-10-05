@@ -83,18 +83,16 @@ class Corrections {
             .orElseThrow(() -> new IllegalStateException("Fund " + fund.getCode() + " has prices but no carried liability"));
         BigDecimal moved = BigDecimal.ZERO;
         List<Map<String, Object>> movements = new ArrayList<>();
-        // Units in before units out, so no holding dips below zero on the way to a total already checked.
-        List<Runnable> inserts = new ArrayList<>();
+        // Every entry that adds units before any that removes them, so no holding dips below zero on the way to a total
+        // refuseAnyShortfall already checked: after all the additions the holding is at least its final figure, and each
+        // removal only walks it down towards that. Ordering per movement was not enough -- a sale's re-entry removes the
+        // same units its reversal gives back, and written first it took a holding already sold to nothing below zero.
+        List<UnitEntry> inserts = new ArrayList<>();
         for (Redo r : redos) {
             UnitEntry e = r.original();
-            UnitEntry reversal = UnitEntry.reversal(e, e.getSourceRef() + "#rev:" + e.getEntryId(), UnitLedger.SYSTEM, clock.instant());
-            UnitEntry again = UnitEntry.reEntry(e, r.units(), corrected, r.amount(),
-                e.getSourceRef() + "#corr:" + corrected.getPriceId(), UnitLedger.SYSTEM, clock.instant());
-            if (again.getUnits().subtract(e.getUnits()).signum() >= 0) {
-                inserts.add(0, () -> { entries.saveAndFlush(again); entries.saveAndFlush(reversal); });
-            } else {
-                inserts.add(() -> { entries.saveAndFlush(reversal); entries.saveAndFlush(again); });
-            }
+            inserts.add(UnitEntry.reversal(e, e.getSourceRef() + "#rev:" + e.getEntryId(), UnitLedger.SYSTEM, clock.instant()));
+            inserts.add(UnitEntry.reEntry(e, r.units(), corrected, r.amount(),
+                e.getSourceRef() + "#corr:" + corrected.getPriceId(), UnitLedger.SYSTEM, clock.instant()));
             BigDecimal difference = r.amount().subtract(e.getAmount());
             moved = moved.add(difference);
             boolean paidAlready = settleWithItsExit(tenantId, e, difference, corrected, approvedBy);
@@ -107,7 +105,7 @@ class Corrections {
             movement.put("paidAlready", paidAlready);
             movements.add(movement);
         }
-        inserts.forEach(Runnable::run);
+        inserts.stream().sorted(java.util.Comparator.comparing(UnitEntry::getUnits).reversed()).forEach(entries::saveAndFlush);
 
         // The liability is carried at the fund's LATEST price, which may be a later date's than the one corrected.
         FundPrice latest = prices.findLatestApprovedBefore(tenantId, fund.getFundId(), LocalDate.of(9999, 12, 31))

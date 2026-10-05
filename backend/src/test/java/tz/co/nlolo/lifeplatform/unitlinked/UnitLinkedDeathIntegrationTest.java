@@ -193,8 +193,9 @@ class UnitLinkedDeathIntegrationTest {
         DeathValueView value = asTenant(s.tenant(), () -> api.deathValue(claim, TODAY.minusDays(1)));
         BigDecimal sold = units(s).entries().stream().filter(e -> e.type().equals("DEATH_SALE"))
             .map(e -> e.amount().negate()).reduce(BigDecimal.ZERO, BigDecimal::add);
-        // 45,000 of the 50,000 premium never reached units (its 10% allocation charge was already taken): it comes back.
-        assertThat(value.proceeds()).isEqualByComparingTo(sold.add(new BigDecimal("45000.00")));
+        // The 50,000 premium never reached units, so it comes back WHOLE -- its 10% allocation charge refunded with it
+        // (the user's decision, 2026-10-05: a premium that bought no unit earns no allocation charge).
+        assertThat(value.proceeds()).isEqualByComparingTo(sold.add(new BigDecimal("50000.00")));
     }
 
     @Test
