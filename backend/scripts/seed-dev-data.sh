@@ -401,7 +401,11 @@ UL_VERSION_RESP=$(curl -sfi -X POST "$API/products/$UL_PRODUCT_ID/versions" \
       "deathRule":"HIGHER_OF","lapseRule":"EXHAUSTION",
       "minimumSurrenderYears":2,"lowFundWarningMonths":3,
       "premiumMinimums":[{"frequency":"MONTHLY","amount":50000},{"frequency":"ANNUALLY","amount":500000}],
-      "sumAssuredMultipleMin":5,"sumAssuredMultipleMax":20}
+      "sumAssuredMultipleMin":5,"sumAssuredMultipleMax":20,
+      "options":{"freeSwitchesPerYear":2,"switchFee":5000,"minimumWithdrawal":100000,"minimumRemainingValue":500000,
+        "withdrawalReducesSumAssured":false,"topUpAllocationPercent":98,"minimumTopUp":50000,
+        "surrenderCharges":[{"fromYear":1,"toYear":1,"percent":10},{"fromYear":2,"toYear":5,"percent":5},
+                            {"fromYear":6,"toYear":null,"percent":0}]}}
   }')
 echo "$UL_VERSION_RESP" | head -1
 

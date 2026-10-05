@@ -1,4 +1,4 @@
-import type { FundPriceView, FundView, PriceAdjustmentView } from '@/api/types';
+import type { FundPriceView, FundView, PriceAdjustmentView, UnitLinkedWithdrawalView } from '@/api/types';
 import type { Gate } from './types';
 
 /**
@@ -56,6 +56,28 @@ export function approvePriceGates(
       detail: passed
         ? 'Every order this price can execute has been received.'
         : `Orders for ${price.valuationDate} are still being received until ${fund?.cutOffTime ?? 'the cut-off'}; the price cannot be approved before then`,
+    },
+  ];
+}
+
+/** A partial withdrawal (U2) is approved by a second person, and only while it is still requested. */
+export function approveWithdrawalGates(withdrawal: UnitLinkedWithdrawalView, viewerSubject: string | undefined): Gate[] {
+  const requested = withdrawal.status === 'REQUESTED';
+  const samePerson = isSame(viewerSubject, withdrawal.requestedBy);
+  return [
+    {
+      ok: requested,
+      hard: true,
+      title: 'Awaiting approval',
+      detail: requested ? 'Requested, nothing sold yet.' : `This withdrawal is ${withdrawal.status.toLowerCase()}`,
+    },
+    {
+      ok: !samePerson,
+      hard: true,
+      title: 'A second person approves',
+      detail: samePerson
+        ? 'A withdrawal must be approved by someone other than the person who requested it'
+        : 'You did not request this withdrawal.',
     },
   ];
 }

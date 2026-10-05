@@ -37,9 +37,13 @@ class PricingRun {
     private final FundLiabilityRepository liabilities;
     private final UnitLedger ledger;
     private final ApplicationEventPublisher events;
+    // Looked up per run, not at construction: Switches reaches the ledger, which reaches the pricing run's listeners.
+    private final org.springframework.beans.factory.ObjectProvider<Switches> switches;
 
     PricingRun(PendingOrderRepository orders, UnitEntryRepository entries, FundLiabilityRepository liabilities,
-               UnitLedger ledger, ApplicationEventPublisher events) {
+               UnitLedger ledger, ApplicationEventPublisher events,
+               org.springframework.beans.factory.ObjectProvider<Switches> switches) {
+        this.switches = switches;
         this.orders = orders;
         this.entries = entries;
         this.liabilities = liabilities;
@@ -57,6 +61,9 @@ class PricingRun {
             moved = moved.add(ledger.execute(order, price));
         }
         trueUp(fund, price, liability, carried.add(moved));
+        // Last (U2, spec §2): a waiting switch moving this fund executes once all its funds are priced for one date.
+        // Its legs move each fund's carried liability themselves, so the next true-up measures from them.
+        switches.getObject().onPriceApproved(fund, price);
     }
 
     /**

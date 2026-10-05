@@ -156,6 +156,107 @@ public class FundController {
         return api.waiveAdjustment(adjustmentId, r.reason(), jwt.getSubject());
     }
 
+    public record SplitRequest(List<tz.co.nlolo.lifeplatform.underwriting.api.UnitLinkedChoice.Split> split) {}
+
+    /** Premium redirection (U2): any staff member, audited -- no money moves. */
+    @org.springframework.web.bind.annotation.PutMapping("/policies/{policyNumber}/premium-split")
+    @PreAuthorize(STAFF)
+    public tz.co.nlolo.lifeplatform.unitlinked.api.PremiumSplitView redirect(@PathVariable String policyNumber,
+                                                                          @RequestBody SplitRequest r,
+                                                                          @AuthenticationPrincipal Jwt jwt) {
+        return api.redirect(policyNumber, r.split(), jwt.getSubject());
+    }
+
+    /** A fund switch (U2): any staff member, audited -- the customer's money moves between funds, none leaves. */
+    @PostMapping("/policies/{policyNumber}/switches")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(STAFF)
+    public tz.co.nlolo.lifeplatform.unitlinked.api.SwitchView requestSwitch(@PathVariable String policyNumber,
+            @RequestBody tz.co.nlolo.lifeplatform.unitlinked.api.SwitchInput input, @AuthenticationPrincipal Jwt jwt) {
+        return api.requestSwitch(policyNumber, input, jwt.getSubject());
+    }
+
+    @GetMapping("/policies/{policyNumber}/switches")
+    @PreAuthorize(STAFF)
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.SwitchView> listSwitches(@PathVariable String policyNumber) {
+        return api.listSwitches(policyNumber);
+    }
+
+    /** A partial withdrawal (U2): requested by any staff member, approved by a second -- finance or an admin. */
+    @PostMapping("/policies/{policyNumber}/withdrawals")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(STAFF)
+    public tz.co.nlolo.lifeplatform.unitlinked.api.WithdrawalView requestWithdrawal(@PathVariable String policyNumber,
+            @RequestBody tz.co.nlolo.lifeplatform.unitlinked.api.WithdrawalInput input, @AuthenticationPrincipal Jwt jwt) {
+        return api.requestWithdrawal(policyNumber, input, jwt.getSubject());
+    }
+
+    @PostMapping("/withdrawals/{withdrawalId}/approval")
+    @PreAuthorize(FINANCE)
+    public tz.co.nlolo.lifeplatform.unitlinked.api.WithdrawalView approveWithdrawal(@PathVariable UUID withdrawalId,
+                                                                                   @AuthenticationPrincipal Jwt jwt) {
+        return api.approveWithdrawal(withdrawalId, jwt.getSubject());
+    }
+
+    @GetMapping("/policies/{policyNumber}/withdrawals")
+    @PreAuthorize(STAFF)
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.WithdrawalView> listWithdrawals(@PathVariable String policyNumber) {
+        return api.listWithdrawals(policyNumber);
+    }
+
+    /** A top-up (U2): any staff member; the Idempotency-Key header is required, so a retry never collects twice. */
+    @PostMapping("/policies/{policyNumber}/top-ups")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(STAFF)
+    public tz.co.nlolo.lifeplatform.unitlinked.api.TopUpView requestTopUp(@PathVariable String policyNumber,
+            @RequestBody tz.co.nlolo.lifeplatform.unitlinked.api.TopUpInput input,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @AuthenticationPrincipal Jwt jwt) {
+        return api.requestTopUp(policyNumber, input, jwt.getSubject(), key);
+    }
+
+    @GetMapping("/policies/{policyNumber}/top-ups")
+    @PreAuthorize(STAFF)
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.TopUpView> listTopUps(@PathVariable String policyNumber) {
+        return api.listTopUps(policyNumber);
+    }
+
+    /** The period of an on-demand statement. */
+    public record StatementPeriod(java.time.LocalDate from, java.time.LocalDate to) {}
+
+    /** An on-demand unit statement (U2): any staff member, any period ending today at the latest. */
+    @PostMapping("/policies/{policyNumber}/statements")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(STAFF)
+    public tz.co.nlolo.lifeplatform.unitlinked.api.UnitStatementView fileStatement(@PathVariable String policyNumber,
+            @RequestBody StatementPeriod period, @AuthenticationPrincipal Jwt jwt) {
+        if (period == null) {
+            throw new IllegalArgumentException("A statement needs the first and last day of its period");
+        }
+        return api.fileStatement(policyNumber, period.from(), period.to(), jwt.getSubject());
+    }
+
+    @GetMapping("/policies/{policyNumber}/statements")
+    @PreAuthorize(STAFF)
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.UnitStatementView> statements(@PathVariable String policyNumber) {
+        return api.statements(policyNumber);
+    }
+
+    @GetMapping(value = "/unit-statements/{statementId}/file", produces = "application/pdf")
+    @PreAuthorize(STAFF)
+    public org.springframework.http.ResponseEntity<byte[]> statementFile(@PathVariable UUID statementId) {
+        return org.springframework.http.ResponseEntity.ok()
+            .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"unit-statement-" + statementId + ".pdf\"")
+            .body(api.statementPdf(statementId));
+    }
+
+    @GetMapping("/policies/{policyNumber}/premium-split")
+    @PreAuthorize(STAFF)
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.PremiumSplitView> splitHistory(@PathVariable String policyNumber) {
+        return api.splitHistory(policyNumber);
+    }
+
     @PostMapping("/fund-prices/{priceId}/withdrawal")
     @PreAuthorize(FINANCE)
     public FundPriceView withdraw(@PathVariable UUID priceId, @AuthenticationPrincipal Jwt jwt) {

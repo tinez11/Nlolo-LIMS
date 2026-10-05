@@ -742,6 +742,29 @@ components:
                   amount: { type: [number, "null"], exclusiveMinimum: 0 }
             sumAssuredMultipleMin: { type: [number, "null"], exclusiveMinimum: 0 }
             sumAssuredMultipleMax: { type: [number, "null"], exclusiveMinimum: 0 }
+            options:
+              description: >-
+                U2, optional: switches (free per policy year and the fee beyond them, both or neither), withdrawals
+                (minimum and value left, both or neither; whether one cuts the sum assured), top-ups (allocation
+                percent and minimum, both or neither) and surrender-charge bands (from year 1, contiguous, last
+                open-ended). Absent = none of them offered. Fixed once the version is published.
+              type: [object, "null"]
+              properties:
+                freeSwitchesPerYear: { type: [integer, "null"], minimum: 0 }
+                switchFee: { type: [number, "null"], minimum: 0 }
+                minimumWithdrawal: { type: [number, "null"], exclusiveMinimum: 0 }
+                minimumRemainingValue: { type: [number, "null"], minimum: 0 }
+                withdrawalReducesSumAssured: { type: [boolean, "null"] }
+                topUpAllocationPercent: { type: [number, "null"], exclusiveMinimum: 0, maximum: 100 }
+                minimumTopUp: { type: [number, "null"], exclusiveMinimum: 0 }
+                surrenderCharges:
+                  type: [array, "null"]
+                  items:
+                    type: object
+                    properties:
+                      fromYear: { type: [integer, "null"], minimum: 1 }
+                      toYear: { type: [integer, "null"], description: "Null = onwards" }
+                      percent: { type: [number, "null"], minimum: 0, maximum: 100 }
         tiraFiling:
           description: >-
             The TIRA filing that authorises this version. Required: in Tanzania a product and
@@ -1018,6 +1041,32 @@ components:
               amount: { type: number }
         sumAssuredMultipleMin: { type: number }
         sumAssuredMultipleMax: { type: number }
+        options: { $ref: '#/components/schemas/UnitLinkedOptions' }
+    UnitLinkedOptions:
+      description: >-
+        A unit-linked version's U2 terms: switches, withdrawals, top-ups and the surrender charge. A feature whose
+        fields are null is not offered; a version published before U2 has every field null and no bands.
+      type: object
+      additionalProperties: false
+      properties:
+        freeSwitchesPerYear: { type: [integer, "null"], minimum: 0 }
+        switchFee: { type: [number, "null"], description: "Per switch beyond the free ones; with freeSwitchesPerYear or neither" }
+        minimumWithdrawal: { type: [number, "null"] }
+        minimumRemainingValue: { type: [number, "null"], description: "Value a withdrawal must leave; with minimumWithdrawal or neither" }
+        withdrawalReducesSumAssured: { type: boolean, description: "Spec Q4; default false" }
+        topUpAllocationPercent: { type: [number, "null"], exclusiveMinimum: 0, maximum: 100 }
+        minimumTopUp: { type: [number, "null"], description: "With topUpAllocationPercent or neither" }
+        surrenderCharges:
+          type: array
+          description: From policy year 1, contiguous, the last open-ended; empty = no surrender charge
+          items:
+            type: object
+            additionalProperties: false
+            required: [fromYear, percent]
+            properties:
+              fromYear: { type: integer, minimum: 1 }
+              toYear: { type: [integer, "null"] }
+              percent: { type: number, minimum: 0, maximum: 100 }
     FuneralTerms:
       description: A funeral plan version's terms (family funeral cover), premium table included.
       type: object

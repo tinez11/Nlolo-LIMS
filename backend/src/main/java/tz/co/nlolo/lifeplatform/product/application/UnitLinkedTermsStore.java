@@ -1,16 +1,21 @@
 package tz.co.nlolo.lifeplatform.product.application;
 
 import org.springframework.stereotype.Component;
+import tz.co.nlolo.lifeplatform.product.api.UnitLinkedOptions;
 import tz.co.nlolo.lifeplatform.product.api.UnitLinkedPlan;
 import tz.co.nlolo.lifeplatform.product.domain.UnitLinkedAllocationBandEntity;
 import tz.co.nlolo.lifeplatform.product.domain.UnitLinkedFundEntity;
 import tz.co.nlolo.lifeplatform.product.domain.UnitLinkedMortalityEntity;
+import tz.co.nlolo.lifeplatform.product.domain.UnitLinkedOptionsEntity;
 import tz.co.nlolo.lifeplatform.product.domain.UnitLinkedPremiumMinimumEntity;
+import tz.co.nlolo.lifeplatform.product.domain.UnitLinkedSurrenderChargeEntity;
 import tz.co.nlolo.lifeplatform.product.domain.UnitLinkedTermsEntity;
 import tz.co.nlolo.lifeplatform.product.infrastructure.UnitLinkedAllocationBandRepository;
 import tz.co.nlolo.lifeplatform.product.infrastructure.UnitLinkedFundRepository;
 import tz.co.nlolo.lifeplatform.product.infrastructure.UnitLinkedMortalityRepository;
+import tz.co.nlolo.lifeplatform.product.infrastructure.UnitLinkedOptionsRepository;
 import tz.co.nlolo.lifeplatform.product.infrastructure.UnitLinkedPremiumMinimumRepository;
+import tz.co.nlolo.lifeplatform.product.infrastructure.UnitLinkedSurrenderChargeRepository;
 import tz.co.nlolo.lifeplatform.product.infrastructure.UnitLinkedTermsRepository;
 
 import java.util.UUID;
@@ -29,15 +34,20 @@ class UnitLinkedTermsStore {
     private final UnitLinkedAllocationBandRepository bands;
     private final UnitLinkedMortalityRepository mortality;
     private final UnitLinkedPremiumMinimumRepository minimums;
+    private final UnitLinkedOptionsRepository options;
+    private final UnitLinkedSurrenderChargeRepository surrenderCharges;
 
     UnitLinkedTermsStore(UnitLinkedTermsRepository terms, UnitLinkedFundRepository funds,
                          UnitLinkedAllocationBandRepository bands, UnitLinkedMortalityRepository mortality,
-                         UnitLinkedPremiumMinimumRepository minimums) {
+                         UnitLinkedPremiumMinimumRepository minimums, UnitLinkedOptionsRepository options,
+                         UnitLinkedSurrenderChargeRepository surrenderCharges) {
         this.terms = terms;
         this.funds = funds;
         this.bands = bands;
         this.mortality = mortality;
         this.minimums = minimums;
+        this.options = options;
+        this.surrenderCharges = surrenderCharges;
     }
 
     /** Nothing for a version that is not unit-linked -- its absence IS that. */
@@ -59,6 +69,14 @@ class UnitLinkedTermsStore {
         for (UnitLinkedPlan.PremiumMinimum minimum : plan.premiumMinimums()) {
             minimums.save(new UnitLinkedPremiumMinimumEntity(tenantId, productVersionId, minimum));
         }
+        // U2 (V26, plan R1): a row only when something was authored -- its absence IS "none of these features".
+        UnitLinkedOptions u2 = plan.options();
+        if (u2.authored()) {
+            options.save(new UnitLinkedOptionsEntity(tenantId, productVersionId, u2));
+            for (UnitLinkedOptions.SurrenderChargeBand band : u2.surrenderCharges()) {
+                surrenderCharges.save(new UnitLinkedSurrenderChargeEntity(tenantId, productVersionId, band));
+            }
+        }
     }
 
     UnitLinkedPlan read(UUID productVersionId) {
@@ -67,7 +85,11 @@ class UnitLinkedTermsStore {
                 funds.findByProductVersionIdOrderByFundCode(productVersionId).stream().map(UnitLinkedFundEntity::getFundCode).toList(),
                 bands.findByProductVersionIdOrderByFromYear(productVersionId).stream().map(UnitLinkedAllocationBandEntity::toBand).toList(),
                 mortality.findByProductVersionIdOrderBySexAscAgeFromAsc(productVersionId).stream().map(UnitLinkedMortalityEntity::toRow).toList(),
-                minimums.findByProductVersionIdOrderByFrequency(productVersionId).stream().map(UnitLinkedPremiumMinimumEntity::toMinimum).toList()))
+                minimums.findByProductVersionIdOrderByFrequency(productVersionId).stream().map(UnitLinkedPremiumMinimumEntity::toMinimum).toList())
+                .withOptions(options.findById(productVersionId)
+                    .map(o -> o.toOptions(surrenderCharges.findByProductVersionIdOrderByFromYear(productVersionId).stream()
+                        .map(UnitLinkedSurrenderChargeEntity::toBand).toList()))
+                    .orElse(UnitLinkedOptions.none())))
             .orElse(UnitLinkedPlan.none());
     }
 }

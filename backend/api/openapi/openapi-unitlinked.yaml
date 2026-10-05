@@ -308,6 +308,230 @@ paths:
         '200': { description: The payout was requested }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/StateConflict' }
+  /policies/{policyNumber}/premium-split:
+    get:
+      summary: Every split the policy's premiums have had, newest first (U2)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The split history
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/PremiumSplit' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    put:
+      summary: Redirect future premiums to a new split (U2)
+      description: >
+        Any staff member, audited. Applies to premiums RECEIVED after this instant; units already held stay where
+        they are (a switch moves those). Whole percents over the version's offered funds, totalling 100.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SplitRequest' }
+      responses:
+        '200':
+          description: The new split, in force from now
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PremiumSplit' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /policies/{policyNumber}/switches:
+    get:
+      summary: The policy's fund switches, newest first (U2)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The switches
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Switch' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Switch units between funds (U2)
+      description: >
+        Any staff member, audited. Both legs are priced on ONE valuation date -- the first after the request on which
+        every involved fund has an approved price. Beyond the version's free switches in a policy year, its fee is
+        taken from the proceeds. 409 on a version without switching, a policy not in force or frozen, or a switch
+        already waiting.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SwitchRequest' }
+      responses:
+        '201':
+          description: The switch, WAITING for its price date
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Switch' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /policies/{policyNumber}/withdrawals:
+    get:
+      summary: The policy's partial withdrawals, newest first (U2)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The withdrawals
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Withdrawal' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Request a partial withdrawal (U2)
+      description: >
+        Any staff member requests; nothing is sold until a second person approves. A gross amount from named funds or
+        pro rata by value; at least the version's minimum, and leaving at least its minimum value. The surrender
+        charge for the policy year applies.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WithdrawalRequest' }
+      responses:
+        '201':
+          description: The withdrawal, REQUESTED, with estimates at the latest prices
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Withdrawal' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /withdrawals/{withdrawalId}/approval:
+    post:
+      summary: Approve a partial withdrawal -- a second person (U2)
+      description: >
+        Finance or an admin, never the requester. The sale binds at this instant and is priced at the first price
+        after it; the rules are checked again at today's prices.
+      security:
+        - staffAuth: [finance_officer, admin]
+      parameters:
+        - { name: withdrawalId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The withdrawal, APPROVED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Withdrawal' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/FundNotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /policies/{policyNumber}/top-ups:
+    get:
+      summary: The policy's top-ups, newest first (U2)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The top-ups
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/TopUp' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Collect a top-up (U2)
+      description: >
+        Any staff member. Once per Idempotency-Key: a retry with the same key answers with the first top-up and
+        collects nothing again. Allocated at the version's top-up percent when payment confirms the money; refunded
+        whole if the policy has ended by then.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TopUpRequest' }
+      responses:
+        '201':
+          description: The top-up, REQUESTED from the payer
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TopUp' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /policies/{policyNumber}/statements:
+    get:
+      summary: Every unit statement filed for the policy, annual and on demand (U2)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The statements
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/UnitStatement' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: File an on-demand unit statement for any period (U2)
+      description: >
+        Any staff member. The period ends today at the latest. Filed beside the annual statements, never in place of
+        them, and the customer is sent nothing.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StatementPeriod' }
+      responses:
+        '201':
+          description: The statement, filed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnitStatement' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /unit-statements/{statementId}/file:
+    get:
+      summary: A filed unit statement's PDF (U2)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: statementId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/FundNotFound' }
 components:
   parameters:
     FundCode:
@@ -442,6 +666,10 @@ components:
         entries: { type: array, items: { $ref: '#/components/schemas/UnitEntry' } }
         frozen: { type: boolean, description: "True while an exit is selling the units -- nothing else moves them" }
         frozenReason: { type: [string, "null"], enum: [DEATH, SURRENDER, MATURITY, FREE_LOOK, LAPSE, EXHAUSTED, null] }
+        switches:
+          description: "U2: the policy's switches, newest first -- a WAITING one is not a pending order"
+          type: array
+          items: { $ref: '#/components/schemas/Switch' }
     Holding:
       type: object
       additionalProperties: false
@@ -473,7 +701,7 @@ components:
             - { $ref: '#/components/schemas/Decimal' }
             - { type: "null" }
         sellAll: { type: boolean }
-        purpose: { type: string, enum: [ALLOCATION, CHARGES, DEATH, SURRENDER, MATURITY, LAPSE, FREE_LOOK, REINVESTMENT] }
+        purpose: { type: string, enum: [ALLOCATION, CHARGES, DEATH, SURRENDER, MATURITY, LAPSE, FREE_LOOK, REINVESTMENT, WITHDRAWAL] }
         receivedAt: { type: string, format: date-time }
         boundDate: { type: string, format: date, description: "The valuation date whose price will execute it" }
     UnitEntry:
@@ -486,7 +714,8 @@ components:
         type:
           type: string
           enum: [ALLOCATION, ALLOCATION_CHARGE, POLICY_FEE, COST_OF_INSURANCE, DEATH_SALE, SURRENDER_SALE, MATURITY_SALE,
-                 LAPSE_SALE, FREE_LOOK_SALE, CHARGE_REFUND, REINVESTMENT, PRICE_CORRECTION, WRITE_OFF]
+                 LAPSE_SALE, FREE_LOOK_SALE, CHARGE_REFUND, REINVESTMENT, PRICE_CORRECTION, WRITE_OFF,
+                 SWITCH_OUT, SWITCH_IN, SWITCH_FEE, WITHDRAWAL_SALE, SURRENDER_CHARGE]
         units: { $ref: '#/components/schemas/Decimal' }
         price:
           anyOf:
@@ -497,3 +726,148 @@ components:
         boundDate: { type: [string, "null"], format: date }
         sourceRef: { type: string }
         createdAt: { type: string, format: date-time }
+    FundShare:
+      type: object
+      required: [fundCode, percent]
+      properties:
+        fundCode: { type: string }
+        percent: { type: integer, minimum: 1, maximum: 100 }
+    SplitRequest:
+      type: object
+      required: [split]
+      properties:
+        split: { type: array, minItems: 1, items: { $ref: '#/components/schemas/FundShare' } }
+    PremiumSplit:
+      type: object
+      additionalProperties: false
+      required: [splitId, policyNumber, effectiveFrom, shares, recordedBy, recordedAt]
+      properties:
+        splitId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        effectiveFrom: { type: string, format: date-time, description: "Premiums received from this instant" }
+        shares: { type: array, items: { $ref: '#/components/schemas/FundShare' } }
+        recordedBy: { type: string }
+        recordedAt: { type: string, format: date-time }
+    SwitchRequest:
+      type: object
+      required: [out, into]
+      properties:
+        out:
+          type: array
+          minItems: 1
+          description: For each fund to move out of, the share of its units (100 = all)
+          items: { $ref: '#/components/schemas/FundShare' }
+        into:
+          type: array
+          minItems: 1
+          description: The split the proceeds buy into, totalling 100
+          items: { $ref: '#/components/schemas/FundShare' }
+    Switch:
+      type: object
+      additionalProperties: false
+      required: [switchId, policyNumber, legs, boundDate, status, requestedBy, requestedAt]
+      properties:
+        switchId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        legs:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [fundCode, side, percent]
+            properties:
+              fundCode: { type: string }
+              side: { type: string, enum: [OUT, IN] }
+              percent: { type: integer }
+        boundDate: { type: string, format: date, description: "The valuation date both legs are priced on" }
+        status: { type: string, enum: [WAITING, EXECUTED, CANCELLED] }
+        executedOn: { type: [string, "null"], format: date }
+        fee:
+          description: Set once executed; 0.00 for a free switch
+          anyOf:
+            - { $ref: '#/components/schemas/Decimal' }
+            - { type: "null" }
+        requestedBy: { type: string }
+        requestedAt: { type: string, format: date-time }
+    NamedAmount:
+      type: object
+      required: [fundCode, amount]
+      properties:
+        fundCode: { type: string }
+        amount: { $ref: '#/components/schemas/Decimal' }
+    WithdrawalRequest:
+      type: object
+      required: [grossAmount, payeeRef]
+      properties:
+        grossAmount: { $ref: '#/components/schemas/Decimal' }
+        funds:
+          type: array
+          description: Named funds with an amount each, summing to the gross; empty = pro rata by value
+          items: { $ref: '#/components/schemas/NamedAmount' }
+        payeeRef: { type: string, minLength: 1 }
+    Withdrawal:
+      type: object
+      additionalProperties: false
+      required: [withdrawalId, policyNumber, grossAmount, funds, payeeRef, status, requestedBy, requestedAt]
+      properties:
+        withdrawalId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        grossAmount: { $ref: '#/components/schemas/Decimal' }
+        funds: { type: array, items: { $ref: '#/components/schemas/NamedAmount' } }
+        payeeRef: { type: string }
+        status: { type: string, enum: [REQUESTED, APPROVED, PRICED, PAID, CANCELLED] }
+        chargePercent: { anyOf: [ { $ref: '#/components/schemas/Decimal' }, { type: "null" } ] }
+        estimatedCharge: { anyOf: [ { $ref: '#/components/schemas/Decimal' }, { type: "null" } ], description: "An estimate at the latest prices" }
+        estimatedNet: { anyOf: [ { $ref: '#/components/schemas/Decimal' }, { type: "null" } ] }
+        estimatedRemaining: { anyOf: [ { $ref: '#/components/schemas/Decimal' }, { type: "null" } ] }
+        newSumAssured: { anyOf: [ { $ref: '#/components/schemas/Decimal' }, { type: "null" } ], description: "Only when the version cuts cover" }
+        proceeds: { anyOf: [ { $ref: '#/components/schemas/Decimal' }, { type: "null" } ], description: "Once priced" }
+        surrenderCharge: { anyOf: [ { $ref: '#/components/schemas/Decimal' }, { type: "null" } ] }
+        shortfall: { anyOf: [ { $ref: '#/components/schemas/Decimal' }, { type: "null" } ] }
+        requestedBy: { type: string }
+        requestedAt: { type: string, format: date-time }
+        approvedBy: { type: [string, "null"] }
+        approvedAt: { type: [string, "null"], format: date-time }
+    TopUpRequest:
+      type: object
+      required: [amount, payerRef]
+      properties:
+        amount: { $ref: '#/components/schemas/Decimal' }
+        payerRef: { type: string, minLength: 1, description: "The mobile money number collected from" }
+        split:
+          type: array
+          description: Its own split; empty = the policy's split in force
+          items: { $ref: '#/components/schemas/FundShare' }
+    TopUp:
+      type: object
+      additionalProperties: false
+      required: [topUpId, policyNumber, amount, currency, payerRef, split, status, requestedBy, requestedAt]
+      properties:
+        topUpId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        amount: { $ref: '#/components/schemas/Decimal' }
+        currency: { type: string }
+        payerRef: { type: string }
+        split: { type: array, items: { $ref: '#/components/schemas/FundShare' } }
+        status: { type: string, enum: [REQUESTED, RECEIVED, REFUNDED, FAILED] }
+        requestedBy: { type: string }
+        requestedAt: { type: string, format: date-time }
+        receivedAt: { type: [string, "null"], format: date-time }
+    StatementPeriod:
+      type: object
+      required: [from, to]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date, description: "Today at the latest" }
+    UnitStatement:
+      type: object
+      additionalProperties: false
+      required: [statementId, policyNumber, periodFrom, periodTo, kind, generatedBy, generatedAt]
+      properties:
+        statementId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        periodFrom: { type: string, format: date }
+        periodTo: { type: string, format: date }
+        kind: { type: string, enum: [ANNUAL, ON_DEMAND] }
+        generatedBy: { type: string }
+        generatedAt: { type: string, format: date-time }

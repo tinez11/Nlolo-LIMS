@@ -176,6 +176,43 @@ export function UnitLinkedTermsSection({
           </FormField>
         </div>
       </fieldset>
+
+      <fieldset className="space-y-2 rounded-md border border-border p-3">
+        <legend className="text-xs font-medium text-muted-foreground">Switches, withdrawals, top-ups and the surrender charge</legend>
+        <p className="text-xs text-subtle-foreground">
+          Optional. A feature is offered only when both of its fields are filled in; leave them all empty and the policy
+          offers none of them. Fixed once the version is published.
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <FormField label="Free switches per policy year" error={errors.ulFreeSwitches?.message}>
+            <Input inputSize="sm" inputMode="numeric" {...register('ulFreeSwitches')} />
+          </FormField>
+          <FormField label={`Fee per extra switch${currency ? ` (${currency})` : ''}`} error={errors.ulSwitchFee?.message}>
+            <Input inputSize="sm" inputMode="decimal" {...register('ulSwitchFee')} />
+          </FormField>
+          <FormField label="Minimum withdrawal" error={errors.ulMinWithdrawal?.message}>
+            <Input inputSize="sm" inputMode="decimal" {...register('ulMinWithdrawal')} />
+          </FormField>
+          <FormField label="Minimum value left after a withdrawal" error={errors.ulMinRemaining?.message}>
+            <Input inputSize="sm" inputMode="decimal" {...register('ulMinRemaining')} />
+          </FormField>
+          <FormField label="Top-up allocation (%)" error={errors.ulTopUpPercent?.message}>
+            <Input inputSize="sm" inputMode="decimal" {...register('ulTopUpPercent')} />
+          </FormField>
+          <FormField label="Minimum top-up" error={errors.ulMinTopUp?.message}>
+            <Input inputSize="sm" inputMode="decimal" {...register('ulMinTopUp')} />
+          </FormField>
+        </div>
+        <CheckboxField label="A withdrawal reduces the sum assured" {...register('ulWithdrawalCutsCover')} />
+        <p className="text-xs text-subtle-foreground">
+          Surrender charge, one band per line: <code>fromYear,toYear,percent</code> — e.g. <code>1,1,10</code>,{' '}
+          <code>2,5,5</code>, <code>6,,0</code>. It applies to surrenders, withdrawals and a lapse for non-payment; never to
+          death, maturity, free-look or a fund that ran out.
+        </p>
+        <FormField label="Surrender charge bands" error={errors.ulSurrenderText?.message}>
+          <Textarea rows={3} className="font-mono text-xs" {...register('ulSurrenderText')} />
+        </FormField>
+      </fieldset>
     </div>
   );
 }

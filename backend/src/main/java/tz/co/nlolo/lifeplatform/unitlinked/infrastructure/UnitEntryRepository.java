@@ -6,6 +6,7 @@ import org.springframework.data.repository.query.Param;
 import tz.co.nlolo.lifeplatform.unitlinked.domain.UnitEntry;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -21,6 +22,18 @@ public interface UnitEntryRepository extends JpaRepository<UnitEntry, UUID> {
     @Query("select e.fundId, sum(e.units) from UnitEntry e where e.tenantId = :tenantId"
         + " and e.policyNumber = :policyNumber and e.fundId is not null group by e.fundId")
     List<Object[]> holdings(@Param("tenantId") UUID tenantId, @Param("policyNumber") String policyNumber);
+
+    /** The policy's units of one fund as at the end of {@code asOf}: a statement's opening and closing positions. */
+    @Query("select coalesce(sum(e.units), 0) from UnitEntry e where e.tenantId = :tenantId"
+        + " and e.policyNumber = :policyNumber and e.fundId = :fundId and e.valuationDate <= :asOf")
+    BigDecimal sumUnitsAsOf(@Param("tenantId") UUID tenantId, @Param("policyNumber") String policyNumber,
+                            @Param("fundId") UUID fundId, @Param("asOf") LocalDate asOf);
+
+    /** A statement's lines: every entry valued in the period, by date and then as written. */
+    List<UnitEntry> findByTenantIdAndPolicyNumberAndValuationDateBetweenOrderByValuationDateAscCreatedAtAsc(
+        UUID tenantId, String policyNumber, LocalDate from, LocalDate to);
+
+    boolean existsByTenantIdAndPolicyNumberAndValuationDateLessThanEqual(UUID tenantId, String policyNumber, LocalDate asOf);
 
     /** Every unit of the fund held by every policy of the tenant: what a new price revalues. */
     @Query("select coalesce(sum(e.units), 0) from UnitEntry e where e.tenantId = :tenantId and e.fundId = :fundId")

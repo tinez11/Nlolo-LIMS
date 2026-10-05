@@ -21,10 +21,13 @@ public class UnitEntry {
 
     public enum Type {
         ALLOCATION, ALLOCATION_CHARGE, POLICY_FEE, COST_OF_INSURANCE, DEATH_SALE, SURRENDER_SALE, MATURITY_SALE,
-        LAPSE_SALE, FREE_LOOK_SALE, CHARGE_REFUND, REINVESTMENT, PRICE_CORRECTION, WRITE_OFF;
+        LAPSE_SALE, FREE_LOOK_SALE, CHARGE_REFUND, REINVESTMENT, PRICE_CORRECTION, WRITE_OFF,
+        // U2 (unitlinked V3): a switch's two legs and its fee; a withdrawal's sale; the surrender charge.
+        SWITCH_OUT, SWITCH_IN, SWITCH_FEE, WITHDRAWAL_SALE, SURRENDER_CHARGE;
 
         public boolean moneyOnly() {
-            return this == ALLOCATION_CHARGE || this == CHARGE_REFUND || this == WRITE_OFF;
+            return this == ALLOCATION_CHARGE || this == CHARGE_REFUND || this == WRITE_OFF || this == SWITCH_FEE
+                || this == SURRENDER_CHARGE;
         }
     }
 
@@ -76,6 +79,16 @@ public class UnitEntry {
         return new UnitEntry(order.getTenantId(), order.getPolicyNumber(), order.getFundId(), type, units, price.getPrice(),
             price.getPriceId(), amount, price.getValuationDate(), order.getBoundDate(), order.getOrderId(),
             order.getSourceType(), order.getSourceRef(), null, createdBy, now);
+    }
+
+    /** One leg of a switch (U2): units out of or into a fund at that date's approved price, with no order behind it. */
+    public static UnitEntry switched(UUID tenantId, String policyNumber, UUID fundId, Type type, BigDecimal units,
+                                     FundPrice price, BigDecimal amount, String sourceRef, String createdBy, Instant now) {
+        if (type != Type.SWITCH_OUT && type != Type.SWITCH_IN) {
+            throw new IllegalArgumentException(type + " is not a switch leg");
+        }
+        return new UnitEntry(tenantId, policyNumber, fundId, type, units, price.getPrice(), price.getPriceId(), amount,
+            price.getValuationDate(), price.getValuationDate(), null, "switch", sourceRef, null, createdBy, now);
     }
 
     /** Money with no units: the allocation charge, a refunded charge, a written-off shortfall. */

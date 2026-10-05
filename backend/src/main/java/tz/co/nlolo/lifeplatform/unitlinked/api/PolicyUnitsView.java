@@ -13,7 +13,8 @@ import java.util.UUID;
  * ledger entry.
  */
 public record PolicyUnitsView(String policyNumber, List<Holding> holdings, @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal totalValue, String currency,
-                              List<Pending> pending, List<Entry> entries, boolean frozen, String frozenReason) {
+                              List<Pending> pending, List<Entry> entries, boolean frozen, String frozenReason,
+                              List<SwitchView> switches) {
 
     public record Holding(String fundCode, String fundName, @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal units, @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal price, LocalDate priceDate,
                           @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal value) {}

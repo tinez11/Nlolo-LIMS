@@ -76,4 +76,53 @@ public interface UnitLinkedApi {
 
     /** Staff set the payee of a maturity or lapse payout the policyholder's record could not supply. */
     void payAwaitingExit(String policyNumber, String payeeRef, String by);
+
+    /**
+     * Premium redirection (U2, spec §4): where premiums received from now on go. One staff member, audited by its own
+     * row; a premium already waiting keeps the split it arrived under, and nothing already bought moves.
+     */
+    PremiumSplitView redirect(String policyNumber, java.util.List<tz.co.nlolo.lifeplatform.underwriting.api.UnitLinkedChoice.Split> split,
+                              String by);
+
+    /** Every split the policy has had, newest first. */
+    java.util.List<PremiumSplitView> splitHistory(String policyNumber);
+
+    /**
+     * A fund switch (U2, spec §2): one staff member, audited. Both legs are priced on one date, the first after the
+     * request on which every involved fund is priced; beyond the version's free switches a year, its fee applies.
+     */
+    SwitchView requestSwitch(String policyNumber, SwitchInput input, String by);
+
+    java.util.List<SwitchView> listSwitches(String policyNumber);
+
+    /**
+     * A partial withdrawal (U2, spec §3), requested by one person: a gross amount from named funds or pro rata, checked
+     * against the version's minimums. Nothing is sold until a second person approves.
+     */
+    WithdrawalView requestWithdrawal(String policyNumber, WithdrawalInput input, String by);
+
+    /** A second person approves; the sale binds at this instant and is priced at the first price after it. */
+    WithdrawalView approveWithdrawal(java.util.UUID withdrawalId, String by);
+
+    java.util.List<WithdrawalView> listWithdrawals(String policyNumber);
+
+    /**
+     * A top-up (U2, spec §4), once per Idempotency-Key: a repeat of the key answers with the first top-up and collects
+     * nothing again. Allocated at the version's top-up percent when payment confirms the money.
+     */
+    TopUpView requestTopUp(String policyNumber, TopUpInput input, String by, String idempotencyKey);
+
+    java.util.List<TopUpView> listTopUps(String policyNumber);
+
+    /**
+     * An on-demand unit statement for any period ending today at the latest (U2, spec §6): filed beside the annual
+     * ones, never in place of them, and sending the customer nothing.
+     */
+    UnitStatementView fileStatement(String policyNumber, java.time.LocalDate from, java.time.LocalDate to, String by);
+
+    /** Every statement filed for the policy, annual and on demand, newest period first. */
+    java.util.List<UnitStatementView> statements(String policyNumber);
+
+    /** A filed statement's PDF. */
+    byte[] statementPdf(java.util.UUID statementId);
 }

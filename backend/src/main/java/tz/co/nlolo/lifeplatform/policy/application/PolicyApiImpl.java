@@ -755,6 +755,30 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
+    @Transactional
+    public PolicyView reduceUnitLinkedSumAssured(String policyNumber, BigDecimal by, String reason, String appliedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        BigDecimal from = policy.getSumAssuredAmount();
+        BigDecimal to = from.subtract(by);
+        policy.reduceSumAssuredForWithdrawal(to);
+        policyRepository.save(policy);
+        // The DEATH coverage moves with it (plan D7): claims value a death from the coverage row.
+        for (Coverage coverage : coverageRepository.findByPolicyNumberAndActiveTrue(policyNumber)) {
+            if ("DEATH".equals(coverage.getBenefitType())) {
+                coverage.restateSumAssured(to);
+                coverageRepository.save(coverage);
+            }
+        }
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"));
+        endorsementRepository.save(new Endorsement(tenantId, policyNumber, "UNIT_LINKED_WITHDRAWAL", today,
+            Map.of("sumAssuredFrom", from.toPlainString(), "sumAssuredTo", to.toPlainString(), "reason", reason), appliedBy));
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyEndorsed", tenantId,
+            Map.of("policyNumber", policyNumber, "endorsementType", "UNIT_LINKED_WITHDRAWAL", "effectiveDate", today.toString())));
+        return toView(policy);
+    }
+
+    @Override
     public String productCategoryOf(String policyNumber) {
         return findPolicyOrThrow(policyNumber, TenantContext.get()).getProductCategory();
     }

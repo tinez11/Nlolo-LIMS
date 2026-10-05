@@ -33,6 +33,29 @@
 - **R5 — Reducing cover needs a new policy path.** `Policy.restateSumAssured` is scheme-only and `applyEndorsement` changes nothing. A new `PolicyApi.reduceUnitLinkedSumAssured` restates `policy.sum_assured_amount` AND the DEATH `policy.coverage` row, and records an endorsement.
 - **R6 — Statements file as `DocumentType.ACCOUNT_STATEMENT`** (the existing statement type; no document migration).
 
+## Pre-start check against the code (2026-10-05, before any code was written)
+
+Confirmed: the U1 constraint names (`unit_entry_check`, `unit_entry_entry_type_check`, `pending_order_purpose_check`,
+`payment_transaction_purpose_check`); WITHDRAWAL_PAYOUT and PREMIUM_RETURN_PAYOUT already allowed and
+`unitlinked.PayoutRequested` already routed; `FundPriceRepository.findApproved`, `UnitEntryRepository.holdings/sumUnits`,
+`Coverage.restateSumAssured`, `unitlinked.unit_linked_policies()`; `payment.PaymentFailed` carries `purpose`.
+Corrections:
+
+- **D1** WAITING switches are NOT shown as pending orders (that list's `side` is BUY|SELL in the API): `PolicyUnitsView`
+  gains its own `switches` list (`SwitchView`), built in `UnitLinkedApiImpl.units`, and the OpenAPI schema with it.
+- **D2** The statement template is `UNIT_LINKED_STATEMENT`, four rows (SMS and EMAIL, `sw` and `en`), in
+  `communication.notification_template (tenant_id, template_key, channel, language, body_template)` like U1's V13.
+- **D3** No ascending "approved on or after" query exists (`findApprovedAfter` is strictly after, newest first):
+  add `FundPriceRepository.findApprovedFrom(tenantId, fundId, from)` ordered ascending.
+- **D4** `findLatestApprovedBefore` is STRICTLY before: a statement's "latest approved price on or before D" calls it
+  with `D.plusDays(1)`.
+- **D5** `FundLiability.adjust(BigDecimal)` and `UnitEntryRepository.sumUnitsAsOf(...)` are new.
+- **D6** unitlinked's `PaymentEventListener` handles only `DisbursementCompleted`: it gains `PaymentConfirmed` and
+  `PaymentFailed`, both filtered to `purpose = UL_TOP_UP` before anything is read.
+- **D7** Cutting cover reuses `Coverage.restateSumAssured` on the active DEATH coverage rows.
+- **Branch:** `product-step6-u2` is cut from `product-step6-unit-linked` at 4416ba1d (U1's loan-race and test-cache
+  fixes are not on main yet); main is merged in once U1 lands.
+
 ---
 
 ## File structure

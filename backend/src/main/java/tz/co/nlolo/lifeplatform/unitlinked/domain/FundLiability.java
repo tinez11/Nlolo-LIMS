@@ -38,6 +38,14 @@ public class FundLiability {
         this.unitsInIssue = unitsInIssue;
     }
 
+    /**
+     * Value moved into (positive) or out of the fund inside 2150 without a pricing run -- a switch's legs (U2, plan D5).
+     * The next true-up measures from this figure, so 2150 stays units x price for every fund.
+     */
+    public void adjust(BigDecimal by) {
+        this.carried = carried.add(by);
+    }
+
     public UUID getFundId() { return fundId; }
     public BigDecimal getCarried() { return carried; }
     public UUID getPriceId() { return priceId; }

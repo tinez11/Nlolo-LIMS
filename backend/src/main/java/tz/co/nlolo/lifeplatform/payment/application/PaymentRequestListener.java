@@ -120,6 +120,8 @@ public class PaymentRequestListener {
             // Unit-linked (product step 6): the same shape -- purpose, sourceRef, idempotencyKey, payee, amount.
             case "unitlinked.PayoutRequested" -> withTenant(envelope, this::handleAccountPayout);
             case "accumulation.TopUpRequested" -> withTenant(envelope, this::handleTopUpCollection);
+            // A unit-linked top-up (product step 6, U2): its own collection purpose, so only unitlinked takes it.
+            case "unitlinked.TopUpRequested" -> withTenant(envelope, this::handleUnitLinkedTopUp);
             default -> { /* not payment-relevant */ }
         }
     }
@@ -262,6 +264,20 @@ public class PaymentRequestListener {
         disbursementId.ifPresentOrElse(
             id -> submitDisbursement(tenantId, id, payeeRef, money),
             () -> log.info("Dropping duplicate accumulation.PayoutRequested for tenant {} key {}", tenantId, idempotencyKey));
+    }
+
+    /** A unit-linked top-up: a collection under UL_TOP_UP -- neither billing's premium nor accumulation's top-up. */
+    private void handleUnitLinkedTopUp(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String idempotencyKey = requireKey(payload);
+        String topUpId = String.valueOf(payload.get("topUpId"));
+        String payerRef = (String) payload.get("payerRef");
+        Money money = money(payload);
+        Optional<UUID> transactionId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordCollectionRequest(
+            tenantId, idempotencyKey, payerRef, money.amount(), money.currency(), topUpId, "UL_TOP_UP"));
+        transactionId.ifPresentOrElse(
+            id -> submitCollection(tenantId, id, payerRef, money),
+            () -> log.info("Dropping duplicate unitlinked.TopUpRequested for tenant {} key {}", tenantId, idempotencyKey));
     }
 
     /** A top-up: a collection that is not a premium, so billing leaves its confirmation alone. */

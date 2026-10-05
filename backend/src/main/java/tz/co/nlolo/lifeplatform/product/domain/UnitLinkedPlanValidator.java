@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.product.domain;
 import tz.co.nlolo.lifeplatform.product.api.FundDirectory;
 import tz.co.nlolo.lifeplatform.product.api.InvalidProductVersionException;
 import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
+import tz.co.nlolo.lifeplatform.product.api.UnitLinkedOptions;
 import tz.co.nlolo.lifeplatform.product.api.UnitLinkedPlan;
 import tz.co.nlolo.lifeplatform.product.api.UnitLinkedPlan.AllocationBand;
 import tz.co.nlolo.lifeplatform.product.api.UnitLinkedPlan.MortalityBasis;
@@ -24,6 +25,8 @@ public final class UnitLinkedPlanValidator {
     /** The platform's own frequencies -- PremiumFrequency's names, never a second hand-kept list. */
     private static final Set<String> FREQUENCIES = java.util.Arrays.stream(tz.co.nlolo.lifeplatform.product.api.PremiumFrequency.values())
         .map(Enum::name).collect(java.util.stream.Collectors.toUnmodifiableSet());
+
+    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
     private UnitLinkedPlanValidator() {}
 
@@ -67,6 +70,48 @@ public final class UnitLinkedPlanValidator {
             fail("The low-fund warning must be between 1 and 60 months of charges");
         }
         checkPremiums(plan);
+        checkOptions(plan.options());
+    }
+
+    /** U2's terms (V26): each feature is both-or-neither of its pair, and the surrender charge runs on from year 1. */
+    private static void checkOptions(UnitLinkedOptions o) {
+        if ((o.freeSwitchesPerYear() == null) != (o.switchFee() == null)) {
+            fail("Switching needs both the free switches per year and the fee for each switch after them");
+        }
+        if (o.freeSwitchesPerYear() != null && (o.freeSwitchesPerYear() < 0 || o.switchFee().signum() < 0)) {
+            fail("Free switches and the switch fee are zero or more");
+        }
+        if ((o.minimumWithdrawal() == null) != (o.minimumRemainingValue() == null)) {
+            fail("Withdrawals need both the minimum withdrawal and the minimum value left in the policy");
+        }
+        if (o.minimumWithdrawal() != null && (o.minimumWithdrawal().signum() <= 0 || o.minimumRemainingValue().signum() < 0)) {
+            fail("A minimum withdrawal is greater than zero and the minimum value left is zero or more");
+        }
+        if ((o.topUpAllocationPercent() == null) != (o.minimumTopUp() == null)) {
+            fail("Top-ups need both their allocation percent and the minimum top-up");
+        }
+        if (o.topUpAllocationPercent() != null && (o.topUpAllocationPercent().signum() <= 0
+                || o.topUpAllocationPercent().compareTo(HUNDRED) > 0 || o.minimumTopUp().signum() <= 0)) {
+            fail("A top-up allocation percent is greater than 0 and at most 100, and the minimum top-up greater than zero");
+        }
+        List<UnitLinkedOptions.SurrenderChargeBand> bands = o.surrenderCharges();
+        for (int i = 0; i < bands.size(); i++) {
+            UnitLinkedOptions.SurrenderChargeBand b = bands.get(i);
+            Integer previousEnd = i == 0 ? Integer.valueOf(0) : bands.get(i - 1).toYear();
+            if (previousEnd == null || b.fromYear() != previousEnd + 1) {
+                fail("Surrender charge bands must run on from year 1 without gaps; band " + (i + 1) + " starts at year "
+                    + b.fromYear());
+            }
+            if (b.percent() == null || b.percent().signum() < 0 || b.percent().compareTo(HUNDRED) > 0) {
+                fail("A surrender charge is between 0% and 100%");
+            }
+            if (b.toYear() != null && b.toYear() < b.fromYear()) {
+                fail("Surrender charge band " + (i + 1) + " ends before it starts");
+            }
+        }
+        if (!bands.isEmpty() && bands.get(bands.size() - 1).toYear() != null) {
+            fail("The last surrender charge band must be open-ended");
+        }
     }
 
     private static void checkFunds(UnitLinkedPlan plan, String productCurrency, FundDirectory directory) {

@@ -296,6 +296,22 @@ public class Policy {
     }
 
     /**
+     * A unit-linked policy's cover cut by a partial withdrawal (product step 6, U2) -- only when its version says a
+     * withdrawal reduces the sum assured. Recorded as an endorsement by the service; never below zero.
+     */
+    public void reduceSumAssuredForWithdrawal(BigDecimal newAmount) {
+        if (!"UNIT_LINKED".equals(productCategory)) {
+            throw new InvalidPolicyStateException("Only a unit-linked policy's cover is cut by a withdrawal; policy "
+                + policyNumber + " is " + productCategory);
+        }
+        if (newAmount == null || newAmount.signum() <= 0) {
+            throw new IllegalArgumentException("A withdrawal cannot cut the sum assured to nothing");
+        }
+        this.sumAssuredAmount = newAmount;
+        this.updatedAt = Instant.now();
+    }
+
+    /**
      * A funeral policy's instalment, restated when its family changes (a life added or ended, the
      * anniversary re-pricing). Only a FUNERAL policy's premium moves this way: every other premium is
      * fixed at issue or changes by endorsement.

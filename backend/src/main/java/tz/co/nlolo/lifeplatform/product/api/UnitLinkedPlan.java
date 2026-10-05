@@ -9,12 +9,16 @@ import java.util.Optional;
  * each premium buys units in each policy year, the monthly fee, the mortality table the cost of insurance is
  * charged from, what death pays, when non-payment lapses, the surrender and premium floors, and the sum-assured
  * multiples. Every rule the unit engine applies is here as data. {@link #none()} on every other version.
+ *
+ * <p>{@code options} carries U2's terms (product V26, plan R2) -- switching, withdrawals, top-ups and the surrender
+ * charge -- and is {@link UnitLinkedOptions#none()} on every version published before them.
  */
 public record UnitLinkedPlan(boolean unitLinked, List<String> fundCodes, List<AllocationBand> allocationBands,
                              BigDecimal monthlyPolicyFee, MortalityBasis mortalityBasis, List<MortalityRow> mortality,
                              DeathRule deathRule, LapseRule lapseRule, Integer minimumPremiumYears,
                              int minimumSurrenderYears, int lowFundWarningMonths, List<PremiumMinimum> premiumMinimums,
-                             BigDecimal sumAssuredMultipleMin, BigDecimal sumAssuredMultipleMax) {
+                             BigDecimal sumAssuredMultipleMin, BigDecimal sumAssuredMultipleMax,
+                             UnitLinkedOptions options) {
 
     /** What death pays (spec Q5): the higher of sum assured and fund value, or both. */
     public enum DeathRule { HIGHER_OF, SUM_ASSURED_PLUS_FUND }
@@ -38,6 +42,7 @@ public record UnitLinkedPlan(boolean unitLinked, List<String> fundCodes, List<Al
         allocationBands = allocationBands == null ? List.of() : List.copyOf(allocationBands);
         mortality = mortality == null ? List.of() : List.copyOf(mortality);
         premiumMinimums = premiumMinimums == null ? List.of() : List.copyOf(premiumMinimums);
+        options = options == null ? UnitLinkedOptions.none() : options;
     }
 
     /** Authored terms; {@code unitLinked} is true. */
@@ -48,12 +53,19 @@ public record UnitLinkedPlan(boolean unitLinked, List<String> fundCodes, List<Al
                                     BigDecimal sumAssuredMultipleMin, BigDecimal sumAssuredMultipleMax) {
         return new UnitLinkedPlan(true, fundCodes, allocationBands, monthlyPolicyFee, mortalityBasis, mortality, deathRule,
             lapseRule == null ? LapseRule.EXHAUSTION : lapseRule, minimumPremiumYears, minimumSurrenderYears,
-            lowFundWarningMonths, premiumMinimums, sumAssuredMultipleMin, sumAssuredMultipleMax);
+            lowFundWarningMonths, premiumMinimums, sumAssuredMultipleMin, sumAssuredMultipleMax, UnitLinkedOptions.none());
+    }
+
+    /** The same terms with U2's options (plan R2): of(...) keeps its U1 signature for every existing caller. */
+    public UnitLinkedPlan withOptions(UnitLinkedOptions options) {
+        return new UnitLinkedPlan(unitLinked, fundCodes, allocationBands, monthlyPolicyFee, mortalityBasis, mortality,
+            deathRule, lapseRule, minimumPremiumYears, minimumSurrenderYears, lowFundWarningMonths, premiumMinimums,
+            sumAssuredMultipleMin, sumAssuredMultipleMax, options);
     }
 
     public static UnitLinkedPlan none() {
         return new UnitLinkedPlan(false, List.of(), List.of(), null, null, List.of(), null, null, null, 0, 0, List.of(),
-            null, null);
+            null, null, UnitLinkedOptions.none());
     }
 
     public boolean offersFund(String code) {

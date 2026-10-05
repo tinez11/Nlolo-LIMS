@@ -36,6 +36,16 @@ export const unitLinkedFieldsShape = {
   ulMinimums: z.array(z.string().trim()),
   ulMultipleMin: z.string().trim(),
   ulMultipleMax: z.string().trim(),
+  // U2 options: each feature is offered only when its pair is filled in; all blank = none offered.
+  ulFreeSwitches: z.string().trim(),
+  ulSwitchFee: z.string().trim(),
+  ulMinWithdrawal: z.string().trim(),
+  ulMinRemaining: z.string().trim(),
+  ulWithdrawalCutsCover: z.boolean(),
+  ulTopUpPercent: z.string().trim(),
+  ulMinTopUp: z.string().trim(),
+  /** fromYear,toYear,percent per line, as the allocation bands. */
+  ulSurrenderText: z.string(),
 };
 
 export interface UnitLinkedFields {
@@ -52,6 +62,14 @@ export interface UnitLinkedFields {
   ulMinimums: string[];
   ulMultipleMin: string;
   ulMultipleMax: string;
+  ulFreeSwitches: string;
+  ulSwitchFee: string;
+  ulMinWithdrawal: string;
+  ulMinRemaining: string;
+  ulWithdrawalCutsCover: boolean;
+  ulTopUpPercent: string;
+  ulMinTopUp: string;
+  ulSurrenderText: string;
 }
 
 /** Death pays the higher of sum assured and fund value, and lapse is on exhaustion: the user's defaults. */
@@ -70,6 +88,14 @@ export function blankUnitLinkedFields(): UnitLinkedFields {
     ulMinimums: UL_FREQUENCIES.map(() => ''),
     ulMultipleMin: '',
     ulMultipleMax: '',
+    ulFreeSwitches: '',
+    ulSwitchFee: '',
+    ulMinWithdrawal: '',
+    ulMinRemaining: '',
+    ulWithdrawalCutsCover: false,
+    ulTopUpPercent: '',
+    ulMinTopUp: '',
+    ulSurrenderText: '',
   };
 }
 
@@ -225,6 +251,59 @@ export function validateUnitLinked(category: ProductCategory, v: UnitLinkedField
   } else if (max < min) {
     issue(['ulMultipleMax'], `The sum assured's maximum multiple ${v.ulMultipleMax} is below its minimum ${v.ulMultipleMin}`);
   }
+
+  validateOptions(v, issue);
+}
+
+/** The U2 options, in UnitLinkedPlanValidator.checkOptions's words: each feature's pair both or neither. */
+function validateOptions(v: UnitLinkedFields, issue: (path: (string | number)[], message: string) => void) {
+  const both = (a: string, b: string) => (a === '') === (b === '');
+  if (!both(v.ulFreeSwitches, v.ulSwitchFee)) {
+    issue(['ulSwitchFee'], 'Switching needs both the free switches per year and the fee for each switch after them');
+  } else if (v.ulFreeSwitches !== '' && !(Number.isInteger(Number(v.ulFreeSwitches)) && Number(v.ulFreeSwitches) >= 0 && Number(v.ulSwitchFee) >= 0)) {
+    issue(['ulSwitchFee'], 'Free switches and the switch fee are zero or more');
+  }
+  if (!both(v.ulMinWithdrawal, v.ulMinRemaining)) {
+    issue(['ulMinRemaining'], 'Withdrawals need both the minimum withdrawal and the minimum value left in the policy');
+  } else if (v.ulMinWithdrawal !== '' && !(Number(v.ulMinWithdrawal) > 0 && Number(v.ulMinRemaining) >= 0)) {
+    issue(['ulMinRemaining'], 'A minimum withdrawal is greater than zero and the minimum value left is zero or more');
+  }
+  if (!both(v.ulTopUpPercent, v.ulMinTopUp)) {
+    issue(['ulMinTopUp'], 'Top-ups need both their allocation percent and the minimum top-up');
+  } else if (v.ulTopUpPercent !== '' && !(Number(v.ulTopUpPercent) > 0 && Number(v.ulTopUpPercent) <= 100 && Number(v.ulMinTopUp) > 0)) {
+    issue(['ulMinTopUp'], 'A top-up allocation percent is greater than 0 and at most 100, and the minimum top-up greater than zero');
+  }
+  const surrender = parseAllocation(v.ulSurrenderText);
+  if (surrender.error) {
+    issue(['ulSurrenderText'], surrender.error);
+    return;
+  }
+  const bands = surrender.rows;
+  for (let i = 0; i < bands.length; i++) {
+    const b = bands[i];
+    const expected = i === 0 ? 1 : (bands[i - 1].toYear ?? Number.NaN) + 1;
+    if (b.fromYear !== expected) {
+      issue(['ulSurrenderText'], `Surrender charge bands must run on from year 1 without gaps; band ${i + 1} starts at year ${b.fromYear}`);
+      return;
+    }
+    if (!(b.percent >= 0 && b.percent <= 100)) {
+      issue(['ulSurrenderText'], 'A surrender charge is between 0% and 100%');
+      return;
+    }
+    if (b.toYear !== null && b.toYear < b.fromYear) {
+      issue(['ulSurrenderText'], `Surrender charge band ${i + 1} ends before it starts`);
+      return;
+    }
+  }
+  if (bands.length > 0 && bands[bands.length - 1].toYear !== null) {
+    issue(['ulSurrenderText'], 'The last surrender charge band must be open-ended');
+  }
+}
+
+/** True when any U2 option is filled in: only then is an options block sent. */
+export function hasUnitLinkedOptions(v: UnitLinkedFields): boolean {
+  return [v.ulFreeSwitches, v.ulSwitchFee, v.ulMinWithdrawal, v.ulMinRemaining, v.ulTopUpPercent, v.ulMinTopUp,
+    v.ulSurrenderText.trim()].some((s) => s !== '') || v.ulWithdrawalCutsCover;
 }
 
 export function toUnitLinkedRequest(v: UnitLinkedFields): NonNullable<ProductVersionSpec['unitLinked']> {
@@ -244,5 +323,19 @@ export function toUnitLinkedRequest(v: UnitLinkedFields): NonNullable<ProductVer
       v.ulMinimums[i] === '' ? [] : [{ frequency, amount: Number(v.ulMinimums[i]) }]),
     sumAssuredMultipleMin: num(v.ulMultipleMin),
     sumAssuredMultipleMax: num(v.ulMultipleMax),
+    ...(hasUnitLinkedOptions(v)
+      ? {
+          options: {
+            freeSwitchesPerYear: num(v.ulFreeSwitches),
+            switchFee: num(v.ulSwitchFee),
+            minimumWithdrawal: num(v.ulMinWithdrawal),
+            minimumRemainingValue: num(v.ulMinRemaining),
+            withdrawalReducesSumAssured: v.ulWithdrawalCutsCover,
+            topUpAllocationPercent: num(v.ulTopUpPercent),
+            minimumTopUp: num(v.ulMinTopUp),
+            surrenderCharges: parseAllocation(v.ulSurrenderText).rows,
+          },
+        }
+      : {}),
   };
 }

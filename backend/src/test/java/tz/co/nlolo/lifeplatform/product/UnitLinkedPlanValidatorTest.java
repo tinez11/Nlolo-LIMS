@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 import tz.co.nlolo.lifeplatform.product.api.FundDirectory;
 import tz.co.nlolo.lifeplatform.product.api.InvalidProductVersionException;
 import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
+import tz.co.nlolo.lifeplatform.product.api.UnitLinkedOptions;
+import tz.co.nlolo.lifeplatform.product.api.UnitLinkedOptions.SurrenderChargeBand;
 import tz.co.nlolo.lifeplatform.product.api.UnitLinkedPlan;
 import tz.co.nlolo.lifeplatform.product.api.UnitLinkedPlan.AllocationBand;
 import tz.co.nlolo.lifeplatform.product.api.UnitLinkedPlan.DeathRule;
@@ -153,5 +155,55 @@ class UnitLinkedPlanValidatorTest {
         assertThat(bySex.annualRatePerMille(30, "FEMALE")).isEqualByComparingTo("1.5");
         assertThatThrownBy(() -> bySex.annualRatePerMille(30, null)).hasMessageContaining("no sex is recorded");
         assertThat(plan.lapseRule()).isEqualTo(LapseRule.EXHAUSTION);
+    }
+
+    // ---- U2 (product V26): switching, withdrawals, top-ups and the surrender charge ----
+
+    /** 2 free switches then 5,000; withdrawals from 100,000 leaving 500,000; top-ups at 98% from 50,000; 10%, 5%, 0%. */
+    static UnitLinkedOptions options() {
+        return new UnitLinkedOptions(2, d("5000"), d("100000"), d("500000"), false, d("98"), d("50000"), List.of(
+            new SurrenderChargeBand(1, 1, d("10")), new SurrenderChargeBand(2, 5, d("5")), new SurrenderChargeBand(6, null, d("0"))));
+    }
+
+    private static UnitLinkedOptions with(Integer free, String fee, String topUp, String minTopUp, List<SurrenderChargeBand> bands) {
+        return new UnitLinkedOptions(free, fee == null ? null : d(fee), d("100000"), d("500000"), false,
+            topUp == null ? null : d(topUp), minTopUp == null ? null : d(minTopUp), bands);
+    }
+
+    @Test
+    void completeU2TermsAreAcceptedAndAVersionWithoutThemOffersNothing() {
+        assertThatCode(() -> check(valid().withOptions(options()))).doesNotThrowAnyException();
+        UnitLinkedOptions none = valid().options();
+        assertThat(none.switchingOffered() || none.withdrawalsOffered() || none.topUpsOffered()).isFalse();
+        assertThat(none.surrenderChargePercent(1)).isEqualByComparingTo("0");
+        assertThat(options().surrenderChargePercent(1)).isEqualByComparingTo("10");
+        assertThat(options().surrenderChargePercent(5)).isEqualByComparingTo("5");
+        assertThat(options().surrenderChargePercent(30)).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void eachFeatureNeedsBothOfItsTerms() {
+        refused(valid().withOptions(with(null, "5000", "98", "50000", List.of())),
+            "Switching needs both the free switches per year and the fee for each switch after them");
+        refused(valid().withOptions(with(2, "5000", "98", null, List.of())),
+            "Top-ups need both their allocation percent and the minimum top-up");
+    }
+
+    @Test
+    void aTopUpAllocationIsAboveZeroAndAtMostAHundred() {
+        refused(valid().withOptions(with(2, "5000", "0", "50000", List.of())),
+            "A top-up allocation percent is greater than 0 and at most 100");
+        refused(valid().withOptions(with(2, "5000", "101", "50000", List.of())),
+            "A top-up allocation percent is greater than 0 and at most 100");
+    }
+
+    @Test
+    void surrenderChargeBandsRunOnFromYearOneAndEndOpen() {
+        refused(valid().withOptions(with(2, "5000", "98", "50000", List.of(new SurrenderChargeBand(2, null, d("5"))))),
+            "Surrender charge bands must run on from year 1 without gaps; band 1 starts at year 2");
+        refused(valid().withOptions(with(2, "5000", "98", "50000", List.of(new SurrenderChargeBand(1, 5, d("5"))))),
+            "The last surrender charge band must be open-ended");
+        refused(valid().withOptions(with(2, "5000", "98", "50000", List.of(new SurrenderChargeBand(1, null, d("101"))))),
+            "A surrender charge is between 0% and 100%");
     }
 }

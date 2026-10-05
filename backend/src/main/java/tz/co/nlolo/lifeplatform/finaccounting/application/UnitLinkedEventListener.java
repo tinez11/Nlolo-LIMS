@@ -34,8 +34,13 @@ import java.util.UUID;
  *   PremiumReturned  DR 2140 premium        / CR 5100 returned, CR 4310 its allocation charge
  *   ChargeRefunded   DR 4310 / CR 5100
  *   UnitsReinvested  DR 5100 / CR 2150
- *   PayoutPaid       DR 5100 / CR cash  an exit's payout (surrender, maturity, lapse), keyed on the disbursement;
- *                    DR 2130 / CR cash  an adjustment paid to the customer
+ *   PayoutPaid       DR 5100 / CR cash  an exit's or a withdrawal's payout, keyed on the disbursement;
+ *                    DR 2130 / CR cash  an adjustment paid to the customer;
+ *                    DR 2140 / CR cash  a top-up refunded whole
+ *   SwitchExecuted   DR 2150 / CR 4310  the switch fee (the units moved stay inside 2150)
+ *   WithdrawalPriced DR 2150 proceeds / CR 5100; DR 5100 / CR 4310 its surrender charge
+ *   SurrenderCharged DR 5100 / CR 4310  an exit's surrender charge, out of what ExitPriced put in 5100
+ *   TopUpReceived    DR cash / CR 2140  the top-up's money in, before it buys units (UnitsAllocated) or goes back
  *   AdjustmentCollected  DR cash / CR 1230   owed by the customer, collected outside the platform
  *   AdjustmentWaived     DR 2130 / CR 5100 owed to them; DR 5100 / CR 1230 owed by them
  *   PriceCorrected   per re-run exit sale: the liability's difference against 5100; where the exit was already
@@ -138,8 +143,26 @@ public class UnitLinkedEventListener {
                 PostingRule.CLAIMS_EXPENSE, PostingRule.UNIT_LINKED_LIABILITY, money(p.get("amount")), currency);
             case "unitlinked.PriceCorrected" -> corrected(tenantId, type, p, currency);
             case "unitlinked.PayoutPaid" -> pair(tenantId, type, (String) p.get("sourceRef"), policy,
-                "PRICE_CORRECTION_PAYOUT".equals(p.get("purpose")) ? PostingRule.POLICYHOLDER_BENEFITS_PAYABLE : PostingRule.CLAIMS_EXPENSE,
+                switch (String.valueOf(p.get("purpose"))) {
+                    case "PRICE_CORRECTION_PAYOUT" -> PostingRule.POLICYHOLDER_BENEFITS_PAYABLE;
+                    // A refunded top-up never bought a unit: its money is still where TopUpReceived put it.
+                    case "TOP_UP_REFUND" -> PostingRule.UNEARNED_PREMIUM;
+                    default -> PostingRule.CLAIMS_EXPENSE;
+                },
                 PostingRule.CASH, money(p.get("amount")), currency);
+            case "unitlinked.SwitchExecuted" -> pair(tenantId, type, (String) p.get("sourceRef"), policy,
+                PostingRule.UNIT_LINKED_LIABILITY, PostingRule.UNIT_LINKED_CHARGES_INCOME, money(p.get("fee")), currency);
+            case "unitlinked.WithdrawalPriced" -> {
+                String ref = (String) p.get("sourceRef");
+                pair(tenantId, type, ref, policy, PostingRule.UNIT_LINKED_LIABILITY, PostingRule.CLAIMS_EXPENSE,
+                    money(p.get("proceeds")), currency);
+                pair(tenantId, type, ref + ":surrender-charge", policy, PostingRule.CLAIMS_EXPENSE,
+                    PostingRule.UNIT_LINKED_CHARGES_INCOME, money(p.get("surrenderCharge")), currency);
+            }
+            case "unitlinked.SurrenderCharged" -> pair(tenantId, type, (String) p.get("sourceRef"), policy,
+                PostingRule.CLAIMS_EXPENSE, PostingRule.UNIT_LINKED_CHARGES_INCOME, money(p.get("amount")), currency);
+            case "unitlinked.TopUpReceived" -> pair(tenantId, type, (String) p.get("sourceRef"), policy,
+                PostingRule.CASH, PostingRule.UNEARNED_PREMIUM, money(p.get("amount")), currency);
             case "unitlinked.AdjustmentCollected" -> pair(tenantId, type, (String) p.get("sourceRef"), policy,
                 PostingRule.CASH, PostingRule.OTHER_RECEIVABLES, money(p.get("amount")), currency);
             case "unitlinked.AdjustmentWaived" -> {

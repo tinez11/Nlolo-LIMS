@@ -19,6 +19,7 @@ import tz.co.nlolo.lifeplatform.unitlinked.domain.BindingRule;
 import tz.co.nlolo.lifeplatform.unitlinked.domain.Fund;
 import tz.co.nlolo.lifeplatform.unitlinked.domain.PendingOrder;
 import tz.co.nlolo.lifeplatform.unitlinked.domain.PolicyAllocation;
+import tz.co.nlolo.lifeplatform.unitlinked.domain.PremiumSplit;
 import tz.co.nlolo.lifeplatform.unitlinked.domain.UnitArithmetic;
 import tz.co.nlolo.lifeplatform.unitlinked.domain.UnitEntry;
 import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.FundRepository;
@@ -59,11 +60,12 @@ class Allocations implements UnitsPricedListener {
     private final UnitLedger ledger;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final PremiumSplits premiumSplits;
 
     Allocations(PolicyAllocationRepository allocations, FundRepository funds, PendingOrderRepository orders,
                 UnitEntryRepository entries, PolicyApi policyApi, ProductApi productApi, UnderwritingApi underwritingApi,
                 @org.springframework.context.annotation.Lazy UnitLedger ledger, ApplicationEventPublisher events,
-                @Qualifier("unitLinkedClock") Clock clock) {
+                @Qualifier("unitLinkedClock") Clock clock, PremiumSplits premiumSplits) {
         this.allocations = allocations;
         this.funds = funds;
         this.orders = orders;
@@ -74,6 +76,7 @@ class Allocations implements UnitsPricedListener {
         this.ledger = ledger;
         this.events = events;
         this.clock = clock;
+        this.premiumSplits = premiumSplits;
     }
 
     boolean isUnitLinked(String policyNumber) {
@@ -95,11 +98,16 @@ class Allocations implements UnitsPricedListener {
         UnitLinkedChoice choice = underwritingApi.unitLinkedChoice(policy.underwritingCaseId())
             .orElseThrow(() -> new IllegalStateException("Unit-linked policy " + policyNumber
                 + " has no fund choice on case " + policy.underwritingCaseId()));
+        List<PremiumSplit.Share> shares = new java.util.ArrayList<>();
         for (UnitLinkedChoice.Split s : choice.split()) {
             Fund fund = funds.findByTenantIdAndCode(tenantId, s.fundCode())
                 .orElseThrow(() -> new FundNotFoundException("Fund " + s.fundCode()));
             allocations.save(new PolicyAllocation(tenantId, policyNumber, fund.getFundId(), s.percent()));
+            shares.add(new PremiumSplit.Share(fund.getFundId(), s.percent()));
         }
+        // U2: the split is a history (spec §4); the case's choice is its first row. policy_allocation stays as the
+        // marker every unit-linked listener gates on (isUnitLinked).
+        premiumSplits.recordAtIssue(policyNumber, shares);
     }
 
     /**
@@ -134,8 +142,8 @@ class Allocations implements UnitsPricedListener {
             entries.save(UnitEntry.money(tenantId, policyNumber, UnitEntry.Type.ALLOCATION_CHARGE,
                 allocated.charge().negate(), collectedOn, PREMIUM, ref, null, UnitLedger.SYSTEM, clock.instant()));
         }
-        List<PolicyAllocation> split = allocations.findByTenantIdAndPolicyNumber(tenantId, policyNumber).stream()
-            .sorted(Comparator.comparing(a -> a.getFundId().toString())).toList();
+        // The split in force when the money was RECEIVED (U2): a redirection reaches only later premiums.
+        List<PremiumSplit.Share> split = premiumSplits.splitAt(policyNumber, collectedAt);
         List<BigDecimal> parts = UnitArithmetic.split(allocated.allocated(), split.stream()
             .map(a -> new UnitArithmetic.Weighted(a.getFundId().toString(), BigDecimal.valueOf(a.getPercent()))).toList());
         for (int i = 0; i < split.size(); i++) {
@@ -145,6 +153,38 @@ class Allocations implements UnitsPricedListener {
             Fund fund = funds.findByTenantIdAndFundId(tenantId, split.get(i).getFundId()).orElseThrow();
             orders.save(PendingOrder.buy(tenantId, policyNumber, fund.getFundId(), parts.get(i),
                 PendingOrder.Purpose.ALLOCATION, collectedAt, fund.getCutOffTime(), PREMIUM, ref));
+        }
+    }
+
+    /**
+     * A top-up received (U2, spec §4): its own allocation percent -- not the policy year's band -- and its own split or
+     * the one in force at the instant the money arrived, each fund's share bound FORWARD by its cut-off like any premium.
+     * When its last order is priced, {@link #afterPriced} publishes UnitsAllocated for it as for a premium.
+     */
+    @Transactional
+    void onTopUpReceived(tz.co.nlolo.lifeplatform.unitlinked.domain.TopUp topUp, Instant receivedAt) {
+        UUID tenantId = TenantContext.get();
+        String ref = TopUps.SOURCE + ":" + topUp.getTopUpId();
+        PolicyView policy = policyApi.getPolicy(topUp.getPolicyNumber());
+        UnitLinkedPlan plan = productApi.resolveUnitLinkedPlan(policy.productVersionId());
+        LocalDate receivedOn = BindingRule.civilDate(receivedAt);
+        UnitArithmetic.Allocated allocated = UnitArithmetic.allocate(topUp.getAmount(), plan.options().topUpAllocationPercent());
+        if (allocated.charge().signum() > 0) {
+            entries.save(UnitEntry.money(tenantId, topUp.getPolicyNumber(), UnitEntry.Type.ALLOCATION_CHARGE,
+                allocated.charge().negate(), receivedOn, TopUps.SOURCE, ref, null, UnitLedger.SYSTEM, clock.instant()));
+        }
+        List<PremiumSplit.Share> split = topUp.getSplit().isEmpty()
+            ? premiumSplits.splitAt(topUp.getPolicyNumber(), receivedAt)
+            : topUp.getSplit().stream().sorted(Comparator.comparing(s -> s.getFundId().toString())).toList();
+        List<BigDecimal> parts = UnitArithmetic.split(allocated.allocated(), split.stream()
+            .map(a -> new UnitArithmetic.Weighted(a.getFundId().toString(), BigDecimal.valueOf(a.getPercent()))).toList());
+        for (int i = 0; i < split.size(); i++) {
+            if (parts.get(i).signum() <= 0) {
+                continue;
+            }
+            Fund fund = funds.findByTenantIdAndFundId(tenantId, split.get(i).getFundId()).orElseThrow();
+            orders.save(PendingOrder.buy(tenantId, topUp.getPolicyNumber(), fund.getFundId(), parts.get(i),
+                PendingOrder.Purpose.ALLOCATION, receivedAt, fund.getCutOffTime(), TopUps.SOURCE, ref));
         }
     }
 

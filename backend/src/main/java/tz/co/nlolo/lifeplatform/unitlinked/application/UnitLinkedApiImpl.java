@@ -31,6 +31,11 @@ import java.util.stream.Collectors;
 public class UnitLinkedApiImpl implements UnitLinkedApi {
 
     private final FundRegister register;
+    private final PremiumSplits premiumSplits;
+    private final Switches switches;
+    private final Withdrawals withdrawals;
+    private final TopUps topUps;
+    private final Statements statements;
     private final FundRepository funds;
     private final FundPriceRepository prices;
     private final PolicyAllocationRepository allocations;
@@ -42,7 +47,13 @@ public class UnitLinkedApiImpl implements UnitLinkedApi {
 
     UnitLinkedApiImpl(FundRegister register, FundRepository funds, FundPriceRepository prices,
                       PolicyAllocationRepository allocations, UnitEntryRepository entries, PendingOrderRepository orders,
-                      FrozenPolicyRepository frozen, Adjustments adjustments, Exits exits) {
+                      FrozenPolicyRepository frozen, Adjustments adjustments, Exits exits, PremiumSplits premiumSplits,
+                      Switches switches, Withdrawals withdrawals, TopUps topUps, Statements statements) {
+        this.statements = statements;
+        this.topUps = topUps;
+        this.switches = switches;
+        this.withdrawals = withdrawals;
+        this.premiumSplits = premiumSplits;
         this.adjustments = adjustments;
         this.exits = exits;
         this.register = register;
@@ -87,8 +98,9 @@ public class UnitLinkedApiImpl implements UnitLinkedApi {
                 e.getType().name(), e.getUnits(), e.getPrice(), e.getAmount(), e.getValuationDate(), e.getBoundDate(),
                 e.getSourceRef(), e.getCreatedAt())).toList();
         var frozenRow = frozen.findByTenantIdAndPolicyNumber(tenantId, policyNumber);
+        // Switches are not pending orders (plan D1): their own list, the waiting one first.
         return new PolicyUnitsView(policyNumber, holdings, holdings.isEmpty() ? null : total, currency, pending, ledger,
-            frozenRow.isPresent(), frozenRow.map(r -> r.getReason().name()).orElse(null));
+            frozenRow.isPresent(), frozenRow.map(r -> r.getReason().name()).orElse(null), switches.list(policyNumber));
     }
 
     @Override
@@ -121,6 +133,71 @@ public class UnitLinkedApiImpl implements UnitLinkedApi {
     @Override
     public void payAwaitingExit(String policyNumber, String payeeRef, String by) {
         exits.payAwaiting(policyNumber, payeeRef);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.unitlinked.api.PremiumSplitView redirect(String policyNumber,
+            List<tz.co.nlolo.lifeplatform.underwriting.api.UnitLinkedChoice.Split> split, String by) {
+        return premiumSplits.redirect(policyNumber, split, by);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.PremiumSplitView> splitHistory(String policyNumber) {
+        return premiumSplits.history(policyNumber);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.unitlinked.api.SwitchView requestSwitch(String policyNumber,
+            tz.co.nlolo.lifeplatform.unitlinked.api.SwitchInput input, String by) {
+        return switches.request(policyNumber, input, by);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.SwitchView> listSwitches(String policyNumber) {
+        return switches.list(policyNumber);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.unitlinked.api.WithdrawalView requestWithdrawal(String policyNumber,
+            tz.co.nlolo.lifeplatform.unitlinked.api.WithdrawalInput input, String by) {
+        return withdrawals.request(policyNumber, input, by);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.unitlinked.api.WithdrawalView approveWithdrawal(UUID withdrawalId, String by) {
+        return withdrawals.approve(withdrawalId, by);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.WithdrawalView> listWithdrawals(String policyNumber) {
+        return withdrawals.list(policyNumber);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.unitlinked.api.TopUpView requestTopUp(String policyNumber,
+            tz.co.nlolo.lifeplatform.unitlinked.api.TopUpInput input, String by, String idempotencyKey) {
+        return topUps.request(policyNumber, input, by, idempotencyKey);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.TopUpView> listTopUps(String policyNumber) {
+        return topUps.list(policyNumber);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.unitlinked.api.UnitStatementView fileStatement(String policyNumber, LocalDate from,
+                                                                                   LocalDate to, String by) {
+        return statements.file(policyNumber, from, to, tz.co.nlolo.lifeplatform.unitlinked.domain.UnitStatement.Kind.ON_DEMAND, by);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.unitlinked.api.UnitStatementView> statements(String policyNumber) {
+        return statements.list(policyNumber);
+    }
+
+    @Override
+    public byte[] statementPdf(UUID statementId) {
+        return statements.pdf(statementId);
     }
 
     @Override

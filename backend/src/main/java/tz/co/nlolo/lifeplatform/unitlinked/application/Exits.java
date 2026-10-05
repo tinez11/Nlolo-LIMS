@@ -74,11 +74,23 @@ class Exits implements UnitsPricedListener {
     private final UnitLedger ledger;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    // Switches and Withdrawals each reach the ledger and Exits: looked up when an exit runs, never at construction.
+    private final org.springframework.beans.factory.ObjectProvider<Switches> switchesProvider;
+    private final org.springframework.beans.factory.ObjectProvider<Withdrawals> withdrawalsProvider;
+    private final SurrenderCharges surrenderCharges;
+    private final org.springframework.beans.factory.ObjectProvider<PremiumSplits> premiumSplitsProvider;
 
     Exits(PendingOrderRepository orders, UnitEntryRepository entries, ExitStateRepository exits, FundRepository funds,
           PolicyAllocationRepository allocations, PolicyApi policyApi, ProductApi productApi, PartyApi partyApi,
           BenefitPayoutApi benefitPayoutApi, @Lazy UnitLedger ledger, ApplicationEventPublisher events,
-          @Qualifier("unitLinkedClock") Clock clock) {
+          @Qualifier("unitLinkedClock") Clock clock,
+          org.springframework.beans.factory.ObjectProvider<Switches> switchesProvider,
+          org.springframework.beans.factory.ObjectProvider<Withdrawals> withdrawalsProvider, SurrenderCharges surrenderCharges,
+          org.springframework.beans.factory.ObjectProvider<PremiumSplits> premiumSplitsProvider) {
+        this.premiumSplitsProvider = premiumSplitsProvider;
+        this.surrenderCharges = surrenderCharges;
+        this.switchesProvider = switchesProvider;
+        this.withdrawalsProvider = withdrawalsProvider;
         this.orders = orders;
         this.entries = entries;
         this.exits = exits;
@@ -124,13 +136,18 @@ class Exits implements UnitsPricedListener {
             return; // redelivered
         }
         ledger.freeze(policyNumber, reason, sourceRef);
+        // A switch still waiting is cancelled (U2): the exit sells everything.
+        switchesProvider.getObject().cancelWaiting(policyNumber);
+        // ...and a withdrawal not yet priced: its waiting sales are cancelled with the rest below.
+        withdrawalsProvider.getObject().cancelLive(policyNumber);
         ExitState state = new ExitState(tenantId, policyNumber, purpose, sourceType, sourceRef, payeeRef);
-        java.util.Set<String> returnedPremiums = new java.util.HashSet<>();
+        // Each money source still waiting for units, by its type: a premium, or a top-up (U2) -- both go back whole.
+        java.util.Map<String, String> returnedPremiums = new java.util.LinkedHashMap<>();
         for (PendingOrder waiting : orders.findByTenantIdAndPolicyNumberAndStatusOrderByReceivedAt(tenantId, policyNumber, "WAITING")) {
             if (waiting.getSide() == PendingOrder.Side.BUY) {
                 state.addReturnedMoney(waiting.getAmount()); // a premium never bought units: it goes back as money
-                if (Allocations.PREMIUM.equals(waiting.getSourceType())) {
-                    returnedPremiums.add(waiting.getSourceRef());
+                if (Allocations.PREMIUM.equals(waiting.getSourceType()) || TopUps.SOURCE.equals(waiting.getSourceType())) {
+                    returnedPremiums.put(waiting.getSourceRef(), waiting.getSourceType());
                 }
             }
             waiting.cancel();
@@ -145,10 +162,12 @@ class Exits implements UnitsPricedListener {
         java.util.Set<UUID> refunded = policyEntries.stream().filter(e -> e.getType() == UnitEntry.Type.CHARGE_REFUND)
             .map(UnitEntry::getReversesEntryId).filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
         String currency = policyApi.getPolicy(policyNumber).premiumCurrency();
-        for (String premium : returnedPremiums) {
+        for (java.util.Map.Entry<String, String> source : returnedPremiums.entrySet()) {
+            String premium = source.getKey();
+            String moneyType = source.getValue();
             BigDecimal earned = BigDecimal.ZERO;
             BigDecimal refundedNow = BigDecimal.ZERO;
-            for (UnitEntry charge : entries.findByTenantIdAndSourceTypeAndSourceRef(tenantId, Allocations.PREMIUM, premium)) {
+            for (UnitEntry charge : entries.findByTenantIdAndSourceTypeAndSourceRef(tenantId, moneyType, premium)) {
                 if (charge.getType() != UnitEntry.Type.ALLOCATION_CHARGE) {
                     continue;
                 }
@@ -163,7 +182,7 @@ class Exits implements UnitsPricedListener {
                 }
             }
             state.addReturnedMoney(refundedNow);
-            BigDecimal returned = orders.findByTenantIdAndSourceTypeAndSourceRef(tenantId, Allocations.PREMIUM, premium).stream()
+            BigDecimal returned = orders.findByTenantIdAndSourceTypeAndSourceRef(tenantId, moneyType, premium).stream()
                 .map(PendingOrder::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add).add(refundedNow);
             // DR 2140 the whole premium / CR 5100 what goes back / CR 4310 only a charge refunded elsewhere (free-look).
             events.publishEvent(DomainEventEnvelope.of("unitlinked.PremiumReturned", tenantId, Map.of(
@@ -200,7 +219,9 @@ class Exits implements UnitsPricedListener {
             }
             return;
         }
-        if (purpose == PendingOrder.Purpose.ALLOCATION || purpose == PendingOrder.Purpose.CHARGES) {
+        // A withdrawal's sale is Withdrawals' (U2, plan R4), not an exit's.
+        if (purpose == PendingOrder.Purpose.ALLOCATION || purpose == PendingOrder.Purpose.CHARGES
+                || purpose == PendingOrder.Purpose.WITHDRAWAL) {
             return;
         }
         UUID tenantId = TenantContext.get();
@@ -225,6 +246,9 @@ class Exits implements UnitsPricedListener {
                 "sourceRef", state.getSourceType() + ":" + state.getSourceRef(), "proceeds", state.getProceeds().toPlainString(),
                 "currencyCode", policyApi.getPolicy(state.getPolicyNumber()).premiumCurrency())));
         }
+        if ("SURRENDER".equals(state.getPurpose()) || "LAPSE".equals(state.getPurpose())) {
+            chargeSurrender(state);
+        }
         switch (state.getPurpose()) {
             case "DEATH" -> { /* claims reads deathValue and pays through its own settlement */ }
             case "SURRENDER" -> payOut(state, "SURRENDER_PAYOUT");
@@ -235,9 +259,33 @@ class Exits implements UnitsPricedListener {
         }
     }
 
-    /** Proceeds plus returned money to the payee, through payment; or waiting for staff to name a payee. */
+    /**
+     * The surrender charge (U2, spec Q6/Q7): a surrender and a non-payment lapse with value -- this purpose is LAPSE only
+     * for non-payment; an exhausted fund lapses through the charge run with nothing left to sell. Taken on the units'
+     * proceeds only, never on a premium returned unbought, at the percent for the policy year of the sale's date.
+     */
+    private void chargeSurrender(ExitState state) {
+        UUID tenantId = TenantContext.get();
+        PolicyView policy = policyApi.getPolicy(state.getPolicyNumber());
+        LocalDate soldOn = entries.findByTenantIdAndSourceTypeAndSourceRef(tenantId, state.getSourceType(), state.getSourceRef())
+            .stream().filter(e -> e.getType().name().endsWith("_SALE")).map(UnitEntry::getValuationDate)
+            .max(java.util.Comparator.naturalOrder()).orElse(BindingRule.civilDate(clock.instant()));
+        BigDecimal charge = SurrenderCharges.charge(state.getProceeds(), surrenderCharges.percentFor(policy, soldOn));
+        if (charge.signum() <= 0) {
+            return;
+        }
+        entries.save(UnitEntry.money(tenantId, state.getPolicyNumber(), UnitEntry.Type.SURRENDER_CHARGE, charge.negate(),
+            soldOn, state.getSourceType(), state.getSourceRef() + ":surrender-charge", null, UnitLedger.SYSTEM, clock.instant()));
+        state.chargeSurrender(charge);
+        exits.save(state);
+        events.publishEvent(DomainEventEnvelope.of("unitlinked.SurrenderCharged", tenantId, Map.of(
+            "policyNumber", state.getPolicyNumber(), "sourceRef", state.getSourceType() + ":" + state.getSourceRef(),
+            "amount", charge.toPlainString(), "currencyCode", policy.premiumCurrency())));
+    }
+
+    /** What is payable to the payee, through payment; or waiting for staff to name a payee. */
     private void payOut(ExitState state, String paymentPurpose) {
-        BigDecimal amount = state.getProceeds().add(state.getReturnedMoney());
+        BigDecimal amount = state.payable();
         PolicyView policy = policyApi.getPolicy(state.getPolicyNumber());
         if (amount.signum() <= 0) {
             log.warn("Unit-linked {} of {} raised nothing; no payment requested", state.getPurpose(), state.getPolicyNumber());
@@ -337,8 +385,9 @@ class Exits implements UnitsPricedListener {
         }
         BigDecimal back = state.getProceeds().add(state.getReturnedMoney());
         if (back.signum() > 0) {
-            List<PolicyAllocation> split = allocations.findByTenantIdAndPolicyNumber(tenantId, policyNumber).stream()
-                .sorted(Comparator.comparing(a -> a.getFundId().toString())).toList();
+            // By the split in force when the money goes back in (U2): a redirection since the sale applies here too.
+            List<tz.co.nlolo.lifeplatform.unitlinked.domain.PremiumSplit.Share> split =
+                premiumSplitsProvider.getObject().splitAt(policyNumber, rejectedAt);
             List<BigDecimal> parts = UnitArithmetic.split(back, split.stream()
                 .map(a -> new UnitArithmetic.Weighted(a.getFundId().toString(), BigDecimal.valueOf(a.getPercent()))).toList());
             for (int i = 0; i < split.size(); i++) {

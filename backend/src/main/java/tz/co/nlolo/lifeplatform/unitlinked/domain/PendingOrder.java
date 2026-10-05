@@ -23,7 +23,7 @@ public class PendingOrder {
 
     public enum Side { BUY, SELL }
 
-    public enum Purpose { ALLOCATION, CHARGES, DEATH, SURRENDER, MATURITY, LAPSE, FREE_LOOK, REINVESTMENT }
+    public enum Purpose { ALLOCATION, CHARGES, DEATH, SURRENDER, MATURITY, LAPSE, FREE_LOOK, REINVESTMENT, WITHDRAWAL }
 
     @Id @Column(name = "order_id") private UUID orderId;
     @Column(name = "tenant_id", nullable = false) private UUID tenantId;
@@ -84,6 +84,14 @@ public class PendingOrder {
     public static PendingOrder sellAll(UUID tenantId, String policyNumber, UUID fundId, Purpose purpose, Instant receivedAt,
                                        LocalTime cutOff, String sourceType, String sourceRef) {
         return new PendingOrder(tenantId, policyNumber, fundId, Side.SELL, null, true, purpose, null, receivedAt, cutOff,
+            sourceType, sourceRef);
+    }
+
+    /** Money sold from one fund for a withdrawal (U2): as many units as cover it, never more than held. */
+    public static PendingOrder sellAmount(UUID tenantId, String policyNumber, UUID fundId, BigDecimal amount, Purpose purpose,
+                                          Instant receivedAt, LocalTime cutOff, String sourceType, String sourceRef) {
+        requirePositive(amount);
+        return new PendingOrder(tenantId, policyNumber, fundId, Side.SELL, amount, false, purpose, null, receivedAt, cutOff,
             sourceType, sourceRef);
     }
 

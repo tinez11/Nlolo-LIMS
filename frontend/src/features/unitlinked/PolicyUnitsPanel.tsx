@@ -16,6 +16,8 @@ import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectApprovingSurrender, selectRequestingSurrender, selectSurrenderRequest, usePolicyStore } from '@/store/policyStore';
 import { useUnitLinkedStore } from '@/store/unitLinkedStore';
+import { PremiumSplitPanel, StatementsPanel, SwitchForm, TopUpForm, WithdrawalPanel } from './U2Panels';
+import { offers } from './u2Forms';
 
 const ENTRY_LABEL: Record<string, string> = {
   ALLOCATION: 'Premium allocated',
@@ -31,6 +33,11 @@ const ENTRY_LABEL: Record<string, string> = {
   REINVESTMENT: 'Reinvested',
   PRICE_CORRECTION: 'Price correction',
   WRITE_OFF: 'Charge written off',
+  SWITCH_OUT: 'Switched out',
+  SWITCH_IN: 'Switched in',
+  SWITCH_FEE: 'Switch fee',
+  WITHDRAWAL_SALE: 'Sold for a withdrawal',
+  SURRENDER_CHARGE: 'Surrender charge',
 };
 
 const FROZEN_LABEL: Record<string, string> = {
@@ -161,11 +168,79 @@ export function PolicyUnitsPanel({ policy, isStaff }: { policy: PolicyView; isSt
         )}
       </section>
 
+      {isStaff && (
+        <U2Actions
+          policy={policy}
+          heldFunds={data.holdings.filter((h) => Number(h.units) > 0).map((h) => h.fundCode)}
+          currency={currency}
+          frozen={data.frozen}
+        />
+      )}
       {isStaff && <UnitLinkedSurrender policy={policy} />}
       {isStaff && data.frozen && (data.frozenReason === 'MATURITY' || data.frozenReason === 'LAPSE') && data.pending.length === 0 && (
         <NamePayee policyNumber={policyNumber} />
       )}
     </div>
+  );
+}
+
+/**
+ * U2: what the version offers on a policy in force -- redirection always, the rest only when the version's options
+ * name them. Statements are offered on any unit-linked policy, in force or not: a closed one still has a history.
+ */
+function U2Actions({
+  policy,
+  heldFunds,
+  currency,
+  frozen,
+}: {
+  policy: PolicyView;
+  heldFunds: string[];
+  currency: string;
+  frozen: boolean;
+}) {
+  const policyNumber = policy.policyNumber ?? '';
+  const productId = policy.productId ?? '';
+  const versionId = policy.productVersionId ?? '';
+  const auth = useAuth();
+  const viewerSubject = readIdentity(auth.user?.access_token)?.subject ?? undefined;
+  const terms = useUnitLinkedStore((s) => s.terms[versionId]);
+  const loadTerms = useUnitLinkedStore((s) => s.loadTerms);
+  const loadPolicyU2 = useUnitLinkedStore((s) => s.loadPolicyU2);
+
+  useEffect(() => {
+    if (productId && versionId) void loadTerms(productId, versionId);
+  }, [productId, versionId, loadTerms]);
+  useEffect(() => {
+    if (policyNumber) void loadPolicyU2(policyNumber);
+  }, [policyNumber, loadPolicyU2]);
+
+  const plan = terms?.data;
+  if (!plan) return null;
+  const fundCodes = plan.fundCodes;
+  const offered = offers(plan.options);
+  const inForce = ['ACTIVE', 'REINSTATED'].includes(policy.status ?? '') && !frozen;
+
+  return (
+    <>
+      {inForce && <PremiumSplitPanel policyNumber={policyNumber} fundCodes={fundCodes} />}
+      {inForce && offered.switching && plan.options && (
+        <SwitchForm policyNumber={policyNumber} heldFunds={heldFunds} fundCodes={fundCodes} options={plan.options} currency={currency} />
+      )}
+      {inForce && offered.withdrawals && plan.options && (
+        <WithdrawalPanel
+          policyNumber={policyNumber}
+          heldFunds={heldFunds}
+          options={plan.options}
+          currency={currency}
+          viewerSubject={viewerSubject}
+        />
+      )}
+      {inForce && offered.topUps && plan.options && (
+        <TopUpForm policyNumber={policyNumber} fundCodes={fundCodes} options={plan.options} currency={currency} />
+      )}
+      <StatementsPanel policyNumber={policyNumber} />
+    </>
   );
 }
 
