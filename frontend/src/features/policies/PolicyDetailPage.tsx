@@ -57,6 +57,7 @@ const INDIVIDUAL_CATEGORIES: readonly string[] = [
   'ENDOWMENT',
   'WHOLE_LIFE',
   'EDUCATION_SAVINGS',
+  'FUNERAL',
 ];
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';

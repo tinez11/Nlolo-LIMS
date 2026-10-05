@@ -218,7 +218,13 @@ export function ClaimSettlementPanel({
                 aria-checked={selected}
                 onClick={() => {
                   const next = switchDecision(choice, approved, recommended, cover);
-                  if (next) reset(next);
+                  if (!next) return;
+                  reset(next);
+                  // An armed confirmation and the refusal that left it there both belong to the
+                  // decision just abandoned. Kept, a refused approval went on offering "Approve and
+                  // pay" under a manager who had moved to Reject, and hid the Reject button.
+                  setPending(null);
+                  resetDecideSettlement(claimId);
                 }}
                 className={cn(
                   'rounded px-3 py-1 text-xs transition-colors',

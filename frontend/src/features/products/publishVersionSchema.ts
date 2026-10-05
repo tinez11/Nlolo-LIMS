@@ -427,6 +427,8 @@ export const FREE_LOOK_CATEGORIES: readonly ProductCategory[] = [
   'WHOLE_LIFE',
   'EDUCATION_SAVINGS',
   'ANNUITY',
+  // A family funeral plan is one policy sold to one person, the main member.
+  'FUNERAL',
 ];
 
 /** `PayoutPlanValidator.SCHEDULED` -- the two that pay while the life assured lives. */
