@@ -29,6 +29,7 @@ import type { components as ProductComponents } from '@/types/api/product';
 import type { components as RegreportingComponents } from '@/types/api/regreporting';
 import type { components as ReinsuranceComponents } from '@/types/api/reinsurance';
 import type { components as UnderwritingComponents } from '@/types/api/underwriting';
+import type { components as UnitLinkedComponents } from '@/types/api/unitlinked';
 
 export type PolicyView = PolicyComponents['schemas']['PolicyView'];
 // Family funeral cover.
@@ -543,6 +544,20 @@ export type VestingTermsSpec = NonNullable<AnnuitySpec['vesting']>;
 export type VestingView = AnnuityComponents['schemas']['Vesting'];
 export type VestingInstructionInput = AnnuityComponents['schemas']['VestingInstructionRequest'];
 export type DeferredAnnuityChoiceView = UnderwritingComponents['schemas']['DeferredAnnuityChoice'];
+
+// Unit-linked (product step 6, U1).
+export type FundView = UnitLinkedComponents['schemas']['Fund'];
+export type CreateFundRequest = UnitLinkedComponents['schemas']['CreateFundRequest'];
+export type FundPriceView = UnitLinkedComponents['schemas']['FundPrice'];
+export type ProposePriceRequest = UnitLinkedComponents['schemas']['ProposePriceRequest'];
+export type WaitingCountView = UnitLinkedComponents['schemas']['WaitingCount'];
+export type PriceAdjustmentView = UnitLinkedComponents['schemas']['PriceAdjustment'];
+export type PolicyUnitsView = UnitLinkedComponents['schemas']['PolicyUnits'];
+export type UnitEntryView = UnitLinkedComponents['schemas']['UnitEntry'];
+export type UnitLinkedTermsView = ProductComponents['schemas']['UnitLinkedTerms'];
+export type UnitLinkedSpec = NonNullable<ProductVersionSpec['unitLinked']>;
+export type UnitLinkedChoiceView = UnderwritingComponents['schemas']['UnitLinkedChoice'];
+export type UnitLinkedReconciliationView = FinaccountingComponents['schemas']['UnitLinkedReconciliation'];
 
 /** The payout register's status filter, in the order a queue is worked. */
 export const INSTALMENT_STATUSES: readonly InstalmentStatus[] = [

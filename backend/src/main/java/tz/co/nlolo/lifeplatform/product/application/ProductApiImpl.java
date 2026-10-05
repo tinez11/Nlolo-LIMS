@@ -23,7 +23,8 @@ public class ProductApiImpl implements ProductApi {
     private final ProductVersionRepository productVersionRepository;
     private final RatingFactorRepository ratingFactorRepository;
     private final BenefitScheduleEntryRepository benefitScheduleEntryRepository;
-    private final FundDefinitionRepository fundDefinitionRepository;
+    private final UnitLinkedTermsStore unitLinkedTermsStore;
+    private final org.springframework.beans.factory.ObjectProvider<FundDirectory> fundDirectory;
     private final BaseRateRepository baseRateRepository;
     private final CashValueEntryRepository cashValueEntryRepository;
     private final CashValueConfigRepository cashValueConfigRepository;
@@ -43,7 +44,7 @@ public class ProductApiImpl implements ProductApi {
 
     public ProductApiImpl(ProductDefinitionRepository productDefinitionRepository, ProductVersionRepository productVersionRepository,
                            RatingFactorRepository ratingFactorRepository, BenefitScheduleEntryRepository benefitScheduleEntryRepository,
-                           FundDefinitionRepository fundDefinitionRepository, BaseRateRepository baseRateRepository,
+                           BaseRateRepository baseRateRepository,
                            CashValueEntryRepository cashValueEntryRepository, CashValueConfigRepository cashValueConfigRepository,
                            PayoutScheduleRowRepository payoutScheduleRowRepository,
                            VersionPayoutTermsRepository versionPayoutTermsRepository,
@@ -57,7 +58,10 @@ public class ProductApiImpl implements ProductApi {
                            AnnuityRateEntryRepository annuityRateEntryRepository,
                            AnnuityFrequencyEntryRepository annuityFrequencyEntryRepository,
                            VersionVestingTermsRepository versionVestingTermsRepository,
-                           FuneralTermsStore funeralTermsStore) {
+                           FuneralTermsStore funeralTermsStore, UnitLinkedTermsStore unitLinkedTermsStore,
+                           org.springframework.beans.factory.ObjectProvider<FundDirectory> fundDirectory) {
+        this.unitLinkedTermsStore = unitLinkedTermsStore;
+        this.fundDirectory = fundDirectory;
         this.versionVestingTermsRepository = versionVestingTermsRepository;
         this.funeralTermsStore = funeralTermsStore;
         this.versionAnnuityTermsRepository = versionAnnuityTermsRepository;
@@ -73,7 +77,6 @@ public class ProductApiImpl implements ProductApi {
         this.productVersionRepository = productVersionRepository;
         this.ratingFactorRepository = ratingFactorRepository;
         this.benefitScheduleEntryRepository = benefitScheduleEntryRepository;
-        this.fundDefinitionRepository = fundDefinitionRepository;
         this.baseRateRepository = baseRateRepository;
         this.cashValueEntryRepository = cashValueEntryRepository;
         this.cashValueConfigRepository = cashValueConfigRepository;
@@ -297,6 +300,20 @@ public class ProductApiImpl implements ProductApi {
                                 TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
                                 AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
                                 AnnuityPlan annuityPlan, FuneralPlan funeralPlan, String publishedBy) {
+        publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
+            fundDefinitions, baseRates, bounds, frequencyLoading, tiraFiling, cashValue, payoutPlan, accumulationPlan,
+            depositPlan, bonusPlan, annuityPlan, funeralPlan, UnitLinkedPlan.none(), publishedBy);
+    }
+
+    @Override
+    @Transactional
+    public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                                List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                                List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                                TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
+                                AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
+                                AnnuityPlan annuityPlan, FuneralPlan funeralPlan, UnitLinkedPlan unitLinkedPlan,
+                                String publishedBy) {
         // First, so the message is about the filing rather than about a rating table the caller
         // may not have reached yet. TiraFiling validates its own contents; what it cannot do is
         // object to its own absence.
@@ -338,9 +355,11 @@ public class ProductApiImpl implements ProductApi {
             }
         }
 
-        // Deliverable 3 invariant: fund definitions restricted to UNIT_LINKED products.
-        if (fundDefinitions != null && !fundDefinitions.isEmpty() && !"UNIT_LINKED".equals(product.getCategory())) {
-            throw new InvalidProductVersionException("Fund definitions are only valid for UNIT_LINKED products");
+        // Funds live in unitlinked's register now (product step 6, plan C1); a version names them by code in its
+        // unit-linked terms. The parameter stays for its 149 callers, all of which pass nothing.
+        if (fundDefinitions != null && !fundDefinitions.isEmpty()) {
+            throw new InvalidProductVersionException("fundDefinitions is replaced by unit-linked terms' fund codes:"
+                + " a fund is defined once in the fund register and a version names the funds it offers");
         }
         // Deliverable 3 invariant: full rating-factor coverage validated at publish --
         // every declared FactorType must have at least one band defined so the rules
@@ -354,6 +373,13 @@ public class ProductApiImpl implements ProductApi {
         // Before the rating rules, so a funeral author reads the funeral words, not a rating-table one.
         FuneralPlan funeral = funeralPlan != null ? funeralPlan : FuneralPlan.none();
         FuneralPlanValidator.validate(ProductCategory.valueOf(product.getCategory()), funeral, baseRates, ratingTable);
+        // A UNIT_LINKED version is likewise not rated: its cost of insurance is taken monthly from units, by its
+        // mortality table (spec §4). Validated here, before the rating rules, for the same reason.
+        boolean unitLinkedCategory = ProductCategory.UNIT_LINKED.name().equals(product.getCategory());
+        UnitLinkedPlan unitLinked = unitLinkedPlan != null ? unitLinkedPlan : UnitLinkedPlan.none();
+        UnitLinkedPlanValidator.validate(ProductCategory.valueOf(product.getCategory()), unitLinked,
+            product.getDefaultCurrency(), bounds != null ? bounds.minEntryAge() : null, fundDirectory.getIfAvailable(),
+            priced || (unitLinkedCategory && !ratingTable.isEmpty()));
 
         if (priced) {
             // M13. Age IS rated on a priced version -- it is a key of the base rate
@@ -377,7 +403,8 @@ public class ProductApiImpl implements ProductApi {
             rejectOverlappingAgeBands(baseRates);
             rejectPricedVersionWithoutEntryAgeBounds(bounds);
             rejectUncoveredEntryAges(baseRates, bounds);
-        } else if (!funeralCategory && !coveredFactorTypes.containsAll(List.of(FactorType.AGE, FactorType.SUM_ASSURED_BAND))) {
+        } else if (!funeralCategory && !unitLinkedCategory
+                && !coveredFactorTypes.containsAll(List.of(FactorType.AGE, FactorType.SUM_ASSURED_BAND))) {
             // Unpriced version: unchanged from M2. Age is rated by multiplier alone.
             throw new InvalidProductVersionException("Rating table must cover at least AGE and SUM_ASSURED_BAND factor types");
         }
@@ -435,6 +462,7 @@ public class ProductApiImpl implements ProductApi {
         persistBonusPlan(tenantId, version.getProductVersionId(), bonusPlan);
         persistAnnuityPlan(tenantId, version.getProductVersionId(), annuity);
         funeralTermsStore.persist(tenantId, version.getProductVersionId(), funeral);
+        unitLinkedTermsStore.persist(tenantId, version.getProductVersionId(), unitLinked);
 
         for (RatingFactorInput input : ratingTable) {
             ratingFactorRepository.save(new RatingFactor(tenantId, version.getProductVersionId(),
@@ -455,12 +483,6 @@ public class ProductApiImpl implements ProductApi {
                 benefit.benefitType().name(), benefit.calculationMethod().name(),
                 benefit.percent(), benefit.flatAmount()));
         }
-        if (fundDefinitions != null) {
-            for (FundInput input : fundDefinitions) {
-                fundDefinitionRepository.save(new FundDefinition(tenantId, version.getProductVersionId(), input.fundCode(), input.currentNav()));
-            }
-        }
-
         product.activate();
         productDefinitionRepository.save(product);
     }
@@ -1050,6 +1072,22 @@ public class ProductApiImpl implements ProductApi {
         boolean funeral = productDefinitionRepository.findById(version.get().getProductId())
             .map(p -> ProductCategory.FUNERAL.name().equals(p.getCategory())).orElse(false);
         return funeral ? funeralTermsStore.read(productVersionId) : FuneralPlan.none();
+    }
+
+    /** Product first, unit-linked tables second -- the same gate, so no other version ever reads V25. */
+    @Override
+    @Transactional(readOnly = true)
+    public UnitLinkedPlan resolveUnitLinkedPlan(UUID productVersionId) {
+        if (productVersionId == null) {
+            return UnitLinkedPlan.none();
+        }
+        Optional<ProductVersion> version = productVersionRepository.findById(productVersionId);
+        if (version.isEmpty()) {
+            return UnitLinkedPlan.none();
+        }
+        boolean unitLinked = productDefinitionRepository.findById(version.get().getProductId())
+            .map(p -> ProductCategory.UNIT_LINKED.name().equals(p.getCategory())).orElse(false);
+        return unitLinked ? unitLinkedTermsStore.read(productVersionId) : UnitLinkedPlan.none();
     }
 
     /** A refusal is an answer (priceAnnuity's reason): it must not mark the caller's transaction rollback-only. */

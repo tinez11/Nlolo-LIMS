@@ -79,4 +79,7 @@ public record PublishVersionRequest(
     @Valid AnnuityRequest annuity,
 
     // Present only on a FUNERAL version (family funeral cover), where it is required.
-    @Valid FuneralRequest funeral) {}
+    @Valid FuneralRequest funeral,
+
+    // Present only on a UNIT_LINKED version (product step 6), where it is required.
+    @Valid UnitLinkedRequest unitLinked) {}

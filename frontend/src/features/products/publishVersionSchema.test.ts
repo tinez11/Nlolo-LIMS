@@ -668,8 +668,7 @@ describe('publishVersionFormSchema', () => {
     });
   });
 
-  // ProductApiImpl.publishVersion: fund definitions are rejected outright for any
-  // category other than UNIT_LINKED, even a well-formed one.
+  // ProductApiImpl.publishVersion: fund definitions are rejected outright.
   it('rejects fund definitions for a non-UNIT_LINKED product', () => {
     const result = termLife.safeParse({
       ...valid(),
@@ -678,13 +677,14 @@ describe('publishVersionFormSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('accepts fund definitions for a UNIT_LINKED product', () => {
+  // Retired in product step 6: funds live in the fund register, so the server refuses any, on every category.
+  it('rejects fund definitions on a UNIT_LINKED product too', () => {
     const unitLinked = publishVersionFormSchema('UNIT_LINKED');
     const result = unitLinked.safeParse({
       ...valid(),
       fundDefinitions: [{ fundCode: 'FUND-A', currentNav: 100 }],
     });
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
   });
 
   it('accepts an empty fundDefinitions array regardless of category', () => {

@@ -23,7 +23,8 @@ class ChartOfAccountBlueprintTest {
     @Test
     void seedsThirtySevenAccounts() {
         // 36 until product step 5 added 2230 Withholding Tax Payable.
-        assertThat(ChartOfAccountBlueprint.accounts()).hasSize(37);
+        // 37, plus product step 6's three unit-linked accounts (2150, 4310, 5600).
+        assertThat(ChartOfAccountBlueprint.accounts()).hasSize(40);
     }
 
     @Test

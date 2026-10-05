@@ -11,7 +11,9 @@ public record SurrenderRequestResponseDto(UUID surrenderRequestId, String policy
                                           String requestedBy, String approvedBy) {
     public static SurrenderRequestResponseDto from(PolicyApi.SurrenderRequestView v) {
         return new SurrenderRequestResponseDto(v.surrenderRequestId(), v.policyNumber(), v.status(),
-            Map.of("amount", v.quotedValueAmount().toPlainString(), "currencyCode", v.quotedValueCurrency()),
+            // Null on a unit-linked surrender: it is valued at the first fund price after approval (product step 6).
+            v.quotedValueAmount() == null ? null
+                : Map.of("amount", v.quotedValueAmount().toPlainString(), "currencyCode", v.quotedValueCurrency()),
             // Where the money goes. Omitted until now, which left the approver -- the person whose
             // whole job is checking this payout before it leaves -- unable to see the destination.
             v.payeeRef(), v.requestedBy(), v.approvedBy());

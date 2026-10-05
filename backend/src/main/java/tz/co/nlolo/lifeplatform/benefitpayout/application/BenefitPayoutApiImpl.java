@@ -435,7 +435,7 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
      * cancelled under the terms the employer or lender negotiated, not under this window.
      */
     private static final Set<String> INDIVIDUAL_CATEGORIES =
-        Set.of("TERM_LIFE", "ENDOWMENT", "WHOLE_LIFE", "EDUCATION_SAVINGS", "ANNUITY", "FUNERAL");
+        Set.of("TERM_LIFE", "ENDOWMENT", "WHOLE_LIFE", "EDUCATION_SAVINGS", "ANNUITY", "FUNERAL", "UNIT_LINKED");
 
     /** The statuses {@code ux_free_look_live} treats as in flight. */
     private static final Set<String> LIVE_CANCELLATION = Set.of("REQUESTED", "APPROVED");
@@ -476,6 +476,17 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
             throw new PayoutStateException("Policy " + policyNumber + "'s free-look period ended on " + lastDay);
         }
 
+        // A unit-linked refund is the unwinding of the policy's own entries and units (product step 6, spec Q12),
+        // not premiums less deductions: none are entered, and the amount is released once the units are sold.
+        if ("UNIT_LINKED".equals(policy.productCategory())) {
+            if (deductionInputs != null && !deductionInputs.isEmpty()) {
+                throw new PayoutStateException("A unit-linked free-look refund is the actual unwinding of the policy's"
+                    + " charges and units, not deductions");
+            }
+            BigDecimal collectedUl = tallies.findById(policyNumber).map(PremiumTally::getPremiumsCollected).orElse(BigDecimal.ZERO);
+            return freeLookView(cancellations.save(FreeLookCancellation.requestUnitLinked(TenantContext.get(), policyNumber,
+                collectedUl, policy.premiumCurrency(), payeeRef, requestedBy)));
+        }
         List<FreeLookDeductionInput> items = new java.util.ArrayList<>(deductionInputs != null ? deductionInputs : List.of());
         for (FreeLookDeductionInput d : items) {
             if (d.description() == null || d.description().isBlank() || d.amount() == null || d.amount().signum() <= 0) {
@@ -516,17 +527,38 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
         cancelFuture(c.getPolicyNumber(), BEGINNING, "Cancelled in free-look");
         // A refund of nothing is not sent to the rail. It happens whenever the deductions used up
         // the premiums exactly, and a zero disbursement would be a payment nobody can reconcile.
-        if (c.getRefundAmount().signum() > 0) {
-            eventPublisher.publishEvent(DomainEventEnvelope.of("benefitpayout.PayoutRequested", TenantContext.get(),
-                Map.of("cancellationId", cancellationId.toString(),
-                       "idempotencyKey", "free-look:" + cancellationId,
-                       "policyNumber", c.getPolicyNumber(),
-                       "payeeRef", c.getPayeeRef(),
-                       "purpose", "FREE_LOOK_REFUND",
-                       "amount", Map.of("amount", c.getRefundAmount().toPlainString(),
-                            "currencyCode", c.getCurrency()))));
+        // A unit-linked refund is not known yet: unitlinked releases it once the units are sold (plan R6).
+        boolean unitLinked = "UNIT_LINKED".equals(policyApi.getPolicy(c.getPolicyNumber()).productCategory());
+        if (!unitLinked && c.getRefundAmount().signum() > 0) {
+            publishFreeLookRefund(c);
         }
         return freeLookView(c);
+    }
+
+    @Override
+    @Transactional
+    public FreeLookCancellationView releaseUnitLinkedFreeLookRefund(UUID cancellationId, BigDecimal refund) {
+        FreeLookCancellation c = cancellations.findById(cancellationId)
+            .orElseThrow(() -> new PayoutNotFoundException(cancellationId));
+        c.releaseUnitLinkedRefund(refund);
+        cancellations.save(c);
+        if (c.getRefundAmount().signum() > 0) {
+            publishFreeLookRefund(c);
+        }
+        return freeLookView(c);
+    }
+
+    /** A refund of nothing is not sent to the rail: a zero disbursement is a payment nobody can reconcile. */
+    private void publishFreeLookRefund(FreeLookCancellation c) {
+        UUID cancellationId = c.getCancellationId();
+        eventPublisher.publishEvent(DomainEventEnvelope.of("benefitpayout.PayoutRequested", TenantContext.get(),
+            Map.of("cancellationId", cancellationId.toString(),
+                   "idempotencyKey", "free-look:" + cancellationId,
+                   "policyNumber", c.getPolicyNumber(),
+                   "payeeRef", c.getPayeeRef(),
+                   "purpose", "FREE_LOOK_REFUND",
+                   "amount", Map.of("amount", c.getRefundAmount().toPlainString(),
+                        "currencyCode", c.getCurrency()))));
     }
 
     @Override

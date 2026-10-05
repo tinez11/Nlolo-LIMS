@@ -685,6 +685,108 @@ channels:
     publish:
       message: { $ref: '#/components/messages/DocumentUploaded' }
 
+  policy.UnitLinkedSurrenderApproved:
+    description: >
+      Producer: policy (product step 6) -- a unit-linked surrender approved; nothing is quoted or paid by
+      policy. Consumer: unitlinked, which sells every unit at the first price after approval and pays the proceeds.
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.PriceApproved:
+    description: >
+      Producer: unitlinked -- a fund price approved by a second person. Consumer: audit.
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.UnitsAllocated:
+    description: >
+      Producer: unitlinked -- a premium bought units (premium, allocated, allocationCharge, firstPremium,
+      policyholderPartyId). Consumers: finaccounting (DR 2140 / CR 2150, CR 4310), communication (UL_ALLOCATED).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.ChargesTaken:
+    description: >
+      Producer: unitlinked -- the monthly policy fee and cost of insurance sold from the units.
+      Consumer: finaccounting (DR 2150 / CR 4310).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.FundRevalued:
+    description: >
+      Producer: unitlinked -- an approved price trued 2150 up to units x price (delta).
+      Consumer: finaccounting (DR 5600 / CR 2150 a rise, the reverse a fall).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.ExitPriced:
+    description: >
+      Producer: unitlinked -- a death, surrender, maturity, lapse or free-look sale priced (proceeds).
+      Consumer: finaccounting (DR 2150 / CR 5100).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.PremiumReturned:
+    description: >
+      Producer: unitlinked -- a premium still waiting for units when the policy exited, returned whole.
+      Consumer: finaccounting.
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.ChargeRefunded:
+    description: >
+      Producer: unitlinked -- a cost of insurance taken after death, or a charge unwound at free-look.
+      Consumer: finaccounting (DR 4310 / CR 5100).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.UnitsReinvested:
+    description: >
+      Producer: unitlinked -- a rejected death claim's proceeds bought back into the funds.
+      Consumer: finaccounting (DR 5100 / CR 2150).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.PriceCorrected:
+    description: >
+      Producer: unitlinked -- an approved correction re-ran what the corrected price priced (movements,
+      each with its original and corrected amount and whether its exit was already paid). Consumer: finaccounting.
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.PayoutRequested:
+    description: >
+      Producer: unitlinked -- an exit's proceeds (SURRENDER_PAYOUT, MATURITY_PAYOUT, LAPSE_SURRENDER_PAYOUT;
+      idempotencyKey unit-linked:<type>:<ref>) or an adjustment owed to the customer (PRICE_CORRECTION_PAYOUT;
+      price-correction:<id>). Consumer: payment.
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.PayoutPaid:
+    description: >
+      Producer: unitlinked -- payment completed one of its payouts; sourceRef is the disbursement id, so a
+      redelivery posts nothing twice. Consumer: finaccounting (DR 5100 / CR cash; DR 2130 / CR cash for an adjustment).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.AdjustmentCollected:
+    description: >
+      Producer: unitlinked -- an adjustment owed by the customer recorded as collected outside the platform.
+      Consumer: finaccounting (DR cash / CR 1230).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.AdjustmentWaived:
+    description: >
+      Producer: unitlinked -- an adjustment waived with a reason by a second person.
+      Consumer: finaccounting (DR 2130 / CR 5100 owed to the customer; DR 5100 / CR 1230 owed by them).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.ProceedsReady:
+    description: >
+      Producer: unitlinked -- an exit's proceeds are being paid. Consumer: communication (UL_PROCEEDS).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.LowFund:
+    description: >
+      Producer: unitlinked -- the units will meet fewer months of charges than the version's warning.
+      Consumer: communication (UL_LOW_FUND).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+  unitlinked.FundExhausted:
+    description: >
+      Producer: unitlinked -- the units could not meet a month's charges; the policy lapses FUND_EXHAUSTED.
+      Consumer: communication (UL_LAPSED_EXHAUSTED).
+    publish:
+      message: { $ref: '#/components/messages/UnitLinkedEvent' }
+
 components:
   messages:
     InvoiceWaived: { messageId: InvoiceWaived, name: InvoiceWaived, payload: { $ref: '#/components/schemas/InvoiceWaivedPayload' } }
@@ -772,6 +874,7 @@ components:
     NotificationFailed: { messageId: NotificationFailed, name: NotificationFailed, payload: { $ref: '#/components/schemas/NotificationFailedPayload' } }
     DocumentUploaded: { messageId: DocumentUploaded, name: DocumentUploaded, payload: { $ref: '#/components/schemas/DocumentUploadedPayload' } }
 
+    UnitLinkedEvent: { messageId: UnitLinkedEvent, name: UnitLinkedEvent, payload: { $ref: '#/components/schemas/UnitLinkedEventPayload' } }
   schemas:
     InvoiceWaivedPayload:
       type: object
@@ -788,6 +891,10 @@ components:
           properties:
             amount: { type: string, description: Decimal string }
             currencyCode: { type: string }
+    UnitLinkedEventPayload:
+      type: object
+      description: Product step 6. Always carries policyNumber (except PriceApproved and FundRevalued, which carry fundCode) and sourceRef; money as decimal strings with currencyCode.
+      additionalProperties: true
     EventEnvelopeMeta:
       type: object
       description: >

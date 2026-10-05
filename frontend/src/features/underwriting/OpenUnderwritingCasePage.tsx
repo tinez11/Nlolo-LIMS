@@ -32,6 +32,9 @@ import { addYears, formatDate } from '@/lib/dates';
 import { getFuneralTerms } from '@/api/funeral';
 import type { FuneralTermsView } from '@/api/types';
 import { FuneralLivesFields } from './FuneralLivesFields';
+import { getUnitLinkedTerms } from '@/api/unitlinked';
+import type { UnitLinkedTermsView } from '@/api/types';
+import { UnitLinkedChoiceFields } from './UnitLinkedChoiceFields';
 
 /**
  * `POST /underwriting/cases` -- the only entry point onto this domain that
@@ -158,6 +161,24 @@ export function OpenUnderwritingCasePage() {
   useEffect(() => {
     setValue('isFuneral', isFuneral);
   }, [isFuneral, setValue]);
+
+  // A unit-linked case (product step 6): the version's funds, premium minimums and sum-assured multiples.
+  // One split row per offered fund, set when the terms arrive.
+  const isUnitLinked = selectedProduct?.category === 'UNIT_LINKED';
+  const [unitLinkedTerms, setUnitLinkedTerms] = useState<UnitLinkedTermsView | null>(null);
+  useEffect(() => {
+    if (!isUnitLinked || !productId || !productVersionId) return undefined;
+    let live = true;
+    getUnitLinkedTerms(productId, productVersionId).then((t) => {
+      if (!live) return;
+      setUnitLinkedTerms(t);
+      setValue('ulSplit', (t?.fundCodes ?? []).map((fundCode) => ({ fundCode, percent: '' })));
+    }, () => undefined);
+    return () => { live = false; };
+  }, [isUnitLinked, productId, productVersionId, setValue]);
+  useEffect(() => {
+    setValue('isUnitLinked', isUnitLinked);
+  }, [isUnitLinked, setValue]);
   const mainMemberParty = (lifeAssuredPartyId ? lifeAssured.data : applicant.data) ?? null;
   const mainMember = mainMemberParty
     ? { name: mainMemberParty.displayName ?? 'Main member', dateOfBirth: mainMemberParty.dateOfBirth ?? null }
@@ -412,22 +433,34 @@ export function OpenUnderwritingCasePage() {
               mainMember={mainMember} register={register} control={control} errors={errors} setValue={setValue} />
           )}
 
+          {/* A unit-linked case: the premium, the fund split, and the version's bounds as they are typed. */}
+          {isUnitLinked && unitLinkedTerms && (
+            <UnitLinkedChoiceFields terms={unitLinkedTerms} register={register} control={control} errors={errors}
+              currency={watch('sumAssuredCurrency') || 'TZS'} />
+          )}
+
           {/* An annuity has no term and no premium frequency: one single premium, paid for life. */}
           {!isAnnuity && (
           <div className="grid grid-cols-2 gap-4">
             {/* A funeral plan renews yearly: no term. */}
             {!isDeferredAnnuity && !isFuneral && (
               <>
-                <FormField label="Term (months)" error={errors.requestedTermMonths?.message}>
+                <FormField
+                  label={isUnitLinked ? 'Term (months; blank for whole of life)' : 'Term (months)'}
+                  error={errors.requestedTermMonths?.message}
+                >
                   <Input placeholder="120" {...register('requestedTermMonths')} />
                 </FormField>
 
-                <FormField
-                  label="Premium-paying term (months)"
-                  error={errors.premiumPayingTermMonths?.message}
-                >
-                  <Input placeholder="Same as the term" {...register('premiumPayingTermMonths')} />
-                </FormField>
+                {/* A unit-linked policy pays its premiums for as long as it runs. */}
+                {!isUnitLinked && (
+                  <FormField
+                    label="Premium-paying term (months)"
+                    error={errors.premiumPayingTermMonths?.message}
+                  >
+                    <Input placeholder="Same as the term" {...register('premiumPayingTermMonths')} />
+                  </FormField>
+                )}
               </>
             )}
 

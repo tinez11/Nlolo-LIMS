@@ -656,6 +656,12 @@ public interface PolicyApi {
     boolean lapseExhaustedAccount(String policyNumber, java.time.LocalDate exhaustedOn);
 
     /**
+     * The same lapse, saying why: a unit-linked fund that can no longer meet its charges is FUND_EXHAUSTED
+     * (product step 6), an account ACCOUNT_EXHAUSTED.
+     */
+    boolean lapseExhaustedAccount(String policyNumber, java.time.LocalDate exhaustedOn, String reason);
+
+    /**
      * Whether {@link #lapsePolicy} would succeed right now -- for a caller that must lapse a
      * policy as a side effect of its own work and cannot simply attempt it.
      *

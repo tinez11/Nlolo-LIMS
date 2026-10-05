@@ -218,6 +218,9 @@ paths:
             deactivated after the claim was registered. Registration runs the same resolution, so
             a claim reaches this only when its policy changed underneath it. A 409 (policy's
             INVALID_POLICY_STATE), not a 422: nothing in this request can be corrected.
+            Also UNITS_NOT_YET_PRICED on a unit-linked death claim (product step 6) whose units are
+            still waiting for the first fund price after the claim was registered -- the figure
+            exists once that price is approved.
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }

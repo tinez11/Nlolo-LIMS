@@ -39,6 +39,12 @@ public class ClaimExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "CLAIM_NOT_FOUND");
     }
 
+    /** A unit-linked death whose units are not yet sold: the figure exists once the price does (product step 6). */
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.unitlinked.api.UnitsNotYetPricedException.class)
+    public ProblemDetail handleUnitsNotYetPriced(tz.co.nlolo.lifeplatform.unitlinked.api.UnitsNotYetPricedException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "UNITS_NOT_YET_PRICED");
+    }
+
     @ExceptionHandler(ClaimValidationException.class)
     public ProblemDetail handleValidation(ClaimValidationException ex) {
         return problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "CLAIM_VALIDATION_FAILED");

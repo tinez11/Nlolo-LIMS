@@ -132,6 +132,15 @@ public interface UnderwritingApi {
     java.util.Optional<FuneralApplication> funeralApplication(UUID caseId);
 
     /**
+     * Record (or replace, until decided) a unit-linked case's fund split, premium and sum assured (product step 6).
+     * Checked against the version's funds, premium floors and sum-assured multiples, and refused in their words.
+     */
+    UnitLinkedChoice recordUnitLinkedChoice(UUID caseId, UnitLinkedChoice choice, String recordedBy);
+
+    /** A unit-linked case's choice; empty for every other case -- never a throw. */
+    java.util.Optional<UnitLinkedChoice> unitLinkedChoice(UUID caseId);
+
+    /**
      * Record a human underwriting decision, and publish {@code UnderwritingDecisionMade}.
      *
      * <p>The only thing that settles a case, and therefore the only thing that puts a policy in

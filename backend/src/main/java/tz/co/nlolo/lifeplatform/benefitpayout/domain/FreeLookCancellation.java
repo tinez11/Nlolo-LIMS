@@ -70,6 +70,31 @@ public class FreeLookCancellation {
         return c;
     }
 
+    /**
+     * A unit-linked policy's free-look (product step 6): its refund is the unwinding of its own entries and units,
+     * known only once the units are sold at the first price after the cancellation -- so it is recorded at nothing
+     * and released by {@link #releaseUnitLinkedRefund} (plan R6, deviation D2: no new column).
+     */
+    public static FreeLookCancellation requestUnitLinked(UUID tenantId, String policyNumber, BigDecimal premiumsCollected,
+                                                         String currency, String payeeRef, String requestedBy) {
+        FreeLookCancellation c = request(tenantId, policyNumber, premiumsCollected, premiumsCollected, currency, payeeRef,
+            requestedBy);
+        c.refundAmount = BigDecimal.ZERO.setScale(2);
+        return c;
+    }
+
+    /** The unwound refund, once unitlinked has sold the units. Only on an approved, still unpaid cancellation. */
+    public void releaseUnitLinkedRefund(BigDecimal refund) {
+        if (!"APPROVED".equals(status)) {
+            throw new PayoutStateException("Free-look cancellation " + cancellationId + " is " + status
+                + "; only an approved one has its unit-linked refund released");
+        }
+        if (refund == null || refund.signum() < 0) {
+            throw new PayoutStateException("A free-look refund can be nothing, never negative");
+        }
+        this.refundAmount = refund.setScale(2, RoundingMode.HALF_EVEN);
+    }
+
     public void approve(String approver) {
         if (!"REQUESTED".equals(status)) {
             throw new PayoutStateException("Free-look cancellation " + cancellationId + " is " + status

@@ -301,6 +301,31 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /products/{productId}/versions/{versionId}/unit-linked:
+    get:
+      summary: A unit-linked version's funds, allocation, fee, mortality, death and lapse rules
+      description: >-
+        Product step 6, U1. Everything staff configured on the version. 404 NOT_A_UNIT_LINKED_PRODUCT for
+        any other version. Agents sell this product, so they may read it.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The unit-linked terms
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnitLinkedTerms' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404':
+          description: Not a unit-linked version
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /products/{productId}/versions/{versionId}/funeral-quote:
     post:
       summary: Price a family on one funeral plan
@@ -672,6 +697,51 @@ components:
             dependantClaimPayee: { type: [string, "null"], enum: [MAIN_MEMBER, MAIN_MEMBER_BENEFICIARY, null] }
             onMainMemberDeath: { type: [string, "null"], enum: [POLICY_ENDS, SPOUSE_TAKES_OVER, null] }
             freeCoverToPaidDate: { type: [boolean, "null"] }
+        unitLinked:
+          description: >-
+            Required on a UNIT_LINKED version and refused on every other (product step 6, U1). The register
+            funds the version offers (OPEN funds in the product's currency), the percent of each premium that
+            buys units in each policy year (bands from year 1, contiguous, the last open-ended), the monthly
+            policy fee, the mortality table the monthly cost of insurance is charged from (it must cover
+            minEntryAge to 120), the death and lapse rules (lapseRule defaults to EXHAUSTION), the surrender
+            and premium floors per frequency (a frequency with no row is not offered), and the sum-assured
+            multiples of the annual premium. A priced (base-rate) version cannot be unit-linked.
+          type: [object, "null"]
+          properties:
+            fundCodes: { type: array, items: { type: string } }
+            allocationBands:
+              type: array
+              items:
+                type: object
+                properties:
+                  fromYear: { type: [integer, "null"], minimum: 1 }
+                  toYear: { type: [integer, "null"], description: "Null = onwards" }
+                  percent: { type: [number, "null"], minimum: 0, maximum: 100 }
+            monthlyPolicyFee: { type: [number, "null"], minimum: 0 }
+            mortalityBasis: { type: [string, "null"], enum: [UNISEX, BY_SEX, null] }
+            mortality:
+              type: array
+              items:
+                type: object
+                properties:
+                  ageFrom: { type: [integer, "null"], minimum: 0 }
+                  ageTo: { type: [integer, "null"], description: "Null = onwards" }
+                  sex: { type: [string, "null"], enum: [FEMALE, MALE, null], description: "Null on a UNISEX table" }
+                  annualRatePerMille: { type: [number, "null"], minimum: 0 }
+            deathRule: { type: [string, "null"], enum: [HIGHER_OF, SUM_ASSURED_PLUS_FUND, null] }
+            lapseRule: { type: [string, "null"], enum: [EXHAUSTION, NON_PAYMENT, null] }
+            minimumPremiumYears: { type: [integer, "null"], minimum: 0, description: "Required under NON_PAYMENT" }
+            minimumSurrenderYears: { type: [integer, "null"], minimum: 0 }
+            lowFundWarningMonths: { type: [integer, "null"], minimum: 0 }
+            premiumMinimums:
+              type: array
+              items:
+                type: object
+                properties:
+                  frequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE, null] }
+                  amount: { type: [number, "null"], exclusiveMinimum: 0 }
+            sumAssuredMultipleMin: { type: [number, "null"], exclusiveMinimum: 0 }
+            sumAssuredMultipleMax: { type: [number, "null"], exclusiveMinimum: 0 }
         tiraFiling:
           description: >-
             The TIRA filing that authorises this version. Required: in Tanzania a product and
@@ -752,7 +822,9 @@ components:
               flatAmount: { type: [number, "null"], description: Set for FLAT_AMOUNT and null otherwise. }
         fundDefinitions:
           type: [array, "null"]
-          description: Only valid when category = UNIT_LINKED.
+          description: >-
+            Retired (product step 6). A non-empty list is refused with 422 -- funds live in the shared
+            register (openapi-unitlinked.yaml) and a version names them in unitLinked.fundCodes.
           items:
             type: object
             properties:
@@ -898,6 +970,54 @@ components:
             defaultFrequency: { type: string, enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL] }
             maxCommutationPercent: { type: string, description: "Decimal string, no trailing zeros" }
             surrenderBeforeVesting: { type: boolean }
+    UnitLinkedTerms:
+      description: A unit-linked version's terms (product step 6, U1). Every rule the unit engine applies, as data.
+      type: object
+      additionalProperties: false
+      required: [unitLinked, fundCodes, allocationBands, monthlyPolicyFee, mortalityBasis, mortality, deathRule, lapseRule,
+                 minimumSurrenderYears, lowFundWarningMonths, premiumMinimums, sumAssuredMultipleMin, sumAssuredMultipleMax]
+      properties:
+        unitLinked: { type: boolean, const: true }
+        fundCodes: { type: array, items: { type: string } }
+        allocationBands:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [fromYear, percent]
+            properties:
+              fromYear: { type: integer }
+              toYear: { type: [integer, "null"] }
+              percent: { type: number }
+        monthlyPolicyFee: { type: number }
+        mortalityBasis: { type: string, enum: [UNISEX, BY_SEX] }
+        mortality:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [ageFrom, annualRatePerMille]
+            properties:
+              ageFrom: { type: integer }
+              ageTo: { type: [integer, "null"] }
+              sex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+              annualRatePerMille: { type: number }
+        deathRule: { type: string, enum: [HIGHER_OF, SUM_ASSURED_PLUS_FUND] }
+        lapseRule: { type: string, enum: [EXHAUSTION, NON_PAYMENT] }
+        minimumPremiumYears: { type: [integer, "null"] }
+        minimumSurrenderYears: { type: integer }
+        lowFundWarningMonths: { type: integer }
+        premiumMinimums:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [frequency, amount]
+            properties:
+              frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
+              amount: { type: number }
+        sumAssuredMultipleMin: { type: number }
+        sumAssuredMultipleMax: { type: number }
     FuneralTerms:
       description: A funeral plan version's terms (family funeral cover), premium table included.
       type: object

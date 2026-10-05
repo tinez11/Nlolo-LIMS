@@ -77,6 +77,7 @@ public class ClaimsApiImpl implements ClaimsApi {
     private final BenefitPayoutApi benefitPayoutApi;
     /** Product step 5: an annuity's death claim is valued by the annuity module. */
     private final AnnuityApi annuityApi;
+    private final tz.co.nlolo.lifeplatform.unitlinked.api.UnitLinkedApi unitLinkedApi;
     /** A funeral plan's claims (family funeral cover); touched only once the policy says FUNERAL. */
     private final FuneralClaims funeralClaims;
     private final ApplicationEventPublisher eventPublisher;
@@ -88,7 +89,9 @@ public class ClaimsApiImpl implements ClaimsApi {
                           PartyApi partyApi, UnderwritingApi underwritingApi, DocumentApi documentApi,
                           BenefitPayoutApi benefitPayoutApi,
                           ApplicationEventPublisher eventPublisher, PlatformTransactionManager transactionManager,
-                          AnnuityApi annuityApi, FuneralClaims funeralClaims) {
+                          AnnuityApi annuityApi, FuneralClaims funeralClaims,
+                          tz.co.nlolo.lifeplatform.unitlinked.api.UnitLinkedApi unitLinkedApi) {
+        this.unitLinkedApi = unitLinkedApi;
         this.annuityApi = annuityApi;
         this.funeralClaims = funeralClaims;
         this.claimRepository = claimRepository;
@@ -347,7 +350,10 @@ public class ClaimsApiImpl implements ClaimsApi {
                            "claimantPartyId", claim.getClaimantPartyId(),
                            "claimType", claim.getClaimType().name(),
                            "dateOfEvent", claim.getDateOfEvent().toString(),
-                           "requiresContestabilityReview", requiresContestabilityReview)));
+                           "requiresContestabilityReview", requiresContestabilityReview,
+                           // When it was registered: a unit-linked death sells its units at the first price after
+                           // THIS instant (plan C4), not whenever a listener gets to it.
+                           "registeredAt", Instant.now().toString())));
             });
         } catch (DataIntegrityViolationException e) {
             Claim existing = claimRepository.findByTenantIdAndRegistrationIdempotencyKey(tenantId, idempotencyKey)
@@ -540,6 +546,14 @@ public class ClaimsApiImpl implements ClaimsApi {
         // An annuity's death (product step 5) pays the capital-protection refund on the last death,
         // or nothing: the annuity module, which holds the contract, values it as at the death. A
         // deferred annuity still saving (D2) is an account policy, so the account is the ceiling.
+        // A unit-linked death (product step 6, plan R7): the units frozen at registration, sold at the first price
+        // after it, decide the figure -- until they are priced, there is no figure, and asking says so (409).
+        // The category first, so no claim on any other policy ever touches unitlinked's tables.
+        if (claim.getClaimType() == ClaimType.DEATH
+                && "UNIT_LINKED".equals(policyApi.getPolicy(claim.getPolicyNumber()).productCategory())
+                && unitLinkedApi.decidesDeath(claim.getPolicyNumber())) {
+            return unitLinkedApi.deathValue(claim.getClaimId(), claim.getDateOfEvent()).benefit();
+        }
         if (claim.getClaimType() == ClaimType.DEATH && annuityApi.decidesDeath(claim.getPolicyNumber())) {
             return annuityApi.deathValue(claim.getPolicyNumber(), deceasedOf(claim), claim.getDateOfEvent()).capitalRefund();
         }

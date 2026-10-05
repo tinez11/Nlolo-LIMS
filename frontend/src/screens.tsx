@@ -15,6 +15,7 @@ import {
   Send,
   Shield,
   TrendingDown,
+  TrendingUp,
   UserCheck,
   UserPlus,
   Users,
@@ -70,6 +71,7 @@ import {
   MaturitiesPage,
   WithholdingRulesPage,
   HeldVestingsPage,
+  FundsPage,
 } from '@/lazyPages';
 
 /**
@@ -463,6 +465,13 @@ const STAFF_SCREENS: Screen[] = [
     reach: { group: 'finance', label: 'Payment runs', icon: Send },
   },
   { path: 'payment-runs/:paymentRunId', element: <PaymentRunPage />, reach: 'drill-in' },
+  // The unit-linked fund register (product step 6): funds, their two-person daily prices, the
+  // price-correction adjustments and the 2150 reconciliation. Finance's: it prices the units.
+  {
+    path: 'funds',
+    element: <FundsPage />,
+    reach: { group: 'finance', label: 'Funds', icon: TrendingUp },
+  },
   // Tax withheld from payouts (product step 5): finance proposes a rule, a second person approves.
   {
     path: 'withholding-rules',
