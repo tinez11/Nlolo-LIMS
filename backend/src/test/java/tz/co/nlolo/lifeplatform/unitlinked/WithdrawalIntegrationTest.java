@@ -202,4 +202,20 @@ class WithdrawalIntegrationTest {
             new WithdrawalInput(new BigDecimal("150000.00"), List.of(), "+255700000600"), "staff-one")))
             .hasMessageContaining("Cutting the cover by this withdrawal would leave 5,850,000.00 TZS");
     }
+
+    @Test
+    void aShortfallCutsCoverByWhatTheSaleRaisedNotWhatWasAsked() {
+        UnitLinkedOptions cuts = new UnitLinkedOptions(2, new BigDecimal("5000"), new BigDecimal("100000"),
+            new BigDecimal("500000"), true, new BigDecimal("98"), new BigDecimal("50000"),
+            UnitLinkedTestFixtures.standardOptions().surrenderCharges());
+        Sold s = invested(cuts, "10000000");
+        WithdrawalView requested = asTenant(s.tenant(), () -> api.requestWithdrawal(s.policyNumber(), new WithdrawalInput(
+            new BigDecimal("200000.00"), List.of(new WithdrawalInput.Named("BD1", new BigDecimal("200000.00"))),
+            "+255700000600"), "staff-one"));
+        asTenant(s.tenant(), () -> api.approveWithdrawal(requested.withdrawalId(), FINANCE));
+        priceOn(s.tenant(), TODAY.plusDays(1), "1.000000", "0.600000");      // BD1 raises only 188,160
+        assertThat(withdrawal(s, requested.withdrawalId()).proceeds()).isEqualByComparingTo("188160.00");
+        assertThat(asTenant(s.tenant(), () -> policyApi.getPolicy(s.policyNumber())).sumAssuredAmount())
+            .isEqualByComparingTo("9811840");                                // 10,000,000 less 188,160, not 200,000
+    }
 }

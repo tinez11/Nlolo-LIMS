@@ -289,8 +289,11 @@ class Withdrawals implements UnitsPricedListener {
             payout.put("amount", Map.of("amount", net.toPlainString(), "currencyCode", policy.premiumCurrency()));
             events.publishEvent(DomainEventEnvelope.of("unitlinked.PayoutRequested", tenantId, payout));
         }
-        if (productApi.resolveUnitLinkedPlan(policy.productVersionId()).options().withdrawalReducesSumAssured()) {
-            policyApi.reduceUnitLinkedSumAssured(request.getPolicyNumber(), request.getGrossAmount(),
+        // Cover falls by what the sale actually raised: a fund that held less than was asked of it (a shortfall)
+        // must not cost the customer cover for money they never received.
+        if (request.getProceeds().signum() > 0
+                && productApi.resolveUnitLinkedPlan(policy.productVersionId()).options().withdrawalReducesSumAssured()) {
+            policyApi.reduceUnitLinkedSumAssured(request.getPolicyNumber(), request.getProceeds(),
                 "Partial withdrawal " + ref, UnitLedger.SYSTEM);
         }
     }
