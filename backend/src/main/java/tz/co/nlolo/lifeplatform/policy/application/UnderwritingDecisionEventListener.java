@@ -364,6 +364,30 @@ public class UnderwritingDecisionEventListener {
                 if (schemeProduct) {
                     throw new NotASingleLifeProductException(category.name());
                 }
+                // A FAMILY, NOT A LIFE (family funeral cover). The premium is the one funeral quote's
+                // instalment for the whole family, never the per-mille formula below; the sum assured is
+                // the main member's benefit (R3). Its lives are written in this same transaction, so a
+                // funeral policy can never exist without the family it was sold to.
+                if (category == ProductCategory.FUNERAL) {
+                    tz.co.nlolo.lifeplatform.underwriting.api.FuneralApplication application =
+                        underwritingApi.funeralApplication(caseId).orElseThrow(() -> new IllegalStateException(
+                            "Funeral case " + caseId + " was accepted with no application"));
+                    if (application.quote() == null) {
+                        throw new IllegalStateException("The family on funeral case " + caseId
+                            + " no longer prices on plan " + application.planCode() + "; re-record the application");
+                    }
+                    tz.co.nlolo.lifeplatform.product.api.FuneralQuote quote = application.quote();
+                    tz.co.nlolo.lifeplatform.policy.api.PolicyView issued = policyApi.issuePolicy(caseId, new PolicyApi.IssueRequest(
+                        decidedCase.applicantPartyId(), decidedCase.productId(), decidedCase.productVersionId(),
+                        quote.mainMemberBenefit(), decidedCase.sumAssuredCurrency(),
+                        quote.instalment(), decidedCase.sumAssuredCurrency(), quote.frequency().name(),
+                        decidedCase.agentOfRecordId(), nominationsAsBeneficiaries(decidedCase),
+                        "Automatic issuance on underwriting decision " + outcome,
+                        decidedCase.proposedCommencementDate(), null, null, decidedCase.lifeAssuredPartyId()),
+                        "system:underwriting-decision-listener");
+                    policyApi.recordCoveredLives(issued.policyNumber(), application, "system:underwriting-decision-listener");
+                    return;
+                }
                 // A deferred annuity saves first (product step 5 D2): an account policy whose
                 // contributions run to the target date, with no policy term -- after vesting it pays
                 // for life, so it has no maturity (plan R2). The case's sum assured is the

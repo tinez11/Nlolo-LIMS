@@ -87,6 +87,8 @@ public class PolicyApiImpl implements PolicyApi {
     private final ReferenceDataApi referenceDataApi;
     private final DistributionApi distributionApi;
     private final UnderwritingApi underwritingApi;
+    /** A funeral policy's lives (family funeral cover); touched only once the product says FUNERAL. */
+    private final CoveredLives coveredLives;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
@@ -100,10 +102,12 @@ public class PolicyApiImpl implements PolicyApi {
                           SurrenderRequestRepository surrenderRequestRepository,
                           PolicyBonusRepository policyBonusRepository,
                           AnnuityVestingRepository annuityVestingRepository,
+                          CoveredLives coveredLives,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
                           DistributionApi distributionApi, UnderwritingApi underwritingApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
         this.policyRepository = policyRepository;
+        this.coveredLives = coveredLives;
         this.annuityVestingRepository = annuityVestingRepository;
         this.policyBonusRepository = policyBonusRepository;
         this.policyAccountRepository = policyAccountRepository;
@@ -456,6 +460,92 @@ public class PolicyApiImpl implements PolicyApi {
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyEndorsed", tenantId,
             Map.of("policyNumber", policyNumber, "endorsementType", request.endorsementType(), "effectiveDate", request.effectiveDate().toString())));
         return toView(policy);
+    }
+
+    @Override
+    @Transactional
+    public void recordCoveredLives(String policyNumber, tz.co.nlolo.lifeplatform.underwriting.api.FuneralApplication application,
+                                   String recordedBy) {
+        Policy policy = findPolicyOrThrow(policyNumber, TenantContext.get());
+        if (!coveredLives.isFuneral(policy)) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " is not a funeral plan, so it covers no family");
+        }
+        coveredLives.recordAtIssue(policy, application, recordedBy);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CoveredLifeView> coveredLives(String policyNumber) {
+        Policy policy = findPolicyOrThrow(policyNumber, TenantContext.get());
+        return coveredLives.isFuneral(policy) ? coveredLives.list(policy) : List.of();
+    }
+
+    @Override
+    @Transactional
+    public CoveredLifeView addCoveredLife(String policyNumber, tz.co.nlolo.lifeplatform.underwriting.api.FuneralApplication.Life life,
+                                          String addedBy) {
+        return coveredLives.add(funeralPolicyOrThrow(policyNumber), life, addedBy);
+    }
+
+    @Override
+    @Transactional
+    public CoveredLifeView removeCoveredLife(String policyNumber, UUID coveredLifeId, String reason, String removedBy) {
+        return coveredLives.remove(funeralPolicyOrThrow(policyNumber), coveredLifeId, reason, removedBy);
+    }
+
+    /**
+     * The nightly covered-life sweep's work on one funeral policy (CoveredLifeSweep), inside the sweep's own
+     * transaction. Only a policy in force is swept; when its last life has ended it closes as a scheme does
+     * when its last member leaves. Runs in the caller's transaction (the sweep's REQUIRES_NEW).
+     */
+    @Override
+    @Transactional
+    public void sweepFuneralPolicy(String policyNumber, LocalDate today) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        if (!"ACTIVE".equals(policy.getStatus()) && !"REINSTATED".equals(policy.getStatus())) {
+            return;
+        }
+        if (!coveredLives.sweep(policy, today)) {
+            closeAsSurrendered(policy, null, tenantId);
+        }
+        policyRepository.save(policy);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Optional<FuneralClaimFacts> funeralClaimFacts(String policyNumber, UUID coveredLifeId) {
+        Policy policy = findPolicyOrThrow(policyNumber, TenantContext.get());
+        if (!coveredLives.isFuneral(policy) || coveredLifeId == null) {
+            return java.util.Optional.empty();
+        }
+        List<UUID> beneficiaries = beneficiaryRepository.findByPolicyNumberAndActiveTrue(policyNumber).stream()
+            .map(Beneficiary::getPartyId).filter(java.util.Objects::nonNull).toList();
+        return java.util.Optional.of(coveredLives.claimFacts(policy, coveredLifeId, beneficiaries));
+    }
+
+    @Override
+    @Transactional
+    public CoveredLifeView promoteCoveredLife(String policyNumber, UUID coveredLifeId, PromoteMemberRequest identity,
+                                              String promotedBy) {
+        return coveredLives.promote(funeralPolicyOrThrow(policyNumber), coveredLifeId, identity, promotedBy);
+    }
+
+    @Override
+    @Transactional
+    public UUID takeOverFuneralPolicy(String policyNumber, PromoteMemberRequest identity, String by) {
+        Policy policy = funeralPolicyOrThrow(policyNumber);
+        UUID partyId = coveredLives.takeOver(policy, identity, by);
+        policyRepository.save(policy);
+        return partyId;
+    }
+
+    private Policy funeralPolicyOrThrow(String policyNumber) {
+        Policy policy = findPolicyOrThrow(policyNumber, TenantContext.get());
+        if (!coveredLives.isFuneral(policy)) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " is not a funeral plan, so it covers no family");
+        }
+        return policy;
     }
 
     @Override
@@ -1477,8 +1567,28 @@ public class PolicyApiImpl implements PolicyApi {
     @Transactional(readOnly = true)
     public ClaimableCoverView claimableCover(String policyNumber, UUID policyMemberId, LocalDate asOf,
                                               String benefitType) {
+        return claimableCover(policyNumber, policyMemberId, null, asOf, benefitType);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ClaimableCoverView claimableCover(String policyNumber, UUID policyMemberId, UUID coveredLifeId, LocalDate asOf,
+                                              String benefitType) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+
+        // A FAMILY: the claim names the covered life, and pays that life's own stored benefit.
+        if (coveredLives.isFuneral(policy)) {
+            if (policyMemberId != null) {
+                throw new InvalidPolicyStateException("Policy " + policyNumber
+                    + " is a funeral plan, not a group scheme, so a claim on it names a covered life, not a member");
+            }
+            return coveredLives.claimable(policy, coveredLifeId, asOf, benefitType);
+        }
+        if (coveredLifeId != null) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber
+                + " is not a funeral plan, so a claim on it cannot name a covered life");
+        }
 
         // Keyed on the scheme ROW, behind a category pre-filter -- see isSchemeCategory
         // for why the pre-filter cannot simply be dropped.
@@ -1582,8 +1692,32 @@ public class PolicyApiImpl implements PolicyApi {
     @Transactional
     public void dischargeForSettledClaim(String policyNumber, UUID policyMemberId, LocalDate dateOfEvent,
                                           UUID claimId, String dischargedBy) {
+        dischargeForSettledClaim(policyNumber, policyMemberId, null, dateOfEvent, claimId, dischargedBy);
+    }
+
+    @Override
+    @Transactional
+    public void dischargeForSettledClaim(String policyNumber, UUID policyMemberId, UUID coveredLifeId, LocalDate dateOfEvent,
+                                          UUID claimId, String dischargedBy) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        // A FAMILY IS NOT DISCHARGED BY ONE DEATH either: the named life ends, and only the main member's
+        // death can end the policy -- by the version's rule, not by this method's default below.
+        if (coveredLives.isFuneral(policy)) {
+            if (coveredLifeId == null) {
+                throw new InvalidPolicyStateException("Claim " + claimId + " on funeral plan " + policyNumber
+                    + " names no covered life, so there is no life to discharge");
+            }
+            switch (coveredLives.dischargeDeath(policy, coveredLifeId, dateOfEvent)) {
+                case POLICY_ENDS -> closeAsSurrendered(policy, claimId, tenantId);
+                case FREE_COVER -> eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PremiumsEnded", tenantId,
+                    Map.of("policyNumber", policyNumber, "after", dateOfEvent.toString(),
+                           "reason", "The main member died on " + dateOfEvent + "; the family is covered free to the next premium date")));
+                default -> { /* a dependant ended, a takeover waits, or a redelivery */ }
+            }
+            policyRepository.save(policy);
+            return;
+        }
         // A SCHEME IS NOT DISCHARGED BY ONE MEMBER'S DEATH.
         //
         // Closing a policy here is right because a settled claim has discharged its coverage,
@@ -2018,9 +2152,20 @@ public class PolicyApiImpl implements PolicyApi {
     @Override
     @Transactional(readOnly = true)
     public ExclusionPeriodsView exclusionPeriodsFor(String policyNumber, UUID policyMemberId) {
+        return exclusionPeriodsFor(policyNumber, policyMemberId, null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ExclusionPeriodsView exclusionPeriodsFor(String policyNumber, UUID policyMemberId, UUID coveredLifeId) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
         ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(policy.getProductVersionId());
+        // A covered life waits from its OWN cover start: a baby added later has a clock of its own.
+        if (coveredLifeId != null && coveredLives.isFuneral(policy)) {
+            return coveredLives.exclusionPeriods(policy, coveredLifeId,
+                snapshot.suicideExclusionMonths(), snapshot.preExistingExclusionMonths());
+        }
 
         // A scheme member went on risk on their OWN join date, which on credit life is the loan
         // disbursement date. That is weeks before the enrolment file reached us, and measuring

@@ -76,4 +76,7 @@ public record PublishVersionRequest(
     @Valid BonusRequest bonus,
 
     // Present only on an ANNUITY version (product step 5), where it is required.
-    @Valid AnnuityRequest annuity) {}
+    @Valid AnnuityRequest annuity,
+
+    // Present only on a FUNERAL version (family funeral cover), where it is required.
+    @Valid FuneralRequest funeral) {}

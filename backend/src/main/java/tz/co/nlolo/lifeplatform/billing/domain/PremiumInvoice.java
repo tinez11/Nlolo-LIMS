@@ -133,6 +133,22 @@ public class PremiumInvoice {
     // request's Hibernate session). A Java-side setter for either transition would be dead code.
     public void waive(String reason) { this.status = "WAIVED"; this.waiverReason = reason; }
 
+    /** Untouched: still DUE and nothing paid against it -- the only instalment a premium change may restate (plan R4). */
+    public boolean isUntouched() { return "DUE".equals(status) && amountPaid.signum() == 0; }
+
+    /**
+     * The premium changed before this instalment fell due (family funeral cover: a life added or ended, the
+     * anniversary re-pricing). Restated IN PLACE rather than waived and re-raised: a waived invoice's
+     * receivable is never reversed in the ledger, so waive-and-re-raise would carry both.
+     */
+    public void restateAmount(BigDecimal newAmount) {
+        if (!isUntouched()) {
+            throw new IllegalStateException("Invoice " + invoiceId + " is " + status + " with " + amountPaid
+                + " paid; only an untouched instalment can be restated");
+        }
+        this.amount = newAmount;
+    }
+
     /**
      * M5: the money-in leg. PAID and PARTIALLY_PAID were declared in InvoiceStatus from M4 but
      * unreachable — nothing could transition into them until payment existed.

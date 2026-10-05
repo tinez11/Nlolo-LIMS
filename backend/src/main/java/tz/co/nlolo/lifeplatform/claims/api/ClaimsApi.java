@@ -32,7 +32,26 @@ public interface ClaimsApi {
      *     deceased. Conflating the two is what left a group claim unable to say who died.
      */
     record RegisterClaimRequest(String policyNumber, UUID policyMemberId, UUID claimantPartyId,
-                                 ClaimType claimType, LocalDate dateOfEvent, ClaimDetails details) {}
+                                 ClaimType claimType, LocalDate dateOfEvent, ClaimDetails details,
+                                 /* The covered life who died, on a funeral plan (required there, refused
+                                    elsewhere -- enforced through PolicyApi.claimableCover). */
+                                 UUID coveredLifeId,
+                                 /* Whether the death was accidental: a funeral plan may waive its waiting
+                                    period for an accident (plan R7). Ignored off a funeral plan. */
+                                 boolean accidental) {
+
+        /** Every claim that is not on a funeral plan. */
+        public RegisterClaimRequest(String policyNumber, UUID policyMemberId, UUID claimantPartyId,
+                                    ClaimType claimType, LocalDate dateOfEvent, ClaimDetails details) {
+            this(policyNumber, policyMemberId, claimantPartyId, claimType, dateOfEvent, details, null, false);
+        }
+    }
+
+    /**
+     * Record whether a funeral claim's death was accidental (plan R7) -- what the assessor learns, so it may
+     * change until the claim is decided. Refused on a claim that is not on a funeral plan.
+     */
+    ClaimView recordAccidentalDeath(UUID claimId, boolean accidental, String recordedBy);
 
     ClaimView registerClaim(RegisterClaimRequest request, String idempotencyKey, String registeredBy);
 

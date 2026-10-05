@@ -123,10 +123,13 @@ public class PaymentEventListener {
     private final ApplicationEventPublisher eventPublisher;
     private final MeterRegistry meterRegistry;
     private final TransactionTemplate requiresNewTransactionTemplate;
+    private final tz.co.nlolo.lifeplatform.claims.infrastructure.FuneralClaimRepository funeralClaimRepository;
 
     public PaymentEventListener(ClaimRepository claimRepository, PolicyApi policyApi,
                                  ApplicationEventPublisher eventPublisher, MeterRegistry meterRegistry,
-                                 PlatformTransactionManager transactionManager) {
+                                 PlatformTransactionManager transactionManager,
+                                 tz.co.nlolo.lifeplatform.claims.infrastructure.FuneralClaimRepository funeralClaimRepository) {
+        this.funeralClaimRepository = funeralClaimRepository;
         this.claimRepository = claimRepository;
         this.policyApi = policyApi;
         this.eventPublisher = eventPublisher;
@@ -182,6 +185,18 @@ public class PaymentEventListener {
      */
     private record SettledClaimFacts(boolean alreadySettled, ClaimType claimType, String policyNumber,
                                       UUID policyMemberId, LocalDate dateOfEvent) {}
+
+    /**
+     * The covered life a funeral claim discharges (claims V10), or null on every other claim. The policy is
+     * asked first, so a class that never sells a funeral plan never touches claims.funeral_claim.
+     */
+    private UUID coveredLifeOf(UUID claimId, String policyNumber) {
+        if (!"FUNERAL".equals(policyApi.getPolicy(policyNumber).productCategory())) {
+            return null;
+        }
+        return funeralClaimRepository.findById(claimId)
+            .map(tz.co.nlolo.lifeplatform.claims.domain.FuneralClaim::getCoveredLifeId).orElse(null);
+    }
 
     private void handleCompleted(Map<String, Object> payload) {
         if (!"CLAIM_SETTLEMENT".equals(payload.get("purpose"))) {
@@ -255,7 +270,7 @@ public class PaymentEventListener {
                     policyApi.markMatured(facts.policyNumber(), "claims:" + claimId);
                 } else {
                     policyApi.dischargeForSettledClaim(facts.policyNumber(), facts.policyMemberId(),
-                        facts.dateOfEvent(), claimId, "claims:" + claimId);
+                        coveredLifeOf(claimId, facts.policyNumber()), facts.dateOfEvent(), claimId, "claims:" + claimId);
                 }
             });
         } catch (RuntimeException e) {

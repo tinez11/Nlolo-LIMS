@@ -1,21 +1,19 @@
 import { z } from 'zod';
-import type { CreateProductRequest } from '@/api/types';
+import { PRODUCT_CATEGORIES, type CreateProductRequest } from '@/api/types';
 import { CURRENCY_PATTERN } from '@/lib/patterns';
+
+/** The request's enum: `ProductCategory` is derived from ProductSummary, whose category is a bare string. */
+type RequestCategory = CreateProductRequest['category'];
 
 /** Zod schema for creating a product, mirroring `CreateProductRequest` exactly. */
 export const createProductFormSchema = z.object({
   productCode: z.string().trim().min(1, 'Product code is required'),
   productName: z.string().trim().min(1, 'Product name is required'),
-  category: z.enum([
-    'TERM_LIFE',
-    'ENDOWMENT',
-    'WHOLE_LIFE',
-    'ANNUITY',
-    'UNIT_LINKED',
-    'GROUP_LIFE',
-    'EDUCATION_SAVINGS',
-    'CREDIT_LIFE',
-  ]),
+  // The one category list (api/types). A second hand-kept copy here once lacked FUNERAL, and the
+  // form then refused a funeral product silently -- the select renders no error of its own.
+  category: z.enum(PRODUCT_CATEGORIES as unknown as [RequestCategory, ...RequestCategory[]], {
+    message: 'Choose a category',
+  }),
   defaultCurrency: z.string().regex(CURRENCY_PATTERN, 'Must be a 3-letter code like TZS'),
 });
 

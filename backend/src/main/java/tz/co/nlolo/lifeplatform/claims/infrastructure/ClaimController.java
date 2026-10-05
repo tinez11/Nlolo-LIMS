@@ -20,6 +20,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -88,7 +89,7 @@ public class ClaimController {
 
         ClaimsApi.RegisterClaimRequest apiRequest = new ClaimsApi.RegisterClaimRequest(request.policyNumber(),
             request.policyMemberId(), request.claimantPartyId(), request.claimType(),
-            request.dateOfEvent(), request.details());
+            request.dateOfEvent(), request.details(), request.coveredLifeId(), Boolean.TRUE.equals(request.accidental()));
         ClaimView view = claimsApi.registerClaim(apiRequest, idempotencyKey, jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(ClaimResponseDto.from(view));
     }
@@ -206,6 +207,18 @@ public class ClaimController {
      * {@code approved} is {@code true} -- already enforced, with the correct 422, by
      * {@code ClaimsApiImpl} itself.
      */
+    /**
+     * Record whether a funeral claim's death was accidental (plan R7) -- what the assessor learns at claim. A
+     * product that waives its waiting period for an accident then pays a death inside it. Before the decision.
+     */
+    @PutMapping("/claims/{claimId}/accidental")
+    @PreAuthorize("hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER')")
+    public ResponseEntity<ClaimResponseDto> recordAccidentalDeath(@PathVariable UUID claimId,
+            @RequestBody java.util.Map<String, Boolean> request, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(ClaimResponseDto.from(
+            claimsApi.recordAccidentalDeath(claimId, Boolean.TRUE.equals(request.get("accidental")), jwt.getSubject())));
+    }
+
     @PostMapping("/claims/{claimId}/settlement-decision")
     @PreAuthorize("hasRole('CLAIMS_MANAGER')")
     public ResponseEntity<ClaimResponseDto> decideSettlement(@PathVariable UUID claimId,
@@ -216,7 +229,7 @@ public class ClaimController {
             ? new BigDecimal(request.approvedAmount().amount()) : null;
         String approvedCurrency = request.approvedAmount() != null ? request.approvedAmount().currencyCode() : null;
         claimsApi.decideSettlement(claimId, request.approved(), approvedAmount, approvedCurrency,
-            request.rejectionReason(), request.payeeRef(), idempotencyKey, jwt.getSubject());
+            request.rejectionReason(), request.declineReason(), request.payeeRef(), idempotencyKey, jwt.getSubject());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(ClaimResponseDto.from(claimsApi.getClaim(claimId)));
     }
 

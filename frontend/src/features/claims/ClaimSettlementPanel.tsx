@@ -20,12 +20,13 @@ import { assessorName } from './assessorName';
 import {
   blankApproveDecision,
   switchDecision,
+  DECLINE_REASONS,
   recommendationExceedsCover,
   settlementDecisionSchema,
   toApiRequest,
   type SettlementDecisionFormValues,
 } from './settlementDecisionForm';
-import { Input, Textarea } from '@/components/ui/input';
+import { Input, Select, Textarea } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 
 /**
@@ -217,7 +218,13 @@ export function ClaimSettlementPanel({
                 aria-checked={selected}
                 onClick={() => {
                   const next = switchDecision(choice, approved, recommended, cover);
-                  if (next) reset(next);
+                  if (!next) return;
+                  reset(next);
+                  // An armed confirmation and the refusal that left it there both belong to the
+                  // decision just abandoned. Kept, a refused approval went on offering "Approve and
+                  // pay" under a manager who had moved to Reject, and hid the Reject button.
+                  setPending(null);
+                  resetDecideSettlement(claimId);
                 }}
                 className={cn(
                   'rounded px-3 py-1 text-xs transition-colors',
@@ -334,13 +341,23 @@ export function ClaimSettlementPanel({
           )}
         </>
       ) : (
-        <FormField label="Rejection reason (optional)">
-          <Textarea
-            className="min-h-16"
-            placeholder="Insufficient evidence"
-            {...register('rejectionReason')}
-          />
-        </FormField>
+        <>
+          <FormField label="Rejection reason (optional)">
+            <Textarea
+              className="min-h-16"
+              placeholder="Insufficient evidence"
+              {...register('rejectionReason')}
+            />
+          </FormField>
+          <FormField label="Policy-term reason (optional)">
+            <Select inputSize="sm" {...register('declineReason')}>
+              <option value="">None — the assessor&rsquo;s finding alone</option>
+              {DECLINE_REASONS.map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </Select>
+          </FormField>
+        </>
       )}
 
       {deciding.status === 'error' && deciding.error && (

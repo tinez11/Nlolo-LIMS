@@ -48,27 +48,26 @@ test.describe('staff finaccounting', () => {
   test('lists real journal entries this session already produced', async ({ page }) => {
     await page.goto('/staff/gl-postings');
     await expect(page.getByRole('heading', { name: 'GL postings' })).toBeVisible();
-    await expect(page.getByText('billing.PremiumInvoiceGenerated').first()).toBeVisible({
-      timeout: 15_000,
-    });
+    // Any real entry, not one particular event: which events fill the newest page depends on what ran before
+    // (a funeral restatement posts one entry per invoice it moves -- eleven at a time).
+    await expect(page.locator('td .font-mono').filter({ hasText: /^[a-z]+\.[A-Z][A-Za-z]+$/ }).first())
+      .toBeVisible({ timeout: 15_000 });
   });
 
   test('opens a row preview showing two balanced postings, then navigates to full detail', async ({
     page,
   }) => {
     await page.goto('/staff/gl-postings');
-    await page
-      .getByRole('row')
-      .filter({ hasText: 'billing.PremiumInvoiceGenerated' })
-      .first()
-      .getByRole('button')
-      .click();
+    // The newest entry, whatever its event -- its detail page is titled with that same event.
+    const firstRow = page.getByRole('row').filter({ has: page.getByRole('button') }).first();
+    const sourceEvent = (await firstRow.locator('.font-mono').first().innerText()).trim();
+    await firstRow.getByRole('button').click();
 
     await expect(page.getByText('DR', { exact: true })).toBeVisible();
     await expect(page.getByText('CR', { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Full detail' }).click();
-    await expect(page.getByRole('heading', { name: 'billing.PremiumInvoiceGenerated' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: sourceEvent })).toBeVisible();
     await expect(page.getByText('Always exactly two legs')).toBeVisible();
   });
 

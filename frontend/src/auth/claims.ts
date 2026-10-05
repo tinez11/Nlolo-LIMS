@@ -62,8 +62,26 @@ function readString(source: Record<string, unknown>, key: string): string | null
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-/** Decode the identity claims from an access token. Never throws. */
+/*
+  The last token decoded, and what it decoded to. Callers read the identity on every render
+  and some pass it to an effect's dependency list (useNavBadges did). A fresh object per call
+  re-ran that effect on every render, and its own setState re-rendered the shell -- a fetch
+  loop sending every sidebar count about twice a second from every open tab, enough to starve
+  the backend's connection pool under a full e2e run (2026-10-05). Same token, same object.
+*/
+let lastToken: string | undefined;
+let lastIdentity: TokenIdentity = EMPTY;
+
+/** Decode the identity claims from an access token. Never throws. The same token returns the same object. */
 export function readIdentity(accessToken: string | undefined): TokenIdentity {
+  if (accessToken === lastToken) return lastIdentity;
+  const identity = decodeIdentity(accessToken);
+  lastToken = accessToken;
+  lastIdentity = identity;
+  return identity;
+}
+
+function decodeIdentity(accessToken: string | undefined): TokenIdentity {
   if (!accessToken) return EMPTY;
   const payload = accessToken.split('.')[1];
   if (!payload) return EMPTY;

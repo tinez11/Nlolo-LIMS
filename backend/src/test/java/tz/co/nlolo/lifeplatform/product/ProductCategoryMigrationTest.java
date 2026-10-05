@@ -21,9 +21,15 @@ class ProductCategoryMigrationTest {
         assertEquals("CREDIT_LIFE", ProductCategory.valueOf("CREDIT_LIFE").name());
     }
 
+    /** Family funeral cover; product V24 widens the CHECK to admit it. */
+    @Test
+    void funeralIsAProductCategory() {
+        assertEquals("FUNERAL", ProductCategory.valueOf("FUNERAL").name());
+    }
+
     @Test
     void theCategoryListHasNotGrownUnexpectedly() {
-        assertEquals(8, ProductCategory.values().length,
+        assertEquals(9, ProductCategory.values().length,
             "A new category must also be added to product_definition_category_check "
             + "(a migration) and to frontend/src/types/api/policy.ts");
     }

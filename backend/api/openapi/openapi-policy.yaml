@@ -476,6 +476,155 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CoverageStatusView' }
+  /policies/{policyNumber}/covered-lives:
+    get:
+      summary: A funeral policy's covered lives, main member first
+      description: >-
+        Family funeral cover. Every life on the policy, active and ended, with the benefit a death pays
+        (fixed when cover was set), the yearly premium, the life's own cover start and the day its
+        waiting period ends. An empty array for any policy that is not a funeral plan. Scoped as
+        GET /policies/{policyNumber}.
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CoveredLifeView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+    post:
+      summary: Add a life to an in-force funeral policy, covered from the next premium date
+      description: >-
+        The life is checked against the version's role rules on the next premium date (role covered by the
+        plan, the role's count, entry age) and priced on the family's plan; its waiting period runs from its
+        own cover start. The premium is restated from that date (policy.PremiumRestated): billing's untouched
+        instalments are restated in place. 409 in the product's words when refused or when the policy is not
+        in force.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { type: [string, "null"], enum: [SPOUSE, CHILD, PARENT, EXTENDED, MAIN_MEMBER, null] }
+                fullName: { type: [string, "null"], maxLength: 200 }
+                dateOfBirth: { type: [string, "null"], format: date }
+                sex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+                idNumber: { type: [string, "null"], maxLength: 50 }
+                student: { type: [boolean, "null"] }
+      responses:
+        '201':
+          description: Added
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoveredLifeView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /policies/{policyNumber}/covered-lives/{coveredLifeId}/promotion:
+    post:
+      summary: Promote a name-only covered life to a registered party at claim
+      description: >-
+        Family funeral cover (plan R10). From the identity document on the death certificate: an existing
+        party holding that document is reused, never duplicated. Idempotent. Claims staff only.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - { name: coveredLifeId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentifyCoveredLife' }
+      responses:
+        '200':
+          description: The life, now a party
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoveredLifeView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /policies/{policyNumber}/takeover:
+    post:
+      summary: The spouse takes over a funeral policy whose main member died
+      description: >-
+        Family funeral cover (plan R8). Only on a policy whose version passes it to the spouse and whose
+        main member's death claim has settled: the spouse is registered from their identity document,
+        made policyholder and life assured, and re-priced as the main member from the next premium date.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentifyCoveredLife' }
+      responses:
+        '200':
+          description: The policy, with its new policyholder
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /policies/{policyNumber}/covered-lives/{coveredLifeId}/removal:
+    post:
+      summary: Take a dependant off a funeral policy at the next premium date
+      description: >-
+        The life stays covered up to (not on) the next premium date -- the period already paid for -- then
+        ends REMOVED. The premium is restated from that date. The main member cannot be removed.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - { name: coveredLifeId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: [string, "null"], maxLength: 200 }
+      responses:
+        '200':
+          description: Scheduled to come off cover
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoveredLifeView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
   /policies/{policyNumber}/in-force:
     get:
       summary: Lightweight boolean in-force check (Deliverable 3 Rev 2, Po3)
@@ -1370,6 +1519,36 @@ paths:
 
 components:
   schemas:
+    IdentifyCoveredLife:
+      type: object
+      properties:
+        idType: { type: [string, "null"], enum: [NATIONAL_ID, PASSPORT, DRIVING_LICENCE, VOTER_ID, null] }
+        idNumber: { type: [string, "null"], maxLength: 50 }
+        phoneNumber: { type: [string, "null"] }
+        sex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+    CoveredLifeView:
+      type: object
+      additionalProperties: false
+      required: [coveredLifeId, role, fullName, dateOfBirth, sex, idNumber, student, partyId, benefit, yearlyPremium,
+                 pricedAtAge, coverStart, waitingPeriodEnds, coverEnd, status, endReason, endedOn]
+      properties:
+        coveredLifeId: { type: string, format: uuid }
+        role: { type: string, enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED] }
+        fullName: { type: string }
+        dateOfBirth: { type: string, format: date }
+        sex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+        idNumber: { type: [string, "null"] }
+        student: { type: boolean }
+        partyId: { type: [string, "null"], format: uuid, description: "The main member's party; a dependant's once promoted at claim" }
+        benefit: { type: number, description: "What a death pays, fixed when cover was set" }
+        yearlyPremium: { type: number }
+        pricedAtAge: { type: integer, description: "The age the premium was last priced at (issue, or the latest anniversary)" }
+        coverStart: { type: string, format: date, description: "This life's own cover start; its waiting period runs from here" }
+        waitingPeriodEnds: { type: [string, "null"], format: date, description: "First day a natural death is paid; null when there is no waiting period" }
+        coverEnd: { type: [string, "null"], format: date, description: "A scheduled end -- covered up to, not on, this date" }
+        status: { type: string, enum: [ACTIVE, ENDED] }
+        endReason: { type: [string, "null"], enum: [DECEASED, REMOVED, AGED_OUT, MAIN_MEMBER_DIED, FREE_COVER_ENDED, POLICY_ENDED, null] }
+        endedOn: { type: [string, "null"], format: date }
     SurrenderRequest:
       description: A customer surrender in flight.
       type: object
@@ -1666,7 +1845,7 @@ components:
             deliberately null rather than merely missing — and it is the one kind of policy
             that also answers on /group-schemes/{policyNumber}.
           type: [string, "null"]
-          enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE, null]
+          enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE, FUNERAL, null]
         underwritingCaseId:
           description: >-
             The decided underwriting case this policy — or scheme — was issued from. Null on an

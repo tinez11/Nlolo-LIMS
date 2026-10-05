@@ -11,4 +11,7 @@ public record SettlementDecisionRequestDto(
     @NotNull Boolean approved,
     @Valid MoneyDto approvedAmount,
     String rejectionReason,
-    String payeeRef) {}
+    String payeeRef,
+    // A policy-term reason for a decline (ClaimDeclineReason): an exclusion window, or a funeral plan's
+    // waiting period. Refused on an approval, and refused when its window was not open on the date of event.
+    tz.co.nlolo.lifeplatform.claims.api.ClaimDeclineReason declineReason) {}

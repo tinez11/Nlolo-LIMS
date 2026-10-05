@@ -339,6 +339,52 @@ public interface ProductApi {
                          AnnuityPlan annuityPlan, String publishedBy);
 
     /**
+     * The fullest form (family funeral cover): also a FUNERAL version's plans, premium table, role rules
+     * and claim rules. Every other overload delegates here with {@link FuneralPlan#none()}. Eleven now.
+     */
+    void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                         List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                         TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
+                         AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
+                         AnnuityPlan annuityPlan, FuneralPlan funeralPlan, String publishedBy);
+
+    /**
+     * A FUNERAL version's terms; {@link FuneralPlan#none()} for every other version. Asks the product's
+     * category before reading any funeral table, so callers on ordinary policies touch none.
+     */
+    FuneralPlan resolveFuneralPlan(UUID productVersionId);
+
+    /**
+     * The one funeral quote: every life priced on the plan, the family total and the instalment, rounded
+     * once. Underwriting quotes on it, issuance takes the policy's premium from it.
+     *
+     * @throws FuneralQuoteRefusedException in words a person can act on
+     */
+    FuneralQuote quoteFuneral(UUID productVersionId, FuneralQuoteInput input);
+
+    /**
+     * One existing life's yearly premium at {@code age} -- no entry-age check: the anniversary re-prices a
+     * life long past the age it joined at.
+     *
+     * @throws FuneralQuoteRefusedException where the table has no row
+     */
+    BigDecimal funeralYearlyPremium(UUID productVersionId, String planCode, FuneralRole role, int age);
+
+    /**
+     * One life joining a family already on cover: the quote's rules for that life (role covered, the role's
+     * count with {@code alreadyInRole} lives already in it, entry age on {@code asOf}), priced. The family's
+     * other lives are not re-checked.
+     *
+     * @throws FuneralQuoteRefusedException in the quote's words
+     */
+    FuneralQuoteLine admitFuneralLife(UUID productVersionId, String planCode, FuneralLifeInput life, int alreadyInRole,
+                                      LocalDate asOf);
+
+    /** A family's instalment from its yearly total: loaded for the frequency, divided once, rounded once. */
+    BigDecimal funeralInstalment(UUID productVersionId, BigDecimal totalYearlyPremium, PremiumFrequency frequency);
+
+    /**
      * An ANNUITY version's terms; {@link AnnuityPlan#none()} for every other version. Asks the
      * product's category before reading any annuity table, so callers on ordinary policies touch none.
      */

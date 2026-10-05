@@ -3,6 +3,8 @@ package tz.co.nlolo.lifeplatform.product.infrastructure;
 import tz.co.nlolo.lifeplatform.product.api.AccumulationPlan;
 import tz.co.nlolo.lifeplatform.product.api.AnnuityPlan;
 import tz.co.nlolo.lifeplatform.product.api.BonusPlan;
+import tz.co.nlolo.lifeplatform.product.api.FuneralPlan;
+import tz.co.nlolo.lifeplatform.product.api.FuneralQuote;
 import tz.co.nlolo.lifeplatform.product.api.DepositPlan;
 import tz.co.nlolo.lifeplatform.product.api.CashValuePlan;
 import tz.co.nlolo.lifeplatform.product.api.PayoutPlan;
@@ -132,6 +134,7 @@ public class ProductController {
             request.deposit() != null ? request.deposit().toPlan() : DepositPlan.none(),
             request.bonus() != null ? request.bonus().toPlan() : BonusPlan.none(),
             request.annuity() != null ? request.annuity().toPlan() : AnnuityPlan.none(),
+            request.funeral() != null ? request.funeral().toPlan() : FuneralPlan.none(),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
@@ -212,6 +215,35 @@ public class ProductController {
             throw new NotAnAnnuityException(versionId);
         }
         return ResponseEntity.ok(AnnuityTermsResponse.from(plan));
+    }
+
+    /**
+     * A FUNERAL version's plans, premium table, role rules and claim rules, for the product screen and the
+     * case form. 404 NOT_A_FUNERAL_PRODUCT for any other version. Agents sell this product, so they may read it.
+     */
+    @GetMapping("/products/{productId}/versions/{versionId}/funeral")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<FuneralTermsResponse> getFuneralTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {
+        FuneralPlan plan = productApi.resolveFuneralPlan(versionId);
+        if (!plan.funeral()) {
+            throw new NotAFuneralProductException(versionId);
+        }
+        return ResponseEntity.ok(FuneralTermsResponse.from(plan));
+    }
+
+    /**
+     * Price a family on one plan: a line per life, the total and the instalment. Read-only, so agents and
+     * any staff member may quote. 422 FUNERAL_QUOTE_REFUSED says what the plan will not cover.
+     */
+    @PostMapping("/products/{productId}/versions/{versionId}/funeral-quote")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<FuneralQuote> quoteFuneral(@PathVariable UUID productId, @PathVariable UUID versionId,
+                                                     @Valid @RequestBody FuneralQuoteRequest request) {
+        if (!productApi.resolveFuneralPlan(versionId).funeral()) {
+            throw new NotAFuneralProductException(versionId);
+        }
+        return ResponseEntity.ok(productApi.quoteFuneral(versionId,
+            request.toInput(java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")))));
     }
 
     /**

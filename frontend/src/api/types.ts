@@ -31,6 +31,14 @@ import type { components as ReinsuranceComponents } from '@/types/api/reinsuranc
 import type { components as UnderwritingComponents } from '@/types/api/underwriting';
 
 export type PolicyView = PolicyComponents['schemas']['PolicyView'];
+// Family funeral cover.
+export type CoveredLifeView = PolicyComponents['schemas']['CoveredLifeView'];
+export type IdentifyCoveredLife = PolicyComponents['schemas']['IdentifyCoveredLife'];
+export type FuneralTermsView = ProductComponents['schemas']['FuneralTerms'];
+export type FuneralQuoteRequest = ProductComponents['schemas']['FuneralQuoteRequest'];
+export type FuneralQuoteView = ProductComponents['schemas']['FuneralQuote'];
+export type FuneralApplicationView = UnderwritingComponents['schemas']['FuneralApplication'];
+export type FuneralApplicationRequest = UnderwritingComponents['schemas']['FuneralApplicationRequest'];
 export type PolicyStatus = NonNullable<PolicyView['status']>;
 /** A customer surrender in flight (product step 1). */
 export type SurrenderRequestView = PolicyComponents['schemas']['SurrenderRequest'];
@@ -373,6 +381,7 @@ export const PRODUCT_CATEGORIES: readonly ProductCategory[] = [
   'GROUP_LIFE',
   'EDUCATION_SAVINGS',
   'CREDIT_LIFE',
+  'FUNERAL',
 ];
 
 /**

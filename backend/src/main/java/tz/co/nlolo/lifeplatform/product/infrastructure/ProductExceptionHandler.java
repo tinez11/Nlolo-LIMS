@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.product.infrastructure;
 
 import tz.co.nlolo.lifeplatform.product.api.AnnuityPricingRefusedException;
 import tz.co.nlolo.lifeplatform.product.api.DuplicateProductCodeException;
+import tz.co.nlolo.lifeplatform.product.api.FuneralQuoteRefusedException;
 import tz.co.nlolo.lifeplatform.product.api.InvalidProductVersionException;
 import tz.co.nlolo.lifeplatform.product.api.NoActiveProductVersionException;
 import tz.co.nlolo.lifeplatform.product.api.PremiumNotQuotableException;
@@ -75,6 +76,16 @@ public class ProductExceptionHandler {
     @ExceptionHandler(NotAnAnnuityException.class)
     public ProblemDetail handleNotAnAnnuity(NotAnAnnuityException ex) {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "NOT_AN_ANNUITY");
+    }
+
+    @ExceptionHandler(NotAFuneralProductException.class)
+    public ProblemDetail handleNotAFuneralProduct(NotAFuneralProductException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "NOT_A_FUNERAL_PRODUCT");
+    }
+
+    @ExceptionHandler(FuneralQuoteRefusedException.class)
+    public ProblemDetail handleFuneralQuoteRefused(FuneralQuoteRefusedException ex) {
+        return problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "FUNERAL_QUOTE_REFUSED");
     }
 
     @ExceptionHandler(DuplicateProductCodeException.class)

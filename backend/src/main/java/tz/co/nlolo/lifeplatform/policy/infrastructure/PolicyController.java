@@ -84,6 +84,12 @@ public class PolicyController {
         if (snapshot.category() == ProductCategory.GROUP_LIFE || snapshot.category() == ProductCategory.CREDIT_LIFE) {
             throw new NotASingleLifeProductException(snapshot.category().name());
         }
+        // A funeral plan covers a FAMILY, recorded on its case; issued by hand it would be a policy
+        // covering nobody but the main member, priced at whatever premium was typed.
+        if (snapshot.category() == ProductCategory.FUNERAL) {
+            throw new InvalidPolicyStateException("A funeral plan is issued from its underwriting case, which records"
+                + " the family and prices it; it cannot be issued by hand");
+        }
         List<PolicyApi.BeneficiaryInput> beneficiaries = request.beneficiaries() != null
             ? request.beneficiaries().stream().map(BeneficiaryInputDto::toApiInput).toList() : List.of();
         PolicyApi.IssueRequest issueRequest = new PolicyApi.IssueRequest(request.policyholderPartyId(), snapshot.productId(), request.productVersionId(),
@@ -467,6 +473,64 @@ public class PolicyController {
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         enforceCustomerOwnPolicyOnly(policyApi.getPolicy(policyNumber), jwt, authentication);
         return ResponseEntity.ok(CoverageStatusResponseDto.from(policyApi.getCoverageStatus(policyNumber, asOf)));
+    }
+
+    /**
+     * A funeral policy's covered lives, main member first (family funeral cover); an empty list for any
+     * other policy. Scoped exactly as getPolicy: a customer to their own policy, an agent to their team's.
+     */
+    @GetMapping("/policies/{policyNumber}/covered-lives")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<List<CoveredLifeView>> getCoveredLives(@PathVariable String policyNumber,
+            @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        PolicyView view = policyApi.getPolicy(policyNumber);
+        enforceCustomerOwnPolicyOnly(view, jwt, authentication);
+        enforceAgentOwnTeamOnly(view, jwt, authentication);
+        return ResponseEntity.ok(policyApi.coveredLives(policyNumber));
+    }
+
+    /**
+     * Add a life to an in-force funeral policy, covered from the next premium date. Staff only: it changes
+     * what the family pays, so it is an act on the contract, not a self-service edit.
+     */
+    @PostMapping("/policies/{policyNumber}/covered-lives")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<CoveredLifeView> addCoveredLife(@PathVariable String policyNumber,
+            @RequestBody CoveredLifeRequests.Add request, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(policyApi.addCoveredLife(policyNumber, request.toLife(), jwt.getSubject()));
+    }
+
+    /**
+     * Promote a name-only covered life to a registered party at claim, from its identity document (plan
+     * R10). Claims staff do this when a death certificate arrives; idempotent.
+     */
+    @PostMapping("/policies/{policyNumber}/covered-lives/{coveredLifeId}/promotion")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER'))")
+    public ResponseEntity<CoveredLifeView> promoteCoveredLife(@PathVariable String policyNumber, @PathVariable UUID coveredLifeId,
+            @RequestBody CoveredLifeRequests.Identify request, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(policyApi.promoteCoveredLife(policyNumber, coveredLifeId, request.toRequest(), jwt.getSubject()));
+    }
+
+    /**
+     * The spouse takes over a funeral policy the main member's death left waiting (plan R8): registered from
+     * their identity document, made policyholder, re-priced as the main member from the next premium date.
+     */
+    @PostMapping("/policies/{policyNumber}/takeover")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<PolicyResponseDto> takeOverFuneralPolicy(@PathVariable String policyNumber,
+            @RequestBody CoveredLifeRequests.Identify request, @AuthenticationPrincipal Jwt jwt) {
+        policyApi.takeOverFuneralPolicy(policyNumber, request.toRequest(), jwt.getSubject());
+        return ResponseEntity.ok(PolicyResponseDto.from(policyApi.getPolicy(policyNumber)));
+    }
+
+    /** Take a dependant off cover at the next premium date. Staff only, as adding is. */
+    @PostMapping("/policies/{policyNumber}/covered-lives/{coveredLifeId}/removal")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<CoveredLifeView> removeCoveredLife(@PathVariable String policyNumber, @PathVariable UUID coveredLifeId,
+            @RequestBody(required = false) CoveredLifeRequests.Remove request, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(policyApi.removeCoveredLife(policyNumber, coveredLifeId,
+            request != null ? request.reason() : null, jwt.getSubject()));
     }
 
     @GetMapping("/policies/{policyNumber}/in-force")

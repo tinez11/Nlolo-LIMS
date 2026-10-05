@@ -118,7 +118,36 @@ export const openCaseFormSchema = z.object({
    */
   isDeferredAnnuity: z.boolean(),
   retirementAge: z.string().trim(),
+
+  /**
+   * A funeral plan (family funeral cover): set by the page from the product. The applicant (or life
+   * assured) is the main member; the plan picks the benefits, and the dependants are names on the case.
+   * The sum assured above is filled from the plan's main-member benefit, never typed (plan R3).
+   */
+  isFuneral: z.boolean(),
+  funeralPlanCode: z.string().trim(),
+  funeralDependants: z.array(z.object({
+    role: z.enum(['SPOUSE', 'CHILD', 'PARENT', 'EXTENDED']),
+    fullName: z.string().trim(),
+    dateOfBirth: z.string().trim(),
+    sex: z.string().trim(),
+    student: z.boolean(),
+  })),
 }).superRefine((values, ctx) => {
+  if (values.isFuneral) {
+    if (values.funeralPlanCode === '') {
+      ctx.addIssue({ code: 'custom', path: ['funeralPlanCode'], message: 'Choose the plan' });
+    }
+    if (values.premiumFrequency === '') {
+      ctx.addIssue({ code: 'custom', path: ['premiumFrequency'], message: 'Choose how often the premium is paid' });
+    }
+    values.funeralDependants.forEach((d, i) => {
+      if (d.fullName === '') ctx.addIssue({ code: 'custom', path: ['funeralDependants', i, 'fullName'], message: 'The full name is required' });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d.dateOfBirth)) {
+        ctx.addIssue({ code: 'custom', path: ['funeralDependants', i, 'dateOfBirth'], message: 'The date of birth is required' });
+      }
+    });
+  }
   if (values.isDeferredAnnuity) {
     if (values.retirementAge === '' || !Number.isInteger(Number(values.retirementAge))) {
       ctx.addIssue({ code: 'custom', path: ['retirementAge'], message: 'Enter the retirement age in whole years' });
@@ -191,10 +220,37 @@ export function blankOpenCaseForm(): OpenCaseFormInput {
     annuityJointLifePartyId: '',
     isDeferredAnnuity: false,
     retirementAge: '',
+    isFuneral: false,
+    funeralPlanCode: '',
+    funeralDependants: [],
   };
 }
 
+export function blankFuneralDependant(): OpenCaseFormInput['funeralDependants'][number] {
+  return { role: 'CHILD', fullName: '', dateOfBirth: '', sex: '', student: false };
+}
+
+/** The dependants as the funeral application and the live quote carry them. */
+export function toFuneralDependants(values: Pick<OpenCaseFormInput, 'funeralDependants'>) {
+  return values.funeralDependants.map((d) => ({
+    role: d.role,
+    fullName: d.fullName.trim(),
+    dateOfBirth: d.dateOfBirth,
+    sex: d.sex === '' ? null : (d.sex as 'FEMALE' | 'MALE'),
+    student: d.role === 'CHILD' && d.student,
+  }));
+}
+
 export function toApiRequest(values: OpenCaseFormValues): OpenCaseRequest {
+  // A funeral plan: the family travels with the case, recorded in the same request. No term -- it
+  // renews yearly -- and the frequency it is billed on.
+  if (values.isFuneral) {
+    return {
+      ...baseRequest(values),
+      ...(values.premiumFrequency ? { premiumFrequency: values.premiumFrequency } : {}),
+      funeral: { planCode: values.funeralPlanCode, dependants: toFuneralDependants(values) },
+    };
+  }
   // A deferred annuity (D2) pays contributions to its vesting date and has no term: the issue
   // listener derives the paying term from the retirement age.
   if (values.isDeferredAnnuity) {

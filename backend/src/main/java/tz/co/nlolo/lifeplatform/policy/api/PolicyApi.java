@@ -510,6 +510,72 @@ public interface PolicyApi {
      * which is the common case and not an error.
      */
     List<BeneficiaryOfView> beneficiaryOf(UUID partyId);
+
+    /**
+     * Family funeral cover: write a newly issued funeral policy's lives from the application its case was
+     * accepted on -- the main member (the life assured) and each dependant, with the benefit and yearly
+     * premium the quote gave them. Called by issuance, in its transaction, straight after issuePolicy.
+     *
+     * @throws InvalidPolicyStateException if the policy already has lives, or the family no longer prices
+     */
+    void recordCoveredLives(String policyNumber, tz.co.nlolo.lifeplatform.underwriting.api.FuneralApplication application,
+                            String recordedBy);
+
+    /** A funeral policy's lives, main member first; empty for every other policy -- asked of product first. */
+    List<CoveredLifeView> coveredLives(String policyNumber);
+
+    /**
+     * Add a life to an in-force funeral policy, covered from the next premium date with its own waiting period,
+     * checked against the version's role rules on that date. Restates the premium from then
+     * ({@code policy.PremiumRestated}).
+     *
+     * @throws InvalidPolicyStateException in the product's words, or when the policy is not in force
+     */
+    CoveredLifeView addCoveredLife(String policyNumber, tz.co.nlolo.lifeplatform.underwriting.api.FuneralApplication.Life life,
+                                   String addedBy);
+
+    /**
+     * Take a dependant off cover at the next premium date (covered to the period already paid for), and
+     * restate the premium from then. The main member cannot be removed.
+     */
+    CoveredLifeView removeCoveredLife(String policyNumber, UUID coveredLifeId, String reason, String removedBy);
+
+    /**
+     * Who a funeral claim's life is and who may file for it (plan R9); empty for any other policy.
+     *
+     * @throws InvalidPolicyStateException if the life is not on this funeral policy
+     */
+    java.util.Optional<FuneralClaimFacts> funeralClaimFacts(String policyNumber, UUID coveredLifeId);
+
+    /** Promote a name-only covered life to a registered party at claim (plan R10). Idempotent. */
+    CoveredLifeView promoteCoveredLife(String policyNumber, UUID coveredLifeId, PromoteMemberRequest identity, String promotedBy);
+
+    /**
+     * The spouse completes the takeover the main member's death left waiting (plan R8): promoted, made
+     * policyholder and life assured, re-priced as the main member from the next premium date.
+     *
+     * @return the new policyholder's party id
+     */
+    UUID takeOverFuneralPolicy(String policyNumber, PromoteMemberRequest identity, String by);
+
+    /**
+     * The nightly covered-life sweep's work on one funeral policy as of {@code today}: scheduled ends, ageing
+     * out, anniversary re-pricing; closes the policy when no life is left. Called by CoveredLifeSweep inside its
+     * own transaction. On the interface, not only the implementation, so the sweep depends on PolicyApi --
+     * a context that replaces PolicyApi with a mock otherwise fails to start for want of PolicyApiImpl.
+     */
+    void sweepFuneralPolicy(String policyNumber, java.time.LocalDate today);
+
+    /** A funeral claim's cover: the named life's stored benefit, if covered on {@code asOf}. */
+    ClaimableCoverView claimableCover(String policyNumber, UUID policyMemberId, UUID coveredLifeId, LocalDate asOf,
+                                      String benefitType);
+
+    /** A funeral claim's windows: the named life's own cover start, with the version's waiting period. */
+    ExclusionPeriodsView exclusionPeriodsFor(String policyNumber, UUID policyMemberId, UUID coveredLifeId);
+
+    /** A settled funeral death claim discharges the named life, and the version's rule decides the rest. */
+    void dischargeForSettledClaim(String policyNumber, UUID policyMemberId, UUID coveredLifeId, LocalDate dateOfEvent,
+                                  UUID claimId, String dischargedBy);
     SurrenderQuoteView quoteSurrenderValue(String policyNumber);
     PolicyView getPolicy(String policyNumber);
 

@@ -38,6 +38,15 @@ public final class ExclusionWindows {
      */
     public static Set<ClaimDeclineReason> openAt(LocalDate coverStart, LocalDate dateOfEvent,
                                                   ExclusionPeriods periods) {
+        return openAt(coverStart, dateOfEvent, periods, false);
+    }
+
+    /**
+     * Also the funeral waiting period: open for a natural death inside it, and for an accidental one unless
+     * the product waives accidents.
+     */
+    public static Set<ClaimDeclineReason> openAt(LocalDate coverStart, LocalDate dateOfEvent,
+                                                  ExclusionPeriods periods, boolean accidental) {
         if (dateOfEvent.isBefore(coverStart)) {
             // Arithmetic on a negative elapsed period would report every window open, which
             // reads as "decline this" for a claim that should never have been registered.
@@ -50,6 +59,10 @@ public final class ExclusionWindows {
         }
         if (insideWindow(coverStart, dateOfEvent, periods.preExistingMonths())) {
             open.add(ClaimDeclineReason.PRE_EXISTING_WITHIN_EXCLUSION);
+        }
+        if (!(accidental && periods.accidentWaivesWaiting())
+                && insideWindow(coverStart, dateOfEvent, periods.waitingMonths())) {
+            open.add(ClaimDeclineReason.WITHIN_WAITING_PERIOD);
         }
         return open;
     }

@@ -39,6 +39,7 @@ public class ProductApiImpl implements ProductApi {
     private final AnnuityRateEntryRepository annuityRateEntryRepository;
     private final AnnuityFrequencyEntryRepository annuityFrequencyEntryRepository;
     private final VersionVestingTermsRepository versionVestingTermsRepository;
+    private final FuneralTermsStore funeralTermsStore;
 
     public ProductApiImpl(ProductDefinitionRepository productDefinitionRepository, ProductVersionRepository productVersionRepository,
                            RatingFactorRepository ratingFactorRepository, BenefitScheduleEntryRepository benefitScheduleEntryRepository,
@@ -55,8 +56,10 @@ public class ProductApiImpl implements ProductApi {
                            AnnuityFormRepository annuityFormRepository,
                            AnnuityRateEntryRepository annuityRateEntryRepository,
                            AnnuityFrequencyEntryRepository annuityFrequencyEntryRepository,
-                           VersionVestingTermsRepository versionVestingTermsRepository) {
+                           VersionVestingTermsRepository versionVestingTermsRepository,
+                           FuneralTermsStore funeralTermsStore) {
         this.versionVestingTermsRepository = versionVestingTermsRepository;
+        this.funeralTermsStore = funeralTermsStore;
         this.versionAnnuityTermsRepository = versionAnnuityTermsRepository;
         this.annuityFormRepository = annuityFormRepository;
         this.annuityRateEntryRepository = annuityRateEntryRepository;
@@ -281,6 +284,19 @@ public class ProductApiImpl implements ProductApi {
                                 TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
                                 AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
                                 AnnuityPlan annuityPlan, String publishedBy) {
+        publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
+            fundDefinitions, baseRates, bounds, frequencyLoading, tiraFiling, cashValue, payoutPlan, accumulationPlan,
+            depositPlan, bonusPlan, annuityPlan, FuneralPlan.none(), publishedBy);
+    }
+
+    @Override
+    @Transactional
+    public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                                List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                                List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                                TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
+                                AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
+                                AnnuityPlan annuityPlan, FuneralPlan funeralPlan, String publishedBy) {
         // First, so the message is about the filing rather than about a rating table the caller
         // may not have reached yet. TiraFiling validates its own contents; what it cannot do is
         // object to its own absence.
@@ -332,6 +348,12 @@ public class ProductApiImpl implements ProductApi {
         // this product intended to rate on.
         java.util.Set<FactorType> coveredFactorTypes = ratingTable.stream().map(RatingFactorInput::factorType).collect(Collectors.toSet());
         boolean priced = baseRates != null && !baseRates.isEmpty();
+        // A FUNERAL version is priced by its premium table alone (plan R1): FuneralPlanValidator refuses
+        // any rating factor or base rate on it, so the unpriced-version rating rule below does not apply.
+        boolean funeralCategory = ProductCategory.FUNERAL.name().equals(product.getCategory());
+        // Before the rating rules, so a funeral author reads the funeral words, not a rating-table one.
+        FuneralPlan funeral = funeralPlan != null ? funeralPlan : FuneralPlan.none();
+        FuneralPlanValidator.validate(ProductCategory.valueOf(product.getCategory()), funeral, baseRates, ratingTable);
 
         if (priced) {
             // M13. Age IS rated on a priced version -- it is a key of the base rate
@@ -355,7 +377,7 @@ public class ProductApiImpl implements ProductApi {
             rejectOverlappingAgeBands(baseRates);
             rejectPricedVersionWithoutEntryAgeBounds(bounds);
             rejectUncoveredEntryAges(baseRates, bounds);
-        } else if (!coveredFactorTypes.containsAll(List.of(FactorType.AGE, FactorType.SUM_ASSURED_BAND))) {
+        } else if (!funeralCategory && !coveredFactorTypes.containsAll(List.of(FactorType.AGE, FactorType.SUM_ASSURED_BAND))) {
             // Unpriced version: unchanged from M2. Age is rated by multiplier alone.
             throw new InvalidProductVersionException("Rating table must cover at least AGE and SUM_ASSURED_BAND factor types");
         }
@@ -412,6 +434,7 @@ public class ProductApiImpl implements ProductApi {
         persistDepositPlan(tenantId, version.getProductVersionId(), deposit);
         persistBonusPlan(tenantId, version.getProductVersionId(), bonusPlan);
         persistAnnuityPlan(tenantId, version.getProductVersionId(), annuity);
+        funeralTermsStore.persist(tenantId, version.getProductVersionId(), funeral);
 
         for (RatingFactorInput input : ratingTable) {
             ratingFactorRepository.save(new RatingFactor(tenantId, version.getProductVersionId(),
@@ -1011,6 +1034,48 @@ public class ProductApiImpl implements ProductApi {
                 // Still behind the category gate: only an ANNUITY version reads V23 (D2).
                 versionVestingTermsRepository.findById(productVersionId).map(VersionVestingTerms::toTerms).orElse(null)))
             .orElse(AnnuityPlan.none());
+    }
+
+    /** Product first, funeral tables second -- resolveAnnuityPlan's rule, for the same reason. */
+    @Override
+    @Transactional(readOnly = true)
+    public FuneralPlan resolveFuneralPlan(UUID productVersionId) {
+        if (productVersionId == null) {
+            return FuneralPlan.none();
+        }
+        Optional<ProductVersion> version = productVersionRepository.findById(productVersionId);
+        if (version.isEmpty()) {
+            return FuneralPlan.none();
+        }
+        boolean funeral = productDefinitionRepository.findById(version.get().getProductId())
+            .map(p -> ProductCategory.FUNERAL.name().equals(p.getCategory())).orElse(false);
+        return funeral ? funeralTermsStore.read(productVersionId) : FuneralPlan.none();
+    }
+
+    /** A refusal is an answer (priceAnnuity's reason): it must not mark the caller's transaction rollback-only. */
+    @Override
+    @Transactional(readOnly = true, noRollbackFor = FuneralQuoteRefusedException.class)
+    public FuneralQuote quoteFuneral(UUID productVersionId, FuneralQuoteInput input) {
+        return FuneralQuoter.quote(resolveFuneralPlan(productVersionId), resolveFrequencyLoading(productVersionId), input);
+    }
+
+    @Override
+    @Transactional(readOnly = true, noRollbackFor = FuneralQuoteRefusedException.class)
+    public BigDecimal funeralYearlyPremium(UUID productVersionId, String planCode, FuneralRole role, int age) {
+        return FuneralQuoter.yearlyPremiumAt(resolveFuneralPlan(productVersionId), planCode, role, age);
+    }
+
+    @Override
+    @Transactional(readOnly = true, noRollbackFor = FuneralQuoteRefusedException.class)
+    public FuneralQuoteLine admitFuneralLife(UUID productVersionId, String planCode, FuneralLifeInput life, int alreadyInRole,
+                                             LocalDate asOf) {
+        return FuneralQuoter.admit(resolveFuneralPlan(productVersionId), planCode, life, alreadyInRole, asOf);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal funeralInstalment(UUID productVersionId, BigDecimal totalYearlyPremium, PremiumFrequency frequency) {
+        return FuneralQuoter.instalment(totalYearlyPremium, resolveFrequencyLoading(productVersionId), frequency);
     }
 
     /**

@@ -36,3 +36,6 @@ bonus:
 annuity:
   vesting-sweep-interval-ms: 60000
   vesting-reminder-interval-ms: 60000
+# Family funeral cover: lives end, age out and are re-priced daily elsewhere; every minute here.
+funeral:
+  covered-life-sweep-interval-ms: 60000

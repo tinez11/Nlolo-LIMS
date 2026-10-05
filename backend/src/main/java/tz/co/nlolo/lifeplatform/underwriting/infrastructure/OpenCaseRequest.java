@@ -95,7 +95,13 @@ public record OpenCaseRequest(
      * On a deferred ANNUITY product only (product step 5 D2): the retirement age. Optional here, as
      * annuityChoice is; the decision refuses a deferred case that has none.
      */
-    @Valid DeferredAnnuityDto deferredAnnuity) {
+    @Valid DeferredAnnuityDto deferredAnnuity,
+
+    /**
+     * On a FUNERAL product only (family funeral cover): the plan and the dependants. Optional here, as the
+     * annuity blocks are; acceptance refuses a funeral case that has none.
+     */
+    @Valid FuneralApplicationRequest funeral) {
 
     /** A deferred annuity applicant's retirement age. Unannotated: a missing age is refused by the window rule. */
     public record DeferredAnnuityDto(Integer retirementAge) {

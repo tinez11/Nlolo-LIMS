@@ -130,6 +130,24 @@ class ProductApiIntegrationTest {
             String.class, product.productId()));
     }
 
+    /**
+     * This class does NOT apply product V24, on purpose: an ordinary version must answer
+     * resolveFuneralPlan from its category alone, never by touching a funeral table (plan gate rule).
+     */
+    @Test
+    void resolveFuneralPlanOnAnOrdinaryVersionIsNoneWithoutTheFuneralTables() {
+        ProductSummaryView product = productApi.createProduct("TERM-NOT-FUNERAL", "Term",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            null, ANY_FILING, "actuary@nlolo.co.tz");
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+
+        assertThat(productApi.resolveFuneralPlan(versionId).funeral()).isFalse();
+    }
+
     // ---- Batch 2b: a version says what it covers, and what each benefit pays ----
 
     @Test
@@ -1707,9 +1725,9 @@ class ProductApiIntegrationTest {
             .toList();
         // Nine: step 1 added the cash-value overload, step 2 the payout-plan one, step 3 the
         // accumulation-plan one, the fixed-term deposit the deposit-grid one, step 4 the with-profits
-        // one, step 5 the annuity one. A new overload must raise this count AND pass both checks
-        // below -- that is the point of counting.
-        assertEquals(10, declared.size(), "expected ten publishVersion overloads");
+        // one, step 5 the annuity one, family funeral cover the funeral one. A new overload must raise
+        // this count AND pass both checks below -- that is the point of counting.
+        assertEquals(11, declared.size(), "expected eleven publishVersion overloads");
         declared.forEach(m -> assertFalse(m.isDefault(),
             "publishVersion must not be a default method: Spring's proxy cannot apply "
                 + "@Transactional to one, so its delegation runs untransacted"));
@@ -1717,7 +1735,7 @@ class ProductApiIntegrationTest {
         List<Method> implementations = Arrays.stream(ProductApiImpl.class.getDeclaredMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        assertEquals(10, implementations.size(), "every overload must be implemented here");
+        assertEquals(11, implementations.size(), "every overload must be implemented here");
         implementations.forEach(m -> assertNotNull(m.getAnnotation(Transactional.class),
             "every publishVersion implementation must carry @Transactional, including the "
                 + "convenience overloads -- the retire-then-insert sequence must be atomic"));

@@ -121,6 +121,17 @@ public interface UnderwritingApi {
     java.util.Optional<DeferredAnnuityChoice> deferredAnnuityChoice(UUID caseId);
 
     /**
+     * Record (or replace, until decided) a funeral case's plan and dependants (family funeral cover). The
+     * whole family is priced through the product's one funeral quote and refused in its words; the case's
+     * sum assured must be the main member's benefit on the plan (plan R3). Refused on any other product.
+     */
+    FuneralApplication recordFuneralApplication(UUID caseId, String planCode, java.util.List<FuneralApplication.Life> dependants,
+                                                String recordedBy);
+
+    /** A funeral case's application with a fresh quote; empty for every other case -- never a throw. */
+    java.util.Optional<FuneralApplication> funeralApplication(UUID caseId);
+
+    /**
      * Record a human underwriting decision, and publish {@code UnderwritingDecisionMade}.
      *
      * <p>The only thing that settles a case, and therefore the only thing that puts a policy in

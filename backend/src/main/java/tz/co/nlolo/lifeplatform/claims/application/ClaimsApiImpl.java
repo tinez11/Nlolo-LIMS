@@ -77,6 +77,8 @@ public class ClaimsApiImpl implements ClaimsApi {
     private final BenefitPayoutApi benefitPayoutApi;
     /** Product step 5: an annuity's death claim is valued by the annuity module. */
     private final AnnuityApi annuityApi;
+    /** A funeral plan's claims (family funeral cover); touched only once the policy says FUNERAL. */
+    private final FuneralClaims funeralClaims;
     private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
@@ -86,8 +88,9 @@ public class ClaimsApiImpl implements ClaimsApi {
                           PartyApi partyApi, UnderwritingApi underwritingApi, DocumentApi documentApi,
                           BenefitPayoutApi benefitPayoutApi,
                           ApplicationEventPublisher eventPublisher, PlatformTransactionManager transactionManager,
-                          AnnuityApi annuityApi) {
+                          AnnuityApi annuityApi, FuneralClaims funeralClaims) {
         this.annuityApi = annuityApi;
+        this.funeralClaims = funeralClaims;
         this.claimRepository = claimRepository;
         this.claimAssessmentRepository = claimAssessmentRepository;
         this.settlementDecisionRepository = settlementDecisionRepository;
@@ -252,13 +255,19 @@ public class ClaimsApiImpl implements ClaimsApi {
         //    must have been covered on the date) raise InvalidPolicyStateException from there
         //    and propagate as-is, exactly as PolicyNotFoundException already does.
         ClaimableCoverView claimable = policyApi.claimableCover(
-            request.policyNumber(), request.policyMemberId(), request.dateOfEvent(),
+            request.policyNumber(), request.policyMemberId(), request.coveredLifeId(), request.dateOfEvent(),
             // The benefit this claim is FOR. Passed as a name because claims may not reference
             // product.api.BenefitType without failing ModularityTests.
             request.claimType().name());
         if (claimable.amount() == null || claimable.amount().signum() <= 0) {
             throw new ClaimValidationException("Policy " + request.policyNumber()
                 + " has no positive cover to claim against on " + request.dateOfEvent());
+        }
+        // A FAMILY'S CLAIM (family funeral cover): policy has already required the life and checked it was
+        // covered on the date; who may file for a dependant is the version's rule (plan R9).
+        boolean funeral = FuneralClaims.isFuneral(policy);
+        if (funeral) {
+            funeralClaims.checkClaimant(request);
         }
 
         // 3a. ONE DEATH CLAIM PER LIFE.
@@ -275,7 +284,10 @@ public class ClaimsApiImpl implements ClaimsApi {
         //     narrower than what that choice warned against: one DEATH claim per LIFE, not one
         //     claim per policy. A rejected claim does not count -- it can be reopened, and a new
         //     claim is the other legitimate path after a refusal.
-        if (request.claimType() == ClaimType.DEATH) {
+        if (request.claimType() == ClaimType.DEATH && funeral) {
+            // Per COVERED LIFE: two children on one policy are two lives.
+            funeralClaims.refuseASecondDeathClaim(tenantId, request.policyNumber(), request.coveredLifeId(), null);
+        } else if (request.claimType() == ClaimType.DEATH) {
             refuseASecondDeathClaim(tenantId, request.policyNumber(), request.policyMemberId(), null,
                 request.details() instanceof DeathClaimDetails d ? d.deceasedPartyId() : null);
         }
@@ -318,6 +330,10 @@ public class ClaimsApiImpl implements ClaimsApi {
                     policyApi.recordOpenDeathClaim(claim.getPolicyNumber(), claim.getPolicyMemberId(),
                         claim.getClaimId());
                 }
+                // Which covered life, and whether by accident -- in the claim's own transaction.
+                if (funeral) {
+                    funeralClaims.record(tenantId, claim, request.coveredLifeId(), request.accidental(), registeredBy);
+                }
                 // Payload matches api/asyncapi-events.yaml's ClaimRegisteredPayload field-for-field
                 // (claimId, policyNumber, claimantPartyId, claimType, dateOfEvent), plus one field
                 // ClaimRegisteredPayload does not declare: requiresContestabilityReview. The
@@ -339,13 +355,59 @@ public class ClaimsApiImpl implements ClaimsApi {
             return toView(existing, deriveContestabilityReview(existing));
         }
 
-        return toView(claim, requiresContestabilityReview);
+        return funeral
+            ? withFuneral(toView(claim, requiresContestabilityReview), request.coveredLifeId(), request.accidental())
+            : toView(claim, requiresContestabilityReview);
     }
 
     @Override
     public ClaimView getClaim(UUID claimId) {
         Claim claim = findOrThrow(claimId, TenantContext.get());
-        return toView(claim, deriveContestabilityReview(claim));
+        return detailView(claim, deriveContestabilityReview(claim));
+    }
+
+    @Override
+    @Transactional
+    public ClaimView recordAccidentalDeath(UUID claimId, boolean accidental, String recordedBy) {
+        Claim claim = findOrThrow(claimId, TenantContext.get());
+        if (!FuneralClaims.isFuneral(policyApi.getPolicy(claim.getPolicyNumber()))) {
+            throw new ClaimValidationException("Claim " + claimId
+                + " is not on a funeral plan, so whether its death was accidental is not recorded");
+        }
+        if (claim.getStatus() != ClaimStatus.REGISTERED && claim.getStatus() != ClaimStatus.UNDER_ASSESSMENT
+                && claim.getStatus() != ClaimStatus.REOPENED) {
+            throw new InvalidClaimStateException("Claim " + claimId + " is " + claim.getStatus()
+                + "; whether the death was accidental is recorded before it is decided");
+        }
+        var funeral = funeralClaims.recordAccidental(claimId, accidental, recordedBy);
+        return withFuneral(toView(claim, deriveContestabilityReview(claim)), funeral.getCoveredLifeId(), funeral.isAccidental());
+    }
+
+    /** A claim's full view: on a funeral plan's claim, also the covered life and whether it was an accident. */
+    private ClaimView detailView(Claim claim, boolean requiresContestabilityReview) {
+        ClaimView view = toView(claim, requiresContestabilityReview);
+        if (!mayBeFuneral(claim)) {
+            return view;
+        }
+        return funeralClaims.of(claim.getClaimId())
+            .map(f -> withFuneral(view, f.getCoveredLifeId(), f.isAccidental()))
+            .orElse(view);
+    }
+
+    /**
+     * A funeral plan pays only on a death (CoveredLives.claimable refuses anything else), so only a DEATH claim
+     * can carry a covered life. Checking the type first keeps every other claim's read off the policy:
+     * reading a claim used to fetch its policy on every view, a 500 wherever that policy was not there.
+     */
+    private boolean mayBeFuneral(Claim claim) {
+        return claim.getClaimType() == ClaimType.DEATH
+            && FuneralClaims.isFuneral(policyApi.getPolicy(claim.getPolicyNumber()));
+    }
+
+    private static ClaimView withFuneral(ClaimView view, UUID coveredLifeId, boolean accidental) {
+        return new ClaimView(view.claimId(), view.policyNumber(), view.policyMemberId(), view.claimantPartyId(),
+            view.claimType(), view.status(), view.dateOfEvent(), view.details(), view.approvedAmount(),
+            view.approvedCurrency(), view.requiresContestabilityReview(), coveredLifeId, accidental);
     }
 
     /** Mirrors {@code PolicyApiImpl.searchPolicies}'s exact four-way branch on which optional
@@ -394,7 +456,7 @@ public class ClaimsApiImpl implements ClaimsApi {
         // cover read it never needed.
         if (recommendedAmount != null) {
             ClaimableCoverView claimable = policyApi.claimableCover(
-                claim.getPolicyNumber(), claim.getPolicyMemberId(), claim.getDateOfEvent(),
+                claim.getPolicyNumber(), claim.getPolicyMemberId(), coveredLifeOf(claim), claim.getDateOfEvent(),
                 claim.getClaimType().name());
             // ceilingFor, the one figure approval enforces (step 4 R1) -- an annuity's death is
             // bounded by its capital refund, not by the purchase price (product step 5).
@@ -447,8 +509,17 @@ public class ClaimsApiImpl implements ClaimsApi {
         // step 4 they did disagree -- this showed the sum assured while approval enforced the
         // death limit -- so both now go through ceilingFor.
         ClaimableCoverView cover = policyApi.claimableCover(claim.getPolicyNumber(),
-            claim.getPolicyMemberId(), claim.getDateOfEvent(), claim.getClaimType().name());
+            claim.getPolicyMemberId(), coveredLifeOf(claim), claim.getDateOfEvent(), claim.getClaimType().name());
         return new ClaimCoverView(ceilingFor(claim, cover), cover.currencyCode());
+    }
+
+    /** The covered life a funeral claim names; null on every other claim. Policy is asked first (V10 gate). */
+    private UUID coveredLifeOf(Claim claim) {
+        if (!mayBeFuneral(claim)) {
+            return null;
+        }
+        return funeralClaims.of(claim.getClaimId())
+            .map(tz.co.nlolo.lifeplatform.claims.domain.FuneralClaim::getCoveredLifeId).orElse(null);
     }
 
     /**
@@ -523,10 +594,16 @@ public class ClaimsApiImpl implements ClaimsApi {
             // money step is the one that must not happen twice. Any OTHER non-rejected death
             // claim on this life refuses this approval, whichever of them was registered first:
             // choosing between them is a person's decision, made by rejecting one.
-            if (claim.getClaimType() == ClaimType.DEATH) {
+            PolicyView policy = policyApi.getPolicy(claim.getPolicyNumber());
+            java.util.Optional<tz.co.nlolo.lifeplatform.claims.domain.FuneralClaim> funeral =
+                FuneralClaims.isFuneral(policy) ? funeralClaims.of(claimId) : java.util.Optional.empty();
+            if (claim.getClaimType() == ClaimType.DEATH && funeral.isPresent()) {
+                funeralClaims.refuseASecondDeathClaim(tenantId, claim.getPolicyNumber(), funeral.get().getCoveredLifeId(), claimId);
+                // A natural death inside the life's waiting period is declined, never paid (plan R7).
+                funeralClaims.refuseApprovalInsideTheWaitingPeriod(claim, funeral.get());
+            } else if (claim.getClaimType() == ClaimType.DEATH) {
                 refuseASecondDeathClaim(tenantId, claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId, deceasedOf(claim));
             }
-            PolicyView policy = policyApi.getPolicy(claim.getPolicyNumber());
             boolean creditLife = "CREDIT_LIFE".equals(policy.productCategory());
             // An annuity's death that pays nothing (product step 5): a verified death on a life-only
             // form, or a guarantee that continues instead of a lump sum. Settled at approval, with no
@@ -601,8 +678,9 @@ public class ClaimsApiImpl implements ClaimsApi {
             // for the scheme's 2.5bn total; on individual business it is the sum assured, which
             // was equally unbounded before.
             ClaimableCoverView claimable = policyApi.claimableCover(
-                claim.getPolicyNumber(), claim.getPolicyMemberId(), claim.getDateOfEvent(),
-                claim.getClaimType().name());
+                claim.getPolicyNumber(), claim.getPolicyMemberId(),
+                funeral.map(tz.co.nlolo.lifeplatform.claims.domain.FuneralClaim::getCoveredLifeId).orElse(null),
+                claim.getDateOfEvent(), claim.getClaimType().name());
             BigDecimal ceiling = ceilingFor(claim, claimable);
             claim.approve(approvedAmount, approvedCurrency, ceiling, annuity);
             // The TYPE and the DATE, because a consumer deciding what a claim ends must know which
@@ -664,12 +742,16 @@ public class ClaimsApiImpl implements ClaimsApi {
                 // ran twelve, and no amount of assessor expertise changes those dates. It is
                 // also the error least likely to be caught, because it produces a
                 // plausible-looking declined claim and costs the lender an entire loan.
-                ExclusionPeriodsView periods = policyApi.exclusionPeriodsFor(
-                    claim.getPolicyNumber(), claim.getPolicyMemberId());
-                ExclusionPeriods windows = new ExclusionPeriods(
-                    periods.suicideMonths(), periods.preExistingMonths());
+                // On a funeral plan, measured from the named LIFE's own cover start, with its waiting period.
+                java.util.Optional<tz.co.nlolo.lifeplatform.claims.domain.FuneralClaim> funeral =
+                    mayBeFuneral(claim) ? funeralClaims.of(claimId) : java.util.Optional.empty();
+                ExclusionPeriodsView periods = funeral.isPresent()
+                    ? funeralClaims.periods(claim, funeral.get())
+                    : policyApi.exclusionPeriodsFor(claim.getPolicyNumber(), claim.getPolicyMemberId());
+                ExclusionPeriods windows = FuneralClaims.windows(periods);
+                boolean accidental = funeral.map(tz.co.nlolo.lifeplatform.claims.domain.FuneralClaim::isAccidental).orElse(false);
 
-                if (!ExclusionWindows.openAt(periods.coverStart(), claim.getDateOfEvent(), windows)
+                if (!ExclusionWindows.openAt(periods.coverStart(), claim.getDateOfEvent(), windows, accidental)
                         .contains(declineReason)) {
                     throw new ClaimValidationException("Claim " + claimId + " cannot be declined for "
                         + declineReason + ": that window was not open on " + claim.getDateOfEvent()
@@ -713,7 +795,14 @@ public class ClaimsApiImpl implements ClaimsApi {
         // the SECOND one on this life -- somebody may have registered a fresh claim after the
         // rejection, which is the other legitimate path.
         if (fromRejected && claim.getClaimType() == ClaimType.DEATH) {
-            refuseASecondDeathClaim(tenantId, claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId, deceasedOf(claim));
+            java.util.Optional<tz.co.nlolo.lifeplatform.claims.domain.FuneralClaim> funeral =
+                FuneralClaims.isFuneral(policyApi.getPolicy(claim.getPolicyNumber()))
+                    ? funeralClaims.of(claimId) : java.util.Optional.empty();
+            if (funeral.isPresent()) {
+                funeralClaims.refuseASecondDeathClaim(tenantId, claim.getPolicyNumber(), funeral.get().getCoveredLifeId(), claimId);
+            } else {
+                refuseASecondDeathClaim(tenantId, claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId, deceasedOf(claim));
+            }
         }
 
         // REJECTED or SETTLED -> REOPENED; a no-op if already REOPENED, throws from any other
@@ -843,8 +932,11 @@ public class ClaimsApiImpl implements ClaimsApi {
 
     /** Which window length this reason was measured against. */
     private static int monthsOf(ClaimDeclineReason reason, ExclusionPeriods windows) {
-        return reason == ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION
-            ? windows.suicideMonths() : windows.preExistingMonths();
+        return switch (reason) {
+            case SUICIDE_WITHIN_EXCLUSION -> windows.suicideMonths();
+            case PRE_EXISTING_WITHIN_EXCLUSION -> windows.preExistingMonths();
+            case WITHIN_WAITING_PERIOD -> windows.waitingMonths();
+        };
     }
 
     /** The first day the window no longer covers -- the anniversary itself is outside it. */
@@ -897,11 +989,12 @@ public class ClaimsApiImpl implements ClaimsApi {
             .orElseThrow(() -> new ClaimNotFoundException("Claim " + claimId + " not found"));
     }
 
+    /** Without the funeral facts: a list row, or any claim not on a funeral plan. See detailView. */
     private ClaimView toView(Claim claim, boolean requiresContestabilityReview) {
         return new ClaimView(claim.getClaimId(), claim.getPolicyNumber(), claim.getPolicyMemberId(),
             claim.getClaimantPartyId(),
             claim.getClaimType(), claim.getStatus(), claim.getDateOfEvent(), claim.getDetails(),
-            claim.getApprovedAmount(), claim.getApprovedCurrency(), requiresContestabilityReview);
+            claim.getApprovedAmount(), claim.getApprovedCurrency(), requiresContestabilityReview, null, null);
     }
 
     private ClaimAssessmentView toAssessmentView(ClaimAssessment assessment) {

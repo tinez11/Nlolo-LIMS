@@ -65,6 +65,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     private final ProposalGroupMemberRepository proposalGroupMemberRepository;
     private final AnnuityChoiceRepository annuityChoiceRepository;
     private final DeferredAnnuityChoiceRepository deferredAnnuityChoiceRepository;
+    private final FuneralApplications funeralApplications;
     /** "Today" is the civil date here, never UTC's (the UTC-vs-civil day bug). */
     private static final java.time.ZoneId CIVIL_ZONE = java.time.ZoneId.of("Africa/Dar_es_Salaam");
     /** Serialises the disclosure Q&A set into its JSONB column -- see recordDisclosures. */
@@ -80,7 +81,9 @@ public class UnderwritingApiImpl implements UnderwritingApi {
                                 ProposalGroupGradeRepository proposalGroupGradeRepository,
                                 ProposalGroupMemberRepository proposalGroupMemberRepository,
                                 AnnuityChoiceRepository annuityChoiceRepository,
-                                DeferredAnnuityChoiceRepository deferredAnnuityChoiceRepository) {
+                                DeferredAnnuityChoiceRepository deferredAnnuityChoiceRepository,
+                                FuneralApplications funeralApplications) {
+        this.funeralApplications = funeralApplications;
         this.annuityChoiceRepository = annuityChoiceRepository;
         this.deferredAnnuityChoiceRepository = deferredAnnuityChoiceRepository;
         this.proposalBeneficiaryRepository = proposalBeneficiaryRepository;
@@ -464,6 +467,10 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         if (annuity) {
             checkAnnuityDecision(underwritingCase, decision, annuityPlan);
         }
+        // A funeral plan is priced by its table (plan R2), and accepted only with a family that still prices.
+        if (!annuity && funeralApplications.isFuneral(underwritingCase)) {
+            funeralApplications.checkDecision(underwritingCase, decision.outcome());
+        }
         // Evidence first. Nothing structural stopped a case being decided the instant it was
         // opened, and "accepted, nothing assessed" is not a decision anyone can defend later.
         if (!annuity && riskAssessmentRepository.countByTenantIdAndCaseId(tenantId, caseId) == 0) {
@@ -705,6 +712,32 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         }
         return deferredAnnuityChoiceRepository.findById(caseId).map(choice -> choice.toChoice(
             partyApi.getPartyDetail(lifeAssuredPartyId(underwritingCase.get())).dateOfBirth()));
+    }
+
+    @Override
+    @Transactional
+    public FuneralApplication recordFuneralApplication(UUID caseId, String planCode, List<FuneralApplication.Life> dependants,
+                                                       String recordedBy) {
+        UnderwritingCase underwritingCase = findOrThrow(caseId, TenantContext.get());
+        if (!funeralApplications.isFuneral(underwritingCase)) {
+            throw new UnderwritingValidationException("Only a funeral plan case records a funeral application");
+        }
+        if (isDecided(underwritingCase)) {
+            throw new UnderwritingCaseAlreadyDecidedException(caseId);
+        }
+        return funeralApplications.record(underwritingCase, planCode, dependants, recordedBy);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Optional<FuneralApplication> funeralApplication(UUID caseId) {
+        // Empty, never a throw -- annuityChoice's reason: callers ask inside their own transaction.
+        java.util.Optional<UnderwritingCase> underwritingCase =
+            underwritingCaseRepository.findByCaseIdAndTenantId(caseId, TenantContext.get());
+        if (underwritingCase.isEmpty() || !funeralApplications.isFuneral(underwritingCase.get())) {
+            return java.util.Optional.empty();
+        }
+        return funeralApplications.read(underwritingCase.get());
     }
 
     @Override

@@ -115,8 +115,15 @@ export function registerClaimFormSchema(context: RegisterClaimFormContext = {}) 
       ),
       dateOfEvent: isoDate('Date of event is required'),
       details: claimDetailsSchema,
+      // Family funeral cover: who died, and whether by accident (it may waive the waiting period).
+      coveredLifeId: z.string().trim().optional(),
+      accidental: z.boolean().optional(),
     })
     .superRefine((values, ctx) => {
+      // A funeral plan covers a family, so a claim on one names the life -- the server refuses it too.
+      if (context.productCategory === 'FUNERAL' && !values.coveredLifeId) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['coveredLifeId'], message: 'Choose who died' });
+      }
       // A scheme insures many lives, so a claim on one must say which. The server refuses it
       // too (409 from PolicyApi.claimableCover) -- this is here so the person filing finds out
       // while they are still looking at the form.
@@ -177,5 +184,7 @@ export function toApiRequest(values: RegisterClaimFormValues): RegisterClaimRequ
     claimType: values.details.claimType,
     dateOfEvent: values.dateOfEvent,
     details: values.details,
+    // Only on a funeral plan's claim; every other claim names no covered life.
+    ...(values.coveredLifeId ? { coveredLifeId: values.coveredLifeId, accidental: values.accidental ?? false } : {}),
   };
 }

@@ -78,6 +78,7 @@ class ProductContractTest {
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/product/V22__annuity_terms.sql",
             "db-migrations/product/V23__vesting_terms.sql",
+            "db-migrations/product/V24__funeral_terms.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -1116,6 +1117,154 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.vesting").value(org.hamcrest.Matchers.nullValue()))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    // ---- Family funeral cover over the wire ----
+
+    /** Plan B only: a main member 18-65 never stopping, children 0-20 to 21; priced to 70. No rating table (R1). */
+    static String funeralVersion(String childPremiums) {
+        return """
+            {"ifrsMeasurementModel":"GMM","effectiveDate":"2026-01-01",
+             "payoutTerms":{"freeLookDays":15},"tiraFiling":{"reference":"TIRA/CONTRACT/FUN","approvalDate":"2026-01-15"},
+             "ratingTable":[],
+             "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
+             "funeral":{"plans":[{"planCode":"B","name":"Familia B"}],
+               "benefits":[{"planCode":"B","role":"MAIN_MEMBER","benefit":2000000},{"planCode":"B","role":"CHILD","benefit":1000000}],
+               "premiums":[{"planCode":"B","role":"MAIN_MEMBER","ageFrom":18,"ageTo":70,"yearlyPremium":60000}%s],
+               "roles":[{"role":"MAIN_MEMBER","maxLives":1,"minEntryAge":18,"maxEntryAge":65},
+                        {"role":"CHILD","maxLives":6,"minEntryAge":0,"maxEntryAge":20,"coverStopAge":21}],
+               "maxPricedAge":70,"waitingPeriodMonths":6,"accidentWaivesWaiting":true,
+               "dependantClaimPayee":"MAIN_MEMBER","onMainMemberDeath":"POLICY_ENDS","freeCoverToPaidDate":true}}
+            """.formatted(childPremiums);
+    }
+
+    static final String CHILD_PREMIUMS = ",{\"planCode\":\"B\",\"role\":\"CHILD\",\"ageFrom\":0,\"ageTo\":20,\"yearlyPremium\":6000}";
+
+    @Test
+    void aFuneralPlanIsPublishedAndItsTermsReadBackToSpec() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProductOfCategory(tenantId, "FUN-CONTRACT-01", "FUNERAL");
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(funeralVersion(CHILD_PREMIUMS)))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        UUID versionId = activeVersion(tenantId, productId);
+        mockMvc.perform(get("/products/" + productId + "/versions/" + versionId + "/funeral")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.plans[0].planCode").value("B"))
+            .andExpect(jsonPath("$.plans[0].name").value("Familia B"))
+            .andExpect(jsonPath("$.benefits[?(@.role=='CHILD')].benefit").value(1000000.0))
+            .andExpect(jsonPath("$.premiums[?(@.role=='CHILD')].yearlyPremium").value(6000.0))
+            .andExpect(jsonPath("$.premiums[?(@.role=='CHILD')].ageFrom").value(0))
+            .andExpect(jsonPath("$.premiums[?(@.role=='CHILD')].ageTo").value(20))
+            .andExpect(jsonPath("$.roles[?(@.role=='CHILD')].maxLives").value(6))
+            .andExpect(jsonPath("$.roles[?(@.role=='CHILD')].minEntryAge").value(0))
+            .andExpect(jsonPath("$.roles[?(@.role=='CHILD')].maxEntryAge").value(20))
+            .andExpect(jsonPath("$.roles[?(@.role=='CHILD')].coverStopAge").value(21))
+            .andExpect(jsonPath("$.roles[?(@.role=='CHILD')].studentStopAge").value(org.hamcrest.Matchers.contains(org.hamcrest.Matchers.nullValue())))
+            .andExpect(jsonPath("$.maxPricedAge").value(70))
+            .andExpect(jsonPath("$.waitingPeriodMonths").value(6))
+            .andExpect(jsonPath("$.accidentWaivesWaiting").value(true))
+            .andExpect(jsonPath("$.dependantClaimPayee").value("MAIN_MEMBER"))
+            .andExpect(jsonPath("$.onMainMemberDeath").value("POLICY_ENDS"))
+            .andExpect(jsonPath("$.freeCoverToPaidDate").value(true))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void aFuneralAgeGapIsRefusedNamingTheAge() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProductOfCategory(tenantId, "FUN-CONTRACT-02", "FUNERAL");
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(funeralVersion(",{\"planCode\":\"B\",\"role\":\"CHILD\",\"ageFrom\":0,\"ageTo\":15,\"yearlyPremium\":6000}")))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("Plan B, CHILD: no premium for age 16"));
+    }
+
+    private UUID publishedFuneral(UUID tenantId, String code) throws Exception {
+        UUID productId = createProductOfCategory(tenantId, code, "FUNERAL");
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(funeralVersion(CHILD_PREMIUMS)))
+            .andExpect(status().isCreated());
+        return productId;
+    }
+
+    @Test
+    void anAgentQuotesAFamilyToSpec() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = publishedFuneral(tenantId, "FUN-CONTRACT-04");
+        UUID versionId = activeVersion(tenantId, productId);
+        mockMvc.perform(post("/products/" + productId + "/versions/" + versionId + "/funeral-quote")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"planCode":"B","frequency":"ANNUALLY","asOf":"2026-10-04",
+                     "lives":[{"role":"MAIN_MEMBER","name":"Juma","dateOfBirth":"1986-01-01"},
+                              {"role":"CHILD","name":"Neema","dateOfBirth":"2016-01-01"}]}"""))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.planCode").value("B"))
+            .andExpect(jsonPath("$.frequency").value("ANNUALLY"))
+            .andExpect(jsonPath("$.lines[0].role").value("MAIN_MEMBER"))
+            .andExpect(jsonPath("$.lines[0].name").value("Juma"))
+            .andExpect(jsonPath("$.lines[0].age").value(40))
+            .andExpect(jsonPath("$.lines[0].benefit").value(2000000.0))
+            .andExpect(jsonPath("$.lines[0].yearlyPremium").value(60000.0))
+            .andExpect(jsonPath("$.lines[1].age").value(10))
+            .andExpect(jsonPath("$.totalYearlyPremium").value(66000.0))
+            .andExpect(jsonPath("$.instalment").value(66000.0))
+            .andExpect(jsonPath("$.mainMemberBenefit").value(2000000.0))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void aFamilyThePlanWillNotCoverIsA422InTheQuotersWords() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = publishedFuneral(tenantId, "FUN-CONTRACT-05");
+        UUID versionId = activeVersion(tenantId, productId);
+        mockMvc.perform(post("/products/" + productId + "/versions/" + versionId + "/funeral-quote")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"planCode":"B","frequency":"MONTHLY","asOf":"2026-10-04",
+                     "lives":[{"role":"MAIN_MEMBER","name":"Juma","dateOfBirth":"1986-01-01"},
+                              {"role":"SPOUSE","name":"Asha","dateOfBirth":"1988-01-01"}]}"""))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.errorCode").value("FUNERAL_QUOTE_REFUSED"))
+            .andExpect(jsonPath("$.detail").value("This product does not cover a spouse"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void theFuneralReadOfAnOrdinaryVersionIsA404WithItsOwnCode() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProductOfCategory(tenantId, "FUN-CONTRACT-03", "ENDOWMENT");
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(withProfitsVersion("[{\"kind\":\"MATURITY\",\"amountBasis\":\"PERCENT_OF_SA\",\"amountValue\":100}]")))
+            .andExpect(status().isCreated());
+        UUID versionId = activeVersion(tenantId, productId);
+        mockMvc.perform(get("/products/" + productId + "/versions/" + versionId + "/funeral")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("NOT_A_FUNERAL_PRODUCT"))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 

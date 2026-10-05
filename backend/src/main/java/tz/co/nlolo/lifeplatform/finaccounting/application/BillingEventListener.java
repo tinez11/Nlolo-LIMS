@@ -85,6 +85,8 @@ public class BillingEventListener {
             case "billing.PremiumInvoiceGenerated" -> withTenant(envelope, p -> post("billing.PremiumInvoiceGenerated", p));
             case "billing.PremiumCollected" -> withTenant(envelope, p -> post("billing.PremiumCollected", p));
             case "billing.PremiumRefundDue" -> withTenant(envelope, this::postCredit);
+            case "billing.PremiumInvoiceIncreased", "billing.PremiumInvoiceReduced" ->
+                withTenant(envelope, p -> postRestatement(envelope.eventType(), p));
             default -> { /* not finaccounting-relevant */ }
         }
     }
@@ -126,6 +128,30 @@ public class BillingEventListener {
         if (maybeEntry.isEmpty()) {
             log.info("{} for invoice {} produced no journal entry (already posted, no accounting rule, "
                 + "or a non-positive amount)", eventType, invoiceId);
+            return;
+        }
+        finaccountingApiImpl.postEntry(maybeEntry.get());
+    }
+
+    /**
+     * An instalment restated in place: the difference only. Keyed on the RESTATEMENT's id, not the
+     * invoice's -- the same instalment can be restated more than once (a baby added, then the anniversary),
+     * and keying on the invoice would treat the second as a repeat of the first and post nothing.
+     */
+    private void postRestatement(String eventType, Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String restatementId = (String) payload.get("restatementId");
+        String policyNumber = (String) payload.get("policyNumber");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> amountMap = (Map<String, Object>) payload.get("amount");
+        BigDecimal amount = new BigDecimal((String) amountMap.get("amount"));
+        String currency = (String) amountMap.get("currencyCode");
+
+        chartOfAccountSeeder.seedIfAbsent(tenantId, "system:" + eventType);
+        Optional<JournalEntry> maybeEntry = GlPostingCalculator.calculate(tenantId, eventType,
+            restatementId, policyNumber, amount, currency, YearMonth.now().toString(), "system:" + eventType);
+        if (maybeEntry.isEmpty()) {
+            log.info("{} for restatement {} produced no journal entry", eventType, restatementId);
             return;
         }
         finaccountingApiImpl.postEntry(maybeEntry.get());

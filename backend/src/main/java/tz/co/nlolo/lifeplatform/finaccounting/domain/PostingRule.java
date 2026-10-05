@@ -73,6 +73,11 @@ public final class PostingRule {
         // no rule at all: billing recorded 4,200 credited to a lender while the ledger went on
         // carrying the whole 13,800 as receivable -- the two could not be reconciled.
         Map.entry("billing.PremiumRefundDue",        new AccountPair(UNEARNED_PREMIUM, PREMIUM_RECEIVABLE)),
+        // An untouched instalment restated in place (family funeral cover): only the difference moves, the
+        // way the invoice was first posted (up) or run backwards (down). Not PremiumRefundDue, which
+        // distribution claws commission back on -- nothing was collected here, so nothing was earned.
+        Map.entry("billing.PremiumInvoiceIncreased", new AccountPair(PREMIUM_RECEIVABLE, UNEARNED_PREMIUM)),
+        Map.entry("billing.PremiumInvoiceReduced",   new AccountPair(UNEARNED_PREMIUM, PREMIUM_RECEIVABLE)),
         Map.entry("claims.ClaimSettled",             new AccountPair(CLAIMS_EXPENSE, CASH)),
         // A surrender value paid out. Against Claims Expense because the chart has no surrender-benefit
         // account and adding one reopens the V5 chart remap -- a placeholder pending FINANCE sign-off,

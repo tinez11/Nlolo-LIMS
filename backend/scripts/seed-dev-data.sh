@@ -303,6 +303,60 @@ PEN_VERSION_RESP=$(curl -sfi -X POST "$API/products/$PEN_PRODUCT_ID/versions" \
   }')
 echo "$PEN_VERSION_RESP" | head -1
 
+# A FUNERAL product (family funeral cover): one policy covering a main member and their family. Plans A
+# and B; each life pays a fixed yearly premium for its role and age band, plus 5% for paying monthly.
+# Six months' waiting (accidents waived), a dependant's death paid to the main member, and the policy
+# ends with the main member -- the family covered free to the next premium date. No rating table: the
+# premium table is its whole price. The premiums are illustrative, NOT actuarial.
+FUN_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
+  '{"productCode":"FUN-FAM-01","productName":"Nlolo Familia","category":"FUNERAL","defaultCurrency":"TZS"}')
+FUN_PRODUCT_ID=$(jsonval "$FUN_PRODUCT_JSON" productId)
+echo "funeralProductId=$FUN_PRODUCT_ID"
+
+FUN_PREMIUMS=''
+for plan in A B; do
+  scale=1; [ "$plan" = "A" ] && scale=2
+  for row in MAIN_MEMBER:18:35:36000 MAIN_MEMBER:36:50:60000 MAIN_MEMBER:51:65:96000 MAIN_MEMBER:66:100:150000 \
+             SPOUSE:18:35:36000 SPOUSE:36:50:60000 SPOUSE:51:65:96000 SPOUSE:66:100:150000 \
+             CHILD:0:24:6000 PARENT:18:65:48000 PARENT:66:100:90000 \
+             EXTENDED:0:35:12000 EXTENDED:36:65:30000 EXTENDED:66:100:70000; do
+    IFS=: read -r role from to premium <<EOF
+$row
+EOF
+    FUN_PREMIUMS="$FUN_PREMIUMS${FUN_PREMIUMS:+,}{\"planCode\":\"$plan\",\"role\":\"$role\",\"ageFrom\":$from,\"ageTo\":$to,\"yearlyPremium\":$((premium / scale))}"
+  done
+done
+
+FUN_VERSION_RESP=$(curl -sfi -X POST "$API/products/$FUN_PRODUCT_ID/versions" \
+  -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuid)" -d '{
+    "ifrsMeasurementModel":"PAA","effectiveDate":"2020-01-01",
+    "payoutTerms":{"freeLookDays":15},
+    "tiraFiling":{"reference":"TIRA/DEMO/FUN/0001","approvalDate":"2020-01-01"},
+    "frequencyLoading":{"monthlyPercent":5,"quarterlyPercent":2},
+    "ratingTable":[],
+    "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
+    "funeral":{
+      "plans":[{"planCode":"A","name":"Familia A"},{"planCode":"B","name":"Familia B"}],
+      "benefits":[
+        {"planCode":"A","role":"MAIN_MEMBER","benefit":1000000},{"planCode":"A","role":"SPOUSE","benefit":1000000},
+        {"planCode":"A","role":"CHILD","benefit":500000},{"planCode":"A","role":"PARENT","benefit":500000},
+        {"planCode":"A","role":"EXTENDED","benefit":250000},
+        {"planCode":"B","role":"MAIN_MEMBER","benefit":2000000},{"planCode":"B","role":"SPOUSE","benefit":2000000},
+        {"planCode":"B","role":"CHILD","benefit":1000000},{"planCode":"B","role":"PARENT","benefit":1000000},
+        {"planCode":"B","role":"EXTENDED","benefit":500000}],
+      "premiums":['"$FUN_PREMIUMS"'],
+      "roles":[
+        {"role":"MAIN_MEMBER","maxLives":1,"minEntryAge":18,"maxEntryAge":65},
+        {"role":"SPOUSE","maxLives":1,"minEntryAge":18,"maxEntryAge":65},
+        {"role":"CHILD","maxLives":6,"minEntryAge":0,"maxEntryAge":20,"coverStopAge":21,"studentStopAge":25},
+        {"role":"PARENT","maxLives":4,"minEntryAge":18,"maxEntryAge":75},
+        {"role":"EXTENDED","maxLives":4,"minEntryAge":0,"maxEntryAge":65}],
+      "maxPricedAge":100,"waitingPeriodMonths":6,"accidentWaivesWaiting":true,
+      "dependantClaimPayee":"MAIN_MEMBER","onMainMemberDeath":"POLICY_ENDS","freeCoverToPaidDate":true}
+  }')
+echo "$FUN_VERSION_RESP" | head -1
+
 # A CREDIT_LIFE product, and a lender to hold a scheme on it.
 #
 # Neither existed here, and the consequence was not cosmetic: the console's "Credit-life scheme"

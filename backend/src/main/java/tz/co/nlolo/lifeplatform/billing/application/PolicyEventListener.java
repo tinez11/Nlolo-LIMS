@@ -62,6 +62,10 @@ public class PolicyEventListener {
             // A deferred annuity (product step 5 D2): vesting stops contributions; a deferral may extend them.
             case "policy.AnnuityVested" -> withTenant(envelope, this::handleAnnuityVested);
             case "policy.PremiumPayingTermRestated" -> withTenant(envelope, this::handlePremiumPayingTermRestated);
+            // Family funeral cover: a life added or ended, or the anniversary, changed the premium.
+            case "policy.PremiumRestated" -> withTenant(envelope, this::handlePremiumRestated);
+            case "policy.PremiumsEnded" -> withTenant(envelope, p -> billingApiImpl.endBillingAfter(TenantContext.get(),
+                (String) p.get("policyNumber"), LocalDate.parse((String) p.get("after")), (String) p.get("reason")));
             default -> { /* not billing-relevant */ }
         }
     }
@@ -176,6 +180,14 @@ public class PolicyEventListener {
     private void handlePremiumPayingTermRestated(Map<String, Object> payload) {
         billingApiImpl.restatePremiumPayingUntil(TenantContext.get(), (String) payload.get("policyNumber"),
             LocalDate.parse((String) payload.get("premiumPayingUntil")));
+    }
+
+    private void handlePremiumRestated(Map<String, Object> payload) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> premium = (Map<String, Object>) payload.get("premiumAmount");
+        billingApiImpl.restatePremium(TenantContext.get(), (String) payload.get("policyNumber"),
+            new BigDecimal((String) premium.get("amount")), LocalDate.parse((String) payload.get("effectiveFrom")),
+            (String) payload.get("reason"));
     }
 
     private void handlePolicySurrendered(Map<String, Object> payload) {

@@ -1,5 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { getFuneralApplication } from '@/api/funeral';
+import type { FuneralApplicationView } from '@/api/types';
+import { FuneralApplicationSummary } from './FuneralApplicationSummary';
 import { useForm } from 'react-hook-form';
 import { useAuth } from 'react-oidc-context';
 import { Link, useParams } from 'react-router-dom';
@@ -84,6 +87,14 @@ export function UnderwritingCaseDetailPage() {
   const roles = staffRoles(identity);
 
   const detail = useUnderwritingStore(selectCase(caseId));
+  // Family funeral cover: null for every case that is not a funeral plan's (its 404, normalised).
+  const [funeralApplication, setFuneralApplication] = useState<FuneralApplicationView | null>(null);
+  useEffect(() => {
+    if (!caseId) return undefined;
+    let live = true;
+    getFuneralApplication(caseId).then((a) => { if (live) setFuneralApplication(a); }, () => undefined);
+    return () => { live = false; };
+  }, [caseId]);
   const loadCase = useUnderwritingStore((s) => s.loadCase);
   const submitAssessment = useUnderwritingStore((s) => s.submitAssessment);
   const resetSubmitAssessment = useUnderwritingStore((s) => s.resetSubmitAssessment);
@@ -231,6 +242,13 @@ export function UnderwritingCaseDetailPage() {
                 />
               )}
             </dl>
+          </Panel>
+        )}
+        {funeralApplication && (
+          <Panel title="Funeral plan" subtitle="The plan, the family it covers, and what each life costs today">
+            <div className="px-4 pb-4">
+              <FuneralApplicationSummary application={funeralApplication} />
+            </div>
           </Panel>
         )}
         {deferredChoice?.data && (

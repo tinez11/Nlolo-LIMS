@@ -295,6 +295,34 @@ public class Policy {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * A funeral policy's instalment, restated when its family changes (a life added or ended, the
+     * anniversary re-pricing). Only a FUNERAL policy's premium moves this way: every other premium is
+     * fixed at issue or changes by endorsement.
+     */
+    public void restateFuneralPremium(BigDecimal instalment) {
+        if (!"FUNERAL".equals(productCategory)) {
+            throw new InvalidPolicyStateException("Only a funeral plan's premium is restated from its lives; policy "
+                + policyNumber + " is " + productCategory);
+        }
+        if (instalment == null || instalment.signum() <= 0) {
+            throw new IllegalArgumentException("A funeral plan's premium must stay positive; with no life left the policy closes");
+        }
+        this.premiumAmount = instalment;
+        this.updatedAt = Instant.now();
+    }
+
+    /** A spouse takes over a funeral policy when the main member dies (plan R8): they own it and are its life. */
+    public void transferToSpouse(UUID spousePartyId) {
+        if (!"FUNERAL".equals(productCategory)) {
+            throw new InvalidPolicyStateException("Only a funeral plan passes to a spouse; policy " + policyNumber
+                + " is " + productCategory);
+        }
+        this.policyholderPartyId = spousePartyId;
+        this.lifeAssuredPartyId = spousePartyId;
+        this.updatedAt = Instant.now();
+    }
+
     public String getPolicyNumber() { return policyNumber; }
     public UUID getTenantId() { return tenantId; }
     public UUID getPolicyholderPartyId() { return policyholderPartyId; }
