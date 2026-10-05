@@ -34,12 +34,13 @@ function accountRow(page: Page, code: string) {
  *
  * Real journal entries already exist in this tenant from every policy this
  * session's OTHER suites have issued: `billing.PremiumInvoiceGenerated`
- * posts a real DR/CR pair (Premium Receivable / Unearned Premium) at
- * issuance, so a fresh policy issued here is both the test fixture and the
- * assertion target -- no fabricated data, just the platform's own real
- * side effect. That same real pair (account 1200) is also what proves the
- * delete-blocked-while-in-use path below: it is the one seeded account this
- * tenant is guaranteed to have posted against.
+ * posts a real DR/CR pair (2122 Premiums due / 2121 Premiums and other
+ * contract inflows, the IFRS 17 posting guide's accrual) at issuance, so a
+ * fresh policy issued here is both the test fixture and the assertion target
+ * -- no fabricated data, just the platform's own real side effect. That same
+ * real pair (account 2122) is also what proves the delete-blocked-while-in-use
+ * path below: it is the one seeded account this tenant is guaranteed to have
+ * posted against.
  */
 
 test.describe('staff finaccounting', () => {
@@ -68,7 +69,8 @@ test.describe('staff finaccounting', () => {
 
     await page.getByRole('link', { name: 'Full detail' }).click();
     await expect(page.getByRole('heading', { name: sourceEvent })).toBeVisible();
-    await expect(page.getByText('Always exactly two legs')).toBeVisible();
+    await expect(page.getByText('Debits equal credits')).toBeVisible();
+    await expect(page.getByText('Policy register version')).toBeVisible();
   });
 
   test('a policyNumber filter narrows the list to a real freshly-issued policy, and is shareable through the URL', async ({
@@ -112,31 +114,40 @@ test.describe('staff finaccounting', () => {
     }
   });
 
-  test('chart of accounts lists the real seeded placeholder accounts', async ({ page }) => {
+  test('chart of accounts lists the IFRS 17 posting guide chart', async ({ page }) => {
     await page.goto('/staff/chart-of-accounts?view=table');
     await expect(page.getByRole('heading', { name: 'Chart of accounts' })).toBeVisible();
-    // 1210 Premium Receivables / 2140 Unearned Premium is the real accrual pair every
-    // premium invoice posts against (PostingRule.PREMIUM_RECEIVABLE / UNEARNED_PREMIUM).
-    // Both moved in finaccounting/V5: they were 1200 and 2200, which are now the
-    // non-posting Receivables and Payables headers.
-    await expect(accountRow(page, '1210')).toBeVisible();
-    await expect(accountRow(page, '2140')).toBeVisible();
+    // 2122 Premiums due / 2121 Premiums and other contract inflows is the accrual pair every
+    // premium invoice posts against (PostingRule.PREMIUM_RECEIVABLE / UNEARNED_PREMIUM) since
+    // finaccounting V10 adopted the guide's chart: both sit inside the insurance contract liability.
+    await expect(accountRow(page, '2122')).toBeVisible();
+    await expect(accountRow(page, '2121')).toBeVisible();
+    // The guide's posting mode is a column of its own.
+    await expect(accountRow(page, '2122').getByText('Automatic', { exact: true })).toBeVisible();
+    await expect(accountRow(page, '9190').getByText('Manual', { exact: true })).toBeVisible();
+  });
+
+  test('a mode filter narrows the table to the accounts only a person posts to', async ({ page }) => {
+    await page.goto('/staff/chart-of-accounts?view=table');
+    await page.getByRole('button', { name: 'Manual posting', exact: true }).click();
+    await expect(accountRow(page, '9190')).toBeVisible();
+    await expect(accountRow(page, '2122')).toHaveCount(0);
   });
 
   test('creates an account under a parent, renames it, retires it, then deletes it', async ({
     page,
   }) => {
-    // 53xx sits inside 5300 Operating Expenses' block, which finaccounting/V5's prefix
+    // 81xx sits inside 8100 Expenses by nature's block, which finaccounting/V5's prefix
     // rule requires of any child: a child's code must begin with its parent's code
-    // minus trailing zeros. Leading block 5 = EXPENSE, normal balance DR -- both
-    // derived server-side, never sent by the UI.
-    const code = `53${String(Date.now() % 100).padStart(2, '0')}`;
+    // minus trailing zeros. 8150-8199 are free in the guide's chart. A child takes its
+    // parent's type and normal balance (EXPENSE, DR) -- derived server-side, never sent.
+    const code = `81${50 + (Date.now() % 50)}`;
     const name = `E2E Expense ${Date.now()}`;
 
     await page.goto('/staff/chart-of-accounts?view=table');
     await page.getByRole('button', { name: 'New account' }).click();
     await page.getByLabel('Account code').fill(code);
-    await page.getByLabel('Parent account').fill('5300');
+    await page.getByLabel('Parent account').fill('8100');
     await page.getByLabel('Name', { exact: true }).fill(name);
     await page.getByRole('button', { name: 'Create account' }).click();
 
@@ -164,14 +175,14 @@ test.describe('staff finaccounting', () => {
   });
 
   test('rejects a duplicate account code with a real 409', async ({ page }) => {
-    // 43xx sits inside 4300 Other Income's block, per the prefix rule.
-    const code = `43${String(Date.now() % 100).padStart(2, '0')}`;
+    // 75xx sits inside 7500 Other income and gains' block, per the prefix rule; 7530-7579 are free.
+    const code = `75${30 + (Date.now() % 50)}`;
     const name = `E2E Income ${Date.now()}`;
 
     await page.goto('/staff/chart-of-accounts?view=table');
     await page.getByRole('button', { name: 'New account' }).click();
     await page.getByLabel('Account code').fill(code);
-    await page.getByLabel('Parent account').fill('4300');
+    await page.getByLabel('Parent account').fill('7500');
     await page.getByLabel('Name', { exact: true }).fill(name);
     await page.getByRole('button', { name: 'Create account' }).click();
 
@@ -179,7 +190,7 @@ test.describe('staff finaccounting', () => {
 
     await page.getByRole('button', { name: 'New account' }).click();
     await page.getByLabel('Account code').fill(code);
-    await page.getByLabel('Parent account').fill('4300');
+    await page.getByLabel('Parent account').fill('7500');
     await page.getByLabel('Name', { exact: true }).fill('Duplicate attempt');
     await page.getByRole('button', { name: 'Create account' }).click();
     await expect(page.getByRole('alert')).toBeVisible({ timeout: 15_000 });
@@ -196,31 +207,31 @@ test.describe('staff finaccounting', () => {
   }) => {
     await page.goto('/staff/chart-of-accounts');
     await page.getByRole('button', { name: 'New account' }).click();
-    await page.getByLabel('Account code').fill('9000');
+    await page.getByLabel('Account code').fill('0900');
     await page.getByLabel('Name', { exact: true }).fill('Should never be created');
     await page.getByRole('button', { name: 'Create account' }).click();
 
-    await expect(page.getByText('Must be 4 digits starting with 1-5')).toBeVisible();
+    await expect(page.getByText('Must be 4 digits starting with 1-9')).toBeVisible();
     await expect(page.getByText('Should never be created')).not.toBeVisible();
   });
 
   test('blocks deleting an account a real GL posting already references', async ({ page }) => {
     await page.goto('/staff/chart-of-accounts?view=table');
-    // 1210 Premium Receivables is the account every premium invoice posts against, and
-    // is the one account this tenant is guaranteed to have posted to.
-    await accountRow(page, '1210').getByRole('button', { name: 'Delete' }).click();
-    await accountRow(page, '1210').getByRole('button', { name: 'Delete account' }).click();
+    // 2122 Premiums due is the account every premium invoice posts against, and is the
+    // one account this tenant is guaranteed to have posted to.
+    await accountRow(page, '2122').getByRole('button', { name: 'Delete' }).click();
+    await accountRow(page, '2122').getByRole('button', { name: 'Delete account' }).click();
 
     await expect(page.getByRole('alert')).toBeVisible({ timeout: 15_000 });
     // Still there -- the delete was rejected, not silently accepted.
-    await expect(accountRow(page, '1210')).toBeVisible();
+    await expect(accountRow(page, '2122')).toBeVisible();
   });
 
   test('blocks deleting a header account, which has children rather than postings', async ({
     page,
   }) => {
     await page.goto('/staff/chart-of-accounts?view=table');
-    // 1200 Receivables is a header. Nothing posts to it -- it is refused for the other
+    // 1200 Financial investments is a header. Nothing posts to it -- it is refused for the other
     // reason, and the two 409s are deliberately distinct error codes server-side.
     await accountRow(page, '1200').getByRole('button', { name: 'Delete' }).click();
     await accountRow(page, '1200').getByRole('button', { name: 'Delete account' }).click();
@@ -233,60 +244,58 @@ test.describe('staff finaccounting', () => {
     page,
   }) => {
     await page.goto('/staff/chart-of-accounts');
-    // The five block roots open by default; 1200 Receivables is one level down and
+    // The class roots open by default; 1100 Cash and bank is one level down and
     // starts collapsed, so its children are not on screen yet.
-    await expect(page.getByText('Receivables', { exact: true })).toBeVisible();
-    await expect(page.getByText('Premium Receivables')).not.toBeVisible();
+    await expect(page.getByText('Cash and bank', { exact: true })).toBeVisible();
+    await expect(page.getByText('Petty cash', { exact: true })).not.toBeVisible();
 
-    await page.getByRole('button', { name: 'Expand Receivables' }).click();
-    await expect(page.getByText('Premium Receivables')).toBeVisible();
+    await page.getByRole('button', { name: 'Expand Cash and bank' }).click();
+    await expect(page.getByText('Petty cash', { exact: true })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Collapse Receivables' }).click();
-    await expect(page.getByText('Premium Receivables')).not.toBeVisible();
+    await page.getByRole('button', { name: 'Collapse Cash and bank' }).click();
+    await expect(page.getByText('Petty cash', { exact: true })).not.toBeVisible();
 
     // `exact` matters: without it "Table" also matches the "Pos-table- only" filter chip.
     await page.getByRole('button', { name: 'Table', exact: true }).click();
     await expect(page).toHaveURL(/view=table/);
     // Every account is flat in the table, whatever the tree had collapsed.
-    await expect(accountRow(page, '1210')).toBeVisible();
+    await expect(accountRow(page, '1150')).toBeVisible();
   });
 
   test('searching the tree opens the branch containing a match', async ({ page }) => {
     await page.goto('/staff/chart-of-accounts');
-    await expect(page.getByText('Premium Receivables')).not.toBeVisible();
+    await expect(page.getByText('Petty cash', { exact: true })).not.toBeVisible();
 
-    // 1210 is two levels deep, under 1000 Assets > 1200 Receivables. A search that
+    // 1150 is two levels deep, under 1000 Assets > 1100 Cash and bank. A search that
     // matched but left the branch shut would be useless.
-    await page.getByLabel('Search accounts').fill('Premium Receivables');
-    await expect(page.getByText('Premium Receivables')).toBeVisible({ timeout: 15_000 });
+    await page.getByLabel('Search accounts').fill('Petty cash');
+    await expect(page.getByText('Petty cash', { exact: true })).toBeVisible({ timeout: 15_000 });
   });
 
   test('the table searches and sorts the whole chart', async ({ page }) => {
     await page.goto('/staff/chart-of-accounts?view=table');
     await page.getByLabel('Search accounts').fill('reinsurance');
-    await expect(page.getByRole('row').filter({ hasText: 'Reinsurance Recoverable' })).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(page.getByRole('row').filter({ hasText: 'Petty Cash' })).toHaveCount(0);
+    // 6110 Allocation of reinsurance premiums paid -- the search matches a code or a name.
+    await expect(accountRow(page, '6110')).toBeVisible({ timeout: 15_000 });
+    await expect(accountRow(page, '1150')).toHaveCount(0);
 
     await page.getByLabel('Search accounts').fill('');
-    await expect(page.getByRole('row').filter({ hasText: 'Petty Cash' })).toBeVisible({
-      timeout: 15_000,
-    });
+    await expect(accountRow(page, '1150')).toBeVisible({ timeout: 15_000 });
 
-    // Ascending by default, so one click flips to descending and the highest code, unit-linked's 5600, leads.
+    // Ascending by default, so one click flips to descending and the highest code, 9190 opening-balance
+    // suspense, leads.
     await page.getByRole('button', { name: 'Code' }).click();
-    await expect(page.getByRole('row').nth(1)).toContainText('5600');
+    await expect(page.getByRole('row').nth(1)).toContainText('9190');
   });
 
-  test('a type filter narrows the table to one block', async ({ page }) => {
+  test('a type filter narrows the table to one class', async ({ page }) => {
     await page.goto('/staff/chart-of-accounts?view=table');
-    // The chips name the block they narrow to, so they read plural -- and "Equity",
+    // The chips name the class they narrow to, so they read plural -- and "Equity",
     // which has no plural, is the one that stayed as it was.
     await page.getByRole('button', { name: 'Equity', exact: true }).click();
 
-    await expect(page.getByRole('row').filter({ hasText: 'Share Capital' })).toBeVisible();
-    await expect(page.getByRole('row').filter({ hasText: 'Petty Cash' })).toHaveCount(0);
+    await expect(accountRow(page, '3110')).toBeVisible();
+    await expect(accountRow(page, '1150')).toHaveCount(0);
   });
 });
 

@@ -171,6 +171,18 @@ export const STATUS_MAPS = {
     WITHDRAWN: 'neutral',
   },
 
+  // finaccounting accounting_period.status and accounting_policy_election.status (IFRS 17 I1).
+  accountingPeriod: {
+    OPEN: 'active',
+    CLOSING: 'warning',
+    LOCKED: 'neutral',
+  },
+  policyElection: {
+    PROPOSED: 'pending',
+    APPROVED: 'active',
+    REJECTED: 'neutral',
+  },
+
   // unitlinked fund.status, fund_price.status, price_correction_adjustment.status (product step 6).
   fund: {
     OPEN: 'active',

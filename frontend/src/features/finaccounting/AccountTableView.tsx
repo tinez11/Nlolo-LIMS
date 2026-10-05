@@ -3,12 +3,14 @@ import type { ReactNode } from 'react';
 import type { ChartOfAccountView } from '@/api/types';
 import { cn } from '@/lib/cn';
 import { AccountStatusCell } from './AccountStatusCell';
-import { accountTypeLabel, type SortKey } from './accountTree';
+import { accountTypeLabel, postingModeLabel, type SortKey } from './accountTree';
 
 const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
   { key: 'accountCode', label: 'Code' },
   { key: 'name', label: 'Account' },
   { key: 'accountType', label: 'Type' },
+  { key: 'normalBalance', label: 'Normal' },
+  { key: 'mode', label: 'Mode' },
   { key: 'parentCode', label: 'Parent' },
   { key: 'level', label: 'Level', numeric: true },
   { key: 'status', label: 'Status' },
@@ -181,6 +183,8 @@ function AccountTableRow({
       <td className="px-4 py-1.5 text-xs text-muted-foreground">
         {accountTypeLabel(account.accountType)}
       </td>
+      <td className="px-4 py-1.5 font-mono text-xs text-muted-foreground">{account.normalBalance}</td>
+      <td className="px-4 py-1.5 text-xs text-muted-foreground">{postingModeLabel(account.mode)}</td>
       <td className="px-4 py-1.5 font-mono text-xs text-muted-foreground">
         {account.parentCode ?? <span className="text-subtle-foreground">—</span>}
       </td>

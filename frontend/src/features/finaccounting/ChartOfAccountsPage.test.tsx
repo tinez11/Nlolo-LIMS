@@ -34,6 +34,7 @@ function account(over: Partial<ChartOfAccountView> = {}): ChartOfAccountView {
     postingAllowed: true,
     status: 'ACTIVE',
     currency: 'TZS',
+    mode: 'AUTO',
     ...over,
   };
 }

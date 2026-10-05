@@ -1,7 +1,7 @@
 import { Plus, RotateCcw, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import type { AccountType, ChartOfAccountView } from '@/api/types';
+import type { AccountType, ChartOfAccountView, PostingMode } from '@/api/types';
 import { FilterChip } from '@/components/FilterChip';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
@@ -23,12 +23,14 @@ import {
   accountTypePlural,
   buildAccountTree,
   filterAccounts,
+  postingModeLabel,
   sortAccounts,
   type AccountFilters,
   type SortKey,
 } from './accountTree';
 
-const ACCOUNT_TYPES: AccountType[] = ['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE'];
+const ACCOUNT_TYPES: AccountType[] = ['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE', 'CLEARING'];
+const POSTING_MODES: PostingMode[] = ['AUTO', 'MAN', 'BOTH'];
 
 /** Which row, if any, has its rename or delete form open. */
 type RowAction = { code: string; action: 'edit' | 'delete' };
@@ -71,6 +73,7 @@ export function ChartOfAccountsPage() {
     search: '',
     types: [],
     statuses: [],
+    modes: [],
     postingOnly: false,
   });
   const [sortKey, setSortKey] = useState<SortKey>('accountCode');
@@ -237,11 +240,19 @@ export function ChartOfAccountsPage() {
     searchInput.trim() !== '' ||
     filters.types.length > 0 ||
     filters.statuses.length > 0 ||
+    (filters.modes ?? []).length > 0 ||
     filters.postingOnly;
 
   function clearFilters() {
     setSearchInput('');
-    setFilters({ search: '', types: [], statuses: [], postingOnly: false });
+    setFilters({ search: '', types: [], statuses: [], modes: [], postingOnly: false });
+  }
+
+  function toggleMode(mode: PostingMode) {
+    setFilters((f) => {
+      const modes = f.modes ?? [];
+      return { ...f, modes: modes.includes(mode) ? modes.filter((m) => m !== mode) : [...modes, mode] };
+    });
   }
 
   const count = {
@@ -413,8 +424,19 @@ export function ChartOfAccountsPage() {
                 />
               ))}
 
-              {/* The five blocks narrow to a part of the chart; these two ask a
-                  different question of all of it, and the rule says so. */}
+              {/* The classes narrow to a part of the chart; the modes and the two after
+                  them ask a different question of all of it, and the rules say so. */}
+              <span className="mx-1.5 h-4 w-px bg-border" aria-hidden="true" />
+
+              {POSTING_MODES.map((mode) => (
+                <FilterChip
+                  key={mode}
+                  label={`${postingModeLabel(mode)} posting`}
+                  active={(filters.modes ?? []).includes(mode)}
+                  onClick={() => toggleMode(mode)}
+                />
+              ))}
+
               <span className="mx-1.5 h-4 w-px bg-border" aria-hidden="true" />
 
               <FilterChip

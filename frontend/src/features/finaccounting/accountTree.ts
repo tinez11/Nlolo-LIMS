@@ -1,4 +1,4 @@
-import type { AccountStatus, AccountType, ChartOfAccountView } from '@/api/types';
+import type { AccountStatus, AccountType, ChartOfAccountView, PostingMode } from '@/api/types';
 
 /**
  * Tree assembly, filtering and sorting for the chart of accounts, as pure functions.
@@ -18,10 +18,31 @@ export interface AccountFilters {
   search: string;
   types: AccountType[];
   statuses: AccountStatus[];
+  /** The posting guide's modes; empty means every mode. Optional so older callers need not name it. */
+  modes?: PostingMode[];
   postingOnly: boolean;
 }
 
-export type SortKey = 'accountCode' | 'name' | 'accountType' | 'parentCode' | 'level' | 'status';
+export type SortKey =
+  | 'accountCode'
+  | 'name'
+  | 'accountType'
+  | 'normalBalance'
+  | 'mode'
+  | 'parentCode'
+  | 'level'
+  | 'status';
+
+/** The posting guide's modes in a finance officer's words: who may post to the account. */
+const MODE_LABEL: Record<PostingMode, string> = {
+  AUTO: 'Automatic',
+  MAN: 'Manual',
+  BOTH: 'Both',
+};
+
+export function postingModeLabel(mode: string): string {
+  return MODE_LABEL[mode as PostingMode] ?? mode;
+}
 
 /**
  * The five blocks in the words a finance officer uses for them.
@@ -37,6 +58,7 @@ const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {
   EQUITY: 'Equity',
   INCOME: 'Income',
   EXPENSE: 'Expense',
+  CLEARING: 'Clearing',
 };
 
 const ACCOUNT_TYPE_PLURAL: Record<AccountType, string> = {
@@ -45,6 +67,7 @@ const ACCOUNT_TYPE_PLURAL: Record<AccountType, string> = {
   EQUITY: 'Equity',
   INCOME: 'Income',
   EXPENSE: 'Expenses',
+  CLEARING: 'Clearing',
 };
 
 /**
@@ -130,6 +153,7 @@ export function filterAccounts(
     }
     if (filters.types.length > 0 && !filters.types.includes(account.accountType)) return false;
     if (filters.statuses.length > 0 && !filters.statuses.includes(account.status)) return false;
+    if (filters.modes && filters.modes.length > 0 && !filters.modes.includes(account.mode)) return false;
     if (filters.postingOnly && !account.postingAllowed) return false;
     return true;
   });
