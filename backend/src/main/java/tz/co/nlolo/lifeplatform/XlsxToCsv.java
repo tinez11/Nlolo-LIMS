@@ -1,4 +1,4 @@
-package tz.co.nlolo.lifeplatform.policy.domain;
+package tz.co.nlolo.lifeplatform;
 
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;

@@ -126,6 +126,7 @@ class DocumentContractTest {
             "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
+            "db-migrations/refdata/V9__journal_reason_codes.sql",
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
@@ -191,7 +192,8 @@ class DocumentContractTest {
             "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
             "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
             "db-migrations/document/V1__create_document_schema.sql",
-            "db-migrations/document/V2__add_content_type_and_file_name.sql");
+            "db-migrations/document/V2__add_content_type_and_file_name.sql",
+            "db-migrations/document/V7__journal_support_document_type.sql");
 
         MinioClient minioClient = MinioClient.builder()
             .endpoint(MINIO.getS3URL())

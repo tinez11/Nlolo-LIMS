@@ -9,6 +9,10 @@ import type {
   PolicyElectionView,
   CreateAccountRequest,
   JournalEntryView,
+  JournalTemplateView,
+  ManualJournalInput,
+  ManualJournalLineInput,
+  ManualJournalView,
   Page,
   PostingRulesView,
   TrialBalanceView,
@@ -218,4 +222,73 @@ export function retryUnpostedEvent(id: string): Promise<UnpostedEventView> {
 
 export function dismissUnpostedEvent(id: string, reason: string): Promise<UnpostedEventView> {
   return post<UnpostedEventView>(`/finance/unposted-events/${encodeURIComponent(id)}/dismissal`, { reason });
+}
+
+// ---- Manual journals (IFRS 17 I4) ----
+
+const mj = (id: string) => `/finance/manual-journals/${encodeURIComponent(id)}`;
+
+export function listManualJournals(status?: string, period?: string): Promise<ManualJournalView[]> {
+  const params: Record<string, string> = {};
+  if (status) params.status = status;
+  if (period) params.period = period;
+  return get<ManualJournalView[]>('/finance/manual-journals', { params });
+}
+
+export function getManualJournal(id: string): Promise<ManualJournalView> {
+  return get<ManualJournalView>(mj(id));
+}
+
+export function createManualJournal(input: ManualJournalInput): Promise<ManualJournalView> {
+  return post<ManualJournalView>('/finance/manual-journals', input);
+}
+
+export function updateManualJournal(id: string, input: ManualJournalInput): Promise<ManualJournalView> {
+  return put<ManualJournalView>(mj(id), input);
+}
+
+export type ManualJournalAction = 'submission' | 'withdrawal' | 'approval';
+
+/** Submit, withdraw or approve. A refusal is a 422 listing every problem, or a 409 with the reason. */
+export function actOnManualJournal(id: string, action: ManualJournalAction): Promise<ManualJournalView> {
+  return post<ManualJournalView>(`${mj(id)}/${action}`, {});
+}
+
+export function rejectManualJournal(id: string, reason: string): Promise<ManualJournalView> {
+  return post<ManualJournalView>(`${mj(id)}/rejection`, { reason });
+}
+
+/** A new draft reversing a posted journal; it is approved like any other. */
+export function reverseManualJournal(id: string): Promise<ManualJournalView> {
+  return post<ManualJournalView>(`${mj(id)}/reversal`, {});
+}
+
+export function attachJournalDocument(id: string, file: File): Promise<ManualJournalView> {
+  const form = new FormData();
+  form.append('file', file);
+  return post<ManualJournalView>(`${mj(id)}/documents`, form);
+}
+
+export function detachJournalDocument(id: string, documentRef: string): Promise<ManualJournalView> {
+  return del<ManualJournalView>(`${mj(id)}/documents/${encodeURIComponent(documentRef)}`);
+}
+
+/** Replaces a draft's lines from a CSV or Excel file (account, side, amount, description, branch, fund, reference). */
+export function uploadJournalLines(id: string, file: File): Promise<ManualJournalView> {
+  const form = new FormData();
+  form.append('file', file);
+  return post<ManualJournalView>(`${mj(id)}/lines`, form);
+}
+
+export function listJournalTemplates(): Promise<JournalTemplateView[]> {
+  return get<JournalTemplateView[]>('/finance/journal-templates');
+}
+
+export function saveJournalTemplate(
+  name: string,
+  description: string | null,
+  lines: ManualJournalLineInput[],
+  reasonCode: string | null,
+): Promise<JournalTemplateView> {
+  return post<JournalTemplateView>('/finance/journal-templates', { name, description, lines, reasonCode });
 }

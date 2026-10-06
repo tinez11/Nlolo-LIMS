@@ -155,6 +155,7 @@ class BillingApiIntegrationTest {
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
+            "db-migrations/refdata/V9__journal_reason_codes.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",

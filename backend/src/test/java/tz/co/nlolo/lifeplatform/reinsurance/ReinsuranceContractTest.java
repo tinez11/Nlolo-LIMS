@@ -115,6 +115,7 @@ class ReinsuranceContractTest {
             "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
+            "db-migrations/refdata/V9__journal_reason_codes.sql",
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",

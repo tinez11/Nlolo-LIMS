@@ -1,0 +1,324 @@
+# The guide's manual and period-end entries (IFRS 17 posting guide Part 4: M equity, N investments, O operating,
+# Q intermediaries, R reinsurance statements) as templates for a manual journal (IFRS 17 I4). Generated from the
+# guide 2026-10-06; edit by hand only to correct it. A template fills in accounts and sides; the preparer enters
+# the amounts. An entry the guide puts on an AUTO account cannot be a manual journal (the chart locks AUTO accounts
+# to manual posting, guide 2.3), so it carries `postedBy` -- where it will come from -- and is shown, not offered.
+# Validated at startup: every account of an offered template is a MAN or BOTH posting account of the chart.
+
+templates:
+  - id: M-01
+    title: "Shares issued and fully paid"
+    when: "1,000,000 shares, TZS 1,000 nominal, issued at TZS 1,500."
+    lines:
+      - {dr: "1110"}
+      - {cr: "3110"}
+      - {cr: "3120"}
+  - id: M-02
+    title: "Share application money received"
+    when: "Rights issue open."
+    lines:
+      - {dr: "1110"}
+      - {cr: "3140"}
+  - id: M-03
+    title: "Call on partly paid shares"
+    when: "TZS 500 per share on 400,000 shares."
+    lines:
+      - {dr: "1385"}
+      - {cr: "3115"}
+  - id: M-04
+    title: "Call money received"
+    lines:
+      - {dr: "1110"}
+      - {cr: "1385"}
+  - id: M-05
+    title: "Partly paid shares become fully paid"
+    when: "Final call received."
+    lines:
+      - {dr: "3115"}
+      - {cr: "3110"}
+  - id: M-06
+    title: "Capital contribution (solvency support)"
+    lines:
+      - {dr: "1110"}
+      - {cr: "3260"}
+  - id: M-07
+    title: "Year-end: profit to retained earnings"
+    when: "Year-end close."
+    postedBy: "The year-end close (IFRS 17 I6): profit or loss is closed to retained earnings by the platform."
+    lines:
+      - {dr: "3310"}
+      - {cr: "3210"}
+  - id: M-08
+    title: "Transfer to statutory / contingency reserve"
+    when: "As required by regulation."
+    lines:
+      - {dr: "3210"}
+      - {cr: "3220"}
+  - id: M-09
+    title: "Dividend declared"
+    when: "AGM approval."
+    lines:
+      - {dr: "3320"}
+      - {cr: "2740"}
+  - id: M-10
+    title: "Dividend paid (WHT 10% illustrative)"
+    lines:
+      - {dr: "2740"}
+      - {cr: "1110"}
+      - {cr: "2620"}
+  - id: M-11
+    title: "Close dividends to retained earnings"
+    when: "Year-end."
+    lines:
+      - {dr: "3210"}
+      - {cr: "3320"}
+  - id: M-12
+    title: "Revaluation of office building"
+    when: "Valuer's report."
+    lines:
+      - {dr: "1710"}
+      - {cr: "3230"}
+  - id: M-13
+    title: "Statutory deposit placed"
+    lines:
+      - {dr: "1810"}
+      - {cr: "1110"}
+  - id: N-01
+    title: "Money transferred to the fund manager"
+    lines:
+      - {dr: "1275"}
+      - {cr: "1110"}
+  - id: N-02
+    title: "Fund manager reports purchases"
+    when: "Monthly report."
+    lines:
+      - {dr: "1215"}
+      - {dr: "1230"}
+      - {cr: "1275"}
+  - id: N-03
+    title: "T-bill bought at a discount (amortised cost)"
+    when: "Face TZS 100,000,000; cost TZS 92,000,000."
+    lines:
+      - {dr: "1210"}
+      - {cr: "1110"}
+  - id: N-04
+    title: "Monthly effective interest on T-bill"
+    when: "Month-end."
+    lines:
+      - {dr: "1210"}
+      - {cr: "7210"}
+  - id: N-05
+    title: "T-bill matures"
+    lines:
+      - {dr: "1110"}
+      - {cr: "1210"}
+  - id: N-06
+    title: "Bond interest accrued (amortised cost)"
+    when: "Month-end."
+    lines:
+      - {dr: "1280"}
+      - {cr: "7210"}
+  - id: N-07
+    title: "Coupon received net of WHT"
+    lines:
+      - {dr: "1110"}
+      - {dr: "1630"}
+      - {cr: "1280"}
+  - id: N-08
+    title: "FVOCI bond – fair value gain"
+    when: "Month-end prices."
+    lines:
+      - {dr: "1216"}
+      - {cr: "3240"}
+  - id: N-09
+    title: "FVTPL equities revalued"
+    when: "Month-end prices."
+    lines:
+      - {dr: "1230"}
+      - {cr: "7230"}
+  - id: N-10
+    title: "FVTPL equities sold"
+    when: "Proceeds TZS 220,000,000; carrying TZS 200,000,000."
+    lines:
+      - {dr: "1110"}
+      - {cr: "1230"}
+      - {cr: "7230"}
+  - id: N-11
+    title: "Dividend received"
+    lines:
+      - {dr: "1110"}
+      - {dr: "1630"}
+      - {cr: "7220"}
+  - id: N-12
+    title: "Expected credit loss on amortised cost investments"
+    when: "Quarterly ECL model."
+    lines:
+      - {dr: "7260"}
+      - {cr: "1290"}
+  - id: N-13
+    title: "Fund manager fee accrued"
+    lines:
+      - {dr: "7410"}
+      - {cr: "2730"}
+  - id: N-14
+    title: "Custodian fee"
+    lines:
+      - {dr: "7420"}
+      - {cr: "2730"}
+  - id: R-01
+    title: "Quarterly statement – offset balances"
+    when: "Premium payable TZS 1,800,000; commission receivable TZS 360,000; recoveries TZS 30,000,000."
+    postedBy: "The reinsurance bordereau (IFRS 17 I3c)."
+    lines:
+      - {dr: "1430"}
+      - {dr: "1434"}
+      - {cr: "1431"}
+      - {cr: "1420"}
+  - id: R-02
+    title: "Net amount received"
+    lines:
+      - {dr: "1110"}
+      - {cr: "1434"}
+  - id: R-03
+    title: "Profit commission (contingent on claims)"
+    when: "Annual treaty statement."
+    postedBy: "The reinsurance bordereau (IFRS 17 I3c)."
+    lines:
+      - {dr: "1433"}
+      - {cr: "6120"}
+  - id: R-04
+    title: "Funds withheld as security"
+    postedBy: "The reinsurance bordereau (IFRS 17 I3c)."
+    lines:
+      - {dr: "1430"}
+      - {cr: "2550"}
+  - id: R-05
+    title: "Exchange difference on a USD balance"
+    lines:
+      - {dr: "1434"}
+      - {cr: "7150"}
+  - id: Q-01
+    title: "Broker statement – premiums the broker collected"
+    when: "Statement of TZS 5,000,000."
+    postedBy: "Broker statement settlement, posted by the system."
+    lines:
+      - {dr: "1320"}
+      - {cr: "2122"}
+  - id: Q-02
+    title: "Brokerage earned (10%)"
+    postedBy: "Broker statement settlement, posted by the system."
+    lines:
+      - {dr: "2123"}
+      - {cr: "2520"}
+  - id: Q-03
+    title: "Broker remits net of brokerage (WHT 5%)"
+    postedBy: "Broker statement settlement, posted by the system."
+    lines:
+      - {dr: "1110"}
+      - {dr: "2520"}
+      - {cr: "1320"}
+      - {cr: "2610"}
+  - id: Q-04
+    title: "Production bonus directly attributable to a portfolio"
+    when: "Sales campaign results."
+    postedBy: "Commission (distribution), posted by the system."
+    lines:
+      - {dr: "2123"}
+      - {cr: "2510"}
+  - id: Q-05
+    title: "Advance to a new agent"
+    lines:
+      - {dr: "1375"}
+      - {cr: "1110"}
+  - id: Q-06
+    title: "Advance recovered from commission"
+    postedBy: "Commission (distribution), posted by the system."
+    lines:
+      - {dr: "2510"}
+      - {cr: "1375"}
+  - id: Q-07
+    title: "Withholding tax paid to TRA"
+    postedBy: "A later build: withholding tax remitted to TRA posts on an AUTO account."
+    lines:
+      - {dr: "2610"}
+      - {cr: "1110"}
+  - id: Q-08
+    title: "Unrecoverable clawback written off"
+    postedBy: "A later build: writing off a clawback posts on an AUTO account."
+    lines:
+      - {dr: "8450"}
+      - {cr: "1370"}
+  - id: Q-09
+    title: "Bancassurance commission invoice"
+    postedBy: "Bancassurance commission, posted by the system."
+    lines:
+      - {dr: "2123"}
+      - {cr: "2530"}
+  - id: O-01
+    title: "Payroll"
+    lines:
+      - {dr: "8110"}
+      - {cr: "2630"}
+      - {cr: "2640"}
+      - {cr: "1110"}
+  - id: O-02
+    title: "Employer social security and SDL"
+    lines:
+      - {dr: "8120"}
+      - {dr: "8130"}
+      - {cr: "2640"}
+      - {cr: "2630"}
+  - id: O-03
+    title: "Office lease signed (IFRS 16)"
+    when: "5-year lease; PV of payments TZS 250,000,000."
+    lines:
+      - {dr: "1715"}
+      - {cr: "2760"}
+  - id: O-04
+    title: "Lease payment and interest"
+    lines:
+      - {dr: "2760"}
+      - {dr: "8420"}
+      - {cr: "1110"}
+  - id: O-05
+    title: "Monthly depreciation (incl. right-of-use)"
+    lines:
+      - {dr: "8430"}
+      - {cr: "1790"}
+  - id: O-06
+    title: "Audit fee accrued"
+    lines:
+      - {dr: "8320"}
+      - {cr: "2720"}
+  - id: O-07
+    title: "ECL on broker balances"
+    when: "Ageing review."
+    lines:
+      - {dr: "8450"}
+      - {cr: "1390"}
+  - id: O-08
+    title: "Corporate tax provision"
+    lines:
+      - {dr: "8810"}
+      - {cr: "2660"}
+  - id: O-09
+    title: "Offset provisional tax and WHT"
+    lines:
+      - {dr: "2660"}
+      - {cr: "1640"}
+      - {cr: "1630"}
+      - {cr: "1110"}
+  - id: O-10
+    title: "Old unallocated receipts to unclaimed monies"
+    postedBy: "A later build: moving old unallocated receipts posts on an AUTO account."
+    lines:
+      - {dr: "2420"}
+      - {cr: "2770"}
+  - id: O-11
+    title: "Migration – IFRS 17 opening balances"
+    when: "Go-live on the new system."
+    lines:
+      - {dr: "9190"}
+      - {cr: "2112"}
+      - {cr: "2111"}
+      - {cr: "2110"}

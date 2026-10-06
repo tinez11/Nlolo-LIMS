@@ -34,5 +34,11 @@ public enum DocumentType {
      * dispute about either. Routed to the general {@code policy-documents} bucket by
      * {@code MinioDocumentStorage.bucketFor}'s default arm, for the reason ENROLMENT_SCHEDULE gives.
      */
-    ACCOUNT_STATEMENT
+    ACCOUNT_STATEMENT,
+
+    /**
+     * IFRS 17 I4: the document a manual journal rests on (guide 2.3, Part 4) -- a board resolution, a fund manager's
+     * report, a statement, a payroll summary. The general bucket, by {@code MinioDocumentStorage.bucketFor}'s default.
+     */
+    JOURNAL_SUPPORT
 }

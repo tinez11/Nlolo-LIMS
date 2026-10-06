@@ -148,7 +148,8 @@ class EftDisbursementIntegrationTest {
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
             "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
             "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
-            "db-migrations/finaccounting/V13__disbursement_method.sql");
+            "db-migrations/finaccounting/V13__disbursement_method.sql",
+            "db-migrations/finaccounting/V14__manual_journals.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

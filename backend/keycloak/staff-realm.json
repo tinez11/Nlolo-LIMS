@@ -24,6 +24,10 @@
         "name": "FINANCE_OFFICER"
       },
       {
+        "name": "FINANCE_APPROVER",
+        "description": "IFRS 17 I4: approves or rejects a manual journal prepared by someone else. Additive to FINANCE_OFFICER; given to finance managers."
+      },
+      {
         "name": "CUSTOMER_SERVICE_REP"
       },
       {
@@ -262,6 +266,33 @@
       ],
       "realmRoles": [
         "FINANCE_OFFICER"
+      ]
+    },
+    {
+      "username": "staff.finance-approver",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "staff.finance-approver@example.tz",
+      "firstName": "Baraka",
+      "lastName": "Approver",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ],
+        "home_branch": [
+          "DSM"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "devpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "FINANCE_OFFICER",
+        "FINANCE_APPROVER"
       ]
     },
     {

@@ -46,7 +46,7 @@ import java.util.List;
  *
  * <p><b>Dates are typed cells, and that is the whole reason this format exists.</b> Excel rewrites
  * a date when it opens a CSV and again when it saves one; in a workbook it round-trips whatever it
- * displays, and {@link XlsxToCsv} reads it back as ISO.
+ * displays, and {@link tz.co.nlolo.lifeplatform.XlsxToCsv} reads it back as ISO.
  */
 public final class LenderTemplateXlsx {
 

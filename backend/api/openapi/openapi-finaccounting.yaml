@@ -592,8 +592,305 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/manual-journals:
+    get:
+      summary: Manual journals, newest first
+      description: "IFRS 17 I4. Filter by status (DRAFT, SUBMITTED, APPROVED, REJECTED) and period. At most 500."
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, REJECTED] } }
+        - { name: period, in: query, required: false, schema: { type: string, pattern: '^\d{4}-\d{2}$' } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ManualJournalView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Prepare a manual journal (a draft)
+      description: "Nothing is posted until a second person holding FINANCE_APPROVER approves it."
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ManualJournalInput' }
+      responses:
+        '201':
+          description: The draft
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualJournalView' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /finance/manual-journals/{id}:
+    get:
+      summary: A manual journal and its lines
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ManualJournalId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualJournalView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      summary: Change a draft (its preparer only)
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ManualJournalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ManualJournalInput' }
+      responses:
+        '200':
+          description: The draft
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualJournalView' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/manual-journals/{id}/submission:
+    post:
+      summary: Submit a draft for approval
+      description: "Every check at once: balanced, MAN or BOTH accounts only, a reason code on a BOTH account, a reason, a document, a period not locked. 422 lists every problem."
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ManualJournalId'
+      responses:
+        '200':
+          description: The journal, SUBMITTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualJournalView' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/manual-journals/{id}/withdrawal:
+    post:
+      summary: Withdraw a submitted journal back to draft (its preparer only)
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ManualJournalId'
+      responses:
+        '200':
+          description: The journal, DRAFT
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualJournalView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/manual-journals/{id}/approval:
+    post:
+      summary: Approve and post a submitted journal (FINANCE_APPROVER, never its preparer)
+      description: "Checked again, then posted in its period. A ledger refusal (a period locked meanwhile) is a 409 with the ledger's words."
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ManualJournalId'
+      responses:
+        '200':
+          description: The journal, APPROVED, with the journal entry it posted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualJournalView' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/manual-journals/{id}/rejection:
+    post:
+      summary: Reject a submitted journal, with a reason (FINANCE_APPROVER, never its preparer)
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ManualJournalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: The journal, REJECTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualJournalView' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/manual-journals/{id}/reversal:
+    post:
+      summary: Draft the reversal of a posted journal
+      description: "A new draft, every line's side swapped, in the current open period; approved like any journal. Once per journal."
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ManualJournalId'
+      responses:
+        '201':
+          description: The reversal draft
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualJournalView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/manual-journals/{id}/documents:
+    post:
+      summary: Attach a supporting document to a draft
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ManualJournalId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: The draft
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualJournalView' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/manual-journals/{id}/documents/{documentRef}:
+    delete:
+      summary: Remove a document from a draft
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ManualJournalId'
+        - { name: documentRef, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The draft
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualJournalView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/manual-journals/{id}/lines:
+    post:
+      summary: Replace a draft's lines from a CSV or Excel file
+      description: "Columns account, side (DR/CR), amount, description, branch, fund, reference -- a header row, any order. Every row checked; 422 lists every error and nothing changes."
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ManualJournalId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: The draft with its new lines
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualJournalView' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/journal-templates:
+    get:
+      summary: The guide's manual-journal templates (Part 4), then the tenant's saved ones
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/JournalTemplateView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Save a recurring template
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, lines]
+              properties:
+                name: { type: string, maxLength: 200 }
+                description: { type: [string, "null"], maxLength: 500 }
+                reasonCode: { type: [string, "null"] }
+                lines:
+                  type: array
+                  items: { $ref: '#/components/schemas/ManualJournalLineInput' }
+      responses:
+        '201':
+          description: The template
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JournalTemplateView' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
 components:
   parameters:
+    ManualJournalId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     UnpostedEventId:
       name: id
       in: path
@@ -1094,3 +1391,97 @@ components:
         resolvedBy: { type: [string, "null"] }
         resolvedAt: { type: [string, "null"], format: date-time }
         journalEntryId: { type: [string, "null"], format: uuid }
+    ManualJournalLineInput:
+      type: object
+      required: [accountCode, side, amount]
+      properties:
+        accountCode: { type: string, pattern: '^\d{4}$' }
+        side: { $ref: '#/components/schemas/PostingDirection' }
+        amount: { type: number, exclusiveMinimum: 0 }
+        description: { type: [string, "null"], maxLength: 300 }
+        branch: { type: [string, "null"] }
+        fund: { type: [string, "null"] }
+        referenceType: { type: [string, "null"] }
+        reference: { type: [string, "null"], maxLength: 100 }
+    ManualJournalInput:
+      type: object
+      required: [title, lines]
+      properties:
+        period: { type: [string, "null"], pattern: '^\d{4}-\d{2}$', description: "Omitted: the current month (Africa/Dar_es_Salaam)." }
+        currency: { type: [string, "null"], minLength: 3, maxLength: 3 }
+        title: { type: string, maxLength: 200 }
+        reason: { type: [string, "null"], maxLength: 500 }
+        reasonCode: { type: [string, "null"], description: "Required when a line is on a BOTH account; one of the JOURNAL_REASON reference codes." }
+        templateId: { type: [string, "null"] }
+        autoReverseOn: { type: [string, "null"], format: date, description: "An accrual reversed by the platform on this date, without a second approval." }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/ManualJournalLineInput' }
+    ManualJournalView:
+      type: object
+      additionalProperties: false
+      required: [id, status, period, currency, title, documentRefs, preparer, preparedAt, lines, totalDebit, totalCredit]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, REJECTED] }
+        period: { type: string }
+        currency: { type: string }
+        title: { type: string }
+        reason: { type: [string, "null"] }
+        reasonCode: { type: [string, "null"] }
+        templateId: { type: [string, "null"] }
+        reversesJournalId: { type: [string, "null"], format: uuid }
+        autoReverseOn: { type: [string, "null"], format: date }
+        documentRefs:
+          type: array
+          items: { type: string }
+        preparer: { type: string }
+        preparedAt: { type: string, format: date-time }
+        submittedAt: { type: [string, "null"], format: date-time }
+        decidedBy: { type: [string, "null"] }
+        decidedAt: { type: [string, "null"], format: date-time }
+        decisionReason: { type: [string, "null"] }
+        journalEntryId: { type: [string, "null"], format: uuid, description: "The journal entry it posted, once APPROVED." }
+        totalDebit: { type: number }
+        totalCredit: { type: number }
+        lines:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [lineNo, accountCode, side, amount]
+            properties:
+              lineNo: { type: integer }
+              accountCode: { type: string }
+              accountName: { type: [string, "null"] }
+              accountMode: { type: [string, "null"], enum: [AUTO, MAN, BOTH, null] }
+              side: { $ref: '#/components/schemas/PostingDirection' }
+              amount: { type: number }
+              description: { type: [string, "null"] }
+              branch: { type: [string, "null"] }
+              fund: { type: [string, "null"] }
+              referenceType: { type: [string, "null"] }
+              reference: { type: [string, "null"] }
+    JournalTemplateView:
+      type: object
+      additionalProperties: false
+      required: [id, source, title, lines]
+      properties:
+        id: { type: string, description: "The guide's entry (e.g. N-04) or a saved template's id" }
+        source: { type: string, enum: [GUIDE, SAVED] }
+        title: { type: string }
+        when: { type: [string, "null"] }
+        postedBy: { type: [string, "null"], description: "Set on a guide entry that posts on an AUTO account and so cannot be a manual journal: where it comes from instead." }
+        reasonCode: { type: [string, "null"] }
+        lines:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [side, accountCode]
+            properties:
+              side: { $ref: '#/components/schemas/PostingDirection' }
+              accountCode: { type: string }
+              accountName: { type: [string, "null"] }
+              amount: { type: [number, "null"] }
+              description: { type: [string, "null"] }

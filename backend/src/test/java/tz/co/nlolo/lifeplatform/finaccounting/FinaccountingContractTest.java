@@ -111,6 +111,7 @@ class FinaccountingContractTest {
             "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
+            "db-migrations/refdata/V9__journal_reason_codes.sql",
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
@@ -154,7 +155,8 @@ class FinaccountingContractTest {
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
             "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
             "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
-            "db-migrations/finaccounting/V13__disbursement_method.sql");
+            "db-migrations/finaccounting/V13__disbursement_method.sql",
+            "db-migrations/finaccounting/V14__manual_journals.sql");
     }
 
     @Autowired private MockMvc mockMvc;

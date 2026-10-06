@@ -17,7 +17,7 @@ import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentReportRenderer;
 import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentSubmission;
 import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentSubmissionRow;
 import tz.co.nlolo.lifeplatform.policy.domain.GroupScheme;
-import tz.co.nlolo.lifeplatform.policy.domain.XlsxToCsv;
+import tz.co.nlolo.lifeplatform.XlsxToCsv;
 import tz.co.nlolo.lifeplatform.policy.domain.Policy;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.EnrolmentSubmissionRepository;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.EnrolmentSubmissionRowRepository;

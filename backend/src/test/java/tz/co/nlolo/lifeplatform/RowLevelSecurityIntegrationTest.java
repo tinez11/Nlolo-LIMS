@@ -174,6 +174,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/policy/V37__sale_classification.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
+            "db-migrations/refdata/V9__journal_reason_codes.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
             // M5 (Task 7) addition: PremiumInvoice now maps amount_paid -- every JPA insert this
@@ -224,6 +225,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
             "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
             "db-migrations/finaccounting/V13__disbursement_method.sql",
+            "db-migrations/finaccounting/V14__manual_journals.sql",
             // M10 (Task 9) additions. regreporting/V1 enabled RLS on NEITHER of its two original
             // tables and granted app_role nothing at all; V2 is what adds both, for
             // policy_dimension/policy_movement/regulatory_return/return_line among others. Until now

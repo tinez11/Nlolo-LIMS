@@ -65,6 +65,7 @@ class UnitStatementIntegrationTest {
         "db-migrations/document/V4__enrolment_schedule_document_type.sql",
         "db-migrations/document/V5__exits_file_document_type.sql",
         "db-migrations/document/V6__account_statement_document_type.sql",
+        "db-migrations/document/V7__journal_support_document_type.sql",
         "db-migrations/communication/V1__create_communication_schema.sql",
         "db-migrations/communication/V2__template_identity.sql",
         "db-migrations/communication/V3__seed_offer_templates.sql",

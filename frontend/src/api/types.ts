@@ -291,6 +291,11 @@ export type PostingRulesView = FinaccountingComponents['schemas']['PostingRulesV
 export type PostingRule = PostingRulesView['rules'][number];
 /** An event the posting rules could not post (IFRS 17 I3a): open until retried into a journal or dismissed. */
 export type UnpostedEventView = FinaccountingComponents['schemas']['UnpostedEventView'];
+/** A manual journal (IFRS 17 I4): a draft until a second person approves it, then posted. */
+export type ManualJournalView = FinaccountingComponents['schemas']['ManualJournalView'];
+export type ManualJournalInput = FinaccountingComponents['schemas']['ManualJournalInput'];
+export type ManualJournalLineInput = FinaccountingComponents['schemas']['ManualJournalLineInput'];
+export type JournalTemplateView = FinaccountingComponents['schemas']['JournalTemplateView'];
 
 /**
  * `ClaimDetails` has no `discriminator` keyword in the spec (deliberately -- see the
