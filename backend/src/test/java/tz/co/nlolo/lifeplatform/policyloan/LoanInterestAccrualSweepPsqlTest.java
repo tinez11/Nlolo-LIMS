@@ -65,7 +65,8 @@ class LoanInterestAccrualSweepPsqlTest {
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
-            "db-migrations/policyloan/V7__q4_2026_partitions.sql");
+            "db-migrations/policyloan/V7__q4_2026_partitions.sql",
+            "db-migrations/policyloan/V8__interest_month_published.sql");
 
         String fullFile = Files.readString(SWEEP_FILE);
         String functionOnly = fullFile.substring(0, fullFile.indexOf("-- Daily at 03:00"));

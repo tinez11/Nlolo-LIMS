@@ -169,19 +169,7 @@ public class PremiumEventListener {
             // for an already-accrued invoice a no-op.
             distributionApiImpl.persistAccrual(tenantId, accrual.agentId(), policyNumber, accrual.tierType(),
                     accrual.amount(), accrual.currency(), period, invoiceId.toString(), null,
-                    "system:billing.PremiumCollected")
-                .ifPresent(saved -> publishCommissionAccrued(tenantId, saved));
+                    "system:billing.PremiumCollected");
         }
-    }
-
-    private void publishCommissionAccrued(UUID tenantId, CommissionAccrual accrual) {
-        // Matches asyncapi-events.yaml's CommissionAccruedPayload field-for-field, exactly as
-        // PolicyEventListener's issuance-side publisher does.
-        Map<String, Object> payload = Map.of(
-            "statementId", accrual.getStatementId(),
-            "agentId", accrual.getAgentId(),
-            "policyNumber", accrual.getPolicyNumber(),
-            "amount", Map.of("amount", accrual.getAmount().toPlainString(), "currencyCode", accrual.getCurrency()));
-        eventPublisher.publishEvent(DomainEventEnvelope.of("distribution.CommissionAccrued", tenantId, payload));
     }
 }

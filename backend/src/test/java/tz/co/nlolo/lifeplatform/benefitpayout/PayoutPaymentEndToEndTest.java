@@ -97,6 +97,7 @@ class PayoutPaymentEndToEndTest {
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/product/V27__ifrs17_classification.sql",
+            "db-migrations/product/V28__survival_investment_component.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -149,7 +150,8 @@ class PayoutPaymentEndToEndTest {
             "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
             "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
-            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql");
+            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
+            "db-migrations/finaccounting/V13__disbursement_method.sql");
     }
 
     @AfterAll
@@ -221,10 +223,12 @@ class PayoutPaymentEndToEndTest {
         TenantContext.set(TENANT);
         try {
             // Booked against the ledger, keyed by the instalment -- the half that was missing for
-            // surrender until step 1's gap fix, and must not go missing again here.
-            assertThat(finaccountingApi.listJournalEntries(null, policyNumber, Pageable.unpaged()).getContent())
-                .extracting(JournalEntryView::sourceRef)
-                .containsExactly(id.toString());
+            // surrender until step 1's gap fix, and must not go missing again here. Since IFRS 17 I3b in two
+            // journals, as the guide does it: payable when it fell due (C-01), cleared when paid (C-03).
+            var entries = finaccountingApi.listJournalEntries(null, policyNumber, Pageable.unpaged()).getContent();
+            assertThat(entries).extracting(JournalEntryView::sourceRef).containsOnly(id.toString());
+            assertThat(entries).extracting(JournalEntryView::sourceEvent)
+                .containsExactlyInAnyOrder("benefitpayout.PayoutRequested", "benefitpayout.PayoutPaid");
         } finally {
             TenantContext.clear();
         }

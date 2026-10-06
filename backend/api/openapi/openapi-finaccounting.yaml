@@ -754,7 +754,8 @@ components:
         key:
           type: string
           enum: [MEASUREMENT_MODEL, INVESTMENT_COMPONENT_RULE, MODEL_OVERRIDE_ALLOWED, POLICY_LOANS,
-                 ACQUISITION_CASH_FLOWS, OCI_OPTION, RIDERS, PREMIUM_BILLING, CONTRACT_RECOGNITION, COHORT]
+                 ACQUISITION_CASH_FLOWS, OCI_OPTION, RIDERS, PREMIUM_BILLING, CONTRACT_RECOGNITION, COHORT,
+                 COMMISSION_WITHHOLDING_RATE, PREMIUM_LEVY_RATE]
         scope:
           type: string
           nullable: true
@@ -1020,8 +1021,19 @@ components:
     PostingRulesView:
       type: object
       additionalProperties: false
-      required: [version, versionLabel, rules]
+      required: [version, versionLabel, rules, settings]
       properties:
+        settings:
+          type: array
+          description: "IFRS 17 I3b: the rates the rules apply, from the accounting policy register; value null = not configured (nothing withheld or levied)."
+          items:
+            type: object
+            additionalProperties: false
+            required: [key]
+            properties:
+              key: { type: string, enum: [COMMISSION_WITHHOLDING_RATE, PREMIUM_LEVY_RATE] }
+              value: { type: [string, "null"], description: "A percentage, e.g. 5" }
+              effectiveFrom: { type: [string, "null"], format: date }
         version: { type: integer }
         versionLabel: { type: string, description: "What each journal records as its rule_version, e.g. 'posting-rules v1'" }
         rules:

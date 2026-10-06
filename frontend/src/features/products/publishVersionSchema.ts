@@ -850,6 +850,14 @@ export function publishVersionFormSchema(category: ProductCategory) {
     // the version only carries an override, blank for none -- the ordinary case.
     expectedProfitabilityBucket: z.enum(['ONEROUS', 'NO_SIGNIFICANT_RISK', 'REMAINING']),
     measurementModelOverride: z.enum(['', 'GMM', 'VFA', 'PAA', 'IFRS9']),
+    // IFRS 17 I3b: the share (%) of each survival benefit or income instalment that is an investment component,
+    // set by the actuary. Blank is none: the whole instalment is an insurance service expense.
+    survivalInvestmentComponentPercent: z
+      .string()
+      .trim()
+      .refine((v) => v === '' || (/^\d{1,3}(\.\d{1,4})?$/.test(v) && Number(v) <= 100), {
+        message: 'A percentage from 0 to 100, or blank for none',
+      }),
     effectiveDate: z.string().trim().min(1, 'Effective date is required').regex(ISO_DATE_PATTERN),
     // Blank means "no retirement date" -- toApiRequest converts that to null.
     retirementDate: z
@@ -1180,6 +1188,7 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
   return {
     expectedProfitabilityBucket: 'REMAINING',
     measurementModelOverride: '',
+    survivalInvestmentComponentPercent: '',
     effectiveDate: '',
     retirementDate: '',
     ratingTable: [],
@@ -1269,6 +1278,8 @@ export function toApiRequest(values: PublishVersionFormValues, category?: Produc
     ...(category === 'UNIT_LINKED' && { unitLinked: toUnitLinkedRequest(values) }),
     expectedProfitabilityBucket: values.expectedProfitabilityBucket,
     measurementModelOverride: values.measurementModelOverride === '' ? null : values.measurementModelOverride,
+    survivalInvestmentComponentPercent:
+      values.survivalInvestmentComponentPercent === '' ? null : Number(values.survivalInvestmentComponentPercent),
     effectiveDate: values.effectiveDate,
     retirementDate: values.retirementDate === '' ? null : values.retirementDate,
     // Age bounds go on the wire as numbers for AGE rows and are OMITTED for every other

@@ -240,6 +240,12 @@ export function ProductDetailPage() {
                 label="Model override"
                 value={snapshot.data.modelOverride ? modelLabel(snapshot.data.modelOverride) : 'None — the register decides'}
               />
+              {snapshot.data.survivalInvestmentComponentPercent != null && (
+                <Field
+                  label="Survival investment component"
+                  value={`${snapshot.data.survivalInvestmentComponentPercent}%`}
+                />
+              )}
               <Field label="Effective" value={snapshot.data.effectiveDate ?? '—'} />
               <Field
                 label="Grace period"

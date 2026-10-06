@@ -135,6 +135,7 @@ class FinaccountingContractTest {
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/product/V27__ifrs17_classification.sql",
+            "db-migrations/product/V28__survival_investment_component.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -143,6 +144,7 @@ class FinaccountingContractTest {
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
+            "db-migrations/policyloan/V8__interest_month_published.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
@@ -151,7 +153,8 @@ class FinaccountingContractTest {
             "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
             "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
-            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql");
+            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
+            "db-migrations/finaccounting/V13__disbursement_method.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -792,7 +795,7 @@ class FinaccountingContractTest {
         mockMvc.perform(get("/finance/posting-rules").with(financeStaffOf(tenantId)))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
-            .andExpect(jsonPath("$.versionLabel").value("posting-rules v1"))
+            .andExpect(jsonPath("$.versionLabel").value("posting-rules v2"))
             .andExpect(jsonPath("$.rules[?(@.id == 'I-01')].lines[0].account").value("2142"));
         mockMvc.perform(get("/finance/posting-rules").with(underwriterStaffOf(tenantId)))
             .andExpect(status().isForbidden());

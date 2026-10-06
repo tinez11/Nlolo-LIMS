@@ -166,6 +166,20 @@ public interface FinaccountingApi {
     /** The election in force for a key and scope on a date, falling back to scope "*". */
     java.util.Optional<PolicyElectionView> policyElectionInForce(String key, String scope, java.time.LocalDate on);
 
+    /**
+     * A configured rate in force on {@code on} (IFRS 17 I3b) -- COMMISSION_WITHHOLDING_RATE or PREMIUM_LEVY_RATE -- as a
+     * fraction (5% is 0.05). Empty when no election is in force or it is NONE: nothing is withheld or levied, never a
+     * default rate (user decisions 6 and 7).
+     */
+    java.util.Optional<java.math.BigDecimal> rateInForce(String key, java.time.LocalDate on);
+
+    /**
+     * The investment component rule in force for a portfolio on a date (the register's INVESTMENT_COMPONENT_RULE,
+     * falling back to "*"): NONE, PREMIUMS_RETURNED, SURRENDER_VALUE ... The emitting module computes the amount by it
+     * (user decision 4); empty when the register has none for the portfolio.
+     */
+    java.util.Optional<String> investmentComponentRule(String portfolioCode, java.time.LocalDate on);
+
     /** A contract's IFRS 17 classification (I2), oldest first; empty for a contract not classified (yet). */
     java.util.List<PolicyClassificationView> policyClassifications(String policyNumber);
 

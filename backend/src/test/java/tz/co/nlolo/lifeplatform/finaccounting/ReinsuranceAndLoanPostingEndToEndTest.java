@@ -185,6 +185,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/product/V27__ifrs17_classification.sql",
+            "db-migrations/product/V28__survival_investment_component.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -233,6 +234,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
+            "db-migrations/policyloan/V8__interest_month_published.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V6__disbursement_method.sql",
@@ -247,7 +249,8 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
             "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
-            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql");
+            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
+            "db-migrations/finaccounting/V13__disbursement_method.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

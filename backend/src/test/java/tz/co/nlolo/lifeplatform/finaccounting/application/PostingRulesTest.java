@@ -123,9 +123,9 @@ class PostingRulesTest {
         validate("version: 1\nrules:\n"
             + rule("A", "billing.PremiumInvoiceGenerated", "[GMM]", null, INVOICE_LINES)
             + rule("B", "billing.PremiumInvoiceGenerated", "[PAA]", null, INVOICE_LINES)
-            + rule("C", "payment.EftDisbursementExecuted", "[NONE]", "{purpose: CLAIM_SETTLEMENT}",
+            + rule("C", "unitlinked.PayoutPaid", "[VFA]", "{purpose: TOP_UP_REFUND}",
                 "      - {dr: \"2211\", amount: amount}\n      - {cr: \"5110\", amount: amount}\n")
-            + rule("D", "payment.EftDisbursementExecuted", "[NONE]", null,
+            + rule("D", "unitlinked.PayoutPaid", "[VFA]", null,
                 "      - {dr: \"2211\", amount: amount}\n      - {cr: \"5110\", amount: amount}\n"));
     }
 
@@ -135,5 +135,47 @@ class PostingRulesTest {
                 + rule("A", "billing.PremiumInvoiceGenerated", "[GMM]", null, INVOICE_LINES)
                 + rule("A", "billing.PremiumInvoiceGenerated", "[PAA]", null, INVOICE_LINES)))
             .hasMessageContaining("A: the id is used twice");
+    }
+
+    // ---- IFRS 17 I3b ----
+
+    @Test
+    void anIfrs9InvoicePostsNothingOnPurposeRatherThanQueueing() {
+        PostingRuleSet set = PostingRules.load();
+        PostingRuleSet.Rule rule = set.select("billing.PremiumInvoiceGenerated", "IFRS9", Map.of(), TODAY).orElseThrow();
+        assertThat(rule.post()).isFalse();
+        assertThat(rule.lines()).isEmpty();
+    }
+
+    @Test
+    void aPayoutDuePostsByItsKind() {
+        PostingRuleSet set = PostingRules.load();
+        assertThat(set.select("benefitpayout.PayoutRequested", "GMM", Map.of("kind", "MATURITY"), TODAY)).get()
+            .extracting(PostingRuleSet.Rule::id).isEqualTo("C-01");
+        assertThat(set.select("benefitpayout.PayoutRequested", "GMM", Map.of("kind", "ANNUITY"), TODAY)).get()
+            .extracting(PostingRuleSet.Rule::id).isEqualTo("H-02");
+        assertThat(set.select("benefitpayout.PayoutRequested", "IFRS9", Map.of("kind", "FREE_LOOK"), TODAY)).get()
+            .extracting(PostingRuleSet.Rule::id).isEqualTo("G-FREE-LOOK");
+    }
+
+    @Test
+    void commissionPostsToThePayableOfItsChannel() {
+        PostingRuleSet set = PostingRules.load();
+        PostingRuleSet.Rule broker = set.select("distribution.CommissionAccrued", "GMM",
+            Map.of("direction", "ACCRUAL", "channel", "BROKER", "movement", "IACF_BRK"), TODAY).orElseThrow();
+        assertThat(broker.lines()).extracting(PostingRuleSet.Line::account).containsExactly("2123", "2520");
+        PostingRuleSet.Rule paid = set.select("distribution.CommissionPaid", "NONE", Map.of("channel", "AGENT"), TODAY)
+            .orElseThrow();
+        assertThat(paid.lines()).extracting(PostingRuleSet.Line::account).containsExactly("2510", "BANK", "2610");
+    }
+
+    @Test
+    void aRuleThatPostsNothingMayHaveNoLinesAndBankIsAnAccount() {
+        validate("version: 1\nrules:\n  - id: Z\n    event: billing.PremiumCollected\n    models: [IFRS9]\n    post: false\n"
+            + rule("Y", "claims.ClaimSettled", "[GMM]", null,
+                "      - {dr: \"2211\", amount: amount}\n      - {cr: BANK, amount: amount}\n"));
+        assertThatThrownBy(() -> validate("version: 1\nrules:\n" + rule("Z", "billing.PremiumCollected", "[IFRS9]", null,
+                INVOICE_LINES).replace("    lines:", "    post: false\n    lines:")))
+            .hasMessageContaining("Z: a rule that posts nothing (post: false) has no lines");
     }
 }

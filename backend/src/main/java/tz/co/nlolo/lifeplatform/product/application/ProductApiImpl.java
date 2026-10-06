@@ -470,7 +470,8 @@ public class ProductApiImpl implements ProductApi {
         // IFRS 17 I2: what the actuary signs off. The model is the register's, resolved when a policy is classified.
         Ifrs17Terms terms = ifrs17 != null ? ifrs17 : Ifrs17Terms.DEFAULT;
         version.applyIfrs17Terms(terms.bucket().name(),
-            terms.modelOverride() != null ? terms.modelOverride().name() : null);
+            terms.modelOverride() != null ? terms.modelOverride().name() : null,
+            terms.survivalInvestmentComponentPercent());
         // What this version will accept. Never null -- callers that state nothing pass
         // EligibilityBounds.none(), because an unbounded version is a real design.
         version.applyEligibilityBounds(bounds != null ? bounds : EligibilityBounds.none());
@@ -549,7 +550,8 @@ public class ProductApiImpl implements ProductApi {
             version.getEligibilityBounds(),
             version.getSuicideExclusionMonths(), version.getPreExistingExclusionMonths(),
             PortfolioCode.valueOf(definition.getPortfolioCode()),
-            ProfitabilityBucket.valueOf(version.getExpectedProfitabilityBucket()), modelOverride(version));
+            ProfitabilityBucket.valueOf(version.getExpectedProfitabilityBucket()), modelOverride(version),
+            version.getSurvivalInvestmentComponentPercent());
     }
 
     /**
@@ -1417,7 +1419,8 @@ public class ProductApiImpl implements ProductApi {
             // to answer a claim's question about which windows a policy's product carries.
             version.getSuicideExclusionMonths(), version.getPreExistingExclusionMonths(),
             PortfolioCode.valueOf(definition.getPortfolioCode()),
-            ProfitabilityBucket.valueOf(version.getExpectedProfitabilityBucket()), modelOverride(version));
+            ProfitabilityBucket.valueOf(version.getExpectedProfitabilityBucket()), modelOverride(version),
+            version.getSurvivalInvestmentComponentPercent());
     }
 
     /** Null for a version published since IFRS 17 I2 retired the field. */

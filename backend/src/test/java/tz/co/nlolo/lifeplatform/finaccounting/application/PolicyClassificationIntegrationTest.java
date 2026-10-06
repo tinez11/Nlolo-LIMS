@@ -63,6 +63,7 @@ class PolicyClassificationIntegrationTest {
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
+            "db-migrations/policyloan/V8__interest_month_published.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
@@ -71,7 +72,8 @@ class PolicyClassificationIntegrationTest {
             "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
             "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
-            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql");
+            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
+            "db-migrations/finaccounting/V13__disbursement_method.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

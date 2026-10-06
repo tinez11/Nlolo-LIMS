@@ -103,6 +103,8 @@ public class DistributionApiImpl implements DistributionApi {
     private final ApplicationEventPublisher eventPublisher;
 
     private final ReferenceDataApi referenceDataApi;
+    /** IFRS 17 I3b: the commission withholding rate in force (user decision 7). */
+    private final tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi finaccountingApi;
 
     public DistributionApiImpl(AgentProfileRepository agentProfileRepository,
                                 CommissionPlanRepository commissionPlanRepository,
@@ -111,7 +113,9 @@ public class DistributionApiImpl implements DistributionApi {
                                 CommissionAccrualRepository commissionAccrualRepository,
                                 PartyApi partyApi, ProductApi productApi,
                                 ApplicationEventPublisher eventPublisher,
-                                ReferenceDataApi referenceDataApi) {
+                                ReferenceDataApi referenceDataApi,
+                                tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi finaccountingApi) {
+        this.finaccountingApi = finaccountingApi;
         this.referenceDataApi = referenceDataApi;
         this.agentProfileRepository = agentProfileRepository;
         this.commissionPlanRepository = commissionPlanRepository;
@@ -559,7 +563,28 @@ public class DistributionApiImpl implements DistributionApi {
             .findByStatementIdAndTenantId(statement.getStatementId(), tenantId);
         statement.recomputeTotal(lineItems);
         commissionStatementRepository.save(statement);
+        publishCommissionAccrued(tenantId, accrual);
         return Optional.of(accrual);
+    }
+
+    /**
+     * Every accrual persisted -- a seller's first-year or renewal commission, an override, and since IFRS 17 I3b a
+     * clawback (a negative accrual with {@code reversesAccrualId}) -- published once, here, so the ledger books each:
+     * commission earned against its payable by the agent's channel (guide A-04/A-09), a clawback reversed (A-14's
+     * note). The amount carries the sign; a payload with a null is a HashMap.
+     */
+    private void publishCommissionAccrued(UUID tenantId, CommissionAccrual accrual) {
+        Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("accrualId", accrual.getAccrualId());
+        payload.put("statementId", accrual.getStatementId());
+        payload.put("agentId", accrual.getAgentId());
+        payload.put("policyNumber", accrual.getPolicyNumber());
+        payload.put("tierType", accrual.getTierType().name());
+        payload.put("salesChannel", agentProfileRepository.findByAgentIdAndTenantId(accrual.getAgentId(), tenantId)
+            .map(AgentProfile::getSalesChannel).orElse(null));
+        payload.put("reversesAccrualId", accrual.getReversesAccrualId());
+        payload.put("amount", Map.of("amount", accrual.getAmount().toPlainString(), "currencyCode", accrual.getCurrency()));
+        eventPublisher.publishEvent(DomainEventEnvelope.of("distribution.CommissionAccrued", tenantId, payload));
     }
 
     /** Finds the agent's existing statement for this exact (period, currency) -- {@code
@@ -613,6 +638,10 @@ public class DistributionApiImpl implements DistributionApi {
         // listener and looks like a request that reached the rail zero times. This also performs
         // the CLOSED/PAYOUT_FAILED -> PAYOUT_REQUESTED transition itself.
         statement.markPayoutRequested(idempotencyKey, payeeRef);
+        // IFRS 17 I3b (guide A-05, user decision 7): tax withheld at the rate in force today -- none configured, none
+        // withheld -- and the agent paid the net.
+        statement.applyWithholding(finaccountingApi.rateInForce("COMMISSION_WITHHOLDING_RATE",
+            java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"))).orElse(null));
         commissionStatementRepository.save(statement);
 
         // Matches api/asyncapi-events.yaml's CommissionPayoutRequestedPayload field-for-field.
@@ -623,7 +652,7 @@ public class DistributionApiImpl implements DistributionApi {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("statementId", statementId);
         payload.put("payeeRef", payeeRef);
-        payload.put("amount", Map.of("amount", statement.getTotalAmount().toPlainString(),
+        payload.put("amount", Map.of("amount", statement.getNetAmount().toPlainString(),
                                       "currencyCode", statement.getTotalCurrency()));
         payload.put("idempotencyKey", idempotencyKey);
         eventPublisher.publishEvent(DomainEventEnvelope.of("distribution.CommissionPayoutRequested", tenantId, payload));

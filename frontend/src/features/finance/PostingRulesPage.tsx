@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { PostingRule } from '@/api/types';
+import type { PostingRule, PostingRulesView } from '@/api/types';
 import { FormField } from '@/components/FormField';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
@@ -62,6 +62,7 @@ export function PostingRulesPage() {
         }
       />
       <div className="space-y-4 px-6 pb-6">
+        {rules.data && <RatesPanel settings={rules.data.settings} />}
         <div className="max-w-sm">
           <FormField label="Search rules">
             <Input inputSize="sm" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="A-06, 2141, refund…" />
@@ -109,5 +110,37 @@ function RuleTable({ rule }: { rule: PostingRule }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+const RATE_LABEL: Record<string, { name: string; none: string }> = {
+  COMMISSION_WITHHOLDING_RATE: { name: 'Commission withholding tax', none: 'nothing is withheld from commission' },
+  PREMIUM_LEVY_RATE: { name: 'Premium levy', none: 'no levy is posted on premiums' },
+};
+
+/**
+ * The rates the rules apply (IFRS 17 I3b), from the accounting policy register -- set there, effective-dated and
+ * approved by a second person. Never a default: one not configured is said so, plainly.
+ */
+function RatesPanel({ settings }: { settings: PostingRulesView['settings'] }) {
+  return (
+    <section className="space-y-1 rounded-lg border border-border bg-surface p-4" aria-label="Rates">
+      <p className="text-xs font-medium">Rates (set in Accounting policies)</p>
+      <ul className="text-sm">
+        {settings.map((s) => {
+          const label = RATE_LABEL[s.key] ?? { name: s.key, none: 'none posted' };
+          return (
+            <li key={s.key}>
+              <span className="font-medium">{label.name}:</span>{' '}
+              {s.value != null ? (
+                `${s.value}% from ${s.effectiveFrom ? formatDate(s.effectiveFrom) : '—'}`
+              ) : (
+                <span className="text-status-warning-fg">Not configured — {label.none}</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

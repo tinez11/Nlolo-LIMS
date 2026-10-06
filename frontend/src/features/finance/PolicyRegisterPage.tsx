@@ -20,6 +20,7 @@ import { useLedgerControlsStore } from '@/store/ledgerControlsStore';
 import {
   ELECTION_KEYS,
   ELECTION_VALUES,
+  RATE_KEYS,
   approvalSchema,
   electionSchema,
   rejectionSchema,
@@ -39,6 +40,8 @@ const KEY_LABEL: Record<ElectionKey, string> = {
   PREMIUM_BILLING: 'Premium billing',
   CONTRACT_RECOGNITION: 'Contract recognition',
   COHORT: 'Cohort',
+  COMMISSION_WITHHOLDING_RATE: 'Commission withholding rate (%)',
+  PREMIUM_LEVY_RATE: 'Premium levy rate (%)',
 };
 
 const keyLabel = (key: string) => KEY_LABEL[key as ElectionKey] ?? key;
@@ -258,6 +261,8 @@ function ProposeForm() {
         <FormField label="Value" error={form.formState.errors.value?.message}>
           {key === 'MODEL_OVERRIDE_ALLOWED' ? (
             <Input placeholder="NONE, or GMM,PAA" {...form.register('value')} />
+          ) : RATE_KEYS.includes(key) ? (
+            <Input placeholder="5, 2.5 or NONE" {...form.register('value')} />
           ) : (
             <Select {...form.register('value')}>
               <option value="">Choose…</option>

@@ -488,6 +488,13 @@ components:
             the register in force on the issue date lists it in MODEL_OVERRIDE_ALLOWED for the product's portfolio.
           type: [string, "null"]
           enum: [GMM, VFA, PAA, IFRS9, null]
+        survivalInvestmentComponentPercent:
+          description: >-
+            IFRS 17 I3b: the share (%) of each survival benefit or income instalment that is an investment component
+            (paid in all circumstances). Omitted: none -- the whole instalment is an insurance service expense.
+          type: [number, "null"]
+          minimum: 0
+          maximum: 100
         effectiveDate: { type: string, format: date }
         retirementDate: { type: [string, "null"], format: date }
         eligibility: { $ref: '#/components/schemas/EligibilityBounds' }
@@ -1279,6 +1286,9 @@ components:
           description: "Null: the accounting policy register's model applies."
           type: [string, "null"]
           enum: [GMM, VFA, PAA, IFRS9, null]
+        survivalInvestmentComponentPercent:
+          description: "IFRS 17 I3b: the investment component share (%) of a survival or income instalment; null where not set."
+          type: [number, "null"]
         gracePeriodDays: { type: integer }
         maxLoanToValuePercent: { type: number }
         category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE, FUNERAL] }

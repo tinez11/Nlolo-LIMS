@@ -20,7 +20,15 @@ public enum ElectionKey {
     RIDERS(List.of("HOST_GROUP", "SEPARATE")),
     PREMIUM_BILLING(List.of("ACCRUAL_AT_INVOICE")),
     CONTRACT_RECOGNITION(List.of("ISSUE_DATE")),
-    COHORT(List.of("ANNUAL"));
+    COHORT(List.of("ANNUAL")),
+    /**
+     * IFRS 17 I3b, user decision 7: the withholding tax rate on commission paid (posting guide A-05), a percentage such
+     * as 5 or 2.5, or NONE. Effective-dated and approved by a second person like any election. No election, or NONE,
+     * means nothing is withheld -- never a default rate.
+     */
+    COMMISSION_WITHHOLDING_RATE(List.of()),
+    /** IFRS 17 I3b, user decision 6: the premium levy rate (A-19), a percentage or NONE; none in force, no levy. */
+    PREMIUM_LEVY_RATE(List.of());
 
     private static final List<String> MODELS = List.of("GMM", "VFA", "PAA", "IFRS9");
 
@@ -43,6 +51,9 @@ public enum ElectionKey {
         if (value == null || value.isBlank()) {
             return false;
         }
+        if (isRate()) {
+            return "NONE".equals(value) || rate(value).isPresent();
+        }
         if (this == MODEL_OVERRIDE_ALLOWED) {
             if ("NONE".equals(value)) {
                 return true;
@@ -58,6 +69,29 @@ public enum ElectionKey {
     }
 
     public List<String> permittedValues() {
+        if (isRate()) {
+            return List.of("NONE");
+        }
         return this == MODEL_OVERRIDE_ALLOWED ? List.of("NONE", "GMM", "VFA", "PAA", "IFRS9") : values;
+    }
+
+    /** A rate election: its value is NONE or a percentage. */
+    public boolean isRate() {
+        return this == COMMISSION_WITHHOLDING_RATE || this == PREMIUM_LEVY_RATE;
+    }
+
+    /**
+     * A rate election's value as a fraction (5 -> 0.05): a percentage above 0 and at most 100, up to four decimal
+     * places. Empty for NONE or anything else.
+     */
+    public static Optional<java.math.BigDecimal> rate(String value) {
+        if (value == null || !value.matches("\\d{1,3}(\\.\\d{1,4})?")) {
+            return Optional.empty();
+        }
+        java.math.BigDecimal percent = new java.math.BigDecimal(value);
+        if (percent.signum() <= 0 || percent.compareTo(java.math.BigDecimal.valueOf(100)) > 0) {
+            return Optional.empty();
+        }
+        return Optional.of(percent.movePointLeft(2));
     }
 }

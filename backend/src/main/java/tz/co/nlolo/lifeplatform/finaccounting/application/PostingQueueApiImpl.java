@@ -24,7 +24,10 @@ public class PostingQueueApiImpl implements PostingQueueApi {
     private final UnpostedEvents queue;
     private final PostingEngine engine;
 
-    PostingQueueApiImpl(PostingRules rules, UnpostedEvents queue, PostingEngine engine) {
+    private final PolicyRegister register;
+
+    PostingQueueApiImpl(PostingRules rules, UnpostedEvents queue, PostingEngine engine, PolicyRegister register) {
+        this.register = register;
         this.rules = rules;
         this.queue = queue;
         this.engine = engine;
@@ -42,7 +45,17 @@ public class PostingQueueApiImpl implements PostingQueueApi {
                     .map(l -> new PostingRulesView.Line(l.side(), l.account(), names.get(l.account()), l.amount(),
                         l.movement()))
                     .toList()))
-            .toList());
+            .toList(), settings());
+    }
+
+    private List<PostingRulesView.Setting> settings() {
+        java.time.LocalDate today = java.time.LocalDate.now(LedgerEventListener.CIVIL);
+        return java.util.stream.Stream.of("COMMISSION_WITHHOLDING_RATE", "PREMIUM_LEVY_RATE")
+            .map(key -> register.inForce(key, "*", today)
+                .filter(e -> !"NONE".equals(e.value()))
+                .map(e -> new PostingRulesView.Setting(key, e.value(), e.effectiveFrom()))
+                .orElse(new PostingRulesView.Setting(key, null, null)))
+            .toList();
     }
 
     @Override

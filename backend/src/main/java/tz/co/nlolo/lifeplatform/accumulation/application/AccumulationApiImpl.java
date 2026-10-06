@@ -173,6 +173,12 @@ public class AccumulationApiImpl implements AccumulationApi {
         if (paid) {
             if (request.markPaid(disbursementId)) {
                 withdrawals.save(request);
+                // IFRS 17 I3b (guide G-04): the withdrawal left the bank; the ledger clears what the WITHDRAWAL entry
+                // made payable (2340). On the real transition only.
+                events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutPaid", TenantContext.get(), Map.of(
+                    "payoutRef", "withdrawal:" + withdrawalId, "paymentRef", withdrawalId.toString(),
+                    "policyNumber", request.getPolicyNumber(),
+                    "amount", Map.of("amount", request.getAmount().toPlainString(), "currencyCode", request.getCurrency()))));
             }
             return;
         }
@@ -599,7 +605,9 @@ public class AccumulationApiImpl implements AccumulationApi {
             "idempotencyKey", surrenderRequestId.toString(),
             "policyNumber", policyNumber,
             "payeeRef", payeeRef,
-            "amount", Map.of("amount", paid.toPlainString(), "currencyCode", account.getCurrency()))));
+            "amount", Map.of("amount", paid.toPlainString(), "currencyCode", account.getCurrency()),
+            // IFRS 17 I3b: the value before the surrender charge, so the ledger can earn the charge (7310).
+            "grossAmount", Map.of("amount", value.toPlainString(), "currencyCode", account.getCurrency()))));
     }
 
     /**

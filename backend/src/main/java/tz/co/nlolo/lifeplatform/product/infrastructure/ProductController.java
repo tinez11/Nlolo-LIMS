@@ -140,7 +140,8 @@ public class ProductController {
             request.funeral() != null ? request.funeral().toPlan() : FuneralPlan.none(),
             request.unitLinked() != null ? request.unitLinked().toPlan() : UnitLinkedPlan.none(),
             // IFRS 17 I2: both optional -- remaining contracts, and the register's model.
-            new Ifrs17Terms(request.expectedProfitabilityBucket(), request.measurementModelOverride()),
+            new Ifrs17Terms(request.expectedProfitabilityBucket(), request.measurementModelOverride(),
+                request.survivalInvestmentComponentPercent()),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }

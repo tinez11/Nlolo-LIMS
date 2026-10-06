@@ -60,12 +60,17 @@ class PostingEngine {
     private final ChartOfAccountSeeder seeder;
     private final UnpostedEvents queue;
     private final PaaEarningSchedule paa;
+    private final DisbursementMethodRecorder rails;
+    private final PolicyRegister register;
     private final MeterRegistry meters;
     private final TransactionTemplate requiresNew;
 
     PostingEngine(PostingRules rules, PolicyClassifier classifier, FinaccountingApiImpl ledger,
                   JournalEntryRepository journals, ChartOfAccountSeeder seeder, UnpostedEvents queue,
-                  PaaEarningSchedule paa, MeterRegistry meters, PlatformTransactionManager transactionManager) {
+                  PaaEarningSchedule paa, MeterRegistry meters, PlatformTransactionManager transactionManager,
+                  DisbursementMethodRecorder rails, PolicyRegister register) {
+        this.rails = rails;
+        this.register = register;
         this.rules = rules;
         this.classifier = classifier;
         this.ledger = ledger;
@@ -157,9 +162,10 @@ class PostingEngine {
         }
     }
 
-    private Result postInTransaction(UUID tenantId, PostingFacts facts, String period, PostingRuleSet set, String by,
+    private Result postInTransaction(UUID tenantId, PostingFacts raw, String period, PostingRuleSet set, String by,
                                      JournalSource source) {
         seeder.seedIfAbsent(tenantId, by);
+        PostingFacts facts = derive(tenantId, raw);
         Optional<JournalEntry> existing = journals.findByTenantIdAndSourceEventAndSourceRef(tenantId, facts.eventType(),
             facts.sourceRef());
         if (existing.isPresent()) {
@@ -178,6 +184,9 @@ class PostingEngine {
                     ? "; policy " + facts.policyNumber() + " has no IFRS 17 classification" : ""));
         }
 
+        if (!rule.get().post()) {
+            return new Result(Outcome.NOTHING_TO_POST, null, rule.get().id());
+        }
         JournalEntry entry = new JournalEntry(tenantId, facts.eventType(), facts.sourceRef(), period,
             facts.policyNumber(), by).underRuleVersion(set.versionLabel()).withSource(source);
         for (PostingRuleSet.Line line : rule.get().lines()) {
@@ -190,7 +199,7 @@ class PostingEngine {
                     + ": fact '" + line.amount() + "' is negative (" + amount.toPlainString() + "); rule "
                     + rule.get().id() + " expects a magnitude");
             }
-            entry.addLeg(line.account(), line.side(), amount, facts.currency(),
+            entry.addLeg(account(line, facts), line.side(), amount, facts.currency(),
                 dimensions(facts, line, classification.orElse(null)));
         }
         if (entry.getLegs().isEmpty()) {
@@ -206,6 +215,42 @@ class PostingEngine {
         }
         queue.resolvePosted(tenantId, facts.eventType(), facts.sourceRef(), posted.getJournalEntryId(), by);
         return new Result(Outcome.POSTED, posted.getJournalEntryId(), rule.get().id());
+    }
+
+    /**
+     * What the engine adds to an event's facts before the rules read them (IFRS 17 I3b) -- never a split, which the
+     * emitting module computes (user decision 4):
+     * <ul>
+     *   <li>{@code paymentMethod}: the rail that paid a payout, recorded from payment's completion under the payment's
+     *       source reference ({@code paymentRef});</li>
+     *   <li>{@code levy}: on a premium collected, the premium levy at the rate in force (A-19, user answer Q4) -- zero
+     *       while none is configured (decision 6), so its lines are left out.</li>
+     * </ul>
+     */
+    private PostingFacts derive(UUID tenantId, PostingFacts facts) {
+        java.util.Map<String, BigDecimal> amounts = new java.util.LinkedHashMap<>(facts.amounts());
+        java.util.Map<String, String> attributes = new java.util.LinkedHashMap<>(facts.attributes());
+        if (facts.attribute("paymentRef") != null) {
+            attributes.put("paymentMethod", rails.methodOf(tenantId, facts.attribute("paymentRef"))
+                .orElse(DisbursementMethodRecorder.MOBILE_MONEY));
+        }
+        if ("billing.PremiumCollected".equals(facts.eventType())) {
+            BigDecimal rate = register.inForce("PREMIUM_LEVY_RATE", "*", facts.eventDate())
+                .flatMap(e -> tz.co.nlolo.lifeplatform.finaccounting.domain.ElectionKey.rate(e.value()))
+                .orElse(BigDecimal.ZERO);
+            amounts.put("levy", facts.amount(PostingFactsExtractor.AMOUNT).multiply(rate)
+                .setScale(2, java.math.RoundingMode.HALF_EVEN));
+        }
+        return new PostingFacts(facts.eventType(), facts.sourceRef(), facts.policyNumber(), facts.currency(),
+            facts.eventDate(), amounts, attributes);
+    }
+
+    /** The line's account; BANK is the rail's -- 1130 for a bank transfer, 1140 for mobile money (user answer Q3). */
+    private static String account(PostingRuleSet.Line line, PostingFacts facts) {
+        if (!PostingRuleSet.BANK.equals(line.account())) {
+            return line.account();
+        }
+        return "EFT".equals(facts.attribute("paymentMethod")) ? PostingRuleSet.BANK_EFT : PostingRuleSet.BANK_MOBILE_MONEY;
     }
 
     private static LineDimensions dimensions(PostingFacts facts, PostingRuleSet.Line line,

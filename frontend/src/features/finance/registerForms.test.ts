@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ELECTION_VALUES,
+  permits,
   approvalSchema,
   electionSchema,
   rejectionSchema,
@@ -46,7 +47,7 @@ describe('electionSchema', () => {
   });
 
   it('lists every key the server knows', () => {
-    expect(Object.keys(ELECTION_VALUES)).toHaveLength(10);
+    expect(Object.keys(ELECTION_VALUES)).toHaveLength(12); // ElectionKey.java, the two I3b rates included
     expect(ELECTION_VALUES.MEASUREMENT_MODEL).toEqual(['GMM', 'VFA', 'PAA', 'IFRS9']);
   });
 });
@@ -65,5 +66,16 @@ describe('the decision forms', () => {
 
   it('reopening a locked period needs a reason', () => {
     expect(errorsOf(reopenSchema.safeParse({ reason: ' ' })).reason).toBe('Reopening a locked period needs a reason');
+  });
+});
+
+describe('rate elections (IFRS 17 I3b)', () => {
+  it('take NONE or a percentage above 0 and at most 100, as the server does', () => {
+    expect(permits('COMMISSION_WITHHOLDING_RATE', 'NONE')).toBe(true);
+    expect(permits('COMMISSION_WITHHOLDING_RATE', '5')).toBe(true);
+    expect(permits('PREMIUM_LEVY_RATE', '2.5')).toBe(true);
+    expect(permits('PREMIUM_LEVY_RATE', '0')).toBe(false);
+    expect(permits('PREMIUM_LEVY_RATE', '101')).toBe(false);
+    expect(permits('PREMIUM_LEVY_RATE', 'five')).toBe(false);
   });
 });

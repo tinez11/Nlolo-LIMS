@@ -72,6 +72,7 @@ class PostingEngineIntegrationTest {
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
+            "db-migrations/policyloan/V8__interest_month_published.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
@@ -80,7 +81,8 @@ class PostingEngineIntegrationTest {
             "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
             "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
-            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql");
+            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
+            "db-migrations/finaccounting/V13__disbursement_method.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -122,7 +124,7 @@ class PostingEngineIntegrationTest {
             assertThat(l.get("reference_type")).isEqualTo("INVOICE");
             assertThat(l.get("reference")).isEqualTo(gmmInvoice.toString());
         });
-        assertThat(journal(tenant, gmmInvoice.toString()).get("rule_version")).isEqualTo("posting-rules v1");
+        assertThat(journal(tenant, gmmInvoice.toString()).get("rule_version")).isEqualTo("posting-rules v2");
 
         assertThat(lines(tenant, paaInvoice.toString())).extracting(l -> l.get("account_code") + " " + l.get("direction"))
             .containsExactlyInAnyOrder("2142 DR", "2141 CR");
@@ -245,6 +247,116 @@ class PostingEngineIntegrationTest {
             "amount", Map.of("amount", "36500.00", "currencyCode", "TZS")));
         earn(tenant, "POL-ENG-EARN", LocalDate.of(2026, 3, 31));
         assertThat(revenue(tenant)).as("nothing left to earn after the waiver").isEqualByComparingTo("5900.00");
+    }
+
+    // ---- IFRS 17 I3b ----------------------------------------------------------------------------------------------
+
+    @Test
+    void aClaimIsBookedAtApprovalAndPaidOutOfTheRailThatPaidIt() {
+        UUID tenant = UUID.randomUUID();
+        issue(tenant, "POL-ENG-CLM", "END", null, "DIRECT", "DSM");
+        UUID byBank = UUID.randomUUID();
+        UUID byWallet = UUID.randomUUID();
+        for (UUID claim : List.of(byBank, byWallet)) {
+            publish(tenant, "claims.ClaimApproved", Map.of("claimId", claim, "policyNumber", "POL-ENG-CLM",
+                "approvedAmount", money("24000.00"), "investmentComponent", "9000.00"));
+        }
+        // payment says how the first went; the second's completion was never recorded, so it reads as mobile money.
+        publish(tenant, "payment.DisbursementCompleted", Map.of("disbursementId", UUID.randomUUID(),
+            "purpose", "CLAIM_SETTLEMENT", "sourceRef", byBank.toString(), "method", "EFT",
+            "amount", money("24000.00")));
+        for (UUID claim : List.of(byBank, byWallet)) {
+            publish(tenant, "claims.ClaimSettled", Map.of("claimId", claim, "policyNumber", "POL-ENG-CLM",
+                "settledAmount", money("24000.00")));
+        }
+
+        assertThat(legs(tenant, "claims.ClaimApproved", byBank.toString()))
+            .containsExactlyInAnyOrder("5110 DR 15000.00", "2124 DR 9000.00", "2211 CR 24000.00");
+        assertThat(legs(tenant, "claims.ClaimSettled", byBank.toString()))
+            .containsExactlyInAnyOrder("2211 DR 24000.00", "1130 CR 24000.00");
+        assertThat(legs(tenant, "claims.ClaimSettled", byWallet.toString()))
+            .containsExactlyInAnyOrder("2211 DR 24000.00", "1140 CR 24000.00");
+        assertThat(open(tenant)).isEmpty();
+    }
+
+    @Test
+    void aPayoutIsPayableWhenDueSplitByItsInvestmentComponentAndClearedNetOfTaxWhenPaid() {
+        UUID tenant = UUID.randomUUID();
+        issue(tenant, "POL-ENG-MB", "MB", null, "AGENT", "ARU");
+        publish(tenant, "benefitpayout.PayoutRequested", Map.of("instalmentId", "INS-1", "policyNumber", "POL-ENG-MB",
+            "purpose", "SURVIVAL_BENEFIT_PAYOUT", "amount", money("1800.00"), "kind", "SURVIVAL",
+            "grossAmount", "2000.00", "withheldAmount", "200.00", "investmentComponent", "1600.00"));
+        publish(tenant, "benefitpayout.PayoutPaid", Map.of("instalmentId", "INS-1", "policyNumber", "POL-ENG-MB",
+            "kind", "SURVIVAL", "paidAmount", money("1800.00"), "grossAmount", money("2000.00"),
+            "withheldAmount", money("200.00")));
+
+        assertThat(legs(tenant, "benefitpayout.PayoutRequested", "INS-1"))
+            .containsExactlyInAnyOrder("2124 DR 1600.00", "5115 DR 400.00", "2214 CR 2000.00");
+        assertThat(legs(tenant, "benefitpayout.PayoutPaid", "INS-1"))
+            .containsExactlyInAnyOrder("2214 DR 2000.00", "1140 CR 1800.00", "2615 CR 200.00");
+    }
+
+    @Test
+    void commissionIsEarnedAgainstItsChannelsPayableAndPaidNetOfTheTaxWithheld() {
+        UUID tenant = UUID.randomUUID();
+        issue(tenant, "POL-ENG-COM", "TERM", null, "AGENT", "DSM");
+        UUID accrual = UUID.randomUUID();
+        UUID statement = UUID.randomUUID();
+        publish(tenant, "distribution.CommissionAccrued", Map.of("accrualId", accrual, "statementId", statement,
+            "agentId", UUID.randomUUID(), "policyNumber", "POL-ENG-COM", "tierType", "FIRST_YEAR",
+            "salesChannel", "AGENT", "amount", money("240000.00")));
+        publish(tenant, "distribution.CommissionPaid", Map.of("statementId", statement, "amount", money("240000.00"),
+            "withheldAmount", "12000.00", "paidAmount", "228000.00", "salesChannel", "AGENT"));
+
+        assertThat(legs(tenant, "distribution.CommissionAccrued", accrual.toString()))
+            .containsExactlyInAnyOrder("2123 DR 240000.00", "2510 CR 240000.00");
+        assertThat(lines(tenant, accrual.toString())).filteredOn(l -> "2123".equals(l.get("account_code")))
+            .extracting(l -> l.get("movement_type")).containsExactly("IACF_COM");
+        assertThat(legs(tenant, "distribution.CommissionPaid", statement.toString()))
+            .containsExactlyInAnyOrder("2510 DR 240000.00", "1140 CR 228000.00", "2610 CR 12000.00");
+    }
+
+    @Test
+    void thePremiumLevyPostsOnlyOnceFinanceHasApprovedARate() {
+        UUID tenant = UUID.randomUUID();
+        issue(tenant, "POL-ENG-LEVY", "TERM", null, "DIRECT", "DSM");
+        UUID before = UUID.randomUUID();
+        publish(tenant, "billing.PremiumCollected", Map.of("invoiceId", before, "policyNumber", "POL-ENG-LEVY",
+            "amount", money("1000.00")));
+        assertThat(legs(tenant, "billing.PremiumCollected", before.toString()))
+            .as("no rate configured: no levy").containsExactlyInAnyOrder("1140 DR 1000.00", "2122 CR 1000.00");
+
+        TenantContext.set(tenant);
+        var proposed = api.proposePolicyElection(new tz.co.nlolo.lifeplatform.finaccounting.api.PolicyElectionInput(
+            "PREMIUM_LEVY_RATE", "*", "1.5", LocalDate.now(ZoneId.of("Africa/Dar_es_Salaam")), "TIRA levy"), "finance-one");
+        api.approvePolicyElection(proposed.electionId(), "Board minute 3/2026", "finance-two");
+
+        UUID after = UUID.randomUUID();
+        publish(tenant, "billing.PremiumCollected", Map.of("invoiceId", after, "policyNumber", "POL-ENG-LEVY",
+            "amount", money("1000.00")));
+        assertThat(legs(tenant, "billing.PremiumCollected", after.toString())).containsExactlyInAnyOrder(
+            "1140 DR 1000.00", "2122 CR 1000.00", "5220 DR 15.00", "2650 CR 15.00");
+    }
+
+    @Test
+    void anIfrs9ContractsInvoicePostsNothingAndQueuesNothing() {
+        UUID tenant = UUID.randomUUID();
+        issue(tenant, "POL-ENG-SAV", "SAV", null, "DIRECT", "DSM");
+        UUID invoiceId = invoice(tenant, "POL-ENG-SAV", "500.00", null);
+        assertThat(lines(tenant, invoiceId.toString())).isEmpty();
+        assertThat(open(tenant)).isEmpty();
+    }
+
+    /** The legs of one journal, as "account DIRECTION amount". */
+    private List<String> legs(UUID tenant, String sourceEvent, String sourceRef) {
+        TenantContext.set(tenant);
+        return jdbc.queryForList("SELECT account_code, direction, amount FROM finaccounting.gl_posting"
+                + " WHERE source_event = ? AND source_ref = ?", sourceEvent, sourceRef).stream()
+            .map(l -> l.get("account_code") + " " + l.get("direction") + " " + l.get("amount")).toList();
+    }
+
+    private static Map<String, Object> money(String amount) {
+        return Map.of("amount", amount, "currencyCode", "TZS");
     }
 
     // ---- helpers --------------------------------------------------------------------------------------------------

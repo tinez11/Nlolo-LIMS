@@ -134,6 +134,7 @@ export function PublishVersionForm({
     defaultValues: {
       expectedProfitabilityBucket: 'REMAINING',
       measurementModelOverride: '',
+      survivalInvestmentComponentPercent: '',
       effectiveDate: '',
       retirementDate: '',
       // A FUNERAL version carries no rating factors (plan R1); every other starts with the two required.
@@ -265,6 +266,14 @@ export function PublishVersionForm({
               </option>
             ))}
           </Select>
+        </FormField>
+        {/* IFRS 17 I3b: set by the actuary; only a version paying survival benefits or income instalments uses it. */}
+        <FormField
+          label="Survival benefit investment component (%)"
+          hint="The share of each survival or income instalment paid in all circumstances. Blank: none."
+          error={errors.survivalInvestmentComponentPercent?.message}
+        >
+          <Input inputMode="decimal" placeholder="e.g. 80" {...register('survivalInvestmentComponentPercent')} />
         </FormField>
         <FormField label="Effective date" error={errors.effectiveDate?.message}>
           <Controller

@@ -102,6 +102,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/product/V27__ifrs17_classification.sql",
+            "db-migrations/product/V28__survival_investment_component.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -150,6 +151,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/distribution/V3__rls_fail_closed.sql",
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
+            "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");
