@@ -175,6 +175,7 @@ class ReinsuranceContractTest {
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
             "db-migrations/reinsurance/V4__projection_product_category.sql",
+            "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -199,6 +200,7 @@ class ReinsuranceContractTest {
     @Autowired private PolicyApi policyApi;
     @Autowired private ClaimsApi claimsApi;
     @Autowired private ReinsuranceApi reinsuranceApi;
+    @Autowired private tz.co.nlolo.lifeplatform.reinsurance.application.BordereauJob bordereauJob;
 
     @AfterEach
     void resetAfterEach() {
@@ -316,17 +318,10 @@ class ReinsuranceContractTest {
         return claimId;
     }
 
-    private UUID recoveryIdFor(UUID tenantId, UUID claimId) {
-        TenantContext.set(tenantId);
-        UUID recoveryId = reinsuranceApi.listRecoveriesForClaim(claimId).get(0).recoveryId();
-        TenantContext.clear();
-        return recoveryId;
-    }
-
     private static String quotaShareTreatyBody(String reinsurerName, String cessionPercent, LocalDate effectiveFrom) {
         return """
             {"reinsurerName":"%s","treatyType":"QUOTA_SHARE","retentionLimit":{"amount":"0.00","currencyCode":"TZS"},
-             "cessionPercent":"%s","effectiveFrom":"%s"}
+             "cessionPercent":"%s","commissionPercent":"0","effectiveFrom":"%s"}
             """.formatted(reinsurerName, cessionPercent, effectiveFrom);
     }
 
@@ -359,7 +354,7 @@ class ReinsuranceContractTest {
                 .content("""
                     {"reinsurerName":"Africa Re","treatyType":"QUOTA_SHARE",
                      "retentionLimit":{"amount":"0.00","currencyCode":"TZS"},
-                     "effectiveFrom":"%s"}
+                     "commissionPercent":"0","effectiveFrom":"%s"}
                     """.formatted(LocalDate.now().minusMonths(1))))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
@@ -376,11 +371,50 @@ class ReinsuranceContractTest {
                 .content("""
                     {"reinsurerName":"Africa Re","treatyType":"SURPLUS",
                      "retentionLimit":{"amount":"500000.00","currencyCode":"TZS"},
-                     "cessionPercent":"30.00","effectiveFrom":"%s"}
+                     "cessionPercent":"30.00","commissionPercent":"0","effectiveFrom":"%s"}
                     """.formatted(LocalDate.now().minusMonths(1))))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.errorCode").value("REINSURANCE_VALIDATION_FAILED"));
+    }
+
+    /** IFRS 17 I3c (user answer Q3): every treaty states its commission not contingent on claims -- 0 is an answer,
+     * silence is not. */
+    @Test
+    void createTreatyReturns400WhenTheCommissionPercentIsMissing() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        // Spec-invalid (commissionPercent is required), so no isValid matcher.
+        mockMvc.perform(post("/treaties").with(financeStaffOf(tenantId))
+                .header("Idempotency-Key", "ct-treaty-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"reinsurerName":"Africa Re","treatyType":"QUOTA_SHARE",
+                     "retentionLimit":{"amount":"0.00","currencyCode":"TZS"},
+                     "cessionPercent":"30.00","effectiveFrom":"%s"}
+                    """.formatted(LocalDate.now().minusMonths(1))))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void createTreatyReturns201ForAnXolTreatyWithItsAnnualPremiumAndCommission() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        mockMvc.perform(post("/treaties").with(financeStaffOf(tenantId))
+                .header("Idempotency-Key", "ct-treaty-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"reinsurerName":"Munich Re","treatyType":"XOL",
+                     "retentionLimit":{"amount":"1500000.00","currencyCode":"TZS"},
+                     "commissionPercent":"12.50","xolAnnualPremium":"120000.00","effectiveFrom":"%s"}
+                    """.formatted(LocalDate.now().minusMonths(1))))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "TreatyView"))
+            .andExpect(jsonPath("$.commissionPercent").value("12.50"))
+            .andExpect(jsonPath("$.xolAnnualPremium.amount").value("120000.00"))
+            .andExpect(jsonPath("$.xolAnnualPremium.currencyCode").value("TZS"));
     }
 
     /**
@@ -548,81 +582,83 @@ class ReinsuranceContractTest {
             .andExpect(jsonPath("$[0].confirmedAt").doesNotExist());
     }
 
-    // ============================================================================================
-    // POST /claims/{claimId}/recoveries/{recoveryId}/confirm
-    // ============================================================================================
-
+    /** IFRS 17 I3c: there is no Confirm -- a recovery is posted when its claim is approved (B-05). */
     @Test
-    void confirmRecoveryReturns202AndThenReturns409OnASecondConfirm() throws Exception {
+    void thereIsNoRecoveryConfirmation() throws Exception {
         UUID tenantId = UUID.randomUUID();
-        UUID claimId = recoveryFixture(tenantId, "CONFIRM");
-        UUID recoveryId = recoveryIdFor(tenantId, claimId);
-
-        mockMvc.perform(post("/claims/{claimId}/recoveries/{recoveryId}/confirm", claimId, recoveryId)
+        mockMvc.perform(post("/claims/{claimId}/recoveries/{recoveryId}/confirm", UUID.randomUUID(), UUID.randomUUID())
                 .with(financeStaffOf(tenantId))
                 .header("Idempotency-Key", "ct-confirm-" + UUID.randomUUID()))
-            .andExpect(status().isAccepted())
-            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
-            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "ClaimRecoveryView"))
-            .andExpect(jsonPath("$.recoveryId").value(recoveryId.toString()))
-            .andExpect(jsonPath("$.confirmedAt").exists());
-
-        // The repeat confirm: ClaimRecovery.confirm throws InvalidRecoveryStateException on a
-        // non-genuine transition, mapped to 409 -- this is the regression guard against a second
-        // reinsurance.RecoveryConfirmed (M6's I1 finding, a duplicate finaccounting journal entry).
-        mockMvc.perform(post("/claims/{claimId}/recoveries/{recoveryId}/confirm", claimId, recoveryId)
-                .with(financeStaffOf(tenantId))
-                .header("Idempotency-Key", "ct-confirm-" + UUID.randomUUID()))
-            .andExpect(status().isConflict())
-            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
-            .andExpect(jsonPath("$.errorCode").value("REINSURANCE_INVALID_STATE"));
+            .andExpect(result -> assertThat(result.getResponse().getStatus()).isIn(404, 405));
     }
 
-    /**
-     * Regression test for {@code RecoveryController.confirmRecovery}'s IDOR fix: the path nests
-     * {@code recoveryId} under {@code claimId}, but {@code ReinsuranceApi.confirmRecovery} takes no
-     * {@code claimId} at all -- it is a pure, tenant-scoped, claim-agnostic recovery-id lookup.
-     * Seeds TWO real claims, each with its own real recovery (never an outright-nonexistent id,
-     * which would 404 even with the IDOR bug present and prove nothing) so a broken check that
-     * trusts the path nesting would return 202 here rather than an incidental 404.
-     */
-    @Test
-    void confirmRecoveryReturns404WhenTheRecoveryBelongsToADifferentClaim() throws Exception {
-        UUID tenantId = UUID.randomUUID();
-        UUID claimA = recoveryFixture(tenantId, "IDOR-A");
-        UUID claimB = recoveryFixture(tenantId, "IDOR-B");
-        UUID recoveryIdB = recoveryIdFor(tenantId, claimB);
+    // ============================================================================================
+    // GET /treaties/{treatyId}/bordereaux, /treaties/{treatyId}/bordereau-preview, /bordereaux/{id}
+    // ============================================================================================
 
-        mockMvc.perform(post("/claims/{claimId}/recoveries/{recoveryId}/confirm", claimA, recoveryIdB)
-                .with(financeStaffOf(tenantId))
-                .header("Idempotency-Key", "ct-confirm-idor-" + UUID.randomUUID()))
+    /** A ceded, claimed policy: the preview of the current month carries a premium line and a recovery line, so every
+     * nullable field of a line is exercised against the spec. */
+    @Test
+    void theCurrentMonthsPreviewReturns200WithItsLinesAndNoId() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        recoveryFixture(tenantId, "BDX-PREVIEW");
+        TenantContext.set(tenantId);
+        UUID treatyId = reinsuranceApi.listTreaties(null).get(0).treatyId();
+        TenantContext.clear();
+
+        mockMvc.perform(get("/treaties/{treatyId}/bordereau-preview", treatyId).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "BordereauView"))
+            .andExpect(jsonPath("$.bordereauId").doesNotExist())
+            .andExpect(jsonPath("$.policyCount").value(1))
+            .andExpect(jsonPath("$.premium").value("50000.00"))
+            .andExpect(jsonPath("$.recoveries").value("1000000.00"))
+            .andExpect(jsonPath("$.lines.length()").value(2));
+    }
+
+    @Test
+    void aWrittenBordereauIsListedAndReadable() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID treatyId = createTreaty(tenantId, TreatyType.QUOTA_SHARE, new BigDecimal("0.00"), new BigDecimal("30.00"));
+        // The treaty took effect last month, so the job has one closed month to write.
+        bordereauJob.drain(LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")).withDayOfMonth(1));
+        String lastMonth = java.time.YearMonth.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")).minusMonths(1).toString();
+
+        String body = mockMvc.perform(get("/treaties/{treatyId}/bordereaux", treatyId).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "BordereauView"))
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].period").value(lastMonth))
+            .andReturn().getResponse().getContentAsString();
+        String bordereauId = com.jayway.jsonpath.JsonPath.read(body, "$[0].bordereauId");
+
+        mockMvc.perform(get("/bordereaux/{bordereauId}", bordereauId).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.bordereauId").value(bordereauId))
+            .andExpect(jsonPath("$.premium").value("0.00"));
+
+        // Another tenant gets a 404, never the row.
+        mockMvc.perform(get("/bordereaux/{bordereauId}", bordereauId).with(financeStaffOf(UUID.randomUUID())))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("BORDEREAU_NOT_FOUND"));
+    }
+
+    @Test
+    void aMalformedPreviewPeriodIs400AndUnderwritersAreForbidden() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID treatyId = createTreaty(tenantId, TreatyType.QUOTA_SHARE, new BigDecimal("0.00"), new BigDecimal("30.00"));
+
+        mockMvc.perform(get("/treaties/{treatyId}/bordereau-preview", treatyId).param("period", "2026-13")
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/treaties/{treatyId}/bordereaux", treatyId).with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/treaties/{treatyId}/bordereaux", UUID.randomUUID()).with(financeStaffOf(tenantId)))
             .andExpect(status().isNotFound())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
-            .andExpect(jsonPath("$.errorCode").value("RECOVERY_NOT_FOUND"));
-
-        // And claim B's recovery must be untouched -- still unconfirmed, not silently consumed by
-        // the mismatched request against claim A's path.
-        TenantContext.set(tenantId);
-        assertThat(reinsuranceApi.listRecoveriesForClaim(claimB).get(0).confirmedAt()).isNull();
-        TenantContext.clear();
-    }
-
-    @Test
-    void confirmRecoveryReturns400WhenTheIdempotencyKeyIsMissing() throws Exception {
-        UUID tenantId = UUID.randomUUID();
-        UUID claimId = recoveryFixture(tenantId, "NOKEY");
-        UUID recoveryId = recoveryIdFor(tenantId, claimId);
-
-        // Spec-invalid request (the header is declared required), so no isValid matcher here.
-        mockMvc.perform(post("/claims/{claimId}/recoveries/{recoveryId}/confirm", claimId, recoveryId)
-                .with(financeStaffOf(tenantId)))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"));
-
-        // Must be untouched -- a 400 that had already confirmed the recovery would be worse than
-        // no validation at all.
-        TenantContext.set(tenantId);
-        assertThat(reinsuranceApi.listRecoveriesForClaim(claimId).get(0).confirmedAt()).isNull();
-        TenantContext.clear();
+            .andExpect(jsonPath("$.errorCode").value("TREATY_NOT_FOUND"));
     }
 }

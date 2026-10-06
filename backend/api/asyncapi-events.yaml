@@ -638,13 +638,19 @@ channels:
     publish:
       message: { $ref: '#/components/messages/CessionRecorded' }
   reinsurance.RecoveryCalculated:
-    description: "Producer: reinsurance. Consumers: finaccounting, audit."
+    description: >-
+      Producer: reinsurance, on claims.ClaimApproved (IFRS 17 I3c). Consumers: finaccounting (B-05: Dr 1420 / Cr 6120,
+      against the policy's IFRS 17 dimensions), audit. Replaces reinsurance.RecoveryConfirmed: there is no staff
+      Confirm -- the amount is agreed with the reinsurer on its statement.
     publish:
       message: { $ref: '#/components/messages/RecoveryCalculated' }
-  reinsurance.RecoveryConfirmed:
-    description: "Producer: reinsurance. Consumers: finaccounting (posts a journal entry, DR 1300/CR 5000), audit."
+  reinsurance.BordereauPosted:
+    description: >-
+      Producer: reinsurance's month-end bordereau job (IFRS 17 I3c), one per treaty and month. Consumers: finaccounting
+      (K-01 Dr 1436 / Cr 1430 premium; K-02 Dr 1431 / Cr 1436 commission not contingent on claims -- dated the month's
+      last day), audit. Not published for a month that charged nothing.
     publish:
-      message: { $ref: '#/components/messages/RecoveryConfirmed' }
+      message: { $ref: '#/components/messages/BordereauPosted' }
 
   finaccounting.GlPostingRecorded:
     description: >-
@@ -907,7 +913,7 @@ components:
     EftDisbursementExecuted: { messageId: EftDisbursementExecuted, name: EftDisbursementExecuted, payload: { $ref: '#/components/schemas/EftDisbursementLedgerPayload' } }
     CessionRecorded: { messageId: CessionRecorded, name: CessionRecorded, payload: { $ref: '#/components/schemas/CessionRecordedPayload' } }
     RecoveryCalculated: { messageId: RecoveryCalculated, name: RecoveryCalculated, payload: { $ref: '#/components/schemas/RecoveryCalculatedPayload' } }
-    RecoveryConfirmed: { messageId: RecoveryConfirmed, name: RecoveryConfirmed, payload: { $ref: '#/components/schemas/RecoveryConfirmedPayload' } }
+    BordereauPosted: { messageId: BordereauPosted, name: BordereauPosted, payload: { $ref: '#/components/schemas/BordereauPostedPayload' } }
     GlPostingRecorded: { messageId: GlPostingRecorded, name: GlPostingRecorded, payload: { $ref: '#/components/schemas/GlPostingRecordedPayload' } }
     CsmRolledForward: { messageId: CsmRolledForward, name: CsmRolledForward, payload: { $ref: '#/components/schemas/CsmRolledForwardPayload' } }
     NotificationDispatched: { messageId: NotificationDispatched, name: NotificationDispatched, payload: { $ref: '#/components/schemas/NotificationDispatchedPayload' } }
@@ -1676,12 +1682,13 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { recoveryId: {type: string, format: uuid}, claimId: {type: string, format: uuid}, treatyId: {type: string, format: uuid}, recoverableAmount: {type: object} }
-    RecoveryConfirmedPayload:
+          properties: { recoveryId: {type: string, format: uuid}, claimId: {type: string, format: uuid}, policyNumber: {type: string}, treatyId: {type: string, format: uuid}, recoverableAmount: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}} }
+    BordereauPostedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { recoveryId: {type: string, format: uuid}, confirmedAt: {type: string, format: date-time}, amount: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}} }
+          required: [bordereauId, treatyId, period, premium, commission]
+          properties: { bordereauId: {type: string, format: uuid}, treatyId: {type: string, format: uuid}, reinsurerName: {type: string}, period: {type: string, description: "YYYY-MM"}, policyCount: {type: integer}, premium: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}}, commission: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}} }
 
     GlPostingRecordedPayload:
       description: >-

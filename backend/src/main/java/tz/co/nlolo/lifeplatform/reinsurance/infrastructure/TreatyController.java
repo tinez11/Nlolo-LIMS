@@ -57,6 +57,8 @@ public class TreatyController {
             request.reinsurerName(), request.treatyType(),
             new BigDecimal(request.retentionLimit().amount()), request.retentionLimit().currencyCode(),
             request.cessionPercent() == null ? null : new BigDecimal(request.cessionPercent()),
+            new BigDecimal(request.commissionPercent()),
+            request.xolAnnualPremium() == null ? null : new BigDecimal(request.xolAnnualPremium()),
             request.effectiveFrom(), request.effectiveTo()), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(TreatyResponseDto.from(view));
     }

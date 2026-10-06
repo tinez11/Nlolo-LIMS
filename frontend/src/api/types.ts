@@ -243,6 +243,9 @@ export type CessionView = ReinsuranceComponents['schemas']['CessionView'];
 /** A treaty's own totals. Count plus two money figures, never a percentage -- see the endpoint. */
 export type TreatyUtilisationView = ReinsuranceComponents['schemas']['TreatyUtilisationView'];
 export type ClaimRecoveryView = ReinsuranceComponents['schemas']['ClaimRecoveryView'];
+/** IFRS 17 I3c: one treaty's month -- the ceded premium and commission it posts, the recoveries it only matches. */
+export type BordereauView = ReinsuranceComponents['schemas']['BordereauView'];
+export type BordereauLine = ReinsuranceComponents['schemas']['BordereauLine'];
 
 export const TREATY_TYPES: readonly TreatyType[] = ['QUOTA_SHARE', 'SURPLUS', 'XOL'];
 export const TREATY_STATUSES: readonly TreatyStatus[] = ['ACTIVE', 'EXPIRED'];

@@ -1,20 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import type { ClaimRecoveryView } from '@/api/types';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
-import { InlineError } from '@/components/InlineError';
-import { Button } from '@/components/ui/button';
 import { formatInstant } from '@/lib/dates';
-import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
-import { selectConfirmingRecovery, selectRecoveries, useReinsuranceStore } from '@/store/reinsuranceStore';
+import { selectRecoveries, useReinsuranceStore } from '@/store/reinsuranceStore';
 
 /**
- * `GET /claims/{claimId}/recoveries` -- read-only line items, plus
- * `POST .../confirm` (staff FINANCE_OFFICER/ADMIN) for whichever are still
- * pending (`confirmedAt === null`). A recovery is entirely event-derived
- * (`RecoveryCalculator` runs off `claims.ClaimSettled`) -- confirming one only
- * records that the reinsurer actually paid; there is no un-confirm.
+ * `GET /claims/{claimId}/recoveries` -- read-only. Since IFRS 17 I3c a recovery is calculated and posted when the
+ * claim is APPROVED (guide B-05: Dr 1420 / Cr 6120) on the insured part of the claim, and the amount is agreed with
+ * the reinsurer on its statement -- there is no Confirm. `confirmedAt` is set only on recoveries from before, when
+ * staff confirmed them, and is shown for that history.
  */
 export function RecoveriesPanel({ claimId }: { claimId: string }) {
   const loadRecoveries = useReinsuranceStore((s) => s.loadRecoveries);
@@ -40,23 +36,13 @@ export function RecoveriesPanel({ claimId }: { claimId: string }) {
   return (
     <ul className="space-y-2 px-4 pb-4">
       {rows.map((r) => (
-        <RecoveryRow key={r.recoveryId} claimId={claimId} recovery={r} />
+        <RecoveryRow key={r.recoveryId} recovery={r} />
       ))}
     </ul>
   );
 }
 
-function RecoveryRow({ claimId, recovery }: { claimId: string; recovery: ClaimRecoveryView }) {
-  const confirmRecovery = useReinsuranceStore((s) => s.confirmRecovery);
-  const resetConfirmRecovery = useReinsuranceStore((s) => s.resetConfirmRecovery);
-  const confirming = useReinsuranceStore(selectConfirmingRecovery(recovery.recoveryId));
-  const [attempt] = useState<MutationAttempt>(() => startMutation());
-
-  useEffect(() => {
-    resetConfirmRecovery(recovery.recoveryId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recovery.recoveryId]);
-
+function RecoveryRow({ recovery }: { recovery: ClaimRecoveryView }) {
   return (
     <li className="rounded-md border border-border p-2.5 text-xs">
       <div className="flex items-center justify-between">
@@ -65,28 +51,11 @@ function RecoveryRow({ claimId, recovery }: { claimId: string; recovery: ClaimRe
         </span>
         <span className="font-medium">{formatMoney(recovery.recoverableAmount)}</span>
       </div>
-
-      {recovery.confirmedAt ? (
-        <p className="mt-1 text-xs text-status-success-fg">
-          Confirmed {formatInstant(recovery.confirmedAt)}
-        </p>
-      ) : (
-        <div className="mt-1.5">
-          <Button
-            size="sm"
-            variant="outline"
-            pending={confirming.status === 'loading'}
-            onClick={() => void confirmRecovery(claimId, recovery.recoveryId, attempt)}
-          >
-            Confirm recovery
-          </Button>
-          {confirming.status === 'error' && confirming.error && (
-            <div className="mt-1">
-              <InlineError error={confirming.error} />
-            </div>
-          )}
-        </div>
-      )}
+      <p className="mt-1 text-xs text-muted-foreground">
+        {recovery.confirmedAt
+          ? `Confirmed ${formatInstant(recovery.confirmedAt)}`
+          : 'Posted at approval -- agreed with the reinsurer on its statement'}
+      </p>
     </li>
   );
 }

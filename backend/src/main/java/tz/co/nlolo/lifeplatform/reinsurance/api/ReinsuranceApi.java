@@ -18,9 +18,24 @@ import java.util.UUID;
  */
 public interface ReinsuranceApi {
 
+    /**
+     * {@code commissionPercent} (IFRS 17 I3c, K-02): the reinsurer's commission not contingent on claims, stated on
+     * every treaty -- 0 is a real answer, null is refused. {@code xolAnnualPremium}: an XOL treaty's flat yearly
+     * premium, charged 1/12 a month; XOL only, optional.
+     */
     record CreateTreatyRequest(String reinsurerName, TreatyType treatyType,
                                 BigDecimal retentionLimitAmount, String retentionLimitCurrency,
-                                BigDecimal cessionPercent, LocalDate effectiveFrom, LocalDate effectiveTo) {}
+                                BigDecimal cessionPercent, BigDecimal commissionPercent, BigDecimal xolAnnualPremium,
+                                LocalDate effectiveFrom, LocalDate effectiveTo) {
+
+        /** A treaty with no reinsurance commission and no XOL premium -- what a caller predating I3c meant. */
+        public CreateTreatyRequest(String reinsurerName, TreatyType treatyType, BigDecimal retentionLimitAmount,
+                                   String retentionLimitCurrency, BigDecimal cessionPercent, LocalDate effectiveFrom,
+                                   LocalDate effectiveTo) {
+            this(reinsurerName, treatyType, retentionLimitAmount, retentionLimitCurrency, cessionPercent,
+                BigDecimal.ZERO, null, effectiveFrom, effectiveTo);
+        }
+    }
 
     TreatyView createTreaty(CreateTreatyRequest request, String createdBy);
     TreatyView getTreaty(UUID treatyId);
@@ -48,9 +63,21 @@ public interface ReinsuranceApi {
      * too small, always plausible.
      */
     TreatyUtilisationView getTreatyUtilisation(UUID treatyId);
+    /**
+     * A claim's recoveries. Since IFRS 17 I3c each is calculated and posted when the claim is approved (B-05); there
+     * is no Confirm -- the amount is agreed with the reinsurer on its statement.
+     */
     List<ClaimRecoveryView> listRecoveriesForClaim(UUID claimId);
 
-    /** Stamps {@code confirmed_at} and publishes {@code reinsurance.RecoveryConfirmed} -- but only
-     * on the genuine transition, so a repeated call emits no second event. */
-    ClaimRecoveryView confirmRecovery(UUID recoveryId, String confirmedBy);
+    /** The treaty's monthly bordereaux, newest month first (IFRS 17 I3c). */
+    List<BordereauView> listBordereaux(UUID treatyId);
+
+    /** One bordereau with its lines. */
+    BordereauView getBordereau(UUID bordereauId);
+
+    /**
+     * What a month's bordereau for this treaty would hold, computed now and not stored -- the current month before
+     * it closes, or any month. A month already posted returns the posted one.
+     */
+    BordereauView previewBordereau(UUID treatyId, java.time.YearMonth period);
 }

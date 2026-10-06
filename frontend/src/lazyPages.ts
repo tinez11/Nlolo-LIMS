@@ -117,6 +117,9 @@ export const TreatiesPage = lazy(() =>
 export const TreatyDetailPage = lazy(() =>
   import('@/features/reinsurance/TreatyDetailPage').then((m) => ({ default: m.TreatyDetailPage })),
 );
+export const BordereauPage = lazy(() =>
+  import('@/features/reinsurance/BordereauPage').then((m) => ({ default: m.BordereauPage })),
+);
 export const OpenUnderwritingCasePage = lazy(() =>
   import('@/features/underwriting/OpenUnderwritingCasePage').then((m) => ({ default: m.OpenUnderwritingCasePage })),
 );

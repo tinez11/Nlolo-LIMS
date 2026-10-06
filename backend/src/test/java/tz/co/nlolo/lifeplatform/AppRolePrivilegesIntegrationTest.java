@@ -265,6 +265,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
             "db-migrations/reinsurance/V4__projection_product_category.sql",
+            "db-migrations/reinsurance/V5__bordereau.sql",
             // M9 (Task 9) additions: finaccounting appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap reinsurance had entering
             // M8. finaccounting/V1 has zero GRANT statements and ends with a REVOKE UPDATE, DELETE
@@ -833,8 +834,8 @@ class AppRolePrivilegesIntegrationTest {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement insertTreaty = connection.prepareStatement(
                  "INSERT INTO reinsurance.reinsurance_treaty (treaty_id, tenant_id, reinsurer_name, treaty_type, "
-                 + "retention_limit_amount, retention_limit_currency, effective_from) "
-                 + "VALUES (?, ?, 'Africa Re', 'XOL', 1500000.00, 'TZS', CURRENT_DATE)")) {
+                 + "retention_limit_amount, retention_limit_currency, effective_from, commission_percent) "
+                 + "VALUES (?, ?, 'Africa Re', 'XOL', 1500000.00, 'TZS', CURRENT_DATE, 0)")) {
             insertTreaty.setObject(1, treatyId);
             insertTreaty.setObject(2, tenantId);
             assertThat(insertTreaty.executeUpdate()).isEqualTo(1);

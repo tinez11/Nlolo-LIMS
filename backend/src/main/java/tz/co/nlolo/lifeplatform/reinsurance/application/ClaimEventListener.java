@@ -28,14 +28,17 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
- * Consumes the M8-enriched {@code claims.ClaimSettled} and books what the reinsurer owes.
+ * Consumes {@code claims.ClaimApproved} and books what the reinsurer owes.
  *
- * <p>Triggering on SETTLED rather than APPROVED is deliberate: a recoverable is a real receivable,
- * and approval precedes the payment rail -- a settlement can still fail (PAYOUT_FAILED) or land
- * IN_DOUBT, and booking a recoverable against money that never left would overstate assets. That
- * is why M8 enriched {@code ClaimSettled} (which carried only claimId + settledAt) rather than
- * consuming {@code ClaimApproved}, the same trade-off M7 resolved the same way for
- * {@code billing.PremiumCollected}.
+ * <p><b>At APPROVAL since IFRS 17 I3c</b> (user answer Q4, posting guide B-05 "when: claim admitted on a reinsured
+ * policy"): the claim is an incurred claim (LIC, 2211) from approval, so the reinsurer's share is an asset for
+ * incurred claims (1420) from the same moment -- Dr 1420 / Cr 6120, posted by finaccounting from
+ * {@code reinsurance.RecoveryCalculated}. M8 waited for settlement so a failed payment could not leave a recoverable
+ * booked; under IFRS 17 the liability, and so the recovery, exist whether or not the money has left yet. Agreement
+ * with the reinsurer happens on the statement, not by a Confirm here.
+ *
+ * <p>Only the INSURED part is recovered: the approved amount less its investment component, which no reinsurer
+ * covers.
  *
  * <p>Mechanics and bean-naming rationale: see {@link PolicyEventListener}.
  *
@@ -92,7 +95,7 @@ public class ClaimEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
-            case "claims.ClaimSettled" -> withTenant(envelope, this::handleClaimSettled);
+            case "claims.ClaimApproved" -> withTenant(envelope, this::handleClaimApproved);
             default -> { /* not reinsurance-relevant */ }
         }
     }
@@ -116,19 +119,27 @@ public class ClaimEventListener {
         }
     }
 
-    private void handleClaimSettled(Map<String, Object> payload) {
+    private void handleClaimApproved(Map<String, Object> payload) {
         UUID tenantId = TenantContext.get();
-        UUID claimId = (UUID) payload.get("claimId");
+        UUID claimId = UUID.fromString(String.valueOf(payload.get("claimId")));
         String policyNumber = (String) payload.get("policyNumber");
         @SuppressWarnings("unchecked")
-        Map<String, Object> settled = (Map<String, Object>) payload.get("settledAmount");
-        BigDecimal settledAmount = new BigDecimal((String) settled.get("amount"));
-        String settledCurrency = (String) settled.get("currencyCode");
+        Map<String, Object> approved = (Map<String, Object>) payload.get("approvedAmount");
+        String settledCurrency = (String) approved.get("currencyCode");
+        // The insured part only: the investment component is repaid in all circumstances and no reinsurer covers it.
+        BigDecimal investmentComponent = payload.get("investmentComponent") == null ? BigDecimal.ZERO
+            : new BigDecimal(String.valueOf(payload.get("investmentComponent")));
+        BigDecimal settledAmount = new BigDecimal(String.valueOf(approved.get("amount")))
+            .subtract(investmentComponent.max(BigDecimal.ZERO));
+        if (settledAmount.signum() <= 0) {
+            log.info("Claim {} on policy {} is all investment component -- nothing insured to recover", claimId, policyNumber);
+            return;
+        }
 
         Optional<PolicyProjection> maybeProjection =
             policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber);
         if (maybeProjection.isEmpty()) {
-            log.info("Claim {} settled on policy {} which has no reinsurance projection row (pre-M8 policy) "
+            log.info("Claim {} approved on policy {} which has no reinsurance projection row (pre-M8 policy) "
                 + "-- nothing to recover", claimId, policyNumber);
             return;
         }
@@ -170,8 +181,8 @@ public class ClaimEventListener {
             Cession cession = cessions.get(0);   // one treaty per policy -- see selectApplicableTreaty
             RecoveryCalculator.proportional(cession, projection.getSumAssuredAmount(), settledAmount, settledCurrency)
                 .flatMap(amount -> reinsuranceApiImpl.persistRecovery(tenantId, claimId, cession.getTreatyId(),
-                    amount, settledCurrency, "system:claims.ClaimSettled"))
-                .ifPresent(recovery -> publishRecoveryCalculated(tenantId, recovery));
+                    amount, settledCurrency, "system:claims.ClaimApproved"))
+                .ifPresent(recovery -> publishRecoveryCalculated(tenantId, policyNumber, recovery));
             return;
         }
 
@@ -189,17 +200,19 @@ public class ClaimEventListener {
         ReinsuranceTreaty xol = maybeXol.get();
         RecoveryCalculator.excessOfLoss(xol, settledAmount, settledCurrency)
             .flatMap(amount -> reinsuranceApiImpl.persistRecovery(tenantId, claimId, xol.getTreatyId(),
-                amount, settledCurrency, "system:claims.ClaimSettled"))
-            .ifPresentOrElse(recovery -> publishRecoveryCalculated(tenantId, recovery),
+                amount, settledCurrency, "system:claims.ClaimApproved"))
+            .ifPresentOrElse(recovery -> publishRecoveryCalculated(tenantId, policyNumber, recovery),
                 () -> log.info("Claim {} of {} {} falls within XOL treaty {}'s retention -- nothing recoverable",
                     claimId, settledAmount, settledCurrency, xol.getTreatyId()));
     }
 
-    /** Matches asyncapi-events.yaml's RecoveryCalculatedPayload field-for-field. */
-    private void publishRecoveryCalculated(UUID tenantId, ClaimRecovery recovery) {
+    /** Matches asyncapi-events.yaml's RecoveryCalculatedPayload field-for-field. finaccounting posts it (B-05: Dr 1420
+     * / Cr 6120) against the policy's IFRS 17 dimensions, hence {@code policyNumber} (IFRS 17 I3c). */
+    private void publishRecoveryCalculated(UUID tenantId, String policyNumber, ClaimRecovery recovery) {
         eventPublisher.publishEvent(DomainEventEnvelope.of("reinsurance.RecoveryCalculated", tenantId,
             Map.of("recoveryId", recovery.getRecoveryId(),
                    "claimId", recovery.getClaimId(),
+                   "policyNumber", policyNumber,
                    "treatyId", recovery.getTreatyId(),
                    "recoverableAmount", Map.of("amount", recovery.getRecoverableAmount().toPlainString(),
                                                 "currencyCode", recovery.getRecoverableCurrency()))));

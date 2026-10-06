@@ -1,6 +1,7 @@
 import { get, post } from '@/lib/http';
 import type { MutationAttempt } from '@/lib/idempotency';
 import type {
+  BordereauView,
   CessionView,
   ClaimRecoveryView,
   CreateTreatyRequest,
@@ -12,9 +13,10 @@ import type {
 
 /**
  * Reinsurance read/write surface: treaty authoring plus the cession/recovery
- * records treaties automatically produce (both entirely event-derived --
- * `CessionCalculator`/`RecoveryCalculator` run off `policy.PolicyIssued` and
- * `claims.ClaimSettled`; there is no manual "create a cession" endpoint).
+ * records treaties automatically produce (all event- or job-derived --
+ * `CessionCalculator`/`RecoveryCalculator` run off `policy.PolicyActivated` and
+ * `claims.ClaimApproved`, the bordereau off the month-end job; there is no manual
+ * "create" endpoint for any of them).
  */
 
 /** `POST /treaties` -- staff FINANCE_OFFICER/ADMIN only. Idempotency-Key is
@@ -86,19 +88,18 @@ export function listRecoveriesForClaim(claimId: string): Promise<ClaimRecoveryVi
 }
 
 /**
- * `POST .../confirm` -- staff FINANCE_OFFICER/ADMIN only. Idempotency-Key is
- * hard-required. Marks that the reinsurer actually paid; there is no
- * un-confirm. 202, not 200 -- confirmed synchronously here, but finaccounting's
- * journal entry reacts to the published event asynchronously.
+ * `GET /treaties/{id}/bordereaux` -- the monthly bordereaux the month-end job wrote, newest month first (IFRS 17
+ * I3c). Rows carry no lines; read one bordereau for those.
  */
-export function confirmRecovery(
-  claimId: string,
-  recoveryId: string,
-  attempt: MutationAttempt,
-): Promise<ClaimRecoveryView> {
-  return post<ClaimRecoveryView>(
-    `/claims/${encodeURIComponent(claimId)}/recoveries/${encodeURIComponent(recoveryId)}/confirm`,
-    undefined,
-    { headers: attempt.headers() },
-  );
+export function listBordereaux(treatyId: string): Promise<BordereauView[]> {
+  return get<BordereauView[]>(`/treaties/${encodeURIComponent(treatyId)}/bordereaux`);
+}
+
+export function getBordereau(bordereauId: string): Promise<BordereauView> {
+  return get<BordereauView>(`/bordereaux/${encodeURIComponent(bordereauId)}`);
+}
+
+/** The current month as it would be written now -- computed, never stored. */
+export function previewBordereau(treatyId: string): Promise<BordereauView> {
+  return get<BordereauView>(`/treaties/${encodeURIComponent(treatyId)}/bordereau-preview`);
 }

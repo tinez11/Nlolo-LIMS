@@ -64,6 +64,7 @@ import {
   CreateTreatyPage,
   TreatiesPage,
   TreatyDetailPage,
+  BordereauPage,
   OpenUnderwritingCasePage,
   UnderwritingCaseDetailPage,
   UnderwritingQueuePage,
@@ -532,6 +533,7 @@ const STAFF_SCREENS: Screen[] = [
   },
   { path: 'treaties/new', element: <CreateTreatyPage />, reach: 'drill-in' },
   { path: 'treaties/:treatyId', element: <TreatyDetailPage />, reach: 'drill-in' },
+  { path: 'treaties/:treatyId/bordereaux/:bordereauId', element: <BordereauPage />, reach: 'drill-in' },
   {
     path: 'regulatory-returns',
     element: <RegulatoryReturnsPage />,

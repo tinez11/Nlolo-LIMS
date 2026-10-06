@@ -1,7 +1,6 @@
 package tz.co.nlolo.lifeplatform.reinsurance.infrastructure;
 
-import tz.co.nlolo.lifeplatform.reinsurance.api.InvalidRecoveryStateException;
-import tz.co.nlolo.lifeplatform.reinsurance.api.RecoveryNotFoundException;
+import tz.co.nlolo.lifeplatform.reinsurance.api.BordereauNotFoundException;
 import tz.co.nlolo.lifeplatform.reinsurance.api.ReinsuranceValidationException;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyNotFoundException;
 import org.springframework.core.Ordered;
@@ -36,19 +35,14 @@ public class ReinsuranceExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "TREATY_NOT_FOUND");
     }
 
-    @ExceptionHandler(RecoveryNotFoundException.class)
-    public ProblemDetail handleRecoveryNotFound(RecoveryNotFoundException ex) {
-        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "RECOVERY_NOT_FOUND");
+    @ExceptionHandler(BordereauNotFoundException.class)
+    public ProblemDetail handleBordereauNotFound(BordereauNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "BORDEREAU_NOT_FOUND");
     }
 
     @ExceptionHandler(ReinsuranceValidationException.class)
     public ProblemDetail handleValidation(ReinsuranceValidationException ex) {
         return problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "REINSURANCE_VALIDATION_FAILED");
-    }
-
-    @ExceptionHandler(InvalidRecoveryStateException.class)
-    public ProblemDetail handleInvalidState(InvalidRecoveryStateException ex) {
-        return problem(HttpStatus.CONFLICT, ex.getMessage(), "REINSURANCE_INVALID_STATE");
     }
 
     /** {@code traceId} is REQUIRED by openapi-common.yaml's ProblemDetails schema -- an M6 contract

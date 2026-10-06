@@ -17,7 +17,6 @@ import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
 import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
 import tz.co.nlolo.lifeplatform.product.api.ProductSummaryView;
-import tz.co.nlolo.lifeplatform.reinsurance.api.InvalidRecoveryStateException;
 import tz.co.nlolo.lifeplatform.reinsurance.api.ReinsuranceApi;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyType;
 import tz.co.nlolo.lifeplatform.reinsurance.domain.ClaimRecovery;
@@ -179,6 +178,7 @@ class RecoveryEndToEndTest {
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
             "db-migrations/reinsurance/V4__projection_product_category.sql",
+            "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -203,7 +203,7 @@ class RecoveryEndToEndTest {
     @AfterAll
     static void stopGateway() { wireMock.stop(); }
 
-    /** Records reinsurance.RecoveryCalculated/RecoveryConfirmed -- same AFTER_COMMIT pattern as
+    /** Records reinsurance.RecoveryCalculated (and claims.ClaimSettled) -- same AFTER_COMMIT pattern as
      * CessionEndToEndTest and CommissionPayoutEndToEndTest. */
     @TestConfiguration
     static class EventRecorderConfiguration {
@@ -332,36 +332,63 @@ class RecoveryEndToEndTest {
         wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/disburse")));
     }
 
+    /**
+     * IFRS 17 I3c (user answer Q4, guide B-05 "claim admitted"): the recovery is recorded and published when the claim
+     * is APPROVED -- carrying the policy, so finaccounting posts it against the policy's IFRS 17 dimensions -- and does
+     * not wait for the money to leave. A rail that refuses the payment leaves the claim unsettled; the reinsurer's
+     * share of the incurred claim is an asset all the same.
+     */
     @Test
-    void confirmingARecoveryStampsConfirmedAtAndARepeatConfirmThrowsWithoutASecondEvent() {
+    void theRecoveryIsRecordedAtApprovalWithThePolicyEvenWhenThePaymentFails() {
         wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
-            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-RECOVERY-E2E-CONFIRM\"}")));
+            "{\"status\":\"REJECTED\",\"gatewayReference\":\"MM-RECOVERY-E2E-APPROVAL\"}")));
 
         UUID tenantId = UUID.randomUUID();
-        Fixture fixture = buildFixture(tenantId, "RECOVERY-E2E-CONFIRM");
+        Fixture fixture = buildFixture(tenantId, "RECOVERY-E2E-APPROVAL");
         createTreaty(tenantId, TreatyType.QUOTA_SHARE, new BigDecimal("0.00"), new BigDecimal("50.00"));
         String policyNumber = issuePolicy(tenantId, fixture);
-        UUID claimId = registerAndAssessDeathClaim(tenantId, fixture, policyNumber, "rec-confirm-reg-01", "assessor-confirm-01");
-        settleClaim(tenantId, claimId, "MPESA-0714000002", "rec-confirm-settle-" + claimId, "manager-confirm-01");
-
-        TenantContext.set(tenantId);
-        UUID recoveryId = claimRecoveryRepository.findByTenantIdAndClaimId(tenantId, claimId).get(0).getRecoveryId();
+        UUID claimId = registerAndAssessDeathClaim(tenantId, fixture, policyNumber, "rec-approval-reg-01", "assessor-approval-01");
         eventRecorder.clear();
 
-        TenantContext.set(tenantId);
-        reinsuranceApi.confirmRecovery(recoveryId, "finance-officer-confirm-01");
+        settleClaim(tenantId, claimId, "MPESA-0714000002", "rec-approval-settle-" + claimId, "manager-approval-01");
 
         TenantContext.set(tenantId);
-        ClaimRecovery confirmed = claimRecoveryRepository.findByRecoveryIdAndTenantId(recoveryId, tenantId).orElseThrow();
-        assertThat(confirmed.getConfirmedAt()).isNotNull();
-        assertThat(eventRecorder.ofType("reinsurance.RecoveryConfirmed")).hasSize(1);
+        assertThat(claimRecoveryRepository.findByTenantIdAndClaimId(tenantId, claimId)).singleElement()
+            .satisfies(r -> assertThat(r.getRecoverableAmount()).isEqualByComparingTo("1000000.00"));
+        assertThat(eventRecorder.ofType("reinsurance.RecoveryCalculated")).singleElement().satisfies(e -> {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> payload = (Map<String, Object>) e.payload();
+            assertThat(payload).containsEntry("policyNumber", policyNumber);
+        });
+        assertThat(eventRecorder.ofType("claims.ClaimSettled")).as("the rail refused: nothing settled").isEmpty();
+    }
+
+    /** The investment component is repaid in all circumstances and no reinsurer covers it: only the rest is recovered. */
+    @Test
+    void onlyTheInsuredPartAboveTheInvestmentComponentIsRecovered() {
+        UUID tenantId = UUID.randomUUID();
+        createTreaty(tenantId, TreatyType.XOL, new BigDecimal("1500000.00"), null);
+        UUID claimId = UUID.randomUUID();
+        String policyNumber = "POL-IC-" + claimId.toString().substring(0, 8).toUpperCase();
+        publishInTransaction(tenantId, DomainEventEnvelope.of("policy.PolicyActivated", tenantId, Map.of(
+            "policyNumber", policyNumber,
+            "productId", UUID.randomUUID(),
+            "productCategory", "ENDOWMENT",
+            "issueDate", LocalDate.now().toString(),
+            "sumAssured", Map.of("amount", "5000000.00", "currencyCode", CURRENCY),
+            "premium", Map.of("amount", "120000.00", "currencyCode", CURRENCY))));
+        eventRecorder.clear();
+
+        publishInTransaction(tenantId, DomainEventEnvelope.of("claims.ClaimApproved", tenantId, Map.of(
+            "claimId", claimId,
+            "policyNumber", policyNumber,
+            "approvedAmount", Map.of("amount", "3000000", "currencyCode", CURRENCY),
+            "investmentComponent", "800000.00")));
 
         TenantContext.set(tenantId);
-        assertThrows(InvalidRecoveryStateException.class,
-            () -> reinsuranceApi.confirmRecovery(recoveryId, "finance-officer-confirm-01"));
-        assertThat(eventRecorder.ofType("reinsurance.RecoveryConfirmed"))
-            .as("a repeat confirmRecovery must not publish a second RecoveryConfirmed")
-            .hasSize(1);
+        // 3,000,000 approved - 800,000 investment component = 2,200,000 insured; less the 1,500,000 retention = 700,000.
+        assertThat(claimRecoveryRepository.findByTenantIdAndClaimId(tenantId, claimId)).singleElement()
+            .satisfies(r -> assertThat(r.getRecoverableAmount()).isEqualByComparingTo("700000.00"));
     }
 
     @Test
@@ -426,9 +453,9 @@ class RecoveryEndToEndTest {
         Map<String, Object> payload = Map.of(
             "claimId", claimId,
             "policyNumber", neverIssuedPolicyNumber,
-            "settledAmount", Map.of("amount", "2000000", "currencyCode", CURRENCY),
-            "settledAt", java.time.Instant.now().toString());
-        var envelope = DomainEventEnvelope.of("claims.ClaimSettled", tenantId, payload);
+            "approvedAmount", Map.of("amount", "2000000", "currencyCode", CURRENCY),
+            "investmentComponent", "0");
+        var envelope = DomainEventEnvelope.of("claims.ClaimApproved", tenantId, payload);
         TenantContext.set(tenantId);
         transactionTemplate().executeWithoutResult(status -> eventPublisher.publishEvent(envelope));
 
@@ -477,11 +504,11 @@ class RecoveryEndToEndTest {
             "sumAssured", Map.of("amount", "240000000.00", "currencyCode", CURRENCY),
             "premium", Map.of("amount", "5200000.00", "currencyCode", CURRENCY))));
 
-        publishInTransaction(tenantId, DomainEventEnvelope.of("claims.ClaimSettled", tenantId, Map.of(
+        publishInTransaction(tenantId, DomainEventEnvelope.of("claims.ClaimApproved", tenantId, Map.of(
             "claimId", claimId,
             "policyNumber", schemeNumber,
-            "settledAmount", Map.of("amount", "2000000", "currencyCode", CURRENCY),
-            "settledAt", java.time.Instant.now().toString())));
+            "approvedAmount", Map.of("amount", "2000000", "currencyCode", CURRENCY),
+            "investmentComponent", "0")));
 
         TenantContext.set(tenantId);
         assertThat(claimRecoveryRepository.findByTenantIdAndClaimId(tenantId, claimId)).isEmpty();
@@ -511,11 +538,11 @@ class RecoveryEndToEndTest {
             "sumAssured", Map.of("amount", "5000000.00", "currencyCode", CURRENCY),
             "premium", Map.of("amount", "120000.00", "currencyCode", CURRENCY))));
 
-        publishInTransaction(tenantId, DomainEventEnvelope.of("claims.ClaimSettled", tenantId, Map.of(
+        publishInTransaction(tenantId, DomainEventEnvelope.of("claims.ClaimApproved", tenantId, Map.of(
             "claimId", claimId,
             "policyNumber", policyNumber,
-            "settledAmount", Map.of("amount", "2000000", "currencyCode", CURRENCY),
-            "settledAt", java.time.Instant.now().toString())));
+            "approvedAmount", Map.of("amount", "2000000", "currencyCode", CURRENCY),
+            "investmentComponent", "0")));
 
         TenantContext.set(tenantId);
         List<ClaimRecovery> recoveries = claimRecoveryRepository.findByTenantIdAndClaimId(tenantId, claimId);
@@ -556,9 +583,9 @@ class RecoveryEndToEndTest {
         Map<String, Object> payload = Map.of(
             "claimId", claimId,
             "policyNumber", policyNumber,
-            "settledAmount", Map.of("amount", "2000000", "currencyCode", CURRENCY),
-            "settledAt", java.time.Instant.now().toString());
-        var envelope = DomainEventEnvelope.of("claims.ClaimSettled", tenantId, payload);
+            "approvedAmount", Map.of("amount", "2000000", "currencyCode", CURRENCY),
+            "investmentComponent", "0");
+        var envelope = DomainEventEnvelope.of("claims.ClaimApproved", tenantId, payload);
         TenantContext.set(tenantId);
         transactionTemplate().executeWithoutResult(status -> eventPublisher.publishEvent(envelope));
 

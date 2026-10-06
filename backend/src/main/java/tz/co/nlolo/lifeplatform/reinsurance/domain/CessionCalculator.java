@@ -41,7 +41,7 @@ public final class CessionCalculator {
      * zero -- V2's {@code cession_ceded_premium_positive} forbids persisting a zero premium row,
      * so callers (Task 6/7) must not assume {@code cededPremium()} is always populated. */
     public record CededAmounts(BigDecimal cededRisk, String riskCurrency,
-                                BigDecimal cededPremium, String premiumCurrency) {}
+                                BigDecimal cededPremium, String premiumCurrency, BigDecimal premiumShare) {}
 
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
 
@@ -85,8 +85,13 @@ public final class CessionCalculator {
         BigDecimal premiumToRecord = cededPremium.signum() > 0 ? cededPremium : null;
         String premiumCurrencyToRecord = premiumToRecord == null ? null : premiumCurrency;
 
+        // IFRS 17 I3c: the share each monthly bordereau charges on the policy's premium -- the treaty's own percent for
+        // a quota share, the fraction of the sum assured actually ceded for a surplus.
+        BigDecimal share = treaty.getTreatyType() == TreatyType.QUOTA_SHARE
+            ? treaty.getCessionPercent().divide(ONE_HUNDRED, 10, RoundingMode.HALF_UP)
+            : cededRisk.divide(sumAssured, 10, RoundingMode.HALF_UP);
         return Optional.of(new CededAmounts(cededRisk, sumAssuredCurrency,
-            premiumToRecord, premiumCurrencyToRecord));
+            premiumToRecord, premiumCurrencyToRecord, share));
     }
 
     private static BigDecimal share(BigDecimal percent, BigDecimal amount) {
