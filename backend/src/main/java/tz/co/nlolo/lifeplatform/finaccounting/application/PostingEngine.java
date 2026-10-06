@@ -145,8 +145,8 @@ class PostingEngine {
         PostingFacts kept = queue.facts(tenantId, unpostedEventId);
         PostingFacts today = new PostingFacts(kept.eventType(), kept.sourceRef(), kept.policyNumber(), kept.currency(),
             LocalDate.now(LedgerEventListener.CIVIL), kept.amounts(), kept.attributes());
-        JournalSource source = PaaEarningJob.EVENT.equals(kept.eventType()) ? JournalSource.SYSTEM : JournalSource.EVENT;
-        Result result = post(tenantId, today, by, source);
+        // The rule decides SYSTEM (source: SYSTEM), not the event type.
+        Result result = post(tenantId, today, by);
         if (result.outcome() == Outcome.NOTHING_TO_POST) {
             requiresNew.executeWithoutResult(status -> queue.dismiss(tenantId, unpostedEventId,
                 "Retried: the rules in force post nothing for these facts", by));
@@ -187,8 +187,11 @@ class PostingEngine {
         if (!rule.get().post()) {
             return new Result(Outcome.NOTHING_TO_POST, null, rule.get().id());
         }
+        // A rule that is the platform's own (source: SYSTEM) posts as SYSTEM however it was reached -- an event, the
+        // earning job, a retry of either.
+        JournalSource effective = rule.get().system() ? JournalSource.SYSTEM : source;
         JournalEntry entry = new JournalEntry(tenantId, facts.eventType(), facts.sourceRef(), period,
-            facts.policyNumber(), by).underRuleVersion(set.versionLabel()).withSource(source);
+            facts.policyNumber(), by).underRuleVersion(set.versionLabel()).withSource(effective);
         for (PostingRuleSet.Line line : rule.get().lines()) {
             BigDecimal amount = facts.amount(line.amount());
             if (amount.signum() == 0) {

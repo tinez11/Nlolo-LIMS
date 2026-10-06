@@ -51,9 +51,12 @@ public record PostingRuleSet(int version, List<Rule> rules) {
     /**
      * @param post false for a rule that deliberately posts nothing (IFRS 17 I3b) -- an IFRS 9 contract's invoice, whose
      *             money its own account ledger posts. Without such a rule the event would queue as UNMAPPED.
+     * @param system true for a rule whose journal is the platform's own ({@code source: SYSTEM}, IFRS 17 I3d): it may
+     *             post to MAN accounts -- the ledger guard refuses only an EVENT journal there -- and a closing period
+     *             still takes it. PAA earning (I-03) and the reinsurance statement are.
      */
     public record Rule(String id, String event, Set<String> models, Map<String, String> when, LocalDate effectiveFrom,
-                       LocalDate effectiveTo, String description, List<Line> lines, boolean post) {
+                       LocalDate effectiveTo, String description, List<Line> lines, boolean post, boolean system) {
 
         public Rule {
             models = Set.copyOf(models);

@@ -31,6 +31,7 @@ import java.util.Set;
  *     models: [GMM, VFA]
  *     when: {}                      # optional
  *     effectiveFrom: "2020-01-01"   # optional; effectiveTo optional, exclusive
+ *     source: SYSTEM                # optional: the platform's own journal, which may post to MAN accounts
  *     description: Renewal premium falls due
  *     lines:
  *       - {dr: "2122", amount: amount, movement: PRM_REN}
@@ -90,8 +91,13 @@ public final class PostingRuleParser {
             }
         }
         LocalDate from = date(m.get("effectiveFrom"), where);
+        Object source = m.get("source");
+        if (source != null && !"SYSTEM".equals(String.valueOf(source))) {
+            throw new IllegalStateException(where + ": 'source' must be SYSTEM when given, not '" + source + "'");
+        }
         return new PostingRuleSet.Rule(id, text(m.get("event")), models, when, from != null ? from : BEGINNING,
-            date(m.get("effectiveTo"), where), text(m.get("description")), lines, !Boolean.FALSE.equals(m.get("post")));
+            date(m.get("effectiveTo"), where), text(m.get("description")), lines, !Boolean.FALSE.equals(m.get("post")),
+            source != null);
     }
 
     private static PostingRuleSet.Line line(Object raw, String where) {

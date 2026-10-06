@@ -47,6 +47,40 @@ class PostingRulesTest {
         }
     }
 
+    // ---- source: SYSTEM (IFRS 17 I3d) ----
+
+    private static final String MAN_LINES = "      - {dr: \"1434\", amount: amount}\n"
+        + "      - {cr: \"4160\", amount: amount}\n";
+
+    /** A SYSTEM rule's journal is the platform's own, which the ledger guard lets post to MAN accounts. */
+    @Test
+    void aSystemRuleIsReadAndMayPostToAManualAccount() {
+        String yaml = "version: 1\nrules:\n" + rule("X-01", "finaccounting.PaaRevenueEarned", "[PAA]", null, MAN_LINES)
+            .replace("    lines:", "    source: SYSTEM\n    lines:");
+        assertThat(parse(yaml).rules().get(0).system()).isTrue();
+        validate(yaml);
+    }
+
+    @Test
+    void anEventRuleStillMayNotPostToAManualAccount() {
+        String yaml = "version: 1\nrules:\n" + rule("X-01", "finaccounting.PaaRevenueEarned", "[PAA]", null, MAN_LINES);
+        assertThat(parse(yaml).rules().get(0).system()).isFalse();
+        assertThatThrownBy(() -> validate(yaml)).hasMessageContaining("X-01: account 1434 is MAN");
+    }
+
+    @Test
+    void aSourceOtherThanSystemIsRefused() {
+        String yaml = "version: 1\nrules:\n" + rule("X-01", "finaccounting.PaaRevenueEarned", "[PAA]", null, MAN_LINES)
+            .replace("    lines:", "    source: MANUAL\n    lines:");
+        assertThatThrownBy(() -> parse(yaml)).hasMessageContaining("X-01: 'source' must be SYSTEM");
+    }
+
+    @Test
+    void theShippedPaaEarningRuleIsTheSystems() {
+        assertThat(PostingRules.load().rules()).filteredOn(r -> "I-03".equals(r.id())).singleElement()
+            .satisfies(r -> assertThat(r.system()).isTrue());
+    }
+
     @Test
     void anInvoicePostsByTheContractsModel() {
         PostingRuleSet set = PostingRules.load();

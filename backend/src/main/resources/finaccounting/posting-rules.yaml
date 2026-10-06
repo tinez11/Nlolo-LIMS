@@ -55,6 +55,7 @@ rules:
   - id: I-03
     event: finaccounting.PaaRevenueEarned
     models: [PAA]
+    source: SYSTEM
     description: Month-end PAA revenue earned, straight-line over the cover each premium pays for (a SYSTEM journal)
     lines:
       - {dr: "2141", amount: amount}
