@@ -10,7 +10,6 @@ import tz.co.nlolo.lifeplatform.claims.api.DeathClaimDetails;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPosting;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
-import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.GlPostingRepository;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.JournalEntryRepository;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
@@ -247,7 +246,8 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
             "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
-            "db-migrations/finaccounting/V11__groups_and_policy_classification.sql");
+            "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
+            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -451,10 +451,10 @@ class ReinsuranceAndLoanPostingEndToEndTest {
         List<GlPosting> cessionLegs = legsFor(tenantId, cessionEntry);
         assertThat(cessionLegs).hasSize(2);
         assertThat(cessionLegs).extracting(GlPosting::getAccountCode)
-            .containsExactlyInAnyOrder(PostingRule.REINSURANCE_CEDED_PREMIUM, PostingRule.REINSURANCE_PAYABLE);
-        assertThat(legFor(cessionLegs, PostingRule.REINSURANCE_CEDED_PREMIUM).getDirection()).isEqualTo(PostingDirection.DR);
-        assertThat(legFor(cessionLegs, PostingRule.REINSURANCE_PAYABLE).getDirection()).isEqualTo(PostingDirection.CR);
-        assertThat(legFor(cessionLegs, PostingRule.REINSURANCE_CEDED_PREMIUM).getAmount()).isEqualByComparingTo("1000000.00");
+            .containsExactlyInAnyOrder("1436", "1430");
+        assertThat(legFor(cessionLegs, "1436").getDirection()).isEqualTo(PostingDirection.DR);
+        assertThat(legFor(cessionLegs, "1430").getDirection()).isEqualTo(PostingDirection.CR);
+        assertThat(legFor(cessionLegs, "1436").getAmount()).isEqualByComparingTo("1000000.00");
 
         // ---- Recovery leg: a real DEATH claim settled for the full sum assured, through the real
         // payment rail, then a real confirmRecovery call. ----
@@ -477,10 +477,10 @@ class ReinsuranceAndLoanPostingEndToEndTest {
         List<GlPosting> recoveryLegs = legsFor(tenantId, recoveryEntry);
         assertThat(recoveryLegs).hasSize(2);
         assertThat(recoveryLegs).extracting(GlPosting::getAccountCode)
-            .containsExactlyInAnyOrder(PostingRule.REINSURANCE_RECOVERABLE, PostingRule.CLAIMS_EXPENSE);
-        assertThat(legFor(recoveryLegs, PostingRule.REINSURANCE_RECOVERABLE).getDirection()).isEqualTo(PostingDirection.DR);
-        assertThat(legFor(recoveryLegs, PostingRule.CLAIMS_EXPENSE).getDirection()).isEqualTo(PostingDirection.CR);
-        assertThat(legFor(recoveryLegs, PostingRule.REINSURANCE_RECOVERABLE).getAmount()).isEqualByComparingTo("1000000.00");
+            .containsExactlyInAnyOrder("1420", "5110");
+        assertThat(legFor(recoveryLegs, "1420").getDirection()).isEqualTo(PostingDirection.DR);
+        assertThat(legFor(recoveryLegs, "5110").getDirection()).isEqualTo(PostingDirection.CR);
+        assertThat(legFor(recoveryLegs, "1420").getAmount()).isEqualByComparingTo("1000000.00");
 
         // ---- Loan leg: real disbursement through the same rail, then a real, matching repayment. ----
         String loanPolicyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "REINS-LOAN-E2E-LOAN");
@@ -498,10 +498,10 @@ class ReinsuranceAndLoanPostingEndToEndTest {
         List<GlPosting> disbursedLegs = legsFor(tenantId, disbursedEntry);
         assertThat(disbursedLegs).hasSize(2);
         assertThat(disbursedLegs).extracting(GlPosting::getAccountCode)
-            .containsExactlyInAnyOrder(PostingRule.POLICY_LOAN_RECEIVABLE, PostingRule.CASH);
-        assertThat(legFor(disbursedLegs, PostingRule.POLICY_LOAN_RECEIVABLE).getDirection()).isEqualTo(PostingDirection.DR);
-        assertThat(legFor(disbursedLegs, PostingRule.CASH).getDirection()).isEqualTo(PostingDirection.CR);
-        assertThat(legFor(disbursedLegs, PostingRule.POLICY_LOAN_RECEIVABLE).getAmount()).isEqualByComparingTo(principal);
+            .containsExactlyInAnyOrder("2125", "1140");
+        assertThat(legFor(disbursedLegs, "2125").getDirection()).isEqualTo(PostingDirection.DR);
+        assertThat(legFor(disbursedLegs, "1140").getDirection()).isEqualTo(PostingDirection.CR);
+        assertThat(legFor(disbursedLegs, "2125").getAmount()).isEqualByComparingTo(principal);
 
         // ---- TWO PARTIAL repayments, each for HALF the principal -- M3's immediately-confirmed
         // simplification, no gateway hop (PolicyLoanApiImpl.recordRepayment's own javadoc), and the
@@ -572,19 +572,19 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             List<GlPosting> repaidLegs = legsFor(tenantId, repaidEntry);
             assertThat(repaidLegs).hasSize(2);
             assertThat(repaidLegs).extracting(GlPosting::getAccountCode)
-                .containsExactlyInAnyOrder(PostingRule.CASH, PostingRule.POLICY_LOAN_RECEIVABLE);
-            assertThat(legFor(repaidLegs, PostingRule.CASH).getDirection()).isEqualTo(PostingDirection.DR);
-            assertThat(legFor(repaidLegs, PostingRule.POLICY_LOAN_RECEIVABLE).getDirection()).isEqualTo(PostingDirection.CR);
-            assertThat(legFor(repaidLegs, PostingRule.POLICY_LOAN_RECEIVABLE).getAmount()).isEqualByComparingTo(half);
+                .containsExactlyInAnyOrder("1140", "2125");
+            assertThat(legFor(repaidLegs, "1140").getDirection()).isEqualTo(PostingDirection.DR);
+            assertThat(legFor(repaidLegs, "2125").getDirection()).isEqualTo(PostingDirection.CR);
+            assertThat(legFor(repaidLegs, "2125").getAmount()).isEqualByComparingTo(half);
         }
 
         // ---- Assertion 5: 1400 Policy Loan Receivable nets to EXACTLY zero across the disbursement
         // and BOTH partial repayments -- the loan-side mirror of PremiumPostingEndToEndTest's 1200
         // invariant, now proven under the case that actually exercises the fix. Before it, this
         // summed to +250,000: half the loan stayed on the balance sheet forever. ----
-        BigDecimal netLoanReceivable = netFor(disbursedLegs, PostingRule.POLICY_LOAN_RECEIVABLE);
+        BigDecimal netLoanReceivable = netFor(disbursedLegs, "2125");
         for (JournalEntry repaidEntry : repaidEntries) {
-            netLoanReceivable = netLoanReceivable.add(netFor(legsFor(tenantId, repaidEntry), PostingRule.POLICY_LOAN_RECEIVABLE));
+            netLoanReceivable = netLoanReceivable.add(netFor(legsFor(tenantId, repaidEntry), "2125"));
         }
         assertThat(netLoanReceivable)
             .as("1400 Policy Loan Receivable must net to zero across disburse plus BOTH partial repayments")

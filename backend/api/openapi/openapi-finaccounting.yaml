@@ -504,8 +504,101 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/posting-rules:
+    get:
+      summary: The posting rules in force, read-only
+      description: >-
+        IFRS 17 I3a. Every journal an event posts comes from these rules (finaccounting/posting-rules.yaml), the
+        source of truth until a database editor with maker-checker exists. Each journal records the version it was
+        posted under.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PostingRulesView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /finance/unposted-events:
+    get:
+      summary: Events the posting rules could not post
+      description: >-
+        IFRS 17 I3a. UNMAPPED (no rule), REFUSED (the ledger refused the journal -- a locked or closing period) or
+        ERROR. Open ones first, oldest first; then the most recently resolved. At most 500. An open one in a period
+        stops that period locking.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: openOnly
+          in: query
+          required: false
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/UnpostedEventView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /finance/unposted-events/{id}/retry:
+    post:
+      summary: Post a queued event with the rules in force now
+      description: >-
+        Posts in the period it is retried in. Still unpostable, it stays open with the new reason; a rule that now
+        posts nothing for it dismisses it.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UnpostedEventId'
+      responses:
+        '200':
+          description: The event, POSTED or still open
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnpostedEventView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/unposted-events/{id}/dismissal:
+    post:
+      summary: Close a queued event without posting it, with a reason
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UnpostedEventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: The event, DISMISSED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnpostedEventView' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
 components:
   parameters:
+    UnpostedEventId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     JournalEntryId:
       name: journalEntryId
       in: path
@@ -795,6 +888,9 @@ components:
         policyRegisterVersion:
           type: integer
           description: "The accounting policy register version in force when the journal was posted."
+        ruleVersion:
+          type: [string, "null"]
+          description: "The posting rules version an event or system journal was posted under (IFRS 17 I3a), e.g. 'posting-rules v1'; null before I3a and for a manual journal."
     AccountStatus:
       type: string
       description: >
@@ -921,3 +1017,68 @@ components:
       properties:
         name: { type: string, maxLength: 200 }
         description: { type: string, maxLength: 2000, nullable: true }
+    PostingRulesView:
+      type: object
+      additionalProperties: false
+      required: [version, versionLabel, rules]
+      properties:
+        version: { type: integer }
+        versionLabel: { type: string, description: "What each journal records as its rule_version, e.g. 'posting-rules v1'" }
+        rules:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, event, models, when, effectiveFrom, lines]
+            properties:
+              id: { type: string, description: "The guide's entry (A-06, I-01 ...) or PLAT-* for a platform interim journal" }
+              event: { type: string }
+              models:
+                type: array
+                items: { type: string, enum: [GMM, VFA, PAA, IFRS9, NONE, ANY] }
+              when:
+                type: object
+                additionalProperties: { type: string }
+              effectiveFrom: { type: string, format: date }
+              effectiveTo: { type: [string, "null"], format: date }
+              description: { type: [string, "null"] }
+              lines:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [side, account, amount]
+                  properties:
+                    side: { $ref: '#/components/schemas/PostingDirection' }
+                    account: { type: string }
+                    accountName: { type: [string, "null"] }
+                    amount: { type: string, description: "The fact that gives the line's amount" }
+                    movement: { type: [string, "null"], description: "The guide's movement type (2.4)" }
+    UnpostedEventView:
+      type: object
+      additionalProperties: false
+      required: [id, eventType, sourceRef, period, amounts, attributes, reason, attempts, createdAt, lastAttemptAt]
+      properties:
+        id: { type: string, format: uuid }
+        eventType: { type: string }
+        sourceRef: { type: string }
+        policyNumber: { type: [string, "null"] }
+        period: { type: string, pattern: '^\d{4}-\d{2}$' }
+        currency: { type: [string, "null"] }
+        amounts:
+          type: object
+          additionalProperties: { type: number }
+        attributes:
+          type: object
+          additionalProperties: { type: string }
+        reason: { type: string, enum: [UNMAPPED, REFUSED, ERROR] }
+        detail: { type: [string, "null"] }
+        ruleVersion: { type: [string, "null"] }
+        attempts: { type: integer }
+        createdAt: { type: string, format: date-time }
+        lastAttemptAt: { type: string, format: date-time }
+        resolution: { type: [string, "null"], enum: [POSTED, DISMISSED, null] }
+        resolutionReason: { type: [string, "null"] }
+        resolvedBy: { type: [string, "null"] }
+        resolvedAt: { type: [string, "null"], format: date-time }
+        journalEntryId: { type: [string, "null"], format: uuid }

@@ -16,7 +16,6 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccount;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
-import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountRepository;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountSeeder;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.GlPostingRepository;
@@ -125,7 +124,8 @@ class FinaccountingApiIntegrationTest {
             "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
             "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
-            "db-migrations/finaccounting/V11__groups_and_policy_classification.sql");
+            "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
+            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -154,6 +154,16 @@ class FinaccountingApiIntegrationTest {
             "policyNumber", "POL-SURR-GL", "paidAmount", java.util.Map.of("amount", "1240000.00", "currencyCode", "TZS"));
         org.springframework.transaction.support.TransactionTemplate tx =
             new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+        // IFRS 17 I3a: posting reads the contract's classification, so the policy is issued (and classified) first.
+        java.util.Map<String, Object> issued = new java.util.HashMap<>();
+        issued.put("policyNumber", "POL-SURR-GL");
+        issued.put("issueDate", "2026-01-15");
+        issued.put("portfolioCode", "END");
+        issued.put("cohortYear", 2026);
+        issued.put("salesChannel", "DIRECT");
+        issued.put("branchCode", "DSM");
+        tx.executeWithoutResult(s -> eventPublisher.publishEvent(
+            tz.co.nlolo.lifeplatform.DomainEventEnvelope.of("policy.PolicyIssued", tenantId, issued)));
         for (int delivery = 0; delivery < 2; delivery++) {   // a redelivery must not post twice
             tx.executeWithoutResult(s -> eventPublisher.publishEvent(
                 tz.co.nlolo.lifeplatform.DomainEventEnvelope.of("policy.SurrenderPaid", tenantId, payload)));
@@ -163,7 +173,7 @@ class FinaccountingApiIntegrationTest {
         List<JournalEntryView> entries = finaccountingApi.listJournalEntries(null, "POL-SURR-GL", Pageable.unpaged()).getContent();
         assertThat(entries).extracting(JournalEntryView::sourceRef).containsExactly(surrenderRequestId);
         TenantContext.set(tenantId);
-        assertThat(glPostingRepository.findByTenantIdAndAccountCodeAndPeriod(tenantId, PostingRule.CLAIMS_EXPENSE,
+        assertThat(glPostingRepository.findByTenantIdAndAccountCodeAndPeriod(tenantId, "5110",
             java.time.YearMonth.now().toString())).hasSize(1);
     }
 
@@ -184,8 +194,8 @@ class FinaccountingApiIntegrationTest {
     private static JournalEntry balancedEntry(UUID tenantId, String sourceEvent, String sourceRef,
                                                String period, String policyNumber) {
         JournalEntry entry = new JournalEntry(tenantId, sourceEvent, sourceRef, period, policyNumber, "system:test");
-        entry.addLeg(PostingRule.CASH, PostingDirection.DR, new BigDecimal("15000.00"), "TZS");
-        entry.addLeg(PostingRule.PREMIUM_RECEIVABLE, PostingDirection.CR, new BigDecimal("15000.00"), "TZS");
+        entry.addLeg("1140", PostingDirection.DR, new BigDecimal("15000.00"), "TZS");
+        entry.addLeg("2122", PostingDirection.CR, new BigDecimal("15000.00"), "TZS");
         return entry;
     }
 
@@ -208,7 +218,7 @@ class FinaccountingApiIntegrationTest {
         assertThat(view.postings()).extracting(GlPostingView::direction)
             .containsExactlyInAnyOrder(PostingDirection.DR, PostingDirection.CR);
         assertThat(view.postings()).extracting(GlPostingView::accountCode)
-            .containsExactlyInAnyOrder(PostingRule.CASH, PostingRule.PREMIUM_RECEIVABLE);
+            .containsExactlyInAnyOrder("1140", "2122");
 
         assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged())).hasSize(1);
         assertThat(glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(tenantId, journalEntryId))
@@ -223,8 +233,8 @@ class FinaccountingApiIntegrationTest {
             "system:test");
         LineDimensions dims = new LineDimensions("TERM-2026-REM", "GMM", "PRM_REN", UUID.randomUUID(), "TERM",
             "AGENT", "DSM", null, "POLICY", "POL-0009");
-        entry.addLeg(PostingRule.CASH, PostingDirection.DR, new BigDecimal("1200.00"), "TZS", dims);
-        entry.addLeg(PostingRule.PREMIUM_RECEIVABLE, PostingDirection.CR, new BigDecimal("1200.00"), "TZS", dims);
+        entry.addLeg("1140", PostingDirection.DR, new BigDecimal("1200.00"), "TZS", dims);
+        entry.addLeg("2122", PostingDirection.CR, new BigDecimal("1200.00"), "TZS", dims);
         UUID journalEntryId = finaccountingApiImpl.postEntry(entry).orElseThrow().getJournalEntryId();
 
         TenantContext.set(tenantId);
@@ -284,7 +294,7 @@ class FinaccountingApiIntegrationTest {
         TenantContext.set(tenantId);
         JournalEntry entry = new JournalEntry(tenantId, "claims.ClaimSettled", "claim-unbalanced",
             "2026-08", "POL-0003", "system:test");
-        entry.addLeg(PostingRule.CLAIMS_EXPENSE, PostingDirection.DR, new BigDecimal("500.00"), "TZS");
+        entry.addLeg("5110", PostingDirection.DR, new BigDecimal("500.00"), "TZS");
         assertThat(entry.isBalanced()).isFalse();
 
         assertThrows(IllegalStateException.class, () -> finaccountingApiImpl.postEntry(entry));
@@ -295,7 +305,7 @@ class FinaccountingApiIntegrationTest {
         // is ever minted. A future reordering of the balance check relative to the posting-construction
         // loop would show up here even though it could never show up in the journal_entry-only check above.
         assertThat(glPostingRepository.findByTenantIdAndAccountCodeAndPeriod(
-            tenantId, PostingRule.CLAIMS_EXPENSE, "2026-08")).isEmpty();
+            tenantId, "5110", "2026-08")).isEmpty();
     }
 
     @Test
@@ -426,7 +436,7 @@ class FinaccountingApiIntegrationTest {
         seedChart(tenantId);
 
         // 1000 Assets has children, so it is a header and never posts.
-        JournalEntry entry = balancedEntryAgainst(tenantId, "1000", PostingRule.CASH, "TZS");
+        JournalEntry entry = balancedEntryAgainst(tenantId, "1000", "1140", "TZS");
         assertThatThrownBy(() -> finaccountingApiImpl.postEntry(entry))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("1000")
@@ -444,7 +454,7 @@ class FinaccountingApiIntegrationTest {
         chartOfAccountRepository.saveAndFlush(pettyCash);
 
         TenantContext.set(tenantId);
-        JournalEntry entry = balancedEntryAgainst(tenantId, "1150", PostingRule.CASH, "TZS");
+        JournalEntry entry = balancedEntryAgainst(tenantId, "1150", "1140", "TZS");
         assertThatThrownBy(() -> finaccountingApiImpl.postEntry(entry))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("1150")
@@ -459,7 +469,7 @@ class FinaccountingApiIntegrationTest {
         // Both legs are USD, so the entry is internally consistent and balanced -- it is the
         // ACCOUNT, seeded in TZS, that disagrees.
         JournalEntry entry = balancedEntryAgainst(
-            tenantId, PostingRule.PREMIUM_RECEIVABLE, PostingRule.UNEARNED_PREMIUM, "USD");
+            tenantId, "2122", "2121", "USD");
         assertThatThrownBy(() -> finaccountingApiImpl.postEntry(entry))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("USD")
@@ -472,7 +482,7 @@ class FinaccountingApiIntegrationTest {
         seedChart(tenantId);
 
         JournalEntry entry = balancedEntryAgainst(
-            tenantId, PostingRule.PREMIUM_RECEIVABLE, PostingRule.UNEARNED_PREMIUM, "TZS");
+            tenantId, "2122", "2121", "TZS");
         assertThat(finaccountingApiImpl.postEntry(entry)).isPresent();
     }
 
@@ -498,9 +508,9 @@ class FinaccountingApiIntegrationTest {
 
         TrialBalanceView balance = finaccountingApi.trialBalance(null);
 
-        assertThat(accountIn(balance, PostingRule.CASH).ownDebit()).isEqualByComparingTo("15000.00");
-        assertThat(accountIn(balance, PostingRule.CASH).ownCredit()).isEqualByComparingTo("0");
-        assertThat(accountIn(balance, PostingRule.PREMIUM_RECEIVABLE).ownCredit())
+        assertThat(accountIn(balance, "1140").ownDebit()).isEqualByComparingTo("15000.00");
+        assertThat(accountIn(balance, "1140").ownCredit()).isEqualByComparingTo("0");
+        assertThat(accountIn(balance, "2122").ownCredit())
             .isEqualByComparingTo("15000.00");
     }
 
@@ -519,7 +529,7 @@ class FinaccountingApiIntegrationTest {
         TenantContext.set(tenantId);
 
         TrialBalanceView balance = finaccountingApi.trialBalance(null);
-        AccountBalanceView leaf = accountIn(balance, PostingRule.CASH);
+        AccountBalanceView leaf = accountIn(balance, "1140");
         AccountBalanceView root = accountIn(balance, "1000");
 
         // CASH is 1120, under 1100 "Cash and Cash Equivalents", under 1000 "Assets" -- so this is
@@ -556,7 +566,7 @@ class FinaccountingApiIntegrationTest {
         TenantContext.set(tenantId);
 
         TrialBalanceView balance = finaccountingApi.trialBalance(null);
-        assertThat(accountIn(balance, PostingRule.CASH).balance())
+        assertThat(accountIn(balance, "1140").balance())
             .as("a debit on a debit-normal account is a positive balance")
             .isEqualByComparingTo("15000.00");
     }
@@ -601,7 +611,7 @@ class FinaccountingApiIntegrationTest {
         TrialBalanceView september = finaccountingApi.trialBalance("2026-09");
         assertThat(september.totalDebit()).isEqualByComparingTo("0");
         assertThat(september.balanced()).as("nothing posted is still in balance").isTrue();
-        assertThat(accountIn(september, PostingRule.CASH).ownDebit()).isEqualByComparingTo("0");
+        assertThat(accountIn(september, "1140").ownDebit()).isEqualByComparingTo("0");
     }
 
     // ---- The account filter that lets a balance be opened up ---------------------------------
@@ -620,13 +630,13 @@ class FinaccountingApiIntegrationTest {
             balancedEntry(tenantId, "billing.PremiumInvoiceGenerated", "inv-1", "2026-08", "POL-0001"));
         // Touches PREMIUM_RECEIVABLE and UNEARNED_PREMIUM -- so CASH must NOT match it.
         finaccountingApiImpl.postEntry(
-            balancedEntryAgainst(tenantId, PostingRule.PREMIUM_RECEIVABLE, PostingRule.UNEARNED_PREMIUM, "TZS"));
+            balancedEntryAgainst(tenantId, "2122", "2121", "TZS"));
         TenantContext.set(tenantId);
 
-        assertThat(finaccountingApi.listJournalEntries(null, null, PostingRule.CASH, Pageable.unpaged()))
+        assertThat(finaccountingApi.listJournalEntries(null, null, "1140", Pageable.unpaged()))
             .as("only the entry with a CASH leg")
             .hasSize(1);
-        assertThat(finaccountingApi.listJournalEntries(null, null, PostingRule.PREMIUM_RECEIVABLE, Pageable.unpaged()))
+        assertThat(finaccountingApi.listJournalEntries(null, null, "2122", Pageable.unpaged()))
             .as("both entries touch premium receivable")
             .hasSize(2);
         // Negative control: without the filter the query is genuinely wider, so the numbers above
@@ -643,12 +653,12 @@ class FinaccountingApiIntegrationTest {
         seedChart(tenantId);
         JournalEntry bothLegsSameAccount = new JournalEntry(tenantId, "test.SameAccountBothLegs",
             "same-1", "2026-08", "POL-0001", "system:test");
-        bothLegsSameAccount.addLeg(PostingRule.CASH, PostingDirection.DR, new BigDecimal("100.00"), "TZS");
-        bothLegsSameAccount.addLeg(PostingRule.CASH, PostingDirection.CR, new BigDecimal("100.00"), "TZS");
+        bothLegsSameAccount.addLeg("1140", PostingDirection.DR, new BigDecimal("100.00"), "TZS");
+        bothLegsSameAccount.addLeg("1140", PostingDirection.CR, new BigDecimal("100.00"), "TZS");
         finaccountingApiImpl.postEntry(bothLegsSameAccount);
         TenantContext.set(tenantId);
 
-        assertThat(finaccountingApi.listJournalEntries(null, null, PostingRule.CASH, Pageable.unpaged()))
+        assertThat(finaccountingApi.listJournalEntries(null, null, "1140", Pageable.unpaged()))
             .hasSize(1);
     }
 }

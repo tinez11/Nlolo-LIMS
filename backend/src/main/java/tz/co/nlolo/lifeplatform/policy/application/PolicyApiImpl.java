@@ -2404,6 +2404,9 @@ public class PolicyApiImpl implements PolicyApi {
     private static void putPremiumPayingUntil(Map<String, Object> payload, Policy policy) {
         LocalDate payingUntil = policy.premiumPayingUntil();
         payload.put("premiumPayingUntil", payingUntil != null ? payingUntil.toString() : null);
+        // When the cover ends, so a single premium's invoice can say what it pays for (IFRS 17 I3a: the ledger earns a
+        // PAA premium over it). Null where the contract does not term.
+        payload.put("maturityDate", policy.getMaturityDate() != null ? policy.getMaturityDate().toString() : null);
     }
 
     @Override

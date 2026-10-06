@@ -32,6 +32,9 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, UUID
                                                                                  String policyNumber, Pageable pageable);
     boolean existsByTenantIdAndSourceEventAndSourceRef(UUID tenantId, String sourceEvent, String sourceRef);
 
+    /** The journal an event already posted, if any: posting is idempotent on (event, source ref). */
+    Optional<JournalEntry> findByTenantIdAndSourceEventAndSourceRef(UUID tenantId, String sourceEvent, String sourceRef);
+
     /**
      * The three-dimension search, replacing the branch-per-combination the four derived finders
      * above were used for.

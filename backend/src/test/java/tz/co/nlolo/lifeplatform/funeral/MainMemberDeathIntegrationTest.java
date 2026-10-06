@@ -162,11 +162,12 @@ class MainMemberDeathIntegrationTest {
         List<InvoiceView> invoices = asTenant(TENANT, () -> billingApi.listInvoices(policyNumber, null));
         assertThat(invoices).filteredOn(i -> i.dueDate().isAfter(TODAY)).isNotEmpty()
             .allMatch(i -> i.status().name().equals("WAIVED"));
-        // The ledger's receivable is what is still owed: the invoices not withdrawn, less the one collection.
+        // The ledger's receivable is what is still owed: the invoices not withdrawn, less the one collection. Funeral
+        // cover is PAA by the register's baseline, so it sits on 2142 LRC (PAA) premiums due (IFRS 17 I3a).
         BigDecimal owed = invoices.stream().filter(i -> !i.status().name().equals("WAIVED"))
             .map(InvoiceView::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal receivable = jdbc.queryForObject("SELECT COALESCE(SUM(CASE WHEN direction = 'DR' THEN amount ELSE -amount END), 0)"
-            + " FROM finaccounting.gl_posting WHERE tenant_id = ? AND policy_number = ? AND account_code = '2122'",
+            + " FROM finaccounting.gl_posting WHERE tenant_id = ? AND policy_number = ? AND account_code = '2142'",
             BigDecimal.class, TENANT, policyNumber);
         assertThat(receivable).isEqualByComparingTo(owed.subtract(new BigDecimal("12075.00")));
 

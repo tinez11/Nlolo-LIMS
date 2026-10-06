@@ -99,7 +99,7 @@ public class ChartOfAccount {
     public static ChartOfAccount root(UUID tenantId, String accountCode, String name,
                                        boolean postingAllowed, String currency, String createdBy) {
         ChartOfAccount account = new ChartOfAccount(tenantId, accountCode, name,
-            PostingRule.accountTypeFor(accountCode), PostingRule.normalBalanceFor(accountCode), createdBy);
+            AccountClasses.accountTypeFor(accountCode), AccountClasses.normalBalanceFor(accountCode), createdBy);
         account.level = 1;
         account.postingAllowed = postingAllowed;
         account.currency = currency;
@@ -220,7 +220,7 @@ public class ChartOfAccount {
 
     /** A plain rename -- {@code accountCode} is this entity's own primary key (composite with
      *  {@code tenantId}) and {@code accountType}/{@code normalBalance} stay derived from its
-     *  leading digit (see {@link PostingRule}), so none is, or should be, independently editable.
+     *  leading digit (see {@link AccountClasses}), so none is, or should be, independently editable.
      *  {@code parentCode} and {@code level} are equally fixed: moving an account is a distinct,
      *  deferred concern that carries real risk to historical reporting. */
     public void rename(String newName, String updatedBy) {

@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 
 /**
  * {@code accountType}/{@code normalBalance} are deliberately absent here: a child takes its
- * parent's, and a class root its class's ({@code PostingRule.accountTypeFor}/
+ * parent's, and a class root its class's ({@code AccountClasses.accountTypeFor}/
  * {@code normalBalanceFor}), so a caller can never make an account disagree with its place in the
  * IFRS 17 posting guide's nine classes. {@code level} is absent for the same reason -- it is
  * derived from the parent chain.

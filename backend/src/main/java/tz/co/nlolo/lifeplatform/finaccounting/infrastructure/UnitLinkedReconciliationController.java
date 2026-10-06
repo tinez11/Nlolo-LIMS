@@ -38,7 +38,7 @@ public class UnitLinkedReconciliationController {
         List<UnitLinkedValuation.FundValuation> funds = source == null ? List.of() : source.valuations();
         BigDecimal total = funds.stream().map(UnitLinkedValuation.FundValuation::value).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal ledger = finaccountingApi.trialBalance(null).accounts().stream()
-            .filter(a -> tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule.UNIT_LINKED_LIABILITY.equals(a.accountCode())).map(AccountBalanceView::balance).findFirst().orElse(BigDecimal.ZERO);
+            .filter(a -> "2131".equals(a.accountCode())).map(AccountBalanceView::balance).findFirst().orElse(BigDecimal.ZERO);
         return new ReconciliationResponse(funds, total, ledger, ledger.subtract(total));
     }
 }

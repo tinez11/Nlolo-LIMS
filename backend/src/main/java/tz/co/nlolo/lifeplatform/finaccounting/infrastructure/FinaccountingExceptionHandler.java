@@ -9,6 +9,8 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PeriodStateException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyElectionNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyRegisterStateException;
+import tz.co.nlolo.lifeplatform.finaccounting.api.UnpostedEventNotFoundException;
+import tz.co.nlolo.lifeplatform.finaccounting.api.UnpostedEventResolvedException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -82,6 +84,16 @@ public class FinaccountingExceptionHandler {
     @ExceptionHandler(PolicyElectionNotFoundException.class)
     public ProblemDetail handlePolicyElectionNotFound(PolicyElectionNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "POLICY_ELECTION_NOT_FOUND");
+    }
+
+    @ExceptionHandler(UnpostedEventNotFoundException.class)
+    public ProblemDetail handleUnpostedEventNotFound(UnpostedEventNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "UNPOSTED_EVENT_NOT_FOUND");
+    }
+
+    @ExceptionHandler(UnpostedEventResolvedException.class)
+    public ProblemDetail handleUnpostedEventResolved(UnpostedEventResolvedException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "UNPOSTED_EVENT_RESOLVED");
     }
 
     /** {@code traceId} is REQUIRED by openapi-common.yaml's ProblemDetails schema -- an M6 contract

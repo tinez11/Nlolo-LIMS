@@ -3,6 +3,8 @@ package tz.co.nlolo.lifeplatform.finaccounting.application;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.event.TransactionPhase;
@@ -30,7 +32,11 @@ import java.util.function.Consumer;
  *       other contract keeps the classification it was issued with.</li>
  * </ul>
  *
- * <p>Mechanics and bean-naming rationale: see {@link BillingEventListener}.
+ * <p>Runs FIRST among the AFTER_COMMIT listeners on an event (I3a): billing raises a new policy's first invoice from
+ * the same PolicyIssued, and the ledger must find the policy classified when it posts that invoice. Should one still
+ * arrive first (another ordering, a redelivery), it is queued as UNMAPPED, and classifying the policy posts it.
+ *
+ * <p>Mechanics and bean-naming rationale: see {@link LedgerEventListener}.
  */
 @Component("finaccountingPolicyClassificationEventListener")
 public class PolicyClassificationEventListener {
@@ -39,17 +45,20 @@ public class PolicyClassificationEventListener {
     private static final String EVENT_PROCESSING_FAILED_COUNTER = "lifeplatform_finaccounting_event_processing_failed_total";
 
     private final PolicyClassifier classifier;
+    private final PostingEngine engine;
     private final MeterRegistry meterRegistry;
     private final TransactionTemplate requiresNew;
 
-    public PolicyClassificationEventListener(PolicyClassifier classifier, MeterRegistry meterRegistry,
-                                             PlatformTransactionManager transactionManager) {
+    public PolicyClassificationEventListener(PolicyClassifier classifier, PostingEngine engine,
+                                             MeterRegistry meterRegistry, PlatformTransactionManager transactionManager) {
         this.classifier = classifier;
+        this.engine = engine;
         this.meterRegistry = meterRegistry;
         this.requiresNew = new TransactionTemplate(transactionManager);
         this.requiresNew.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
+    @Order(Ordered.HIGHEST_PRECEDENCE)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
@@ -66,6 +75,10 @@ public class PolicyClassificationEventListener {
             @SuppressWarnings("unchecked")
             Map<String, Object> payload = (Map<String, Object>) envelope.payload();
             requiresNew.executeWithoutResult(status -> handler.accept(payload));
+            if (payload.get("policyNumber") != null) {
+                engine.retryUnmapped(envelope.tenantId(), payload.get("policyNumber").toString(),
+                    "system:" + envelope.eventType());
+            }
         } catch (Exception e) {
             meterRegistry.counter(EVENT_PROCESSING_FAILED_COUNTER, "eventType", envelope.eventType()).increment();
             log.error("finaccounting failed to classify on {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
