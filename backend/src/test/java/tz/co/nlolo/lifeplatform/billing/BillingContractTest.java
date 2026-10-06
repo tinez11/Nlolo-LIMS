@@ -123,6 +123,7 @@ class BillingContractTest {
             "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/policy/V30__surrender.sql",
             "db-migrations/policy/V31__free_look_status.sql",
+            "db-migrations/policy/V37__sale_classification.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",

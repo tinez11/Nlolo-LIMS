@@ -138,6 +138,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/policy/V30__surrender.sql",
             "db-migrations/policy/V31__free_look_status.sql",
+            "db-migrations/policy/V37__sale_classification.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             // The offer-validity window the expiry sweep reads.
             "db-migrations/refdata/V5__seed_offer_validity.sql",
@@ -1075,6 +1076,77 @@ class PolicyApiIntegrationTest {
         PolicyView issued = policyApi.issuePolicy(UUID.randomUUID(), request, "test-agent");
         assertThat(issued.status()).isEqualTo(PolicyStatus.ACTIVE);
         assertTrue(policyApi.isPolicyInForce(issued.policyNumber(), LocalDate.now()));
+    }
+
+    // ---- IFRS 17 I2: classified at sale (V37) ------------------------------------------------
+
+    @Test
+    void aDirectSaleIsClassifiedFromItsProductAndTheHeadOfficeAndNeverChanges() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "IFRS-SALE-01");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+        PolicyView view = policyApi.getPolicy(policyNumber);
+
+        assertThat(view.portfolioCode()).isEqualTo("TERM");
+        assertThat(view.cohortYear()).isEqualTo(LocalDate.now().getYear());
+        assertThat(view.profitabilityBucket()).isEqualTo("REMAINING");
+        assertThat(view.measurementModelOverride()).isNull();
+        assertThat(view.salesChannel()).as("no case, no agent: a direct sale").isEqualTo("DIRECT");
+        assertThat(view.branchCode()).as("nothing named a branch: head office").isEqualTo("DSM");
+
+        assertThatThrownBy(() -> jdbcTemplate.update(
+            "UPDATE policy.policy SET sales_channel = 'BROKER' WHERE policy_number = ?", policyNumber))
+            .hasStackTraceContaining("POLICY_CLASSIFICATION_IMMUTABLE");
+    }
+
+    @Test
+    void anAgentsSaleTakesTheAgentsChannelAndBranch() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "IFRS-SALE-02");
+        TenantContext.set(tenantId);
+        PartyView agentParty = partyApi.registerIndividual("Broker For Sale", LocalDate.of(1985, 1, 1),
+            "+255713990021", null, "test-staff");
+        partyApi.submitKycEvidence(agentParty.partyId(), KycStatus.VERIFIED, "doc-sale-02", "kyc-officer");
+        AgentView broker = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            agentParty.partyId(), "LIC-SALE-02", LocalDate.now().plusYears(1), null,
+            tz.co.nlolo.lifeplatform.distribution.api.SalesChannel.BROKER, "ARU"), "test-staff");
+
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("1000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            broker.agentId(), List.of(), "Direct issuance test");
+        PolicyView view = policyApi.getPolicy(policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber());
+
+        assertThat(view.salesChannel()).isEqualTo("BROKER");
+        assertThat(view.branchCode()).isEqualTo("ARU");
+    }
+
+    @Test
+    void theCasesSaleWinsAndIsFixedOnceThePolicyIsIssued() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "IFRS-SALE-03");
+        TenantContext.set(tenantId);
+        UnderwritingCaseView opened = underwritingApi.openCase(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("1000000"), "TZS", null, ProposalDetails.selfInsured(), "agent1");
+        underwritingApi.recordSale(opened.caseId(), "DIGITAL", "ZNZ", "uw");
+        underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Standard", new BigDecimal("10"), "uw");
+        underwritingApi.decide(opened.caseId(),
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "uw-decider", false);
+
+        List<PolicyView> found = List.of();
+        for (int attempt = 0; attempt < 50 && found.isEmpty(); attempt++) {
+            TenantContext.set(tenantId);
+            found = policyApi.searchPolicies(fixture.applicantId(), null, null, null, null, PageRequest.of(0, 10)).getContent();
+            if (found.isEmpty()) Thread.sleep(100);
+        }
+        assertThat(found).hasSize(1);
+        assertThat(found.get(0).salesChannel()).isEqualTo("DIGITAL");
+        assertThat(found.get(0).branchCode()).isEqualTo("ZNZ");
+
+        TenantContext.set(tenantId);
+        assertThat(underwritingApi.getCase(opened.caseId()).saleLockedAt()).isNotNull();
+        assertThatThrownBy(() -> underwritingApi.recordSale(opened.caseId(), "AGENT", "DSM", "uw"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.underwriting.api.SaleFixedException.class);
     }
 
     // ---- The agent of record must be a real agent ---------------------------------------------

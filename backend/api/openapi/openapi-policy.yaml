@@ -1879,6 +1879,24 @@ components:
             Who issued it, by name from their token — for a credit-life scheme set up from agreed
             terms, the underwriter of record. Null for automatic issuance and older policies.
           type: [string, "null"]
+        # IFRS 17 I2 (classification at sale): stamped at issue and never changed. Null only on a policy issued
+        # before I2 that the development backfill has not reached. The measurement model and the group of
+        # contracts are finaccounting's (GET /finance/policy-classifications/{policyNumber}).
+        portfolioCode:
+          type: [string, "null"]
+          enum: [TERM, WL, END, MB, PAR, ULIP, SAV, DEP, IANN, DANN, PEN, GRPL, CRL, FUN, null]
+        cohortYear: { type: [integer, "null"], description: "Calendar year of issue." }
+        profitabilityBucket:
+          type: [string, "null"]
+          enum: [ONEROUS, NO_SIGNIFICANT_RISK, REMAINING, null]
+        measurementModelOverride:
+          description: "The version's override, or null for the accounting policy register's model."
+          type: [string, "null"]
+          enum: [GMM, VFA, PAA, IFRS9, null]
+        salesChannel:
+          type: [string, "null"]
+          enum: [AGENT, BROKER, BANCASSURANCE, DIRECT, DIGITAL, null]
+        branchCode: { type: [string, "null"], description: "A refdata BRANCH code." }
     IssueGroupSchemeRequest:
       description: >-
         No sumAssured field, deliberately: a scheme's sum assured is the total of its members'

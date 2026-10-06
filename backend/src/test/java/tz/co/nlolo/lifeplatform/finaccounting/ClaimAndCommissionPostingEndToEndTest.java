@@ -204,6 +204,7 @@ class ClaimAndCommissionPostingEndToEndTest {
             "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/policy/V30__surrender.sql",
             "db-migrations/policy/V31__free_look_status.sql",
+            "db-migrations/policy/V37__sale_classification.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",

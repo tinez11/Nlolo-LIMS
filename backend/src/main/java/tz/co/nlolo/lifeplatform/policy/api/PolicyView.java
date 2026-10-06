@@ -32,4 +32,8 @@ public record PolicyView(String policyNumber, UUID underwritingCaseId, UUID poli
                           // How it came to be issued (V24): the basis and reason on an exception
                           // route, and who issued it by name -- the underwriter of record for a
                           // scheme set up from agreed terms. All null on ordinary business.
-                          String issuanceBasis, String issuanceReason, String issuedByName) {}
+                          String issuanceBasis, String issuanceReason, String issuedByName,
+                          // IFRS 17 I2 (V37): classified at sale and never changed. Null only on a policy
+                          // issued before I2 that the development backfill has not reached.
+                          String portfolioCode, Integer cohortYear, String profitabilityBucket,
+                          String measurementModelOverride, String salesChannel, String branchCode) {}

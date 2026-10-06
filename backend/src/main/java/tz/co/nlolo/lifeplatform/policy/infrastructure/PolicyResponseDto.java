@@ -23,7 +23,10 @@ public record PolicyResponseDto(String policyNumber, UUID policyholderPartyId, U
                                  /** The decided case this was issued from; null on an exception route. */
                                  UUID underwritingCaseId,
                                  /** V24: how it was issued, and by whom -- see PolicyView. */
-                                 String issuanceBasis, String issuanceReason, String issuedByName) {
+                                 String issuanceBasis, String issuanceReason, String issuedByName,
+                                 /** IFRS 17 I2: the sale facts, fixed at issue -- see PolicyView. */
+                                 String portfolioCode, Integer cohortYear, String profitabilityBucket,
+                                 String measurementModelOverride, String salesChannel, String branchCode) {
 
     public static PolicyResponseDto from(PolicyView view) {
         return new PolicyResponseDto(view.policyNumber(), view.policyholderPartyId(), view.productId(), view.productVersionId(),
@@ -35,6 +38,8 @@ public record PolicyResponseDto(String policyNumber, UUID policyholderPartyId, U
             view.commencementDate(), view.policyTermMonths(),
             view.premiumPayingTermMonths(), view.maturityDate(),
             view.lifeAssuredPartyId(), view.productCategory(),
-            view.underwritingCaseId(), view.issuanceBasis(), view.issuanceReason(), view.issuedByName());
+            view.underwritingCaseId(), view.issuanceBasis(), view.issuanceReason(), view.issuedByName(),
+            view.portfolioCode(), view.cohortYear(), view.profitabilityBucket(), view.measurementModelOverride(),
+            view.salesChannel(), view.branchCode());
     }
 }

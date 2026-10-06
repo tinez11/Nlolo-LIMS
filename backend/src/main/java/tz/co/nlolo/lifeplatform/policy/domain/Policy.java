@@ -124,6 +124,26 @@ public class Policy {
     @Column(name = "issued_by_name", updatable = false)
     private String issuedByName;
 
+    // IFRS 17 I2 (V37): classified at sale, never changed -- updatable=false here, and a trigger refuses any change
+    // in the database. The measurement model and group are finaccounting's, from policy.PolicyIssued.
+    @Column(name = "portfolio_code", updatable = false)
+    private String portfolioCode;
+
+    @Column(name = "cohort_year", updatable = false)
+    private Integer cohortYear;
+
+    @Column(name = "profitability_bucket", updatable = false)
+    private String profitabilityBucket;
+
+    @Column(name = "measurement_model_override", updatable = false)
+    private String measurementModelOverride;
+
+    @Column(name = "sales_channel", updatable = false)
+    private String salesChannel;
+
+    @Column(name = "branch_code", updatable = false)
+    private String branchCode;
+
     @Version
     private Long version;
 
@@ -379,6 +399,22 @@ public class Policy {
     public String getIssuanceBasis() { return issuanceBasis; }
     public String getIssuanceReason() { return issuanceReason; }
     public String getIssuedByName() { return issuedByName; }
+    public String getPortfolioCode() { return portfolioCode; }
+    public Integer getCohortYear() { return cohortYear; }
+    public String getProfitabilityBucket() { return profitabilityBucket; }
+    public String getMeasurementModelOverride() { return measurementModelOverride; }
+    public String getSalesChannel() { return salesChannel; }
+    public String getBranchCode() { return branchCode; }
+
+    /** The IFRS 17 sale facts (V37). Before the first save only; the columns are not updatable. */
+    public void classifyAtSale(SaleClassification sale) {
+        this.portfolioCode = sale.portfolioCode();
+        this.cohortYear = sale.cohortYear();
+        this.profitabilityBucket = sale.profitabilityBucket();
+        this.measurementModelOverride = sale.measurementModelOverride();
+        this.salesChannel = sale.salesChannel();
+        this.branchCode = sale.branchCode();
+    }
 
     /** Record how this policy came to be issued (V24). Before the first save only. */
     public void recordIssuance(String basis, String reason, String issuerName) {
