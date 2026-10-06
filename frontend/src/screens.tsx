@@ -10,6 +10,7 @@ import {
   Hourglass,
   Landmark,
   MessageSquare,
+  Scale,
   Package,
   Percent,
   Receipt,
@@ -65,6 +66,8 @@ import {
   TreatiesPage,
   TreatyDetailPage,
   BordereauPage,
+  StatementPage,
+  ReinsuranceStatementsPage,
   OpenUnderwritingCasePage,
   UnderwritingCaseDetailPage,
   UnderwritingQueuePage,
@@ -552,6 +555,13 @@ const STAFF_SCREENS: Screen[] = [
   { path: 'treaties/new', element: <CreateTreatyPage />, reach: 'drill-in' },
   { path: 'treaties/:treatyId', element: <TreatyDetailPage />, reach: 'drill-in' },
   { path: 'treaties/:treatyId/bordereaux/:bordereauId', element: <BordereauPage />, reach: 'drill-in' },
+  // IFRS 17 I3d: each treaty's quarter settled into the reinsurer current account; approvers find theirs in the list.
+  { path: 'treaties/:treatyId/statements/:statementId', element: <StatementPage />, reach: 'drill-in' },
+  {
+    path: 'reinsurance-statements',
+    element: <ReinsuranceStatementsPage />,
+    reach: { group: 'finance', label: 'Reinsurance statements', icon: Scale },
+  },
   {
     path: 'regulatory-returns',
     element: <RegulatoryReturnsPage />,

@@ -1,6 +1,10 @@
 import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import type { BordereauView, CessionView } from '@/api/types';
+import type { BordereauView, CessionView, ReinsuranceStatementView } from '@/api/types';
+import { InlineError } from '@/components/InlineError';
+import { Button } from '@/components/ui/button';
+import { useReinsuranceStatementsStore } from '@/store/reinsuranceStatementsStore';
+import { STATEMENT_STATUS_LABEL, endedQuarters, settlementSide } from './statementForm';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -11,7 +15,7 @@ import { Panel } from '@/components/Panel';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { formatPeriod } from './formatPeriod';
-import { isInitialLoad } from '@/store/createResourceSlice';
+import { idle, isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectBordereauPreview,
   selectBordereaux,
@@ -126,6 +130,9 @@ export function TreatyDetailPage() {
           }
         >
           {treatyId && <TreatyBordereaux treatyId={treatyId} />}
+          {treatyId && (
+            <TreatyStatements treatyId={treatyId} effectiveFrom={treaty.effectiveFrom} effectiveTo={treaty.effectiveTo} />
+          )}
           {treatyId && <TreatyCessions treatyId={treatyId} />}
         </DetailLayout>
       )}
@@ -213,6 +220,75 @@ function TreatyBordereaux({ treatyId }: { treatyId: string }) {
           onRowActivate={(b) => {
             if (b.bordereauId) navigate(`bordereaux/${b.bordereauId}`);
           }}
+        />
+      )}
+    </Panel>
+  );
+}
+
+/**
+ * The treaty's quarterly statements (IFRS 17 I3d): each settles a calendar quarter's bordereaux and recoveries into the
+ * reinsurer current account. An ended quarter with no live statement offers "Prepare statement for <quarter>"; the
+ * server decides whether it can really be settled (every month's bordereau written) and says why not.
+ */
+function TreatyStatements({ treatyId, effectiveFrom, effectiveTo }: {
+  treatyId: string;
+  effectiveFrom: string;
+  effectiveTo?: string | null | undefined;
+}) {
+  const navigate = useNavigate();
+  const statements = useReinsuranceStatementsStore((s) => s.byTreaty[treatyId] ?? idle<ReinsuranceStatementView[]>());
+  const loadForTreaty = useReinsuranceStatementsStore((s) => s.loadForTreaty);
+  const prepare = useReinsuranceStatementsStore((s) => s.prepare);
+  const acting = useReinsuranceStatementsStore((s) => s.acting[`prepare.${treatyId}`]);
+
+  useEffect(() => {
+    void loadForTreaty(treatyId);
+  }, [treatyId, loadForTreaty]);
+
+  const rows = statements.data ?? [];
+  const settled = new Set(rows.filter((s) => s.status !== 'REJECTED').map((s) => s.quarter));
+  const open = endedQuarters(effectiveFrom, effectiveTo).filter((q) => !settled.has(q));
+
+  const columns: Column<ReinsuranceStatementView>[] = [
+    { key: 'quarter', header: 'Quarter', render: (s) => <span className="font-medium">{s.quarter}</span> },
+    { key: 'status', header: 'Status', render: (s) => STATEMENT_STATUS_LABEL[s.status] ?? s.status },
+    { key: 'balance', header: 'Balance', render: (s) => settlementSide(s) },
+  ];
+
+  return (
+    <Panel title="Statements">
+      {open.length > 0 && (
+        <div className="flex flex-wrap gap-2 border-b border-border px-4 py-2.5">
+          {open.map((quarter) => (
+            <Button key={quarter} type="button" size="sm" variant="outline" disabled={acting?.status === 'loading'}
+              onClick={async () => {
+                const draft = await prepare(treatyId, quarter);
+                if (draft) navigate(`statements/${draft.statementId}`);
+              }}>
+              {`Prepare statement for ${quarter}`}
+            </Button>
+          ))}
+        </div>
+      )}
+      {acting?.status === 'error' && acting.error && (
+        <div className="px-4 py-2">
+          <InlineError error={acting.error} />
+        </div>
+      )}
+      {isInitialLoad(statements) ? (
+        <TableSkeleton columns={columns.length} />
+      ) : statements.status === 'error' && statements.error && statements.data === null ? (
+        <ErrorPanel error={statements.error} onRetry={() => void loadForTreaty(treatyId)} />
+      ) : rows.length === 0 ? (
+        <EmptyState title="No statement yet" description="A quarter is settled once all its months' bordereaux are written." />
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={rows}
+          rowKey={(s) => s.statementId}
+          caption="Quarterly statements of this treaty"
+          onRowActivate={(s) => navigate(`statements/${s.statementId}`)}
         />
       )}
     </Panel>

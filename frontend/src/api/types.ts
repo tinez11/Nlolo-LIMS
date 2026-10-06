@@ -246,6 +246,10 @@ export type ClaimRecoveryView = ReinsuranceComponents['schemas']['ClaimRecoveryV
 /** IFRS 17 I3c: one treaty's month -- the ceded premium and commission it posts, the recoveries it only matches. */
 export type BordereauView = ReinsuranceComponents['schemas']['BordereauView'];
 export type BordereauLine = ReinsuranceComponents['schemas']['BordereauLine'];
+// IFRS 17 I3d: the quarterly reinsurance statement. Prefixed: accumulation already has a StatementView.
+export type ReinsuranceStatementView = ReinsuranceComponents['schemas']['StatementView'];
+export type ReinsuranceStatementStatus = ReinsuranceComponents['schemas']['StatementStatus'];
+export type UpdateReinsuranceStatementRequest = ReinsuranceComponents['schemas']['UpdateStatementRequest'];
 
 export const TREATY_TYPES: readonly TreatyType[] = ['QUOTA_SHARE', 'SURPLUS', 'XOL'];
 export const TREATY_STATUSES: readonly TreatyStatus[] = ['ACTIVE', 'EXPIRED'];

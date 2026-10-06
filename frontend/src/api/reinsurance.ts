@@ -1,4 +1,4 @@
-import { get, post } from '@/lib/http';
+import { get, post, put } from '@/lib/http';
 import type { MutationAttempt } from '@/lib/idempotency';
 import type {
   BordereauView,
@@ -6,9 +6,12 @@ import type {
   ClaimRecoveryView,
   CreateTreatyRequest,
   Page,
+  ReinsuranceStatementStatus,
+  ReinsuranceStatementView,
   TreatyStatus,
   TreatyUtilisationView,
   TreatyView,
+  UpdateReinsuranceStatementRequest,
 } from './types';
 
 /**
@@ -102,4 +105,45 @@ export function getBordereau(bordereauId: string): Promise<BordereauView> {
 /** The current month as it would be written now -- computed, never stored. */
 export function previewBordereau(treatyId: string): Promise<BordereauView> {
   return get<BordereauView>(`/treaties/${encodeURIComponent(treatyId)}/bordereau-preview`);
+}
+
+// ---- The quarterly statement (IFRS 17 I3d) ----
+
+const stmt = (id: string) => `/reinsurance-statements/${encodeURIComponent(id)}`;
+
+export function listStatements(status?: ReinsuranceStatementStatus, treatyId?: string): Promise<ReinsuranceStatementView[]> {
+  const params: Record<string, string> = {};
+  if (status) params.status = status;
+  if (treatyId) params.treatyId = treatyId;
+  return get<ReinsuranceStatementView[]>('/reinsurance-statements', { params });
+}
+
+/** A DRAFT for one ended calendar quarter (e.g. 2026-Q3), from the treaty's bordereaux and recoveries. */
+export function prepareStatement(treatyId: string, quarter: string): Promise<ReinsuranceStatementView> {
+  return post<ReinsuranceStatementView>(`/treaties/${encodeURIComponent(treatyId)}/statements`, { quarter });
+}
+
+export function getStatement(id: string): Promise<ReinsuranceStatementView> {
+  return get<ReinsuranceStatementView>(stmt(id));
+}
+
+/** What the reinsurer's statement states -- funds withheld and profit commission as decimal strings -- and why. */
+export function updateStatement(id: string, body: UpdateReinsuranceStatementRequest): Promise<ReinsuranceStatementView> {
+  return put<ReinsuranceStatementView>(stmt(id), body);
+}
+
+export function attachStatementDocument(id: string, file: File): Promise<ReinsuranceStatementView> {
+  const form = new FormData();
+  form.append('file', file);
+  return post<ReinsuranceStatementView>(`${stmt(id)}/documents`, form);
+}
+
+export type StatementAction = 'submission' | 'withdrawal' | 'approval';
+
+export function actOnStatement(id: string, action: StatementAction): Promise<ReinsuranceStatementView> {
+  return post<ReinsuranceStatementView>(`${stmt(id)}/${action}`, {});
+}
+
+export function rejectStatement(id: string, reason: string): Promise<ReinsuranceStatementView> {
+  return post<ReinsuranceStatementView>(`${stmt(id)}/rejection`, { reason });
 }
