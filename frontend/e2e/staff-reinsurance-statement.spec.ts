@@ -1,4 +1,5 @@
 import { expect, request as apiRequest, test } from '@playwright/test';
+import { approverPage } from './approverSession';
 import { staffToken } from './creditLife';
 
 /**
@@ -98,9 +99,8 @@ test.describe('reinsurance statement', () => {
     await expect(page.getByRole('button', { name: 'Approve and post' })).toHaveCount(0);
     const url = page.url();
 
-    const approverContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance-approver.json' });
+    const { page: approver, context: approverContext } = await approverPage(browser);
     try {
-      const approver = await approverContext.newPage();
       await approver.goto('/staff/reinsurance-statements');
       await expect(approver.getByRole('table', { name: 'Reinsurance statements' })).toContainText(quarter, { timeout: 15_000 });
       await approver.goto(url);

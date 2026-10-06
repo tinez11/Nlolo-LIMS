@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { approverPage } from './approverSession';
 
 /**
  * IFRS 17 I4 through the real stack: finance prepares a manual journal from the guide's payroll template, attaches
@@ -35,8 +36,7 @@ test.describe('IFRS 17 manual journals', () => {
     await expect(page.getByRole('button', { name: 'Approve and post' })).toHaveCount(0);
     const url = page.url();
 
-    const approverContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance-approver.json' });
-    const approver = await approverContext.newPage();
+    const { page: approver, context: approverContext } = await approverPage(browser);
     await approver.goto(url);
     await approver.getByRole('button', { name: 'Approve and post' }).click();
     await expect(approver.getByText(/Posted · period/)).toBeVisible({ timeout: 15_000 });
