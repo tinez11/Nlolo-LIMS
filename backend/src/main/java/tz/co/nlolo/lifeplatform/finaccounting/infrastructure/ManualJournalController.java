@@ -128,12 +128,20 @@ public class ManualJournalController {
         }
         String ref;
         try {
-            ref = documents.upload("manual-journal:" + id, DocumentType.JOURNAL_SUPPORT, jwt.getSubject(),
+            ref = documents.upload(ownerContextOf(id), DocumentType.JOURNAL_SUPPORT, jwt.getSubject(),
                 file.getInputStream(), file.getSize(), contentType, file.getOriginalFilename());
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to read the uploaded document", e);
         }
         return api.attachDocument(id, ref, jwt.getSubject());
+    }
+
+    /**
+     * The document store's owner of a journal's supporting document. Short, like claims' "claim:{id}": the column is
+     * VARCHAR(50), and "manual-journal:{id}" (51) failed every upload.
+     */
+    static String ownerContextOf(UUID id) {
+        return "journal:" + id;
     }
 
     @DeleteMapping("/finance/manual-journals/{id}/documents/{documentRef}")
