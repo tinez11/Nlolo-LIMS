@@ -80,7 +80,8 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
             "db-migrations/underwriting/V11__member_evidence_case.sql",
-            "db-migrations/refdata/V1__create_refdata_schema.sql");
+            "db-migrations/refdata/V1__create_refdata_schema.sql",
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql");
     }
 
     @BeforeEach

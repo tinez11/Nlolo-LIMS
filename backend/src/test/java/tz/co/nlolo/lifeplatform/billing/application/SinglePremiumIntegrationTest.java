@@ -133,6 +133,7 @@ class SinglePremiumIntegrationTest {
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",

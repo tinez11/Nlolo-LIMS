@@ -168,6 +168,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/policy/V30__surrender.sql",
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
             // M5 (Task 7) addition: PremiumInvoice now maps amount_paid -- every JPA insert this

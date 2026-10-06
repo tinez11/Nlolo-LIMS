@@ -89,6 +89,7 @@ class UnderwritingContractTest {
             "db-migrations/underwriting/V13__single_premium_frequency.sql",
             "db-migrations/underwriting/V16__funeral_application.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");

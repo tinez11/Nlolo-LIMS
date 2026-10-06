@@ -248,6 +248,7 @@ class AppRolePrivilegesIntegrationTest {
             // distribution/V1 has zero GRANT statements (the recurring V1 pattern this class
             // exists to catch); V2 is what grants app_role anything at all here.
             "db-migrations/refdata/V4__seed_distribution_parameters.sql",
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             // M8 (Task 9) additions: reinsurance appeared in NEITHER this class nor

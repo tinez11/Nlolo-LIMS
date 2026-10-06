@@ -90,6 +90,7 @@ class FinaccountingApiIntegrationTest {
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",

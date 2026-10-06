@@ -139,6 +139,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             // The offer-validity window the expiry sweep reads.
             "db-migrations/refdata/V5__seed_offer_validity.sql",
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             // Issuance now validates agentOfRecordId against distribution, so this schema has to
             // exist here -- without it the check fails on a missing relation rather than on the
             // agent, which is a different (and much less useful) failure.

@@ -82,6 +82,7 @@ class DistributionApiIntegrationTest {
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/refdata/V4__seed_distribution_parameters.sql",
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
