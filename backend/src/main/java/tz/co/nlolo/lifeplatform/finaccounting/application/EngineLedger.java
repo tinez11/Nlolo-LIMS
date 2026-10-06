@@ -72,8 +72,10 @@ public class EngineLedger {
                 + " FROM (" + ATTRIBUTED + ") a"
                 + " WHERE a.period <= ? AND a.grp IS NOT NULL AND " + MEASURED
                 + " GROUP BY a.grp, a.account_code, a.currency ORDER BY a.grp, a.account_code",
-            (rs, i) -> new BalanceRow(rs.getString("grp"), rs.getString("account_code"), rs.getBigDecimal("opening"),
-                rs.getBigDecimal("closing"), trim(rs.getString("currency"))),
+            // A sum over no earlier rows comes back as a bare 0; the extract shows money with its two decimals.
+            (rs, i) -> new BalanceRow(rs.getString("grp"), rs.getString("account_code"),
+                rs.getBigDecimal("opening").setScale(2, java.math.RoundingMode.HALF_UP),
+                rs.getBigDecimal("closing").setScale(2, java.math.RoundingMode.HALF_UP), trim(rs.getString("currency"))),
             period, tenantId, period);
     }
 

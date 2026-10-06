@@ -66,15 +66,17 @@ public class EngineRuns {
     private final AccountingPeriods periods;
     private final FinaccountingApiImpl postings;
     private final DocumentApi documents;
+    private final jakarta.persistence.EntityManager entityManager;
 
     EngineRuns(JdbcTemplate jdbc, EngineExtracts extracts, EngineLedger ledger, AccountingPeriods periods,
-               FinaccountingApiImpl postings, DocumentApi documents) {
+               FinaccountingApiImpl postings, DocumentApi documents, jakarta.persistence.EntityManager entityManager) {
         this.jdbc = jdbc;
         this.extracts = extracts;
         this.ledger = ledger;
         this.periods = periods;
         this.postings = postings;
         this.documents = documents;
+        this.entityManager = entityManager;
     }
 
     // ---- upload -----------------------------------------------------------------------------------------------------
@@ -161,6 +163,10 @@ public class EngineRuns {
             }
             postings.postEntry(entry);
         }
+        // The journals go through Hibernate, which writes them when it flushes; what follows reads them back with JDBC.
+        // Unflushed, the last group's lines are invisible -- the 9160 check would pass on nothing, and the
+        // reconciliation would read that group's ledger as zero.
+        entityManager.flush();
         BigDecimal clearing = jdbc.queryForObject("SELECT COALESCE(sum(CASE WHEN p.direction = 'DR' THEN p.amount ELSE -p.amount END), 0)"
                 + " FROM finaccounting.gl_posting p JOIN finaccounting.journal_entry j ON j.journal_entry_id = p.journal_entry_id"
                 + " WHERE j.tenant_id = ? AND j.engine_run_id = ? AND p.account_code = ?",

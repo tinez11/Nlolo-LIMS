@@ -114,7 +114,7 @@ class EngineResultsTest {
                 new Object[] {RI, "P-17", "2112", "DR", 3, null, null},               // a policy account on an RI group
                 new Object[] {RI, "P-17", "6130", "CR", 3, null, null},
                 new Object[] {GROUP, "P-10", "4150", "XX", "1.001", null, null}),     // side and decimals
-            List.of(new Object[] {RI, null, null, null, "1", "0", "0"}));             // the policy group has no closing row
+            List.<Object[]>of(new Object[] {RI, null, null, null, "1", "0", "0"}));             // the policy group has no closing row
         List<String> problems = validate(bad, PeriodStatus.OPEN, List.of(GROUP, RI), Set.of("RUN-OLD"));
         assertThat(problems)
             .contains("Header: period 2026-08 is OPEN; results are loaded into a closing period")
@@ -154,7 +154,7 @@ class EngineResultsTest {
         byte[] file = workbook(header("RUN-B"),
             List.of(new Object[] {GROUP, "P-05", "2111", "DR", 1, null, null},
                 new Object[] {GROUP, "P-05", "4120", "CR", 1, null, null}),
-            List.of(new Object[] {GROUP, "1", null, "1", "1", null, null}));
+            List.<Object[]>of(new Object[] {GROUP, "1", null, "1", "1", null, null}));
         assertThat(validate(file, PeriodStatus.CLOSING, List.of(GROUP), Set.of()))
             .containsExactly("Closing row 2: " + GROUP + " is a policy group: give lrc, lic and csm, not arc, aic or ri_csm");
         assertThat(new BigDecimal("1")).isNotNull();

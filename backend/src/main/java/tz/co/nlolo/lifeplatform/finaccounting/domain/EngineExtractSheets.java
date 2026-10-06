@@ -53,11 +53,10 @@ public record EngineExtractSheets(List<CashFlowRow> cashFlows, List<BalanceRow> 
 
     /** Every group any sheet names, sorted: what an engine run for this period may report on. */
     public List<String> groups() {
-        TreeSet<String> groups = new TreeSet<>();
-        cashFlows.forEach(r -> groups.add(r.group()));
-        balances.forEach(r -> groups.add(r.group()));
-        policies.forEach(r -> groups.add(r.group()));
-        groups.remove(null);
+        TreeSet<String> groups = new TreeSet<>();   // sorted; and a TreeSet takes no null, so none is added
+        cashFlows.stream().map(CashFlowRow::group).filter(java.util.Objects::nonNull).forEach(groups::add);
+        balances.stream().map(BalanceRow::group).filter(java.util.Objects::nonNull).forEach(groups::add);
+        policies.stream().map(PolicyRow::group).filter(java.util.Objects::nonNull).forEach(groups::add);
         return List.copyOf(groups);
     }
 

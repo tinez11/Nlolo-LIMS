@@ -73,7 +73,15 @@ export function EnginePage() {
                   <tr key={x.extractId} className="border-t border-border">
                     <td className="py-1 pr-3 font-medium">{x.period} #{x.number}</td>
                     <td className="py-1 pr-3 text-xs text-muted-foreground">
-                      {x.groups.length} groups · {x.cashFlowRows} cash-flow rows · {x.policyRows} policies
+                      {/* The results file needs a closing row for every group the extract names: show which. */}
+                      <details>
+                        <summary className="cursor-pointer">
+                          {x.groups.length} groups · {x.cashFlowRows} cash-flow rows · {x.policyRows} policies
+                        </summary>
+                        <ul className="mt-1 font-mono" aria-label={`Groups of ${x.period} #${x.number}`}>
+                          {x.groups.map((g) => <li key={g}>{g}</li>)}
+                        </ul>
+                      </details>
                     </td>
                     <td className="py-1 pr-3 text-xs text-muted-foreground">{formatInstant(x.createdAt)}</td>
                     <td className="py-1 text-right">

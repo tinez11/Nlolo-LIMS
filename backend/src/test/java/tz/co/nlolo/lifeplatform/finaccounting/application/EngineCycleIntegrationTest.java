@@ -299,7 +299,8 @@ class EngineCycleIntegrationTest {
         assertThat(jdbc.queryForList("SELECT DISTINCT j.source_type || ' ' || p.ifrs17_group FROM finaccounting.journal_entry j"
                 + " JOIN finaccounting.gl_posting p ON p.journal_entry_id = j.journal_entry_id WHERE j.engine_run_id = ?",
             String.class, run.runId())).containsExactlyInAnyOrder("ENGINE_RUN " + GROUP, "ENGINE_RUN " + RI_GROUP);
-        assertThat(posted.reconciliation()).extracting(r -> r.group() + " " + r.figure() + " " + r.status())
+        assertThat(posted.reconciliation())
+            .extracting(r -> r.group() + " " + r.figure() + " " + r.status())
             .containsExactlyInAnyOrder(GROUP + " CSM AGREED", GROUP + " LIC AGREED", GROUP + " LRC AGREED",
                 RI_GROUP + " AIC AGREED", RI_GROUP + " ARC AGREED", RI_GROUP + " RI_CSM AGREED");
 

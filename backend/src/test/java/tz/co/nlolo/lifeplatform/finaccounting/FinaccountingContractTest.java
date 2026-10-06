@@ -885,8 +885,9 @@ class FinaccountingContractTest {
                 .file(new org.springframework.mock.web.MockMultipartFile("file", "results.xlsx",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "not a workbook".getBytes()))
                 .with(financeStaffOf(tenantId)))
+            // No OpenAPI matcher on a multipart request: the validator does not see a MockMvc multipart body and
+            // reports it missing. The run's shape is checked on its GET below.
             .andExpect(status().isCreated())
-            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.status").value("REJECTED"))
             .andExpect(jsonPath("$.errors[0]").value(org.hamcrest.Matchers.containsString("not an Excel workbook")))
             .andReturn().getResponse().getContentAsString();
@@ -906,6 +907,10 @@ class FinaccountingContractTest {
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.length()").value(1));
+        mockMvc.perform(get("/ifrs17/engine-runs/{id}", runId).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("REJECTED"));
         mockMvc.perform(get("/ifrs17/engine-runs/{id}", runId).with(financeStaffOf(UUID.randomUUID())))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("ENGINE_NOT_FOUND"));
