@@ -222,6 +222,7 @@ class ProjectionEndToEndTest {
             "db-migrations/reinsurance/V4__projection_product_category.sql",
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
+            "db-migrations/reinsurance/V7__statement.sql",
             "db-migrations/regreporting/V1__create_regreporting_schema.sql",
             "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql",
             "db-migrations/regreporting/V3__optimistic_locking_on_movement_tables.sql",

@@ -48,17 +48,76 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
     private final ClaimRecoveryRepository claimRecoveryRepository;
     private final Bordereaux bordereaux;
     private final BordereauJob bordereauJob;
+    private final ReinsuranceStatements statements;
 
     public ReinsuranceApiImpl(ReinsuranceTreatyRepository treatyRepository,
                                CessionRepository cessionRepository,
                                ClaimRecoveryRepository claimRecoveryRepository,
                                Bordereaux bordereaux,
-                               BordereauJob bordereauJob) {
+                               BordereauJob bordereauJob,
+                               ReinsuranceStatements statements) {
         this.treatyRepository = treatyRepository;
         this.cessionRepository = cessionRepository;
         this.claimRecoveryRepository = claimRecoveryRepository;
         this.bordereaux = bordereaux;
         this.bordereauJob = bordereauJob;
+        this.statements = statements;
+    }
+
+    // ---- the quarterly statement (IFRS 17 I3d): ReinsuranceStatements ---------------------------------------------
+
+    @Override
+    public tz.co.nlolo.lifeplatform.reinsurance.api.StatementView prepareStatement(UUID treatyId, String quarter,
+                                                                                   String preparer) {
+        return statements.prepare(treatyId, quarter, preparer, LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")));
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.reinsurance.api.StatementView updateStatement(UUID statementId, BigDecimal fundsWithheld,
+                                                                                  BigDecimal profitCommission, String reason,
+                                                                                  String by) {
+        return statements.update(statementId, fundsWithheld, profitCommission, reason, by);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.reinsurance.api.StatementView submitStatement(UUID statementId, String by) {
+        return statements.submit(statementId, by);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.reinsurance.api.StatementView withdrawStatement(UUID statementId, String by) {
+        return statements.withdraw(statementId, by);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.reinsurance.api.StatementView approveStatement(UUID statementId, String approver) {
+        return statements.approve(statementId, approver);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.reinsurance.api.StatementView rejectStatement(UUID statementId, String reason, String by) {
+        return statements.reject(statementId, reason, by);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.reinsurance.api.StatementView getStatement(UUID statementId) {
+        return statements.get(statementId);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.reinsurance.api.StatementView> listStatements(String status, UUID treatyId) {
+        return statements.list(status, treatyId);
+    }
+
+    @Override
+    public void requireStatementEditable(UUID statementId, String by) {
+        statements.requireEditable(statementId, by);
+    }
+
+    @Override
+    public tz.co.nlolo.lifeplatform.reinsurance.api.StatementView attachStatementDocument(UUID statementId,
+                                                                                          String documentRef, String by) {
+        return statements.attachDocument(statementId, documentRef, by);
     }
 
     @Override
