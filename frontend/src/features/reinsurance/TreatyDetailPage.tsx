@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import type { CessionView } from '@/api/types';
+import { useNavigate, useParams } from 'react-router-dom';
+import type { BordereauView, CessionView } from '@/api/types';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -10,8 +10,11 @@ import { DetailLayout } from '@/components/DetailLayout';
 import { Panel } from '@/components/Panel';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
+import { formatPeriod } from './formatPeriod';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
+  selectBordereauPreview,
+  selectBordereaux,
   selectTreatyCessions,
   selectTreatyDetail,
   selectTreatyUtilisation,
@@ -106,14 +109,113 @@ export function TreatyDetailPage() {
                     note="Excess-of-loss cedes nothing on new business -- it participates only in claim recovery"
                   />
                 )}
+                <Field
+                  label="Reinsurance commission"
+                  value={`${treaty.commissionPercent}%`}
+                  note="Not contingent on claims -- taken off each month's ceded premium"
+                />
+                {treaty.xolAnnualPremium && (
+                  <Field
+                    label="Annual XOL premium"
+                    value={formatMoney(treaty.xolAnnualPremium)}
+                    note="Charged one twelfth on each monthly bordereau"
+                  />
+                )}
               </dl>
             </Panel>
           }
         >
+          {treatyId && <TreatyBordereaux treatyId={treatyId} />}
           {treatyId && <TreatyCessions treatyId={treatyId} />}
         </DetailLayout>
       )}
     </>
+  );
+}
+
+/**
+ * What the reinsurer is charged, month by month (IFRS 17 I3c).
+ *
+ * A month-end job writes one bordereau per treaty and closed month: the treaty's share of each ceded policy's own
+ * premium for every month it was on risk (K-01), less the commission not contingent on claims (K-02). Each is final
+ * once written and posts one journal dated the month's last day. The current month is shown as it would be written
+ * now -- computed, not stored -- so finance can see it build up before the month closes.
+ */
+function TreatyBordereaux({ treatyId }: { treatyId: string }) {
+  const navigate = useNavigate();
+  const written = useReinsuranceStore(selectBordereaux(treatyId));
+  const preview = useReinsuranceStore(selectBordereauPreview(treatyId));
+  const loadBordereaux = useReinsuranceStore((s) => s.loadBordereaux);
+  const loadBordereauPreview = useReinsuranceStore((s) => s.loadBordereauPreview);
+
+  useEffect(() => {
+    void loadBordereaux(treatyId);
+    void loadBordereauPreview(treatyId);
+  }, [treatyId, loadBordereaux, loadBordereauPreview]);
+
+  const money = (amount: string, currency: string) => formatMoney({ amount, currencyCode: currency });
+  const current = preview.data;
+  const rows = written.data ?? [];
+
+  const columns: Column<BordereauView>[] = [
+    { key: 'period', header: 'Month', render: (b) => <span className="font-medium">{formatPeriod(b.period)}</span> },
+    { key: 'policyCount', header: 'Policies', align: 'right', render: (b) => b.policyCount },
+    { key: 'premium', header: 'Ceded premium', align: 'right', render: (b) => money(b.premium, b.currency) },
+    { key: 'commission', header: 'Commission', align: 'right', render: (b) => money(b.commission, b.currency) },
+    {
+      key: 'recoveries',
+      header: 'Recoveries matched',
+      align: 'right',
+      secondary: true,
+      render: (b) => money(b.recoveries, b.currency),
+    },
+  ];
+
+  return (
+    <Panel title="Bordereaux">
+      {current && (
+        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 border-b border-border px-4 py-2.5 text-xs tabular-nums">
+          <span className="font-medium">{formatPeriod(current.period)} so far</span>
+          <span>
+            <span className="text-muted-foreground">Policies </span>
+            {current.policyCount}
+          </span>
+          <span>
+            <span className="text-muted-foreground">Ceded premium </span>
+            {money(current.premium, current.currency)}
+          </span>
+          <span>
+            <span className="text-muted-foreground">Commission </span>
+            {money(current.commission, current.currency)}
+          </span>
+          <span>
+            <span className="text-muted-foreground">Recoveries </span>
+            {money(current.recoveries, current.currency)}
+          </span>
+        </div>
+      )}
+
+      {isInitialLoad(written) ? (
+        <TableSkeleton columns={columns.length} />
+      ) : written.status === 'error' && written.error && written.data === null ? (
+        <ErrorPanel error={written.error} onRetry={() => void loadBordereaux(treatyId)} />
+      ) : rows.length === 0 ? (
+        <EmptyState
+          title="No month closed yet"
+          description="A bordereau is written for each month after it ends, from the treaty's effective date."
+        />
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={rows}
+          rowKey={(b) => b.bordereauId ?? b.period}
+          caption="Monthly bordereaux of this treaty"
+          onRowActivate={(b) => {
+            if (b.bordereauId) navigate(`bordereaux/${b.bordereauId}`);
+          }}
+        />
+      )}
+    </Panel>
   );
 }
 

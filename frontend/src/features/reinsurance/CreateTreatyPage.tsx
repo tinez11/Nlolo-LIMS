@@ -129,9 +129,30 @@ export function CreateTreatyPage() {
           <p className="text-xs text-muted-foreground">
             {treatyType === 'SURPLUS'
               ? 'SURPLUS cedes by retention limit, not a percent.'
-              : 'XOL cedes nothing at issuance -- it participates only in claim recovery.'}
+              : 'XOL cedes no policies -- it recovers the part of a claim above the retention.'}
           </p>
         )}
+
+        {treatyType === 'XOL' && (
+          <FormField
+            label="Annual XOL premium (optional)"
+            error={fieldError(errors, 'xolAnnualPremium')}
+            hint="Charged one twelfth on each monthly bordereau, in the treaty's currency."
+          >
+            <Input placeholder="120000.00" {...register('xolAnnualPremium')} />
+          </FormField>
+        )}
+
+        <FormField
+          label="Reinsurance commission"
+          error={errors.commissionPercent?.message}
+          hint="The commission not contingent on claims, a percent of each month's ceded premium. 0 when the reinsurer pays none."
+        >
+          <div className="flex items-center gap-1">
+            <Input placeholder="0" {...register('commissionPercent')} />
+            <span className="text-xs text-muted-foreground">%</span>
+          </div>
+        </FormField>
 
         <div className="grid grid-cols-2 gap-2">
           <FormField label="Effective from" error={errors.effectiveFrom?.message}>

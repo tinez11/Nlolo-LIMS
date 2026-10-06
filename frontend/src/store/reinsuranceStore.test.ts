@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { BordereauView } from '@/api/types';
 import type { ApiError } from '@/lib/apiError';
 import { failure, idle } from './createResourceSlice';
-import { useReinsuranceStore } from './reinsuranceStore';
+import { selectBordereauPreview, selectBordereaux, useReinsuranceStore } from './reinsuranceStore';
 
 const anError: ApiError = {
   status: 422,
@@ -14,9 +15,27 @@ const anError: ApiError = {
   mayBeDenied: false,
 };
 
+const month = (period: string, treatyId: string): BordereauView => ({
+  bordereauId: `b-${period}`,
+  treatyId,
+  period,
+  currency: 'TZS',
+  policyCount: 1,
+  premium: '50000.00',
+  commission: '10000.00',
+  recoveries: '0.00',
+  lines: [],
+});
+
+vi.mock('@/api/reinsurance', () => ({
+  listBordereaux: vi.fn((treatyId: string) => Promise.resolve([month('2026-09', treatyId)])),
+  previewBordereau: vi.fn((treatyId: string) =>
+    Promise.resolve({ ...month('2026-10', treatyId), bordereauId: null }),
+  ),
+}));
+
 /**
- * `creating` (single slot) and `confirmingRecovery` (keyed) both outlive
- * their owning form's mount/unmount, same failure mode already found live on
+ * `creating` (single slot) outlives its owning form's mount/unmount, same failure mode already found live on
  * beneficiaries/claims/policy-issuance/products -- built in from the start.
  */
 describe('resetCreateTreaty', () => {
@@ -32,28 +51,17 @@ describe('resetCreateTreaty', () => {
   });
 });
 
-describe('resetConfirmRecovery', () => {
-  it('clears a failed confirmation back to idle', () => {
-    useReinsuranceStore.setState({
-      confirmingRecovery: { 'recovery-1': failure(idle<never>(), anError) },
-    });
-    useReinsuranceStore.getState().resetConfirmRecovery('recovery-1');
-    expect(useReinsuranceStore.getState().confirmingRecovery['recovery-1']).toBeUndefined();
-  });
+/** IFRS 17 I3c: a treaty's written months and its current-month preview are kept per treaty, never shared. */
+describe('bordereaux', () => {
+  it('keeps each treaty its own months and preview', async () => {
+    await useReinsuranceStore.getState().loadBordereaux('treaty-a');
+    await useReinsuranceStore.getState().loadBordereaux('treaty-b');
+    await useReinsuranceStore.getState().loadBordereauPreview('treaty-a');
 
-  it('does not touch a different recovery id', () => {
-    useReinsuranceStore.setState({
-      confirmingRecovery: {
-        'recovery-1': failure(idle<never>(), anError),
-        'recovery-2': idle<never>(),
-      },
-    });
-    useReinsuranceStore.getState().resetConfirmRecovery('recovery-1');
-    expect(useReinsuranceStore.getState().confirmingRecovery['recovery-2']).toEqual(idle());
-  });
-
-  it('does no harm when there is nothing to reset', () => {
-    useReinsuranceStore.setState({ confirmingRecovery: {} });
-    expect(() => useReinsuranceStore.getState().resetConfirmRecovery('recovery-1')).not.toThrow();
+    const state = useReinsuranceStore.getState();
+    expect(selectBordereaux('treaty-a')(state).data?.[0]?.treatyId).toBe('treaty-a');
+    expect(selectBordereaux('treaty-b')(state).data?.[0]?.treatyId).toBe('treaty-b');
+    expect(selectBordereauPreview('treaty-a')(state).data?.bordereauId).toBeNull();
+    expect(selectBordereauPreview('treaty-b')(state)).toEqual(idle());
   });
 });
