@@ -91,6 +91,15 @@ class PostingEngine {
         try {
             result = requiresNew.execute(status -> postInTransaction(tenantId, facts, period, set, by, source));
         } catch (RuntimeException e) {
+            // Two deliveries racing (a redelivery, a classification's retry): the loser's journal hits
+            // ux_journal_entry_once. The event IS posted, so it is not queued.
+            Optional<JournalEntry> won = requiresNew.execute(status ->
+                journals.findByTenantIdAndSourceEventAndSourceRef(tenantId, facts.eventType(), facts.sourceRef()));
+            if (won != null && won.isPresent()) {
+                requiresNew.executeWithoutResult(status -> queue.resolvePosted(tenantId, facts.eventType(),
+                    facts.sourceRef(), won.get().getJournalEntryId(), by));
+                return new Result(Outcome.ALREADY_POSTED, won.get().getJournalEntryId(), null);
+            }
             String message = rootMessage(e);
             boolean refused = message != null && (message.contains("LEDGER_") || message.startsWith("Refusing to post"));
             result = new Result(refused ? Outcome.REFUSED : Outcome.ERROR, null, message);

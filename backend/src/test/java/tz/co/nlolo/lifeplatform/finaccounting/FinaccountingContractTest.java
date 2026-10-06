@@ -781,4 +781,67 @@ class FinaccountingContractTest {
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("POLICY_ELECTION_NOT_FOUND"));
     }
+
+    // ============================================================================================
+    // IFRS 17 I3a: the posting rules and the unposted-event queue
+    // ============================================================================================
+
+    @Test
+    void thePostingRulesAreReadableByFinanceOnly() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(get("/finance/posting-rules").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.versionLabel").value("posting-rules v1"))
+            .andExpect(jsonPath("$.rules[?(@.id == 'I-01')].lines[0].account").value("2142"));
+        mockMvc.perform(get("/finance/posting-rules").with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void aQueuedEventIsListedDismissedWithAReasonAndThenRefusesARetry() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        // An invoice for a policy nobody classified: the rules cannot choose a model, so it is queued.
+        java.util.Map<String, Object> invoice = java.util.Map.of("invoiceId", UUID.randomUUID(),
+            "policyNumber", "POL-UNCLASSIFIED", "dueDate", "2026-10-01",
+            "amount", java.util.Map.of("amount", "450.00", "currencyCode", CURRENCY));
+        new org.springframework.transaction.support.TransactionTemplate(transactionManager).executeWithoutResult(s ->
+            eventPublisher.publishEvent(tz.co.nlolo.lifeplatform.DomainEventEnvelope.of(
+                "billing.PremiumInvoiceGenerated", tenantId, invoice)));
+
+        String body = mockMvc.perform(get("/finance/unposted-events").param("openOnly", "true")
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].reason").value("UNMAPPED"))
+            .andExpect(jsonPath("$[0].policyNumber").value("POL-UNCLASSIFIED"))
+            .andReturn().getResponse().getContentAsString();
+        String id = com.jayway.jsonpath.JsonPath.read(body, "$[0].id");
+
+        mockMvc.perform(post("/finance/unposted-events/{id}/dismissal", id).with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"reason":"  "}"""))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.errorCode").value("FINACCOUNTING_VALIDATION_FAILED"));
+        mockMvc.perform(post("/finance/unposted-events/{id}/dismissal", id).with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"reason":"Test policy, never issued"}"""))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.resolution").value("DISMISSED"))
+            .andExpect(jsonPath("$.resolvedBy").value("finance-officer"));
+
+        mockMvc.perform(post("/finance/unposted-events/{id}/retry", id).with(financeStaffOf(tenantId)))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("UNPOSTED_EVENT_RESOLVED"));
+        mockMvc.perform(post("/finance/unposted-events/{id}/retry", UUID.randomUUID()).with(financeStaffOf(tenantId)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("UNPOSTED_EVENT_NOT_FOUND"));
+        mockMvc.perform(post("/finance/unposted-events/{id}/retry", id).with(financeStaffOf(UUID.randomUUID())))
+            .andExpect(status().isNotFound());
+        mockMvc.perform(get("/finance/unposted-events").with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+    }
 }
