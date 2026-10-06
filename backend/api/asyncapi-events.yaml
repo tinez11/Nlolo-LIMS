@@ -651,6 +651,13 @@ channels:
       last day), audit. Not published for a month that charged nothing.
     publish:
       message: { $ref: '#/components/messages/BordereauPosted' }
+  reinsurance.StatementApproved:
+    description: >-
+      Producer: reinsurance, when a FINANCE_APPROVER approves a quarter's statement (IFRS 17 I3d). Consumers:
+      finaccounting (rules v4 R-STMT, one SYSTEM journal: R-04 Dr 1430 / Cr 2550 funds withheld; R-01 Dr 1430, Cr 1431,
+      Cr 1420 and 1434 the balance; R-03 Dr 1433 / Cr 6120 profit commission). Not published for an all-zero quarter.
+    publish:
+      message: { $ref: '#/components/messages/StatementApproved' }
 
   finaccounting.GlPostingRecorded:
     description: >-
@@ -914,6 +921,7 @@ components:
     CessionRecorded: { messageId: CessionRecorded, name: CessionRecorded, payload: { $ref: '#/components/schemas/CessionRecordedPayload' } }
     RecoveryCalculated: { messageId: RecoveryCalculated, name: RecoveryCalculated, payload: { $ref: '#/components/schemas/RecoveryCalculatedPayload' } }
     BordereauPosted: { messageId: BordereauPosted, name: BordereauPosted, payload: { $ref: '#/components/schemas/BordereauPostedPayload' } }
+    StatementApproved: { messageId: StatementApproved, name: StatementApproved, payload: { $ref: '#/components/schemas/StatementApprovedPayload' } }
     GlPostingRecorded: { messageId: GlPostingRecorded, name: GlPostingRecorded, payload: { $ref: '#/components/schemas/GlPostingRecordedPayload' } }
     CsmRolledForward: { messageId: CsmRolledForward, name: CsmRolledForward, payload: { $ref: '#/components/schemas/CsmRolledForwardPayload' } }
     NotificationDispatched: { messageId: NotificationDispatched, name: NotificationDispatched, payload: { $ref: '#/components/schemas/NotificationDispatchedPayload' } }
@@ -1682,13 +1690,23 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { recoveryId: {type: string, format: uuid}, claimId: {type: string, format: uuid}, policyNumber: {type: string}, treatyId: {type: string, format: uuid}, recoverableAmount: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}} }
+          properties: { recoveryId: {type: string, format: uuid}, claimId: {type: string, format: uuid}, policyNumber: {type: string}, treatyId: {type: string, format: uuid}, reinsuranceGroup: {type: string, description: "IFRS 17 I5a: the reinsurance-held group, RI-<treaty short id>-<year>."}, recoverableAmount: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}} }
+    StatementApprovedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          required: [statementId, treatyId, quarter, premium, commission, recoveries, fundsWithheld, profitCommission, owedToUs, owedByUs]
+          properties: { statementId: {type: string, format: uuid}, treatyId: {type: string, format: uuid}, reinsuranceGroup: {type: string, description: "IFRS 17 I5a: RI-<treaty short id>-<year>."}, reinsurerName: {type: string}, quarter: {type: string, description: "YYYY-Qn"}, premium: {$ref: '#/components/schemas/StatementMoney'}, commission: {$ref: '#/components/schemas/StatementMoney'}, recoveries: {$ref: '#/components/schemas/StatementMoney'}, fundsWithheld: {$ref: '#/components/schemas/StatementMoney'}, profitCommission: {$ref: '#/components/schemas/StatementMoney'}, owedToUs: {$ref: '#/components/schemas/StatementMoney'}, owedByUs: {$ref: '#/components/schemas/StatementMoney'} }
+    StatementMoney:
+      type: object
+      required: [amount, currencyCode]
+      properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}
     BordereauPostedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
           required: [bordereauId, treatyId, period, premium, commission]
-          properties: { bordereauId: {type: string, format: uuid}, treatyId: {type: string, format: uuid}, reinsurerName: {type: string}, period: {type: string, description: "YYYY-MM"}, policyCount: {type: integer}, premium: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}}, commission: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}} }
+          properties: { bordereauId: {type: string, format: uuid}, treatyId: {type: string, format: uuid}, reinsuranceGroup: {type: string, description: "IFRS 17 I5a: RI-<treaty short id>-<year>."}, reinsurerName: {type: string}, period: {type: string, description: "YYYY-MM"}, policyCount: {type: integer}, premium: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}}, commission: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}} }
 
     GlPostingRecordedPayload:
       description: >-

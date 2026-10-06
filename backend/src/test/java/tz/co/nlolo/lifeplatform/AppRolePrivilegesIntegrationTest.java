@@ -288,6 +288,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
             "db-migrations/finaccounting/V13__disbursement_method.sql",
             "db-migrations/finaccounting/V14__manual_journals.sql",
+            "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             // M10 (Task 9) additions: regreporting appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap finaccounting had entering
             // M9. regreporting/V1 has zero GRANT statements and zero RLS on either of its two

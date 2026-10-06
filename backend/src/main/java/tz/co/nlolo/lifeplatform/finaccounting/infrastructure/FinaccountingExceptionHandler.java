@@ -88,6 +88,17 @@ public class FinaccountingExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "POLICY_ELECTION_NOT_FOUND");
     }
 
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.finaccounting.api.EngineNotFoundException.class)
+    public ProblemDetail handleEngineNotFound(tz.co.nlolo.lifeplatform.finaccounting.api.EngineNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "ENGINE_NOT_FOUND");
+    }
+
+    /** IFRS 17 I5a: a step of the engine cycle the period, the run's state or its people refuse. */
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.finaccounting.api.EngineStateException.class)
+    public ProblemDetail handleEngineState(tz.co.nlolo.lifeplatform.finaccounting.api.EngineStateException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "ENGINE_STATE");
+    }
+
     @ExceptionHandler(ManualJournalNotFoundException.class)
     public ProblemDetail handleManualJournalNotFound(ManualJournalNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "MANUAL_JOURNAL_NOT_FOUND");

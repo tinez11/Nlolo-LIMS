@@ -194,7 +194,8 @@ class DocumentContractTest {
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V7__journal_support_document_type.sql",
-            "db-migrations/document/V8__reinsurance_statement_document_type.sql");
+            "db-migrations/document/V8__reinsurance_statement_document_type.sql",
+            "db-migrations/document/V9__ifrs17_engine_document_types.sql");
 
         MinioClient minioClient = MinioClient.builder()
             .endpoint(MINIO.getS3URL())

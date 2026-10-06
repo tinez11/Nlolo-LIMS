@@ -69,6 +69,7 @@ class PartyContractTest {
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V7__journal_support_document_type.sql",
             "db-migrations/document/V8__reinsurance_statement_document_type.sql",
+            "db-migrations/document/V9__ifrs17_engine_document_types.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");

@@ -46,5 +46,14 @@ public enum DocumentType {
      * IFRS 17 I3d: the reinsurer's quarterly statement, attached to the reinsurance statement that settles the quarter
      * -- what the funds withheld and profit commission entered rest on. The general bucket.
      */
-    REINSURANCE_STATEMENT
+    REINSURANCE_STATEMENT,
+
+    /** IFRS 17 I5a: the extract an IFRS 17 engine is sent for a period (month-end step 6). The general bucket. */
+    IFRS17_EXTRACT,
+
+    /** IFRS 17 I5a: the results file an engine returned (step 7), kept whether it validated or not. */
+    IFRS17_RESULTS,
+
+    /** IFRS 17 I5a: the appointed actuary's report an engine run's approval rests on. */
+    ACTUARIAL_REPORT
 }

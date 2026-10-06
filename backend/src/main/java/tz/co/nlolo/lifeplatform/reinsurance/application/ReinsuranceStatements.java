@@ -166,6 +166,8 @@ public class ReinsuranceStatements {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("statementId", id.toString());
             payload.put("treatyId", row.treatyId().toString());
+            payload.put("reinsuranceGroup", tz.co.nlolo.lifeplatform.reinsurance.domain.ReinsuranceGroupKey.of(
+                row.treatyId(), treaty.getEffectiveFrom()));
             payload.put("reinsurerName", treaty.getReinsurerName());
             payload.put("quarter", row.quarter());
             payload.put("premium", money(row.premium(), row.currency()));
