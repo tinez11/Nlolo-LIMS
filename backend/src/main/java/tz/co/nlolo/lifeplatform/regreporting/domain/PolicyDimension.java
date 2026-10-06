@@ -64,13 +64,13 @@ public class PolicyDimension {
      * activation; the sum assured is not, because on a group scheme it is the total of a member
      * schedule that changes every month.
      *
-     * <p><b>Refuses a non-positive total, and that is not defensive coding.</b>
-     * {@code policy_dimension_sum_assured_positive} forbids zero outright, and a scheme whose
-     * total has reached zero is one whose last member has left. That case belongs to the close
+     * <p><b>Refuses a non-positive total, and that is not defensive coding.</b> Zero is a valid
+     * STARTING total -- a credit-life scheme is set up with no borrowers and activated at zero
+     * (regreporting V7) -- but a scheme RESTATED to zero is one whose last member has left. That case belongs to the close
      * event: {@code PolicyApiImpl.exitOneMember} restates to zero and then closes the scheme, and
      * the resulting {@code policy.PolicySurrendered} terminates the last recorded total. A
-     * restatement to zero here would both violate the constraint and remove cover the close is
-     * about to remove again — the whole scheme counted out twice.
+     * restatement to zero here would remove cover the close is about to remove again — the whole
+     * scheme counted out twice.
      */
     public void restateSumAssured(BigDecimal newTotal) {
         if (newTotal == null || newTotal.signum() <= 0) {

@@ -85,8 +85,8 @@ public interface EnrolmentApi {
      * sends the template back as-is gets ALREADY_ENROLLED on that line and nobody is insured
      * twice. That is why a REAL borrower can be used here where an invented one could not.
      *
-     * <p>Header only when the scheme has no members yet, which is a state the set-up form cannot
-     * produce.
+     * <p>Header only when the scheme has no members yet -- which is how every scheme the
+     * credit-life set-up form creates begins, since it asks for no opening borrower.
      */
     String renderTemplate(String policyNumber);
 

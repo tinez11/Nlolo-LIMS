@@ -292,8 +292,7 @@ public class PolicyEventListener {
      * active member leaves, {@code PolicyApiImpl.exitOneMember} restates the scheme to zero and
      * then closes it, and the resulting {@code policy.PolicySurrendered} already terminates the
      * last recorded total through {@link #applyTerminationMovement}. Acting here as well would
-     * write a zero into a column whose CHECK forbids it, and would remove cover the close event
-     * is about to remove again — the whole scheme counted out twice.
+     * remove cover the close event is about to remove again — the whole scheme counted out twice.
      *
      * <p><b>A missing dimension is dropped here, unlike everywhere else in this class.</b>
      * {@link #resolveDimension}'s UNKNOWN-product fallback is right for a termination, whose
@@ -304,7 +303,8 @@ public class PolicyEventListener {
      *
      * <p>Opening-schedule members need no handling: {@code issueGroupScheme} publishes no
      * {@code GroupMemberAdded} for them, because their cover is already inside the
-     * {@code sumAssured} on {@code PolicyActivated}. Verified, not assumed.
+     * {@code sumAssured} on {@code PolicyActivated}. Verified, not assumed. A credit-life scheme set
+     * up with no borrowers activates at ZERO, so its first file's delta is that file's whole cover.
      */
     private void handleSchemeTotalRestated(Map<String, Object> payload, String eventType) {
         UUID tenantId = TenantContext.get();
