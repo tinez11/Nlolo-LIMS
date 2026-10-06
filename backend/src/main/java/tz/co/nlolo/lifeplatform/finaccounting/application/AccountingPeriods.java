@@ -29,11 +29,14 @@ class AccountingPeriods {
     private final AccountingPeriodRepository periods;
     private final GlPostingRepository postings;
     private final UnpostedEvents unposted;
+    private final EngineLockGate engineGate;
 
-    AccountingPeriods(AccountingPeriodRepository periods, GlPostingRepository postings, UnpostedEvents unposted) {
+    AccountingPeriods(AccountingPeriodRepository periods, GlPostingRepository postings, UnpostedEvents unposted,
+                      EngineLockGate engineGate) {
         this.periods = periods;
         this.postings = postings;
         this.unposted = unposted;
+        this.engineGate = engineGate;
     }
 
     @Transactional(readOnly = true)
@@ -78,6 +81,12 @@ class AccountingPeriods {
         if (waiting > 0) {
             throw new PeriodStateException(waiting + (waiting == 1 ? " event is" : " events are") + " not posted;"
                 + " post or dismiss " + (waiting == 1 ? "it" : "them") + " before the period locks");
+        }
+        // IFRS 17 I5a (user answer Q4): the ledger must agree with the engine's closing figures, or the difference be
+        // explained and accepted by two people -- or a replacement run make them agree.
+        List<String> engine = engineGate.blocking(tenantId, period);
+        if (!engine.isEmpty()) {
+            throw new PeriodStateException(engine.get(0) + (engine.size() > 1 ? " (and " + (engine.size() - 1) + " more)" : ""));
         }
         p.lock(by, Instant.now());
         return toView(periods.save(p));

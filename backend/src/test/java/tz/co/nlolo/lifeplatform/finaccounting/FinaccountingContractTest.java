@@ -156,7 +156,8 @@ class FinaccountingContractTest {
             "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
             "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
             "db-migrations/finaccounting/V13__disbursement_method.sql",
-            "db-migrations/finaccounting/V14__manual_journals.sql");
+            "db-migrations/finaccounting/V14__manual_journals.sql",
+            "db-migrations/finaccounting/V15__engine_period_cycle.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -851,6 +852,69 @@ class FinaccountingContractTest {
     }
 
     @Autowired private tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalApi manualJournals;
+
+    /** The document store is MinIO, which this class does not start: storage is not what it tests. */
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private tz.co.nlolo.lifeplatform.document.api.DocumentApi documentApi;
+
+    /**
+     * IFRS 17 I5a over HTTP, against the spec: an extract of an OPEN period is refused (409 ENGINE_STATE); the template
+     * downloads; a file that is not the template is kept REJECTED with its errors (201); only a FINANCE_APPROVER
+     * decides a run, and a rejected run cannot be approved.
+     */
+    @Test
+    void theEngineCycleOverHttp() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        org.mockito.Mockito.when(documentApi.upload(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+            .thenReturn("doc-engine");
+
+        mockMvc.perform(post("/ifrs17/periods/{period}/extracts", "2026-08").with(financeStaffOf(tenantId)))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("ENGINE_STATE"));
+
+        mockMvc.perform(get("/ifrs17/results-template").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                .string("Content-Disposition", org.hamcrest.Matchers.containsString("ifrs17-engine-results-template.xlsx")));
+
+        String body = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .multipart("/ifrs17/engine-runs")
+                .file(new org.springframework.mock.web.MockMultipartFile("file", "results.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "not a workbook".getBytes()))
+                .with(financeStaffOf(tenantId)))
+            // No OpenAPI matcher on a multipart request: the validator does not see a MockMvc multipart body and
+            // reports it missing. The run's shape is checked on its GET below.
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.status").value("REJECTED"))
+            .andExpect(jsonPath("$.errors[0]").value(org.hamcrest.Matchers.containsString("not an Excel workbook")))
+            .andReturn().getResponse().getContentAsString();
+        String runId = com.jayway.jsonpath.JsonPath.read(body, "$.runId");
+
+        var approval = org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+            .multipart("/ifrs17/engine-runs/{id}/approval", runId)
+            .file(new org.springframework.mock.web.MockMultipartFile("report", "report.pdf", "application/pdf", "%PDF".getBytes()))
+            .param("signOffReference", "AS-2026-08");
+        mockMvc.perform(approval.with(financeStaffOf(tenantId, "finance-two")))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(approval.with(financeApproverOf(tenantId)))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("ENGINE_STATE"));
+
+        mockMvc.perform(get("/ifrs17/engine-runs").param("status", "REJECTED").with(financeApproverOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.length()").value(1));
+        mockMvc.perform(get("/ifrs17/engine-runs/{id}", runId).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("REJECTED"));
+        mockMvc.perform(get("/ifrs17/engine-runs/{id}", runId).with(financeStaffOf(UUID.randomUUID())))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("ENGINE_NOT_FOUND"));
+    }
 
     /** FINANCE_APPROVER on top of FINANCE_OFFICER: the finance manager who approves manual journals (IFRS 17 I4). */
     private static RequestPostProcessor financeApproverOf(UUID tenantId) {

@@ -209,11 +209,15 @@ public class ClaimEventListener {
     /** Matches asyncapi-events.yaml's RecoveryCalculatedPayload field-for-field. finaccounting posts it (B-05: Dr 1420
      * / Cr 6120) against the policy's IFRS 17 dimensions, hence {@code policyNumber} (IFRS 17 I3c). */
     private void publishRecoveryCalculated(UUID tenantId, String policyNumber, ClaimRecovery recovery) {
+        // IFRS 17 I5a: the reinsurance-held group the recovery belongs to (para 61), from the treaty that pays it.
+        String reinsuranceGroup = tz.co.nlolo.lifeplatform.reinsurance.domain.ReinsuranceGroupKey.of(recovery.getTreatyId(),
+            reinsuranceApiImpl.getTreaty(recovery.getTreatyId()).effectiveFrom());
         eventPublisher.publishEvent(DomainEventEnvelope.of("reinsurance.RecoveryCalculated", tenantId,
             Map.of("recoveryId", recovery.getRecoveryId(),
                    "claimId", recovery.getClaimId(),
                    "policyNumber", policyNumber,
                    "treatyId", recovery.getTreatyId(),
+                   "reinsuranceGroup", reinsuranceGroup,
                    "recoverableAmount", Map.of("amount", recovery.getRecoverableAmount().toPlainString(),
                                                 "currencyCode", recovery.getRecoverableCurrency()))));
     }

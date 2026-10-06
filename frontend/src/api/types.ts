@@ -300,6 +300,11 @@ export type PostingRule = PostingRulesView['rules'][number];
 export type UnpostedEventView = FinaccountingComponents['schemas']['UnpostedEventView'];
 /** A manual journal (IFRS 17 I4): a draft until a second person approves it, then posted. */
 export type ManualJournalView = FinaccountingComponents['schemas']['ManualJournalView'];
+// IFRS 17 I5a: the engine period cycle.
+export type EngineExtractView = FinaccountingComponents['schemas']['EngineExtractView'];
+export type EngineRunView = FinaccountingComponents['schemas']['EngineRunView'];
+export type EngineRunGroup = EngineRunView['groups'][number];
+export type EngineReconciliation = EngineRunView['reconciliation'][number];
 export type ManualJournalInput = FinaccountingComponents['schemas']['ManualJournalInput'];
 export type ManualJournalLineInput = FinaccountingComponents['schemas']['ManualJournalLineInput'];
 export type JournalTemplateView = FinaccountingComponents['schemas']['JournalTemplateView'];

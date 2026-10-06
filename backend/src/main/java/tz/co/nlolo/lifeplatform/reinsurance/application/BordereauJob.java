@@ -96,6 +96,9 @@ public class BordereauJob {
                 events.publishEvent(DomainEventEnvelope.of(EVENT, tenantId, Map.of(
                     "bordereauId", id.toString(),
                     "treatyId", treatyId.toString(),
+                    // IFRS 17 I5a: the reinsurance-held group the posting belongs to (para 61), not a policy group.
+                    "reinsuranceGroup", tz.co.nlolo.lifeplatform.reinsurance.domain.ReinsuranceGroupKey.of(treatyId,
+                        treaty.getEffectiveFrom()),
                     "reinsurerName", treaty.getReinsurerName(),
                     "period", month.toString(),
                     "policyCount", result.policyCount(),

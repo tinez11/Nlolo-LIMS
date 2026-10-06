@@ -70,6 +70,7 @@ class WithholdingIntegrationTest {
         "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
         "db-migrations/finaccounting/V13__disbursement_method.sql",
         "db-migrations/finaccounting/V14__manual_journals.sql",
+        "db-migrations/finaccounting/V15__engine_period_cycle.sql",
     };
 
     @BeforeAll

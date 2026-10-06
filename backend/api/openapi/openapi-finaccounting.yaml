@@ -885,6 +885,254 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/StateConflict' }
+  # ---- IFRS 17 I5a: the engine period cycle -----------------------------------------------------------------------
+  /ifrs17/periods/{period}/extracts:
+    parameters:
+      - { name: period, in: path, required: true, schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$' } }
+    post:
+      summary: Make the period's extract for the IFRS 17 engine (month-end step 6)
+      description: >-
+        Only for a CLOSING period with nothing unposted in it or before it (409 ENGINE_STATE otherwise). Numbered per
+        period; the sheets are kept as they were sent. FINANCE_OFFICER or ADMIN.
+      security:
+        - staffAuth: []
+      responses:
+        '201':
+          description: The extract
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EngineExtractView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+    get:
+      summary: The period's extracts, newest first
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/EngineExtractView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /ifrs17/extracts/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: One extract
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EngineExtractView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /ifrs17/extracts/{id}/download:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: The extract as it was sent -- the workbook, or one sheet as CSV
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: format, in: query, required: false, schema: { type: string, enum: [xlsx, csv] } }
+        - { name: sheet, in: query, required: false, schema: { type: string, enum: [cash-flows, balances, policies] } }
+      responses:
+        '200':
+          description: The file
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /ifrs17/results-template:
+    get:
+      summary: The blank results template an actuary fills from any engine
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The workbook (Header, Journal, Closing, and an Example sheet that is never read)
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /ifrs17/engine-runs:
+    post:
+      summary: Upload an engine's results (month-end step 7)
+      description: >-
+        Stored, read and checked against the extract it answers at once: VALIDATED, or REJECTED with every error (both
+        201 -- a file's content is never refused). FINANCE_OFFICER or ADMIN.
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: The run, VALIDATED or REJECTED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EngineRunView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+    get:
+      summary: Engine runs, newest first
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: period, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [VALIDATED, REJECTED, POSTED, REPLACED] } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/EngineRunView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /ifrs17/engine-runs/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: One engine run, with each group's lines and closing figures and, once posted, the reconciliation
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EngineRunView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /ifrs17/engine-runs/{id}/approval:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Approve and post through 9160 -- FINANCE_APPROVER, never the uploader
+      description: >-
+        Needs the appointed actuary's sign-off reference and report. Re-validated first. Replaces (reverses in full) a
+        run already posted for the period, posts one ENGINE_RUN journal per group with every line counter-posted through
+        9160, proves 9160 at zero, and reconciles the ledger to the engine's closing figures.
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [signOffReference, report]
+              properties:
+                signOffReference: { type: string, maxLength: 200 }
+                report: { type: string, format: binary }
+      responses:
+        '200':
+          description: The posted run
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EngineRunView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /ifrs17/engine-runs/{id}/rejection:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Reject with a reason -- FINANCE_APPROVER, never the uploader; frees the engine reference
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: The rejected run
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EngineRunView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /ifrs17/engine-runs/{id}/exceptions/{group}/{figure}/explanation:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: group, in: path, required: true, schema: { type: string } }
+      - { name: figure, in: path, required: true, schema: { type: string, enum: [LRC, LIC, CSM, ARC, AIC, RI_CSM] } }
+    post:
+      summary: Explain a difference between the ledger and the engine -- FINANCE_OFFICER or ADMIN
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        '200':
+          description: The run
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EngineRunView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /ifrs17/engine-runs/{id}/exceptions/{group}/{figure}/acceptance:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: group, in: path, required: true, schema: { type: string } }
+      - { name: figure, in: path, required: true, schema: { type: string, enum: [LRC, LIC, CSM, ARC, AIC, RI_CSM] } }
+    post:
+      summary: Accept an explained difference -- FINANCE_APPROVER who did not explain it; the period may then lock
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The run
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EngineRunView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
 components:
   parameters:
     ManualJournalId:
@@ -1418,6 +1666,104 @@ components:
         lines:
           type: array
           items: { $ref: '#/components/schemas/ManualJournalLineInput' }
+    EngineExtractView:
+      type: object
+      additionalProperties: false
+      required: [extractId, period, number, groups, cashFlowRows, balanceRows, policyRows, createdBy, createdAt]
+      description: An extract the IFRS 17 engine was sent (IFRS 17 I5a, step 6). An engine run may report only on its groups.
+      properties:
+        extractId: { type: string, format: uuid }
+        period: { type: string }
+        number: { type: integer }
+        groups:
+          type: array
+          items: { type: string }
+        cashFlowRows: { type: integer }
+        balanceRows: { type: integer }
+        policyRows: { type: integer }
+        documentRef: { type: [string, "null"] }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+    EngineRunView:
+      type: object
+      additionalProperties: false
+      required: [runId, status, errors, uploadedBy, uploadedAt, groups, reconciliation]
+      description: >-
+        An IFRS 17 engine run (IFRS 17 I5a, step 7): VALIDATED or REJECTED (with every error) at upload, POSTED through
+        9160 by a FINANCE_APPROVER who did not upload it, REPLACED when a later run of the period supersedes it.
+        Amounts as booked, net Dr - Cr: a liability's closing figure is negative.
+      properties:
+        runId: { type: string, format: uuid }
+        period: { type: [string, "null"] }
+        extractNumber: { type: [integer, "null"] }
+        engineReference: { type: [string, "null"] }
+        engineName: { type: [string, "null"] }
+        measurementDate: { type: [string, "null"] }
+        status: { type: string, enum: [VALIDATED, REJECTED, POSTED, REPLACED] }
+        errors:
+          type: array
+          items: { type: string }
+        fileName: { type: [string, "null"] }
+        resultsDocumentRef: { type: [string, "null"] }
+        uploadedBy: { type: string }
+        uploadedAt: { type: string, format: date-time }
+        decidedBy: { type: [string, "null"] }
+        decidedAt: { type: [string, "null"], format: date-time }
+        decisionReason: { type: [string, "null"] }
+        signOffReference: { type: [string, "null"] }
+        reportDocumentRef: { type: [string, "null"] }
+        replacesRunId: { type: [string, "null"], format: uuid }
+        replacedByRunId: { type: [string, "null"], format: uuid }
+        groups:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [group, reinsurance, lines]
+            properties:
+              group: { type: string }
+              reinsurance: { type: boolean }
+              lines:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [row, entry, account, side, amount]
+                  properties:
+                    row: { type: integer }
+                    entry: { type: string }
+                    account: { type: string }
+                    side: { type: string, enum: [DR, CR] }
+                    amount: { type: number }
+                    movement: { type: [string, "null"] }
+                    note: { type: [string, "null"] }
+              closing:
+                type: [object, "null"]
+                additionalProperties: false
+                properties:
+                  lrc: { type: [number, "null"] }
+                  lic: { type: [number, "null"] }
+                  csm: { type: [number, "null"] }
+                  arc: { type: [number, "null"] }
+                  aic: { type: [number, "null"] }
+                  riCsm: { type: [number, "null"] }
+        reconciliation:
+          type: array
+          description: Each figure of each group, ledger against engine; an EXCEPTION or EXPLAINED one blocks the period lock.
+          items:
+            type: object
+            additionalProperties: false
+            required: [group, figure, ledger, engine, difference, status]
+            properties:
+              group: { type: string }
+              figure: { type: string, enum: [LRC, LIC, CSM, ARC, AIC, RI_CSM] }
+              ledger: { type: number }
+              engine: { type: number }
+              difference: { type: number }
+              status: { type: string, enum: [AGREED, EXCEPTION, EXPLAINED, ACCEPTED] }
+              explanation: { type: [string, "null"] }
+              explainedBy: { type: [string, "null"] }
+              acceptedBy: { type: [string, "null"] }
     ManualJournalView:
       type: object
       additionalProperties: false

@@ -87,6 +87,8 @@ import {
   ManualJournalEditorPage,
   ManualJournalDetailPage,
   JournalTemplatesPage,
+  EnginePage,
+  EngineRunPage,
 } from '@/lazyPages';
 
 /**
@@ -547,6 +549,13 @@ const STAFF_SCREENS: Screen[] = [
     element: <JournalTemplatesPage />,
     reach: { group: 'finance', label: 'Journal templates', icon: ScrollText },
   },
+  // IFRS 17 I5a: month-end steps 6 and 7 -- the engine's extract, its results through 9160, the reconciliation.
+  {
+    path: 'ifrs17-engine',
+    element: <EnginePage />,
+    reach: { group: 'finance', label: 'IFRS 17 engine', icon: Percent },
+  },
+  { path: 'ifrs17-engine/runs/:runId', element: <EngineRunPage />, reach: 'drill-in' },
   {
     path: 'treaties',
     element: <TreatiesPage />,
