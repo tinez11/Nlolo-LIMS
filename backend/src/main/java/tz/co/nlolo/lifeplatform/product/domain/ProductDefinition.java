@@ -44,14 +44,31 @@ public class ProductDefinition {
 
     protected ProductDefinition() {}
 
+    /**
+     * The IFRS 17 portfolio (spec §6): contracts subject to similar risks and managed together. With the cohort and the
+     * version's expected profitability it decides the group of contracts a policy joins at issue.
+     */
+    @Column(name = "portfolio_code", nullable = false)
+    private String portfolioCode;
+
     public ProductDefinition(UUID tenantId, String productCode, String productName, String category, String defaultCurrency, String createdBy) {
+        this(tenantId, productCode, productName, category, null, defaultCurrency, createdBy);
+    }
+
+    public ProductDefinition(UUID tenantId, String productCode, String productName, String category, String portfolioCode,
+                             String defaultCurrency, String createdBy) {
         this.tenantId = tenantId;
         this.productCode = productCode;
         this.productName = productName;
         this.category = category;
+        this.portfolioCode = portfolioCode != null ? portfolioCode
+            : tz.co.nlolo.lifeplatform.product.api.PortfolioCode.defaultFor(
+                tz.co.nlolo.lifeplatform.product.api.ProductCategory.valueOf(category)).name();
         this.defaultCurrency = defaultCurrency;
         this.createdBy = createdBy;
     }
+
+    public String getPortfolioCode() { return portfolioCode; }
 
     public UUID getProductId() { return productId; }
     public UUID getTenantId() { return tenantId; }

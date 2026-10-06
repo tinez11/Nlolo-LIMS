@@ -71,6 +71,7 @@ class UnderwritingContractTest {
             "db-migrations/product/V21__bonus_terms.sql",
             // Family funeral cover: V24 widens the category CHECK and holds the funeral terms.
             "db-migrations/product/V24__funeral_terms.sql",
+            "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -282,7 +283,7 @@ class UnderwritingContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"UW-FUN-%s","productName":"UW Funeral Contract Test","category":"FUNERAL","defaultCurrency":"TZS"}
+                    {"productCode":"UW-FUN-%s","productName":"UW Funeral Contract Test","category":"FUNERAL","portfolioCode":"FUN","defaultCurrency":"TZS"}
                     """.formatted(UUID.randomUUID().toString().substring(0, 8))))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
@@ -320,7 +321,7 @@ class UnderwritingContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"UW-GRP-%s","productName":"UW Group Contract Test","category":"GROUP_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"UW-GRP-%s","productName":"UW Group Contract Test","category":"GROUP_LIFE","portfolioCode":"GRPL","defaultCurrency":"TZS"}
                     """.formatted(UUID.randomUUID().toString().substring(0, 8))))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
@@ -353,7 +354,7 @@ class UnderwritingContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"UW-CONTRACT-%s","productName":"UW Contract Test","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"UW-CONTRACT-%s","productName":"UW Contract Test","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """.formatted(UUID.randomUUID().toString().substring(0, 8))))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();

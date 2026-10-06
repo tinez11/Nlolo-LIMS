@@ -1,6 +1,8 @@
 package tz.co.nlolo.lifeplatform.product.infrastructure;
 
+import tz.co.nlolo.lifeplatform.product.api.Ifrs17Model;
 import tz.co.nlolo.lifeplatform.product.api.IfrsMeasurementModel;
+import tz.co.nlolo.lifeplatform.product.api.ProfitabilityBucket;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -9,10 +11,14 @@ import java.time.LocalDate;
 import java.util.List;
 
 // Mirrors api/openapi/openapi-product.yaml's ProductVersionSpec: required
-// [ifrsMeasurementModel, effectiveDate, ratingTable, benefitSchedule]; retirementDate,
-// fundDefinitions and baseRates are optional/nullable per the spec.
+// [effectiveDate, ratingTable, benefitSchedule]; retirementDate, fundDefinitions and baseRates
+// are optional/nullable per the spec.
 public record PublishVersionRequest(
-    @NotNull IfrsMeasurementModel ifrsMeasurementModel,
+    /**
+     * RETIRED by IFRS 17 I2 and optional: the measurement model is the accounting policy register's. Still accepted so
+     * an older client's request is not refused; stored as given and never read for accounting.
+     */
+    IfrsMeasurementModel ifrsMeasurementModel,
     @NotNull LocalDate effectiveDate,
     LocalDate retirementDate,
     @NotNull List<RatingFactorRequest> ratingTable,
@@ -82,4 +88,9 @@ public record PublishVersionRequest(
     @Valid FuneralRequest funeral,
 
     // Present only on a UNIT_LINKED version (product step 6), where it is required.
-    @Valid UnitLinkedRequest unitLinked) {}
+    @Valid UnitLinkedRequest unitLinked,
+
+    // IFRS 17 I2 (spec §6), both optional: what the actuary signs off. Absent bucket = REMAINING; absent override =
+    // the accounting policy register's model, which is the ordinary case.
+    ProfitabilityBucket expectedProfitabilityBucket,
+    Ifrs17Model measurementModelOverride) {}

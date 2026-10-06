@@ -91,6 +91,7 @@ class PolicyContractTest {
             "db-migrations/product/V19__accumulation_terms.sql",
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
+            "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -320,8 +321,9 @@ class PolicyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"%s","productName":"Policy Contract Product","category":"%s","defaultCurrency":"TZS"}
-                    """.formatted(code, category)))
+                    {"productCode":"%s","productName":"Policy Contract Product","category":"%s","portfolioCode":"%s","defaultCurrency":"TZS"}
+                    """.formatted(code, category, tz.co.nlolo.lifeplatform.product.api.PortfolioCode.defaultFor(
+                        tz.co.nlolo.lifeplatform.product.api.ProductCategory.valueOf(category)))))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
         String productId = JsonPath.read(createResponse, "$.productId");

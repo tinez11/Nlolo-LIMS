@@ -36,6 +36,7 @@ public final class DepositTestMigrations {
         "db-migrations/product/V19__accumulation_terms.sql",
         "db-migrations/product/V20__deposit_rate_grid.sql",
         "db-migrations/product/V21__bonus_terms.sql",
+        "db-migrations/product/V27__ifrs17_classification.sql",
         "db-migrations/accumulation/V1__create_accumulation_schema.sql",
         "db-migrations/accumulation/V2__request_keys.sql",
         "db-migrations/accumulation/V3__deposit_periods.sql",

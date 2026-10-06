@@ -103,6 +103,7 @@ class PolicyLoanContractTest {
             "db-migrations/product/V19__accumulation_terms.sql",
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
+            "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -200,7 +201,7 @@ class PolicyLoanContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"%s","productName":"Loan Contract Product","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"%s","productName":"Loan Contract Product","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """.formatted(productCode)))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String productId = JsonPath.read(productResponse, "$.productId");

@@ -79,6 +79,7 @@ class ProductContractTest {
             "db-migrations/product/V22__annuity_terms.sql",
             "db-migrations/product/V23__vesting_terms.sql",
             "db-migrations/product/V24__funeral_terms.sql",
+            "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -104,7 +105,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", UUID.randomUUID().toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"CONTRACT-01","productName":"Contract Term Life","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"CONTRACT-01","productName":"Contract Term Life","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
@@ -123,7 +124,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"CONTRACT-LIST-01","productName":"Contract Listed Product","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"CONTRACT-LIST-01","productName":"Contract Listed Product","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isCreated())
             .andReturn();
@@ -153,6 +154,55 @@ class ProductContractTest {
             .andExpect(jsonPath("$[?(@.productId == '" + productId + "')].defaultCurrency").value("TZS"));
     }
 
+    /** IFRS 17 I2: a new product names its portfolio; a version needs no legacy model and may carry its own terms. */
+    @Test
+    void aProductNamesItsPortfolioAndAVersionItsIfrs17TermsOnTheWire() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"NO-PF-01","productName":"No Portfolio","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isBadRequest());
+
+        MvcResult createResult = mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"CRL-PF-01","productName":"Single Credit Life","category":"TERM_LIFE","portfolioCode":"CRL","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.portfolioCode").value("CRL"))
+            .andReturn();
+        UUID productId = objectMapper.readValue(createResult.getResponse().getContentAsString(), ProductSummaryView.class).productId();
+
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"effectiveDate":"2026-01-01","expectedProfitabilityBucket":"NO_SIGNIFICANT_RISK",
+                     "payoutTerms":{"freeLookDays":15},"tiraFiling":{"reference":"TIRA/PF/0001","approvalDate":"2026-01-15"},
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED"}]}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.portfolioCode").value("CRL"))
+            .andExpect(jsonPath("$.profitabilityBucket").value("NO_SIGNIFICANT_RISK"))
+            .andExpect(jsonPath("$.modelOverride").doesNotExist());
+    }
+
     @Test
     void createProductRejectsNonStaffCaller() throws Exception {
         // POST /products is @PreAuthorize("hasRole('REALM_STAFF')") -- a customer or agent JWT
@@ -163,7 +213,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", UUID.randomUUID().toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"CONTRACT-FORBIDDEN-01","productName":"Should Be Rejected","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"CONTRACT-FORBIDDEN-01","productName":"Should Be Rejected","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isForbidden());
     }
@@ -285,7 +335,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"productCode\":\"" + code + "\",\"productName\":\"" + name
-                    + "\",\"category\":\"CREDIT_LIFE\",\"defaultCurrency\":\"TZS\"}"))
+                    + "\",\"category\":\"CREDIT_LIFE\",\"portfolioCode\":\"CRL\",\"defaultCurrency\":\"TZS\"}"))
             .andExpect(status().isCreated())
             .andReturn();
         UUID productId = objectMapper.readValue(
@@ -317,7 +367,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"CONTRACT-FORBIDDEN-02","productName":"Contract Forbidden Version","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"CONTRACT-FORBIDDEN-02","productName":"Contract Forbidden Version","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isCreated())
             .andReturn();
@@ -345,7 +395,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"CONTRACT-02","productName":"Contract Endowment","category":"ENDOWMENT","defaultCurrency":"TZS"}
+                    {"productCode":"CONTRACT-02","productName":"Contract Endowment","category":"ENDOWMENT","portfolioCode":"END","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isCreated())
             .andReturn();
@@ -473,7 +523,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"productCode\":\"" + code + "\",\"productName\":\"" + name
-                    + "\",\"category\":\"ENDOWMENT\",\"defaultCurrency\":\"TZS\"}"))
+                    + "\",\"category\":\"ENDOWMENT\",\"portfolioCode\":\"END\",\"defaultCurrency\":\"TZS\"}"))
             .andExpect(status().isCreated())
             .andReturn();
         return objectMapper.readValue(result.getResponse().getContentAsString(), ProductSummaryView.class)
@@ -500,7 +550,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"TIRA-WIRE-01","productName":"Filed Over Http","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"TIRA-WIRE-01","productName":"Filed Over Http","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String productId = JsonPath.read(createResponse, "$.productId");
@@ -584,7 +634,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"CV-TERM-01","productName":"Term With Values","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"CV-TERM-01","productName":"Term With Values","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(), "$.productId");
 
@@ -652,7 +702,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"ACC-TERM-01","productName":"Term With An Account","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"ACC-TERM-01","productName":"Term With An Account","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(), "$.productId");
 
@@ -684,7 +734,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"TIRA-WIRE-02","productName":"Unfiled Over Http","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"TIRA-WIRE-02","productName":"Unfiled Over Http","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String productId = JsonPath.read(createResponse, "$.productId");
@@ -727,7 +777,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"CONTRACT-03","productName":"Contract Incomplete","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"CONTRACT-03","productName":"Contract Incomplete","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isCreated())
             .andReturn();
@@ -768,7 +818,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"GATE-UW-01","productName":"Underwriter Authored","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"GATE-UW-01","productName":"Underwriter Authored","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isForbidden());
 
@@ -781,7 +831,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"GATE-FIN-01","productName":"Finance Authored","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"GATE-FIN-01","productName":"Finance Authored","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isForbidden());
 
@@ -792,7 +842,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"GATE-ADMIN-01","productName":"Admin Authored","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"GATE-ADMIN-01","productName":"Admin Authored","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isCreated());
     }
@@ -806,7 +856,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"GATE-PUB-01","productName":"Gate Publish","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"GATE-PUB-01","productName":"Gate Publish","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String productId = JsonPath.read(createResponse, "$.productId");
@@ -857,7 +907,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"SA-BOUNDS-01","productName":"Banded By Amount","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"SA-BOUNDS-01","productName":"Banded By Amount","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String productId = JsonPath.read(createResponse, "$.productId");
@@ -923,6 +973,9 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"productCode\":\"" + code + "\",\"productName\":\"" + code + "\",\"category\":\"" + category
+                    + "\",\"portfolioCode\":\""
+                    + tz.co.nlolo.lifeplatform.product.api.PortfolioCode.defaultFor(
+                        tz.co.nlolo.lifeplatform.product.api.ProductCategory.valueOf(category))
                     + "\",\"defaultCurrency\":\"TZS\"}"))
             .andExpect(status().isCreated())
             .andReturn();
