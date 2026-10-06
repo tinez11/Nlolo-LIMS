@@ -8,23 +8,28 @@ import { xlsx } from './xlsx';
  * approves with the appointed actuary's sign-off and report, the run is posted through 9160, the ledger agrees with the
  * engine group by group, and the month locks.
  *
- * The month is an untouched one long before dev's postings (they start in 2026), chosen at random so each run has its
- * own, and locked at the end: a closing month with postings would otherwise stop dev's real months from locking.
+ * The month is the one before the earliest the ledger knows (dev's own postings start in 2026), so each run has its
+ * own. Earlier, not just untouched: the engine's closing figures are balances to date, so a month after an earlier
+ * run's would carry that run's postings too -- and a month with an unlocked earlier month holding postings cannot
+ * lock. The month is locked at the end: a closing month with postings would stop every later month from locking.
  */
 
 async function untouchedPeriod(page: Page): Promise<string> {
   await page.goto('/staff/periods');
-  await expect(page.getByRole('list', { name: 'Accounting periods' })).toBeVisible({ timeout: 15_000 });
-  for (let attempt = 0; attempt < 10; attempt++) {
-    const n = Math.floor(Math.random() * 240);
-    const period = `${2000 + Math.floor(n / 12)}-${`${(n % 12) + 1}`.padStart(2, '0')}`;
-    await page.getByLabel('Another period (YYYY-MM)').fill(period);
-    await page.getByRole('button', { name: 'Show', exact: true }).click();
-    const row = page.getByRole('listitem', { name: `Period ${period}` });
-    await expect(row).toBeVisible();
-    if (await row.getByRole('button', { name: 'Start closing' }).isVisible()) return period;
-  }
-  throw new Error('No untouched period found in ten tries');
+  const list = page.getByRole('list', { name: 'Accounting periods' });
+  await expect(list).toBeVisible({ timeout: 15_000 });
+  const known = (await list.getByRole('listitem').evaluateAll((items) => items.map((i) => i.getAttribute('aria-label') ?? '')))
+    .map((label) => label.replace('Period ', ''))
+    .filter((p) => /^\d{4}-\d{2}$/.test(p))
+    .sort();
+  const before = known[0] !== undefined && known[0] < '2001-01' ? known[0] : '2001-01';
+  const [y, m] = before.split('-').map(Number);
+  const period = m === 1 ? `${y - 1}-12` : `${y}-${`${m - 1}`.padStart(2, '0')}`;
+  await page.getByLabel('Another period (YYYY-MM)').fill(period);
+  await page.getByRole('button', { name: 'Show', exact: true }).click();
+  await expect(page.getByRole('listitem', { name: `Period ${period}` }).getByRole('button', { name: 'Start closing' }))
+    .toBeVisible();
+  return period;
 }
 
 const lastDay = (period: string) => {
