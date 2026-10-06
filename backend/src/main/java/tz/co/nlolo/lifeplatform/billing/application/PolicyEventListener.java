@@ -133,8 +133,11 @@ public class PolicyEventListener {
             // the premium was rated and stored on it, and no invoice was ever raised against
             // it: the customer owed money the platform never asked for, and the cover ran
             // regardless. One charge, due the day cover begins.
+            // Its cover runs to the day before maturity; the ledger earns a PAA premium over it (IFRS 17 I3a).
+            String maturityRaw = (String) payload.get("maturityDate");
+            LocalDate coverEndsOn = maturityRaw != null ? LocalDate.parse(maturityRaw).minusDays(1) : null;
             billingApiImpl.raisePolicyInceptionInvoice(TenantContext.get(), policyNumber,
-                productVersionId, issueDate, premiumAmount, premiumCurrency);
+                productVersionId, issueDate, premiumAmount, premiumCurrency, coverEndsOn);
             return;
         }
 
@@ -259,8 +262,12 @@ public class PolicyEventListener {
         LocalDate acceptedOn = Instant.parse((String) payload.get("acceptedAt"))
             .atZone(ZoneOffset.UTC).toLocalDate();
 
+        // Each borrower's cover, as policy stated it: passed through to the invoice event for the ledger (IFRS 17 I3a).
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> covers = payload.get("covers") instanceof java.util.List<?> list
+            ? (java.util.List<Map<String, Object>>) list : java.util.List.of();
         billingApiImpl.raiseSinglePremiumInvoice(TenantContext.get(), policyNumber, submissionId,
-            amount, (String) premium.get("currencyCode"), acceptedOn);
+            amount, (String) premium.get("currencyCode"), acceptedOn, covers);
     }
 
     /**

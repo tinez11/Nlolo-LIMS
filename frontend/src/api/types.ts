@@ -286,6 +286,11 @@ export type PolicyElectionView = FinaccountingComponents['schemas']['PolicyElect
 export type PolicyClassificationView = FinaccountingComponents['schemas']['PolicyClassificationView'];
 export type PolicyElectionInput = FinaccountingComponents['schemas']['PolicyElectionInput'];
 export type ElectionKey = PolicyElectionInput['key'];
+/** The posting rules in force (IFRS 17 I3a), read-only: the rules file is the source of truth. */
+export type PostingRulesView = FinaccountingComponents['schemas']['PostingRulesView'];
+export type PostingRule = PostingRulesView['rules'][number];
+/** An event the posting rules could not post (IFRS 17 I3a): open until retried into a journal or dismissed. */
+export type UnpostedEventView = FinaccountingComponents['schemas']['UnpostedEventView'];
 
 /**
  * `ClaimDetails` has no `discriminator` keyword in the spec (deliberately -- see the

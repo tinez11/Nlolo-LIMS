@@ -28,10 +28,12 @@ class AccountingPeriods {
 
     private final AccountingPeriodRepository periods;
     private final GlPostingRepository postings;
+    private final UnpostedEvents unposted;
 
-    AccountingPeriods(AccountingPeriodRepository periods, GlPostingRepository postings) {
+    AccountingPeriods(AccountingPeriodRepository periods, GlPostingRepository postings, UnpostedEvents unposted) {
         this.periods = periods;
         this.postings = postings;
+        this.unposted = unposted;
     }
 
     @Transactional(readOnly = true)
@@ -70,6 +72,12 @@ class AccountingPeriods {
             throw new PeriodStateException("Clearing account " + first[0] + " holds "
                 + String.format("%,.2f", ((BigDecimal) first[1]).abs()) + " TZS in " + period
                 + "; clearing accounts must return to zero before the period locks");
+        }
+        // Spec §7.6: an event the rules could not post is a hole in the period until it is posted or dismissed.
+        int waiting = unposted.openUpTo(tenantId, period);
+        if (waiting > 0) {
+            throw new PeriodStateException(waiting + (waiting == 1 ? " event is" : " events are") + " not posted;"
+                + " post or dismiss " + (waiting == 1 ? "it" : "them") + " before the period locks");
         }
         p.lock(by, Instant.now());
         return toView(periods.save(p));

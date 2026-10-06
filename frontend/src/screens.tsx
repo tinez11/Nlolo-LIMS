@@ -4,6 +4,7 @@ import {
   Building2,
   CalendarCheck,
   ClipboardCheck,
+  FileWarning,
   FileText,
   HandCoins,
   Hourglass,
@@ -12,6 +13,7 @@ import {
   Package,
   Percent,
   Receipt,
+  Route,
   ScrollText,
   Send,
   Shield,
@@ -75,6 +77,8 @@ import {
   FundsPage,
   PeriodsPage,
   PolicyRegisterPage,
+  PostingRulesPage,
+  UnpostedEventsPage,
 } from '@/lazyPages';
 
 /**
@@ -509,6 +513,17 @@ const STAFF_SCREENS: Screen[] = [
     path: 'accounting-policies',
     element: <PolicyRegisterPage />,
     reach: { group: 'finance', label: 'Accounting policies', icon: ScrollText },
+  },
+  // IFRS 17 I3a: the rules every event posts by (read-only) and the events they could not post.
+  {
+    path: 'posting-rules',
+    element: <PostingRulesPage />,
+    reach: { group: 'finance', label: 'Posting rules', icon: Route },
+  },
+  {
+    path: 'unposted-events',
+    element: <UnpostedEventsPage />,
+    reach: { group: 'finance', label: 'Unposted events', icon: FileWarning },
   },
   {
     path: 'treaties',

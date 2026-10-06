@@ -553,7 +553,8 @@ public class FinaccountingApiImpl implements FinaccountingApi {
     private JournalEntryView toView(JournalEntry entry, List<GlPosting> legs) {
         return new JournalEntryView(entry.getJournalEntryId(), entry.getSourceEvent(), entry.getSourceRef(),
             entry.getPeriod(), entry.getPolicyNumber(), entry.getPostedAt(),
-            legs.stream().map(this::toView).toList(), entry.getSourceType(), entry.getPolicyRegisterVersion());
+            legs.stream().map(this::toView).toList(), entry.getSourceType(), entry.getPolicyRegisterVersion(),
+            entry.getRuleVersion());
     }
 
     private GlPostingView toView(GlPosting posting) {

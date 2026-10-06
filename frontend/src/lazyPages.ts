@@ -157,3 +157,9 @@ export const PeriodsPage = lazy(() =>
 export const PolicyRegisterPage = lazy(() =>
   import('@/features/finance/PolicyRegisterPage').then((m) => ({ default: m.PolicyRegisterPage })),
 );
+export const PostingRulesPage = lazy(() =>
+  import('@/features/finance/PostingRulesPage').then((m) => ({ default: m.PostingRulesPage })),
+);
+export const UnpostedEventsPage = lazy(() =>
+  import('@/features/finance/UnpostedEventsPage').then((m) => ({ default: m.UnpostedEventsPage })),
+);

@@ -10,7 +10,6 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.JournalSource;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPosting;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
-import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.GlPostingRepository;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.JournalEntryRepository;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
@@ -186,7 +185,8 @@ class PremiumPostingEndToEndTest {
             "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
             "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
-            "db-migrations/finaccounting/V11__groups_and_policy_classification.sql");
+            "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
+            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -303,10 +303,10 @@ class PremiumPostingEndToEndTest {
             tenantId, generatedEntry.getJournalEntryId());
         assertThat(generatedLegs).as("must have exactly two balanced legs").hasSize(2);
         assertThat(generatedLegs).extracting(GlPosting::getAccountCode)
-            .containsExactlyInAnyOrder(PostingRule.PREMIUM_RECEIVABLE, PostingRule.UNEARNED_PREMIUM);
-        assertThat(legFor(generatedLegs, PostingRule.PREMIUM_RECEIVABLE).getDirection()).isEqualTo(PostingDirection.DR);
-        assertThat(legFor(generatedLegs, PostingRule.UNEARNED_PREMIUM).getDirection()).isEqualTo(PostingDirection.CR);
-        assertThat(legFor(generatedLegs, PostingRule.PREMIUM_RECEIVABLE).getAmount()).isEqualByComparingTo(premium);
+            .containsExactlyInAnyOrder("2122", "2121");
+        assertThat(legFor(generatedLegs, "2122").getDirection()).isEqualTo(PostingDirection.DR);
+        assertThat(legFor(generatedLegs, "2121").getDirection()).isEqualTo(PostingDirection.CR);
+        assertThat(legFor(generatedLegs, "2122").getAmount()).isEqualByComparingTo(premium);
 
         // ---- Act 2: collect the invoice in full for real. finaccounting posts DR 1000 / CR 1200. ----
         TenantContext.set(tenantId);
@@ -326,21 +326,21 @@ class PremiumPostingEndToEndTest {
             tenantId, collectedEntry.getJournalEntryId());
         assertThat(collectedLegs).as("must have exactly two balanced legs").hasSize(2);
         assertThat(collectedLegs).extracting(GlPosting::getAccountCode)
-            .containsExactlyInAnyOrder(PostingRule.CASH, PostingRule.PREMIUM_RECEIVABLE);
-        assertThat(legFor(collectedLegs, PostingRule.CASH).getDirection()).isEqualTo(PostingDirection.DR);
-        assertThat(legFor(collectedLegs, PostingRule.PREMIUM_RECEIVABLE).getDirection()).isEqualTo(PostingDirection.CR);
-        assertThat(legFor(collectedLegs, PostingRule.PREMIUM_RECEIVABLE).getAmount()).isEqualByComparingTo(premium);
+            .containsExactlyInAnyOrder("1140", "2122");
+        assertThat(legFor(collectedLegs, "1140").getDirection()).isEqualTo(PostingDirection.DR);
+        assertThat(legFor(collectedLegs, "2122").getDirection()).isEqualTo(PostingDirection.CR);
+        assertThat(legFor(collectedLegs, "2122").getAmount()).isEqualByComparingTo(premium);
 
         // ---- Assertion 3: 1200 Premium Receivable nets to zero across the pair, for THIS invoice. ----
         BigDecimal netReceivable = BigDecimal.ZERO;
         for (GlPosting leg : generatedLegs) {
-            if (PostingRule.PREMIUM_RECEIVABLE.equals(leg.getAccountCode())) {
+            if ("2122".equals(leg.getAccountCode())) {
                 netReceivable = leg.getDirection() == PostingDirection.DR
                     ? netReceivable.add(leg.getAmount()) : netReceivable.subtract(leg.getAmount());
             }
         }
         for (GlPosting leg : collectedLegs) {
-            if (PostingRule.PREMIUM_RECEIVABLE.equals(leg.getAccountCode())) {
+            if ("2122".equals(leg.getAccountCode())) {
                 netReceivable = leg.getDirection() == PostingDirection.DR
                     ? netReceivable.add(leg.getAmount()) : netReceivable.subtract(leg.getAmount());
             }

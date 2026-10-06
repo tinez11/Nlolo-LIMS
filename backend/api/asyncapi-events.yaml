@@ -1412,10 +1412,24 @@ components:
           properties: { policyNumber: {type: string}, loanId: {type: string, format: uuid, nullable: true}, settlementAmount: {type: object, description: "Zero if no active loan."} }
 
     PremiumInvoiceGeneratedPayload:
+      description: >
+        `covers` (IFRS 17 I3a): what the premium pays for, which the ledger earns a PAA premium over. One entry for an
+        instalment (billed in arrears: the period ending the day before it falls due) or a retail single premium (issue
+        to the day before maturity); one per borrower for a credit-life enrolment file (each borrower's own loan, from
+        disbursement), with `memberRef` the policy member id.
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { invoiceId: {type: string, format: uuid}, policyNumber: {type: string}, dueDate: {type: string, format: date}, amount: {type: object} }
+          properties:
+            invoiceId: {type: string, format: uuid}
+            policyNumber: {type: string}
+            dueDate: {type: string, format: date}
+            amount: {type: object}
+            covers:
+              type: array
+              items:
+                type: object
+                properties: { memberRef: {type: string}, coversFrom: {type: string, format: date}, coversTo: {type: string, format: date}, amount: {type: string} }
     PremiumCollectedPayload:
       description: >
         `policyholderPartyId` is new with the payment receipt, and genuinely new on the wire.

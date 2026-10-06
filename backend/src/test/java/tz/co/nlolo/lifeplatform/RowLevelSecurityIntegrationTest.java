@@ -219,6 +219,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
             "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
+            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
             // M10 (Task 9) additions. regreporting/V1 enabled RLS on NEITHER of its two original
             // tables and granted app_role nothing at all; V2 is what adds both, for
             // policy_dimension/policy_movement/regulatory_return/return_line among others. Until now

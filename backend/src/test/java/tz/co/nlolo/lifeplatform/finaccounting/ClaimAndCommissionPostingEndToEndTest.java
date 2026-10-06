@@ -16,7 +16,6 @@ import tz.co.nlolo.lifeplatform.distribution.infrastructure.CommissionStatementR
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPosting;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
-import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.GlPostingRepository;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.JournalEntryRepository;
 import tz.co.nlolo.lifeplatform.party.api.KycStatus;
@@ -233,7 +232,8 @@ class ClaimAndCommissionPostingEndToEndTest {
             "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
             "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
-            "db-migrations/finaccounting/V11__groups_and_policy_classification.sql");
+            "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
+            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -432,10 +432,10 @@ class ClaimAndCommissionPostingEndToEndTest {
         List<GlPosting> claimLegs = legsFor(tenantId, claimEntry);
         assertThat(claimLegs).hasSize(2);
         assertThat(claimLegs).extracting(GlPosting::getAccountCode)
-            .containsExactlyInAnyOrder(PostingRule.CLAIMS_EXPENSE, PostingRule.CASH);
-        assertThat(legFor(claimLegs, PostingRule.CLAIMS_EXPENSE).getDirection()).isEqualTo(PostingDirection.DR);
-        assertThat(legFor(claimLegs, PostingRule.CASH).getDirection()).isEqualTo(PostingDirection.CR);
-        assertThat(legFor(claimLegs, PostingRule.CLAIMS_EXPENSE).getAmount()).isEqualByComparingTo("2000000");
+            .containsExactlyInAnyOrder("5110", "1140");
+        assertThat(legFor(claimLegs, "5110").getDirection()).isEqualTo(PostingDirection.DR);
+        assertThat(legFor(claimLegs, "1140").getDirection()).isEqualTo(PostingDirection.CR);
+        assertThat(legFor(claimLegs, "5110").getAmount()).isEqualByComparingTo("2000000");
 
         // ---- Commission leg: a real closed statement, paid out through the same rail. ----
         UUID statementId = closedStatementFor(tenantId, "CLAIM-COMM-E2E-COMM", new BigDecimal("100000.00"));
@@ -454,11 +454,11 @@ class ClaimAndCommissionPostingEndToEndTest {
         List<GlPosting> commissionLegs = legsFor(tenantId, commissionEntry);
         assertThat(commissionLegs).hasSize(2);
         assertThat(commissionLegs).extracting(GlPosting::getAccountCode)
-            .containsExactlyInAnyOrder(PostingRule.COMMISSION_EXPENSE, PostingRule.CASH);
-        assertThat(legFor(commissionLegs, PostingRule.COMMISSION_EXPENSE).getDirection()).isEqualTo(PostingDirection.DR);
-        assertThat(legFor(commissionLegs, PostingRule.CASH).getDirection()).isEqualTo(PostingDirection.CR);
+            .containsExactlyInAnyOrder("2123", "1140");
+        assertThat(legFor(commissionLegs, "2123").getDirection()).isEqualTo(PostingDirection.DR);
+        assertThat(legFor(commissionLegs, "1140").getDirection()).isEqualTo(PostingDirection.CR);
         // 10% of 100000.00 -- the accrual really drove the payout, and therefore the posted amount.
-        assertThat(legFor(commissionLegs, PostingRule.COMMISSION_EXPENSE).getAmount()).isEqualByComparingTo("10000.00");
+        assertThat(legFor(commissionLegs, "2123").getAmount()).isEqualByComparingTo("10000.00");
 
         // ---- Assertion 3: a redelivery of each source event adds nothing -- finaccounting's own
         // ux_journal_entry_once-backed idempotency, not the producer's. Republished directly onto

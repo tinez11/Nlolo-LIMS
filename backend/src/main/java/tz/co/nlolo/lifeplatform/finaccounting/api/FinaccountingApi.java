@@ -21,7 +21,7 @@ import java.util.UUID;
  * unlike {@code journal_entry}/{@code gl_posting}'s deliberate REVOKE -- only the
  * application/API layer was missing. {@code accountType}/{@code normalBalance} stay derived from
  * the account code's leading digit
- * ({@link tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule#accountTypeFor}) and are never
+ * ({@link tz.co.nlolo.lifeplatform.finaccounting.domain.AccountClasses#accountTypeFor}) and are never
  * independently settable, and delete is blocked by a real foreign key
  * ({@code fk_gl_posting_account_code}, finaccounting/V3) once any posting references the account.
  *

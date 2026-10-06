@@ -24,7 +24,6 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyRegisterStateException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.PolicyRegisterBaseline;
-import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountSeeder;
 
 import java.math.BigDecimal;
@@ -103,7 +102,8 @@ class AccountingPeriodAndPolicyRegisterIntegrationTest {
             "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
             "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
-            "db-migrations/finaccounting/V11__groups_and_policy_classification.sql");
+            "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
+            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -124,8 +124,8 @@ class AccountingPeriodAndPolicyRegisterIntegrationTest {
     @Test
     void aPeriodLocksOnlyAfterEveryEarlierPeriodWithPostingsIsLocked() {
         UUID tenant = tenantWithChart();
-        post(tenant, "p-aug", "2026-08", PostingRule.CASH, PostingRule.PREMIUM_RECEIVABLE, "15000.00");
-        post(tenant, "p-sep", "2026-09", PostingRule.CASH, PostingRule.PREMIUM_RECEIVABLE, "9000.00");
+        post(tenant, "p-aug", "2026-08", "1140", "2122", "15000.00");
+        post(tenant, "p-sep", "2026-09", "1140", "2122", "9000.00");
 
         as(tenant);
         api.startClosing("2026-09", "alice");
@@ -141,7 +141,7 @@ class AccountingPeriodAndPolicyRegisterIntegrationTest {
     @Test
     void aPeriodDoesNotLockWhileAClearingAccountHoldsABalance() {
         UUID tenant = tenantWithChart();
-        post(tenant, "clr-in", "2026-07", "9110", PostingRule.CASH, "500.00");
+        post(tenant, "clr-in", "2026-07", "9110", "1140", "500.00");
 
         as(tenant);
         api.startClosing("2026-07", "alice");
@@ -151,9 +151,9 @@ class AccountingPeriodAndPolicyRegisterIntegrationTest {
                 + "before the period locks");
 
         // A closing period takes no event journal; the month-end step that clears it is the platform's own.
-        assertThatThrownBy(() -> post(tenant, "clr-out", "2026-07", PostingRule.CASH, "9110", "500.00"))
+        assertThatThrownBy(() -> post(tenant, "clr-out", "2026-07", "1140", "9110", "500.00"))
             .hasStackTraceContaining("LEDGER_PERIOD_CLOSING");
-        post(tenant, "clr-out", "2026-07", PostingRule.CASH, "9110", "500.00", JournalSource.SYSTEM);
+        post(tenant, "clr-out", "2026-07", "1140", "9110", "500.00", JournalSource.SYSTEM);
         as(tenant);
         assertThat(api.lockPeriod("2026-07", "alice").status()).isEqualTo(PeriodStatus.LOCKED);
     }
@@ -165,7 +165,7 @@ class AccountingPeriodAndPolicyRegisterIntegrationTest {
         api.startClosing("2026-06", "alice");
         api.lockPeriod("2026-06", "alice");
 
-        assertThatThrownBy(() -> post(tenant, "late", "2026-06", PostingRule.CASH, PostingRule.PREMIUM_RECEIVABLE,
+        assertThatThrownBy(() -> post(tenant, "late", "2026-06", "1140", "2122",
             "100.00")).hasStackTraceContaining("LEDGER_PERIOD_LOCKED");
 
         as(tenant);
@@ -179,7 +179,7 @@ class AccountingPeriodAndPolicyRegisterIntegrationTest {
         assertThat(reopened.reopenRequestedBy()).isEqualTo("alice");
         assertThat(reopened.reopenedBy()).isEqualTo("bob");
 
-        post(tenant, "late", "2026-06", PostingRule.CASH, PostingRule.PREMIUM_RECEIVABLE, "100.00");
+        post(tenant, "late", "2026-06", "1140", "2122", "100.00");
     }
 
     @Test
@@ -227,7 +227,7 @@ class AccountingPeriodAndPolicyRegisterIntegrationTest {
         assertThat(api.policyElectionInForce("MEASUREMENT_MODEL", "TERM", today)).get()
             .extracting(PolicyElectionView::value).isEqualTo("PAA");
 
-        UUID journalId = post(tenant, "after-election", "2026-10", PostingRule.CASH, PostingRule.PREMIUM_RECEIVABLE,
+        UUID journalId = post(tenant, "after-election", "2026-10", "1140", "2122",
             "100.00");
         as(tenant);
         assertThat(api.getJournalEntry(journalId).policyRegisterVersion()).isEqualTo(baselineVersion + 1);

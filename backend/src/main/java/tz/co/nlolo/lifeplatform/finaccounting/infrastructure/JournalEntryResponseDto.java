@@ -13,12 +13,12 @@ import java.util.UUID;
 public record JournalEntryResponseDto(UUID journalEntryId, String sourceEvent, String sourceRef,
                                        String period, String policyNumber, Instant postedAt,
                                        List<GlPostingResponseDto> postings, JournalSource sourceType,
-                                       int policyRegisterVersion) {
+                                       int policyRegisterVersion, String ruleVersion) {
 
     public static JournalEntryResponseDto from(JournalEntryView view) {
         return new JournalEntryResponseDto(view.journalEntryId(), view.sourceEvent(), view.sourceRef(),
             view.period(), view.policyNumber(), view.postedAt(),
             view.postings().stream().map(GlPostingResponseDto::from).toList(), view.sourceType(),
-            view.policyRegisterVersion());
+            view.policyRegisterVersion(), view.ruleVersion());
     }
 }

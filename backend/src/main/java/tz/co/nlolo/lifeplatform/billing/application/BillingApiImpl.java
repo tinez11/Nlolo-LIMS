@@ -642,6 +642,19 @@ public class BillingApiImpl implements BillingApi {
     @Transactional
     UUID raiseSinglePremiumInvoice(UUID tenantId, String policyNumber, UUID enrolmentSubmissionId,
                                     BigDecimal amount, String currency, LocalDate acceptedOn) {
+        return raiseSinglePremiumInvoice(tenantId, policyNumber, enrolmentSubmissionId, amount, currency, acceptedOn,
+            List.of());
+    }
+
+    /**
+     * @param covers what each borrower's premium pays for ({@code memberRef, coversFrom, coversTo, amount}), as policy
+     *     stated it on the accepted file. Carried on the invoice event for the ledger, which earns a PAA premium over
+     *     each borrower's own loan (IFRS 17 I3a); billing itself reads nothing from it.
+     */
+    @Transactional
+    UUID raiseSinglePremiumInvoice(UUID tenantId, String policyNumber, UUID enrolmentSubmissionId,
+                                    BigDecimal amount, String currency, LocalDate acceptedOn,
+                                    List<Map<String, Object>> covers) {
         LocalDate dueDate = acceptedOn.plusDays(SINGLE_PREMIUM_PAYMENT_TERM_DAYS);
 
         // The grace period comes from the product for a scheduled invoice, read off the version
@@ -685,7 +698,8 @@ public class BillingApiImpl implements BillingApi {
         eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumInvoiceGenerated", tenantId,
             Map.of("invoiceId", invoice.getInvoiceId(), "policyNumber", policyNumber,
                    "dueDate", dueDate.toString(),
-                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency))));
+                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency),
+                   "covers", covers == null ? List.of() : covers)));
 
         log.info("Raised single-premium invoice {} of {} {} for enrolment submission {} on policy {}",
             invoice.getInvoiceId(), amount.toPlainString(), currency, enrolmentSubmissionId, policyNumber);
@@ -719,6 +733,16 @@ public class BillingApiImpl implements BillingApi {
     @Transactional
     UUID raisePolicyInceptionInvoice(UUID tenantId, String policyNumber, UUID productVersionId,
                                       LocalDate issueDate, BigDecimal amount, String currency) {
+        return raisePolicyInceptionInvoice(tenantId, policyNumber, productVersionId, issueDate, amount, currency, null);
+    }
+
+    /**
+     * @param coverEndsOn the last day the single premium buys cover for (the day before maturity), stated on the
+     *     invoice event for the ledger's PAA earning; null where the contract does not term, read as a year
+     */
+    @Transactional
+    UUID raisePolicyInceptionInvoice(UUID tenantId, String policyNumber, UUID productVersionId,
+                                      LocalDate issueDate, BigDecimal amount, String currency, LocalDate coverEndsOn) {
         ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(productVersionId);
         LocalDate graceEnd = issueDate.plusDays(snapshot.gracePeriodDays());
 
@@ -739,10 +763,13 @@ public class BillingApiImpl implements BillingApi {
         PremiumInvoice invoice = premiumInvoiceRepository.save(
             PremiumInvoice.forPolicyInception(tenantId, policyNumber, issueDate, amount, currency, graceEnd));
 
+        LocalDate coverEnd = coverEndsOn != null && !coverEndsOn.isBefore(issueDate) ? coverEndsOn
+            : issueDate.plusYears(1).minusDays(1);
         eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumInvoiceGenerated", tenantId,
             Map.of("invoiceId", invoice.getInvoiceId(), "policyNumber", policyNumber,
                    "dueDate", issueDate.toString(),
-                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency))));
+                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency),
+                   "covers", List.of(cover(issueDate, coverEnd, amount)))));
 
         log.info("Raised inception invoice {} of {} {} for single-premium policy {}",
             invoice.getInvoiceId(), amount.toPlainString(), currency, policyNumber);
@@ -901,10 +928,30 @@ public class BillingApiImpl implements BillingApi {
         schedule.advanceNextDueDate(cursor);
         billingScheduleRepository.save(schedule);
         for (PremiumInvoice invoice : toCreate) {
+            // Premium is billed in arrears (the first falls one period after issue), so an instalment pays for the
+            // period that ENDS the day before it falls due.
+            LocalDate due = invoice.getDueDate();
+            LocalDate coversFrom = previousPeriodStart(due, schedule.getPremiumFrequency());
             eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumInvoiceGenerated", tenantId,
-                Map.of("invoiceId", invoice.getInvoiceId(), "policyNumber", invoice.getPolicyNumber(), "dueDate", invoice.getDueDate().toString(),
-                       "amount", Map.of("amount", invoice.getAmount().toPlainString(), "currencyCode", invoice.getCurrency()))));
+                Map.of("invoiceId", invoice.getInvoiceId(), "policyNumber", invoice.getPolicyNumber(), "dueDate", due.toString(),
+                       "amount", Map.of("amount", invoice.getAmount().toPlainString(), "currencyCode", invoice.getCurrency()),
+                       "covers", List.of(cover(coversFrom, due.minusDays(1), invoice.getAmount())))));
         }
+    }
+
+    /** One cover an invoice pays for, as the ledger's PAA earning reads it (IFRS 17 I3a). */
+    private static Map<String, Object> cover(LocalDate from, LocalDate to, BigDecimal amount) {
+        return Map.of("memberRef", "", "coversFrom", from.toString(), "coversTo", to.toString(),
+            "amount", amount.toPlainString());
+    }
+
+    private LocalDate previousPeriodStart(LocalDate due, String frequency) {
+        return switch (frequency) {
+            case "MONTHLY" -> due.minusMonths(1);
+            case "QUARTERLY" -> due.minusMonths(3);
+            case "ANNUALLY" -> due.minusYears(1);
+            default -> throw new IllegalArgumentException("Unknown premium frequency: " + frequency);
+        };
     }
 
     private LocalDate nextPeriodStart(LocalDate from, String frequency) {

@@ -12,6 +12,7 @@ import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -102,6 +103,37 @@ class PolicyClassifier {
                 rs.getString("profitability_bucket"), rs.getString("sales_channel"), rs.getString("branch_code"),
                 rs.getObject("classified_at", Timestamp.class).toInstant()),
             tenantId, policyNumber);
+    }
+
+    /** What posting reads off a contract's classification (I3a): its model and the line dimensions. */
+    record InForce(String groupKey, String model, UUID productId, String portfolio, String channel, String branch) {}
+
+    /**
+     * The classification in force on {@code date}: the latest one effective by then (a vested pension's VESTING row
+     * from its vesting date). An event dated before the contract's first classification -- a backdated issue -- reads
+     * that first one: a classified contract is never unclassified. The product, which a VESTING row does not repeat,
+     * comes from the ISSUE row.
+     */
+    Optional<InForce> inForce(UUID tenantId, String policyNumber, LocalDate date) {
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT * FROM finaccounting.policy_classification"
+            + " WHERE tenant_id = ? AND policy_number = ? ORDER BY effective_from, classified_at", tenantId, policyNumber);
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        Map<String, Object> chosen = rows.get(0);
+        for (Map<String, Object> row : rows) {
+            if (!((Date) row.get("effective_from")).toLocalDate().isAfter(date)) {
+                chosen = row;
+            }
+        }
+        UUID product = (UUID) chosen.get("product_id");
+        if (product == null) {
+            product = rows.stream().map(r -> (UUID) r.get("product_id")).filter(java.util.Objects::nonNull)
+                .findFirst().orElse(null);
+        }
+        return Optional.of(new InForce((String) chosen.get("group_key"), (String) chosen.get("measurement_model"), product,
+            (String) chosen.get("portfolio_code"), (String) chosen.get("sales_channel"),
+            (String) chosen.get("branch_code")));
     }
 
     /** The ISSUE classification, if the contract has one. */

@@ -1,0 +1,415 @@
+# IFRS 17 posting rules (I3a). The source of truth for every journal an event posts; the console shows it read-only
+# until a database editor with maker-checker exists. Bump `version` on ANY change: every journal records the version
+# it was posted under.
+#
+# A rule: the event it posts, the measurement models it applies to (GMM, VFA, PAA, IFRS9 from the contract's
+# classification; NONE for an event with no policy; ANY for any classified contract -- never an unclassified one),
+# an optional `when` on the event's attributes (the rule with the most `when` attributes wins), optional dates
+# (effectiveFrom inclusive, effectiveTo exclusive), and its lines. A line names a side and account, the fact that
+# gives its amount, and the guide's movement type (2.4). A line whose amount is zero is left out; a journal with no
+# lines left is not posted. The application refuses to start on a rule that names an unknown account, a MAN account,
+# an unknown fact or movement, or that another rule could be chosen over.
+#
+# Ids are the guide's entries (A-06, I-01 ...); PLAT-* are the platform's own interim journals that I3b replaces with
+# the guide's splits (claims B-01..B-04 and C-04, surrenders C-05/C-06, payouts D, commission earned A-04 and its
+# withholding A-05). IFRS9 contracts post their premiums as before until I3b gives them the guide's G entries.
+
+version: 1
+rules:
+
+  # ---- Premium: billed, collected, credited, restated, waived ------------------------------------------------------
+
+  - id: A-06
+    event: billing.PremiumInvoiceGenerated
+    models: [GMM, VFA, IFRS9]
+    description: Premium falls due (billing)
+    lines:
+      - {dr: "2122", amount: amount, movement: PRM_REN}
+      - {cr: "2121", amount: amount, movement: PRM_REN}
+
+  - id: I-01
+    event: billing.PremiumInvoiceGenerated
+    models: [PAA]
+    description: PAA premium billed -- earned monthly by the PAA earning job (I-03)
+    lines:
+      - {dr: "2142", amount: amount, movement: PRM_REN}
+      - {cr: "2141", amount: amount, movement: PRM_REN}
+
+  - id: I-03
+    event: finaccounting.PaaRevenueEarned
+    models: [PAA]
+    description: Month-end PAA revenue earned, straight-line over the cover each premium pays for (a SYSTEM journal)
+    lines:
+      - {dr: "2141", amount: amount}
+      - {cr: "4160", amount: amount}
+
+  - id: PLAT-A07
+    event: billing.PremiumCollected
+    models: [GMM, VFA, IFRS9]
+    description: Premium collected, straight to the mobile money wallet (no 9110 clearing until a settlement file exists)
+    lines:
+      - {dr: "1140", amount: amount}
+      - {cr: "2122", amount: amount, movement: PRM_REN}
+
+  - id: I-02
+    event: billing.PremiumCollected
+    models: [PAA]
+    description: PAA premium received
+    lines:
+      - {dr: "1140", amount: amount}
+      - {cr: "2142", amount: amount, movement: PRM_REN}
+
+  - id: PLAT-A18
+    event: billing.PremiumRefundDue
+    models: [GMM, VFA, IFRS9]
+    description: Premium credited back -- the invoice posting run backwards for the part given back
+    lines:
+      - {dr: "2121", amount: amount, movement: PRM_REN}
+      - {cr: "2122", amount: amount, movement: PRM_REN}
+
+  - id: PLAT-A18-PAA
+    event: billing.PremiumRefundDue
+    models: [PAA]
+    description: PAA premium credited back; the earning schedule stops earning what was given back
+    lines:
+      - {dr: "2141", amount: amount, movement: PRM_REN}
+      - {cr: "2142", amount: amount, movement: PRM_REN}
+
+  - id: PLAT-A06-UP
+    event: billing.PremiumInvoiceIncreased
+    models: [GMM, VFA, IFRS9]
+    description: An untouched instalment restated upward -- the difference only
+    lines:
+      - {dr: "2122", amount: amount, movement: PRM_REN}
+      - {cr: "2121", amount: amount, movement: PRM_REN}
+
+  - id: PLAT-A06-UP-PAA
+    event: billing.PremiumInvoiceIncreased
+    models: [PAA]
+    description: A PAA instalment restated upward -- the difference only
+    lines:
+      - {dr: "2142", amount: amount, movement: PRM_REN}
+      - {cr: "2141", amount: amount, movement: PRM_REN}
+
+  - id: PLAT-A06-DOWN
+    event: billing.PremiumInvoiceReduced
+    models: [GMM, VFA, IFRS9]
+    description: An untouched instalment restated downward -- the difference only
+    lines:
+      - {dr: "2121", amount: amount, movement: PRM_REN}
+      - {cr: "2122", amount: amount, movement: PRM_REN}
+
+  - id: PLAT-A06-DOWN-PAA
+    event: billing.PremiumInvoiceReduced
+    models: [PAA]
+    description: A PAA instalment restated downward -- the difference only
+    lines:
+      - {dr: "2141", amount: amount, movement: PRM_REN}
+      - {cr: "2142", amount: amount, movement: PRM_REN}
+
+  - id: A-14
+    event: billing.InvoiceWaived
+    models: [GMM, VFA, IFRS9]
+    description: Lapse, write-off or end of contract -- cancel the unpaid billed premium
+    lines:
+      - {dr: "2121", amount: amount, movement: PRM_REN}
+      - {cr: "2122", amount: amount, movement: PRM_REN}
+
+  - id: A-14-PAA
+    event: billing.InvoiceWaived
+    models: [PAA]
+    description: A PAA invoice waived; the earning schedule stops earning what was waived
+    lines:
+      - {dr: "2141", amount: amount, movement: PRM_REN}
+      - {cr: "2142", amount: amount, movement: PRM_REN}
+
+  # ---- Money out: claims, surrenders, payouts, commission (I3b splits these into the guide's entries) ---------------
+
+  - id: PLAT-B
+    event: claims.ClaimSettled
+    models: [ANY]
+    description: Claim settled (I3b -- B-01..B-04 and C-04)
+    lines:
+      - {dr: "5110", amount: amount}
+      - {cr: "1140", amount: amount}
+
+  - id: PLAT-EFT-QUEUED
+    event: payment.EftDisbursementAwaitingExecution
+    models: [NONE]
+    when: {purpose: CLAIM_SETTLEMENT}
+    description: A claim settlement queued on the EFT rail -- payable until the transfer executes
+    lines:
+      - {dr: "5110", amount: amount}
+      - {cr: "2211", amount: amount}
+
+  - id: PLAT-EFT-EXECUTED
+    event: payment.EftDisbursementExecuted
+    models: [NONE]
+    when: {purpose: CLAIM_SETTLEMENT}
+    description: The EFT transfer executed -- the payable clears
+    lines:
+      - {dr: "2211", amount: amount}
+      - {cr: "5110", amount: amount}
+
+  - id: PLAT-C06
+    event: policy.SurrenderPaid
+    models: [ANY]
+    description: Surrender value paid (I3b -- C-05/C-06 through 2124 and 2213)
+    lines:
+      - {dr: "5110", amount: amount, movement: IC_SUR}
+      - {cr: "1140", amount: amount}
+
+  - id: PLAT-D
+    event: benefitpayout.PayoutPaid
+    models: [ANY]
+    description: A benefit paid to a living policyholder, tax withheld where it applies (I3b -- the D/H splits)
+    lines:
+      - {dr: "5110", amount: gross}
+      - {cr: "1140", amount: paid}
+      - {cr: "2615", amount: withheld}
+
+  - id: PLAT-A05
+    event: distribution.CommissionPaid
+    models: [NONE]
+    description: Commission paid (I3b -- earned A-04, withholding A-05 once Finance sets the rate)
+    lines:
+      - {dr: "2123", amount: amount, movement: IACF_COM}
+      - {cr: "1140", amount: amount}
+
+  # ---- Policy loans ---------------------------------------------------------------------------------------------------
+
+  - id: E-01
+    event: policyloan.LoanDisbursed
+    models: [NONE]
+    description: Policy loan disbursed
+    lines:
+      - {dr: "2125", amount: amount}
+      - {cr: "1140", amount: amount}
+
+  - id: E-03
+    event: policyloan.LoanRepaid
+    models: [NONE]
+    description: Policy loan repayment
+    lines:
+      - {dr: "1140", amount: amount}
+      - {cr: "2125", amount: amount}
+
+  # ---- Reinsurance (I3c rebuilds both on the monthly bordereau) -------------------------------------------------------
+
+  - id: K-01
+    event: reinsurance.CessionRecorded
+    models: [ANY]
+    description: Cession recorded -- INTERIM, still the ceded sum assured until I3c posts the bordereau premium
+    lines:
+      - {dr: "1436", amount: amount}
+      - {cr: "1430", amount: amount}
+
+  - id: B-05
+    event: reinsurance.RecoveryConfirmed
+    models: [NONE]
+    description: Reinsurer's share of a claim
+    lines:
+      - {dr: "1420", amount: amount}
+      - {cr: "5110", amount: amount}
+
+  # ---- Unit-linked (the guide's F entries; units in issue x price always equals 2131) -------------------------------
+
+  - id: F-01
+    event: unitlinked.UnitsAllocated
+    models: [ANY]
+    description: Premium allocated to units; the allocation charge stays inside the liability
+    lines:
+      - {dr: "2121", amount: premium}
+      - {cr: "2131", amount: allocated}
+      - {cr: "2132", amount: allocationCharge, movement: UL_ALLOC}
+
+  - id: F-04
+    event: unitlinked.ChargesTaken
+    models: [ANY]
+    description: The month's policy fee and mortality charge, cancelled from units
+    lines:
+      - {dr: "2131", amount: policyFee, movement: UL_ADM}
+      - {dr: "2131", amount: costOfInsurance, movement: UL_MORT}
+      - {cr: "2132", amount: policyFee, movement: UL_ADM}
+      - {cr: "2132", amount: costOfInsurance, movement: UL_MORT}
+
+  - id: F-03
+    event: unitlinked.FundRevalued
+    models: [NONE]
+    when: {sign: POSITIVE}
+    description: Unit price rises -- the liability trued up to units in issue x price
+    lines:
+      - {dr: "7130", amount: delta}
+      - {cr: "2131", amount: delta}
+
+  - id: F-03-FALL
+    event: unitlinked.FundRevalued
+    models: [NONE]
+    when: {sign: NEGATIVE}
+    description: Unit price falls
+    lines:
+      - {dr: "2131", amount: delta}
+      - {cr: "7130", amount: delta}
+
+  - id: PLAT-UL-EXIT
+    event: unitlinked.ExitPriced
+    models: [ANY]
+    description: Units sold on an exit; the payout's own posting takes it from 5110 to cash (I3b -- F-08/F-09)
+    lines:
+      - {dr: "2131", amount: amount}
+      - {cr: "5110", amount: amount}
+
+  - id: PLAT-UL-RETURN
+    event: unitlinked.PremiumReturned
+    models: [ANY]
+    description: A premium returned whole, its allocation charge with it
+    lines:
+      - {dr: "2121", amount: total}
+      - {cr: "5110", amount: returned}
+      - {cr: "2132", amount: allocationCharge, movement: UL_ALLOC}
+
+  - id: PLAT-UL-CHARGE-REFUND
+    event: unitlinked.ChargeRefunded
+    models: [ANY]
+    description: A charge refunded
+    lines:
+      - {dr: "2132", amount: amount}
+      - {cr: "5110", amount: amount}
+
+  - id: PLAT-UL-REINVEST
+    event: unitlinked.UnitsReinvested
+    models: [ANY]
+    description: Money reinvested in units
+    lines:
+      - {dr: "5110", amount: amount}
+      - {cr: "2131", amount: amount}
+
+  - id: PLAT-UL-CORR-LIAB-UP
+    event: unitlinked.PriceCorrected
+    models: [ANY]
+    when: {part: LIABILITY, sign: POSITIVE}
+    description: A re-run exit sale -- the customer is owed more; the liability gives it up
+    lines:
+      - {dr: "2131", amount: difference}
+      - {cr: "5110", amount: difference}
+
+  - id: PLAT-UL-CORR-LIAB-DOWN
+    event: unitlinked.PriceCorrected
+    models: [ANY]
+    when: {part: LIABILITY, sign: NEGATIVE}
+    description: A re-run exit sale -- the customer is owed less
+    lines:
+      - {dr: "5110", amount: difference}
+      - {cr: "2131", amount: difference}
+
+  - id: PLAT-UL-CORR-OWED-TO
+    event: unitlinked.PriceCorrected
+    models: [ANY]
+    when: {part: OWED, sign: POSITIVE}
+    description: Already paid -- the difference is owed to the customer
+    lines:
+      - {dr: "5110", amount: difference}
+      - {cr: "2213", amount: difference}
+
+  - id: PLAT-UL-CORR-OWED-BY
+    event: unitlinked.PriceCorrected
+    models: [ANY]
+    when: {part: OWED, sign: NEGATIVE}
+    description: Already paid -- the customer owes the difference back
+    lines:
+      - {dr: "2122", amount: difference}
+      - {cr: "5110", amount: difference}
+
+  - id: PLAT-UL-PAYOUT
+    event: unitlinked.PayoutPaid
+    models: [ANY]
+    description: An exit's or a withdrawal's payout, keyed on the disbursement
+    lines:
+      - {dr: "5110", amount: amount}
+      - {cr: "1140", amount: amount}
+
+  - id: PLAT-UL-PAYOUT-CORRECTION
+    event: unitlinked.PayoutPaid
+    models: [ANY]
+    when: {purpose: PRICE_CORRECTION_PAYOUT}
+    description: An adjustment paid to the customer
+    lines:
+      - {dr: "2213", amount: amount}
+      - {cr: "1140", amount: amount}
+
+  - id: PLAT-UL-PAYOUT-TOPUP
+    event: unitlinked.PayoutPaid
+    models: [ANY]
+    when: {purpose: TOP_UP_REFUND}
+    description: A top-up refunded whole -- it never bought a unit, so it leaves 2121 where it arrived
+    lines:
+      - {dr: "2121", amount: amount, movement: PRM_TOP}
+      - {cr: "1140", amount: amount}
+
+  - id: F-06
+    event: unitlinked.SwitchExecuted
+    models: [ANY]
+    description: Fund switch fee (the units moved stay inside 2131)
+    lines:
+      - {dr: "2131", amount: fee, movement: UL_SWITCH}
+      - {cr: "2132", amount: fee, movement: UL_SWITCH}
+
+  - id: F-07
+    event: unitlinked.WithdrawalPriced
+    models: [ANY]
+    when: {part: PROCEEDS}
+    description: Partial withdrawal -- the units' proceeds
+    lines:
+      - {dr: "2131", amount: proceeds, movement: IC_WDL}
+      - {cr: "5110", amount: proceeds}
+
+  - id: PLAT-UL-WITHDRAWAL-CHARGE
+    event: unitlinked.WithdrawalPriced
+    models: [ANY]
+    when: {part: SURRENDER_CHARGE}
+    description: Partial withdrawal -- its surrender charge
+    lines:
+      - {dr: "5110", amount: surrenderCharge}
+      - {cr: "2132", amount: surrenderCharge, movement: UL_SURCH}
+
+  - id: PLAT-UL-SURRENDER-CHARGE
+    event: unitlinked.SurrenderCharged
+    models: [ANY]
+    description: An exit's surrender charge, out of what the exit put in 5110
+    lines:
+      - {dr: "5110", amount: amount}
+      - {cr: "2132", amount: amount, movement: UL_SURCH}
+
+  - id: PLAT-UL-TOPUP
+    event: unitlinked.TopUpReceived
+    models: [ANY]
+    description: A top-up's money in, before it buys units or goes back
+    lines:
+      - {dr: "1140", amount: amount}
+      - {cr: "2121", amount: amount, movement: PRM_TOP}
+
+  - id: PLAT-UL-ADJ-COLLECTED
+    event: unitlinked.AdjustmentCollected
+    models: [ANY]
+    description: An amount owed by the customer, collected outside the platform
+    lines:
+      - {dr: "1140", amount: amount}
+      - {cr: "2122", amount: amount}
+
+  - id: PLAT-UL-ADJ-WAIVED-TO
+    event: unitlinked.AdjustmentWaived
+    models: [ANY]
+    when: {direction: OWED_TO_CUSTOMER}
+    description: An amount owed to the customer, waived
+    lines:
+      - {dr: "2213", amount: amount}
+      - {cr: "5110", amount: amount}
+
+  - id: PLAT-UL-ADJ-WAIVED-BY
+    event: unitlinked.AdjustmentWaived
+    models: [ANY]
+    when: {direction: OWED_BY_CUSTOMER}
+    description: An amount owed by the customer, waived
+    lines:
+      - {dr: "5110", amount: amount}
+      - {cr: "2122", amount: amount}

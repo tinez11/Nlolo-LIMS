@@ -10,7 +10,9 @@ import type {
   CreateAccountRequest,
   JournalEntryView,
   Page,
+  PostingRulesView,
   TrialBalanceView,
+  UnpostedEventView,
   UpdateAccountRequest,
 } from './types';
 
@@ -195,4 +197,25 @@ export function rejectPolicyElection(electionId: string, reason: string): Promis
     `/finance/accounting-policies/${encodeURIComponent(electionId)}/rejection`,
     { reason },
   );
+}
+
+// ---- The posting rules and the events they could not post (IFRS 17 I3a) ----
+
+/** `GET /finance/posting-rules` -- the rules in force, read-only (the rules file is the source of truth). */
+export function getPostingRules(): Promise<PostingRulesView> {
+  return get<PostingRulesView>('/finance/posting-rules');
+}
+
+/** `GET /finance/unposted-events` -- open first (oldest first), then the most recently resolved. */
+export function listUnpostedEvents(openOnly = false): Promise<UnpostedEventView[]> {
+  return get<UnpostedEventView[]>('/finance/unposted-events', openOnly ? { params: { openOnly: true } } : undefined);
+}
+
+/** Posts it with the rules in force now; still unpostable, it stays open with the new reason. */
+export function retryUnpostedEvent(id: string): Promise<UnpostedEventView> {
+  return post<UnpostedEventView>(`/finance/unposted-events/${encodeURIComponent(id)}/retry`, {});
+}
+
+export function dismissUnpostedEvent(id: string, reason: string): Promise<UnpostedEventView> {
+  return post<UnpostedEventView>(`/finance/unposted-events/${encodeURIComponent(id)}/dismissal`, { reason });
 }

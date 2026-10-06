@@ -197,6 +197,9 @@ public class EnrolmentApiImpl implements EnrolmentApi {
 
         int enrolled = 0;
         BigDecimal premiumTotal = BigDecimal.ZERO;
+        // What each borrower's premium pays for: their own loan, from disbursement to its last day. The ledger earns a
+        // PAA premium over exactly this (IFRS 17 I3a), so a file's premium is earned borrower by borrower.
+        List<Map<String, Object>> covers = new ArrayList<>();
         for (EnrolmentSubmissionRow row :
                 rowRepository.findByTenantIdAndSubmissionIdOrderByLineNumberAsc(tenantId, submissionId)) {
             // ENROLLED_CAPPED is cover, not a refusal: a capped borrower is insured up
@@ -227,6 +230,10 @@ public class EnrolmentApiImpl implements EnrolmentApi {
                 scheme.getPremiumBasis());
             row.becameMember(member.policyMemberId(), member.memberReference(), memberPremium);
             premiumTotal = premiumTotal.add(memberPremium);
+            covers.add(Map.of("memberRef", member.policyMemberId().toString(),
+                "coversFrom", judged.disbursementDate().toString(),
+                "coversTo", judged.disbursementDate().plusMonths(judged.loanTermMonths()).minusDays(1).toString(),
+                "amount", memberPremium.toPlainString()));
             enrolled++;
         }
 
@@ -278,7 +285,8 @@ public class EnrolmentApiImpl implements EnrolmentApi {
                    // lender is charged twice.
                    "acceptedAt", submission.getAcceptedAt().toString(),
                    "premium", Map.of("amount", premiumTotal.toPlainString(),
-                                     "currencyCode", scheme.getCurrency()))));
+                                     "currencyCode", scheme.getCurrency()),
+                   "covers", covers)));
 
         return toView(submission);
     }

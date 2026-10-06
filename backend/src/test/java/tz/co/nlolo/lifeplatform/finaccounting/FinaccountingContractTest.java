@@ -8,7 +8,6 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPosting;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
-import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountSeeder;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.GlPostingRepository;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.JournalEntryRepository;
@@ -151,7 +150,8 @@ class FinaccountingContractTest {
             "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
             "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
-            "db-migrations/finaccounting/V11__groups_and_policy_classification.sql");
+            "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
+            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -211,8 +211,8 @@ class FinaccountingContractTest {
         chartOfAccountSeeder.seedIfAbsent(tenantId, "system:test");
         TenantContext.set(tenantId);
         JournalEntry entry = new JournalEntry(tenantId, sourceEvent, sourceRef, period, policyNumber, "system:test");
-        entry.addLeg(PostingRule.CASH, PostingDirection.DR, new BigDecimal(amount), CURRENCY);
-        entry.addLeg(PostingRule.PREMIUM_RECEIVABLE, PostingDirection.CR, new BigDecimal(amount), CURRENCY);
+        entry.addLeg("1140", PostingDirection.DR, new BigDecimal(amount), CURRENCY);
+        entry.addLeg("2122", PostingDirection.CR, new BigDecimal(amount), CURRENCY);
         // One transaction, as finaccounting V10 requires: a journal balances at commit, and its lines may only be
         // written by the transaction that wrote it.
         new org.springframework.transaction.support.TransactionTemplate(transactionManager).executeWithoutResult(s -> {
@@ -505,7 +505,7 @@ class FinaccountingContractTest {
         // seedEntry posts a real DR CASH ("1140") / CR PREMIUM_RECEIVABLE ("2122") leg pair.
         seedEntry(tenantId, "billing.PremiumInvoiceGenerated", "gl-ct-inuse", "2026-08", "POL-GL-INUSE", "1000.00");
 
-        mockMvc.perform(delete("/chart-of-accounts/{accountCode}", PostingRule.CASH).with(financeStaffOf(tenantId)))
+        mockMvc.perform(delete("/chart-of-accounts/{accountCode}", "1140").with(financeStaffOf(tenantId)))
             .andExpect(status().isConflict())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.errorCode").value("ACCOUNT_IN_USE"));
@@ -780,5 +780,68 @@ class FinaccountingContractTest {
                     {"reason":"No such thing"}"""))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("POLICY_ELECTION_NOT_FOUND"));
+    }
+
+    // ============================================================================================
+    // IFRS 17 I3a: the posting rules and the unposted-event queue
+    // ============================================================================================
+
+    @Test
+    void thePostingRulesAreReadableByFinanceOnly() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(get("/finance/posting-rules").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.versionLabel").value("posting-rules v1"))
+            .andExpect(jsonPath("$.rules[?(@.id == 'I-01')].lines[0].account").value("2142"));
+        mockMvc.perform(get("/finance/posting-rules").with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void aQueuedEventIsListedDismissedWithAReasonAndThenRefusesARetry() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        // An invoice for a policy nobody classified: the rules cannot choose a model, so it is queued.
+        java.util.Map<String, Object> invoice = java.util.Map.of("invoiceId", UUID.randomUUID(),
+            "policyNumber", "POL-UNCLASSIFIED", "dueDate", "2026-10-01",
+            "amount", java.util.Map.of("amount", "450.00", "currencyCode", CURRENCY));
+        new org.springframework.transaction.support.TransactionTemplate(transactionManager).executeWithoutResult(s ->
+            eventPublisher.publishEvent(tz.co.nlolo.lifeplatform.DomainEventEnvelope.of(
+                "billing.PremiumInvoiceGenerated", tenantId, invoice)));
+
+        String body = mockMvc.perform(get("/finance/unposted-events").param("openOnly", "true")
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].reason").value("UNMAPPED"))
+            .andExpect(jsonPath("$[0].policyNumber").value("POL-UNCLASSIFIED"))
+            .andReturn().getResponse().getContentAsString();
+        String id = com.jayway.jsonpath.JsonPath.read(body, "$[0].id");
+
+        mockMvc.perform(post("/finance/unposted-events/{id}/dismissal", id).with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"reason":"  "}"""))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.errorCode").value("FINACCOUNTING_VALIDATION_FAILED"));
+        mockMvc.perform(post("/finance/unposted-events/{id}/dismissal", id).with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"reason":"Test policy, never issued"}"""))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.resolution").value("DISMISSED"))
+            .andExpect(jsonPath("$.resolvedBy").value("finance-officer"));
+
+        mockMvc.perform(post("/finance/unposted-events/{id}/retry", id).with(financeStaffOf(tenantId)))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("UNPOSTED_EVENT_RESOLVED"));
+        mockMvc.perform(post("/finance/unposted-events/{id}/retry", UUID.randomUUID()).with(financeStaffOf(tenantId)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("UNPOSTED_EVENT_NOT_FOUND"));
+        mockMvc.perform(post("/finance/unposted-events/{id}/retry", id).with(financeStaffOf(UUID.randomUUID())))
+            .andExpect(status().isNotFound());
+        mockMvc.perform(get("/finance/unposted-events").with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
     }
 }

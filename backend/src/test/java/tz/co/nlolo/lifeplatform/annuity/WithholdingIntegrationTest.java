@@ -67,6 +67,7 @@ class WithholdingIntegrationTest {
         "db-migrations/finaccounting/V8__withholding_tax_account.sql",
         "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
         "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
+        "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
     };
 
     @BeforeAll

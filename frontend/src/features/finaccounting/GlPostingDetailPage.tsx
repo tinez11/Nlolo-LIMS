@@ -108,6 +108,7 @@ export function GlPostingDetailPage() {
                 <Field label="Posted" value={formatInstant(entry.postedAt)} />
                 <Field label="Source" value={SOURCE_LABEL[entry.sourceType] ?? entry.sourceType} />
                 <Field label="Policy register version" value={entry.policyRegisterVersion} />
+                {entry.ruleVersion != null && <Field label="Posting rules" value={entry.ruleVersion} />}
                 <Field label="Source ref" value={<span className="font-mono text-xs">{entry.sourceRef}</span>} />
               </dl>
             </Panel>
