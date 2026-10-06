@@ -150,7 +150,8 @@ class FinaccountingContractTest {
             "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql",
             "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
             "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
-            "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql");
+            "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
+            "db-migrations/finaccounting/V11__groups_and_policy_classification.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -158,6 +159,7 @@ class FinaccountingContractTest {
     @Autowired private GlPostingRepository glPostingRepository;
     @Autowired private ChartOfAccountSeeder chartOfAccountSeeder;
     @Autowired private org.springframework.transaction.PlatformTransactionManager transactionManager;
+    @Autowired private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     @AfterEach
     void resetAfterEach() {
@@ -705,6 +707,30 @@ class FinaccountingContractTest {
             .andExpect(jsonPath("$[0].period").value(period));
 
         mockMvc.perform(get("/finance/periods").with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+    }
+
+    /** IFRS 17 I2: a contract's classification on the wire; finance only. */
+    @Test
+    void aPolicyClassificationIsReadOverTheWireByFinanceOnly() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        java.util.Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("policyNumber", "POL-CT-CLS");
+        payload.put("issueDate", "2026-03-01");
+        payload.put("portfolioCode", "TERM");
+        payload.put("cohortYear", 2026);
+        payload.put("profitabilityBucket", "REMAINING");
+        payload.put("salesChannel", "DIRECT");
+        payload.put("branchCode", "DSM");
+        new org.springframework.transaction.support.TransactionTemplate(transactionManager).executeWithoutResult(s ->
+            eventPublisher.publishEvent(tz.co.nlolo.lifeplatform.DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload)));
+
+        mockMvc.perform(get("/finance/policy-classifications/{policyNumber}", "POL-CT-CLS").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$[0].groupKey").value("TERM-GMM-2026-REM"))
+            .andExpect(jsonPath("$[0].modelBasis").value("REGISTER"));
+        mockMvc.perform(get("/finance/policy-classifications/{policyNumber}", "POL-CT-CLS").with(underwriterStaffOf(tenantId)))
             .andExpect(status().isForbidden());
     }
 

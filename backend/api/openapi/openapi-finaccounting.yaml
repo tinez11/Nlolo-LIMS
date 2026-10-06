@@ -392,6 +392,29 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/StateConflict' }
+  /finance/policy-classifications/{policyNumber}:
+    get:
+      summary: A policy's IFRS 17 classification, oldest first
+      description: >-
+        IFRS 17 I2. Empty for a policy issued before I2 that the development backfill has not reached, or one whose
+        PolicyIssued has not been processed yet.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PolicyClassificationView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /finance/accounting-policies:
     get:
       summary: The accounting policy elections in force on a date, those scheduled after it, and every one proposed
@@ -680,6 +703,35 @@ components:
       required: [reason]
       properties:
         reason: { type: string, minLength: 1 }
+    PolicyClassificationView:
+      type: object
+      description: >-
+        How a contract is classified for IFRS 17 (spec §6, §7.2): the facts it was sold with, and what finaccounting
+        decided from them -- the measurement model under the accounting policy register in force on the date, why,
+        and the group of contracts. Never changed; a vesting pension has a second row (reason VESTING).
+      required: [policyNumber, reason, effectiveFrom, groupKey, measurementModel, modelBasis, registerVersion,
+                 portfolioCode, cohortYear, profitabilityBucket, classifiedAt]
+      properties:
+        policyNumber: { type: string }
+        reason: { type: string, enum: [ISSUE, VESTING] }
+        effectiveFrom: { type: string, format: date }
+        groupKey: { type: string, description: "PORTFOLIO-MODEL-YEAR-BUCKET, e.g. END-GMM-2026-REM" }
+        measurementModel: { type: string, enum: [GMM, VFA, PAA, IFRS9] }
+        modelBasis:
+          type: string
+          enum: [REGISTER, OVERRIDE, OVERRIDE_REFUSED]
+          description: >-
+            REGISTER: the register's model for the portfolio. OVERRIDE: the version's override, which the register
+            allows. OVERRIDE_REFUSED: the version asked for a model the register does not allow, so the register's
+            applies -- a configuration to correct on the product.
+        requestedOverride: { type: [string, "null"], enum: [GMM, VFA, PAA, IFRS9, null] }
+        registerVersion: { type: integer }
+        portfolioCode: { type: string }
+        cohortYear: { type: integer }
+        profitabilityBucket: { type: string, enum: [ONEROUS, NO_SIGNIFICANT_RISK, REMAINING] }
+        salesChannel: { type: [string, "null"] }
+        branchCode: { type: [string, "null"] }
+        classifiedAt: { type: string, format: date-time }
     GlPostingView:
       type: object
       required: [postingId, journalEntryId, accountCode, direction, amount, period, sourceEvent, sourceRef]

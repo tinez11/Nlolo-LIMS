@@ -166,6 +166,9 @@ public interface FinaccountingApi {
     /** The election in force for a key and scope on a date, falling back to scope "*". */
     java.util.Optional<PolicyElectionView> policyElectionInForce(String key, String scope, java.time.LocalDate on);
 
+    /** A contract's IFRS 17 classification (I2), oldest first; empty for a contract not classified (yet). */
+    java.util.List<PolicyClassificationView> policyClassifications(String policyNumber);
+
     PolicyElectionView proposePolicyElection(PolicyElectionInput input, String by);
 
     PolicyElectionView approvePolicyElection(java.util.UUID electionId, String signOffRef, String by);

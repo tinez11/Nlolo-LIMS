@@ -49,6 +49,14 @@ public class PolicyRegisterController {
         return api.policyElections(asOf == null ? LocalDate.now(CIVIL) : asOf);
     }
 
+    /** IFRS 17 I2: how a contract is classified, oldest first (a vesting pension has two). */
+    @GetMapping("/finance/policy-classifications/{policyNumber}")
+    @PreAuthorize(FINANCE)
+    public List<tz.co.nlolo.lifeplatform.finaccounting.api.PolicyClassificationView> classifications(
+            @PathVariable String policyNumber) {
+        return api.policyClassifications(policyNumber);
+    }
+
     @PostMapping("/finance/accounting-policies")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize(FINANCE)

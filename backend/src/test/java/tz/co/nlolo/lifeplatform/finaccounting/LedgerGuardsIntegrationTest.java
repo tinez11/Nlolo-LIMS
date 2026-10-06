@@ -42,7 +42,8 @@ class LedgerGuardsIntegrationTest {
             "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql",
             "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
             "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
-            "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql");
+            "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
+            "db-migrations/finaccounting/V11__groups_and_policy_classification.sql");
         try (Connection c = connect()) {
             account(c, "2000", "LIABILITY", "CR", "MAN", false, null);
             account(c, "2120", "LIABILITY", "CR", "MAN", false, "2000");
