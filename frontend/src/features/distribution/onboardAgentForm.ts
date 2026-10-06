@@ -18,6 +18,9 @@ import { ISO_DATE_PATTERN, UUID_PATTERN } from '@/lib/patterns';
  */
 const MAX_LICENSE_NUMBER_LENGTH = 50;
 
+/** The channels an intermediary can sell through; DIRECT and DIGITAL are sales no agent made. */
+export const AGENT_CHANNELS = ['AGENT', 'BROKER', 'BANCASSURANCE'] as const;
+
 export const onboardAgentFormSchema = z.object({
   partyId: z.string().trim().min(1, 'Party id is required').regex(UUID_PATTERN, 'Not a valid party id'),
   licenseNumber: z.string().trim().min(1, 'A license number is required').max(
@@ -34,12 +37,23 @@ export const onboardAgentFormSchema = z.object({
     .string()
     .trim()
     .refine((v) => v === '' || UUID_PATTERN.test(v), 'Not a valid agent id'),
+  // IFRS 17 I2: the channel this intermediary sells through and the branch it sells from. A case the agent
+  // introduces takes both as its defaults.
+  salesChannel: z.enum(AGENT_CHANNELS),
+  homeBranch: z.string().trim().min(1, 'Choose the branch the agent sells from'),
 });
 
 export type OnboardAgentFormValues = z.infer<typeof onboardAgentFormSchema>;
 
 export function blankOnboardAgentForm(): OnboardAgentFormValues {
-  return { partyId: '', licenseNumber: '', licenseExpiryDate: '', hierarchyParentId: '' };
+  return {
+    partyId: '',
+    licenseNumber: '',
+    licenseExpiryDate: '',
+    hierarchyParentId: '',
+    salesChannel: 'AGENT',
+    homeBranch: 'DSM',
+  };
 }
 
 export function toApiRequest(values: OnboardAgentFormValues): OnboardAgentRequest {
@@ -48,5 +62,14 @@ export function toApiRequest(values: OnboardAgentFormValues): OnboardAgentReques
     licenseNumber: values.licenseNumber.trim(),
     licenseExpiryDate: values.licenseExpiryDate,
     hierarchyParentId: values.hierarchyParentId.trim() || null,
+    salesChannel: values.salesChannel,
+    homeBranch: values.homeBranch,
   };
 }
+
+/** `PUT /agents/{agentId}/placement` (IFRS 17 I2): both required. */
+export const agentPlacementSchema = z.object({
+  salesChannel: z.enum(AGENT_CHANNELS),
+  homeBranch: z.string().trim().min(1, 'Choose the branch the agent sells from'),
+});
+export type AgentPlacementValues = z.infer<typeof agentPlacementSchema>;

@@ -5,6 +5,7 @@ const valid = () => ({
   productCode: 'NEW-TERM-01',
   productName: 'New Term Product',
   category: 'TERM_LIFE' as const,
+  portfolioCode: 'TERM' as const,
   defaultCurrency: 'TZS',
 });
 

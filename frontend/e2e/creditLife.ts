@@ -166,6 +166,7 @@ export async function seedCreditLifeFixtures(
     productCode,
     productName,
     category: 'CREDIT_LIFE',
+    portfolioCode: 'CRL',
     defaultCurrency: 'TZS',
   });
   const productId = product.productId as string;
@@ -174,7 +175,8 @@ export async function seedCreditLifeFixtures(
   // cover AGE and SUM_ASSURED_BAND, and the TIRA filing is mandatory as of V12 -- the same three
   // rules the group-scheme spec's product fixture obeys through the form.
   await postJson(http, token, `/products/${productId}/versions`, {
-    ifrsMeasurementModel: 'PAA',
+    // A lender's scheme: the register lets credit life override to PAA (IFRS 17 I2).
+    measurementModelOverride: 'PAA',
     effectiveDate: '2026-01-01',
     tiraFiling: { reference: `TIRA/E2E/CL/${suffix}`, approvalDate: '2026-01-15' },
     ratingTable: [

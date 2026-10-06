@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { PRODUCT_CATEGORIES, type CreateProductRequest } from '@/api/types';
+import { PORTFOLIO_CODES, type PortfolioCode } from '@/lib/ifrs17';
 import { CURRENCY_PATTERN } from '@/lib/patterns';
 
 /** The request's enum: `ProductCategory` is derived from ProductSummary, whose category is a bare string. */
@@ -14,13 +15,18 @@ export const createProductFormSchema = z.object({
   category: z.enum(PRODUCT_CATEGORIES as unknown as [RequestCategory, ...RequestCategory[]], {
     message: 'Choose a category',
   }),
+  // IFRS 17 I2: the product's portfolio, preselected from the category and changeable (a with-profits endowment
+  // is PAR, a savings plan SAV, a pension PEN).
+  portfolioCode: z.enum(PORTFOLIO_CODES as unknown as [PortfolioCode, ...PortfolioCode[]], {
+    message: 'Choose the IFRS 17 portfolio',
+  }),
   defaultCurrency: z.string().regex(CURRENCY_PATTERN, 'Must be a 3-letter code like TZS'),
 });
 
 export type CreateProductFormValues = z.infer<typeof createProductFormSchema>;
 
 export function blankCreateProductForm(): CreateProductFormValues {
-  return { productCode: '', productName: '', category: 'TERM_LIFE', defaultCurrency: 'TZS' };
+  return { productCode: '', productName: '', category: 'TERM_LIFE', portfolioCode: 'TERM', defaultCurrency: 'TZS' };
 }
 
 export function toApiRequest(values: CreateProductFormValues): CreateProductRequest {
@@ -28,6 +34,7 @@ export function toApiRequest(values: CreateProductFormValues): CreateProductRequ
     productCode: values.productCode.trim(),
     productName: values.productName.trim(),
     category: values.category,
+    portfolioCode: values.portfolioCode,
     defaultCurrency: values.defaultCurrency,
   };
 }

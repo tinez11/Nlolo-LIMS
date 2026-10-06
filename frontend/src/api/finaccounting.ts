@@ -5,6 +5,7 @@ import type {
   AccountStatus,
   ChartOfAccountView,
   PolicyElectionInput,
+  PolicyClassificationView,
   PolicyElectionView,
   CreateAccountRequest,
   JournalEntryView,
@@ -143,6 +144,11 @@ export function setAccountStatus(
  */
 export function deleteAccount(accountCode: string): Promise<void> {
   return del<void>(`/chart-of-accounts/${encodeURIComponent(accountCode)}`);
+}
+
+/** `GET /finance/policy-classifications/{policyNumber}` (IFRS 17 I2) -- finance/admin; oldest first. */
+export function getPolicyClassifications(policyNumber: string): Promise<PolicyClassificationView[]> {
+  return get<PolicyClassificationView[]>(`/finance/policy-classifications/${encodeURIComponent(policyNumber)}`);
 }
 
 // ---- Accounting periods (IFRS 17 spec §5.4) ----

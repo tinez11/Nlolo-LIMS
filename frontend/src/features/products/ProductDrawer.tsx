@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetBody, SheetContent, SheetFooter, SheetHeader } from '@/components/ui/sheet';
+import { portfolioLabel } from '@/lib/ifrs17';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectProductSnapshot, useProductStore } from '@/store/productStore';
 
@@ -73,7 +74,7 @@ export function ProductDrawer({
               )}
               {snapshot.data && (
                 <>
-                  <Field label="IFRS model" value={snapshot.data.ifrsMeasurementModel ?? '—'} />
+                  <Field label="IFRS 17 portfolio" value={portfolioLabel(snapshot.data.portfolioCode)} />
                   <Field label="Grace period" value={`${snapshot.data.gracePeriodDays ?? '—'} days`} />
                 </>
               )}

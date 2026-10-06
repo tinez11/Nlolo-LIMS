@@ -105,6 +105,12 @@ export function suspendAgent(agentId: string): Promise<AgentView> {
   return post<AgentView>(`/agents/${encodeURIComponent(agentId)}/suspend`);
 }
 
+/** `PUT /agents/{n}/placement` -- staff FINANCE_OFFICER/ADMIN (IFRS 17 I2): the channel the agent sells through and
+ *  the branch it sells from. Cases opened afterwards take the new defaults; issued policies never change. */
+export function updateAgentPlacement(agentId: string, salesChannel: string, homeBranch: string): Promise<AgentView> {
+  return put<AgentView>(`/agents/${encodeURIComponent(agentId)}/placement`, { salesChannel, homeBranch });
+}
+
 /** `POST /agents/{n}/reactivate` -- staff FINANCE_OFFICER/ADMIN only. 409s
  *  unless the agent is currently SUSPENDED (an EXPIRED agent is not
  *  reactivated through this endpoint -- expiry is calendar-driven). */

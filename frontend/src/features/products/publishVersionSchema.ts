@@ -846,7 +846,10 @@ function requireOrdered(
 
 export function publishVersionFormSchema(category: ProductCategory) {
   return z.object({
-    ifrsMeasurementModel: z.enum(['GMM', 'PAA']),
+    // IFRS 17 I2: what the actuary signs off. The measurement model itself is the accounting policy register's;
+    // the version only carries an override, blank for none -- the ordinary case.
+    expectedProfitabilityBucket: z.enum(['ONEROUS', 'NO_SIGNIFICANT_RISK', 'REMAINING']),
+    measurementModelOverride: z.enum(['', 'GMM', 'VFA', 'PAA', 'IFRS9']),
     effectiveDate: z.string().trim().min(1, 'Effective date is required').regex(ISO_DATE_PATTERN),
     // Blank means "no retirement date" -- toApiRequest converts that to null.
     retirementDate: z
@@ -1175,7 +1178,8 @@ export type PublishVersionFormInput = z.input<ReturnType<typeof publishVersionFo
 
 export function blankPublishVersionForm(): PublishVersionFormInput {
   return {
-    ifrsMeasurementModel: 'PAA',
+    expectedProfitabilityBucket: 'REMAINING',
+    measurementModelOverride: '',
     effectiveDate: '',
     retirementDate: '',
     ratingTable: [],
@@ -1263,7 +1267,8 @@ export function toApiRequest(values: PublishVersionFormValues, category?: Produc
     ...(category === 'FUNERAL' && { funeral: toFuneralRequest(values) }),
     // Product step 6: sent only on a UNIT_LINKED product, where it is required.
     ...(category === 'UNIT_LINKED' && { unitLinked: toUnitLinkedRequest(values) }),
-    ifrsMeasurementModel: values.ifrsMeasurementModel,
+    expectedProfitabilityBucket: values.expectedProfitabilityBucket,
+    measurementModelOverride: values.measurementModelOverride === '' ? null : values.measurementModelOverride,
     effectiveDate: values.effectiveDate,
     retirementDate: values.retirementDate === '' ? null : values.retirementDate,
     // Age bounds go on the wire as numbers for AGE rows and are OMITTED for every other

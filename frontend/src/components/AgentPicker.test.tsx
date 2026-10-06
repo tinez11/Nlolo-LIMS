@@ -17,6 +17,7 @@ const JUMA_PARTY_ID = '80681a28-abe4-4646-80ca-209b1ee95886';
 const jumaSenior: AgentView = {
   agentId: JUMA_AGENT_ID,
   partyId: JUMA_PARTY_ID,
+  salesChannel: 'AGENT',
   licenseNumber: 'LIC-SENIOR-001',
   licenseStatus: 'ACTIVE',
   licenseExpiryDate: '2030-01-01',

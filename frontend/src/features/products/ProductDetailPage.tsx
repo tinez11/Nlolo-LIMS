@@ -13,6 +13,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
+import { bucketLabel, modelLabel, portfolioLabel } from '@/lib/ifrs17';
 import { humanizeStatus } from '@/lib/status';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
@@ -233,7 +234,12 @@ export function ProductDetailPage() {
             ))}
           {snapshot.data && (
             <dl className="px-4 pb-2">
-              <Field label="IFRS model" value={snapshot.data.ifrsMeasurementModel ?? '—'} />
+              <Field label="IFRS 17 portfolio" value={portfolioLabel(snapshot.data.portfolioCode)} />
+              <Field label="Expected profitability" value={bucketLabel(snapshot.data.profitabilityBucket)} />
+              <Field
+                label="Model override"
+                value={snapshot.data.modelOverride ? modelLabel(snapshot.data.modelOverride) : 'None — the register decides'}
+              />
               <Field label="Effective" value={snapshot.data.effectiveDate ?? '—'} />
               <Field
                 label="Grace period"

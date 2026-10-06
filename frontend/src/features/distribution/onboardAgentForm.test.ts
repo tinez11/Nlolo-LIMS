@@ -8,9 +8,18 @@ const valid = () => ({
   licenseNumber: 'LIC-0001',
   licenseExpiryDate: FUTURE_DATE,
   hierarchyParentId: '',
+  salesChannel: 'AGENT' as const,
+  homeBranch: 'DSM',
 });
 
 describe('onboardAgentFormSchema', () => {
+  it('needs a home branch and refuses a channel no agent sells through (IFRS 17 I2)', () => {
+    expect(onboardAgentFormSchema.safeParse({ ...valid(), homeBranch: '' }).success).toBe(false);
+    expect(onboardAgentFormSchema.safeParse({ ...valid(), salesChannel: 'DIRECT' }).success).toBe(false);
+    expect(toApiRequest(onboardAgentFormSchema.parse({ ...valid(), salesChannel: 'BROKER', homeBranch: 'ARU' })))
+      .toMatchObject({ salesChannel: 'BROKER', homeBranch: 'ARU' });
+  });
+
   it('accepts a well-formed request with no hierarchy parent', () => {
     expect(onboardAgentFormSchema.safeParse(valid()).success).toBe(true);
   });

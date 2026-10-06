@@ -31,6 +31,7 @@ import { MessagesPanel } from '@/features/communications/MessagesPanel';
 import { CessionsPanel } from '@/features/reinsurance/CessionsPanel';
 import { BeneficiariesPanel } from './BeneficiariesPanel';
 import { CoveredLivesPanel } from './CoveredLivesPanel';
+import { Ifrs17Classification } from './Ifrs17Classification';
 import { InvoicesPanel } from './InvoicesPanel';
 import { LoansPanel } from './LoansPanel';
 import { FreeLookPanel } from '@/features/payouts/FreeLookPanel';
@@ -685,6 +686,11 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           )}
         </Panel>
 
+        {policy && isStaff && (
+          <Panel title="Sale & IFRS 17" subtitle="Classified at issue and never changed">
+            <Ifrs17Classification policy={policy} showAccounting={canSeeReinsurance} />
+          </Panel>
+        )}
       </>
     );
   }
