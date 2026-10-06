@@ -15,7 +15,7 @@ const API = 'http://localhost:8080';
 
 interface Treaty { treatyId: string; reinsurerName: string; effectiveFrom: string; effectiveTo?: string | null }
 interface Statement { quarter: string; status: string }
-interface Bordereau { period: string }
+interface Bordereau { period: string; premium: string }
 
 function quarterMonths(quarter: string): string[] {
   const [y, q] = [Number(quarter.slice(0, 4)), Number(quarter.slice(6))];
@@ -30,9 +30,13 @@ function endedQuarters(from: string, now = new Date()): string[] {
   return out.reverse();
 }
 
-/** A treaty and quarter the server will settle: ended, every month inside the treaty's dates written, no live statement. */
-async function findSettleable(): Promise<{ treaty: Treaty; quarter: string } | null> {
+/**
+ * A treaty and quarter the server will settle: ended, every month inside the treaty's dates written, no live statement.
+ * One whose bordereaux charged premium is preferred -- an all-zero quarter posts no journal, which proves less.
+ */
+async function findSettleable(): Promise<{ treaty: Treaty; quarter: string; charged: boolean } | null> {
   const http = await apiRequest.newContext();
+  let quiet: { treaty: Treaty; quarter: string; charged: boolean } | null = null;
   try {
     const headers = { Authorization: `Bearer ${await staffToken(http, 'staff.finance')}` };
     const treaties = (await (await http.get(`${API}/treaties`, { headers })).json()) as Treaty[];
@@ -43,17 +47,20 @@ async function findSettleable(): Promise<{ treaty: Treaty; quarter: string } | n
         headers, params: { treatyId: treaty.treatyId },
       })).json()) as Statement[];
       const live = new Set(statements.filter((s) => s.status !== 'REJECTED').map((s) => s.quarter));
-      const written = new Set(((await (await http.get(`${API}/treaties/${treaty.treatyId}/bordereaux`, { headers }))
-        .json()) as Bordereau[]).map((b) => b.period));
+      const bordereaux = (await (await http.get(`${API}/treaties/${treaty.treatyId}/bordereaux`, { headers }))
+        .json()) as Bordereau[];
+      const written = new Map(bordereaux.map((b) => [b.period, Number(b.premium)]));
       for (const quarter of quarters) {
         const needed = quarterMonths(quarter).filter((m) => `${m}-31` >= treaty.effectiveFrom
           && (!treaty.effectiveTo || `${m}-01` <= treaty.effectiveTo));
         if (!live.has(quarter) && needed.length > 0 && needed.every((m) => written.has(m))) {
-          return { treaty, quarter };
+          const charged = needed.some((m) => (written.get(m) ?? 0) > 0);
+          if (charged) return { treaty, quarter, charged };
+          quiet ??= { treaty, quarter, charged };
         }
       }
     }
-    return null;
+    return quiet;
   } finally {
     await http.dispose();
   }
@@ -68,7 +75,7 @@ test.describe('reinsurance statement', () => {
   }) => {
     const found = await findSettleable();
     test.skip(found === null, 'no treaty in this tenant has an ended quarter left to settle');
-    const { treaty, quarter } = found!;
+    const { treaty, quarter, charged } = found!;
 
     await page.goto(`/staff/treaties/${treaty.treatyId}`);
     await page.getByRole('button', { name: `Prepare statement for ${quarter}` }).click();
@@ -97,8 +104,15 @@ test.describe('reinsurance statement', () => {
       await approver.goto('/staff/reinsurance-statements');
       await expect(approver.getByRole('table', { name: 'Reinsurance statements' })).toContainText(quarter, { timeout: 15_000 });
       await approver.goto(url);
+      if (charged) {
+        // The approver sees what will post: R-01 clears the quarter's premium payable (Dr 1430).
+        await expect(approver.getByRole('table', { name: 'Journal' })).toContainText('1430');
+      }
       await approver.getByRole('button', { name: 'Approve and post' }).click();
       await expect(approver.getByText('Posted', { exact: true })).toBeVisible({ timeout: 15_000 });
+      if (charged) {
+        await expect(approver.getByRole('region', { name: 'Journal preview' })).toContainText('Journal posted');
+      }
     } finally {
       await approverContext.close();
     }
