@@ -8,4 +8,5 @@ import java.util.UUID;
  * exactly for QUOTA_SHARE (V2's {@code treaty_cession_percent_required_for_quota_share}). */
 public record TreatyView(UUID treatyId, String reinsurerName, TreatyType treatyType, TreatyStatus status,
                           BigDecimal retentionLimitAmount, String retentionLimitCurrency,
-                          BigDecimal cessionPercent, LocalDate effectiveFrom, LocalDate effectiveTo) {}
+                          BigDecimal cessionPercent, LocalDate effectiveFrom, LocalDate effectiveTo,
+                          BigDecimal commissionPercent, BigDecimal xolAnnualPremium) {}

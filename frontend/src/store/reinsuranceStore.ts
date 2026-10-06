@@ -1,15 +1,18 @@
 import { create } from 'zustand';
 import {
-  confirmRecovery,
   createTreaty,
+  getBordereau,
   getTreaty,
   getTreatyUtilisation,
+  listBordereaux,
   listCessionsForPolicy,
   listCessionsForTreaty,
   listRecoveriesForClaim,
   listTreaties,
+  previewBordereau,
 } from '@/api/reinsurance';
 import type {
+  BordereauView,
   CessionView,
   Page,
   TreatyUtilisationView,
@@ -38,7 +41,11 @@ interface ReinsuranceState {
   treatyCessions: Keyed<Page<CessionView>>;
   treatyUtilisation: Keyed<TreatyUtilisationView>;
   recoveries: Keyed<ClaimRecoveryView[]>;
-  confirmingRecovery: Keyed<true>;
+  /** IFRS 17 I3c -- keyed by treaty: its written months, and the current month's preview. */
+  bordereaux: Keyed<BordereauView[]>;
+  bordereauPreview: Keyed<BordereauView>;
+  /** Keyed by bordereau id: one month with its lines. */
+  bordereau: Keyed<BordereauView>;
 
   loadList: (status?: TreatyStatus) => Promise<void>;
   loadDetail: (treatyId: string) => Promise<void>;
@@ -48,8 +55,9 @@ interface ReinsuranceState {
   loadTreatyCessions: (treatyId: string, page?: number) => Promise<void>;
   loadTreatyUtilisation: (treatyId: string) => Promise<void>;
   loadRecoveries: (claimId: string) => Promise<void>;
-  confirmRecovery: (claimId: string, recoveryId: string, attempt: MutationAttempt) => Promise<void>;
-  resetConfirmRecovery: (recoveryId: string) => void;
+  loadBordereaux: (treatyId: string) => Promise<void>;
+  loadBordereauPreview: (treatyId: string) => Promise<void>;
+  loadBordereau: (bordereauId: string) => Promise<void>;
 }
 
 export const useReinsuranceStore = create<ReinsuranceState>((set, getState) => ({
@@ -60,7 +68,9 @@ export const useReinsuranceStore = create<ReinsuranceState>((set, getState) => (
   treatyCessions: {},
   treatyUtilisation: {},
   recoveries: {},
-  confirmingRecovery: {},
+  bordereaux: {},
+  bordereauPreview: {},
+  bordereau: {},
 
   // The key is constant regardless of which status filter was requested --
   // see policyStore.loadList's identical comment: `list` is a single
@@ -135,28 +145,29 @@ export const useReinsuranceStore = create<ReinsuranceState>((set, getState) => (
       () => listRecoveriesForClaim(claimId),
     ),
 
-  confirmRecovery: (claimId, recoveryId, attempt) =>
+  loadBordereaux: (treatyId) =>
     track(
-      `reinsurance.confirm.${recoveryId}`,
-      getState().confirmingRecovery[recoveryId] ?? idle<true>(),
-      (next) => set((s) => ({ confirmingRecovery: { ...s.confirmingRecovery, [recoveryId]: next } })),
-      // Explicit Promise<true>: see productStore.publishVersion for why the
-      // annotation is required to stop TypeScript widening the literal to boolean.
-      async (): Promise<true> => {
-        await confirmRecovery(claimId, recoveryId, attempt);
-        // The recoveries list is what the UI actually renders -- refetch it so
-        // this recovery's confirmedAt shows without a manual reload.
-        await getState().loadRecoveries(claimId);
-        return true;
-      },
+      `reinsurance.bordereaux.${treatyId}`,
+      getState().bordereaux[treatyId] ?? idle<BordereauView[]>(),
+      (next) => set((s) => ({ bordereaux: { ...s.bordereaux, [treatyId]: next } })),
+      () => listBordereaux(treatyId),
     ),
 
-  resetConfirmRecovery: (recoveryId) =>
-    set((s) => {
-      if (!(recoveryId in s.confirmingRecovery)) return s;
-      const { [recoveryId]: _discard, ...rest } = s.confirmingRecovery;
-      return { confirmingRecovery: rest };
-    }),
+  loadBordereauPreview: (treatyId) =>
+    track(
+      `reinsurance.bordereauPreview.${treatyId}`,
+      getState().bordereauPreview[treatyId] ?? idle<BordereauView>(),
+      (next) => set((s) => ({ bordereauPreview: { ...s.bordereauPreview, [treatyId]: next } })),
+      () => previewBordereau(treatyId),
+    ),
+
+  loadBordereau: (bordereauId) =>
+    track(
+      `reinsurance.bordereau.${bordereauId}`,
+      getState().bordereau[bordereauId] ?? idle<BordereauView>(),
+      (next) => set((s) => ({ bordereau: { ...s.bordereau, [bordereauId]: next } })),
+      () => getBordereau(bordereauId),
+    ),
 }));
 
 export const selectTreatyDetail = (treatyId: string) => (s: ReinsuranceState) =>
@@ -169,5 +180,9 @@ export const selectTreatyUtilisation = (treatyId: string) => (s: ReinsuranceStat
   s.treatyUtilisation[treatyId] ?? idle<TreatyUtilisationView>();
 export const selectRecoveries = (claimId: string) => (s: ReinsuranceState) =>
   s.recoveries[claimId] ?? idle<ClaimRecoveryView[]>();
-export const selectConfirmingRecovery = (recoveryId: string) => (s: ReinsuranceState) =>
-  s.confirmingRecovery[recoveryId] ?? idle<true>();
+export const selectBordereaux = (treatyId: string) => (s: ReinsuranceState) =>
+  s.bordereaux[treatyId] ?? idle<BordereauView[]>();
+export const selectBordereauPreview = (treatyId: string) => (s: ReinsuranceState) =>
+  s.bordereauPreview[treatyId] ?? idle<BordereauView>();
+export const selectBordereau = (bordereauId: string) => (s: ReinsuranceState) =>
+  s.bordereau[bordereauId] ?? idle<BordereauView>();

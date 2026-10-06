@@ -1,10 +1,10 @@
 package tz.co.nlolo.lifeplatform.reinsurance.application;
 
-import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.reinsurance.api.BordereauNotFoundException;
+import tz.co.nlolo.lifeplatform.reinsurance.api.BordereauView;
 import tz.co.nlolo.lifeplatform.reinsurance.api.CessionView;
 import tz.co.nlolo.lifeplatform.reinsurance.api.ClaimRecoveryView;
-import tz.co.nlolo.lifeplatform.reinsurance.api.RecoveryNotFoundException;
 import tz.co.nlolo.lifeplatform.reinsurance.api.ReinsuranceApi;
 import tz.co.nlolo.lifeplatform.reinsurance.api.ReinsuranceValidationException;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyNotFoundException;
@@ -19,18 +19,16 @@ import tz.co.nlolo.lifeplatform.reinsurance.domain.ReinsuranceTreaty;
 import tz.co.nlolo.lifeplatform.reinsurance.infrastructure.CessionRepository;
 import tz.co.nlolo.lifeplatform.reinsurance.infrastructure.ClaimRecoveryRepository;
 import tz.co.nlolo.lifeplatform.reinsurance.infrastructure.ReinsuranceTreatyRepository;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -48,16 +46,19 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
     private final ReinsuranceTreatyRepository treatyRepository;
     private final CessionRepository cessionRepository;
     private final ClaimRecoveryRepository claimRecoveryRepository;
-    private final ApplicationEventPublisher eventPublisher;
+    private final Bordereaux bordereaux;
+    private final BordereauJob bordereauJob;
 
     public ReinsuranceApiImpl(ReinsuranceTreatyRepository treatyRepository,
                                CessionRepository cessionRepository,
                                ClaimRecoveryRepository claimRecoveryRepository,
-                               ApplicationEventPublisher eventPublisher) {
+                               Bordereaux bordereaux,
+                               BordereauJob bordereauJob) {
         this.treatyRepository = treatyRepository;
         this.cessionRepository = cessionRepository;
         this.claimRecoveryRepository = claimRecoveryRepository;
-        this.eventPublisher = eventPublisher;
+        this.bordereaux = bordereaux;
+        this.bordereauJob = bordereauJob;
     }
 
     @Override
@@ -91,6 +92,23 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
                     || request.cessionPercent().compareTo(new BigDecimal("100")) > 0)) {
             throw new ReinsuranceValidationException("Cession percent must be greater than 0 and at most 100");
         }
+        // IFRS 17 I3c (user answer Q3): every treaty states its commission not contingent on claims; 0 is a real answer.
+        if (request.commissionPercent() == null) {
+            throw new ReinsuranceValidationException("State the treaty's commission not contingent on claims, as a "
+                + "percent of the ceded premium -- 0 when the reinsurer pays none");
+        }
+        if (request.commissionPercent().signum() < 0 || request.commissionPercent().compareTo(new BigDecimal("100")) > 0) {
+            throw new ReinsuranceValidationException("Commission percent must be from 0 to 100");
+        }
+        if (request.xolAnnualPremium() != null) {
+            if (request.treatyType() != TreatyType.XOL) {
+                throw new ReinsuranceValidationException("Only an XOL treaty carries a flat annual premium; a "
+                    + request.treatyType() + " treaty's premium is its share of each policy's premium");
+            }
+            if (request.xolAnnualPremium().signum() <= 0) {
+                throw new ReinsuranceValidationException("An XOL annual premium must be greater than 0");
+            }
+        }
         if (request.effectiveFrom() == null) {
             throw new ReinsuranceValidationException("An effective-from date is required");
         }
@@ -101,7 +119,8 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
 
         ReinsuranceTreaty treaty = new ReinsuranceTreaty(tenantId, request.reinsurerName().trim(),
             request.treatyType(), request.retentionLimitAmount(), request.retentionLimitCurrency(),
-            request.cessionPercent(), request.effectiveFrom(), request.effectiveTo(), createdBy);
+            request.cessionPercent(), request.commissionPercent(), request.xolAnnualPremium(),
+            request.effectiveFrom(), request.effectiveTo(), createdBy);
         treatyRepository.save(treaty);
         return toTreatyView(treaty);
     }
@@ -167,31 +186,24 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
     }
 
     @Override
-    @Transactional
-    public ClaimRecoveryView confirmRecovery(UUID recoveryId, String confirmedBy) {
+    public List<BordereauView> listBordereaux(UUID treatyId) {
+        getTreaty(treatyId);
+        return bordereaux.list(TenantContext.get(), treatyId);
+    }
+
+    @Override
+    public BordereauView getBordereau(UUID bordereauId) {
+        return bordereaux.find(TenantContext.get(), bordereauId)
+            .orElseThrow(() -> new BordereauNotFoundException("Bordereau " + bordereauId + " not found"));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BordereauView previewBordereau(UUID treatyId, YearMonth period) {
         UUID tenantId = TenantContext.get();
-        ClaimRecovery recovery = claimRecoveryRepository.findByRecoveryIdAndTenantId(recoveryId, tenantId)
-            .orElseThrow(() -> new RecoveryNotFoundException("Recovery " + recoveryId + " not found"));
-
-        // ClaimRecovery.confirm throws InvalidRecoveryStateException on a repeat, which the
-        // boundary maps to 409. That is what makes the publish below safe to run unconditionally:
-        // control only reaches it on a genuine transition, so a double-confirm can never emit a
-        // second RecoveryConfirmed -- M6's I1 finding, where a duplicate reached finaccounting as
-        // a double journal entry.
-        recovery.confirm(Instant.now(), confirmedBy);
-        claimRecoveryRepository.save(recovery);
-
-        // M9: amount added. finaccounting is already this event's declared consumer (see the
-        // comment above) but had nothing postable -- only recoveryId and confirmedAt, no amount --
-        // so it could not actually post the recovery. recovery is already loaded and mutated above;
-        // this is purely additive, and control still only reaches here on a genuine transition (a
-        // repeat throws InvalidRecoveryStateException before this line), so a double-confirm still
-        // cannot emit a second RecoveryConfirmed.
-        eventPublisher.publishEvent(DomainEventEnvelope.of("reinsurance.RecoveryConfirmed", tenantId,
-            Map.of("recoveryId", recoveryId, "confirmedAt", recovery.getConfirmedAt().toString(),
-                   "amount", Map.of("amount", recovery.getRecoverableAmount().toPlainString(),
-                                     "currencyCode", recovery.getRecoverableCurrency()))));
-        return toRecoveryView(recovery);
+        ReinsuranceTreaty treaty = treatyRepository.findByTreatyIdAndTenantId(treatyId, tenantId)
+            .orElseThrow(() -> new TreatyNotFoundException("Treaty " + treatyId + " not found"));
+        return bordereauJob.preview(tenantId, treaty, period);
     }
 
     /**
@@ -220,7 +232,8 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
             return Optional.empty();
         }
         Cession cession = new Cession(tenantId, policyNumber, treaty.getTreatyId(),
-            amounts.cededRisk(), amounts.riskCurrency(), amounts.cededPremium(), amounts.premiumCurrency());
+            amounts.cededRisk(), amounts.riskCurrency(), amounts.cededPremium(), amounts.premiumCurrency(),
+            amounts.premiumShare());
         cessionRepository.save(cession);
         return Optional.of(cession);
     }
@@ -241,7 +254,7 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
     private TreatyView toTreatyView(ReinsuranceTreaty t) {
         return new TreatyView(t.getTreatyId(), t.getReinsurerName(), t.getTreatyType(), t.getStatus(),
             t.getRetentionLimitAmount(), t.getRetentionLimitCurrency(), t.getCessionPercent(),
-            t.getEffectiveFrom(), t.getEffectiveTo());
+            t.getEffectiveFrom(), t.getEffectiveTo(), t.getCommissionPercent(), t.getXolAnnualPremium());
     }
 
     private CessionView toCessionView(Cession c) {

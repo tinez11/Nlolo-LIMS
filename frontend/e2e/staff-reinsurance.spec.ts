@@ -37,6 +37,7 @@ import { expectNavItemsHidden, expectRouteDenied } from './guards';
 async function createRealQuotaShareTreaty(
   page: Page,
   cessionPercent: string,
+  commissionPercent = '0',
 ): Promise<{ treatyId: string; reinsurerName: string }> {
   const reinsurerName = `E2E Re ${Date.now()}`;
   await page.goto('/staff/treaties/new');
@@ -44,6 +45,8 @@ async function createRealQuotaShareTreaty(
   // QUOTA_SHARE is the default selection.
   await page.getByLabel('Retention limit').fill('0.00');
   await page.getByLabel('Cession percent').fill(cessionPercent);
+  // IFRS 17 I3c: every treaty states its commission not contingent on claims; 0 is an answer.
+  await page.getByLabel('Reinsurance commission').fill(commissionPercent);
   // Today: the latest effectiveFrom that still applies to a policy issued today.
   // See the file header for why a fixed past date was the wrong choice.
   await page.getByLabel('Effective from').fill(dmy(todayIso()));
@@ -60,10 +63,16 @@ test.describe('staff reinsurance', () => {
     const financeContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance.json' });
     const page = await financeContext.newPage();
 
-    const { reinsurerName } = await createRealQuotaShareTreaty(page, '25.00');
+    const { reinsurerName } = await createRealQuotaShareTreaty(page, '25.00', '12.50');
     await expect(page.getByRole('heading', { name: reinsurerName })).toBeVisible();
     await expect(page.getByText('QUOTA SHARE')).toBeVisible();
     await expect(page.getByText('25.00%')).toBeVisible();
+    await expect(page.getByText('12.50%')).toBeVisible();
+    // IFRS 17 I3c: the monthly bordereaux. A treaty effective today has no closed month yet, and its current month
+    // is shown as it would be written now.
+    await expect(page.getByRole('heading', { name: 'Bordereaux' })).toBeVisible();
+    await expect(page.getByText('No month closed yet')).toBeVisible();
+    await expect(page.getByText(/so far$/)).toBeVisible();
 
     await page.goto('/staff/treaties');
     await expect(page.getByText(reinsurerName)).toBeVisible();

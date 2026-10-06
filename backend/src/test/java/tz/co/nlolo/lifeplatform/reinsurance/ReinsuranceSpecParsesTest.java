@@ -34,6 +34,8 @@ class ReinsuranceSpecParsesTest {
         // Guards against a "successful" parse of an empty or truncated document.
         assertThat(result.getOpenAPI().getPaths()).containsKeys(
             "/treaties", "/treaties/{treatyId}", "/claims/{claimId}/recoveries",
-            "/claims/{claimId}/recoveries/{recoveryId}/confirm");
+            // IFRS 17 I3c: the monthly bordereaux replaced the recovery Confirm.
+            "/treaties/{treatyId}/bordereaux", "/treaties/{treatyId}/bordereau-preview", "/bordereaux/{bordereauId}")
+            .doesNotContainKey("/claims/{claimId}/recoveries/{recoveryId}/confirm");
     }
 }

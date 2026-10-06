@@ -61,8 +61,9 @@ final class PostingFactsExtractor {
         Map.entry("accumulation.PostingRecorded", amount("flow")),
         Map.entry("accumulation.PayoutRequested", new EventShape(Set.of("charge"), Set.of())),
         Map.entry("accumulation.PayoutPaid", amount()),
-        Map.entry("reinsurance.CessionRecorded", amount()),
-        Map.entry("reinsurance.RecoveryConfirmed", amount()),
+        // IFRS 17 I3c: reinsurance held from the monthly bordereau (K-01/K-02) and a recovery at claim approval (B-05).
+        Map.entry("reinsurance.BordereauPosted", new EventShape(Set.of("premium", "commission"), Set.of())),
+        Map.entry("reinsurance.RecoveryCalculated", amount()),
         // The platform's own: a month's PAA premium earned (PaaEarningJob), never an event from another module.
         Map.entry(PaaEarningJob.EVENT, amount()),
         Map.entry("unitlinked.UnitsAllocated", new EventShape(Set.of("premium", "allocated", "allocationCharge"), Set.of())),
@@ -151,10 +152,16 @@ final class PostingFactsExtractor {
             case "accumulation.PayoutRequested" -> accumulationCharge(type, p, policy, today);
             case "accumulation.PayoutPaid" -> List.of(money(type, string(p.get("payoutRef")), policy, p.get("amount"),
                 today, paid("ACCOUNT_PAYOUT", p.get("paymentRef"))));
-            case "reinsurance.CessionRecorded" ->
-                List.of(money(type, string(p.get("cessionId")), policy, p.get("cededAmount"), today, Map.of("refType", "CESSION")));
-            case "reinsurance.RecoveryConfirmed" ->
-                List.of(money(type, string(p.get("recoveryId")), null, p.get("amount"), today, Map.of("refType", "RECOVERY")));
+            // Dated the bordereau month's last day, so it posts in the month it charges (period from the event date).
+            case "reinsurance.BordereauPosted" -> {
+                java.time.YearMonth month = java.time.YearMonth.parse(string(p.get("period")));
+                yield List.of(facts(type, string(p.get("bordereauId")), null, currencyOf(p.get("premium")),
+                    month.atEndOfMonth(), Map.of("premium", amountOf(p.get("premium")), "commission",
+                        amountOf(p.get("commission"))), Map.of("refType", "BORDEREAU")));
+            }
+            case "reinsurance.RecoveryCalculated" ->
+                List.of(money(type, string(p.get("recoveryId")), policy, p.get("recoverableAmount"), today,
+                    Map.of("refType", "RECOVERY")));
             default -> type.startsWith("unitlinked.") ? unitLinked(type, p, policy, today) : List.of();
         };
     }
@@ -418,6 +425,14 @@ final class PostingFactsExtractor {
             currency = string(m.get("currencyCode"));
         }
         return facts(type, ref, policy, currency, today, Map.of(AMOUNT, amount), attributes);
+    }
+
+    private static BigDecimal amountOf(Object money) {
+        return money instanceof Map<?, ?> m ? decimal(m.get("amount")) : BigDecimal.ZERO;
+    }
+
+    private static String currencyOf(Object money) {
+        return money instanceof Map<?, ?> m ? string(m.get("currencyCode")) : null;
     }
 
     private static PostingFacts facts(String type, String ref, String policy, String currency, LocalDate today,

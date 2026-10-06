@@ -220,9 +220,38 @@ class PostingFactsExtractorTest {
 
     @Test
     void aMissingAmountIsZeroSoNothingPosts() {
-        PostingFacts f = PostingFactsExtractor.extract("reinsurance.CessionRecorded", Map.of("cessionId", UUID.randomUUID(),
+        PostingFacts f = PostingFactsExtractor.extract("reinsurance.RecoveryCalculated", Map.of("recoveryId", UUID.randomUUID(),
             "policyNumber", "POL-1"), TODAY).get(0);
         assertThat(f.amount("amount")).isZero();
+    }
+
+    /** IFRS 17 I3c: one journal per treaty and month, dated the month's last day so it lands in the month it charges. */
+    @Test
+    void aBordereauIsDatedItsMonthEndAndCarriesPremiumAndCommission() {
+        UUID bordereauId = UUID.randomUUID();
+        PostingFacts f = PostingFactsExtractor.extract("reinsurance.BordereauPosted", Map.of(
+            "bordereauId", bordereauId.toString(),
+            "treatyId", UUID.randomUUID().toString(),
+            "period", "2026-09",
+            "premium", Map.of("amount", "50000.00", "currencyCode", "TZS"),
+            "commission", Map.of("amount", "10000.00", "currencyCode", "TZS")), TODAY).get(0);
+        assertThat(f.sourceRef()).isEqualTo(bordereauId.toString());
+        assertThat(f.policyNumber()).isNull();
+        assertThat(f.currency()).isEqualTo("TZS");
+        assertThat(f.eventDate()).isEqualTo(LocalDate.of(2026, 9, 30));
+        assertThat(f.amount("premium")).isEqualByComparingTo("50000.00");
+        assertThat(f.amount("commission")).isEqualByComparingTo("10000.00");
+    }
+
+    /** IFRS 17 I3c: the recovery carries the policy, so B-05 posts against its IFRS 17 dimensions. */
+    @Test
+    void aRecoveryPostsAgainstItsPolicy() {
+        PostingFacts f = PostingFactsExtractor.extract("reinsurance.RecoveryCalculated", Map.of(
+            "recoveryId", "R1", "policyNumber", "POL-9",
+            "recoverableAmount", Map.of("amount", "1000000.00", "currencyCode", "TZS")), TODAY).get(0);
+        assertThat(f.policyNumber()).isEqualTo("POL-9");
+        assertThat(f.amount("amount")).isEqualByComparingTo("1000000.00");
+        assertThat(f.attribute("refType")).isEqualTo("RECOVERY");
     }
 
     @Test

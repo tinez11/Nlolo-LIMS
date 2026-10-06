@@ -63,12 +63,17 @@ public class PolicyEventListener {
     private final ApplicationEventPublisher eventPublisher;
     private final MeterRegistry meterRegistry;
     private final TransactionTemplate requiresNewTransactionTemplate;
+    private final CoverPeriods coverPeriods;
+
+    private static final java.time.ZoneId CIVIL = java.time.ZoneId.of("Africa/Dar_es_Salaam");
 
     public PolicyEventListener(ReinsurancePolicyProjectionRepository policyProjectionRepository,
                                 ReinsuranceApiImpl reinsuranceApiImpl,
                                 ApplicationEventPublisher eventPublisher,
                                 MeterRegistry meterRegistry,
-                                PlatformTransactionManager transactionManager) {
+                                PlatformTransactionManager transactionManager,
+                                CoverPeriods coverPeriods) {
+        this.coverPeriods = coverPeriods;
         this.policyProjectionRepository = policyProjectionRepository;
         this.reinsuranceApiImpl = reinsuranceApiImpl;
         this.eventPublisher = eventPublisher;
@@ -84,7 +89,74 @@ public class PolicyEventListener {
             // exists" -- an offer awaiting its first premium. Ceding a proposal would put risk
             // the platform is not carrying onto a treaty, and pay reinsurance premium for it.
             case "policy.PolicyActivated" -> withTenant(envelope, this::handlePolicyActivated);
+            // IFRS 17 I3c: when a ceded policy is on risk, and paying, decides what each monthly bordereau charges.
+            case "policy.PolicyLapsed" -> withTenant(envelope, p -> closeCover(p, "lapsedAt"));
+            // A settled death claim closes a policy as surrendered, so this is also a death.
+            case "policy.PolicySurrendered" -> withTenant(envelope, p -> closeCover(p, "surrenderedAt"));
+            case "policy.PolicyMatured" -> withTenant(envelope, p -> closeCover(p, "maturedAt"));
+            case "policy.PolicyExpired" -> withTenant(envelope, p -> closeCover(p, "expiredAt"));
+            case "policy.AnnuityEnded" -> withTenant(envelope, p -> closeCover(p, "endedAt"));
+            case "policy.PolicyCancelledFreeLook" -> withTenant(envelope, this::voidCover);
+            case "policy.PolicyReinstated" -> withTenant(envelope, this::reopenCover);
+            case "policy.PolicyMadePaidUp" -> withTenant(envelope, p -> endPremiums(p, "madePaidUpAt"));
+            case "policy.PremiumsEnded" -> withTenant(envelope, p -> endPremiums(p, "after"));
+            case "policy.PremiumRestated" -> withTenant(envelope, this::restatePremium);
             default -> { /* not reinsurance-relevant */ }
+        }
+    }
+
+    private void closeCover(Map<String, Object> payload, String dateKey) {
+        coverPeriods.close(TenantContext.get(), (String) payload.get("policyNumber"), civilDate(payload.get(dateKey)));
+    }
+
+    private void voidCover(Map<String, Object> payload) {
+        coverPeriods.voidAll(TenantContext.get(), (String) payload.get("policyNumber"));
+    }
+
+    private void reopenCover(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String policyNumber = (String) payload.get("policyNumber");
+        Optional<PolicyProjection> projection = policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber);
+        if (projection.isEmpty() || projection.get().isScheme()) {
+            return;
+        }
+        coverPeriods.open(tenantId, policyNumber, civilDate(payload.get("reinstatedAt")));
+        projection.get().resumePremiums();
+        policyProjectionRepository.save(projection.get());
+    }
+
+    private void endPremiums(Map<String, Object> payload, String dateKey) {
+        policyProjectionRepository.findByTenantIdAndPolicyNumber(TenantContext.get(), (String) payload.get("policyNumber"))
+            .ifPresent(projection -> {
+                projection.endPremiums(civilDate(payload.get(dateKey)));
+                policyProjectionRepository.save(projection);
+            });
+    }
+
+    private void restatePremium(Map<String, Object> payload) {
+        if (!(payload.get("premiumAmount") instanceof Map<?, ?> premium)) {
+            return;
+        }
+        policyProjectionRepository.findByTenantIdAndPolicyNumber(TenantContext.get(), (String) payload.get("policyNumber"))
+            .ifPresent(projection -> {
+                projection.restatePremium(new BigDecimal(String.valueOf(premium.get("amount"))));
+                policyProjectionRepository.save(projection);
+            });
+    }
+
+    /** policy's events carry their dates as a day or as an instant; either way, the day in Dar es Salaam. */
+    static LocalDate civilDate(Object value) {
+        if (value == null) {
+            return LocalDate.now(CIVIL);
+        }
+        String s = value.toString();
+        if (s.length() == 10) {
+            return LocalDate.parse(s);
+        }
+        try {
+            return java.time.Instant.parse(s).atZone(CIVIL).toLocalDate();
+        } catch (java.time.format.DateTimeParseException e) {
+            return java.time.OffsetDateTime.parse(s).atZoneSameInstant(CIVIL).toLocalDate();
         }
     }
 
@@ -132,7 +204,9 @@ public class PolicyEventListener {
                 // only. ClaimEventListener has its own route to a treaty -- XOL, which needs no
                 // cession -- and treated "has a projection row" as "was in scope", which a scheme
                 // always satisfies. See db-migrations/reinsurance/V4.
-                productCategory));
+                productCategory,
+                // IFRS 17 I3c: what turns the premium into the month's ceded premium.
+                (String) payload.get("premiumFrequency")));
         }
 
         // A GROUP SCHEME IS NOT ONE RISK, AND MUST NOT BE CEDED AS ONE.
@@ -172,6 +246,11 @@ public class PolicyEventListener {
         // So the hold is the correct behaviour, not a temporary convenience: the platform
         // cannot represent the treaty terms that would govern this cession. Enabling it needs
         // the treaty model extended first.
+        if (!PolicyProjection.isScheme(productCategory)) {
+            // IFRS 17 I3c: on risk from activation -- the month it falls in is the first a bordereau charges.
+            coverPeriods.open(tenantId, policyNumber, payload.get("activatedAt") == null ? issueDate
+                : civilDate(payload.get("activatedAt")));
+        }
         if (PolicyProjection.isScheme(productCategory)) {
             log.info("Policy {} is a {} scheme -- its sum assured is the total of a member "
                 + "schedule, not one life, so it is NOT ceded. Group cession needs a per-life "

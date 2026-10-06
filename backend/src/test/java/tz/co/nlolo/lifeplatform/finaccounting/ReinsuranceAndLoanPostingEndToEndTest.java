@@ -222,6 +222,8 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
             "db-migrations/reinsurance/V4__projection_product_category.sql",
+            "db-migrations/reinsurance/V5__bordereau.sql",
+            "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -290,6 +292,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
     @Autowired private ProductApi productApi;
     @Autowired private PolicyApi policyApi;
     @Autowired private ReinsuranceApi reinsuranceApi;
+    @Autowired private tz.co.nlolo.lifeplatform.reinsurance.application.BordereauJob bordereauJob;
     @Autowired private PolicyLoanApi policyLoanApi;
     /** Read directly for the same reason CessionRepository/ClaimRecoveryRepository are below: this
      * test has to assert against the REAL rows a producer wrote, not just against its API view. */
@@ -340,7 +343,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
         TenantContext.set(tenantId);
         reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest(
             "Africa Re", TreatyType.QUOTA_SHARE, new BigDecimal("0.00"), CURRENCY, cessionPercent,
-            LocalDate.now().minusMonths(1), null), "finance-officer");
+            new BigDecimal("20.00"), null, LocalDate.now().minusMonths(1), null), "finance-officer");
     }
 
     /** Sum assured fixed at 2,000,000 -- the DEATH claim below settles for the full sum assured,
@@ -445,24 +448,32 @@ class ReinsuranceAndLoanPostingEndToEndTest {
         String policyNumber = issuePolicy(tenantId, fixture);
 
         TenantContext.set(tenantId);
-        UUID cessionId = cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber)
-            .stream().findFirst()
-            .orElseThrow(() -> new AssertionError("Expected a cession row for " + policyNumber))
-            .getCessionId();
+        assertThat(cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber))
+            .as("the policy is ceded").hasSize(1);
 
-        // ---- Assertion 1: the cession journal entry, DR 5200 / CR 2300, for 50% of the sum
-        // assured (2,000,000 -> 1,000,000 ceded). ----
-        JournalEntry cessionEntry = singleEntryFor(tenantId, "reinsurance.CessionRecorded", cessionId.toString());
-        List<GlPosting> cessionLegs = legsFor(tenantId, cessionEntry);
-        assertThat(cessionLegs).hasSize(2);
-        assertThat(cessionLegs).extracting(GlPosting::getAccountCode)
-            .containsExactlyInAnyOrder("1436", "1430");
-        assertThat(legFor(cessionLegs, "1436").getDirection()).isEqualTo(PostingDirection.DR);
-        assertThat(legFor(cessionLegs, "1430").getDirection()).isEqualTo(PostingDirection.CR);
-        assertThat(legFor(cessionLegs, "1436").getAmount()).isEqualByComparingTo("1000000.00");
+        // ---- Assertion 1 (IFRS 17 I3c): a cession posts nothing -- it used to post the ceded SUM ASSURED as premium.
+        TenantContext.set(tenantId);
+        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged()).stream()
+            .filter(e -> e.getSourceEvent().startsWith("reinsurance.")).toList()).isEmpty();
 
-        // ---- Recovery leg: a real DEATH claim settled for the full sum assured, through the real
-        // payment rail, then a real confirmRecovery call. ----
+        // ---- Assertion 2: the month's bordereau posts K-01 and K-02 -- 50% of the 100,000 monthly premium ceded
+        // (Dr 1436 / Cr 1430 50,000), less the treaty's 20% commission not contingent on claims (Dr 1431 / Cr 1436
+        // 10,000) -- dated the month's last day. ----
+        bordereauJob.drain(LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")).withDayOfMonth(1).plusMonths(1));
+        TenantContext.set(tenantId);
+        JournalEntry bordereauEntry = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged())
+            .stream().filter(e -> "reinsurance.BordereauPosted".equals(e.getSourceEvent())).findFirst()
+            .orElseThrow(() -> new AssertionError("Expected the month's bordereau journal"));
+        assertThat(bordereauEntry.getPeriod()).isEqualTo(java.time.YearMonth.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")).toString());
+        List<GlPosting> bordereauLegs = legsFor(tenantId, bordereauEntry);
+        assertThat(bordereauLegs).extracting(GlPosting::getAccountCode)
+            .containsExactlyInAnyOrder("1436", "1430", "1431", "1436");
+        assertThat(netFor(bordereauLegs, "1430")).isEqualByComparingTo("-50000.00");
+        assertThat(netFor(bordereauLegs, "1431")).isEqualByComparingTo("10000.00");
+        assertThat(netFor(bordereauLegs, "1436")).as("the ceded premium net of the commission").isEqualByComparingTo("40000.00");
+
+        // ---- Recovery leg: a real DEATH claim approved for the full sum assured -- the recovery posts at approval
+        // (B-05), with no Confirm. ----
         UUID claimId = registerAndAssessDeathClaim(tenantId, fixture, policyNumber, "reins-loan-e2e-reg-01", "assessor-reins-loan-01");
         claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), CURRENCY, null,
             "MPESA-0716000001", "reins-loan-e2e-settle-" + claimId, "manager-reins-loan-01");
@@ -472,19 +483,16 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             .orElseThrow(() -> new AssertionError("Expected a recovery row for claim " + claimId))
             .getRecoveryId();
 
-        eventRecorder.clear();
-        TenantContext.set(tenantId);
-        reinsuranceApi.confirmRecovery(recoveryId, "finance-officer-reins-loan-01");
-
-        // ---- Assertion 2: the recovery-confirmed journal entry, DR 1300 / CR 5000, for 50% of
-        // the settled amount (2,000,000 -> 1,000,000 recoverable). ----
-        JournalEntry recoveryEntry = singleEntryFor(tenantId, "reinsurance.RecoveryConfirmed", recoveryId.toString());
+        // ---- Assertion 3: Dr 1420 / Cr 6120 -- the reinsurance result, never netted against the claims expense --
+        // for 50% of the approved amount (2,000,000 -> 1,000,000 recoverable). ----
+        JournalEntry recoveryEntry = singleEntryFor(tenantId, "reinsurance.RecoveryCalculated", recoveryId.toString());
+        assertThat(recoveryEntry.getPolicyNumber()).isEqualTo(policyNumber);
         List<GlPosting> recoveryLegs = legsFor(tenantId, recoveryEntry);
         assertThat(recoveryLegs).hasSize(2);
         assertThat(recoveryLegs).extracting(GlPosting::getAccountCode)
-            .containsExactlyInAnyOrder("1420", "5110");
+            .containsExactlyInAnyOrder("1420", "6120");
         assertThat(legFor(recoveryLegs, "1420").getDirection()).isEqualTo(PostingDirection.DR);
-        assertThat(legFor(recoveryLegs, "5110").getDirection()).isEqualTo(PostingDirection.CR);
+        assertThat(legFor(recoveryLegs, "6120").getDirection()).isEqualTo(PostingDirection.CR);
         assertThat(legFor(recoveryLegs, "1420").getAmount()).isEqualByComparingTo("1000000.00");
 
         // ---- Loan leg: real disbursement through the same rail, then a real, matching repayment. ----

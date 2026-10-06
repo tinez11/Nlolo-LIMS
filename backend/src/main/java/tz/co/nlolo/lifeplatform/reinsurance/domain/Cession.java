@@ -49,10 +49,23 @@ public class Cession {
     @Column(name = "ceded_premium_currency")
     private String cededPremiumCurrency;
 
+    /** IFRS 17 I3c: the share of the policy's premium that travels with the ceded risk (0 < share <= 1) -- a quota
+     * share's percent, a surplus's ceded risk over the sum assured. Each monthly bordereau charges it on the
+     * policy's premium then (original terms, user answer Q1). */
+    @Column(name = "premium_share")
+    private BigDecimal premiumShare;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
     protected Cession() {}
+
+    public Cession(UUID tenantId, String policyNumber, UUID treatyId, BigDecimal cededAmount,
+                    String cededCurrency, BigDecimal cededPremiumAmount, String cededPremiumCurrency,
+                    BigDecimal premiumShare) {
+        this(tenantId, policyNumber, treatyId, cededAmount, cededCurrency, cededPremiumAmount, cededPremiumCurrency);
+        this.premiumShare = premiumShare;
+    }
 
     public Cession(UUID tenantId, String policyNumber, UUID treatyId, BigDecimal cededAmount,
                     String cededCurrency, BigDecimal cededPremiumAmount, String cededPremiumCurrency) {
@@ -73,5 +86,6 @@ public class Cession {
     public String getCededCurrency() { return cededCurrency; }
     public BigDecimal getCededPremiumAmount() { return cededPremiumAmount; }
     public String getCededPremiumCurrency() { return cededPremiumCurrency; }
+    public BigDecimal getPremiumShare() { return premiumShare; }
     public Instant getCreatedAt() { return createdAt; }
 }

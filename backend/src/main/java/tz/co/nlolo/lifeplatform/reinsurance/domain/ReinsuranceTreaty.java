@@ -60,6 +60,17 @@ public class ReinsuranceTreaty {
     @Column(name = "cession_percent")
     private BigDecimal cessionPercent;
 
+    /** IFRS 17 I3c (guide K-02): the reinsurer's commission not contingent on claims, a percent of the ceded premium
+     * on each bordereau -- a reduction of the reinsurance premium (IFRS 17 para 86). Stated on every treaty; 0 is
+     * a real answer. */
+    @Column(name = "commission_percent", nullable = false)
+    private BigDecimal commissionPercent = BigDecimal.ZERO;
+
+    /** IFRS 17 I3c: an XOL treaty's flat yearly premium, charged one twelfth on each monthly bordereau. XOL only;
+     * null when the treaty states none. */
+    @Column(name = "xol_annual_premium")
+    private BigDecimal xolAnnualPremium;
+
     @Column(name = "effective_from", nullable = false)
     private LocalDate effectiveFrom;
 
@@ -99,6 +110,16 @@ public class ReinsuranceTreaty {
         this.createdBy = createdBy;
     }
 
+    public ReinsuranceTreaty(UUID tenantId, String reinsurerName, TreatyType treatyType,
+                              BigDecimal retentionLimitAmount, String retentionLimitCurrency,
+                              BigDecimal cessionPercent, BigDecimal commissionPercent, BigDecimal xolAnnualPremium,
+                              LocalDate effectiveFrom, LocalDate effectiveTo, String createdBy) {
+        this(tenantId, reinsurerName, treatyType, retentionLimitAmount, retentionLimitCurrency, cessionPercent,
+            effectiveFrom, effectiveTo, createdBy);
+        this.commissionPercent = commissionPercent;
+        this.xolAnnualPremium = xolAnnualPremium;
+    }
+
     /** ACTIVE and its effective window covers {@code date}. An open-ended treaty (null
      * effectiveTo) never expires by date. Used by Task 4's selection. */
     public boolean isActiveOn(LocalDate date) {
@@ -121,6 +142,8 @@ public class ReinsuranceTreaty {
     public BigDecimal getRetentionLimitAmount() { return retentionLimitAmount; }
     public String getRetentionLimitCurrency() { return retentionLimitCurrency; }
     public BigDecimal getCessionPercent() { return cessionPercent; }
+    public BigDecimal getCommissionPercent() { return commissionPercent; }
+    public BigDecimal getXolAnnualPremium() { return xolAnnualPremium; }
     public LocalDate getEffectiveFrom() { return effectiveFrom; }
     public LocalDate getEffectiveTo() { return effectiveTo; }
     public long getVersion() { return version; }

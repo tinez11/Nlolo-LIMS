@@ -63,10 +63,48 @@ public class PolicyProjection {
     @Column(name = "product_category")
     private String productCategory;
 
+    /** IFRS 17 I3c: how often the policy pays (MONTHLY, QUARTERLY, ANNUALLY, SINGLE) -- what turns its premium into
+     * the monthly amount a bordereau charges. Null only on a row nothing could backfill. */
+    @Column(name = "premium_frequency")
+    private String premiumFrequency;
+
+    /** IFRS 17 I3c: the day premiums stopped (paid up, premium term over). On original terms the reinsurer's premium
+     * stops with the policy's: no bordereau after this month charges it, though cover -- and recovery -- go on. */
+    @Column(name = "premiums_end_on")
+    private LocalDate premiumsEndOn;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
     protected PolicyProjection() {}
+
+    public PolicyProjection(UUID tenantId, String policyNumber, UUID productId,
+                             BigDecimal sumAssuredAmount, String sumAssuredCurrency,
+                             BigDecimal premiumAmount, String premiumCurrency, LocalDate issueDate,
+                             String productCategory, String premiumFrequency) {
+        this(tenantId, policyNumber, productId, sumAssuredAmount, sumAssuredCurrency, premiumAmount, premiumCurrency,
+            issueDate, productCategory);
+        this.premiumFrequency = premiumFrequency;
+    }
+
+    /** The premium from a restatement on (a funeral family changing): later bordereaux charge the share of it. */
+    public void restatePremium(BigDecimal premium) {
+        if (premium != null && premium.signum() > 0) {
+            this.premiumAmount = premium;
+        }
+    }
+
+    /** Premiums stopped on this day; the first one wins, as a redelivery must not move it. */
+    public void endPremiums(LocalDate on) {
+        if (premiumsEndOn == null) {
+            this.premiumsEndOn = on;
+        }
+    }
+
+    /** A reinstatement puts premiums back in payment. */
+    public void resumePremiums() {
+        this.premiumsEndOn = null;
+    }
 
     public PolicyProjection(UUID tenantId, String policyNumber, UUID productId,
                              BigDecimal sumAssuredAmount, String sumAssuredCurrency,
@@ -92,6 +130,8 @@ public class PolicyProjection {
     public String getPremiumCurrency() { return premiumCurrency; }
     public LocalDate getIssueDate() { return issueDate; }
     public String getProductCategory() { return productCategory; }
+    public String getPremiumFrequency() { return premiumFrequency; }
+    public LocalDate getPremiumsEndOn() { return premiumsEndOn; }
 
     /**
      * Whether this policy is a scheme, and therefore outside reinsurance entirely.

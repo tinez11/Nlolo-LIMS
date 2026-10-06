@@ -4,9 +4,9 @@ info:
   version: "1.0.0"
   description: >
     External REST surface of the `reinsurance` module: treaty authoring (staff/finance-only),
-    the read paths over cessions and claim recoveries, and the one imperative action -- confirming
-    a recovery -- that back-office staff need. Cession and recovery CALCULATION are not exposed
-    here at all: both are event-driven internally, so there is no create endpoint for either.
+    the read paths over cessions, claim recoveries and the monthly bordereaux (IFRS 17 I3c). Cession,
+    recovery and bordereau CALCULATION are not exposed here at all: all are event- or job-driven
+    internally, so there is no create endpoint for any of them.
 
 
     Every endpoint requires the staff realm AND the fine-grained FINANCE_OFFICER or ADMIN role,
@@ -195,41 +195,71 @@ paths:
                 items: { $ref: '#/components/schemas/ClaimRecoveryView' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-  /claims/{claimId}/recoveries/{recoveryId}/confirm:
-    post:
-      summary: Confirm that the reinsurer actually paid a recovery
+  /treaties/{treatyId}/bordereaux:
+    get:
+      summary: The treaty's monthly bordereaux, newest month first (IFRS 17 I3c)
       description: >
-        Stamps `confirmedAt` and publishes `reinsurance.RecoveryConfirmed`, but only on the
-        genuine transition, so a repeated call emits no second event and instead 409s. The path
-        nests `recoveryId` under `claimId`; the server verifies `recoveryId` genuinely belongs to
-        `claimId` and 404s on a mismatch, rather than trusting the nesting. 202, not 200: this is
-        an imperative staff action whose downstream journal entry (finaccounting) settles
-        asynchronously off the published event.
+        Written by the month-end job for every closed month from the treaty's effective-from, final once written.
+        Each posts K-01 (ceded premium, Dr 1436 / Cr 1430) and K-02 (commission not contingent on claims,
+        Dr 1431 / Cr 1436); recoveries are listed only to be matched (K-03). Rows carry no lines.
       security:
         - staffAuth: []
       parameters:
-        - $ref: '#/components/parameters/ClaimId'
-        - $ref: '#/components/parameters/RecoveryId'
-        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/TreatyId'
       responses:
-        '202':
-          description: Confirmed
+        '200':
+          description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ClaimRecoveryView' }
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BordereauView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /treaties/{treatyId}/bordereau-preview:
+    get:
+      summary: A month's bordereau as it would be written now, not stored
+      description: >
+        The current month (Dar es Salaam) when `period` is absent. A month already written returns the written one.
+        `bordereauId` and `createdAt` are null on a preview.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TreatyId'
+        - name: period
+          in: query
+          required: false
+          schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BordereauView' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '404':
-          description: "No such recovery in this tenant, or the recovery exists but does not belong to the named claim"
+        '404': { $ref: '#/components/responses/NotFound' }
+  /bordereaux/{bordereauId}:
+    get:
+      summary: One bordereau with its lines
+      security:
+        - staffAuth: []
+      parameters:
+        - name: bordereauId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
           content:
-            application/problem+json:
-              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
-        '409':
-          description: "Either the recovery is already confirmed (errorCode REINSURANCE_INVALID_STATE), or a genuine concurrent double-confirm lost an optimistic-locking race on ClaimRecovery's @Version column (errorCode CONCURRENT_MODIFICATION, see GlobalExceptionHandler.handleOptimisticLockingFailure) -- re-read the resource and retry in that second case."
-          content:
-            application/problem+json:
-              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+            application/json:
+              schema: { $ref: '#/components/schemas/BordereauView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 components:
   parameters:
     TreatyId:
@@ -239,11 +269,6 @@ components:
       schema: { type: string, format: uuid }
     ClaimId:
       name: claimId
-      in: path
-      required: true
-      schema: { type: string, format: uuid }
-    RecoveryId:
-      name: recoveryId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -290,7 +315,7 @@ components:
       description: Only ACTIVE treaties are eligible for cession selection.
     CreateTreatyRequest:
       type: object
-      required: [reinsurerName, treatyType, retentionLimit, effectiveFrom]
+      required: [reinsurerName, treatyType, retentionLimit, effectiveFrom, commissionPercent]
       properties:
         reinsurerName: { type: string, minLength: 1, maxLength: 200 }
         treatyType: { $ref: '#/components/schemas/TreatyType' }
@@ -304,9 +329,19 @@ components:
           type: [string, "null"]
           format: date
           description: Omitted or null for a treaty with no known end date.
+        commissionPercent:
+          type: string
+          pattern: '^\d+(\.\d{1,2})?$'
+          description: >
+            IFRS 17 I3c (K-02): the reinsurer's commission not contingent on claims, a percent of each month's ceded
+            premium from 0 to 100. Required on every treaty; "0" when the reinsurer pays none.
+        xolAnnualPremium:
+          type: [string, "null"]
+          pattern: '^\d+(\.\d{1,2})?$'
+          description: "XOL only: the flat yearly premium in the treaty's currency, charged one twelfth a month."
     TreatyView:
       type: object
-      required: [treatyId, reinsurerName, treatyType, status, retentionLimit, effectiveFrom]
+      required: [treatyId, reinsurerName, treatyType, status, retentionLimit, effectiveFrom, commissionPercent]
       properties:
         treatyId: { type: string, format: uuid }
         reinsurerName: { type: string }
@@ -319,6 +354,44 @@ components:
           description: "Decimal string, never a JSON number. Non-null exactly for QUOTA_SHARE."
         effectiveFrom: { type: string, format: date }
         effectiveTo: { type: [string, "null"], format: date }
+        commissionPercent:
+          type: string
+          pattern: '^\d+(\.\d{1,2})?$'
+          description: "The commission not contingent on claims (K-02), a percent of each month's ceded premium."
+        xolAnnualPremium:
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
+          description: "An XOL treaty's flat yearly premium, charged one twelfth a month; null otherwise."
+    BordereauView:
+      type: object
+      required: [treatyId, period, currency, policyCount, premium, commission, recoveries, lines]
+      properties:
+        bordereauId: { type: [string, "null"], format: uuid, description: "Null on a preview." }
+        treatyId: { type: string, format: uuid }
+        period: { type: string, description: "YYYY-MM" }
+        currency: { type: string }
+        policyCount: { type: integer, description: "Policies charged this month (the XOL premium is not one)." }
+        premium: { type: string, description: "Ceded premium, decimal string in `currency`." }
+        commission: { type: string, description: "Commission not contingent on claims, decimal string." }
+        recoveries: { type: string, description: "Recoveries recorded this month, matched only (K-03)." }
+        createdAt: { type: [string, "null"], format: date-time, description: "Null on a preview." }
+        lines:
+          type: array
+          description: "Empty on a list row."
+          items: { $ref: '#/components/schemas/BordereauLine' }
+    BordereauLine:
+      type: object
+      required: [type, premium, commission, recovery]
+      properties:
+        type: { type: string, enum: [PREMIUM, XOL_PREMIUM, RECOVERY] }
+        policyNumber: { type: [string, "null"] }
+        claimId: { type: [string, "null"], format: uuid }
+        premiumShare: { type: [string, "null"], description: "The cession's share of the policy's premium, 0 < share <= 1." }
+        policyPremium: { type: [string, "null"], description: "The policy's premium the share was taken of." }
+        premium: { type: string }
+        commission: { type: string }
+        recovery: { type: string }
     CessionSearchResponse:
       type: object
       required: [items, page]
@@ -370,4 +443,6 @@ components:
         confirmedAt:
           type: [string, "null"]
           format: date-time
-          description: "Null until staff confirm the reinsurer actually paid."
+          description: >
+            Set only on recoveries from before IFRS 17 I3c, when staff confirmed them. A recovery is now posted when its
+            claim is approved (B-05) and agreed with the reinsurer on its statement.

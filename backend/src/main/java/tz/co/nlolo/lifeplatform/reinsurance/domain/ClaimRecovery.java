@@ -1,6 +1,5 @@
 package tz.co.nlolo.lifeplatform.reinsurance.domain;
 
-import tz.co.nlolo.lifeplatform.reinsurance.api.InvalidRecoveryStateException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -12,7 +11,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Maps {@code reinsurance.claim_recovery}. Mutable exactly once, via {@link #confirm}. */
+/** Maps {@code reinsurance.claim_recovery}. Write-once since IFRS 17 I3c: posted at claim approval, never confirmed
+ * here ({@code confirmed_at} is set only on rows from before, when staff confirmed them). */
 @Entity
 @Table(name = "claim_recovery", schema = "reinsurance")
 public class ClaimRecovery {
@@ -65,26 +65,6 @@ public class ClaimRecovery {
         this.recoverableCurrency = recoverableCurrency;
         this.updatedBy = createdBy;
     }
-
-    /**
-     * Throws rather than returning quietly on a repeat, deliberately. The caller must be able to
-     * distinguish a real transition from a double-confirm, because {@code
-     * reinsurance.RecoveryConfirmed} may be published ONLY on the former -- M6's I1 finding, where
-     * an unconditional publish after an idempotent transition emitted a duplicate event to
-     * finaccounting, and a duplicate there is a double journal entry. A 409 is also the honest
-     * answer to a human clicking confirm twice.
-     */
-    public void confirm(Instant when, String confirmedBy) {
-        if (confirmedAt != null) {
-            throw new InvalidRecoveryStateException(
-                "Recovery " + recoveryId + " was already confirmed at " + confirmedAt);
-        }
-        this.confirmedAt = when;
-        this.updatedAt = Instant.now();
-        this.updatedBy = confirmedBy;
-    }
-
-    public boolean isConfirmed() { return confirmedAt != null; }
 
     public UUID getRecoveryId() { return recoveryId; }
     public UUID getTenantId() { return tenantId; }
