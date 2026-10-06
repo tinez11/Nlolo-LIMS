@@ -121,7 +121,8 @@ class PolicyCustomerScopingTest {
             // book of business" scoping) queries distribution.agent_profile for ANY agents-realm
             // search now, not just ones this class originally anticipated.
             "db-migrations/distribution/V1__create_distribution_schema.sql",
-            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
+            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
+            "db-migrations/distribution/V5__agent_channel_and_home_branch.sql");
     }
 
     @Autowired

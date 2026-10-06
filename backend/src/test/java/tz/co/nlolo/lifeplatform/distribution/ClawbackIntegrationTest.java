@@ -146,7 +146,8 @@ class ClawbackIntegrationTest {
             "db-migrations/policy/V30__surrender.sql",
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
-            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
+            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
+            "db-migrations/distribution/V5__agent_channel_and_home_branch.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

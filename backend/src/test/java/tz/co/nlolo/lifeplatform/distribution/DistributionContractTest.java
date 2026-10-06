@@ -176,6 +176,7 @@ class DistributionContractTest {
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
+            "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
@@ -325,6 +326,42 @@ class DistributionContractTest {
     // ============================================================================================
     // POST /agents
     // ============================================================================================
+
+    /** IFRS 17 I2: an agent is onboarded with its channel and branch, and its placement can be changed. */
+    @Test
+    void anAgentsPlacementGoesInOnboardingAndChangesThroughItsOwnEndpoint() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        PartyView party = verifiedParty(tenantId, "ONB-PLACE");
+
+        String body = mockMvc.perform(post("/agents").with(financeStaffOf(tenantId))
+                .header("Idempotency-Key", "ct-onb-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"partyId":"%s","licenseNumber":"LIC-CT-PLACE","licenseExpiryDate":"%s","salesChannel":"BROKER","homeBranch":"ARU"}
+                    """.formatted(party.partyId(), LocalDate.now().plusYears(1))))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.salesChannel").value("BROKER"))
+            .andExpect(jsonPath("$.homeBranch").value("ARU"))
+            .andReturn().getResponse().getContentAsString();
+        String agentId = com.jayway.jsonpath.JsonPath.read(body, "$.agentId");
+
+        mockMvc.perform(put("/agents/{agentId}/placement", agentId).with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"salesChannel":"BANCASSURANCE","homeBranch":"MWZ"}"""))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.salesChannel").value("BANCASSURANCE"))
+            .andExpect(jsonPath("$.homeBranch").value("MWZ"));
+
+        mockMvc.perform(put("/agents/{agentId}/placement", agentId).with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"salesChannel":"AGENT","homeBranch":"NOPE"}"""))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("Unknown branch NOPE"));
+    }
 
     @Test
     void onboardAgentReturns201ForAVerifiedParty() throws Exception {

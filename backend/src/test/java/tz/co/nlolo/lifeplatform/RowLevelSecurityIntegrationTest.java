@@ -195,6 +195,7 @@ class RowLevelSecurityIntegrationTest {
             // AppRolePrivilegesIntegrationTest touched the module at all.
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
+            "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             // M8 (Task 9) additions. reinsurance/V1 enabled RLS on only ONE of its three tables
             // (reinsurance_treaty) and granted app_role nothing; V2 is what adds both cession's and
             // claim_recovery's policies, plus the grants that let app_role reach the schema at all.

@@ -15,6 +15,8 @@ import tz.co.nlolo.lifeplatform.distribution.api.DistributionValidationException
 import tz.co.nlolo.lifeplatform.distribution.api.InvalidAgentStateException;
 import tz.co.nlolo.lifeplatform.distribution.api.LicenseStatus;
 import tz.co.nlolo.lifeplatform.distribution.api.PlanStatus;
+import tz.co.nlolo.lifeplatform.distribution.api.SalesChannel;
+import tz.co.nlolo.lifeplatform.refdata.api.ReferenceDataApi;
 import tz.co.nlolo.lifeplatform.distribution.api.TierType;
 import tz.co.nlolo.lifeplatform.distribution.domain.AgentProfile;
 import tz.co.nlolo.lifeplatform.distribution.domain.CommissionAccrual;
@@ -100,13 +102,17 @@ public class DistributionApiImpl implements DistributionApi {
     private final ProductApi productApi;
     private final ApplicationEventPublisher eventPublisher;
 
+    private final ReferenceDataApi referenceDataApi;
+
     public DistributionApiImpl(AgentProfileRepository agentProfileRepository,
                                 CommissionPlanRepository commissionPlanRepository,
                                 CommissionRuleRepository commissionRuleRepository,
                                 CommissionStatementRepository commissionStatementRepository,
                                 CommissionAccrualRepository commissionAccrualRepository,
                                 PartyApi partyApi, ProductApi productApi,
-                                ApplicationEventPublisher eventPublisher) {
+                                ApplicationEventPublisher eventPublisher,
+                                ReferenceDataApi referenceDataApi) {
+        this.referenceDataApi = referenceDataApi;
         this.agentProfileRepository = agentProfileRepository;
         this.commissionPlanRepository = commissionPlanRepository;
         this.commissionRuleRepository = commissionRuleRepository;
@@ -160,8 +166,13 @@ public class DistributionApiImpl implements DistributionApi {
                 + " characters; the maximum is " + MAX_LICENSE_NUMBER_LENGTH);
         }
 
+        // 5. Where the agent sells from and through what (IFRS 17 I2).
+        SalesChannel channel = request.salesChannel() != null ? request.salesChannel() : SalesChannel.AGENT;
+        requireValidPlacement(channel, request.homeBranch());
+
         AgentProfile agent = new AgentProfile(tenantId, request.partyId(), request.licenseNumber(),
             request.licenseExpiryDate(), request.hierarchyParentId(), null, onboardedBy);
+        agent.place(channel.name(), request.homeBranch());
 
         // The unique index ux_agent_license (tenant_id, license_number) means a duplicate licence
         // throws DataIntegrityViolationException -- caught and rethrown as a validation failure so
@@ -626,7 +637,37 @@ public class DistributionApiImpl implements DistributionApi {
     private AgentView toAgentView(AgentProfile agent) {
         return new AgentView(agent.getAgentId(), agent.getPartyId(), agent.getLicenseNumber(),
             agent.getLicenseStatus(), agent.getLicenseExpiryDate(), agent.getHierarchyParentId(),
-            agent.getCommissionPlanId());
+            agent.getCommissionPlanId(), SalesChannel.valueOf(agent.getSalesChannel()), agent.getHomeBranch());
+    }
+
+    /**
+     * An agent's channel is one an intermediary can be, and its branch a refdata BRANCH code (IFRS 17 I2). The branch
+     * may be absent -- an agent onboarded through the Java API without one -- but never unknown.
+     */
+    private void requireValidPlacement(SalesChannel channel, String homeBranch) {
+        if (channel == null || !channel.isAgentChannel()) {
+            throw new DistributionValidationException("An agent sells through AGENT, BROKER or BANCASSURANCE");
+        }
+        if (homeBranch != null && referenceDataApi.getCodes("BRANCH").stream()
+                .noneMatch(c -> c.code().equals(homeBranch))) {
+            throw new DistributionValidationException("Unknown branch " + homeBranch);
+        }
+    }
+
+    @Override
+    @Transactional
+    public AgentView updateAgentPlacement(UUID agentId, SalesChannel salesChannel, String homeBranch, String updatedBy) {
+        UUID tenantId = TenantContext.get();
+        AgentProfile agent = agentProfileRepository.findByAgentIdAndTenantId(agentId, tenantId)
+            .orElseThrow(() -> new AgentNotFoundException("Agent " + agentId + " not found"));
+        if (homeBranch == null || homeBranch.isBlank()) {
+            throw new DistributionValidationException("An agent's placement names its home branch");
+        }
+        requireValidPlacement(salesChannel, homeBranch);
+        agent.place(salesChannel.name(), homeBranch);
+        agent.setUpdatedAt(java.time.Instant.now());
+        agent.setUpdatedBy(updatedBy);
+        return toAgentView(agentProfileRepository.save(agent));
     }
 
     private CommissionPlanView toCommissionPlanView(CommissionPlan plan) {

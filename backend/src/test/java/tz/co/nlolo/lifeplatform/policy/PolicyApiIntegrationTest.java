@@ -147,6 +147,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/distribution/V3__rls_fail_closed.sql",
+            "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");

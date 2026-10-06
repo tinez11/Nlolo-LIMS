@@ -152,6 +152,36 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /agents/{agentId}/placement:
+    put:
+      summary: Change the channel an agent sells through and the branch it sells from
+      description: >-
+        IFRS 17 I2. Applies to cases the agent introduces from now on; a case already opened keeps the defaults it
+        took, and an issued policy never changes. Same gate as onboarding.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentPlacementRequest' }
+      responses:
+        '200':
+          description: The agent, with its new placement
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: "An unknown branch, or a channel no agent sells through"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /agents/{agentId}/suspend:
     post:
       summary: Suspend an ACTIVE agent's license
@@ -454,9 +484,26 @@ components:
           type: [string, "null"]
           format: uuid
           description: Omitted or null for an agent at the top of its hierarchy.
+        salesChannel:
+          description: "The intermediary this agent is (IFRS 17 I2). Omitted means AGENT. See AgentChannel."
+          type: [string, "null"]
+          enum: [AGENT, BROKER, BANCASSURANCE, null]
+        homeBranch:
+          type: [string, "null"]
+          description: "A refdata BRANCH code (DSM, ARU, MWZ, DOD, ZNZ). The branch a case this agent introduces defaults to."
+    AgentChannel:
+      type: string
+      description: "The channel an intermediary sells through. DIRECT and DIGITAL are sales channels, but no agent's."
+      enum: [AGENT, BROKER, BANCASSURANCE]
+    AgentPlacementRequest:
+      type: object
+      required: [salesChannel, homeBranch]
+      properties:
+        salesChannel: { $ref: '#/components/schemas/AgentChannel' }
+        homeBranch: { type: string, description: "A refdata BRANCH code." }
     AgentView:
       type: object
-      required: [agentId, partyId, licenseNumber, licenseStatus, licenseExpiryDate]
+      required: [agentId, partyId, licenseNumber, licenseStatus, licenseExpiryDate, salesChannel]
       properties:
         agentId: { type: string, format: uuid }
         partyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
@@ -468,6 +515,8 @@ components:
           type: [string, "null"]
           format: uuid
           description: The agent's own assigned plan, if any. Null means the product's active plan applies instead.
+        salesChannel: { $ref: '#/components/schemas/AgentChannel' }
+        homeBranch: { type: [string, "null"], description: "A refdata BRANCH code; null only for an agent onboarded without one." }
     CreateCommissionPlanRequest:
       type: object
       required: [productId, rules]

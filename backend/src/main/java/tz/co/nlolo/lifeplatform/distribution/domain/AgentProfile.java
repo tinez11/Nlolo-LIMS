@@ -67,6 +67,16 @@ public class AgentProfile {
     @Column(name = "updated_by")
     private String updatedBy;
 
+    /**
+     * IFRS 17 I2 (distribution V5): the channel this intermediary sells through (AGENT, BROKER, BANCASSURANCE) and the
+     * branch it sells from. A case the agent introduces takes both as its defaults.
+     */
+    @Column(name = "sales_channel", nullable = false)
+    private String salesChannel = "AGENT";
+
+    @Column(name = "home_branch")
+    private String homeBranch;
+
     protected AgentProfile() {}
 
     public AgentProfile(UUID tenantId, UUID partyId, String licenseNumber, LocalDate licenseExpiryDate,
@@ -107,4 +117,12 @@ public class AgentProfile {
     public String getCreatedBy() { return createdBy; }
     public Instant getUpdatedAt() { return updatedAt; }
     public String getUpdatedBy() { return updatedBy; }
+    public String getSalesChannel() { return salesChannel; }
+    public String getHomeBranch() { return homeBranch; }
+
+    /** Validated by the caller: the channel is one an intermediary can be, the branch a refdata BRANCH code. */
+    public void place(String salesChannel, String homeBranch) {
+        this.salesChannel = salesChannel;
+        this.homeBranch = homeBranch;
+    }
 }

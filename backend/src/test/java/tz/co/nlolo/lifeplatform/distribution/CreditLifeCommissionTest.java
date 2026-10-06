@@ -161,7 +161,8 @@ class CreditLifeCommissionTest {
             "db-migrations/billing/V8__schedule_premium_paying_until.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
-            "db-migrations/distribution/V4__partial_reversals.sql");
+            "db-migrations/distribution/V4__partial_reversals.sql",
+            "db-migrations/distribution/V5__agent_channel_and_home_branch.sql");
 
         MinioClient minio = MinioClient.builder()
             .endpoint(MINIO.getS3URL())

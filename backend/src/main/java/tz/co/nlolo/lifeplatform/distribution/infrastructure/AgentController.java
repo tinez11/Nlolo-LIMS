@@ -101,9 +101,19 @@ public class AgentController {
             @AuthenticationPrincipal Jwt jwt) {
         requireIdempotencyKey(idempotencyKey);
         AgentView view = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
-            request.partyId(), request.licenseNumber(), request.licenseExpiryDate(), request.hierarchyParentId()),
+            request.partyId(), request.licenseNumber(), request.licenseExpiryDate(), request.hierarchyParentId(),
+            request.salesChannel(), request.homeBranch()),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(AgentResponseDto.from(view));
+    }
+
+    /** IFRS 17 I2: the channel an agent sells through and the branch it sells from. Gated like onboarding. */
+    @PutMapping("/agents/{agentId}/placement")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    public ResponseEntity<AgentResponseDto> updatePlacement(@PathVariable UUID agentId,
+            @Valid @RequestBody AgentPlacementRequestDto request, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(AgentResponseDto.from(distributionApi.updateAgentPlacement(agentId,
+            request.salesChannel(), request.homeBranch(), jwt.getSubject())));
     }
 
     /**
