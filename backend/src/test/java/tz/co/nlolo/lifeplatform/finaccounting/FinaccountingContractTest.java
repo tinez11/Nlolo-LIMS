@@ -795,7 +795,7 @@ class FinaccountingContractTest {
         mockMvc.perform(get("/finance/posting-rules").with(financeStaffOf(tenantId)))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
-            .andExpect(jsonPath("$.versionLabel").value("posting-rules v2"))
+            .andExpect(jsonPath("$.versionLabel").value("posting-rules v3"))
             .andExpect(jsonPath("$.rules[?(@.id == 'I-01')].lines[0].account").value("2142"));
         mockMvc.perform(get("/finance/posting-rules").with(underwriterStaffOf(tenantId)))
             .andExpect(status().isForbidden());

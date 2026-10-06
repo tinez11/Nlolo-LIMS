@@ -33,6 +33,8 @@ class CessionCalculatorTest {
         assertThat(result.get().cededPremium()).isEqualByComparingTo("30000.00");
         assertThat(result.get().riskCurrency()).isEqualTo("TZS");
         assertThat(result.get().premiumCurrency()).isEqualTo("TZS");
+        // IFRS 17 I3c: each monthly bordereau charges the treaty's percent of the policy's premium.
+        assertThat(result.get().premiumShare()).isEqualByComparingTo("0.30");
     }
 
     @Test
@@ -46,6 +48,8 @@ class CessionCalculatorTest {
         assertThat(result).isPresent();
         assertThat(result.get().cededRisk()).isEqualByComparingTo("1500000.00");
         assertThat(result.get().cededPremium()).isEqualByComparingTo("75000.00");
+        // IFRS 17 I3c: the share of the premium that travels with the ceded risk.
+        assertThat(result.get().premiumShare()).isEqualByComparingTo("0.75");
     }
 
     @Test

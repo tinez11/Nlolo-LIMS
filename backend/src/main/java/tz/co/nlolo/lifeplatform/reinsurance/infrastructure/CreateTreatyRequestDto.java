@@ -27,4 +27,8 @@ public record CreateTreatyRequestDto(
     @Valid @NotNull MoneyDto retentionLimit,
     @Pattern(regexp = "^\\d+(\\.\\d{1,2})?$") String cessionPercent,
     @NotNull LocalDate effectiveFrom,
-    LocalDate effectiveTo) {}
+    LocalDate effectiveTo,
+    // IFRS 17 I3c (K-02): required on every treaty, 0 allowed -- a decimal string, like every rate on the wire.
+    @NotNull @Pattern(regexp = "^\\d+(\\.\\d{1,2})?$") String commissionPercent,
+    // XOL only: the flat yearly premium in the treaty's currency, charged 1/12 a month.
+    @Pattern(regexp = "^\\d+(\\.\\d{1,2})?$") String xolAnnualPremium) {}

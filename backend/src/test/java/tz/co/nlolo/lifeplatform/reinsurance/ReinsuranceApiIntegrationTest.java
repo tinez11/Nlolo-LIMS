@@ -56,7 +56,8 @@ class ReinsuranceApiIntegrationTest {
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
-            "db-migrations/reinsurance/V4__projection_product_category.sql");
+            "db-migrations/reinsurance/V4__projection_product_category.sql",
+            "db-migrations/reinsurance/V5__bordereau.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

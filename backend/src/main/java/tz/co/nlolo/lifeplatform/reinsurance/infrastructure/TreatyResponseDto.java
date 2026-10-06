@@ -13,12 +13,17 @@ import java.util.UUID;
  * DisabilityClaimDetails.impairmentPercent -- which openApi().isValid() provably does not catch. */
 public record TreatyResponseDto(UUID treatyId, String reinsurerName, TreatyType treatyType, TreatyStatus status,
                                  MoneyDto retentionLimit, String cessionPercent,
-                                 LocalDate effectiveFrom, LocalDate effectiveTo) {
+                                 LocalDate effectiveFrom, LocalDate effectiveTo,
+                                 String commissionPercent, MoneyDto xolAnnualPremium) {
 
     public static TreatyResponseDto from(TreatyView view) {
         return new TreatyResponseDto(view.treatyId(), view.reinsurerName(), view.treatyType(), view.status(),
             new MoneyDto(view.retentionLimitAmount().toPlainString(), view.retentionLimitCurrency()),
             view.cessionPercent() == null ? null : view.cessionPercent().toPlainString(),
-            view.effectiveFrom(), view.effectiveTo());
+            view.effectiveFrom(), view.effectiveTo(),
+            // IFRS 17 I3c: the commission not contingent on claims (K-02), and an XOL treaty's flat annual premium.
+            view.commissionPercent().toPlainString(),
+            view.xolAnnualPremium() == null ? null
+                : new MoneyDto(view.xolAnnualPremium().toPlainString(), view.retentionLimitCurrency()));
     }
 }

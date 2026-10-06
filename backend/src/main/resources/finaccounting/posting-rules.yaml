@@ -19,9 +19,13 @@
 #
 # v2 (IFRS 17 I3b): money out in two steps as the guide does it -- the payable when it is decided (claim approved,
 # surrender approved, payout due), the bank when it is paid; commission earned and withheld; loan interest; IFRS 9
-# accounts (G); premium levy. Unit-linked VFA exits (F-08/F-09) and reinsurance (I3c) are as v1 posted them.
+# accounts (G); premium levy. Unit-linked VFA exits (F-08/F-09) are as v1 posted them.
+#
+# v3 (IFRS 17 I3c): reinsurance held from the monthly bordereau (K-01, K-02) instead of a cession posting the ceded
+# SUM ASSURED as premium; the reinsurer's share of a claim (B-05) when the claim is approved, to 6120 -- not to the
+# claims expense, and with no staff confirmation.
 
-version: 2
+version: 3
 rules:
 
   # ---- Premium: billed, collected, credited, restated, waived ------------------------------------------------------
@@ -595,23 +599,28 @@ rules:
       - {dr: "2340", amount: amount}
       - {cr: BANK, amount: amount}
 
-  # ---- Reinsurance (I3c rebuilds both on the monthly bordereau) -------------------------------------------------------
+  # ---- Reinsurance held (I3c): the monthly bordereau, and the reinsurer's share of a claim when it is approved ------
 
+  # One journal per treaty and month, dated the month's last day. K-02 rides on the same bordereau: the commission not
+  # contingent on claims reduces the ceded premium (IFRS 17 para 86) -- there is no reinsurance commission income.
+  # Recoveries listed on the bordereau are only matched (K-03): they posted at approval (B-05).
   - id: K-01
-    event: reinsurance.CessionRecorded
-    models: [ANY]
-    description: Cession recorded -- INTERIM, still the ceded sum assured until I3c posts the bordereau premium
+    event: reinsurance.BordereauPosted
+    models: [NONE]
+    description: Bordereau -- reinsurance premium ceded (K-01) less the commission not contingent on claims (K-02)
     lines:
-      - {dr: "1436", amount: amount}
-      - {cr: "1430", amount: amount}
+      - {dr: "1436", amount: premium}
+      - {cr: "1430", amount: premium}
+      - {dr: "1431", amount: commission}
+      - {cr: "1436", amount: commission}
 
   - id: B-05
-    event: reinsurance.RecoveryConfirmed
-    models: [NONE]
-    description: Reinsurer's share of a claim
+    event: reinsurance.RecoveryCalculated
+    models: [ANY]
+    description: Reinsurer's share of a claim admitted on a reinsured policy -- in the reinsurance result, never netted
     lines:
       - {dr: "1420", amount: amount}
-      - {cr: "5110", amount: amount}
+      - {cr: "6120", amount: amount}
 
   # ---- Unit-linked (the guide's F entries; units in issue x price always equals 2131) -------------------------------
 
