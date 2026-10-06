@@ -27,7 +27,14 @@ export function BranchSelect({
   // While the list loads, the current value is still offered, so the select shows it rather than nothing.
   const showValueAlone = value !== '' && !branches.some((b) => b.code === value);
   return (
-    <Select id={id} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
+    // Only a REAL id is passed: `id={undefined}` would still override the id FormField supplies through its
+    // context, leaving the select with no label and no accessible name.
+    <Select
+      {...(id ? { id } : {})}
+      {...(disabled !== undefined ? { disabled } : {})}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
       {allowNone && <option value="">{noneLabel}</option>}
       {showValueAlone && <option value={value}>{value}</option>}
       {branches.map((b) => (
