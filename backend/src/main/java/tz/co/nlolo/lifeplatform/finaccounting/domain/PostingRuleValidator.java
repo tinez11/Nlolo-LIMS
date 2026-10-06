@@ -17,7 +17,8 @@ import java.util.Set;
  *   <li>its event is one the platform extracts facts for, and every {@code when} attribute is one that event has;</li>
  *   <li>its models are known, and it has at least one Dr and one Cr line;</li>
  *   <li>every line's account is a posting account of the guide's chart (2.5) whose mode is AUTO or BOTH -- never MAN,
- *       which the database refuses an event journal on;</li>
+ *       which the database refuses an event journal on, unless the rule is {@code source: SYSTEM} (the guard lets the
+ *       platform's own journals post there);</li>
  *   <li>every line's amount is a fact the event states, and its movement is one of the guide's (2.4);</li>
  *   <li>no other rule could be chosen for the same event, model, attributes and date: two rules for one event with an
  *       identical {@code when}, a model in common and overlapping dates leave the choice to file order.</li>
@@ -110,7 +111,7 @@ public final class PostingRuleValidator {
                 problems.add(id + ": account " + line.account() + " is not in the chart");
             } else if (!account.postingAllowed()) {
                 problems.add(id + ": account " + line.account() + " is a heading and takes no postings");
-            } else if (account.mode() == PostingMode.MAN) {
+            } else if (account.mode() == PostingMode.MAN && !rule.system()) {
                 problems.add(id + ": account " + line.account() + " is MAN (manual journals only)");
             }
             checkAmountAndMovement(rule, id, line, shape, problems);

@@ -80,4 +80,36 @@ public interface ReinsuranceApi {
      * it closes, or any month. A month already posted returns the posted one.
      */
     BordereauView previewBordereau(UUID treatyId, java.time.YearMonth period);
+
+    // ---- the quarterly statement (IFRS 17 I3d) ---------------------------------------------------------------------
+
+    /**
+     * A DRAFT settling the treaty's {@code quarter} (YYYY-Qn) from its bordereaux and recoveries. Refused (409) before
+     * the quarter ends, while a month's bordereau is unwritten, or when the quarter already has a live statement.
+     */
+    StatementView prepareStatement(UUID treatyId, String quarter, String preparer);
+
+    /** What the reinsurer's statement states, and why; a DRAFT, by its preparer. */
+    StatementView updateStatement(UUID statementId, BigDecimal fundsWithheld, BigDecimal profitCommission, String reason,
+                                  String by);
+
+    StatementView submitStatement(UUID statementId, String by);
+
+    StatementView withdrawStatement(UUID statementId, String by);
+
+    /** Checked again, then approved -- never by its preparer -- and published as reinsurance.StatementApproved. */
+    StatementView approveStatement(UUID statementId, String approver);
+
+    StatementView rejectStatement(UUID statementId, String reason, String by);
+
+    StatementView getStatement(UUID statementId);
+
+    /** Newest first; null filters are ignored. At most 500. */
+    List<StatementView> listStatements(String status, UUID treatyId);
+
+    /** Refuses unless {@code by} may still change it -- asked before a document is stored. */
+    void requireStatementEditable(UUID statementId, String by);
+
+    /** The reinsurer's statement, already stored (document::api), recorded on a DRAFT. */
+    StatementView attachStatementDocument(UUID statementId, String documentRef, String by);
 }

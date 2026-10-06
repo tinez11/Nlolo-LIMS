@@ -25,7 +25,7 @@
 # SUM ASSURED as premium; the reinsurer's share of a claim (B-05) when the claim is approved, to 6120 -- not to the
 # claims expense, and with no staff confirmation.
 
-version: 3
+version: 4
 rules:
 
   # ---- Premium: billed, collected, credited, restated, waived ------------------------------------------------------
@@ -55,6 +55,7 @@ rules:
   - id: I-03
     event: finaccounting.PaaRevenueEarned
     models: [PAA]
+    source: SYSTEM
     description: Month-end PAA revenue earned, straight-line over the cover each premium pays for (a SYSTEM journal)
     lines:
       - {dr: "2141", amount: amount}
@@ -621,6 +622,26 @@ rules:
     lines:
       - {dr: "1420", amount: amount}
       - {cr: "6120", amount: amount}
+
+  # IFRS 17 I3d: the quarterly reinsurance statement settles what K-01/K-02 and B-05 posted into the current account
+  # (R-01), keeps funds withheld (R-04) and books profit commission (R-03). The platform's own journal: it mixes AUTO
+  # (1430, 1431, 1420, 6120) and MAN (1434, 1433, 2550) accounts, which only a SYSTEM journal may do. Exactly one of
+  # owedToUs / owedByUs is above zero; zero lines are left out, so the journal balances by construction.
+  - id: R-STMT
+    event: reinsurance.StatementApproved
+    models: [NONE]
+    source: SYSTEM
+    description: Reinsurance statement -- R-04 funds withheld, R-01 offset into the current account, R-03 profit commission
+    lines:
+      - {dr: "1430", amount: withheld}
+      - {cr: "2550", amount: withheld}
+      - {dr: "1430", amount: premiumNet}
+      - {cr: "1431", amount: commission}
+      - {cr: "1420", amount: recoveries}
+      - {dr: "1434", amount: owedToUs}
+      - {cr: "1434", amount: owedByUs}
+      - {dr: "1433", amount: profitCommission}
+      - {cr: "6120", amount: profitCommission}
 
   # ---- Unit-linked (the guide's F entries; units in issue x price always equals 2131) -------------------------------
 

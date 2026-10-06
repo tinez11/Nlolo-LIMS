@@ -117,6 +117,12 @@ export const TreatiesPage = lazy(() =>
 export const TreatyDetailPage = lazy(() =>
   import('@/features/reinsurance/TreatyDetailPage').then((m) => ({ default: m.TreatyDetailPage })),
 );
+export const StatementPage = lazy(() =>
+  import('@/features/reinsurance/StatementPage').then((m) => ({ default: m.StatementPage })),
+);
+export const ReinsuranceStatementsPage = lazy(() =>
+  import('@/features/reinsurance/ReinsuranceStatementsPage').then((m) => ({ default: m.ReinsuranceStatementsPage })),
+);
 export const BordereauPage = lazy(() =>
   import('@/features/reinsurance/BordereauPage').then((m) => ({ default: m.BordereauPage })),
 );

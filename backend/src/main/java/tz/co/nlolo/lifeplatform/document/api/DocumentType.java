@@ -40,5 +40,11 @@ public enum DocumentType {
      * IFRS 17 I4: the document a manual journal rests on (guide 2.3, Part 4) -- a board resolution, a fund manager's
      * report, a statement, a payroll summary. The general bucket, by {@code MinioDocumentStorage.bucketFor}'s default.
      */
-    JOURNAL_SUPPORT
+    JOURNAL_SUPPORT,
+
+    /**
+     * IFRS 17 I3d: the reinsurer's quarterly statement, attached to the reinsurance statement that settles the quarter
+     * -- what the funds withheld and profit commission entered rest on. The general bucket.
+     */
+    REINSURANCE_STATEMENT
 }

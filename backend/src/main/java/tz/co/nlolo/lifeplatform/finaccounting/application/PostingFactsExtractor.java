@@ -64,6 +64,9 @@ final class PostingFactsExtractor {
         // IFRS 17 I3c: reinsurance held from the monthly bordereau (K-01/K-02) and a recovery at claim approval (B-05).
         Map.entry("reinsurance.BordereauPosted", new EventShape(Set.of("premium", "commission"), Set.of())),
         Map.entry("reinsurance.RecoveryCalculated", amount()),
+        // IFRS 17 I3d: the quarterly statement (R-01, R-03, R-04). premiumNet is the premium less what is withheld.
+        Map.entry("reinsurance.StatementApproved", new EventShape(Set.of("premiumNet", "withheld", "commission",
+            "recoveries", "owedToUs", "owedByUs", "profitCommission"), Set.of())),
         // The platform's own: a month's PAA premium earned (PaaEarningJob), never an event from another module.
         Map.entry(PaaEarningJob.EVENT, amount()),
         Map.entry("unitlinked.UnitsAllocated", new EventShape(Set.of("premium", "allocated", "allocationCharge"), Set.of())),
@@ -162,6 +165,16 @@ final class PostingFactsExtractor {
             case "reinsurance.RecoveryCalculated" ->
                 List.of(money(type, string(p.get("recoveryId")), policy, p.get("recoverableAmount"), today,
                     Map.of("refType", "RECOVERY")));
+            // Posted in the month it is approved: the quarter it settles may already be closing or locked.
+            case "reinsurance.StatementApproved" -> {
+                BigDecimal withheld = amountOf(p.get("fundsWithheld"));
+                yield List.of(facts(type, string(p.get("statementId")), null, currencyOf(p.get("premium")), today,
+                    Map.of("premiumNet", amountOf(p.get("premium")).subtract(withheld), "withheld", withheld,
+                        "commission", amountOf(p.get("commission")), "recoveries", amountOf(p.get("recoveries")),
+                        "owedToUs", amountOf(p.get("owedToUs")), "owedByUs", amountOf(p.get("owedByUs")),
+                        "profitCommission", amountOf(p.get("profitCommission"))),
+                    Map.of("refType", "STATEMENT")));
+            }
             default -> type.startsWith("unitlinked.") ? unitLinked(type, p, policy, today) : List.of();
         };
     }

@@ -157,6 +157,7 @@ class CreditLifeCommissionTest {
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
             "db-migrations/document/V7__journal_support_document_type.sql",
+            "db-migrations/document/V8__reinsurance_statement_document_type.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
             "db-migrations/billing/V3__amount_paid.sql",
