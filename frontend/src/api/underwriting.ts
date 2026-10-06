@@ -1,4 +1,4 @@
-import { get, post } from '@/lib/http';
+import { get, post, put } from '@/lib/http';
 import type {
   BeneficiaryNomination,
   DecideRequest,
@@ -145,6 +145,17 @@ export function submitAssessment(
  * 422 for a case with no assessment, a blank reason, or a loading that does not match the
  * outcome. 409 for a case already decided.
  */
+/**
+ * `PUT /underwriting/cases/{id}/sale` (IFRS 17 I2): the channel the sale came through and the branch it belongs to,
+ * both refdata codes. 409 once the policy is issued -- the policy has taken them for good.
+ */
+export function recordSale(caseId: string, salesChannel: string, branchCode: string): Promise<UnderwritingCaseView> {
+  return put<UnderwritingCaseView>(`/underwriting/cases/${encodeURIComponent(caseId)}/sale`, {
+    salesChannel,
+    branchCode,
+  });
+}
+
 export function decide(caseId: string, request: DecideRequest): Promise<UnderwritingCaseView> {
   return post<UnderwritingCaseView>(
     `/underwriting/cases/${encodeURIComponent(caseId)}/decision`,

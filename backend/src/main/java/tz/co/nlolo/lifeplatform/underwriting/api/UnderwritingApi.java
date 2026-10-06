@@ -82,6 +82,15 @@ public interface UnderwritingApi {
      *
      * @throws UnderwritingCaseAlreadyDecidedException if the case is decided and not POSTPONED
      */
+    /**
+     * Record the channel the sale came through and the branch it belongs to (IFRS 17 I2), both refdata codes.
+     * Refused with {@link SaleFixedException} once the policy is issued.
+     */
+    UnderwritingCaseView recordSale(UUID caseId, String salesChannel, String branchCode, String recordedBy);
+
+    /** The case's policy is issued: its channel and branch are fixed. Idempotent; a no-op for an unknown case. */
+    void lockSale(UUID caseId);
+
     UnderwritingCaseView submitAssessment(UUID caseId, AssessmentType assessmentType, String findings, BigDecimal riskScore, String assessedBy);
 
     /**

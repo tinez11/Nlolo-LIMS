@@ -12,6 +12,7 @@ import tz.co.nlolo.lifeplatform.product.api.PayoutPlan;
 import tz.co.nlolo.lifeplatform.product.api.PayoutTerms;
 import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
 import tz.co.nlolo.lifeplatform.product.api.FrequencyLoading;
+import tz.co.nlolo.lifeplatform.product.api.Ifrs17Terms;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.product.api.TiraFiling;
 import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
@@ -89,7 +90,8 @@ public class ProductController {
     @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
     public ResponseEntity<ProductSummaryView> createProduct(@Valid @RequestBody CreateProductRequest request,
                                                               @AuthenticationPrincipal Jwt jwt) {
-        ProductSummaryView view = productApi.createProduct(request.productCode(), request.productName(), request.category(), request.defaultCurrency(), jwt.getSubject());
+        ProductSummaryView view = productApi.createProduct(request.productCode(), request.productName(), request.category(),
+            request.portfolioCode(), request.defaultCurrency(), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
@@ -137,6 +139,8 @@ public class ProductController {
             request.annuity() != null ? request.annuity().toPlan() : AnnuityPlan.none(),
             request.funeral() != null ? request.funeral().toPlan() : FuneralPlan.none(),
             request.unitLinked() != null ? request.unitLinked().toPlan() : UnitLinkedPlan.none(),
+            // IFRS 17 I2: both optional -- remaining contracts, and the register's model.
+            new Ifrs17Terms(request.expectedProfitabilityBucket(), request.measurementModelOverride()),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }

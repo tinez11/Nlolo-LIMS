@@ -8,6 +8,8 @@ import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { PartyName } from '@/components/PartyName';
 import { AgentPicker } from '@/components/AgentPicker';
+import { BranchSelect } from '@/components/BranchSelect';
+import { CHANNEL_LABEL } from '@/lib/ifrs17';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { isSingleLifeProduct, PREMIUM_FREQUENCIES, PREMIUM_FREQUENCY_LABELS } from '@/api/types';
@@ -345,10 +347,25 @@ export function OpenUnderwritingCasePage() {
           </legend>
 
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Branch" error={errors.branch?.message}>
-              <Input
-                {...register('branch')}
+            <FormField label="Branch" hint="Blank takes the agent's branch, or yours.">
+              <Controller
+                control={control}
+                name="branchCode"
+                render={({ field }) => (
+                  <BranchSelect value={field.value} onChange={field.onChange} allowNone noneLabel="Default" />
+                )}
               />
+            </FormField>
+
+            <FormField label="Sales channel" hint="Blank takes the agent's channel, or Direct.">
+              <Select {...register('salesChannel')}>
+                <option value="">Default</option>
+                {Object.keys(CHANNEL_LABEL).map((c) => (
+                  <option key={c} value={c}>
+                    {CHANNEL_LABEL[c]}
+                  </option>
+                ))}
+              </Select>
             </FormField>
 
             <FormField label="Source of business" error={errors.sourceOfBusiness?.message}>

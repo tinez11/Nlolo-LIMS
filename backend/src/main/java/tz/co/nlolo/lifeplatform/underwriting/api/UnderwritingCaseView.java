@@ -120,7 +120,13 @@ public record UnderwritingCaseView(UUID caseId, UUID applicantPartyId, UUID prod
                                     // excess it decides. Null on a proposal. Serialized, so the
                                     // queue and the case page can say what is being decided.
                                     String evidenceForPolicyNumber,
-                                    UUID evidenceForMemberId) {
+                                    UUID evidenceForMemberId,
+                                    // IFRS 17 I2 (V18): the channel the sale came through and the
+                                    // branch it belongs to -- what the policy takes at issue -- and
+                                    // when the issue fixed them (null while they can still change).
+                                    String salesChannel,
+                                    String branchCode,
+                                    Instant saleLockedAt) {
 
     /**
      * The sum assured the proposal asked for, as Money on the wire -- null on a group case, which

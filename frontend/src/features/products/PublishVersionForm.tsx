@@ -6,11 +6,11 @@ import {
   BENEFIT_CALCULATION_METHODS,
   BENEFIT_CALCULATION_METHOD_LABELS,
   BENEFIT_TYPES,
-  IFRS_MEASUREMENT_MODELS,
   RATING_FACTOR_TYPES,
   type ProductCategory,
 } from '@/api/types';
 import { ConfirmAct } from '@/components/ConfirmAct';
+import { BUCKET_LABEL, MODEL_LABEL } from '@/lib/ifrs17';
 import { DatePicker } from '@/components/DatePicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
@@ -132,7 +132,8 @@ export function PublishVersionForm({
   } = useForm<PublishVersionFormInput, unknown, PublishVersionFormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      ifrsMeasurementModel: 'PAA',
+      expectedProfitabilityBucket: 'REMAINING',
+      measurementModelOverride: '',
       effectiveDate: '',
       retirementDate: '',
       // A FUNERAL version carries no rating factors (plan R1); every other starts with the two required.
@@ -244,13 +245,23 @@ export function PublishVersionForm({
   return (
     <form className="space-y-4" onSubmit={(e) => void handleSubmit((v) => setPending(v))(e)}>
       <div className="grid grid-cols-2 gap-3">
-        <FormField label="IFRS measurement model">
-          <Select
-            {...register('ifrsMeasurementModel')}
-          >
-            {IFRS_MEASUREMENT_MODELS.map((m) => (
+        {/* IFRS 17 I2: what the actuary signs off. The model is the accounting policy register's; an override
+            counts only where the register allows it for the product's portfolio. */}
+        <FormField label="Expected profitability">
+          <Select {...register('expectedProfitabilityBucket')}>
+            {(Object.keys(BUCKET_LABEL) as (keyof typeof BUCKET_LABEL)[]).map((b) => (
+              <option key={b} value={b}>
+                {BUCKET_LABEL[b]}
+              </option>
+            ))}
+          </Select>
+        </FormField>
+        <FormField label="Measurement model override">
+          <Select {...register('measurementModelOverride')}>
+            <option value="">None — the accounting policy register decides</option>
+            {(Object.keys(MODEL_LABEL) as (keyof typeof MODEL_LABEL)[]).map((m) => (
               <option key={m} value={m}>
-                {m}
+                {MODEL_LABEL[m]}
               </option>
             ))}
           </Select>

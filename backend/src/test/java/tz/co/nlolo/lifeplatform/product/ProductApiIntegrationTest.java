@@ -80,6 +80,7 @@ class ProductApiIntegrationTest {
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/product/V22__annuity_terms.sql",
             "db-migrations/product/V23__vesting_terms.sql",
+            "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -128,6 +129,61 @@ class ProductApiIntegrationTest {
         assertEquals("CREDIT_LIFE", jdbcTemplate.queryForObject(
             "SELECT category FROM product.product_definition WHERE product_id = ?",
             String.class, product.productId()));
+    }
+
+    // ---- IFRS 17 I2: classification at sale (product V27) ----
+
+    @Test
+    void aProductCarriesTheIfrs17PortfolioItWasCreatedWith() {
+        ProductSummaryView named = productApi.createProduct("PAR-01", "With profits", ProductCategory.ENDOWMENT,
+            PortfolioCode.PAR, "TZS", "actuary@nlolo.co.tz");
+        ProductSummaryView defaulted = productApi.createProduct("TERM-PF-01", "Term", ProductCategory.TERM_LIFE,
+            "TZS", "actuary@nlolo.co.tz");
+
+        assertEquals(PortfolioCode.PAR, named.portfolioCode());
+        assertEquals(PortfolioCode.PAR, productApi.getProduct(named.productId()).portfolioCode());
+        assertEquals(PortfolioCode.TERM, defaulted.portfolioCode(), "the old overload takes the category's portfolio");
+    }
+
+    @Test
+    void aRawInsertWithoutAPortfolioTakesItsCategorysOne() {
+        UUID id = UUID.randomUUID();
+        jdbcTemplate.update("INSERT INTO product.product_definition (product_id, tenant_id, product_code, product_name,"
+            + " category, default_currency) VALUES (?, ?, 'RAW-WL-01', 'Raw', 'WHOLE_LIFE', 'TZS')", id, TenantContext.get());
+        assertEquals("WL", jdbcTemplate.queryForObject(
+            "SELECT portfolio_code FROM product.product_definition WHERE product_id = ?", String.class, id));
+    }
+
+    @Test
+    void aVersionCarriesItsExpectedProfitabilityAndOverrideAndDefaultsToRemainingWithNone() {
+        ProductSummaryView product = productApi.createProduct("CRL-PF-01", "Lender scheme", ProductCategory.TERM_LIFE,
+            PortfolioCode.CRL, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), null, LocalDate.now().minusDays(1), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            null, List.of(), EligibilityBounds.none(), FrequencyLoading.none(), ANY_FILING, CashValuePlan.none(),
+            PayoutPlan.none(), AccumulationPlan.none(), DepositPlan.none(), BonusPlan.none(), AnnuityPlan.none(),
+            FuneralPlan.none(), UnitLinkedPlan.none(),
+            new Ifrs17Terms(ProfitabilityBucket.ONEROUS, Ifrs17Model.PAA), "actuary@nlolo.co.tz");
+
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+        assertEquals(PortfolioCode.CRL, snapshot.portfolioCode());
+        assertEquals(ProfitabilityBucket.ONEROUS, snapshot.profitabilityBucket());
+        assertEquals(Ifrs17Model.PAA, snapshot.modelOverride());
+        assertNull(snapshot.ifrsMeasurementModel(), "the legacy model is retired and not asked for");
+
+        ProductSummaryView older = productApi.createProduct("TERM-PF-02", "Term", ProductCategory.TERM_LIFE,
+            "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(older.productId(), IfrsMeasurementModel.GMM, LocalDate.now().minusDays(1), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            null, ANY_FILING, "actuary@nlolo.co.tz");
+        ProductSnapshotView olderSnapshot = productApi.getActiveSnapshot(older.productId(), LocalDate.now());
+        assertEquals(ProfitabilityBucket.REMAINING, olderSnapshot.profitabilityBucket());
+        assertNull(olderSnapshot.modelOverride(), "no override: the register decides");
+        assertEquals(PortfolioCode.TERM, productApi.getSnapshotByVersionId(olderSnapshot.productVersionId()).portfolioCode());
     }
 
     /**
@@ -1728,9 +1784,9 @@ class ProductApiIntegrationTest {
             .toList();
         // Nine: step 1 added the cash-value overload, step 2 the payout-plan one, step 3 the
         // accumulation-plan one, the fixed-term deposit the deposit-grid one, step 4 the with-profits
-        // one, step 5 the annuity one, family funeral cover the funeral one, step 6 the unit-linked one. A new overload must raise
-        // this count AND pass both checks below -- that is the point of counting.
-        assertEquals(12, declared.size(), "expected twelve publishVersion overloads");
+        // one, step 5 the annuity one, family funeral cover the funeral one, step 6 the unit-linked one, IFRS 17 I2 the
+        // Ifrs17Terms one. A new overload must raise this count AND pass both checks below -- that is the point of counting.
+        assertEquals(13, declared.size(), "expected thirteen publishVersion overloads");
         declared.forEach(m -> assertFalse(m.isDefault(),
             "publishVersion must not be a default method: Spring's proxy cannot apply "
                 + "@Transactional to one, so its delegation runs untransacted"));
@@ -1738,7 +1794,7 @@ class ProductApiIntegrationTest {
         List<Method> implementations = Arrays.stream(ProductApiImpl.class.getDeclaredMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        assertEquals(12, implementations.size(), "every overload must be implemented here");
+        assertEquals(13, implementations.size(), "every overload must be implemented here");
         implementations.forEach(m -> assertNotNull(m.getAnnotation(Transactional.class),
             "every publishVersion implementation must carry @Transactional, including the "
                 + "convenience overloads -- the retire-then-insert sequence must be atomic"));

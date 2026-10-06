@@ -119,6 +119,7 @@ class DistributionContractTest {
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/refdata/V4__seed_distribution_parameters.sql",
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
@@ -142,6 +143,7 @@ class DistributionContractTest {
             "db-migrations/product/V19__accumulation_terms.sql",
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
+            "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -157,6 +159,7 @@ class DistributionContractTest {
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
             "db-migrations/underwriting/V11__member_evidence_case.sql",
+            "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
@@ -172,8 +175,10 @@ class DistributionContractTest {
             "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/policy/V30__surrender.sql",
             "db-migrations/policy/V31__free_look_status.sql",
+            "db-migrations/policy/V37__sale_classification.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
+            "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
@@ -323,6 +328,42 @@ class DistributionContractTest {
     // ============================================================================================
     // POST /agents
     // ============================================================================================
+
+    /** IFRS 17 I2: an agent is onboarded with its channel and branch, and its placement can be changed. */
+    @Test
+    void anAgentsPlacementGoesInOnboardingAndChangesThroughItsOwnEndpoint() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        PartyView party = verifiedParty(tenantId, "ONB-PLACE");
+
+        String body = mockMvc.perform(post("/agents").with(financeStaffOf(tenantId))
+                .header("Idempotency-Key", "ct-onb-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"partyId":"%s","licenseNumber":"LIC-CT-PLACE","licenseExpiryDate":"%s","salesChannel":"BROKER","homeBranch":"ARU"}
+                    """.formatted(party.partyId(), LocalDate.now().plusYears(1))))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.salesChannel").value("BROKER"))
+            .andExpect(jsonPath("$.homeBranch").value("ARU"))
+            .andReturn().getResponse().getContentAsString();
+        String agentId = com.jayway.jsonpath.JsonPath.read(body, "$.agentId");
+
+        mockMvc.perform(put("/agents/{agentId}/placement", agentId).with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"salesChannel":"BANCASSURANCE","homeBranch":"MWZ"}"""))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.salesChannel").value("BANCASSURANCE"))
+            .andExpect(jsonPath("$.homeBranch").value("MWZ"));
+
+        mockMvc.perform(put("/agents/{agentId}/placement", agentId).with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"salesChannel":"AGENT","homeBranch":"NOPE"}"""))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("Unknown branch NOPE"));
+    }
 
     @Test
     void onboardAgentReturns201ForAVerifiedParty() throws Exception {

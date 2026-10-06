@@ -1,5 +1,14 @@
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Pause, Play } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Controller, useForm } from 'react-hook-form';
+import { updateAgentPlacement } from '@/api/distribution';
+import { BranchSelect } from '@/components/BranchSelect';
+import { FormField } from '@/components/FormField';
+import { Select } from '@/components/ui/input';
+import type { ApiError } from '@/lib/apiError';
+import { channelLabel } from '@/lib/ifrs17';
+import { AGENT_CHANNELS, agentPlacementSchema, type AgentPlacementValues } from './onboardAgentForm';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { readIdentity, staffRoles } from '@/auth/claims';
@@ -138,6 +147,8 @@ export function AgentDetailPage() {
                 }
               />
               <Field label="License expiry" value={formatDate(agent.licenseExpiryDate)} />
+              <Field label="Sales channel" value={channelLabel(agent.salesChannel)} />
+              <Field label="Home branch" value={agent.homeBranch ?? '—'} />
               <Field
                 label="Hierarchy parent"
                 value={
@@ -160,10 +171,98 @@ export function AgentDetailPage() {
               />
             </dl>
           )}
+          {canManage && agent && (
+            <PlacementForm
+              agentId={agentId}
+              salesChannel={agent.salesChannel}
+              homeBranch={agent.homeBranch ?? 'DSM'}
+              onSaved={() => void loadAgent(agentId)}
+            />
+          )}
         </Panel>
       </>
     );
   }
+}
+
+/**
+ * Change where an agent sells from and through what (IFRS 17 I2). Cases opened afterwards take the new defaults; a
+ * case already open keeps its own, and an issued policy never changes.
+ */
+function PlacementForm({
+  agentId,
+  salesChannel,
+  homeBranch,
+  onSaved,
+}: {
+  agentId: string;
+  salesChannel: string;
+  homeBranch: string;
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+  const form = useForm<AgentPlacementValues>({
+    resolver: zodResolver(agentPlacementSchema),
+    defaultValues: { salesChannel: salesChannel as AgentPlacementValues['salesChannel'], homeBranch },
+  });
+
+  if (!open) {
+    return (
+      <div className="px-4 pb-3">
+        <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>
+          Change placement
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      aria-label="Change placement"
+      className="space-y-3 px-4 pb-4"
+      onSubmit={form.handleSubmit(async (v) => {
+        setBusy(true);
+        setError(null);
+        try {
+          await updateAgentPlacement(agentId, v.salesChannel, v.homeBranch);
+          setOpen(false);
+          onSaved();
+        } catch (e) {
+          setError(e as ApiError);
+        } finally {
+          setBusy(false);
+        }
+      })}
+    >
+      {error && <InlineError error={error} />}
+      <FormField label="Sales channel">
+        <Select {...form.register('salesChannel')}>
+          {AGENT_CHANNELS.map((c) => (
+            <option key={c} value={c}>
+              {channelLabel(c)}
+            </option>
+          ))}
+        </Select>
+      </FormField>
+      <FormField label="Home branch" error={form.formState.errors.homeBranch?.message}>
+        <Controller
+          control={form.control}
+          name="homeBranch"
+          render={({ field }) => <BranchSelect value={field.value} onChange={field.onChange} />}
+        />
+      </FormField>
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" pending={busy}>
+          Save placement
+        </Button>
+        <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
 }
 
 

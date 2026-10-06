@@ -116,23 +116,27 @@ describe('proposal identity', () => {
     ).toBe(false);
   });
 
-  it('sends branch, source and proposed commencement when given', () => {
+  it('sends branch code, channel, source and proposed commencement when given', () => {
     const api = toApiRequest(
       openCaseFormSchema.parse({
         ...valid(),
-        branch: 'Ilala',
+        branchCode: 'ARU',
+        salesChannel: 'DIGITAL',
         sourceOfBusiness: 'Bancassurance',
         proposedCommencementDate: '2026-11-01',
       }),
     );
-    expect(api.branch).toBe('Ilala');
+    expect(api.branchCode).toBe('ARU');
+    expect(api.salesChannel).toBe('DIGITAL');
+    expect('branch' in api).toBe(false);
     expect(api.sourceOfBusiness).toBe('Bancassurance');
     expect(api.proposedCommencementDate).toBe('2026-11-01');
   });
 
   it('omits each of them when blank rather than sending an empty string', () => {
     const api = toApiRequest(openCaseFormSchema.parse(valid()));
-    expect('branch' in api).toBe(false);
+    expect('branchCode' in api).toBe(false);
+    expect('salesChannel' in api).toBe(false);
     expect('sourceOfBusiness' in api).toBe(false);
     expect('proposedCommencementDate' in api).toBe(false);
   });

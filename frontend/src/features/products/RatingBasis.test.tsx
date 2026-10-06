@@ -59,7 +59,8 @@ const snapshot = {
   productId: PRODUCT_ID,
   productVersionId: VERSION_ID,
   effectiveDate: '2026-01-01',
-  ifrsMeasurementModel: 'PAA',
+  portfolioCode: 'TERM',
+  profitabilityBucket: 'REMAINING',
   gracePeriodDays: 30,
 } as ProductSnapshot;
 

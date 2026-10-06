@@ -73,6 +73,8 @@ public class FinaccountingApiImpl implements FinaccountingApi {
     private final PolicyRegister register;
     private final ChartOfAccountSeeder seeder;
 
+    private final PolicyClassifier classifier;
+
     public FinaccountingApiImpl(JournalEntryRepository journalEntryRepository,
                                  GlPostingRepository glPostingRepository,
                                  ChartOfAccountRepository chartOfAccountRepository,
@@ -80,7 +82,9 @@ public class FinaccountingApiImpl implements FinaccountingApi {
                                  PolicyElectionRepository elections,
                                  AccountingPeriods periods,
                                  PolicyRegister register,
-                                 ChartOfAccountSeeder seeder) {
+                                 ChartOfAccountSeeder seeder,
+                                 PolicyClassifier classifier) {
+        this.classifier = classifier;
         this.elections = elections;
         this.periods = periods;
         this.register = register;
@@ -495,6 +499,11 @@ public class FinaccountingApiImpl implements FinaccountingApi {
     public List<PolicyElectionView> policyElections(java.time.LocalDate asOf) {
         seeder.seedPolicyRegisterIfAbsent(TenantContext.get());
         return register.list(asOf);
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.finaccounting.api.PolicyClassificationView> policyClassifications(String policyNumber) {
+        return classifier.classifications(TenantContext.get(), policyNumber);
     }
 
     @Override

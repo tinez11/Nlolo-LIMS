@@ -31,7 +31,8 @@ const deathBenefit = {
 // Built on the blank form so the fixture always carries every key a real submission has.
 const valid = () => ({
   ...blankPublishVersionForm(),
-  ifrsMeasurementModel: 'PAA' as const,
+  expectedProfitabilityBucket: 'REMAINING' as const,
+  measurementModelOverride: '' as const,
   effectiveDate: '2026-01-01',
   retirementDate: '',
   ratingTable: [ageRow, sumRow],

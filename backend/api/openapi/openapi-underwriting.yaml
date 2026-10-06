@@ -441,6 +441,43 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/GroupProposal' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /underwriting/cases/{caseId}/sale:
+    put:
+      summary: Record the channel the sale came through and the branch it belongs to
+      description: >-
+        IFRS 17 I2 (spec §6). Both are defaulted when the case opens and editable until the policy is issued, which
+        fixes them (saleLockedAt) -- the policy carries them for good and they are posting dimensions.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaleRequest' }
+      responses:
+        '200':
+          description: The case, with its sale recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnderwritingCaseView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: "The policy is issued; the sale is fixed"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422':
+          description: "An unknown channel or branch"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /underwriting/cases/{caseId}/referral:
     post:
       summary: Refer a borderline case to a senior underwriter
@@ -623,6 +660,16 @@ components:
             and minting one here would make it the de facto schema before anybody ratified it.
           type: [string, "null"]
           maxLength: 60
+        salesChannel:
+          description: >-
+            IFRS 17 I2. Omitted means the case's default: the agent of record's channel, else BANCASSURANCE for a
+            credit-life product, else DIRECT. Editable until the policy is issued.
+          type: [string, "null"]
+          enum: [AGENT, BROKER, BANCASSURANCE, DIRECT, DIGITAL, null]
+        branchCode:
+          description: >-
+            IFRS 17 I2, a refdata BRANCH code. Omitted means the agent's home branch, else the opening staff member's.
+          type: [string, "null"]
         proposedCommencementDate:
           description: >-
             When the applicant wants risk to start. A proposal taken today commonly asks for
@@ -740,6 +787,13 @@ components:
         premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         commencementDate: { type: [string, "null"], format: date }
         policyTermMonths: { type: [integer, "null"] }
+        salesChannel:
+          description: "IFRS 17 I2; see OpenCaseRequest.salesChannel."
+          type: [string, "null"]
+          enum: [AGENT, BROKER, BANCASSURANCE, DIRECT, DIGITAL, null]
+        branchCode:
+          description: "IFRS 17 I2, a refdata BRANCH code; see OpenCaseRequest.branchCode."
+          type: [string, "null"]
     GroupProposal:
       description: >-
         A group scheme as asked for, before anybody has agreed to write it. Everything policy
@@ -815,6 +869,12 @@ components:
             nomination is a real instrument and cannot be revised without the beneficiary's
             consent. Defaults to true.
           type: boolean
+    SaleRequest:
+      type: object
+      required: [salesChannel, branchCode]
+      properties:
+        salesChannel: { type: string, enum: [AGENT, BROKER, BANCASSURANCE, DIRECT, DIGITAL] }
+        branchCode: { type: string, description: "A refdata BRANCH code." }
     SubmitAssessmentRequest:
       type: object
       required: [assessmentType, findings]
@@ -998,6 +1058,17 @@ components:
             schema before anybody ratified it.
           type: [string, "null"]
         proposedCommencementDate: { type: [string, "null"], format: date }
+        salesChannel:
+          description: "IFRS 17 I2: the channel the sale came through. Null only on a case opened before I2."
+          type: [string, "null"]
+          enum: [AGENT, BROKER, BANCASSURANCE, DIRECT, DIGITAL, null]
+        branchCode:
+          description: "IFRS 17 I2: a refdata BRANCH code; null until somebody names one."
+          type: [string, "null"]
+        saleLockedAt:
+          description: "When the policy was issued and the sale fixed; null while channel and branch can still change."
+          type: [string, "null"]
+          format: date-time
         recommendationOutcome:
           description: >-
             What the rules engine suggests on the evidence gathered so far. ADVICE, not the

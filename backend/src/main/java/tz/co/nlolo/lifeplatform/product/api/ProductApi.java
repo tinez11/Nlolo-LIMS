@@ -143,7 +143,12 @@ public interface ProductApi {
                             PremiumFrequency frequency, int instalmentsPerYear,
                             BigDecimal instalmentAmount) {}
 
+    /** Takes the category's default portfolio ({@link PortfolioCode#defaultFor}). */
     ProductSummaryView createProduct(String productCode, String productName, ProductCategory category, String defaultCurrency, String createdBy);
+
+    /** With the IFRS 17 portfolio named (spec §6); the console always names one. */
+    ProductSummaryView createProduct(String productCode, String productName, ProductCategory category, PortfolioCode portfolioCode,
+                                     String defaultCurrency, String createdBy);
 
     List<ProductSummaryView> listActiveProducts(ProductCategory categoryFilter);
 
@@ -361,6 +366,19 @@ public interface ProductApi {
                          TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
                          AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
                          AnnuityPlan annuityPlan, FuneralPlan funeralPlan, UnitLinkedPlan unitLinkedPlan, String publishedBy);
+
+    /**
+     * The fullest form since IFRS 17 I2: also the version's {@link Ifrs17Terms} -- its expected profitability and a
+     * measurement-model override or none. Every other overload delegates here with {@link Ifrs17Terms#DEFAULT}.
+     * {@code ifrsMeasurementModel} is retired and may be null; the model is the accounting policy register's.
+     */
+    void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                         List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                         TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
+                         AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
+                         AnnuityPlan annuityPlan, FuneralPlan funeralPlan, UnitLinkedPlan unitLinkedPlan,
+                         Ifrs17Terms ifrs17, String publishedBy);
 
     /**
      * A UNIT_LINKED version's terms; {@link UnitLinkedPlan#none()} for every other version. Asks the product's

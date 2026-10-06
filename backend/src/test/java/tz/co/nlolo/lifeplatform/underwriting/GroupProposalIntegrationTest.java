@@ -78,6 +78,7 @@ class GroupProposalIntegrationTest {
             "db-migrations/product/V19__accumulation_terms.sql",
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
+            "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -93,7 +94,9 @@ class GroupProposalIntegrationTest {
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
             "db-migrations/underwriting/V11__member_evidence_case.sql",
-            "db-migrations/refdata/V1__create_refdata_schema.sql");
+            "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
+            "db-migrations/refdata/V1__create_refdata_schema.sql",
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql");
     }
 
     @Autowired private UnderwritingApi underwritingApi;

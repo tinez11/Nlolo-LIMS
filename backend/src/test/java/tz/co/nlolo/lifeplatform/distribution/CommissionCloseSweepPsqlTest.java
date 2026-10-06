@@ -48,7 +48,8 @@ class CommissionCloseSweepPsqlTest {
     static void applyMigrationsAndCloseFunction() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/distribution/V1__create_distribution_schema.sql",
-            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
+            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
+            "db-migrations/distribution/V5__agent_channel_and_home_branch.sql");
 
         String fullFile = Files.readString(SWEEP_FILE);
         String functionOnly = fullFile.substring(0, fullFile.indexOf("-- Daily at 01:00"));

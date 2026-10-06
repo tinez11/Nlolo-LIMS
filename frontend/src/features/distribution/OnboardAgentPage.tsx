@@ -11,12 +11,15 @@ import { FormField } from '@/components/FormField';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { useDistributionStore } from '@/store/distributionStore';
 import {
+  AGENT_CHANNELS,
   blankOnboardAgentForm,
   onboardAgentFormSchema,
   toApiRequest,
   type OnboardAgentFormValues,
 } from './onboardAgentForm';
-import { Input } from '@/components/ui/input';
+import { BranchSelect } from '@/components/BranchSelect';
+import { Input, Select } from '@/components/ui/input';
+import { channelLabel } from '@/lib/ifrs17';
 import { InlineError } from '@/components/InlineError';
 
 /**
@@ -106,6 +109,25 @@ export function OnboardAgentPage() {
             )}
           />
         </FormField>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <FormField label="Sales channel" error={errors.salesChannel?.message}>
+            <Select {...register('salesChannel')}>
+              {AGENT_CHANNELS.map((c) => (
+                <option key={c} value={c}>
+                  {channelLabel(c)}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+          <FormField label="Home branch" error={errors.homeBranch?.message}>
+            <Controller
+              control={control}
+              name="homeBranch"
+              render={({ field }) => <BranchSelect value={field.value} onChange={field.onChange} />}
+            />
+          </FormField>
+        </div>
 
         <FormField label="Reports to (optional)" error={errors.hierarchyParentId?.message}>
           {/*

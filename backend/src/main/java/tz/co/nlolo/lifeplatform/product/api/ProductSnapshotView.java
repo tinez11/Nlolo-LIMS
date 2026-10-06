@@ -22,4 +22,10 @@ public record ProductSnapshotView(UUID productId, UUID productVersionId, LocalDa
                                    EligibilityBounds eligibility,
                                    /** Months from cover start; null where the product has no such exclusion. */
                                    Integer suicideExclusionMonths,
-                                   Integer preExistingExclusionMonths) {}
+                                   Integer preExistingExclusionMonths,
+                                   // IFRS 17 I2: what policy stamps on a contract at sale. ifrsMeasurementModel above is
+                                   // retired (null for a version published since I2); the register decides the model.
+                                   PortfolioCode portfolioCode,
+                                   ProfitabilityBucket profitabilityBucket,
+                                   /** Null: the register's model applies. */
+                                   Ifrs17Model modelOverride) {}

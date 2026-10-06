@@ -11,6 +11,7 @@ import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionValidationException;
 import tz.co.nlolo.lifeplatform.distribution.api.LicenseStatus;
 import tz.co.nlolo.lifeplatform.distribution.api.PlanStatus;
+import tz.co.nlolo.lifeplatform.distribution.api.SalesChannel;
 import tz.co.nlolo.lifeplatform.distribution.api.TierType;
 import tz.co.nlolo.lifeplatform.distribution.domain.AgentProfile;
 import tz.co.nlolo.lifeplatform.distribution.infrastructure.AgentProfileRepository;
@@ -45,6 +46,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 import tz.co.nlolo.lifeplatform.product.api.BenefitCalculationMethod;
@@ -82,6 +84,7 @@ class DistributionApiIntegrationTest {
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/refdata/V4__seed_distribution_parameters.sql",
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
@@ -105,13 +108,15 @@ class DistributionApiIntegrationTest {
             "db-migrations/product/V19__accumulation_terms.sql",
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
+            "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
             "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
-            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
+            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
+            "db-migrations/distribution/V5__agent_channel_and_home_branch.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -173,6 +178,43 @@ class DistributionApiIntegrationTest {
         AgentView reloaded = distributionApi.getAgent(view.agentId());
         assertThat(reloaded.agentId()).isEqualTo(view.agentId());
         assertThat(reloaded.licenseNumber()).isEqualTo("LIC-ONBOARD-01");
+    }
+
+    // ---- IFRS 17 I2: an agent's channel and home branch -------------------------------------------
+
+    @Test
+    void anAgentSellsThroughAChannelFromABranchAndCanBeReplaced() {
+        UUID tenantId = UUID.randomUUID();
+        PartyView broker = registerVerifiedParty(tenantId, "AGT-PLACE-01");
+        AgentView placed = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            broker.partyId(), "LIC-PLACE-01", LocalDate.now().plusYears(1), null, SalesChannel.BROKER, "ARU"), "staff-1");
+        assertThat(placed.salesChannel()).isEqualTo(SalesChannel.BROKER);
+        assertThat(placed.homeBranch()).isEqualTo("ARU");
+
+        PartyView plain = registerVerifiedParty(tenantId, "AGT-PLACE-02");
+        AgentView defaulted = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            plain.partyId(), "LIC-PLACE-02", LocalDate.now().plusYears(1), null), "staff-1");
+        assertThat(defaulted.salesChannel()).isEqualTo(SalesChannel.AGENT);
+        assertThat(defaulted.homeBranch()).isNull();
+
+        TenantContext.set(tenantId);
+        AgentView moved = distributionApi.updateAgentPlacement(placed.agentId(), SalesChannel.BANCASSURANCE, "MWZ", "staff-2");
+        assertThat(moved.salesChannel()).isEqualTo(SalesChannel.BANCASSURANCE);
+        assertThat(distributionApi.getAgent(placed.agentId()).homeBranch()).isEqualTo("MWZ");
+    }
+
+    @Test
+    void anAgentCannotSellDirectAndABranchMustBeOnTheList() {
+        UUID tenantId = UUID.randomUUID();
+        PartyView party = registerVerifiedParty(tenantId, "AGT-PLACE-03");
+        assertThatThrownBy(() -> distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            party.partyId(), "LIC-PLACE-03", LocalDate.now().plusYears(1), null, SalesChannel.DIRECT, "DSM"), "staff-1"))
+            .isInstanceOf(DistributionValidationException.class)
+            .hasMessage("An agent sells through AGENT, BROKER or BANCASSURANCE");
+        assertThatThrownBy(() -> distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            party.partyId(), "LIC-PLACE-03", LocalDate.now().plusYears(1), null, SalesChannel.AGENT, "XYZ"), "staff-1"))
+            .isInstanceOf(DistributionValidationException.class)
+            .hasMessage("Unknown branch XYZ");
     }
 
     // ---- M13: listAgents ---------------------------------------------------------------------

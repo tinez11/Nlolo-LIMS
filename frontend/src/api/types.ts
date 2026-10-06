@@ -282,6 +282,8 @@ export type AccountingPeriodView = FinaccountingComponents['schemas']['Accountin
 export type PeriodStatus = FinaccountingComponents['schemas']['PeriodStatus'];
 /** The effective-dated accounting policy register (IFRS 17 spec §3). */
 export type PolicyElectionView = FinaccountingComponents['schemas']['PolicyElectionView'];
+/** A contract's IFRS 17 classification (I2). */
+export type PolicyClassificationView = FinaccountingComponents['schemas']['PolicyClassificationView'];
 export type PolicyElectionInput = FinaccountingComponents['schemas']['PolicyElectionInput'];
 export type ElectionKey = PolicyElectionInput['key'];
 

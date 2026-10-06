@@ -89,6 +89,17 @@ public class UnderwritingCase {
     @Column(name = "source_of_business")
     private String sourceOfBusiness;
 
+    // IFRS 17 I2 (V18): the channel the sale came through and the branch it belongs to -- controlled codes, beside the
+    // free-text `branch` above. Defaulted at open, editable until the policy is issued, which sets sale_locked_at.
+    @Column(name = "sales_channel")
+    private String salesChannel;
+
+    @Column(name = "branch_code")
+    private String branchCode;
+
+    @Column(name = "sale_locked_at")
+    private java.time.Instant saleLockedAt;
+
     @Column(name = "proposed_commencement_date")
     private LocalDate proposedCommencementDate;
 
@@ -242,6 +253,28 @@ public class UnderwritingCase {
     public UUID getLifeAssuredPartyId() { return lifeAssuredPartyId; }
     public String getBranch() { return branch; }
     public String getSourceOfBusiness() { return sourceOfBusiness; }
+    public String getSalesChannel() { return salesChannel; }
+    public String getBranchCode() { return branchCode; }
+    public java.time.Instant getSaleLockedAt() { return saleLockedAt; }
+
+    /**
+     * Record the channel and branch (IFRS 17 I2). Validated by the service against refdata; refused here once the
+     * policy is issued, because the policy has already taken them for good.
+     */
+    public void recordSale(String salesChannel, String branchCode) {
+        if (saleLockedAt != null) {
+            throw new tz.co.nlolo.lifeplatform.underwriting.api.SaleFixedException();
+        }
+        this.salesChannel = salesChannel;
+        this.branchCode = branchCode;
+    }
+
+    /** The policy is issued: channel and branch are fixed. Idempotent. */
+    public void lockSale(java.time.Instant at) {
+        if (saleLockedAt == null) {
+            saleLockedAt = at;
+        }
+    }
     public LocalDate getProposedCommencementDate() { return proposedCommencementDate; }
 
     public UUID getCaseId() { return caseId; }

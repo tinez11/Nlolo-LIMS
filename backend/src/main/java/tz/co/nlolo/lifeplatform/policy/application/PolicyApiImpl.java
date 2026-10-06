@@ -274,6 +274,9 @@ public class PolicyApiImpl implements PolicyApi {
         // See Policy.recordIssuedOn for the readers that would otherwise get a null.
         policy.recordIssuedOn(LocalDate.now());
         recordIssuance(policy, request.issuanceBasis(), request.reasonForManualIssue(), underwritingCaseId, issuedByName);
+        // IFRS 17 I2: classified at sale, from the product, the version, the case and the agent.
+        policy.classifyAtSale(saleClassification(productApi.getSnapshotByVersionId(request.productVersionId()),
+            underwritingCaseId, policy.getAgentOfRecordId(), policy.getIssueDate()));
 
         // An accepted decision produces an OFFER, not cover. The policy exists so the customer
         // has something to pay against -- billing raises its first invoice off PolicyIssued --
@@ -358,7 +361,12 @@ public class PolicyApiImpl implements PolicyApi {
         // by the aggregate after applyTerm, because billing may not read policy's tables.
         putPremiumPayingUntil(payload, policy);
         putIssuanceRecord(payload, policy, issuedBy);
+        putSaleClassification(payload, policy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
+        // IFRS 17 I2: the case's channel and branch are the policy's now; the case may no longer change them.
+        if (policy.getUnderwritingCaseId() != null) {
+            underwritingApi.lockSale(policy.getUnderwritingCaseId());
+        }
 
         // Both events together for an immediate-cover issuance, so every downstream consumer
         // behaves exactly as it did before this change.
@@ -2319,6 +2327,66 @@ public class PolicyApiImpl implements PolicyApi {
         policy.recordIssuance(basis != null ? basis.name() : null, exceptionRoute ? reason : null, issuedByName);
     }
 
+    /**
+     * The IFRS 17 sale facts (I2, spec §6): portfolio, bucket and override from the version the policy pins; cohort
+     * from the issue year; channel and branch from the case, else the agent, else the platform's defaults --
+     * BANCASSURANCE for a lender's credit life or DIRECT, and the head-office branch (refdata HEAD_OFFICE_BRANCH).
+     */
+    private tz.co.nlolo.lifeplatform.policy.domain.SaleClassification saleClassification(ProductSnapshotView version,
+            UUID underwritingCaseId, UUID agentOfRecordId, LocalDate issuedOn) {
+        String channel = null;
+        String branch = null;
+        if (underwritingCaseId != null) {
+            try {
+                var underwritten = underwritingApi.getCase(underwritingCaseId);
+                channel = underwritten.salesChannel();
+                branch = underwritten.branchCode();
+            } catch (tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseNotFoundException e) {
+                // a case id with no case is refused elsewhere; here it only means no sale was recorded
+            }
+        }
+        if (agentOfRecordId != null && (channel == null || branch == null)) {
+            var agent = distributionApi.getAgent(agentOfRecordId);
+            if (channel == null && agent.salesChannel() != null) {
+                channel = agent.salesChannel().name();
+            }
+            if (branch == null) {
+                branch = agent.homeBranch();
+            }
+        }
+        if (channel == null) {
+            channel = version.category() == ProductCategory.CREDIT_LIFE ? "BANCASSURANCE" : "DIRECT";
+        }
+        if (branch == null) {
+            branch = headOfficeBranch();
+        }
+        return new tz.co.nlolo.lifeplatform.policy.domain.SaleClassification(
+            version.portfolioCode() != null ? version.portfolioCode().name() : null,
+            issuedOn.getYear(),
+            version.profitabilityBucket() != null ? version.profitabilityBucket().name() : "REMAINING",
+            version.modelOverride() != null ? version.modelOverride().name() : null,
+            channel, branch);
+    }
+
+    /** Null where the platform has no head office configured (a schema without refdata V8). */
+    private String headOfficeBranch() {
+        try {
+            return referenceDataApi.getValue("HEAD_OFFICE_BRANCH", "TZ");
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** IFRS 17 I2: what finaccounting classifies the contract from (its PolicyClassificationEventListener). */
+    private static void putSaleClassification(Map<String, Object> payload, Policy policy) {
+        payload.put("portfolioCode", policy.getPortfolioCode());
+        payload.put("cohortYear", policy.getCohortYear());
+        payload.put("profitabilityBucket", policy.getProfitabilityBucket());
+        payload.put("measurementModelOverride", policy.getMeasurementModelOverride());
+        payload.put("salesChannel", policy.getSalesChannel());
+        payload.put("branchCode", policy.getBranchCode());
+    }
+
     /** The same record, on PolicyIssued -- so the audit log carries it, which it never did. */
     private static void putIssuanceRecord(Map<String, Object> payload, Policy policy, String issuedBy) {
         payload.put("underwritingCaseId", policy.getUnderwritingCaseId());
@@ -2529,6 +2597,9 @@ public class PolicyApiImpl implements PolicyApi {
         // assured, and the lives are the schedule below.
         policy.recordIssuedOn(today);
         recordIssuance(policy, request.issuanceBasis(), request.reasonForManualIssue(), underwritingCaseId, issuedByName);
+        // IFRS 17 I2: a scheme is classified at sale like any contract; its members are inside it.
+        policy.classifyAtSale(saleClassification(productApi.getSnapshotByVersionId(request.productVersionId()),
+            underwritingCaseId, agentOfRecordId, today));
         // AN OFFER, not cover, unless the basis already carries cover. Identical to
         // issuePolicy: a scheme is a contract an employer accepts by paying for it, and the
         // first cleared premium is that acceptance.
@@ -2624,7 +2695,12 @@ public class PolicyApiImpl implements PolicyApi {
         // annually renewable group scheme), a date on a fixed-term one so billing stops at term end.
         putPremiumPayingUntil(payload, policy);
         putIssuanceRecord(payload, policy, issuedBy);
+        putSaleClassification(payload, policy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
+        // IFRS 17 I2: the case's channel and branch are the policy's now; the case may no longer change them.
+        if (policy.getUnderwritingCaseId() != null) {
+            underwritingApi.lockSale(policy.getUnderwritingCaseId());
+        }
 
         // Both events together for an immediate-cover issuance, exactly as issuePolicy does.
         //
@@ -3505,6 +3581,8 @@ public class PolicyApiImpl implements PolicyApi {
             policy.getCommencementDate(), policy.getPolicyTermMonths(),
             policy.getPremiumPayingTermMonths(), policy.getMaturityDate(),
             policy.getLifeAssuredPartyId(), policy.getProductCategory(),
-            policy.getIssuanceBasis(), policy.getIssuanceReason(), policy.getIssuedByName());
+            policy.getIssuanceBasis(), policy.getIssuanceReason(), policy.getIssuedByName(),
+            policy.getPortfolioCode(), policy.getCohortYear(), policy.getProfitabilityBucket(),
+            policy.getMeasurementModelOverride(), policy.getSalesChannel(), policy.getBranchCode());
     }
 }

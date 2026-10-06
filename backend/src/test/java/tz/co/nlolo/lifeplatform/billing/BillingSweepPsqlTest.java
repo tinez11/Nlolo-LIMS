@@ -48,6 +48,7 @@ class BillingSweepPsqlTest {
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
             // The policy schema is new to this list, and not incidental: the arrears step of the
@@ -67,7 +68,8 @@ class BillingSweepPsqlTest {
             "db-migrations/policy/V28__policies_due_to_expire.sql",
             "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/policy/V30__surrender.sql",
-            "db-migrations/policy/V31__free_look_status.sql");
+            "db-migrations/policy/V31__free_look_status.sql",
+            "db-migrations/policy/V37__sale_classification.sql");
 
         String fullFile = Files.readString(Path.of("db-migrations/_post-migration/configure-billing-sweep.sql"));
         String functionOnly = fullFile.substring(0, fullFile.indexOf("-- Every 15 minutes"));

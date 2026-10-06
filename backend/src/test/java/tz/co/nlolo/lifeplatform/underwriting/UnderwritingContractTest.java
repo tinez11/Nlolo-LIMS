@@ -71,6 +71,7 @@ class UnderwritingContractTest {
             "db-migrations/product/V21__bonus_terms.sql",
             // Family funeral cover: V24 widens the category CHECK and holds the funeral terms.
             "db-migrations/product/V24__funeral_terms.sql",
+            "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -88,7 +89,9 @@ class UnderwritingContractTest {
             "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/underwriting/V13__single_premium_frequency.sql",
             "db-migrations/underwriting/V16__funeral_application.sql",
+            "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");
@@ -281,7 +284,7 @@ class UnderwritingContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"UW-FUN-%s","productName":"UW Funeral Contract Test","category":"FUNERAL","defaultCurrency":"TZS"}
+                    {"productCode":"UW-FUN-%s","productName":"UW Funeral Contract Test","category":"FUNERAL","portfolioCode":"FUN","defaultCurrency":"TZS"}
                     """.formatted(UUID.randomUUID().toString().substring(0, 8))))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
@@ -319,7 +322,7 @@ class UnderwritingContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"UW-GRP-%s","productName":"UW Group Contract Test","category":"GROUP_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"UW-GRP-%s","productName":"UW Group Contract Test","category":"GROUP_LIFE","portfolioCode":"GRPL","defaultCurrency":"TZS"}
                     """.formatted(UUID.randomUUID().toString().substring(0, 8))))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
@@ -352,7 +355,7 @@ class UnderwritingContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"UW-CONTRACT-%s","productName":"UW Contract Test","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    {"productCode":"UW-CONTRACT-%s","productName":"UW Contract Test","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """.formatted(UUID.randomUUID().toString().substring(0, 8))))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
@@ -400,6 +403,62 @@ class UnderwritingContractTest {
         UUID applicantId = registerTestApplicant(tenantId);
         ProductFixture product = publishTestProduct(tenantId);
         openCaseViaHttp(tenantId, applicantId, product.productId(), product.productVersionId());
+    }
+
+    /**
+     * IFRS 17 I2: a staff member opening a case gives it their own home branch (the home_branch claim), the request
+     * may name the sale outright, and PUT /sale changes it until the policy is issued.
+     */
+    @Test
+    void theSaleTakesTheOpenersBranchAndChangesOverTheWire() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerTestApplicant(tenantId);
+        ProductFixture product = publishTestProduct(tenantId);
+
+        String opened = mockMvc.perform(post("/underwriting/cases")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()).claim("home_branch", "ARU")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"applicantPartyId":"%s","productId":"%s","productVersionId":"%s","sumAssured":{"amount":"1000000.00","currencyCode":"TZS"}}
+                    """.formatted(applicantId, product.productId(), product.productVersionId())))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.salesChannel").value("DIRECT"))
+            .andExpect(jsonPath("$.branchCode").value("ARU"))
+            .andReturn().getResponse().getContentAsString();
+        String caseId = JsonPath.read(opened, "$.caseId");
+
+        mockMvc.perform(post("/underwriting/cases")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()).claim("home_branch", "ARU")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"applicantPartyId":"%s","productId":"%s","productVersionId":"%s","sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "salesChannel":"DIGITAL","branchCode":"DOD"}
+                    """.formatted(applicantId, product.productId(), product.productVersionId())))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.salesChannel").value("DIGITAL"))
+            .andExpect(jsonPath("$.branchCode").value("DOD"));
+
+        mockMvc.perform(put("/underwriting/cases/" + caseId + "/sale")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"salesChannel":"BROKER","branchCode":"MWZ"}"""))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.salesChannel").value("BROKER"))
+            .andExpect(jsonPath("$.branchCode").value("MWZ"));
+
+        mockMvc.perform(put("/underwriting/cases/" + caseId + "/sale")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"salesChannel":"BROKER","branchCode":"NOWHERE"}"""))
+            .andExpect(status().isUnprocessableEntity());
     }
 
     @Test

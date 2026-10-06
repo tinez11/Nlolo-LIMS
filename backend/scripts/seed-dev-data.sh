@@ -92,7 +92,7 @@ fi
 
 echo "=== Step 1: Product + version (staff.admin -- authoring is ADMIN-only) ==="
 PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
-  '{"productCode":"DEMO-TERM-01","productName":"Demo Term Life","category":"TERM_LIFE","defaultCurrency":"TZS"}')
+  '{"productCode":"DEMO-TERM-01","productName":"Demo Term Life","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}')
 PRODUCT_ID=$(jsonval "$PRODUCT_JSON" productId)
 echo "productId=$PRODUCT_ID"
 
@@ -129,7 +129,7 @@ echo "productVersionId=$PRODUCT_VERSION_ID"
 # the form is for.
 echo "=== Step 1a: Endowment product with a cash-value table (staff.admin) ==="
 END_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
-  '{"productCode":"DEMO-END-01","productName":"Demo Endowment","category":"ENDOWMENT","defaultCurrency":"TZS"}')
+  '{"productCode":"DEMO-END-01","productName":"Demo Endowment","category":"ENDOWMENT","portfolioCode":"END","defaultCurrency":"TZS"}')
 END_PRODUCT_ID=$(jsonval "$END_PRODUCT_JSON" productId)
 echo "endowmentProductId=$END_PRODUCT_ID"
 
@@ -166,7 +166,7 @@ echo "$END_VERSION_RESP" | head -1
 # form is for. The e2e suite issues against this product per run.
 echo "=== Step 1a2: Money-back endowment, paying while the life assured lives (staff.admin) ==="
 MB_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
-  '{"productCode":"END-MB-20","productName":"Nlolo Money-Back 20","category":"ENDOWMENT","defaultCurrency":"TZS"}')
+  '{"productCode":"END-MB-20","productName":"Nlolo Money-Back 20","category":"ENDOWMENT","portfolioCode":"MB","defaultCurrency":"TZS"}')
 MB_PRODUCT_ID=$(jsonval "$MB_PRODUCT_JSON" productId)
 echo "moneyBackProductId=$MB_PRODUCT_ID"
 
@@ -197,7 +197,7 @@ echo "$MB_VERSION_RESP" | head -1
 # are demonstration figures, not an actuarial basis: 5% held back from each premium in year 1 and
 # 1% after, 2%/1% on a transfer in, and a 1,000 monthly fee throughout.
 SAVE_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
-  '{"productCode":"SAVE-PLAN-01","productName":"Nlolo Akiba Plan","category":"ENDOWMENT","defaultCurrency":"TZS"}')
+  '{"productCode":"SAVE-PLAN-01","productName":"Nlolo Akiba Plan","category":"ENDOWMENT","portfolioCode":"SAV","defaultCurrency":"TZS"}')
 SAVE_PRODUCT_ID=$(jsonval "$SAVE_PRODUCT_JSON" productId)
 echo "savingsPlanProductId=$SAVE_PRODUCT_ID"
 
@@ -221,7 +221,7 @@ echo "$SAVE_VERSION_RESP" | head -1
 # is seeded -- proposing one and having a second person approve it is what the product page is for,
 # and one approved declaration per valuation date means a seeded one would block that on day one.
 WP_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
-  '{"productCode":"WP-ENDOW-01","productName":"Nlolo Faida Endowment","category":"ENDOWMENT","defaultCurrency":"TZS"}')
+  '{"productCode":"WP-ENDOW-01","productName":"Nlolo Faida Endowment","category":"ENDOWMENT","portfolioCode":"PAR","defaultCurrency":"TZS"}')
 WP_PRODUCT_ID=$(jsonval "$WP_PRODUCT_JSON" productId)
 echo "withProfitsProductId=$WP_PRODUCT_ID"
 
@@ -245,7 +245,7 @@ echo "$WP_VERSION_RESP" | head -1
 # cover every entry age 55-85 because a gap is refused at publish. No withholding rule is seeded:
 # finance proposes one and a second person approves it, which is what the screen is for.
 ANN_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
-  '{"productCode":"ANN-LIFE-01","productName":"Nlolo Pensheni Annuity","category":"ANNUITY","defaultCurrency":"TZS"}')
+  '{"productCode":"ANN-LIFE-01","productName":"Nlolo Pensheni Annuity","category":"ANNUITY","portfolioCode":"IANN","defaultCurrency":"TZS"}')
 ANN_PRODUCT_ID=$(jsonval "$ANN_PRODUCT_JSON" productId)
 echo "annuityProductId=$ANN_PRODUCT_ID"
 
@@ -276,7 +276,7 @@ echo "$ANN_VERSION_RESP" | head -1
 # 25% taken as a lump sum. Locked: nothing can be surrendered or withdrawn before it vests. Its grid
 # covers the VESTING ages, not the entry ages; the rates are generated, NOT actuarial.
 PEN_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
-  '{"productCode":"PEN-DEF-01","productName":"Nlolo Pensheni Akiba","category":"ANNUITY","defaultCurrency":"TZS"}')
+  '{"productCode":"PEN-DEF-01","productName":"Nlolo Pensheni Akiba","category":"ANNUITY","portfolioCode":"PEN","defaultCurrency":"TZS"}')
 PEN_PRODUCT_ID=$(jsonval "$PEN_PRODUCT_JSON" productId)
 echo "pensionProductId=$PEN_PRODUCT_ID"
 
@@ -309,7 +309,7 @@ echo "$PEN_VERSION_RESP" | head -1
 # ends with the main member -- the family covered free to the next premium date. No rating table: the
 # premium table is its whole price. The premiums are illustrative, NOT actuarial.
 FUN_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
-  '{"productCode":"FUN-FAM-01","productName":"Nlolo Familia","category":"FUNERAL","defaultCurrency":"TZS"}')
+  '{"productCode":"FUN-FAM-01","productName":"Nlolo Familia","category":"FUNERAL","portfolioCode":"FUN","defaultCurrency":"TZS"}')
 FUN_PRODUCT_ID=$(jsonval "$FUN_PRODUCT_JSON" productId)
 echo "funeralProductId=$FUN_PRODUCT_ID"
 
@@ -378,7 +378,7 @@ done
 echo "unitLinkedFunds=EQ-GROWTH,MM-CASH priced $UL_PRICE_DATE"
 
 UL_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
-  '{"productCode":"UL-INV-01","productName":"Nlolo Wekeza","category":"UNIT_LINKED","defaultCurrency":"TZS"}')
+  '{"productCode":"UL-INV-01","productName":"Nlolo Wekeza","category":"UNIT_LINKED","portfolioCode":"ULIP","defaultCurrency":"TZS"}')
 UL_PRODUCT_ID=$(jsonval "$UL_PRODUCT_JSON" productId)
 echo "unitLinkedProductId=$UL_PRODUCT_ID"
 
@@ -422,7 +422,7 @@ echo "$UL_VERSION_RESP" | head -1
 # would hide whether that form works.
 echo "=== Step 1b: Credit-life product + a lender (staff.admin) ==="
 CL_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
-  '{"productCode":"DEMO-CL-01","productName":"Demo Credit Life","category":"CREDIT_LIFE","defaultCurrency":"TZS"}')
+  '{"productCode":"DEMO-CL-01","productName":"Demo Credit Life","category":"CREDIT_LIFE","portfolioCode":"CRL","defaultCurrency":"TZS"}')
 CL_PRODUCT_ID=$(jsonval "$CL_PRODUCT_JSON" productId)
 echo "creditLifeProductId=$CL_PRODUCT_ID"
 

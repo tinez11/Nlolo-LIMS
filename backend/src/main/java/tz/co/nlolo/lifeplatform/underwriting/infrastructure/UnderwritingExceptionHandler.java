@@ -73,6 +73,14 @@ public class UnderwritingExceptionHandler {
         return problem;
     }
 
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.underwriting.api.SaleFixedException.class)
+    public ProblemDetail handleSaleFixed(tz.co.nlolo.lifeplatform.underwriting.api.SaleFixedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setProperty("errorCode", "SALE_FIXED");
+        problem.setProperty("traceId", UUID.randomUUID().toString());
+        return problem;
+    }
+
     /**
      * 403, not 422: the request is well formed and the decision may be perfectly correct --
      * this caller is simply not senior enough to make it. A 422 would read as "fix your input",

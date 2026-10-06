@@ -115,7 +115,10 @@ paths:
   /products/{productId}/versions:
     post:
       summary: Publish a new product version (staff/actuarial only)
-      description: Rejected with 422 if ifrsMeasurementModel is not set (Deliverable 3 Rev 2 — carried from Deliverable 2 Rev 2's mandatory-before-ACTIVE rule).
+      description: >-
+        Publishes a version and activates the product. Since IFRS 17 I2 the measurement model is not asked for -- the
+        accounting policy register decides it -- and the version carries its expected profitability and an optional
+        model override instead.
       security:
         - staffAuth: []
       parameters:
@@ -132,7 +135,7 @@ paths:
         '201':
           description: Version published
         '422':
-          description: Missing ifrsMeasurementModel, incomplete rating-factor coverage, or a fund definition on a non-unit-linked product
+          description: Incomplete rating-factor coverage, or a fund definition on a non-unit-linked product
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
@@ -419,13 +422,28 @@ components:
         category: { type: string }
         status: { type: string, enum: [DRAFT, ACTIVE, RETIRED] }
         defaultCurrency: { type: string, example: TZS }
+        portfolioCode: { $ref: '#/components/schemas/PortfolioCode' }
+    PortfolioCode:
+      type: string
+      description: >-
+        The IFRS 17 portfolio (IFRS 17 spec §6): contracts subject to similar risks and managed together. With the
+        cohort (issue year) and the version's expected profitability it decides a policy's group of contracts.
+      enum: [TERM, WL, END, MB, PAR, ULIP, SAV, DEP, IANN, DANN, PEN, GRPL, CRL, FUN]
+    ProfitabilityBucket:
+      type: string
+      description: "Expected profitability at initial recognition (IFRS 17 para 16), signed off by the actuary at publish."
+      enum: [ONEROUS, NO_SIGNIFICANT_RISK, REMAINING]
+    Ifrs17Model:
+      type: string
+      enum: [GMM, VFA, PAA, IFRS9]
     CreateProductRequest:
       type: object
-      required: [productCode, productName, category, defaultCurrency]
+      required: [productCode, productName, category, portfolioCode, defaultCurrency]
       properties:
         productCode: { type: string }
         productName: { type: string }
         category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE, FUNERAL] }
+        portfolioCode: { $ref: '#/components/schemas/PortfolioCode' }
         defaultCurrency: { type: string, example: TZS }
     EligibilityBounds:
       description: >-
@@ -453,9 +471,23 @@ components:
         maxSumAssured: { type: [number, "null"], exclusiveMinimum: 0 }
     ProductVersionSpec:
       type: object
-      required: [ifrsMeasurementModel, effectiveDate, ratingTable, benefitSchedule, tiraFiling]
+      required: [effectiveDate, ratingTable, benefitSchedule, tiraFiling]
       properties:
-        ifrsMeasurementModel: { type: string, enum: [GMM, PAA] }
+        ifrsMeasurementModel:
+          type: [string, "null"]
+          enum: [GMM, PAA, null]
+          deprecated: true
+          description: "Retired by IFRS 17 I2: the measurement model is the accounting policy register's. Accepted, stored, never read for accounting."
+        expectedProfitabilityBucket:
+          description: "Omitted means REMAINING. See ProfitabilityBucket."
+          type: [string, "null"]
+          enum: [ONEROUS, NO_SIGNIFICANT_RISK, REMAINING, null]
+        measurementModelOverride:
+          description: >-
+            Omitted means none: the register's model applies, which is the ordinary case. An override counts only where
+            the register in force on the issue date lists it in MODEL_OVERRIDE_ALLOWED for the product's portfolio.
+          type: [string, "null"]
+          enum: [GMM, VFA, PAA, IFRS9, null]
         effectiveDate: { type: string, format: date }
         retirementDate: { type: [string, "null"], format: date }
         eligibility: { $ref: '#/components/schemas/EligibilityBounds' }
@@ -1236,7 +1268,17 @@ components:
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
         effectiveDate: { type: string, format: date }
-        ifrsMeasurementModel: { type: string, enum: [GMM, PAA] }
+        ifrsMeasurementModel:
+          type: [string, "null"]
+          enum: [GMM, PAA, null]
+          deprecated: true
+          description: "Retired by IFRS 17 I2; null for a version published since."
+        portfolioCode: { $ref: '#/components/schemas/PortfolioCode' }
+        profitabilityBucket: { $ref: '#/components/schemas/ProfitabilityBucket' }
+        modelOverride:
+          description: "Null: the accounting policy register's model applies."
+          type: [string, "null"]
+          enum: [GMM, VFA, PAA, IFRS9, null]
         gracePeriodDays: { type: integer }
         maxLoanToValuePercent: { type: number }
         category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE, FUNERAL] }

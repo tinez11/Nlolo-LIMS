@@ -61,7 +61,10 @@ export const openCaseFormSchema = z.object({
     .trim()
     .refine((v) => v === '' || UUID_PATTERN.test(v), 'Not a valid party id'),
 
-  branch: z.string().trim().max(100, 'Cannot exceed 100 characters'),
+  // IFRS 17 I2: controlled refdata codes, both optional -- blank takes the case's defaults (the agent's channel and
+  // branch, else DIRECT and the opening staff member's branch). They replace the old free-text branch.
+  branchCode: z.string().trim(),
+  salesChannel: z.enum(['', 'AGENT', 'BROKER', 'BANCASSURANCE', 'DIRECT', 'DIGITAL']),
 
   /** Free text: the platform does not own this vocabulary until TIRA publishes one. */
   sourceOfBusiness: z.string().trim().max(60, 'Cannot exceed 60 characters'),
@@ -238,7 +241,8 @@ export function blankOpenCaseForm(): OpenCaseFormInput {
     sumAssuredCurrency: 'TZS',
     agentOfRecordId: '',
     lifeAssuredPartyId: '',
-    branch: '',
+    branchCode: '',
+    salesChannel: '',
     sourceOfBusiness: '',
     proposedCommencementDate: '',
     requestedTermMonths: '',
@@ -349,7 +353,8 @@ function baseRequest(values: OpenCaseFormValues): OpenCaseRequest {
     // self-insured, and the backend resolves that to the applicant rather than storing a
     // null every later reader would have to interpret.
     ...(values.lifeAssuredPartyId ? { lifeAssuredPartyId: values.lifeAssuredPartyId } : {}),
-    ...(values.branch ? { branch: values.branch } : {}),
+    ...(values.branchCode ? { branchCode: values.branchCode } : {}),
+    ...(values.salesChannel ? { salesChannel: values.salesChannel } : {}),
     ...(values.sourceOfBusiness ? { sourceOfBusiness: values.sourceOfBusiness } : {}),
     ...(values.proposedCommencementDate
       ? { proposedCommencementDate: values.proposedCommencementDate }

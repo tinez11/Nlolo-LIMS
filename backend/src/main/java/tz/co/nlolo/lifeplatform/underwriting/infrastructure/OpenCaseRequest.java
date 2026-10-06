@@ -109,7 +109,14 @@ public record OpenCaseRequest(
      * On a UNIT_LINKED product only (product step 6): the fund split, premium, frequency and sum assured.
      * Optional here, as the funeral block is; acceptance refuses a unit-linked case that has none.
      */
-    UnitLinkedChoice unitLinked) {
+    UnitLinkedChoice unitLinked,
+
+    /**
+     * IFRS 17 I2, both optional refdata codes: the channel the sale came through and the branch it belongs to. Absent,
+     * the case takes its defaults (the agent's, else DIRECT / BANCASSURANCE, and the opening staff member's branch).
+     */
+    String salesChannel,
+    String branchCode) {
 
     /** A deferred annuity applicant's retirement age. Unannotated: a missing age is refused by the window rule. */
     public record DeferredAnnuityDto(Integer retirementAge) {

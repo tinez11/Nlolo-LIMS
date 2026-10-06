@@ -33,6 +33,7 @@ const PARTY_ID = 'd9937444-3873-4336-9cb7-addb486f3e1b';
 const seniorAgent: AgentView = {
   agentId: AGENT_ID,
   partyId: PARTY_ID,
+  salesChannel: 'AGENT',
   licenseNumber: 'LIC-0001',
   licenseStatus: 'ACTIVE',
   licenseExpiryDate: '2030-01-01',

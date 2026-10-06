@@ -9,4 +9,6 @@ import java.util.UUID;
  * and by {@link DistributionApi#getApplicablePlan}'s caller-visible precedence, and an additive
  * field on an internal Java record breaks no existing caller. */
 public record AgentView(UUID agentId, UUID partyId, String licenseNumber, LicenseStatus licenseStatus,
-                         LocalDate licenseExpiryDate, UUID hierarchyParentId, UUID commissionPlanId) {}
+                         LocalDate licenseExpiryDate, UUID hierarchyParentId, UUID commissionPlanId,
+                         /** IFRS 17 I2: the channel this agent sells through and the branch it sells from. */
+                         SalesChannel salesChannel, String homeBranch) {}

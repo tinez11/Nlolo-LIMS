@@ -39,6 +39,10 @@ import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
+import { recordSale } from '@/api/underwriting';
+import { BranchSelect } from '@/components/BranchSelect';
+import type { ApiError } from '@/lib/apiError';
+import { CHANNEL_LABEL, channelLabel } from '@/lib/ifrs17';
 
 /**
  * Reached from `OpenUnderwritingCasePage`'s own redirect, a direct visit to a
@@ -485,7 +489,9 @@ export function UnderwritingCaseDetailPage() {
                   )
                 }
               />
-              {view.branch && <Field label="Branch" value={view.branch} />}
+              {view.branch && <Field label="Branch (as written)" value={view.branch} />}
+              <Field label="Sales channel" value={channelLabel(view.salesChannel)} />
+              <Field label="Sale branch" value={view.branchCode ?? 'Not named yet'} />
               {view.sourceOfBusiness && (
                 <Field label="Source of business" value={view.sourceOfBusiness} />
               )}
@@ -504,6 +510,16 @@ export function UnderwritingCaseDetailPage() {
                 value={<StatusBadge kind="referral" value={view.referralStatus} />}
               />
             </dl>
+          )}
+
+          {view && (
+            <SaleSection
+              caseId={caseId}
+              salesChannel={view.salesChannel ?? 'DIRECT'}
+              branchCode={view.branchCode ?? ''}
+              locked={view.saleLockedAt != null}
+              onSaved={() => void loadCase(caseId)}
+            />
           )}
 
           {view?.referralStatus === 'NONE' && roles.UNDERWRITER && (
@@ -536,6 +552,91 @@ export function UnderwritingCaseDetailPage() {
       </>
     );
   }
+}
+
+/**
+ * The channel and branch of the sale (IFRS 17 I2): editable until the policy is issued, which fixes them -- the
+ * policy carries them for good and they become posting dimensions.
+ */
+function SaleSection({
+  caseId,
+  salesChannel,
+  branchCode,
+  locked,
+  onSaved,
+}: {
+  caseId: string;
+  salesChannel: string;
+  branchCode: string;
+  locked: boolean;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [channel, setChannel] = useState(salesChannel);
+  const [branch, setBranch] = useState(branchCode);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  if (locked) {
+    return <p className="px-4 pb-3 text-xs text-muted-foreground">Sale fixed when the policy was issued.</p>;
+  }
+  if (!editing) {
+    return (
+      <div className="px-4 pb-3">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            setChannel(salesChannel);
+            setBranch(branchCode);
+            setEditing(true);
+          }}
+        >
+          Change sale
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <form
+      aria-label="Change sale"
+      className="space-y-3 px-4 pb-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setBusy(true);
+        setError(null);
+        recordSale(caseId, channel, branch)
+          .then(() => {
+            setEditing(false);
+            onSaved();
+          })
+          .catch((err: unknown) => setError(err as ApiError))
+          .finally(() => setBusy(false));
+      }}
+    >
+      {error && <InlineError error={error} />}
+      <FormField label="Sales channel">
+        <Select value={channel} onChange={(e) => setChannel(e.target.value)}>
+          {Object.keys(CHANNEL_LABEL).map((c) => (
+            <option key={c} value={c}>
+              {CHANNEL_LABEL[c]}
+            </option>
+          ))}
+        </Select>
+      </FormField>
+      <FormField label="Sale branch">
+        <BranchSelect value={branch} onChange={setBranch} allowNone noneLabel="Choose a branch" />
+      </FormField>
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" pending={busy} disabled={branch === ''}>
+          Save sale
+        </Button>
+        <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setEditing(false)}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
 }
 
 

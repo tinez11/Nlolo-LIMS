@@ -20,6 +20,7 @@ import {
 import { PublishVersionForm } from './PublishVersionForm';
 import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
+import { PORTFOLIO_CODES, PORTFOLIO_LABEL, portfolioDefaultFor } from '@/lib/ifrs17';
 
 /**
  * A genuinely two-phase flow, not a stylistic choice: `GET /products` only
@@ -47,7 +48,8 @@ export function CreateProductPage() {
   const {
     register,
     handleSubmit,
-    formState: { errors },
+    setValue,
+    formState: { errors, dirtyFields },
   } = useForm<CreateProductFormValues>({
     resolver: zodResolver(createProductFormSchema),
     defaultValues: blankCreateProductForm(),
@@ -91,11 +93,32 @@ export function CreateProductPage() {
               </FormField>
               <FormField label="Category">
                 <Select
-                  {...register('category')}
+                  {...register('category', {
+                    // The portfolio follows the category until somebody picks one by hand.
+                    onChange: (e) => {
+                      if (!dirtyFields.portfolioCode) {
+                        setValue('portfolioCode',
+                          portfolioDefaultFor(e.target.value as CreateProductFormValues['category']));
+                      }
+                    },
+                  })}
                 >
                   {PRODUCT_CATEGORIES.map((c: ProductCategory) => (
                     <option key={c} value={c}>
                       {c.replace(/_/g, ' ')}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+              <FormField
+                label="IFRS 17 portfolio"
+                hint="Contracts with similar risks, managed together. With the year of issue and expected profitability it decides each policy's group."
+                error={errors.portfolioCode?.message}
+              >
+                <Select {...register('portfolioCode')}>
+                  {PORTFOLIO_CODES.map((p) => (
+                    <option key={p} value={p}>
+                      {PORTFOLIO_LABEL[p]}
                     </option>
                   ))}
                 </Select>

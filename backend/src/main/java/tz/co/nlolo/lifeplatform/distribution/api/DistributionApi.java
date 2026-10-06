@@ -18,13 +18,27 @@ import java.util.UUID;
  */
 public interface DistributionApi {
 
+    /**
+     * {@code salesChannel} null means AGENT; {@code homeBranch} is a refdata BRANCH code, null only for a caller that
+     * does not know one (IFRS 17 I2). The console always names both.
+     */
     record OnboardAgentRequest(UUID partyId, String licenseNumber, LocalDate licenseExpiryDate,
-                                UUID hierarchyParentId) {}
+                                UUID hierarchyParentId, SalesChannel salesChannel, String homeBranch) {
+        public OnboardAgentRequest(UUID partyId, String licenseNumber, LocalDate licenseExpiryDate, UUID hierarchyParentId) {
+            this(partyId, licenseNumber, licenseExpiryDate, hierarchyParentId, null, null);
+        }
+    }
     record CommissionRuleInput(TierType tierType, BigDecimal rate,
                                 BigDecimal flatAmount, String flatCurrency) {}
 
     AgentView onboardAgent(OnboardAgentRequest request, String onboardedBy);
     AgentView getAgent(UUID agentId);
+
+    /**
+     * Change the channel an agent sells through and the branch it sells from (IFRS 17 I2). Cases opened afterwards
+     * take the new defaults; a case already opened keeps its own, and an issued policy never changes.
+     */
+    AgentView updateAgentPlacement(UUID agentId, SalesChannel salesChannel, String homeBranch, String updatedBy);
 
     /**
      * "Is this id an agent in this tenant" — the question, asked without an exception.

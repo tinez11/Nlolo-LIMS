@@ -63,8 +63,20 @@ public class ProductVersion {
      * <p>It also belongs next to its own evidence. PAA eligibility turns on the coverage period,
      * and {@code minTermMonths}/{@code maxTermMonths} are on this row.
      */
-    @Column(name = "ifrs_measurement_model", nullable = false)
+    @Column(name = "ifrs_measurement_model")
     private String ifrsMeasurementModel;
+
+    /**
+     * IFRS 17 I2 (product V27): what the actuary signs off at publish. The measurement model itself is the accounting
+     * policy register's, resolved when a policy is classified; a version only carries an override, which the register
+     * must allow for the portfolio. The legacy {@code ifrs_measurement_model} above is retired (nullable, no longer
+     * asked for) -- read as an override it would contradict the register for every version that stored GMM by habit.
+     */
+    @Column(name = "expected_profitability_bucket", nullable = false)
+    private String expectedProfitabilityBucket = "REMAINING";
+
+    @Column(name = "measurement_model_override")
+    private String measurementModelOverride;
 
     // What this version will accept (V6). All nullable -- an unbounded dimension is a
     // real product design, not a gap. Consumed by Build 4's issueGates, where entry age
@@ -160,6 +172,14 @@ public class ProductVersion {
     public int getGracePeriodDays() { return gracePeriodDays; }
     public BigDecimal getMaxLoanToValuePercent() { return maxLoanToValuePercent; }
     public String getIfrsMeasurementModel() { return ifrsMeasurementModel; }
+    public String getExpectedProfitabilityBucket() { return expectedProfitabilityBucket; }
+    public String getMeasurementModelOverride() { return measurementModelOverride; }
+
+    /** Set once, at publish, before the version is saved. */
+    public void applyIfrs17Terms(String expectedProfitabilityBucket, String measurementModelOverride) {
+        this.expectedProfitabilityBucket = expectedProfitabilityBucket;
+        this.measurementModelOverride = measurementModelOverride;
+    }
 
     /**
      * Record what this version will accept.

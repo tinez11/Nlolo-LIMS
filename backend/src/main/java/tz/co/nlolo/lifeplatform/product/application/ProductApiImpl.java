@@ -87,11 +87,19 @@ public class ProductApiImpl implements ProductApi {
     @Override
     @Transactional
     public ProductSummaryView createProduct(String productCode, String productName, ProductCategory category, String defaultCurrency, String createdBy) {
+        return createProduct(productCode, productName, category, PortfolioCode.defaultFor(category), defaultCurrency, createdBy);
+    }
+
+    @Override
+    @Transactional
+    public ProductSummaryView createProduct(String productCode, String productName, ProductCategory category,
+                                            PortfolioCode portfolioCode, String defaultCurrency, String createdBy) {
         UUID tenantId = TenantContext.get();
         if (productDefinitionRepository.findByTenantIdAndProductCode(tenantId, productCode).isPresent()) {
             throw new DuplicateProductCodeException(productCode);
         }
-        ProductDefinition product = new ProductDefinition(tenantId, productCode, productName, category.name(), defaultCurrency, createdBy);
+        ProductDefinition product = new ProductDefinition(tenantId, productCode, productName, category.name(),
+            (portfolioCode != null ? portfolioCode : PortfolioCode.defaultFor(category)).name(), defaultCurrency, createdBy);
         try {
             // The check above is a fast-path UX improvement, not the guarantee -- ux_product_code
             // (the unique index on (tenant_id, product_code)) is. Two concurrent requests can both
@@ -314,6 +322,20 @@ public class ProductApiImpl implements ProductApi {
                                 AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
                                 AnnuityPlan annuityPlan, FuneralPlan funeralPlan, UnitLinkedPlan unitLinkedPlan,
                                 String publishedBy) {
+        publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
+            fundDefinitions, baseRates, bounds, frequencyLoading, tiraFiling, cashValue, payoutPlan, accumulationPlan,
+            depositPlan, bonusPlan, annuityPlan, funeralPlan, unitLinkedPlan, Ifrs17Terms.DEFAULT, publishedBy);
+    }
+
+    @Override
+    @Transactional
+    public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                                List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                                List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                                TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
+                                AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
+                                AnnuityPlan annuityPlan, FuneralPlan funeralPlan, UnitLinkedPlan unitLinkedPlan,
+                                Ifrs17Terms ifrs17, String publishedBy) {
         // First, so the message is about the filing rather than about a rating table the caller
         // may not have reached yet. TiraFiling validates its own contents; what it cannot do is
         // object to its own absence.
@@ -444,7 +466,11 @@ public class ProductApiImpl implements ProductApi {
 
         int gracePeriodDays = 30; // Deliverable 3 doesn't specify a grace-period source yet at this layer -- see Global Constraints; this is a fixed, flagged default, not read from an OpenAPI field (ProductVersionSpec has no gracePeriodDays field).
         ProductVersion version = new ProductVersion(tenantId, productId, effectiveDate, retirementDate, gracePeriodDays, null,
-            ifrsMeasurementModel.name(), publishedBy);
+            ifrsMeasurementModel != null ? ifrsMeasurementModel.name() : null, publishedBy);
+        // IFRS 17 I2: what the actuary signs off. The model is the register's, resolved when a policy is classified.
+        Ifrs17Terms terms = ifrs17 != null ? ifrs17 : Ifrs17Terms.DEFAULT;
+        version.applyIfrs17Terms(terms.bucket().name(),
+            terms.modelOverride() != null ? terms.modelOverride().name() : null);
         // What this version will accept. Never null -- callers that state nothing pass
         // EligibilityBounds.none(), because an unbounded version is a real design.
         version.applyEligibilityBounds(bounds != null ? bounds : EligibilityBounds.none());
@@ -517,11 +543,13 @@ public class ProductApiImpl implements ProductApi {
                     .map(ProductVersion::getEffectiveDate)
                     .orElse(null)));
         return new ProductSnapshotView(productId, version.getProductVersionId(), version.getEffectiveDate(),
-            IfrsMeasurementModel.valueOf(version.getIfrsMeasurementModel()),
+            legacyModel(version),
             version.getGracePeriodDays(), version.getMaxLoanToValuePercent(),
             ProductCategory.valueOf(definition.getCategory()), version.getSurrenderChargeScheduleJson(),
             version.getEligibilityBounds(),
-            version.getSuicideExclusionMonths(), version.getPreExistingExclusionMonths());
+            version.getSuicideExclusionMonths(), version.getPreExistingExclusionMonths(),
+            PortfolioCode.valueOf(definition.getPortfolioCode()),
+            ProfitabilityBucket.valueOf(version.getExpectedProfitabilityBucket()), modelOverride(version));
     }
 
     /**
@@ -1379,7 +1407,7 @@ public class ProductApiImpl implements ProductApi {
         ProductDefinition definition = productDefinitionRepository.findById(version.getProductId())
             .orElseThrow(() -> new ProductNotFoundException(version.getProductId()));
         return new ProductSnapshotView(version.getProductId(), productVersionId, version.getEffectiveDate(),
-            IfrsMeasurementModel.valueOf(version.getIfrsMeasurementModel()), version.getGracePeriodDays(), version.getMaxLoanToValuePercent(),
+            legacyModel(version), version.getGracePeriodDays(), version.getMaxLoanToValuePercent(),
             ProductCategory.valueOf(definition.getCategory()), version.getSurrenderChargeScheduleJson(),
             // The by-version-id lookup carries the bounds too. It is what
             // PolicyController.manualIssue resolves, so omitting them here would leave the
@@ -1387,7 +1415,18 @@ public class ProductApiImpl implements ProductApi {
             version.getEligibilityBounds(),
             // And the exclusion windows, for the same reason: this is the lookup policy uses
             // to answer a claim's question about which windows a policy's product carries.
-            version.getSuicideExclusionMonths(), version.getPreExistingExclusionMonths());
+            version.getSuicideExclusionMonths(), version.getPreExistingExclusionMonths(),
+            PortfolioCode.valueOf(definition.getPortfolioCode()),
+            ProfitabilityBucket.valueOf(version.getExpectedProfitabilityBucket()), modelOverride(version));
+    }
+
+    /** Null for a version published since IFRS 17 I2 retired the field. */
+    private static IfrsMeasurementModel legacyModel(ProductVersion version) {
+        return version.getIfrsMeasurementModel() != null ? IfrsMeasurementModel.valueOf(version.getIfrsMeasurementModel()) : null;
+    }
+
+    private static Ifrs17Model modelOverride(ProductVersion version) {
+        return version.getMeasurementModelOverride() != null ? Ifrs17Model.valueOf(version.getMeasurementModelOverride()) : null;
     }
 
     @Override
@@ -1407,6 +1446,7 @@ public class ProductApiImpl implements ProductApi {
 
     private ProductSummaryView toSummaryView(ProductDefinition p) {
         return new ProductSummaryView(p.getProductId(), p.getProductCode(), p.getProductName(),
-            ProductCategory.valueOf(p.getCategory()), ProductStatus.valueOf(p.getStatus()), p.getDefaultCurrency());
+            ProductCategory.valueOf(p.getCategory()), ProductStatus.valueOf(p.getStatus()), p.getDefaultCurrency(),
+            PortfolioCode.valueOf(p.getPortfolioCode()));
     }
 }

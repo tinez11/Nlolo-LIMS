@@ -70,7 +70,8 @@ class ChartOfAccountMigrationV5Test {
             // Product step 5: V8 adds 2230 to every seeded chart, so the migrated chart still equals the blueprint.
             "db-migrations/finaccounting/V8__withholding_tax_account.sql",
             // Product step 6: V9 adds 2150, 4310 and 5600 the same way.
-            "db-migrations/finaccounting/V9__unit_linked_accounts.sql");
+            "db-migrations/finaccounting/V9__unit_linked_accounts.sql",
+            "db-migrations/finaccounting/V11__groups_and_policy_classification.sql");
     }
 
     /** The nine flat accounts as M9 seeded them -- no parent, no level, no status. */
