@@ -10,6 +10,7 @@ import tz.co.nlolo.lifeplatform.reinsurance.api.ReinsuranceValidationException;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyType;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyView;
 import tz.co.nlolo.lifeplatform.reinsurance.application.BordereauJob;
+import tz.co.nlolo.lifeplatform.reinsurance.infrastructure.ReinsurancePolicyProjectionRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -84,7 +85,8 @@ class BordereauIntegrationTest {
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
             "db-migrations/reinsurance/V4__projection_product_category.sql",
-            "db-migrations/reinsurance/V5__bordereau.sql");
+            "db-migrations/reinsurance/V5__bordereau.sql",
+            "db-migrations/reinsurance/V6__scheme_may_open_empty.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -116,6 +118,7 @@ class BordereauIntegrationTest {
     @Autowired private ApplicationEventPublisher eventPublisher;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private EventRecorder eventRecorder;
+    @Autowired private ReinsurancePolicyProjectionRepository policyProjections;
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
@@ -134,6 +137,11 @@ class BordereauIntegrationTest {
     }
 
     private String activate(UUID tenantId, String category, String frequency, String premium, LocalDate on) {
+        return activate(tenantId, category, frequency, premium, on, "2000000.00");
+    }
+
+    private String activate(UUID tenantId, String category, String frequency, String premium, LocalDate on,
+                            String sumAssured) {
         String policyNumber = "POL-BDX-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         Map<String, Object> payload = new HashMap<>();
         payload.put("policyNumber", policyNumber);
@@ -142,7 +150,7 @@ class BordereauIntegrationTest {
         payload.put("issueDate", on.toString());
         payload.put("activatedAt", on.toString());
         payload.put("premiumFrequency", frequency);
-        payload.put("sumAssured", Map.of("amount", "2000000.00", "currencyCode", CURRENCY));
+        payload.put("sumAssured", Map.of("amount", sumAssured, "currencyCode", CURRENCY));
         payload.put("premium", Map.of("amount", premium, "currencyCode", CURRENCY));
         publish(tenantId, "policy.PolicyActivated", payload);
         return policyNumber;
@@ -248,6 +256,24 @@ class BordereauIntegrationTest {
         bordereauJob.drain(LocalDate.of(2026, 3, 1));
 
         assertThat(premiumsByMonth(tenantId, treaty.treatyId()).get("2026-02")).isZero();
+    }
+
+    /**
+     * A credit-life scheme is set up with no borrowers -- they arrive with the lender's first file -- so it activates
+     * with a total of zero. Until reinsurance V6 the projection's CHECK refused it, the activation failed, and a later
+     * claim on the scheme read as a "pre-M8 policy" instead of a scheme.
+     */
+    @Test
+    void aSchemeSetUpWithNoBorrowersIsStillKnownAsAScheme() {
+        UUID tenantId = UUID.randomUUID();
+        String scheme = activate(tenantId, "CREDIT_LIFE", "SINGLE", "52000.00", LocalDate.of(2026, 2, 10), "0.00");
+
+        TenantContext.set(tenantId);
+        assertThat(policyProjections.findByTenantIdAndPolicyNumber(tenantId, scheme))
+            .hasValueSatisfying(p -> {
+                assertThat(p.isScheme()).isTrue();
+                assertThat(p.getSumAssuredAmount()).isEqualByComparingTo("0.00");
+            });
     }
 
     /** A single premium is charged once, its share, in the month cover began. */

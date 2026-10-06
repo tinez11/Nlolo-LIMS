@@ -85,7 +85,8 @@ class MemberMovementProjectionTest {
             "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql",
             "db-migrations/regreporting/V3__optimistic_locking_on_movement_tables.sql",
             "db-migrations/regreporting/V5__member_movement_columns.sql",
-            "db-migrations/regreporting/V6__free_look_cancellation_movement.sql");
+            "db-migrations/regreporting/V6__free_look_cancellation_movement.sql",
+            "db-migrations/regreporting/V7__scheme_may_open_empty.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -157,8 +158,8 @@ class MemberMovementProjectionTest {
     void theLastMemberLeavingIsLeftToTheCloseEvent() {
         // THE MOST IMPORTANT TEST IN THIS PLAN. When the last member goes, PolicyApiImpl restates
         // the scheme to ZERO and closes it, and policy.PolicySurrendered then terminates the last
-        // recorded total. If this handler also acted it would (a) try to write 0 into a column
-        // whose CHECK forbids it and (b) remove cover the close is about to remove again.
+        // recorded total. If this handler also acted it would remove cover the close is about to
+        // remove again.
         UUID tenantId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
         String scheme = "POL-LAST-" + shortId();
@@ -193,6 +194,33 @@ class MemberMovementProjectionTest {
 
         assertThat(unattributedCount("policy.GroupMemberAdded")).isEqualTo(before + 1);
         assertThat(policyDimensionRepository.findByTenantIdAndPolicyNumber(tenantId, scheme)).isEmpty();
+    }
+
+    @Test
+    void aSchemeSetUpWithNoBorrowersIsRecordedAndItsFirstFileCounted() {
+        // The credit-life set-up form asks for no opening borrower: members arrive with the lender's
+        // first monthly file, so the scheme is activated with a total of ZERO. Until regreporting V7
+        // the dimension's CHECK refused that row, and with no dimension every borrower the lender
+        // later sent was dropped as unattributed -- missing from the return, not merely late.
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        String scheme = "POL-EMPTY-" + shortId();
+        double before = unattributedCount("policy.GroupMemberAdded");
+
+        activateScheme(tenantId, scheme, productId, "0.00");
+        assertThat(dimensionTotal(tenantId, scheme)).isEqualByComparingTo("0.00");
+
+        memberAdded(tenantId, scheme, "1250000.00");
+
+        assertThat(unattributedCount("policy.GroupMemberAdded")).isEqualTo(before);
+        assertThat(dimensionTotal(tenantId, scheme)).isEqualByComparingTo("1250000.00");
+        assertThat(inForceSumAssured(tenantId)).isEqualByComparingTo("1250000.00");
+        assertThat(policyMovementRepository.findByTenantIdAndPeriodAndProductId(tenantId, quarterOf(ISSUED), productId))
+            .as("the scheme counts as one contract issued, with no cover until its first file")
+            .hasValueSatisfying(m -> {
+                assertThat(m.getPoliciesIssued()).isEqualTo(1);
+                assertThat(m.getSumAssuredIssued()).isEqualByComparingTo("0.00");
+            });
     }
 
     @Test

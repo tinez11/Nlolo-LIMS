@@ -179,6 +179,7 @@ class RecoveryEndToEndTest {
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
             "db-migrations/reinsurance/V4__projection_product_category.sql",
             "db-migrations/reinsurance/V5__bordereau.sql",
+            "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
