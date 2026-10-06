@@ -115,8 +115,39 @@ public class UnderwritingController {
         if (request.unitLinked() != null) {
             underwritingApi.recordUnitLinkedChoice(view.caseId(), request.unitLinked(), jwt.getSubject());
         }
+        view = applySale(view, request.salesChannel(), request.branchCode(), jwt);
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
+
+    /**
+     * The sale as the request names it, else as the case defaulted it, with the opening staff member's home branch
+     * (the {@code home_branch} token claim, IFRS 17 I2) where neither the request nor an agent gave one. Nothing is
+     * written when nothing changes, and nothing when no branch is known at all -- the case then waits for one.
+     */
+    private UnderwritingCaseView applySale(UnderwritingCaseView view, String requestedChannel, String requestedBranch,
+                                           Jwt jwt) {
+        String channel = requestedChannel != null ? requestedChannel : view.salesChannel();
+        String branch = requestedBranch != null ? requestedBranch
+            : view.branchCode() != null ? view.branchCode() : jwt.getClaimAsString("home_branch");
+        if (branch == null || (java.util.Objects.equals(channel, view.salesChannel())
+                && java.util.Objects.equals(branch, view.branchCode()))) {
+            return view;
+        }
+        return underwritingApi.recordSale(view.caseId(), channel, branch, jwt.getSubject());
+    }
+
+    /** IFRS 17 I2: the channel and branch of the sale, editable until the policy is issued. */
+    @PutMapping("/cases/{caseId}/sale")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<UnderwritingCaseView> recordSale(@PathVariable UUID caseId, @Valid @RequestBody SaleRequest request,
+                                                            @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(underwritingApi.recordSale(caseId, request.salesChannel(), request.branchCode(),
+            jwt.getSubject()));
+    }
+
+    /** {@code PUT /underwriting/cases/{caseId}/sale}. */
+    public record SaleRequest(@jakarta.validation.constraints.NotBlank String salesChannel,
+                              @jakarta.validation.constraints.NotBlank String branchCode) {}
 
     /**
      * Propose a group scheme.
@@ -133,6 +164,7 @@ public class UnderwritingController {
         UnderwritingCaseView view = underwritingApi.openCase(request.policyholderPartyId(),
             request.productId(), request.productVersionId(), request.agentOfRecordId(),
             request.toApiProposal(), jwt.getSubject());
+        view = applySale(view, request.salesChannel(), request.branchCode(), jwt);
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 

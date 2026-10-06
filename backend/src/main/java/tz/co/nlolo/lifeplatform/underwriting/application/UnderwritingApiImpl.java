@@ -215,6 +215,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         if (memberEvidence) {
             underwritingCase.recordEvidenceFor(evidenceForPolicyNumber, evidenceForMemberId);
         }
+        defaultSale(underwritingCase, agentOfRecordId, category);
         underwritingCaseRepository.save(underwritingCase);
 
         for (BeneficiaryNomination nomination : details.beneficiaries()) {
@@ -270,6 +271,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             productVersionId, null, proposal.currency(), agentOfRecordId, openedBy);
         underwritingCase.recordGroupProposal(nextProposalNumber(), proposal.commencementDate(),
             proposal.premiumFrequency());
+        defaultSale(underwritingCase, agentOfRecordId, category);
         underwritingCaseRepository.save(underwritingCase);
         persistGroupProposal(tenantId, underwritingCase.getCaseId(), proposal, openedBy);
 
@@ -1115,7 +1117,8 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             // One more query per row, for the same reason and at the same price as the group
             // proposal lookup above.
             c.getCreatedBy(), riskAssessmentRepository.findDistinctAssessors(c.getTenantId(), c.getCaseId()),
-            c.getEvidenceForPolicyNumber(), c.getEvidenceForMemberId());
+            c.getEvidenceForPolicyNumber(), c.getEvidenceForMemberId(),
+            c.getSalesChannel(), c.getBranchCode(), c.getSaleLockedAt());
     }
 
     /**
@@ -1150,6 +1153,50 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             base.ratingMultiplier(),
             base.issuanceFailureReason(), base.issuanceFailedAt(),
             nominations, base.openedBy(), base.assessedBy(),
-            base.evidenceForPolicyNumber(), base.evidenceForMemberId());
+            base.evidenceForPolicyNumber(), base.evidenceForMemberId(),
+            base.salesChannel(), base.branchCode(), base.saleLockedAt());
+    }
+
+    /**
+     * Where a sale comes from by default (IFRS 17 I2): the agent of record's channel and home branch; with no agent,
+     * a credit-life product is the lender's (BANCASSURANCE) and anything else DIRECT, with no branch until somebody
+     * names one (the controller fills the opening staff member's).
+     */
+    private void defaultSale(UnderwritingCase underwritingCase, UUID agentOfRecordId, ProductCategory category) {
+        if (agentOfRecordId != null) {
+            var agent = distributionApi.getAgent(agentOfRecordId);
+            underwritingCase.recordSale(agent.salesChannel() != null ? agent.salesChannel().name() : "AGENT",
+                agent.homeBranch());
+        } else {
+            underwritingCase.recordSale(category == ProductCategory.CREDIT_LIFE ? "BANCASSURANCE" : "DIRECT", null);
+        }
+    }
+
+    @Override
+    @Transactional
+    public UnderwritingCaseView recordSale(UUID caseId, String salesChannel, String branchCode, String recordedBy) {
+        UUID tenantId = TenantContext.get();
+        UnderwritingCase underwritingCase = underwritingCaseRepository.findByCaseIdAndTenantId(caseId, tenantId)
+            .orElseThrow(() -> new UnderwritingCaseNotFoundException(caseId));
+        if (salesChannel == null || referenceDataApi.getCodes("SALES_CHANNEL").stream()
+                .noneMatch(c -> c.code().equals(salesChannel))) {
+            throw new UnderwritingValidationException("Unknown sales channel " + salesChannel);
+        }
+        if (branchCode == null || referenceDataApi.getCodes("BRANCH").stream()
+                .noneMatch(c -> c.code().equals(branchCode))) {
+            throw new UnderwritingValidationException("Unknown branch " + branchCode);
+        }
+        underwritingCase.recordSale(salesChannel, branchCode);
+        underwritingCaseRepository.save(underwritingCase);
+        return toViewWithNominations(underwritingCase);
+    }
+
+    @Override
+    @Transactional
+    public void lockSale(UUID caseId) {
+        underwritingCaseRepository.findByCaseIdAndTenantId(caseId, TenantContext.get()).ifPresent(c -> {
+            c.lockSale(java.time.Instant.now());
+            underwritingCaseRepository.save(c);
+        });
     }
 }

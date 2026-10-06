@@ -89,6 +89,7 @@ class UnderwritingContractTest {
             "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/underwriting/V13__single_premium_frequency.sql",
             "db-migrations/underwriting/V16__funeral_application.sql",
+            "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
@@ -402,6 +403,62 @@ class UnderwritingContractTest {
         UUID applicantId = registerTestApplicant(tenantId);
         ProductFixture product = publishTestProduct(tenantId);
         openCaseViaHttp(tenantId, applicantId, product.productId(), product.productVersionId());
+    }
+
+    /**
+     * IFRS 17 I2: a staff member opening a case gives it their own home branch (the home_branch claim), the request
+     * may name the sale outright, and PUT /sale changes it until the policy is issued.
+     */
+    @Test
+    void theSaleTakesTheOpenersBranchAndChangesOverTheWire() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerTestApplicant(tenantId);
+        ProductFixture product = publishTestProduct(tenantId);
+
+        String opened = mockMvc.perform(post("/underwriting/cases")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()).claim("home_branch", "ARU")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"applicantPartyId":"%s","productId":"%s","productVersionId":"%s","sumAssured":{"amount":"1000000.00","currencyCode":"TZS"}}
+                    """.formatted(applicantId, product.productId(), product.productVersionId())))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.salesChannel").value("DIRECT"))
+            .andExpect(jsonPath("$.branchCode").value("ARU"))
+            .andReturn().getResponse().getContentAsString();
+        String caseId = JsonPath.read(opened, "$.caseId");
+
+        mockMvc.perform(post("/underwriting/cases")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()).claim("home_branch", "ARU")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"applicantPartyId":"%s","productId":"%s","productVersionId":"%s","sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "salesChannel":"DIGITAL","branchCode":"DOD"}
+                    """.formatted(applicantId, product.productId(), product.productVersionId())))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.salesChannel").value("DIGITAL"))
+            .andExpect(jsonPath("$.branchCode").value("DOD"));
+
+        mockMvc.perform(put("/underwriting/cases/" + caseId + "/sale")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"salesChannel":"BROKER","branchCode":"MWZ"}"""))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.salesChannel").value("BROKER"))
+            .andExpect(jsonPath("$.branchCode").value("MWZ"));
+
+        mockMvc.perform(put("/underwriting/cases/" + caseId + "/sale")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"salesChannel":"BROKER","branchCode":"NOWHERE"}"""))
+            .andExpect(status().isUnprocessableEntity());
     }
 
     @Test

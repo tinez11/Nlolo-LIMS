@@ -81,6 +81,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
             "db-migrations/underwriting/V11__member_evidence_case.sql",
+            "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql");
     }
@@ -116,6 +117,33 @@ class UnderwritingApiIntegrationTest {
             null, ANY_FILING, "actuary");
         var snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         return underwritingApi.openCase(applicant.partyId(), product.productId(), snapshot.productVersionId(), sumAssured, "TZS", null, "agent1").caseId();
+    }
+
+    // ---- IFRS 17 I2: the sale's channel and branch (V18) ------------------------------------
+
+    @Test
+    void aCaseWithNoAgentIsADirectSaleWithNoBranchUntilOneIsNamedAndTheIssueFixesIt() {
+        UUID caseId = openTestCase(new BigDecimal("1000000.00"));
+        UnderwritingCaseView opened = underwritingApi.getCase(caseId);
+        assertEquals("DIRECT", opened.salesChannel());
+        assertNull(opened.branchCode());
+        assertNull(opened.saleLockedAt());
+
+        UnderwritingCaseView named = underwritingApi.recordSale(caseId, "DIGITAL", "ZNZ", "uw-1");
+        assertEquals("DIGITAL", named.salesChannel());
+        assertEquals("ZNZ", named.branchCode());
+
+        assertThrows(UnderwritingValidationException.class, () -> underwritingApi.recordSale(caseId, "SMOKE_SIGNALS", "ZNZ", "uw-1"));
+        UnderwritingValidationException badBranch = assertThrows(UnderwritingValidationException.class,
+            () -> underwritingApi.recordSale(caseId, "DIRECT", "XYZ", "uw-1"));
+        assertEquals("Unknown branch XYZ", badBranch.getMessage());
+
+        underwritingApi.lockSale(caseId);
+        assertNotNull(underwritingApi.getCase(caseId).saleLockedAt());
+        SaleFixedException fixed = assertThrows(SaleFixedException.class,
+            () -> underwritingApi.recordSale(caseId, "AGENT", "DSM", "uw-1"));
+        assertEquals("The sale is fixed once the policy is issued", fixed.getMessage());
+        assertEquals("ZNZ", underwritingApi.getCase(caseId).branchCode());
     }
 
     // ---- What the proposal states about the contract (V6) --------------------------------

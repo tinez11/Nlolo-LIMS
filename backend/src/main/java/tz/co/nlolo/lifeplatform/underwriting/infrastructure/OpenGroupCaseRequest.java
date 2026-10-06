@@ -58,7 +58,11 @@ public record OpenGroupCaseRequest(
 
     LocalDate commencementDate,
     /** Null for the usual annually renewable scheme. */
-    @Positive Integer policyTermMonths) {
+    @Positive Integer policyTermMonths,
+
+    /** IFRS 17 I2, optional refdata codes -- see {@link OpenCaseRequest#salesChannel}. */
+    String salesChannel,
+    String branchCode) {
 
     public record GradeLineDto(@NotNull String gradeCode,
                                 @NotNull @Pattern(regexp = "^\\d+(\\.\\d{1,2})?$") String benefitAmount) {}
