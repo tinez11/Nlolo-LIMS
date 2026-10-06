@@ -21,7 +21,7 @@ import java.util.Set;
  *       (the database refuses it too);</li>
  *   <li>a BOTH account needs a reason code (guide 2.3), and a reason code must be one of the list;</li>
  *   <li>a reason, and at least one supporting document (guide Part 4: "a reason and an attached document");</li>
- *   <li>a period that is not LOCKED; an auto-reverse date after the period.</li>
+ *   <li>a period that is not LOCKED; an auto-reverse date on the first day of a later period (spec §8).</li>
  * </ul>
  */
 public final class ManualJournalRules {
@@ -47,9 +47,10 @@ public final class ManualJournalRules {
         if (periodStatus == PeriodStatus.LOCKED) {
             problems.add("Period " + period + " is locked; a manual journal posts to an open or closing period");
         }
-        if (journal.autoReverseOn() != null
-                && !journal.autoReverseOn().isAfter(java.time.YearMonth.parse(period).atEndOfMonth())) {
-            problems.add("An auto-reversal falls after the journal's period, " + period);
+        if (journal.autoReverseOn() != null && (journal.autoReverseOn().getDayOfMonth() != 1
+                || !journal.autoReverseOn().isAfter(java.time.YearMonth.parse(period).atEndOfMonth()))) {
+            problems.add("An auto-reversal is dated the first day of a period after " + period + ", such as "
+                + java.time.YearMonth.parse(period).plusMonths(1).atDay(1));
         }
         if (journal.reasonCode() != null && !journal.reasonCode().isBlank() && !reasonCodes.contains(journal.reasonCode())) {
             problems.add("Reason code " + journal.reasonCode() + " is not one of " + reasonCodes);

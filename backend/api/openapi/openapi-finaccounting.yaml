@@ -595,12 +595,13 @@ paths:
   /finance/manual-journals:
     get:
       summary: Manual journals, newest first
-      description: "IFRS 17 I4. Filter by status (DRAFT, SUBMITTED, APPROVED, REJECTED) and period. At most 500."
+      description: "IFRS 17 I4. Filter by status (DRAFT, SUBMITTED, APPROVED, REJECTED), period and preparer. At most 500."
       security:
         - staffAuth: []
       parameters:
         - { name: status, in: query, required: false, schema: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, REJECTED] } }
         - { name: period, in: query, required: false, schema: { type: string, pattern: '^\d{4}-\d{2}$' } }
+        - { name: preparer, in: query, required: false, schema: { type: string }, description: "The preparer's user id (the token subject)." }
       responses:
         '200':
           description: OK
@@ -1442,6 +1443,14 @@ components:
         decidedAt: { type: [string, "null"], format: date-time }
         decisionReason: { type: [string, "null"] }
         journalEntryId: { type: [string, "null"], format: uuid, description: "The journal entry it posted, once APPROVED." }
+        autoReversal:
+          type: [string, "null"]
+          enum: [SCHEDULED, DUE, WAITING_PERIOD_LOCKED, REVERSED, null]
+          description: >-
+            Where the platform's reversal of an approved journal with a reverse-on date stands: SCHEDULED (its date is
+            ahead), DUE (its date has come; the hourly drain posts it), WAITING_PERIOD_LOCKED (its period is locked and
+            it waits until the period reopens), REVERSED (posted). Null for any other journal.
+        autoReversalJournalId: { type: [string, "null"], format: uuid, description: "The platform's reversal, once REVERSED." }
         totalDebit: { type: number }
         totalCredit: { type: number }
         lines:

@@ -119,6 +119,32 @@ export function toInput(v: ManualJournalValues): ManualJournalInput {
   };
 }
 
+export const STATUS_LABEL: Record<string, string> = {
+  DRAFT: 'Draft',
+  SUBMITTED: 'Awaiting approval',
+  APPROVED: 'Posted',
+  REJECTED: 'Rejected',
+};
+
+/**
+ * Where the platform's reversal of an accrual stands, in words, or null when the journal has none. A reversal
+ * waiting on a locked period says so -- it posts only once the period is reopened.
+ */
+export function autoReversalLabel(j: Pick<ManualJournalView, 'autoReversal' | 'autoReverseOn'>): string | null {
+  switch (j.autoReversal) {
+    case 'SCHEDULED':
+      return `Reverses automatically on ${j.autoReverseOn}`;
+    case 'DUE':
+      return `Reversal due on ${j.autoReverseOn}; the platform posts it within the hour`;
+    case 'WAITING_PERIOD_LOCKED':
+      return `Reversal waiting: the period of ${j.autoReverseOn} is locked. It posts once the period is reopened`;
+    case 'REVERSED':
+      return `Reversed automatically on ${j.autoReverseOn}`;
+    default:
+      return null;
+  }
+}
+
 /** Live Dr and Cr totals of the lines typed so far (an amount not yet a number counts as nothing). */
 export function totals(lines: { side: string; amount: string }[]): { debit: number; credit: number } {
   let debit = 0;

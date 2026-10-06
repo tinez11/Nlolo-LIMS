@@ -25,7 +25,13 @@ public interface ManualJournalApi {
     ManualJournalView get(UUID id);
 
     /** Newest first; null filters are ignored. At most 500. */
-    List<ManualJournalView> list(String status, String period);
+    List<ManualJournalView> list(String status, String period, String preparer);
+
+    /**
+     * Refuses unless {@code by} may still change the journal -- a DRAFT, by its preparer. Asked before a supporting
+     * document is stored, so a refused attachment leaves nothing behind in the document store.
+     */
+    void requireEditable(UUID id, String by);
 
     /** DRAFT -> SUBMITTED, by its preparer, once every check passes (every problem listed otherwise). */
     ManualJournalView submit(UUID id, String by);
@@ -39,7 +45,10 @@ public interface ManualJournalApi {
     /** SUBMITTED -> REJECTED, with a reason. Never by the preparer. */
     ManualJournalView reject(UUID id, String reason, String by);
 
-    /** A new DRAFT reversing an approved journal: lines swapped, dated in the current open period. Once per journal. */
+    /**
+     * A new DRAFT reversing an approved journal: lines swapped, dated in the current open period. Once per journal,
+     * and never one approved with a reverse-on date -- the platform reverses that one.
+     */
     ManualJournalView reverse(UUID id, String preparer);
 
     /** A supporting document, already stored (document::api), recorded on a DRAFT. */
@@ -60,10 +69,17 @@ public interface ManualJournalApi {
     JournalTemplateView saveTemplate(String name, String description, List<ManualJournalInput.Line> lines,
                                      String reasonCode, String by);
 
+    /**
+     * A journal. {@code autoReversal} says where the platform's reversal of an approved journal with a reverse-on
+     * date stands: SCHEDULED (its date is ahead), DUE (its date has come; the hourly drain posts it),
+     * WAITING_PERIOD_LOCKED (its period is locked, so it waits until the period reopens), REVERSED (posted, as
+     * {@code autoReversalJournalId}); null for any other journal.
+     */
     record ManualJournalView(UUID id, String status, String period, String currency, String title, String reason,
                              String reasonCode, String templateId, UUID reversesJournalId, LocalDate autoReverseOn,
                              List<String> documentRefs, String preparer, Instant preparedAt, Instant submittedAt,
                              String decidedBy, Instant decidedAt, String decisionReason, UUID journalEntryId,
+                             String autoReversal, UUID autoReversalJournalId,
                              List<Line> lines, BigDecimal totalDebit, BigDecimal totalCredit) {
 
         public record Line(int lineNo, String accountCode, String accountName, String accountMode, PostingDirection side,

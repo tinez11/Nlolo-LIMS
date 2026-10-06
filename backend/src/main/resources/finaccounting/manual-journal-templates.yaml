@@ -168,7 +168,7 @@ templates:
   - id: R-01
     title: "Quarterly statement – offset balances"
     when: "Premium payable TZS 1,800,000; commission receivable TZS 360,000; recoveries TZS 30,000,000."
-    postedBy: "The reinsurance bordereau (IFRS 17 I3c)."
+    postedBy: "The reinsurance statement (built after IFRS 17 I4), from the reinsurer's quarterly or annual statement."
     lines:
       - {dr: "1430"}
       - {dr: "1434"}
@@ -182,13 +182,13 @@ templates:
   - id: R-03
     title: "Profit commission (contingent on claims)"
     when: "Annual treaty statement."
-    postedBy: "The reinsurance bordereau (IFRS 17 I3c)."
+    postedBy: "The reinsurance statement (built after IFRS 17 I4), from the reinsurer's quarterly or annual statement."
     lines:
       - {dr: "1433"}
       - {cr: "6120"}
   - id: R-04
     title: "Funds withheld as security"
-    postedBy: "The reinsurance bordereau (IFRS 17 I3c)."
+    postedBy: "The reinsurance statement (built after IFRS 17 I4), from the reinsurer's quarterly or annual statement."
     lines:
       - {dr: "1430"}
       - {cr: "2550"}

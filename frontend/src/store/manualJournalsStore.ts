@@ -28,7 +28,7 @@ interface ManualJournalsState {
   templates: Resource<JournalTemplateView[]>;
   acting: Record<string, Resource<unknown>>;
 
-  loadList: (status?: string) => Promise<void>;
+  loadList: (status?: string, preparer?: string) => Promise<void>;
   load: (id: string) => Promise<void>;
   loadTemplates: () => Promise<void>;
   /** Resolves the journal (created or changed) on success, null on a refusal. */
@@ -66,8 +66,9 @@ export const useManualJournalsStore = create<ManualJournalsState>((set, getState
     templates: idle(),
     acting: {},
 
-    loadList: (status) =>
-      track('manualJournals.list', getState().list, (next) => set({ list: next }), () => listManualJournals(status)),
+    loadList: (status, preparer) =>
+      track('manualJournals.list', getState().list, (next) => set({ list: next }), () =>
+        listManualJournals(status, undefined, preparer)),
 
     load: (id) => track('manualJournals.current', getState().current, (next) => set({ current: next }), () => getManualJournal(id)),
 

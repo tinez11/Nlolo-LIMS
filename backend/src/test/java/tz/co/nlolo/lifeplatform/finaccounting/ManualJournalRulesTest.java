@@ -65,11 +65,30 @@ class ManualJournalRulesTest {
             .anyMatch(p -> p.contains("reason"))
             .anyMatch(p -> p.contains("Attach the document"))
             .anyMatch(p -> p.contains("is locked"))
-            .anyMatch(p -> p.contains("auto-reversal falls after"))
+            .anyMatch(p -> p.contains("An auto-reversal is dated the first day of a period after 2026-10"))
             .anyMatch(p -> p.contains("posted only by the system (AUTO)"))
             .anyMatch(p -> p.contains("no such account"))
             .anyMatch(p -> p.contains("BOTH account") && p.contains("reason code"))
             .anyMatch(p -> p.contains("differ by"));
+    }
+
+    /** An accrual reverses at the start of a period, never in the middle of one (spec §8: "day 1 of the next period"). */
+    @Test
+    void anAutoReversalIsTheFirstDayOfALaterPeriod() {
+        String man1 = code(PostingMode.MAN);
+        String man2 = ChartOfAccountBlueprint.accounts().stream()
+            .filter(s -> s.postingAllowed() && s.mode() == PostingMode.MAN && !s.code().equals(man1)).findFirst()
+            .orElseThrow().code();
+        java.util.function.Function<LocalDate, List<String>> on = date -> ManualJournalRules.problems(
+            new ManualJournalInput("2026-10", "TZS", "Accrued audit fee", "Engagement letter", null, null, date,
+                List.of(line(man1, PostingDirection.DR, "5.00"), line(man2, PostingDirection.CR, "5.00"))),
+            "2026-10", CHART, CODES, PeriodStatus.OPEN, 1);
+        assertThat(on.apply(LocalDate.of(2026, 11, 1))).isEmpty();
+        assertThat(on.apply(LocalDate.of(2027, 1, 1))).isEmpty();
+        assertThat(on.apply(LocalDate.of(2026, 11, 15)))
+            .containsExactly("An auto-reversal is dated the first day of a period after 2026-10, such as 2026-11-01");
+        assertThat(on.apply(LocalDate.of(2026, 10, 1)))
+            .containsExactly("An auto-reversal is dated the first day of a period after 2026-10, such as 2026-11-01");
     }
 
     @Test
@@ -111,6 +130,11 @@ class ManualJournalRulesTest {
         assertThat(templates.stream().filter(t -> t.postedBy() != null).map(GuideTemplates.Template::id))
             .containsExactlyInAnyOrder("M-07", "R-01", "R-03", "R-04", "Q-01", "Q-02", "Q-03", "Q-04", "Q-06", "Q-07",
                 "Q-08", "Q-09", "O-10");
+        // I3c's decision Q6: the quarterly/annual statement (R-01 offset, R-03 profit commission, R-04 funds withheld)
+        // is its own build after I4 -- the monthly bordereau posts none of them.
+        assertThat(templates).filteredOn(t -> t.id().startsWith("R-0") && t.postedBy() != null)
+            .extracting(GuideTemplates.Template::postedBy)
+            .containsOnly("The reinsurance statement (built after IFRS 17 I4), from the reinsurer's quarterly or annual statement.");
         assertThat(templates).filteredOn(t -> t.id().equals("M-01")).singleElement()
             .satisfies(t -> assertThat(t.lines()).extracting(GuideTemplates.Line::account)
                 .containsExactly("1110", "3110", "3120"));

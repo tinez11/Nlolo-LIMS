@@ -85,12 +85,29 @@ class ManualJournals {
         return headers.stream().findFirst().map(h -> new Draft(h, lines(tenantId, id)));
     }
 
-    List<Draft> list(UUID tenantId, String status, String period) {
+    List<Draft> list(UUID tenantId, String status, String period, String preparer) {
         List<Header> headers = jdbc.query("SELECT * FROM finaccounting.manual_journal WHERE tenant_id = ?"
                 + " AND (?::text IS NULL OR status = ?) AND (?::text IS NULL OR period = ?)"
+                + " AND (?::text IS NULL OR preparer = ?)"
                 + " ORDER BY prepared_at DESC LIMIT 500",
-            this::header, tenantId, status, status, period, period);
+            this::header, tenantId, status, status, period, period, preparer, preparer);
         return headers.stream().map(h -> new Draft(h, lines(tenantId, h.id()))).toList();
+    }
+
+    /** The platform's reversal of a journal approved with a reverse-on date (V14 auto_reversal). */
+    record AutoReversal(LocalDate reverseOn, UUID reversalJournalId) {}
+
+    /** Every auto-reversal of the tenant, by the journal it reverses. */
+    java.util.Map<UUID, AutoReversal> autoReversals(UUID tenantId) {
+        java.util.Map<UUID, AutoReversal> byOriginal = new java.util.HashMap<>();
+        jdbc.query("SELECT original_journal_id, reverse_on, reversal_journal_id FROM finaccounting.auto_reversal"
+                + " WHERE tenant_id = ?",
+            rs -> {
+                byOriginal.put(rs.getObject("original_journal_id", UUID.class), new AutoReversal(
+                    rs.getDate("reverse_on").toLocalDate(), rs.getObject("reversal_journal_id", UUID.class)));
+            },
+            tenantId);
+        return byOriginal;
     }
 
     /** The draft reversing {@code journalEntryId}, if one is live (not rejected). */

@@ -56,8 +56,9 @@ public class ManualJournalController {
     @GetMapping("/finance/manual-journals")
     @PreAuthorize(FINANCE + " or " + APPROVER)
     public List<ManualJournalView> list(@RequestParam(required = false) String status,
-                                        @RequestParam(required = false) String period) {
-        return api.list(status, period);
+                                        @RequestParam(required = false) String period,
+                                        @RequestParam(required = false) String preparer) {
+        return api.list(status, period, preparer);
     }
 
     @PostMapping("/finance/manual-journals")
@@ -116,7 +117,9 @@ public class ManualJournalController {
     @PreAuthorize(FINANCE)
     public ManualJournalView attach(@PathVariable UUID id, @RequestPart("file") MultipartFile file,
                                     @AuthenticationPrincipal Jwt jwt) {
-        api.get(id);   // 404 before anything is stored
+        // 404, or 409 when this person may not change the draft -- before anything is stored, so a refused
+        // attachment leaves no orphan in the document store.
+        api.requireEditable(id, jwt.getSubject());
         String contentType;
         try {
             contentType = AllowedDocumentContentTypes.normalizeOrThrow(file.getContentType());

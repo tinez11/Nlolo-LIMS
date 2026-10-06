@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import type { JournalTemplateView } from '@/api/types';
-import { blankJournal, fromTemplate, manualJournalSchema, toInput, totals } from './manualJournalForm';
+import { autoReversalLabel, blankJournal, fromTemplate, manualJournalSchema, toInput, totals } from './manualJournalForm';
+
+describe('autoReversalLabel', () => {
+  it('says where the platform reversal stands, and that a locked period holds it back', () => {
+    expect(autoReversalLabel({ autoReversal: 'SCHEDULED', autoReverseOn: '2026-11-01' })).toBe(
+      'Reverses automatically on 2026-11-01',
+    );
+    expect(autoReversalLabel({ autoReversal: 'WAITING_PERIOD_LOCKED', autoReverseOn: '2026-11-01' })).toBe(
+      'Reversal waiting: the period of 2026-11-01 is locked. It posts once the period is reopened',
+    );
+    expect(autoReversalLabel({ autoReversal: 'REVERSED', autoReverseOn: '2026-11-01' })).toBe(
+      'Reversed automatically on 2026-11-01',
+    );
+    expect(autoReversalLabel({ autoReversal: null, autoReverseOn: null })).toBeNull();
+  });
+});
 
 const payroll = () => ({
   ...blankJournal('2026-10'),

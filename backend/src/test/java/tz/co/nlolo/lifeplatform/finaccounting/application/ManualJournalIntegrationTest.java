@@ -215,6 +215,159 @@ class ManualJournalIntegrationTest {
             AutoReversalJob.EVENT);
         assertThat(reversal.get("source_type")).isEqualTo("SYSTEM");
         assertThat(reversal.get("period")).isEqualTo(YearMonth.from(firstOfNext).toString());
+        TenantContext.set(tenant);
+        ManualJournalView after = journals.get(posted.id());
+        assertThat(after.autoReversal()).isEqualTo("REVERSED");
+        assertThat(after.autoReversalJournalId()).isEqualTo(reversal.get("journal_entry_id"));
+    }
+
+    /**
+     * An accrual approved with a reverse-on date is the platform's to reverse. Reversing it by hand as well would post
+     * the reversal twice -- the drain never looks for a manual one -- so the hand reversal is refused, before the
+     * date and after it.
+     */
+    @Test
+    void aJournalThePlatformReversesCannotAlsoBeReversedByHand() {
+        UUID tenant = UUID.randomUUID();
+        TenantContext.set(tenant);
+        LocalDate firstOfNext = YearMonth.parse(THIS_MONTH).plusMonths(1).atDay(1);
+        ManualJournalView posted = approve(journals.create(payroll(firstOfNext), "finance-one"));
+
+        assertThatThrownBy(() -> journals.reverse(posted.id(), "finance-two"))
+            .isInstanceOf(ManualJournalStateException.class)
+            .hasMessage("This journal is reversed by the platform on " + firstOfNext + "; it cannot also be reversed by hand");
+
+        autoReversals.drain(firstOfNext);
+        TenantContext.set(tenant);
+        assertThatThrownBy(() -> journals.reverse(posted.id(), "finance-two"))
+            .isInstanceOf(ManualJournalStateException.class);
+        assertThat(reversals(tenant, posted.journalEntryId())).isEqualTo(1);
+    }
+
+    /**
+     * Where the platform's reversal stands, on the journal itself: scheduled while its date is ahead, waiting while
+     * its period is locked. The view reads the real calendar, so this accrual is last month's, reversing on the first
+     * of this one -- a date that has come.
+     */
+    @Test
+    void anAutoReversalWaitingOnALockedPeriodIsShownOnTheJournal() {
+        UUID tenant = UUID.randomUUID();
+        TenantContext.set(tenant);
+        String lastMonth = YearMonth.parse(THIS_MONTH).minusMonths(1).toString();
+        LocalDate firstOfThis = YearMonth.parse(THIS_MONTH).atDay(1);
+        ManualJournalInput accrual = payroll(firstOfThis);
+        ManualJournalView posted = approve(journals.create(new ManualJournalInput(lastMonth, accrual.currency(),
+            accrual.title(), accrual.reason(), accrual.reasonCode(), accrual.templateId(), firstOfThis, accrual.lines()),
+            "finance-one"));
+        assertThat(journals.create(payroll(YearMonth.parse(THIS_MONTH).plusMonths(1).atDay(1)), "finance-one"))
+            .isNotNull();
+        assertThat(approve(journals.list("DRAFT", THIS_MONTH, null).get(0)).autoReversal())
+            .as("a date still ahead").isEqualTo("SCHEDULED");
+
+        ledger.startClosing(lastMonth, "finance-one");
+        ledger.lockPeriod(lastMonth, "finance-one");
+        ledger.startClosing(THIS_MONTH, "finance-one");
+        ledger.lockPeriod(THIS_MONTH, "finance-one");
+        autoReversals.drain(firstOfThis);
+
+        TenantContext.set(tenant);
+        assertThat(reversals(tenant, posted.journalEntryId())).isZero();
+        assertThat(journals.get(posted.id()).autoReversal()).isEqualTo("WAITING_PERIOD_LOCKED");
+        assertThat(journals.list(null, null, null)).filteredOn(j -> j.id().equals(posted.id())).singleElement()
+            .satisfies(j -> assertThat(j.autoReversal()).isEqualTo("WAITING_PERIOD_LOCKED"));
+    }
+
+    @Test
+    void anAutoReversalIsDatedTheFirstDayOfALaterPeriod() {
+        UUID tenant = UUID.randomUUID();
+        TenantContext.set(tenant);
+        LocalDate midNext = YearMonth.parse(THIS_MONTH).plusMonths(1).atDay(15);
+        ManualJournalView draft = journals.create(payroll(midNext), "finance-one");
+        journals.attachDocument(draft.id(), "doc-1", "finance-one");
+        assertThatThrownBy(() -> journals.submit(draft.id(), "finance-one"))
+            .isInstanceOf(FinaccountingValidationException.class)
+            .hasMessageContaining("An auto-reversal is dated the first day of a period after " + THIS_MONTH);
+    }
+
+    /** The controller asks before it stores a document, so a refused attachment leaves no orphan in the store. */
+    @Test
+    void onlyItsPreparerMayChangeADraftAndOnlyWhileItIsADraft() {
+        UUID tenant = UUID.randomUUID();
+        TenantContext.set(tenant);
+        ManualJournalView draft = journals.create(payroll(null), "finance-one");
+        journals.requireEditable(draft.id(), "finance-one");
+        assertThatThrownBy(() -> journals.requireEditable(draft.id(), "finance-two"))
+            .isInstanceOf(ManualJournalStateException.class).hasMessageContaining("who prepared it");
+
+        journals.attachDocument(draft.id(), "doc-1", "finance-one");
+        journals.submit(draft.id(), "finance-one");
+        assertThatThrownBy(() -> journals.requireEditable(draft.id(), "finance-one"))
+            .isInstanceOf(ManualJournalStateException.class).hasMessageContaining("only a draft can be changed");
+
+        assertThatThrownBy(() -> journals.withdraw(draft.id(), "finance-two"))
+            .isInstanceOf(ManualJournalStateException.class);
+        assertThat(journals.withdraw(draft.id(), "finance-one").status()).isEqualTo("DRAFT");
+        journals.requireEditable(draft.id(), "finance-one");
+    }
+
+    @Test
+    void journalsAreListedByStatusPeriodAndPreparerWithinTheirTenant() {
+        UUID tenant = UUID.randomUUID();
+        TenantContext.set(tenant);
+        ManualJournalView mine = journals.create(payroll(null), "finance-one");
+        journals.create(payroll(null), "finance-two");
+        assertThat(journals.list(null, null, "finance-one")).extracting(ManualJournalView::id).containsExactly(mine.id());
+        assertThat(journals.list("DRAFT", THIS_MONTH, null)).hasSize(2);
+        assertThat(journals.list("SUBMITTED", null, null)).isEmpty();
+
+        TenantContext.set(UUID.randomUUID());
+        assertThat(journals.list(null, null, null)).as("another tenant sees none of them").isEmpty();
+        assertThatThrownBy(() -> journals.get(mine.id()))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalNotFoundException.class);
+    }
+
+    /** Checked again at approval: a period locked since submission refuses the journal, and nothing is posted. */
+    @Test
+    void aPeriodLockedAfterSubmissionRefusesTheApproval() {
+        UUID tenant = UUID.randomUUID();
+        TenantContext.set(tenant);
+        ManualJournalView draft = journals.create(payroll(null), "finance-one");
+        journals.attachDocument(draft.id(), "doc-1", "finance-one");
+        journals.submit(draft.id(), "finance-one");
+        ledger.startClosing(THIS_MONTH, "finance-one");
+        ledger.lockPeriod(THIS_MONTH, "finance-one");
+
+        assertThatThrownBy(() -> journals.approve(draft.id(), "finance-approver"))
+            .isInstanceOf(FinaccountingValidationException.class).hasMessageContaining("is locked");
+        assertThat(journals.get(draft.id()).status()).isEqualTo("SUBMITTED");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM finaccounting.journal_entry WHERE source_ref = ?",
+            Integer.class, draft.id().toString())).isZero();
+    }
+
+    /** A refusal by the ledger's own guard -- a period locked in the instant between check and post -- keeps its words. */
+    @Test
+    void aLedgerGuardsWordsAreKept() {
+        RuntimeException fromTheDatabase = new RuntimeException("could not execute statement",
+            new RuntimeException("ERROR: LEDGER_PERIOD_LOCKED: period 2026-08 is locked\n  Where: PL/pgSQL function"));
+        assertThat(ManualJournalApiImpl.ledgerGuard(fromTheDatabase)).isEqualTo("LEDGER_PERIOD_LOCKED: period 2026-08 is locked");
+        assertThat(ManualJournalApiImpl.ledgerGuard(new RuntimeException("connection reset"))).isNull();
+    }
+
+    @Test
+    void aRecurringJournalIsSavedAsATemplateOnceByName() {
+        UUID tenant = UUID.randomUUID();
+        TenantContext.set(tenant);
+        var saved = journals.saveTemplate("Monthly payroll", "Salaries against NSSF and PAYE",
+            payroll(null).lines(), null, "finance-one");
+        assertThat(saved.source()).isEqualTo("SAVED");
+        assertThat(saved.lines()).extracting(l -> l.accountCode() + " " + l.side() + " " + l.amount().toPlainString())
+            .containsExactly("8110 DR 4500000.00", "2640 CR 4500000.00");
+        assertThat(journals.templates()).filteredOn(t -> "SAVED".equals(t.source())).hasSize(1);
+        assertThatThrownBy(() -> journals.saveTemplate("Monthly payroll", null, payroll(null).lines(), null, "finance-one"))
+            .isInstanceOf(ManualJournalStateException.class).hasMessageContaining("already exists");
+
+        TenantContext.set(UUID.randomUUID());
+        assertThat(journals.templates()).filteredOn(t -> "SAVED".equals(t.source())).isEmpty();
     }
 
     @Test

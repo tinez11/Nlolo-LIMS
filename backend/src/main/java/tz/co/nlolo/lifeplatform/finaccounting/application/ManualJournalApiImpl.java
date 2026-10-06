@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -116,10 +117,16 @@ public class ManualJournalApiImpl implements ManualJournalApi {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ManualJournalView> list(String status, String period) {
-        Map<String, ChartOfAccount> accounts = accounts(TenantContext.get());
-        return drafts.list(TenantContext.get(), blankToNull(status), blankToNull(period)).stream()
-            .map(d -> view(d, accounts)).toList();
+    public List<ManualJournalView> list(String status, String period, String preparer) {
+        ViewContext context = viewContext();
+        return drafts.list(TenantContext.get(), blankToNull(status), blankToNull(period), blankToNull(preparer)).stream()
+            .map(d -> view(d, context)).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public void requireEditable(UUID id, String by) {
+        editableBy(id, by);
     }
 
     // ---- the workflow ---------------------------------------------------------------------------------------------
@@ -213,6 +220,12 @@ public class ManualJournalApiImpl implements ManualJournalApi {
         }
         if (h.reversesJournalId() != null) {
             throw new ManualJournalStateException("This journal is itself a reversal; post a new journal instead");
+        }
+        // The platform reverses it on its date (AutoReversalJob), and that drain never looks for a manual reversal:
+        // allowing one here would post the reversal twice.
+        if (h.autoReverseOn() != null) {
+            throw new ManualJournalStateException("This journal is reversed by the platform on " + h.autoReverseOn()
+                + "; it cannot also be reversed by hand");
         }
         drafts.liveReversalOf(tenantId, h.journalEntryId()).ifPresent(existing -> {
             throw new ManualJournalStateException("This journal already has a reversal (" + existing + ")");
@@ -414,11 +427,37 @@ public class ManualJournalApiImpl implements ManualJournalApi {
         return map;
     }
 
-    private ManualJournalView view(ManualJournals.Draft d) {
-        return view(d, accounts(TenantContext.get()));
+    /** What every view needs once per call, not once per journal. */
+    private record ViewContext(Map<String, ChartOfAccount> accounts, Map<UUID, ManualJournals.AutoReversal> autoReversals,
+                               java.time.LocalDate today) {}
+
+    private ViewContext viewContext() {
+        UUID tenantId = TenantContext.get();
+        return new ViewContext(accounts(tenantId), drafts.autoReversals(tenantId), java.time.LocalDate.now(CIVIL));
     }
 
-    private static ManualJournalView view(ManualJournals.Draft d, Map<String, ChartOfAccount> accounts) {
+    private ManualJournalView view(ManualJournals.Draft d) {
+        return view(d, viewContext());
+    }
+
+    /** See {@link ManualJournalView}: SCHEDULED, DUE, WAITING_PERIOD_LOCKED, REVERSED, or null. */
+    private String autoReversalOf(ManualJournals.Header h, ViewContext context) {
+        if (!"APPROVED".equals(h.status()) || h.autoReverseOn() == null) {
+            return null;
+        }
+        ManualJournals.AutoReversal ar = context.autoReversals().get(h.journalEntryId());
+        if (ar != null && ar.reversalJournalId() != null) {
+            return "REVERSED";
+        }
+        if (context.today().isBefore(h.autoReverseOn())) {
+            return "SCHEDULED";
+        }
+        return periods.view(YearMonth.from(h.autoReverseOn()).toString()).status()
+            == tz.co.nlolo.lifeplatform.finaccounting.api.PeriodStatus.LOCKED ? "WAITING_PERIOD_LOCKED" : "DUE";
+    }
+
+    private ManualJournalView view(ManualJournals.Draft d, ViewContext context) {
+        Map<String, ChartOfAccount> accounts = context.accounts();
         ManualJournals.Header h = d.header();
         List<ManualJournalView.Line> lines = new ArrayList<>();
         BigDecimal debit = BigDecimal.ZERO;
@@ -438,7 +477,10 @@ public class ManualJournalApiImpl implements ManualJournalApi {
         }
         return new ManualJournalView(h.id(), h.status(), h.period(), h.currency(), h.title(), h.reason(), h.reasonCode(),
             h.templateId(), h.reversesJournalId(), h.autoReverseOn(), h.documentRefs(), h.preparer(), h.preparedAt(),
-            h.submittedAt(), h.decidedBy(), h.decidedAt(), h.decisionReason(), h.journalEntryId(), lines, debit, credit);
+            h.submittedAt(), h.decidedBy(), h.decidedAt(), h.decisionReason(), h.journalEntryId(), autoReversalOf(h, context),
+            Optional.ofNullable(context.autoReversals().get(h.journalEntryId()))
+                .map(ManualJournals.AutoReversal::reversalJournalId).orElse(null),
+            lines, debit, credit);
     }
 
     private static String blankToNull(String s) {

@@ -8,13 +8,9 @@ import { FormField } from '@/components/FormField';
 import { formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useManualJournalsStore } from '@/store/manualJournalsStore';
-
-export const STATUS_LABEL: Record<string, string> = {
-  DRAFT: 'Draft',
-  SUBMITTED: 'Awaiting approval',
-  APPROVED: 'Posted',
-  REJECTED: 'Rejected',
-};
+import { useAuth } from 'react-oidc-context';
+import { readIdentity } from '@/auth/claims';
+import { STATUS_LABEL } from './manualJournalForm';
 
 const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -26,15 +22,19 @@ export function ManualJournalsPage() {
   const list = useManualJournalsStore((s) => s.list);
   const loadList = useManualJournalsStore((s) => s.loadList);
   const [status, setStatus] = useState('');
+  const [mine, setMine] = useState(false);
+  const auth = useAuth();
+  const subject = readIdentity(auth.user?.access_token).subject;
+  const preparer = mine ? (subject ?? undefined) : undefined;
 
   useEffect(() => {
-    void loadList(status || undefined);
-  }, [loadList, status]);
+    void loadList(status || undefined, preparer);
+  }, [loadList, status, preparer]);
 
   function renderBody() {
     if (isInitialLoad(list)) return <LoadingBlock />;
     if (list.status === 'error' && list.error && list.data === null) {
-      return <ErrorPanel error={list.error} onRetry={() => void loadList(status || undefined)} />;
+      return <ErrorPanel error={list.error} onRetry={() => void loadList(status || undefined, preparer)} />;
     }
     const rows = list.data ?? [];
     if (rows.length === 0) {
@@ -62,7 +62,12 @@ export function ManualJournalsPage() {
                   {j.reversesJournalId && <span className="ml-2 text-xs text-muted-foreground">reversal</span>}
                 </td>
                 <td className="px-3 py-2 tabular-nums">{j.period}</td>
-                <td className="px-3 py-2">{STATUS_LABEL[j.status] ?? j.status}</td>
+                <td className="px-3 py-2">
+                  {STATUS_LABEL[j.status] ?? j.status}
+                  {j.autoReversal === 'WAITING_PERIOD_LOCKED' && (
+                    <span className="block text-xs text-status-warning-fg">Reversal waiting: period locked</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums">{money(j.totalDebit)}</td>
                 <td className="px-3 py-2 text-xs text-muted-foreground">{formatInstant(j.preparedAt)}</td>
               </tr>
@@ -90,6 +95,14 @@ export function ManualJournalsPage() {
                     {label}
                   </option>
                 ))}
+              </Select>
+            </FormField>
+          </div>
+          <div className="w-56">
+            <FormField label="Prepared by">
+              <Select value={mine ? 'me' : ''} onChange={(e) => setMine(e.target.value === 'me')}>
+                <option value="">Anyone</option>
+                <option value="me">Me</option>
               </Select>
             </FormField>
           </div>

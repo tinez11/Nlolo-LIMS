@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatInstant } from '@/lib/dates';
 import { useManualJournalsStore } from '@/store/manualJournalsStore';
-import { STATUS_LABEL } from './ManualJournalsPage';
+import { STATUS_LABEL, autoReversalLabel } from './manualJournalForm';
 
 const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -52,7 +52,17 @@ function Journal({ journal: j }: { journal: ManualJournalView }) {
           <p><span className="text-muted-foreground">Reason code:</span> {j.reasonCode ?? '—'}</p>
           <p><span className="text-muted-foreground">Prepared:</span> {formatInstant(j.preparedAt)}{isPreparer ? ' (by you)' : ''}</p>
           <p><span className="text-muted-foreground">Template:</span> {j.templateId ?? '—'}</p>
-          {j.autoReverseOn && <p><span className="text-muted-foreground">Reverses automatically on:</span> {j.autoReverseOn}</p>}
+          {autoReversalLabel(j) && (
+            <p className={j.autoReversal === 'WAITING_PERIOD_LOCKED' ? 'text-status-warning-fg' : undefined}>
+              <span className="text-muted-foreground">Auto-reversal:</span> {autoReversalLabel(j)}
+            </p>
+          )}
+          {j.autoReversalJournalId && (
+            <p>
+              <span className="text-muted-foreground">Reversed as:</span>{' '}
+              <Link className="underline" to={`../../gl-postings/${j.autoReversalJournalId}`} relative="path">journal entry</Link>
+            </p>
+          )}
           {j.reversesJournalId && (
             <p>
               <span className="text-muted-foreground">Reverses journal:</span>{' '}

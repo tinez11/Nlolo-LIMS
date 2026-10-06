@@ -228,10 +228,11 @@ export function dismissUnpostedEvent(id: string, reason: string): Promise<Unpost
 
 const mj = (id: string) => `/finance/manual-journals/${encodeURIComponent(id)}`;
 
-export function listManualJournals(status?: string, period?: string): Promise<ManualJournalView[]> {
+export function listManualJournals(status?: string, period?: string, preparer?: string): Promise<ManualJournalView[]> {
   const params: Record<string, string> = {};
   if (status) params.status = status;
   if (period) params.period = period;
+  if (preparer) params.preparer = preparer;
   return get<ManualJournalView[]>('/finance/manual-journals', { params });
 }
 

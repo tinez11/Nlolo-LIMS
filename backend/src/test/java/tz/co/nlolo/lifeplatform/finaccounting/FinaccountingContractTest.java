@@ -849,4 +849,55 @@ class FinaccountingContractTest {
         mockMvc.perform(get("/finance/unposted-events").with(underwriterStaffOf(tenantId)))
             .andExpect(status().isForbidden());
     }
+
+    @Autowired private tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalApi manualJournals;
+
+    /** FINANCE_APPROVER on top of FINANCE_OFFICER: the finance manager who approves manual journals (IFRS 17 I4). */
+    private static RequestPostProcessor financeApproverOf(UUID tenantId) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                                 new SimpleGrantedAuthority("ROLE_FINANCE_OFFICER"),
+                                 new SimpleGrantedAuthority("ROLE_FINANCE_APPROVER"))
+            .jwt(builder -> builder.subject("finance-approver").claim("tenant_id", tenantId.toString()));
+    }
+
+    /**
+     * IFRS 17 I4: only a FINANCE_APPROVER approves a manual journal -- a second finance officer, however senior, is
+     * refused at the endpoint -- and what comes back is what the spec says, the auto-reversal state included.
+     */
+    @Test
+    void onlyAFinanceApproverApprovesAManualJournal() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        var draft = manualJournals.create(new tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalInput(null, CURRENCY,
+            "October payroll", "Payroll summary from HR", null, "O-01", null, java.util.List.of(
+                new tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalInput.Line("8110", PostingDirection.DR,
+                    new BigDecimal("4500000.00"), "Salaries", null, null, null, null),
+                new tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalInput.Line("2640", PostingDirection.CR,
+                    new BigDecimal("4500000.00"), "NSSF and PAYE", null, null, null, null))), "finance-officer");
+        manualJournals.attachDocument(draft.id(), "doc-1", "finance-officer");
+        manualJournals.submit(draft.id(), "finance-officer");
+        TenantContext.clear();
+
+        mockMvc.perform(post("/finance/manual-journals/{id}/approval", draft.id()).with(financeStaffOf(tenantId, "finance-two")))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/finance/manual-journals/{id}/rejection", draft.id()).with(financeStaffOf(tenantId, "finance-two"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"no\"}"))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/finance/manual-journals/{id}/approval", draft.id()).with(financeApproverOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("APPROVED"))
+            .andExpect(jsonPath("$.decidedBy").value("finance-approver"));
+
+        mockMvc.perform(get("/finance/manual-journals").param("preparer", "finance-officer").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.length()").value(1));
+        mockMvc.perform(get("/finance/manual-journals").param("preparer", "someone-else").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(0));
+        mockMvc.perform(get("/finance/manual-journals").with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+    }
 }
