@@ -435,6 +435,63 @@ class ReinsuranceAndLoanPostingEndToEndTest {
         return net;
     }
 
+    @Autowired private tz.co.nlolo.lifeplatform.reinsurance.application.ReinsuranceStatements statements;
+
+    /** Every leg the tenant has posted -- to see an account's whole balance, not one journal's movement. */
+    private List<GlPosting> everyLeg(UUID tenantId) {
+        TenantContext.set(tenantId);
+        List<GlPosting> all = new java.util.ArrayList<>();
+        for (JournalEntry e : journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged())) {
+            all.addAll(legsFor(tenantId, e));
+        }
+        return all;
+    }
+
+    /**
+     * IFRS 17 I3d: a quarter's statement clears exactly what its bordereaux (K-01, K-02) and recoveries (B-05) posted.
+     * Afterwards premium payable 1430, commission receivable 1431 and recoveries 1420 are zero, the current account 1434
+     * carries what the reinsurer owes, and profit commission sits on 1433 -- one SYSTEM journal (R-01, R-03).
+     */
+    @Test
+    void aQuartersStatementClearsTheBordereauxAndRecoveriesIntoTheCurrentAccount() {
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
+            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-REINS-STMT-E2E\"}")));
+        UUID tenantId = UUID.randomUUID();
+        createQuotaShareTreaty(tenantId, new BigDecimal("50.00"));
+        Fixture fixture = buildFixture(tenantId, "REINS-STMT-E2E");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerAndAssessDeathClaim(tenantId, fixture, policyNumber, "reins-stmt-e2e-reg", "assessor-stmt");
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), CURRENCY, null,
+            "MPESA-0716000002", "reins-stmt-e2e-settle-" + claimId, "manager-stmt");
+
+        var quarter = tz.co.nlolo.lifeplatform.reinsurance.domain.StatementCalculator.Quarter.of(
+            LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")));
+        bordereauJob.drain(quarter.endExclusive());     // every month of this quarter written
+
+        TenantContext.set(tenantId);
+        UUID treatyId = reinsuranceApi.listTreaties(null).get(0).treatyId();
+        var draft = statements.prepare(treatyId, quarter.toString(), "finance-one", quarter.endExclusive());
+        assertThat(draft.recoveries()).as("the death claim's 50%").isEqualByComparingTo("1000000.00");
+        reinsuranceApi.attachStatementDocument(draft.statementId(), "doc-statement", "finance-one");
+        reinsuranceApi.updateStatement(draft.statementId(), BigDecimal.ZERO, new BigDecimal("1000.00"), "Africa Re agreed",
+            "finance-one");
+        reinsuranceApi.submitStatement(draft.statementId(), "finance-one");
+        reinsuranceApi.approveStatement(draft.statementId(), "finance-approver");
+
+        JournalEntry statement = singleEntryFor(tenantId, "reinsurance.StatementApproved", draft.statementId().toString());
+        assertThat(statement.getSourceType()).isEqualTo(tz.co.nlolo.lifeplatform.finaccounting.api.JournalSource.SYSTEM);
+        assertThat(legsFor(tenantId, statement)).allSatisfy(l -> assertThat(l.getDimensions().reference())
+            .isEqualTo(draft.statementId().toString()));
+
+        List<GlPosting> all = everyLeg(tenantId);
+        assertThat(netFor(all, "1430")).as("premium payable cleared").isZero();
+        assertThat(netFor(all, "1431")).as("commission receivable cleared").isZero();
+        assertThat(netFor(all, "1420")).as("recoveries cleared").isZero();
+        assertThat(netFor(all, "1434")).as("the reinsurer owes the recovery and commission, less the premium")
+            .isEqualByComparingTo(draft.owedToUs());
+        assertThat(netFor(all, "1433")).isEqualByComparingTo("1000.00");
+    }
+
     @Test
     void cessionRecoveryAndLoanDisburseThenTwoPartialRepaymentsEachPostTheirOwnBalancedEntryAndTheLoanReceivableNetsToZero() throws Exception {
         wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
