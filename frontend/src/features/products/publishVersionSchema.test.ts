@@ -708,6 +708,14 @@ describe('publishVersionFormSchema', () => {
 describe('toApiRequest', () => {
   const termLife = publishVersionFormSchema('TERM_LIFE');
 
+  it('sends the survival investment component as a number, or null when left blank (IFRS 17 I3b)', () => {
+    expect(toApiRequest(termLife.parse(valid())).survivalInvestmentComponentPercent).toBeNull();
+    expect(
+      toApiRequest(termLife.parse({ ...valid(), survivalInvestmentComponentPercent: '80' })).survivalInvestmentComponentPercent,
+    ).toBe(80);
+    expect(termLife.safeParse({ ...valid(), survivalInvestmentComponentPercent: '120' }).success).toBe(false);
+  });
+
   it('sends retirementDate as null, not an empty string, when left blank', () => {
     const parsed = termLife.parse(valid());
     expect(toApiRequest(parsed).retirementDate).toBeNull();

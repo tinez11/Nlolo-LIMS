@@ -25,7 +25,20 @@ export const ELECTION_VALUES: Record<ElectionKey, readonly string[]> = {
   PREMIUM_BILLING: ['ACCRUAL_AT_INVOICE'],
   CONTRACT_RECOGNITION: ['ISSUE_DATE'],
   COHORT: ['ANNUAL'],
+  // IFRS 17 I3b: a percentage such as 5 or 2.5, or NONE. None in force: nothing withheld or levied.
+  COMMISSION_WITHHOLDING_RATE: ['NONE'],
+  PREMIUM_LEVY_RATE: ['NONE'],
 };
+
+/** The rate elections (IFRS 17 I3b): their value is NONE or a percentage. */
+export const RATE_KEYS: readonly string[] = ['COMMISSION_WITHHOLDING_RATE', 'PREMIUM_LEVY_RATE'];
+
+/** ElectionKey.rate: a percentage above 0 and at most 100, up to four decimal places. */
+export function isRate(value: string): boolean {
+  if (!/^\d{1,3}(\.\d{1,4})?$/.test(value)) return false;
+  const n = Number(value);
+  return n > 0 && n <= 100;
+}
 
 export const ELECTION_KEYS = Object.keys(ELECTION_VALUES) as ElectionKey[];
 
@@ -33,6 +46,7 @@ export const ELECTION_KEYS = Object.keys(ELECTION_VALUES) as ElectionKey[];
 export function permits(key: string, value: string): boolean {
   const allowed = ELECTION_VALUES[key as ElectionKey];
   if (!allowed || value.trim() === '') return false;
+  if (RATE_KEYS.includes(key)) return value === 'NONE' || isRate(value);
   if (key === 'MODEL_OVERRIDE_ALLOWED') {
     return value === 'NONE' || value.split(',').every((m) => (MODELS as readonly string[]).includes(m.trim()));
   }
