@@ -100,6 +100,7 @@ class PostingEngineIntegrationTest {
     @Autowired private ApplicationEventPublisher events;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private PostingRules postingRules;
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
@@ -126,7 +127,10 @@ class PostingEngineIntegrationTest {
             assertThat(l.get("reference_type")).isEqualTo("INVOICE");
             assertThat(l.get("reference")).isEqualTo(gmmInvoice.toString());
         });
-        assertThat(journal(tenant, gmmInvoice.toString()).get("rule_version")).isEqualTo("posting-rules v2");
+        // The version the loaded rules file declares, not a literal: I3c moved the file to v3 and a literal "v2" here
+        // went stale without anyone noticing.
+        assertThat(journal(tenant, gmmInvoice.toString()).get("rule_version"))
+            .isEqualTo(postingRules.ruleSet().versionLabel()).asString().startsWith("posting-rules v");
 
         assertThat(lines(tenant, paaInvoice.toString())).extracting(l -> l.get("account_code") + " " + l.get("direction"))
             .containsExactlyInAnyOrder("2142 DR", "2141 CR");
