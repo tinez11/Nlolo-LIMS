@@ -2,18 +2,29 @@ import { create } from 'zustand';
 import {
   actOnPeriod,
   approvePolicyElection,
+  dismissUnpostedEvent,
+  getPostingRules,
   listPeriods,
+  listUnpostedEvents,
   listPolicyElections,
   proposePolicyElection,
   rejectPolicyElection,
   requestReopen,
+  retryUnpostedEvent,
   type PeriodAction,
 } from '@/api/finaccounting';
-import type { AccountingPeriodView, PolicyElectionInput, PolicyElectionView } from '@/api/types';
+import type {
+  AccountingPeriodView,
+  PolicyElectionInput,
+  PolicyElectionView,
+  PostingRulesView,
+  UnpostedEventView,
+} from '@/api/types';
 import { idle, track, type Resource } from './createResourceSlice';
 
 /**
- * The ledger's controls (IFRS 17 I1): accounting periods and the accounting policy register. Each mutation
+ * The ledger's controls (IFRS 17 I1, I3a): accounting periods, the accounting policy register, the posting rules
+ * and the events they could not post. Each mutation
  * runs under its own `acting` slot -- a refusal on one period or election must not touch another's controls
  * -- then rereads the list it changed.
  */
@@ -23,6 +34,8 @@ type Keyed<T> = Record<string, Resource<T>>;
 interface LedgerControlsState {
   periods: Resource<AccountingPeriodView[]>;
   elections: Resource<PolicyElectionView[]>;
+  rules: Resource<PostingRulesView>;
+  unposted: Resource<UnpostedEventView[]>;
   acting: Keyed<unknown>;
 
   loadPeriods: () => Promise<void>;
@@ -32,6 +45,10 @@ interface LedgerControlsState {
   propose: (input: PolicyElectionInput) => Promise<boolean>;
   approve: (electionId: string, signOffRef: string) => Promise<boolean>;
   reject: (electionId: string, reason: string) => Promise<boolean>;
+  loadRules: () => Promise<void>;
+  loadUnposted: () => Promise<void>;
+  retryUnposted: (id: string) => Promise<boolean>;
+  dismissUnposted: (id: string, reason: string) => Promise<boolean>;
 }
 
 export const useLedgerControlsStore = create<LedgerControlsState>((set, getState) => {
@@ -50,6 +67,8 @@ export const useLedgerControlsStore = create<LedgerControlsState>((set, getState
   return {
     periods: idle(),
     elections: idle(),
+    rules: idle(),
+    unposted: idle(),
     acting: {},
 
     loadPeriods: () =>
@@ -91,6 +110,26 @@ export const useLedgerControlsStore = create<LedgerControlsState>((set, getState
       act(`election.${electionId}`, async () => {
         await rejectPolicyElection(electionId, reason);
         await getState().loadElections();
+      }),
+
+    loadRules: () =>
+      track('ledgerControls.rules', getState().rules, (next) => set({ rules: next }), () => getPostingRules()),
+
+    loadUnposted: () =>
+      track('ledgerControls.unposted', getState().unposted, (next) => set({ unposted: next }), () =>
+        listUnpostedEvents(),
+      ),
+
+    retryUnposted: (id) =>
+      act(`unposted.${id}`, async () => {
+        await retryUnpostedEvent(id);
+        await getState().loadUnposted();
+      }),
+
+    dismissUnposted: (id, reason) =>
+      act(`unposted.${id}`, async () => {
+        await dismissUnpostedEvent(id, reason);
+        await getState().loadUnposted();
       }),
   };
 });
