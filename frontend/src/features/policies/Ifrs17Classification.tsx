@@ -30,20 +30,27 @@ export function Ifrs17Classification({ policy, showAccounting }: { policy: Polic
     };
   }, [policyNumber, showAccounting]);
 
+  // One <dl> per block, never a wrapper <div> inside a <dl>: a definition list may hold only its terms and
+  // descriptions, and the staff a11y sweep counts anything else as a violation.
   return (
-    <dl className="px-4 pb-2">
-      <Field label="Portfolio" value={portfolioLabel(policy.portfolioCode)} />
-      <Field label="Cohort" value={policy.cohortYear ?? '—'} />
-      <Field label="Expected profitability" value={bucketLabel(policy.profitabilityBucket)} />
-      <Field
-        label="Model override"
-        value={policy.measurementModelOverride ? modelLabel(policy.measurementModelOverride) : 'None'}
-      />
-      <Field label="Sales channel" value={channelLabel(policy.salesChannel)} />
-      <Field label="Branch" value={policy.branchCode ?? '—'} />
+    <>
+      <dl className="px-4 pb-2">
+        <Field label="Portfolio" value={portfolioLabel(policy.portfolioCode)} />
+        <Field label="Cohort" value={policy.cohortYear ?? '—'} />
+        <Field label="Expected profitability" value={bucketLabel(policy.profitabilityBucket)} />
+        <Field
+          label="Model override"
+          value={policy.measurementModelOverride ? modelLabel(policy.measurementModelOverride) : 'None'}
+        />
+        <Field label="Sales channel" value={channelLabel(policy.salesChannel)} />
+        <Field label="Branch" value={policy.branchCode ?? '—'} />
+        {showAccounting && rows?.length === 0 && (
+          <Field label="Group of contracts" value="Not classified yet" />
+        )}
+      </dl>
       {showAccounting &&
         rows?.map((c) => (
-          <div key={c.reason} className="mt-2 border-t border-border pt-2">
+          <dl key={c.reason} className="mx-4 mb-2 border-t border-border pt-2">
             <Field
               label={c.reason === 'VESTING' ? 'Group from vesting' : 'Group of contracts'}
               value={<span className="font-mono">{c.groupKey}</span>}
@@ -54,11 +61,8 @@ export function Ifrs17Classification({ policy, showAccounting }: { policy: Polic
               note={BASIS_NOTE[c.modelBasis] ?? c.modelBasis}
             />
             <Field label="Register version" value={c.registerVersion} />
-          </div>
+          </dl>
         ))}
-      {showAccounting && rows?.length === 0 && (
-        <Field label="Group of contracts" value="Not classified yet" />
-      )}
-    </dl>
+    </>
   );
 }
