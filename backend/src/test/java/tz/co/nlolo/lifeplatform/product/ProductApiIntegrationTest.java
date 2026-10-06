@@ -1784,9 +1784,9 @@ class ProductApiIntegrationTest {
             .toList();
         // Nine: step 1 added the cash-value overload, step 2 the payout-plan one, step 3 the
         // accumulation-plan one, the fixed-term deposit the deposit-grid one, step 4 the with-profits
-        // one, step 5 the annuity one, family funeral cover the funeral one, step 6 the unit-linked one. A new overload must raise
-        // this count AND pass both checks below -- that is the point of counting.
-        assertEquals(12, declared.size(), "expected twelve publishVersion overloads");
+        // one, step 5 the annuity one, family funeral cover the funeral one, step 6 the unit-linked one, IFRS 17 I2 the
+        // Ifrs17Terms one. A new overload must raise this count AND pass both checks below -- that is the point of counting.
+        assertEquals(13, declared.size(), "expected thirteen publishVersion overloads");
         declared.forEach(m -> assertFalse(m.isDefault(),
             "publishVersion must not be a default method: Spring's proxy cannot apply "
                 + "@Transactional to one, so its delegation runs untransacted"));
@@ -1794,7 +1794,7 @@ class ProductApiIntegrationTest {
         List<Method> implementations = Arrays.stream(ProductApiImpl.class.getDeclaredMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        assertEquals(12, implementations.size(), "every overload must be implemented here");
+        assertEquals(13, implementations.size(), "every overload must be implemented here");
         implementations.forEach(m -> assertNotNull(m.getAnnotation(Transactional.class),
             "every publishVersion implementation must carry @Transactional, including the "
                 + "convenience overloads -- the retire-then-insert sequence must be atomic"));
