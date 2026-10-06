@@ -13,6 +13,10 @@ test.describe('IFRS 17 posting rules', () => {
     await page.goto('/staff/posting-rules');
     await expect(page.getByRole('heading', { name: 'Posting rules' })).toBeVisible();
     await expect(page.getByText(/posting-rules v\d+/)).toBeVisible();
+    // IFRS 17 I3b: the rates the rules apply, from the accounting policy register -- never a default.
+    const rates = page.getByRole('region', { name: 'Rates' });
+    await expect(rates).toContainText('Commission withholding tax');
+    await expect(rates).toContainText('Premium levy');
 
     const renewal = page.getByRole('table', { name: 'Rule A-06' });
     await expect(renewal).toContainText('2122');
