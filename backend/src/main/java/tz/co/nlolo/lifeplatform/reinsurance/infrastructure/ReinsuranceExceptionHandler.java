@@ -40,6 +40,17 @@ public class ReinsuranceExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "BORDEREAU_NOT_FOUND");
     }
 
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.reinsurance.api.StatementNotFoundException.class)
+    public ProblemDetail handleStatementNotFound(tz.co.nlolo.lifeplatform.reinsurance.api.StatementNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "STATEMENT_NOT_FOUND");
+    }
+
+    /** IFRS 17 I3d: a quarter not settleable yet, a statement already there, or a step its state or people refuse. */
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.reinsurance.api.StatementStateException.class)
+    public ProblemDetail handleStatementState(tz.co.nlolo.lifeplatform.reinsurance.api.StatementStateException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "STATEMENT_STATE");
+    }
+
     @ExceptionHandler(ReinsuranceValidationException.class)
     public ProblemDetail handleValidation(ReinsuranceValidationException ex) {
         return problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "REINSURANCE_VALIDATION_FAILED");

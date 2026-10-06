@@ -664,4 +664,61 @@ class ReinsuranceContractTest {
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.errorCode").value("TREATY_NOT_FOUND"));
     }
+
+    // --- the quarterly statement (IFRS 17 I3d) ---------------------------------------------------------------------
+
+    @Autowired private tz.co.nlolo.lifeplatform.reinsurance.application.ReinsuranceStatements statements;
+
+    /** FINANCE_APPROVER on top of FINANCE_OFFICER: the finance manager who approves (IFRS 17 I4's role). */
+    private static RequestPostProcessor financeApproverOf(UUID tenantId) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                                 new SimpleGrantedAuthority("ROLE_FINANCE_OFFICER"),
+                                 new SimpleGrantedAuthority("ROLE_FINANCE_APPROVER"))
+            .jwt(builder -> builder.subject("finance-approver").claim("tenant_id", tenantId.toString()));
+    }
+
+    /**
+     * Only a FINANCE_APPROVER approves a statement -- a second finance officer is refused at the endpoint -- and
+     * what comes back is the spec's StatementView, amounts as decimal strings like every other reinsurance amount.
+     */
+    @Test
+    void onlyAFinanceApproverApprovesAStatementAndItIsTheSpecs() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        UUID treatyId = reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest("Africa Re",
+            TreatyType.QUOTA_SHARE, new BigDecimal("0.00"), CURRENCY, new BigDecimal("50.00"), BigDecimal.ZERO, null,
+            LocalDate.of(2026, 1, 1), null), "finance-officer").treatyId();
+        bordereauJob.drain(LocalDate.of(2026, 4, 1));
+        TenantContext.set(tenantId);
+        var draft = statements.prepare(treatyId, "2026-Q1", "finance-officer", LocalDate.of(2026, 4, 2));
+        reinsuranceApi.attachStatementDocument(draft.statementId(), "doc-q1", "finance-officer");
+        reinsuranceApi.updateStatement(draft.statementId(), BigDecimal.ZERO, BigDecimal.ZERO, "Q1 agreed", "finance-officer");
+        reinsuranceApi.submitStatement(draft.statementId(), "finance-officer");
+        TenantContext.clear();
+
+        mockMvc.perform(post("/reinsurance-statements/{id}/approval", draft.statementId()).with(financeStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/reinsurance-statements/{id}/approval", draft.statementId()).with(financeApproverOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "StatementView"))
+            .andExpect(jsonPath("$.status").value("APPROVED"))
+            .andExpect(jsonPath("$.premium").value("0.00"))
+            .andExpect(jsonPath("$.items.length()").value(3));
+
+        mockMvc.perform(get("/reinsurance-statements").param("status", "APPROVED").with(financeApproverOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.length()").value(1));
+        mockMvc.perform(get("/reinsurance-statements/{id}", draft.statementId()).with(financeStaffOf(UUID.randomUUID())))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("STATEMENT_NOT_FOUND"));
+        mockMvc.perform(post("/treaties/{treatyId}/statements", treatyId).with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"quarter\":\"2099-Q1\"}"))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("STATEMENT_STATE"));
+        mockMvc.perform(get("/reinsurance-statements").with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+    }
 }

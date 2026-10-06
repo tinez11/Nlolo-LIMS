@@ -260,6 +260,191 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /treaties/{treatyId}/statements:
+    post:
+      summary: Prepare a quarter's statement (IFRS 17 I3d)
+      description: >
+        A DRAFT settling the treaty's calendar quarter from its bordereaux and the recoveries that posted (not legacy).
+        409 before the quarter has ended (Dar es Salaam), while a month's bordereau is unwritten, or when the quarter
+        already has a statement that is not REJECTED. FINANCE_OFFICER or ADMIN.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TreatyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PrepareStatementRequest' }
+      responses:
+        '201':
+          description: Prepared
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StatementView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /reinsurance-statements:
+    get:
+      summary: Reinsurance statements, newest first (IFRS 17 I3d)
+      description: Filter by status and treaty. At most 500. FINANCE_OFFICER, ADMIN or FINANCE_APPROVER.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: status, in: query, required: false, schema: { $ref: '#/components/schemas/StatementStatus' } }
+        - { name: treatyId, in: query, required: false, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StatementView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /reinsurance-statements/{statementId}:
+    parameters:
+      - $ref: '#/components/parameters/StatementId'
+    get:
+      summary: One statement, with what it settles and the journal approval posts
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StatementView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      summary: What the reinsurer's statement states, and why -- a DRAFT, by its preparer
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateStatementRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StatementView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /reinsurance-statements/{statementId}/documents:
+    parameters:
+      - $ref: '#/components/parameters/StatementId'
+    post:
+      summary: Attach the reinsurer's statement (PDF, image or spreadsheet) to a DRAFT, by its preparer
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StatementView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /reinsurance-statements/{statementId}/submission:
+    parameters:
+      - $ref: '#/components/parameters/StatementId'
+    post:
+      summary: Submit for approval -- needs a reason and the reinsurer's statement attached
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StatementView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /reinsurance-statements/{statementId}/withdrawal:
+    parameters:
+      - $ref: '#/components/parameters/StatementId'
+    post:
+      summary: Back to DRAFT, by its preparer
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StatementView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /reinsurance-statements/{statementId}/approval:
+    parameters:
+      - $ref: '#/components/parameters/StatementId'
+    post:
+      summary: Approve and post (R-04, R-01, R-03 as one SYSTEM journal) -- FINANCE_APPROVER, never the preparer
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StatementView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /reinsurance-statements/{statementId}/rejection:
+    parameters:
+      - $ref: '#/components/parameters/StatementId'
+    post:
+      summary: Reject with a reason -- FINANCE_APPROVER, never the preparer; the quarter may then be prepared again
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StatementRejectionRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StatementView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 components:
   parameters:
     TreatyId:
@@ -269,6 +454,11 @@ components:
       schema: { type: string, format: uuid }
     ClaimId:
       name: claimId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    StatementId:
+      name: statementId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -298,6 +488,16 @@ components:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
     NotFound:
       description: No such resource in this tenant. Also returned for a resource belonging to another tenant, so that cross-tenant existence is not leaked.
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    Conflict:
+      description: "A step the statement's state, its quarter or its people refuse (STATEMENT_STATE)"
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    Unprocessable:
+      description: "Every problem with what was entered, listed (REINSURANCE_VALIDATION_FAILED)"
       content:
         application/problem+json:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
@@ -380,6 +580,88 @@ components:
           type: array
           description: "Empty on a list row."
           items: { $ref: '#/components/schemas/BordereauLine' }
+    StatementStatus:
+      type: string
+      enum: [DRAFT, SUBMITTED, APPROVED, REJECTED]
+    PrepareStatementRequest:
+      type: object
+      required: [quarter]
+      properties:
+        quarter: { type: string, pattern: '^\d{4}-Q[1-4]$', description: "A calendar quarter, e.g. 2026-Q3." }
+    UpdateStatementRequest:
+      type: object
+      properties:
+        fundsWithheld:
+          type: [string, "null"]
+          pattern: '^\d+(\.\d{1,2})?$'
+          description: "R-04: kept from the premium as security, 0 up to the quarter's premium. Decimal string; absent is 0."
+        profitCommission:
+          type: [string, "null"]
+          pattern: '^\d+(\.\d{1,2})?$'
+          description: "R-03: the reinsurer's profit commission on this statement. Decimal string; absent is 0."
+        reason: { type: [string, "null"], maxLength: 500 }
+    StatementRejectionRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    StatementView:
+      type: object
+      additionalProperties: false
+      required: [statementId, treatyId, quarter, currency, status, premium, commission, recoveries, fundsWithheld,
+                 profitCommission, owedToUs, owedByUs, documentRefs, preparer, preparedAt, items, journal]
+      description: >
+        A treaty's quarterly statement (IFRS 17 I3d). premium, commission and recoveries are the platform's, summed from
+        items; fundsWithheld and profitCommission come from the reinsurer's statement. Exactly one of owedToUs/owedByUs
+        is above zero unless the quarter nets to nothing: where the current account (1434) falls. Amounts are decimal
+        strings in `currency`.
+      properties:
+        statementId: { type: string, format: uuid }
+        treatyId: { type: string, format: uuid }
+        reinsurerName: { type: [string, "null"] }
+        quarter: { type: string }
+        currency: { type: string }
+        status: { $ref: '#/components/schemas/StatementStatus' }
+        premium: { type: string }
+        commission: { type: string }
+        recoveries: { type: string }
+        fundsWithheld: { type: string }
+        profitCommission: { type: string }
+        owedToUs: { type: string }
+        owedByUs: { type: string }
+        reason: { type: [string, "null"] }
+        documentRefs:
+          type: array
+          items: { type: string }
+        preparer: { type: string }
+        preparedAt: { type: string, format: date-time }
+        submittedAt: { type: [string, "null"], format: date-time }
+        decidedBy: { type: [string, "null"] }
+        decidedAt: { type: [string, "null"], format: date-time }
+        decisionReason: { type: [string, "null"] }
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [type, id, label, amount]
+            properties:
+              type: { type: string, enum: [BORDEREAU, RECOVERY] }
+              id: { type: string, format: uuid }
+              label: { type: string }
+              amount: { type: string }
+        journal:
+          type: array
+          description: "The lines approval posts, zero lines left out (R-04, R-01, R-03)."
+          items:
+            type: object
+            additionalProperties: false
+            required: [entry, account, side, amount]
+            properties:
+              entry: { type: string, enum: [R-01, R-03, R-04] }
+              account: { type: string }
+              side: { type: string, enum: [DR, CR] }
+              amount: { type: string }
     BordereauLine:
       type: object
       required: [type, premium, commission, recovery]
