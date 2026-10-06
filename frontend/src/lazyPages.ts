@@ -166,3 +166,15 @@ export const PostingRulesPage = lazy(() =>
 export const UnpostedEventsPage = lazy(() =>
   import('@/features/finance/UnpostedEventsPage').then((m) => ({ default: m.UnpostedEventsPage })),
 );
+export const ManualJournalsPage = lazy(() =>
+  import('@/features/finance/ManualJournalsPage').then((m) => ({ default: m.ManualJournalsPage })),
+);
+export const ManualJournalEditorPage = lazy(() =>
+  import('@/features/finance/ManualJournalEditorPage').then((m) => ({ default: m.ManualJournalEditorPage })),
+);
+export const ManualJournalDetailPage = lazy(() =>
+  import('@/features/finance/ManualJournalDetailPage').then((m) => ({ default: m.ManualJournalDetailPage })),
+);
+export const JournalTemplatesPage = lazy(() =>
+  import('@/features/finance/JournalTemplatesPage').then((m) => ({ default: m.JournalTemplatesPage })),
+);

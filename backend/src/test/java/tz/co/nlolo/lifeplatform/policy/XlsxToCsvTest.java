@@ -6,7 +6,7 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentCsvParser;
-import tz.co.nlolo.lifeplatform.policy.domain.XlsxToCsv;
+import tz.co.nlolo.lifeplatform.XlsxToCsv;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;

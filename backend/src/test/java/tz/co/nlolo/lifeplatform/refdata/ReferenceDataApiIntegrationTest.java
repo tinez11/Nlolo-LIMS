@@ -33,7 +33,8 @@ class ReferenceDataApiIntegrationTest {
     static void applyMigration() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/refdata/V1__create_refdata_schema.sql",
-            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql");
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
+            "db-migrations/refdata/V9__journal_reason_codes.sql");
     }
 
     @Autowired

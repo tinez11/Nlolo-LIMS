@@ -131,6 +131,7 @@ class ExitFileIntegrationTest {
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
+            "db-migrations/refdata/V9__journal_reason_codes.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
@@ -167,6 +168,7 @@ class ExitFileIntegrationTest {
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
             "db-migrations/document/V5__exits_file_document_type.sql",
             "db-migrations/document/V6__account_statement_document_type.sql",
+            "db-migrations/document/V7__journal_support_document_type.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");

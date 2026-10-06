@@ -69,6 +69,7 @@ class PostingEngineIntegrationTest {
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
+            "db-migrations/refdata/V9__journal_reason_codes.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
@@ -82,7 +83,8 @@ class PostingEngineIntegrationTest {
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
             "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
             "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
-            "db-migrations/finaccounting/V13__disbursement_method.sql");
+            "db-migrations/finaccounting/V13__disbursement_method.sql",
+            "db-migrations/finaccounting/V14__manual_journals.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -98,6 +100,7 @@ class PostingEngineIntegrationTest {
     @Autowired private ApplicationEventPublisher events;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private PostingRules postingRules;
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
@@ -124,7 +127,10 @@ class PostingEngineIntegrationTest {
             assertThat(l.get("reference_type")).isEqualTo("INVOICE");
             assertThat(l.get("reference")).isEqualTo(gmmInvoice.toString());
         });
-        assertThat(journal(tenant, gmmInvoice.toString()).get("rule_version")).isEqualTo("posting-rules v2");
+        // The version the loaded rules file declares, not a literal: I3c moved the file to v3 and a literal "v2" here
+        // went stale without anyone noticing.
+        assertThat(journal(tenant, gmmInvoice.toString()).get("rule_version"))
+            .isEqualTo(postingRules.ruleSet().versionLabel()).asString().startsWith("posting-rules v");
 
         assertThat(lines(tenant, paaInvoice.toString())).extracting(l -> l.get("account_code") + " " + l.get("direction"))
             .containsExactlyInAnyOrder("2142 DR", "2141 CR");

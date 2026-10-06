@@ -80,6 +80,10 @@ import {
   PolicyRegisterPage,
   PostingRulesPage,
   UnpostedEventsPage,
+  ManualJournalsPage,
+  ManualJournalEditorPage,
+  ManualJournalDetailPage,
+  JournalTemplatesPage,
 } from '@/lazyPages';
 
 /**
@@ -525,6 +529,20 @@ const STAFF_SCREENS: Screen[] = [
     path: 'unposted-events',
     element: <UnpostedEventsPage />,
     reach: { group: 'finance', label: 'Unposted events', icon: FileWarning },
+  },
+  // IFRS 17 I4: manual journals, prepared by one person and posted when a finance approver approves them.
+  {
+    path: 'manual-journals',
+    element: <ManualJournalsPage />,
+    reach: { group: 'finance', label: 'Manual journals', icon: BookText },
+  },
+  { path: 'manual-journals/new', element: <ManualJournalEditorPage />, reach: 'drill-in' },
+  { path: 'manual-journals/:id', element: <ManualJournalDetailPage />, reach: 'drill-in' },
+  { path: 'manual-journals/:id/edit', element: <ManualJournalEditorPage />, reach: 'drill-in' },
+  {
+    path: 'journal-templates',
+    element: <JournalTemplatesPage />,
+    reach: { group: 'finance', label: 'Journal templates', icon: ScrollText },
   },
   {
     path: 'treaties',

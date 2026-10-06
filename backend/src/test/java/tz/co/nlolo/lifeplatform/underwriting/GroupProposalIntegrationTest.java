@@ -97,7 +97,8 @@ class GroupProposalIntegrationTest {
             "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
-            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql");
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
+            "db-migrations/refdata/V9__journal_reason_codes.sql");
     }
 
     @Autowired private UnderwritingApi underwritingApi;

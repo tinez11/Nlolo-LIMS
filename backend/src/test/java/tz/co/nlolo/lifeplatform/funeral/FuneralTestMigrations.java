@@ -24,6 +24,7 @@ public final class FuneralTestMigrations {
         "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
         "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
         "db-migrations/finaccounting/V13__disbursement_method.sql",
+        "db-migrations/finaccounting/V14__manual_journals.sql",
         "db-migrations/product/V24__funeral_terms.sql",
         "db-migrations/underwriting/V16__funeral_application.sql",
         "db-migrations/policy/V35__covered_life.sql",

@@ -9,6 +9,8 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PeriodStateException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyElectionNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyRegisterStateException;
+import tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalNotFoundException;
+import tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalStateException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.UnpostedEventNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.UnpostedEventResolvedException;
 import org.springframework.core.Ordered;
@@ -84,6 +86,16 @@ public class FinaccountingExceptionHandler {
     @ExceptionHandler(PolicyElectionNotFoundException.class)
     public ProblemDetail handlePolicyElectionNotFound(PolicyElectionNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "POLICY_ELECTION_NOT_FOUND");
+    }
+
+    @ExceptionHandler(ManualJournalNotFoundException.class)
+    public ProblemDetail handleManualJournalNotFound(ManualJournalNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "MANUAL_JOURNAL_NOT_FOUND");
+    }
+
+    @ExceptionHandler(ManualJournalStateException.class)
+    public ProblemDetail handleManualJournalState(ManualJournalStateException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "MANUAL_JOURNAL_STATE");
     }
 
     @ExceptionHandler(UnpostedEventNotFoundException.class)

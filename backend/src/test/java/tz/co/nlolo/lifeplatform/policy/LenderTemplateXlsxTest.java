@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentCsvParser;
 import tz.co.nlolo.lifeplatform.policy.domain.ExitCsvParser;
 import tz.co.nlolo.lifeplatform.policy.domain.LenderTemplateXlsx;
-import tz.co.nlolo.lifeplatform.policy.domain.XlsxToCsv;
+import tz.co.nlolo.lifeplatform.XlsxToCsv;
 
 import java.io.ByteArrayInputStream;
 import java.io.StringReader;

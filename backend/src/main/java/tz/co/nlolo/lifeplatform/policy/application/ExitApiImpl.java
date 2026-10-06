@@ -13,7 +13,7 @@ import tz.co.nlolo.lifeplatform.policy.domain.ExitSubmissionRow;
 import tz.co.nlolo.lifeplatform.policy.domain.GroupScheme;
 import tz.co.nlolo.lifeplatform.policy.domain.PolicyMember;
 import tz.co.nlolo.lifeplatform.policy.domain.LenderTemplateXlsx;
-import tz.co.nlolo.lifeplatform.policy.domain.XlsxToCsv;
+import tz.co.nlolo.lifeplatform.XlsxToCsv;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.ExitSubmissionRepository;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.ExitSubmissionRowRepository;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.GroupSchemeRepository;

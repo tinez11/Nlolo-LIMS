@@ -84,7 +84,8 @@ class ReferenceDataAllowlistTest {
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/refdata/V4__seed_distribution_parameters.sql",
-            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql");
+            "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
+            "db-migrations/refdata/V9__journal_reason_codes.sql");
     }
 
     @Autowired private MockMvc mockMvc;

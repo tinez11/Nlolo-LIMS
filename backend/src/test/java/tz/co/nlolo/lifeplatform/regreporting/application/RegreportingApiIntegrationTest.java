@@ -64,6 +64,7 @@ class RegreportingApiIntegrationTest {
             "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
+            "db-migrations/refdata/V9__journal_reason_codes.sql",
             "db-migrations/regreporting/V1__create_regreporting_schema.sql",
             "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql",
             "db-migrations/regreporting/V3__optimistic_locking_on_movement_tables.sql",

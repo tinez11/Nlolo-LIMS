@@ -22,6 +22,8 @@ export interface StaffRoles {
   CLAIMS_ASSESSOR: boolean;
   CLAIMS_MANAGER: boolean;
   FINANCE_OFFICER: boolean;
+  /** IFRS 17 I4: approves or rejects a manual journal someone else prepared. Additive to FINANCE_OFFICER. */
+  FINANCE_APPROVER: boolean;
   CUSTOMER_SERVICE_REP: boolean;
   ADMIN: boolean;
 }
@@ -121,6 +123,7 @@ export function staffRoles(identity: TokenIdentity): StaffRoles {
     CLAIMS_ASSESSOR: has('CLAIMS_ASSESSOR'),
     CLAIMS_MANAGER: has('CLAIMS_MANAGER'),
     FINANCE_OFFICER: has('FINANCE_OFFICER'),
+    FINANCE_APPROVER: has('FINANCE_APPROVER'),
     CUSTOMER_SERVICE_REP: has('CUSTOMER_SERVICE_REP'),
     ADMIN: has('ADMIN'),
   };
@@ -133,6 +136,14 @@ export function staffRoles(identity: TokenIdentity): StaffRoles {
 export function canSeeFinance(identity: TokenIdentity): boolean {
   const roles = staffRoles(identity);
   return roles.FINANCE_OFFICER || roles.ADMIN;
+}
+
+/**
+ * Approving or rejecting a manual journal (IFRS 17 I4). Mirrors `hasRole('REALM_STAFF') and hasRole('FINANCE_APPROVER')`;
+ * the server also refuses the journal's own preparer, whatever their roles.
+ */
+export function canApproveJournals(identity: TokenIdentity): boolean {
+  return staffRoles(identity).FINANCE_APPROVER;
 }
 
 /**
