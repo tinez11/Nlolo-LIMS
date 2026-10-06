@@ -80,6 +80,7 @@ public class ClaimsApiImpl implements ClaimsApi {
     private final tz.co.nlolo.lifeplatform.unitlinked.api.UnitLinkedApi unitLinkedApi;
     /** A funeral plan's claims (family funeral cover); touched only once the policy says FUNERAL. */
     private final FuneralClaims funeralClaims;
+    private final ClaimInvestmentComponent investmentComponent;
     private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
@@ -90,7 +91,9 @@ public class ClaimsApiImpl implements ClaimsApi {
                           BenefitPayoutApi benefitPayoutApi,
                           ApplicationEventPublisher eventPublisher, PlatformTransactionManager transactionManager,
                           AnnuityApi annuityApi, FuneralClaims funeralClaims,
-                          tz.co.nlolo.lifeplatform.unitlinked.api.UnitLinkedApi unitLinkedApi) {
+                          tz.co.nlolo.lifeplatform.unitlinked.api.UnitLinkedApi unitLinkedApi,
+                          ClaimInvestmentComponent investmentComponent) {
+        this.investmentComponent = investmentComponent;
         this.unitLinkedApi = unitLinkedApi;
         this.annuityApi = annuityApi;
         this.funeralClaims = funeralClaims;
@@ -707,6 +710,9 @@ public class ClaimsApiImpl implements ClaimsApi {
             approvedPayload.put("claimType", claim.getClaimType().name());
             approvedPayload.put("dateOfEvent", claim.getDateOfEvent().toString());
             approvedPayload.put("approvedAmount", Map.of("amount", approvedAmount.toPlainString(), "currencyCode", approvedCurrency));
+            // IFRS 17 I3b (guide B-02, C-04): the part of the claim repaid in all circumstances, by the register's rule.
+            approvedPayload.put("investmentComponent", investmentComponent.of(claim.getPolicyNumber(), claim.getDateOfEvent(),
+                approvedAmount).toPlainString());
             if (deceasedOf(claim) != null) {
                 approvedPayload.put("deceasedPartyId", deceasedOf(claim));
             }

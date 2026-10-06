@@ -335,6 +335,15 @@ public class Deposits {
     @Transactional
     public void settlePayout(String sourceRef, boolean paid) {
         if (paid) {
+            // IFRS 17 I3b: the maturity left the bank; the ledger clears what the MATURITY entry made payable (2340).
+            postings.findByTenantIdAndSourceTypeAndSourceRef(TenantContext.get(), "deposit-maturity",
+                    "deposit-maturity:" + sourceRef)
+                .map(p -> entries.findByPostingIdOrderBySeq(p.getPostingId()).get(0))
+                .ifPresent(e -> events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutPaid", TenantContext.get(),
+                    Map.of("payoutRef", "deposit-maturity:" + sourceRef, "paymentRef", sourceRef,
+                           "policyNumber", e.getPolicyNumber(),
+                           "amount", Map.of("amount", e.getAmount().abs().toPlainString(),
+                               "currencyCode", accounts.findById(e.getPolicyNumber()).orElseThrow().getCurrency())))));
             return;
         }
         Posting posting = postings.findByTenantIdAndSourceTypeAndSourceRef(TenantContext.get(), "deposit-maturity",

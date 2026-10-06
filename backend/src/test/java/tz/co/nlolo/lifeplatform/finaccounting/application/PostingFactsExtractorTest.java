@@ -72,16 +72,113 @@ class PostingFactsExtractorTest {
     }
 
     @Test
-    void onlyAClaimSettlementPostsFromTheEftRail() {
-        assertThat(PostingFactsExtractor.extract("payment.EftDisbursementExecuted", Map.of("purpose", "CLAIM_SETTLEMENT",
-            "sourceRef", "CLM-1", "disbursementId", UUID.randomUUID(), "amount", money("50.00")), TODAY))
-            .singleElement().satisfies(f -> {
-                assertThat(f.sourceRef()).isEqualTo("CLM-1");
-                assertThat(f.policyNumber()).isNull();
-                assertThat(f.attribute("purpose")).isEqualTo("CLAIM_SETTLEMENT");
-            });
-        assertThat(PostingFactsExtractor.extract("payment.EftDisbursementExecuted", Map.of("purpose", "SURRENDER_PAYOUT",
-            "sourceRef", "S-1", "disbursementId", UUID.randomUUID(), "amount", money("50.00")), TODAY)).isEmpty();
+    void theEftRailNoLongerPostsItsOwnPairApprovalBooksTheClaim() {
+        // IFRS 17 I3b: approval books 2211, payment clears it; the EFT steps would double it.
+        assertThat(PostingFactsExtractor.handles("payment.EftDisbursementExecuted")).isFalse();
+        assertThat(PostingFactsExtractor.handles("payment.EftDisbursementAwaitingExecution")).isFalse();
+    }
+
+    @Test
+    void anApprovedClaimSplitsItsInvestmentComponentFromTheInsuranceCost() {
+        UUID claim = UUID.randomUUID();
+        PostingFacts f = PostingFactsExtractor.extract("claims.ClaimApproved", Map.of("claimId", claim,
+            "policyNumber", "END-1", "approvedAmount", money("24000.00"), "investmentComponent", "9000.00"), TODAY).get(0);
+        assertThat(f.sourceRef()).isEqualTo(claim.toString());
+        assertThat(f.amount("amount")).isEqualByComparingTo("24000.00");
+        assertThat(f.amount("investmentComponent")).isEqualByComparingTo("9000.00");
+        assertThat(f.amount("insured")).isEqualByComparingTo("15000.00");   // guide C-04
+
+        PostingFacts capped = PostingFactsExtractor.extract("claims.ClaimApproved", Map.of("claimId", claim,
+            "policyNumber", "END-1", "approvedAmount", money("5000.00"), "investmentComponent", "9000.00"), TODAY).get(0);
+        assertThat(capped.amount("investmentComponent")).as("never more than the claim").isEqualByComparingTo("5000.00");
+        assertThat(capped.amount("insured")).isZero();
+    }
+
+    @Test
+    void aPaidEventNamesThePaymentItWasPaidBySoTheRailCanBeFound() {
+        UUID claim = UUID.randomUUID();
+        PostingFacts f = PostingFactsExtractor.extract("claims.ClaimSettled", Map.of("claimId", claim,
+            "policyNumber", "POL-1", "settledAmount", money("700.00")), TODAY).get(0);
+        assertThat(f.attribute("paymentRef")).isEqualTo(claim.toString());
+    }
+
+    @Test
+    void aPayoutFallingDueStatesItsKindGrossAndInvestmentComponent() {
+        PostingFacts f = PostingFactsExtractor.extract("benefitpayout.PayoutRequested", Map.of("instalmentId", "I-9",
+            "policyNumber", "MB-1", "purpose", "SURVIVAL_BENEFIT_PAYOUT", "amount", money("1800.00"), "kind", "SURVIVAL",
+            "grossAmount", "2000.00", "withheldAmount", "200.00", "investmentComponent", "1600.00"), TODAY).get(0);
+        assertThat(f.sourceRef()).isEqualTo("I-9");
+        assertThat(f.attribute("kind")).isEqualTo("SURVIVAL");
+        assertThat(f.amount("gross")).isEqualByComparingTo("2000.00");
+        assertThat(f.amount("investmentComponent")).isEqualByComparingTo("1600.00");
+        assertThat(f.amount("insured")).isEqualByComparingTo("400.00");   // guide D-01
+
+        PostingFacts refund = PostingFactsExtractor.extract("benefitpayout.PayoutRequested", Map.of("cancellationId", "C-1",
+            "policyNumber", "TL-1", "purpose", "FREE_LOOK_REFUND", "amount", money("1150.00")), TODAY).get(0);
+        assertThat(refund.sourceRef()).isEqualTo("C-1");
+        assertThat(refund.attribute("kind")).isEqualTo("FREE_LOOK");
+        assertThat(refund.amount("gross")).isEqualByComparingTo("1150.00");
+    }
+
+    @Test
+    void aCommissionAccrualCarriesItsChannelAndAClawbackIsAReversalMagnitude() {
+        Map<String, Object> accrual = new HashMap<>(Map.of("accrualId", UUID.randomUUID(), "policyNumber", "POL-1",
+            "tierType", "FIRST_YEAR", "salesChannel", "BANCASSURANCE", "amount", money("240.00")));
+        PostingFacts earned = PostingFactsExtractor.extract("distribution.CommissionAccrued", accrual, TODAY).get(0);
+        assertThat(earned.attribute("direction")).isEqualTo("ACCRUAL");
+        assertThat(earned.attribute("channel")).isEqualTo("BANCASSURANCE");
+        assertThat(earned.attribute("movement")).isEqualTo("IACF_BANC");
+
+        accrual.put("amount", money("-120.00"));
+        accrual.put("reversesAccrualId", UUID.randomUUID());
+        accrual.put("salesChannel", null);
+        PostingFacts clawback = PostingFactsExtractor.extract("distribution.CommissionAccrued", accrual, TODAY).get(0);
+        assertThat(clawback.attribute("direction")).isEqualTo("REVERSAL");
+        assertThat(clawback.attribute("channel")).as("no channel is a tied agent").isEqualTo("AGENT");
+        assertThat(clawback.attribute("movement")).isEqualTo("IACF_CLAW");
+        assertThat(clawback.amount("amount")).isEqualByComparingTo("120.00");
+    }
+
+    @Test
+    void aCommissionPaymentStatesGrossNetAndTaxWithheld() {
+        UUID statement = UUID.randomUUID();
+        PostingFacts f = PostingFactsExtractor.extract("distribution.CommissionPaid", Map.of("statementId", statement,
+            "amount", money("240000.00"), "withheldAmount", "12000.00", "paidAmount", "228000.00",
+            "salesChannel", "BROKER"), TODAY).get(0);
+        assertThat(f.amount("gross")).isEqualByComparingTo("240000.00");
+        assertThat(f.amount("paid")).isEqualByComparingTo("228000.00");
+        assertThat(f.amount("withheld")).isEqualByComparingTo("12000.00");
+        assertThat(f.attribute("channel")).isEqualTo("BROKER");
+        assertThat(f.attribute("paymentRef")).isEqualTo(statement.toString());
+    }
+
+    @Test
+    void aLoanRepaymentAndAForeclosureCarryTheirSplit() {
+        UUID txn = UUID.randomUUID();
+        PostingFacts repaid = PostingFactsExtractor.extract("policyloan.LoanRepaid", Map.of("loanId", UUID.randomUUID(),
+            "loanTransactionId", txn, "policyNumber", "WL-1", "interestAmount", "10000.00",
+            "principalAmount", "200000.00", "amount", money("210000.00")), TODAY).get(0);
+        assertThat(repaid.amount("interest")).isEqualByComparingTo("10000.00");
+        assertThat(repaid.amount("principal")).isEqualByComparingTo("200000.00");
+
+        UUID loan = UUID.randomUUID();
+        PostingFacts lapse = PostingFactsExtractor.extract("policyloan.LoanForcedLapseTriggered", Map.of("loanId", loan,
+            "policyNumber", "WL-1", "principalOutstanding", "1000000.00", "interestOutstanding", "100000.00",
+            "currencyCode", "TZS"), TODAY).get(0);
+        assertThat(lapse.sourceRef()).isEqualTo(loan + ":forced-lapse");
+        assertThat(lapse.amount("total")).isEqualByComparingTo("1100000.00");   // guide E-06
+    }
+
+    @Test
+    void anAccountLedgerPostingIsOneFactPerEntryByFlow() {
+        List<PostingFacts> facts = PostingFactsExtractor.extract("accumulation.PostingRecorded", Map.of(
+            "postingId", "P1", "policyNumber", "SAV-1", "entries", List.of(
+                Map.of("seq", 1, "type", "CONTRIBUTION", "amount", "500000.00"),
+                Map.of("seq", 2, "type", "POLICY_FEE", "amount", "-5000.00"),
+                Map.of("seq", 3, "type", "REVERSAL", "amount", "2000.00"))), TODAY);
+        assertThat(facts).extracting(PostingFacts::sourceRef).containsExactly("P1:1", "P1:2", "P1:3");
+        assertThat(facts).extracting(f -> f.attribute("flow")).containsExactly("IN", "CHARGE", "REVERSAL_UP");
+        assertThat(facts.get(1).amount("amount")).isEqualByComparingTo("5000.00");
     }
 
     @Test

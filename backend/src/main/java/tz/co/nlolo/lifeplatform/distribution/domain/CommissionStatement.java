@@ -83,6 +83,14 @@ public class CommissionStatement {
     @Column(name = "paid_at")
     private Instant paidAt;
 
+    // IFRS 17 I3b (distribution V6, guide A-05): the withholding tax taken from the payout at the rate in force when
+    // it was requested, and so what the agent is paid. Null rate: none was configured, nothing withheld.
+    @Column(name = "withholding_rate")
+    private BigDecimal withholdingRate;
+
+    @Column(name = "withheld_amount", nullable = false)
+    private BigDecimal withheldAmount = BigDecimal.ZERO;
+
     protected CommissionStatement() {}
 
     public CommissionStatement(UUID tenantId, UUID agentId, String period, String totalCurrency) {
@@ -181,6 +189,21 @@ public class CommissionStatement {
     public UUID getTenantId() { return tenantId; }
     public UUID getAgentId() { return agentId; }
     public String getPeriod() { return period; }
+    /**
+     * Withholding tax on this payout (IFRS 17 I3b): {@code rate} a fraction (0.05), or null when none is configured --
+     * then nothing is withheld, never a default. Set when the payout is requested; a retry re-reads the rate.
+     */
+    public void applyWithholding(BigDecimal rate) {
+        this.withholdingRate = rate;
+        this.withheldAmount = rate == null ? BigDecimal.ZERO
+            : totalAmount.multiply(rate).setScale(2, java.math.RoundingMode.HALF_EVEN);
+    }
+
+    /** What the agent is paid: the total less the tax withheld. */
+    public BigDecimal getNetAmount() { return totalAmount.subtract(withheldAmount); }
+    public BigDecimal getWithholdingRate() { return withholdingRate; }
+    public BigDecimal getWithheldAmount() { return withheldAmount; }
+
     public BigDecimal getTotalAmount() { return totalAmount; }
     public String getTotalCurrency() { return totalCurrency; }
     public StatementStatus getStatus() { return status; }

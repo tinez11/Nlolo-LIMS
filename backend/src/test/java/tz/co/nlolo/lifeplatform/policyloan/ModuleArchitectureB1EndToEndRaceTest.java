@@ -131,6 +131,7 @@ class ModuleArchitectureB1EndToEndRaceTest {
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/product/V27__ifrs17_classification.sql",
+            "db-migrations/product/V28__survival_investment_component.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -171,6 +172,7 @@ class ModuleArchitectureB1EndToEndRaceTest {
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
+            "db-migrations/policyloan/V8__interest_month_published.sql",
             // Required, and absent from the task brief's list -- see PolicyLoanContractTest's
             // note: audit.DomainEventAuditListener consumes every published domain event
             // application-wide and swallows its own persistence failures.

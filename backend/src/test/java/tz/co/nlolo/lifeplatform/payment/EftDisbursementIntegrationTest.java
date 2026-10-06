@@ -138,6 +138,7 @@ class EftDisbursementIntegrationTest {
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
+            "db-migrations/policyloan/V8__interest_month_published.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
@@ -146,7 +147,8 @@ class EftDisbursementIntegrationTest {
             "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
             "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
             "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
-            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql");
+            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
+            "db-migrations/finaccounting/V13__disbursement_method.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -194,15 +196,9 @@ class EftDisbursementIntegrationTest {
 
         wireMock.verify(exactly(0), postRequestedFor(urlPathEqualTo("/disburse")));
 
-        // And it is on the books the moment it is real, rather than a week later when somebody
-        // gets to the bank: DR 5100 Claims Expense / CR 2110 Claims Payable.
-        JournalEntry accrual = singleEntryFor(tenantId, "payment.EftDisbursementAwaitingExecution", claimId.toString());
-        List<GlPosting> legs = legsFor(tenantId, accrual);
-        assertThat(legs).hasSize(2);
-        assertThat(legFor(legs, "5110").getAmount()).isEqualByComparingTo(MILLIONS);
-        assertThat(legFor(legs, "2211").getAmount()).isEqualByComparingTo(MILLIONS);
-        assertThat(legFor(legs, "5110").getDirection().name()).isEqualTo("DR");
-        assertThat(legFor(legs, "2211").getDirection().name()).isEqualTo("CR");
+        // IFRS 17 I3b: the claim is on the books from its approval (B-02: DR 5110 / CR 2211), so queuing the transfer
+        // posts nothing of its own -- the accrual pair this rail used to post would book the payable twice.
+        assertThat(entriesFor(tenantId, "payment.EftDisbursementAwaitingExecution", claimId.toString())).isEmpty();
 
         // It also shows up on finance's work queue -- which is the only way anyone finds out they
         // owe it. An endpoint nobody can navigate to would make the whole rail unusable.
@@ -238,21 +234,16 @@ class EftDisbursementIntegrationTest {
         // and takes the borrower off cover, so a silent state change would be worse than useless.
         assertThat(auditRows(tenantId, "payment.DisbursementCompleted", before)).hasSize(1);
 
-        // The accrual reverses: DR 2110 Claims Payable / CR 5100 Claims Expense. Without this the
-        // claims expense would be recognised twice -- once here and once by claims.ClaimSettled.
-        JournalEntry reversal = singleEntryFor(tenantId, "payment.EftDisbursementExecuted", claimId.toString());
-        List<GlPosting> legs = legsFor(tenantId, reversal);
-        assertThat(legFor(legs, "2211").getDirection().name()).isEqualTo("DR");
-        assertThat(legFor(legs, "5110").getDirection().name()).isEqualTo("CR");
-
-        // Net effect of the pair on the payable: zero. The liability existed exactly as long as
-        // the money was owed and not yet paid.
-        assertThat(netMovement(tenantId, "2211")).isEqualByComparingTo("0.00");
+        // IFRS 17 I3b (user answer Q3): the ledger records that this claim went by bank transfer, so its settlement
+        // (B-04) leaves through 1130, the claims and benefits bank account -- not the mobile money wallet. The executed
+        // transfer posts no journal of its own.
+        assertThat(entriesFor(tenantId, "payment.EftDisbursementExecuted", claimId.toString())).isEmpty();
+        assertThat(railOf(tenantId, claimId.toString())).isEqualTo("EFT");
 
         // Confirming twice is a finance officer clicking twice, not a second payout.
         paymentApiImpl.markEftExecuted(disbursementId, "FT26091200417", "finance-officer-asha");
         assertThat(auditRows(tenantId, "payment.DisbursementCompleted", before)).hasSize(1);
-        assertThat(entriesFor(tenantId, "payment.EftDisbursementExecuted", claimId.toString())).hasSize(1);
+        assertThat(entriesFor(tenantId, "payment.EftDisbursementExecuted", claimId.toString())).isEmpty();
 
         wireMock.verify(exactly(0), postRequestedFor(urlPathEqualTo("/disburse")));
     }
@@ -400,6 +391,20 @@ class EftDisbursementIntegrationTest {
     }
 
     /** DR minus CR across every posting this tenant has against one account. */
+    /** The rail finaccounting recorded for a payment source reference (finaccounting V13). */
+    private static String railOf(UUID tenantId, String sourceRef) {
+        try (Connection c = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var ps = c.prepareStatement("SELECT method FROM finaccounting.disbursement_method WHERE tenant_id = ? AND source_ref = ?")) {
+            ps.setObject(1, tenantId);
+            ps.setString(2, sourceRef);
+            try (var rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
+        } catch (java.sql.SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     private BigDecimal netMovement(UUID tenantId, String accountCode) {
         TenantContext.set(tenantId);
         return journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged()).stream()

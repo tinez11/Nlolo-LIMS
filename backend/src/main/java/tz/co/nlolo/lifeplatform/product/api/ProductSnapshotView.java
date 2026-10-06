@@ -28,4 +28,7 @@ public record ProductSnapshotView(UUID productId, UUID productVersionId, LocalDa
                                    PortfolioCode portfolioCode,
                                    ProfitabilityBucket profitabilityBucket,
                                    /** Null: the register's model applies. */
-                                   Ifrs17Model modelOverride) {}
+                                   Ifrs17Model modelOverride,
+                                   /** IFRS 17 I3b: the investment component share (%) of a survival or income
+                                    *  instalment; null where the actuary has not set it (none). */
+                                   java.math.BigDecimal survivalInvestmentComponentPercent) {}

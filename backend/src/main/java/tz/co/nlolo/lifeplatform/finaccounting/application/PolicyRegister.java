@@ -55,7 +55,11 @@ class PolicyRegister {
         ElectionKey key = ElectionKey.of(input.key())
             .orElseThrow(() -> new FinaccountingValidationException("Unknown accounting policy election " + input.key()));
         if (!key.permits(input.value())) {
-            throw new FinaccountingValidationException(input.value() + " is not a permitted value for " + key.name());
+            throw new FinaccountingValidationException(input.value() + " is not a permitted value for " + key.name()
+                + (key.isRate() ? " (a percentage above 0 and at most 100, e.g. 5 or 2.5, or NONE)" : ""));
+        }
+        if (key.isRate() && input.scope() != null && !input.scope().isBlank() && !"*".equals(input.scope())) {
+            throw new FinaccountingValidationException(key.name() + " is company-wide: its scope is *");
         }
         if (input.effectiveFrom() == null) {
             throw new FinaccountingValidationException("An election has an effective date");

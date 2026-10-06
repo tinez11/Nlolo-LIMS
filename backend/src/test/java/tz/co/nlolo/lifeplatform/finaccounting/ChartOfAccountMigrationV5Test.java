@@ -72,7 +72,8 @@ class ChartOfAccountMigrationV5Test {
             // Product step 6: V9 adds 2150, 4310 and 5600 the same way.
             "db-migrations/finaccounting/V9__unit_linked_accounts.sql",
             "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
-            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql");
+            "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
+            "db-migrations/finaccounting/V13__disbursement_method.sql");
     }
 
     /** The nine flat accounts as M9 seeded them -- no parent, no level, no status. */

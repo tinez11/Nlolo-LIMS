@@ -80,15 +80,18 @@ public class PaymentEventListener {
     private static final String PAYOUT_FAILED_COUNTER = "lifeplatform_distribution_payout_failed_total";
 
     private final CommissionStatementRepository commissionStatementRepository;
+    private final tz.co.nlolo.lifeplatform.distribution.infrastructure.AgentProfileRepository agentProfileRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final MeterRegistry meterRegistry;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
     public PaymentEventListener(CommissionStatementRepository commissionStatementRepository,
+                                 tz.co.nlolo.lifeplatform.distribution.infrastructure.AgentProfileRepository agentProfileRepository,
                                  ApplicationEventPublisher eventPublisher,
                                  MeterRegistry meterRegistry,
                                  PlatformTransactionManager transactionManager) {
         this.commissionStatementRepository = commissionStatementRepository;
+        this.agentProfileRepository = agentProfileRepository;
         this.eventPublisher = eventPublisher;
         this.meterRegistry = meterRegistry;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
@@ -160,10 +163,17 @@ public class PaymentEventListener {
             // expense. statement is already loaded above; this is purely additive, and stays
             // inside the wasAlreadyPaid guard, so a redelivered DisbursementCompleted still emits
             // no second event.
+            // IFRS 17 I3b (guide A-05): the gross clears the payable, the net left the bank, the tax withheld is owed
+            // to the authority. The channel says which payable (2510 agents, 2520 brokers, 2530 bancassurance).
+            String channel = agentProfileRepository.findByAgentIdAndTenantId(statement.getAgentId(), tenantId)
+                .map(tz.co.nlolo.lifeplatform.distribution.domain.AgentProfile::getSalesChannel).orElse("AGENT");
             eventPublisher.publishEvent(DomainEventEnvelope.of("distribution.CommissionPaid", tenantId,
                 Map.of("statementId", statementId, "paidAt", Instant.now().toString(),
                        "amount", Map.of("amount", statement.getTotalAmount().toPlainString(),
-                                        "currencyCode", statement.getTotalCurrency()))));
+                                        "currencyCode", statement.getTotalCurrency()),
+                       "withheldAmount", statement.getWithheldAmount().toPlainString(),
+                       "paidAmount", statement.getNetAmount().toPlainString(),
+                       "salesChannel", channel == null ? "AGENT" : channel)));
         });
     }
 

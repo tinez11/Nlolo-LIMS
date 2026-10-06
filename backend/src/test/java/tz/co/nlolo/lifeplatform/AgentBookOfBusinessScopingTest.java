@@ -113,6 +113,7 @@ class AgentBookOfBusinessScopingTest {
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/product/V27__ifrs17_classification.sql",
+            "db-migrations/product/V28__survival_investment_component.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -156,7 +157,8 @@ class AgentBookOfBusinessScopingTest {
             "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
-            "db-migrations/distribution/V5__agent_channel_and_home_branch.sql");
+            "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
+            "db-migrations/distribution/V6__commission_withholding.sql");
 
         MinioClient minioClient = MinioClient.builder()
             .endpoint(MINIO.getS3URL()).credentials(MINIO.getUserName(), MINIO.getPassword()).build();

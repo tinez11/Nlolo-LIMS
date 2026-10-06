@@ -239,19 +239,8 @@ public class PolicyEventListener {
             // row -- safe because ux_commission_accrual_once is keyed on (agent, tier_type,
             // source_ref), and each agent/tier combination here is distinct.
             distributionApiImpl.persistAccrual(tenantId, accrual.agentId(), policyNumber, accrual.tierType(),
-                    accrual.amount(), accrual.currency(), period, policyNumber, null, "system:policy.PolicyActivated")
-                .ifPresent(saved -> publishCommissionAccrued(tenantId, saved));
+                    accrual.amount(), accrual.currency(), period, policyNumber, null, "system:policy.PolicyActivated");
         }
-    }
-
-    private void publishCommissionAccrued(UUID tenantId, CommissionAccrual accrual) {
-        // Matches asyncapi-events.yaml's existing CommissionAccruedPayload field-for-field.
-        Map<String, Object> payload = Map.of(
-            "statementId", accrual.getStatementId(),
-            "agentId", accrual.getAgentId(),
-            "policyNumber", accrual.getPolicyNumber(),
-            "amount", Map.of("amount", accrual.getAmount().toPlainString(), "currencyCode", accrual.getCurrency()));
-        eventPublisher.publishEvent(DomainEventEnvelope.of("distribution.CommissionAccrued", tenantId, payload));
     }
 
     /**

@@ -1526,10 +1526,14 @@ components:
         - type: object
           properties: { agentId: {type: string, format: uuid}, expiresAt: {type: string, format: date} }
     CommissionAccruedPayload:
+      description: >
+        IFRS 17 I3b: published for EVERY accrual persisted -- first-year, renewal, override and a clawback reversal
+        (negative amount, reversesAccrualId set) -- with its tier and the agent's sales channel, so the ledger books
+        it against the channel's payable (2510 agents, 2520 brokers, 2530 bancassurance).
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { statementId: {type: string, format: uuid}, agentId: {type: string, format: uuid}, policyNumber: {type: string}, amount: {type: object} }
+          properties: { accrualId: {type: string, format: uuid}, statementId: {type: string, format: uuid}, agentId: {type: string, format: uuid}, policyNumber: {type: string}, tierType: {type: string}, salesChannel: {type: [string, "null"]}, reversesAccrualId: {type: [string, "null"], format: uuid}, amount: {type: object} }
     CommissionPayoutRequestedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

@@ -91,7 +91,7 @@ public final class PostingRuleParser {
         }
         LocalDate from = date(m.get("effectiveFrom"), where);
         return new PostingRuleSet.Rule(id, text(m.get("event")), models, when, from != null ? from : BEGINNING,
-            date(m.get("effectiveTo"), where), text(m.get("description")), lines);
+            date(m.get("effectiveTo"), where), text(m.get("description")), lines, !Boolean.FALSE.equals(m.get("post")));
     }
 
     private static PostingRuleSet.Line line(Object raw, String where) {

@@ -78,6 +78,10 @@ public class ProductVersion {
     @Column(name = "measurement_model_override")
     private String measurementModelOverride;
 
+    /** IFRS 17 I3b (product V28): the investment component share (%) of a survival or income instalment. */
+    @Column(name = "survival_ic_percent")
+    private BigDecimal survivalInvestmentComponentPercent;
+
     // What this version will accept (V6). All nullable -- an unbounded dimension is a
     // real product design, not a gap. Consumed by Build 4's issueGates, where entry age
     // and term are hard refusals and sum assured is a soft flag; the severities live in
@@ -174,11 +178,14 @@ public class ProductVersion {
     public String getIfrsMeasurementModel() { return ifrsMeasurementModel; }
     public String getExpectedProfitabilityBucket() { return expectedProfitabilityBucket; }
     public String getMeasurementModelOverride() { return measurementModelOverride; }
+    public BigDecimal getSurvivalInvestmentComponentPercent() { return survivalInvestmentComponentPercent; }
 
     /** Set once, at publish, before the version is saved. */
-    public void applyIfrs17Terms(String expectedProfitabilityBucket, String measurementModelOverride) {
+    public void applyIfrs17Terms(String expectedProfitabilityBucket, String measurementModelOverride,
+                                 BigDecimal survivalInvestmentComponentPercent) {
         this.expectedProfitabilityBucket = expectedProfitabilityBucket;
         this.measurementModelOverride = measurementModelOverride;
+        this.survivalInvestmentComponentPercent = survivalInvestmentComponentPercent;
     }
 
     /**

@@ -1,27 +1,34 @@
-# IFRS 17 posting rules (I3a). The source of truth for every journal an event posts; the console shows it read-only
-# until a database editor with maker-checker exists. Bump `version` on ANY change: every journal records the version
-# it was posted under.
+# IFRS 17 posting rules. The source of truth for every journal an event posts; the console shows it read-only until a
+# database editor with maker-checker exists. Bump `version` on ANY change: every journal records the version it was
+# posted under.
 #
 # A rule: the event it posts, the measurement models it applies to (GMM, VFA, PAA, IFRS9 from the contract's
 # classification; NONE for an event with no policy; ANY for any classified contract -- never an unclassified one),
 # an optional `when` on the event's attributes (the rule with the most `when` attributes wins), optional dates
 # (effectiveFrom inclusive, effectiveTo exclusive), and its lines. A line names a side and account, the fact that
 # gives its amount, and the guide's movement type (2.4). A line whose amount is zero is left out; a journal with no
-# lines left is not posted. The application refuses to start on a rule that names an unknown account, a MAN account,
-# an unknown fact or movement, or that another rule could be chosen over.
+# lines left is not posted. `post: false` is a rule that deliberately posts nothing (an IFRS 9 contract's invoice,
+# whose money its own account ledger posts) -- without one the event would queue as unmapped. The account BANK is the
+# rail's: 1130 for a bank transfer (EFT), 1140 for mobile money (I3b, user answer Q3). The application refuses to start
+# on a rule that names an unknown account, a MAN account, an unknown fact or movement, or that another rule could be
+# chosen over.
 #
-# Ids are the guide's entries (A-06, I-01 ...); PLAT-* are the platform's own interim journals that I3b replaces with
-# the guide's splits (claims B-01..B-04 and C-04, surrenders C-05/C-06, payouts D, commission earned A-04 and its
-# withholding A-05). IFRS9 contracts post their premiums as before until I3b gives them the guide's G entries.
+# Ids are the guide's entries (A-06, B-02, I-01 ...); PLAT-* are the platform's own journals for what the guide has no
+# entry for. Splits are computed by the emitting module, never here (user decision 4). Rates (premium levy, commission
+# withholding) are the accounting policy register's; none in force, none posted (decisions 6 and 7).
+#
+# v2 (IFRS 17 I3b): money out in two steps as the guide does it -- the payable when it is decided (claim approved,
+# surrender approved, payout due), the bank when it is paid; commission earned and withheld; loan interest; IFRS 9
+# accounts (G); premium levy. Unit-linked VFA exits (F-08/F-09) and reinsurance (I3c) are as v1 posted them.
 
-version: 1
+version: 2
 rules:
 
   # ---- Premium: billed, collected, credited, restated, waived ------------------------------------------------------
 
   - id: A-06
     event: billing.PremiumInvoiceGenerated
-    models: [GMM, VFA, IFRS9]
+    models: [GMM, VFA]
     description: Premium falls due (billing)
     lines:
       - {dr: "2122", amount: amount, movement: PRM_REN}
@@ -35,6 +42,12 @@ rules:
       - {dr: "2142", amount: amount, movement: PRM_REN}
       - {cr: "2141", amount: amount, movement: PRM_REN}
 
+  - id: G-BILLED
+    event: billing.PremiumInvoiceGenerated
+    models: [IFRS9]
+    description: An IFRS 9 contract's invoice -- nothing; its money posts from its account ledger when it arrives (G-05)
+    post: false
+
   - id: I-03
     event: finaccounting.PaaRevenueEarned
     models: [PAA]
@@ -45,23 +58,33 @@ rules:
 
   - id: PLAT-A07
     event: billing.PremiumCollected
-    models: [GMM, VFA, IFRS9]
-    description: Premium collected, straight to the mobile money wallet (no 9110 clearing until a settlement file exists)
+    models: [GMM, VFA]
+    description: Premium collected, straight to the mobile money wallet; the premium levy at the rate in force (A-19)
     lines:
       - {dr: "1140", amount: amount}
       - {cr: "2122", amount: amount, movement: PRM_REN}
+      - {dr: "5220", amount: levy}
+      - {cr: "2650", amount: levy}
 
   - id: I-02
     event: billing.PremiumCollected
     models: [PAA]
-    description: PAA premium received
+    description: PAA premium received; the premium levy at the rate in force (A-19)
     lines:
       - {dr: "1140", amount: amount}
       - {cr: "2142", amount: amount, movement: PRM_REN}
+      - {dr: "5220", amount: levy}
+      - {cr: "2650", amount: levy}
+
+  - id: G-COLLECTED
+    event: billing.PremiumCollected
+    models: [IFRS9]
+    description: An IFRS 9 contract's premium -- posted by its account ledger's contribution (G-05), not here
+    post: false
 
   - id: PLAT-A18
     event: billing.PremiumRefundDue
-    models: [GMM, VFA, IFRS9]
+    models: [GMM, VFA]
     description: Premium credited back -- the invoice posting run backwards for the part given back
     lines:
       - {dr: "2121", amount: amount, movement: PRM_REN}
@@ -75,9 +98,15 @@ rules:
       - {dr: "2141", amount: amount, movement: PRM_REN}
       - {cr: "2142", amount: amount, movement: PRM_REN}
 
+  - id: G-REFUND
+    event: billing.PremiumRefundDue
+    models: [IFRS9]
+    description: An IFRS 9 contract's credit -- nothing was billed to the ledger
+    post: false
+
   - id: PLAT-A06-UP
     event: billing.PremiumInvoiceIncreased
-    models: [GMM, VFA, IFRS9]
+    models: [GMM, VFA]
     description: An untouched instalment restated upward -- the difference only
     lines:
       - {dr: "2122", amount: amount, movement: PRM_REN}
@@ -91,9 +120,15 @@ rules:
       - {dr: "2142", amount: amount, movement: PRM_REN}
       - {cr: "2141", amount: amount, movement: PRM_REN}
 
+  - id: G-RESTATED-UP
+    event: billing.PremiumInvoiceIncreased
+    models: [IFRS9]
+    description: An IFRS 9 contract's restated invoice -- nothing was billed to the ledger
+    post: false
+
   - id: PLAT-A06-DOWN
     event: billing.PremiumInvoiceReduced
-    models: [GMM, VFA, IFRS9]
+    models: [GMM, VFA]
     description: An untouched instalment restated downward -- the difference only
     lines:
       - {dr: "2121", amount: amount, movement: PRM_REN}
@@ -107,9 +142,15 @@ rules:
       - {dr: "2141", amount: amount, movement: PRM_REN}
       - {cr: "2142", amount: amount, movement: PRM_REN}
 
+  - id: G-RESTATED-DOWN
+    event: billing.PremiumInvoiceReduced
+    models: [IFRS9]
+    description: An IFRS 9 contract's restated invoice -- nothing was billed to the ledger
+    post: false
+
   - id: A-14
     event: billing.InvoiceWaived
-    models: [GMM, VFA, IFRS9]
+    models: [GMM, VFA]
     description: Lapse, write-off or end of contract -- cancel the unpaid billed premium
     lines:
       - {dr: "2121", amount: amount, movement: PRM_REN}
@@ -123,60 +164,312 @@ rules:
       - {dr: "2141", amount: amount, movement: PRM_REN}
       - {cr: "2142", amount: amount, movement: PRM_REN}
 
-  # ---- Money out: claims, surrenders, payouts, commission (I3b splits these into the guide's entries) ---------------
+  - id: G-WAIVED
+    event: billing.InvoiceWaived
+    models: [IFRS9]
+    description: An IFRS 9 contract's waived invoice -- nothing was billed to the ledger
+    post: false
 
-  - id: PLAT-B
-    event: claims.ClaimSettled
+  # ---- Commission (A-04, A-09, A-05; a clawback reverses, A-14's note) ---------------------------------------------
+
+  - id: A-04
+    event: distribution.CommissionAccrued
     models: [ANY]
-    description: Claim settled (I3b -- B-01..B-04 and C-04)
+    when: {direction: ACCRUAL, channel: AGENT}
+    description: Commission earned by a tied agent (first-year A-04, renewal A-09, override)
     lines:
-      - {dr: "5110", amount: amount}
-      - {cr: "1140", amount: amount}
+      - {dr: "2123", amount: amount, movement: "attr:movement"}
+      - {cr: "2510", amount: amount}
 
-  - id: PLAT-EFT-QUEUED
-    event: payment.EftDisbursementAwaitingExecution
-    models: [NONE]
-    when: {purpose: CLAIM_SETTLEMENT}
-    description: A claim settlement queued on the EFT rail -- payable until the transfer executes
-    lines:
-      - {dr: "5110", amount: amount}
-      - {cr: "2211", amount: amount}
-
-  - id: PLAT-EFT-EXECUTED
-    event: payment.EftDisbursementExecuted
-    models: [NONE]
-    when: {purpose: CLAIM_SETTLEMENT}
-    description: The EFT transfer executed -- the payable clears
-    lines:
-      - {dr: "2211", amount: amount}
-      - {cr: "5110", amount: amount}
-
-  - id: PLAT-C06
-    event: policy.SurrenderPaid
+  - id: A-04-BROKER
+    event: distribution.CommissionAccrued
     models: [ANY]
-    description: Surrender value paid (I3b -- C-05/C-06 through 2124 and 2213)
+    when: {direction: ACCRUAL, channel: BROKER}
+    description: Brokerage earned
     lines:
-      - {dr: "5110", amount: amount, movement: IC_SUR}
-      - {cr: "1140", amount: amount}
+      - {dr: "2123", amount: amount, movement: "attr:movement"}
+      - {cr: "2520", amount: amount}
 
-  - id: PLAT-D
-    event: benefitpayout.PayoutPaid
+  - id: A-04-BANC
+    event: distribution.CommissionAccrued
     models: [ANY]
-    description: A benefit paid to a living policyholder, tax withheld where it applies (I3b -- the D/H splits)
+    when: {direction: ACCRUAL, channel: BANCASSURANCE}
+    description: Bancassurance commission earned
     lines:
-      - {dr: "5110", amount: gross}
-      - {cr: "1140", amount: paid}
-      - {cr: "2615", amount: withheld}
+      - {dr: "2123", amount: amount, movement: "attr:movement"}
+      - {cr: "2530", amount: amount}
 
-  - id: PLAT-A05
+  - id: A-15
+    event: distribution.CommissionAccrued
+    models: [ANY]
+    when: {direction: REVERSAL, channel: AGENT}
+    description: Commission clawed back -- netted on the agent's next statement, so the payable falls
+    lines:
+      - {dr: "2510", amount: amount}
+      - {cr: "2123", amount: amount, movement: IACF_CLAW}
+
+  - id: A-15-BROKER
+    event: distribution.CommissionAccrued
+    models: [ANY]
+    when: {direction: REVERSAL, channel: BROKER}
+    description: Brokerage clawed back
+    lines:
+      - {dr: "2520", amount: amount}
+      - {cr: "2123", amount: amount, movement: IACF_CLAW}
+
+  - id: A-15-BANC
+    event: distribution.CommissionAccrued
+    models: [ANY]
+    when: {direction: REVERSAL, channel: BANCASSURANCE}
+    description: Bancassurance commission clawed back
+    lines:
+      - {dr: "2530", amount: amount}
+      - {cr: "2123", amount: amount, movement: IACF_CLAW}
+
+  - id: A-05
     event: distribution.CommissionPaid
     models: [NONE]
-    description: Commission paid (I3b -- earned A-04, withholding A-05 once Finance sets the rate)
+    when: {channel: AGENT}
+    description: Commission paid, net of the withholding tax in force (none until Finance sets a rate)
     lines:
-      - {dr: "2123", amount: amount, movement: IACF_COM}
-      - {cr: "1140", amount: amount}
+      - {dr: "2510", amount: gross}
+      - {cr: BANK, amount: paid}
+      - {cr: "2610", amount: withheld}
 
-  # ---- Policy loans ---------------------------------------------------------------------------------------------------
+  - id: A-05-BROKER
+    event: distribution.CommissionPaid
+    models: [NONE]
+    when: {channel: BROKER}
+    description: Brokerage paid, net of withholding tax
+    lines:
+      - {dr: "2520", amount: gross}
+      - {cr: BANK, amount: paid}
+      - {cr: "2610", amount: withheld}
+
+  - id: A-05-BANC
+    event: distribution.CommissionPaid
+    models: [NONE]
+    when: {channel: BANCASSURANCE}
+    description: Bancassurance commission paid, net of withholding tax
+    lines:
+      - {dr: "2530", amount: gross}
+      - {cr: BANK, amount: paid}
+      - {cr: "2610", amount: withheld}
+
+  # ---- Claims (B, C-04): the liability at approval (user answer Q1), the bank at settlement --------------------------
+
+  - id: B-02
+    event: claims.ClaimApproved
+    models: [GMM, VFA, PAA]
+    description: Claim admitted -- the insurance cost to 5110, any investment component (C-04) to 2124
+    lines:
+      - {dr: "5110", amount: insured}
+      - {dr: "2124", amount: investmentComponent, movement: IC_DTH}
+      - {cr: "2211", amount: amount}
+
+  - id: G-CLAIM-APPROVED
+    event: claims.ClaimApproved
+    models: [IFRS9]
+    description: An IFRS 9 account's claim -- its account ledger books the payable (G-04)
+    post: false
+
+  - id: B-04
+    event: claims.ClaimSettled
+    models: [GMM, VFA, PAA]
+    description: Claim paid
+    lines:
+      - {dr: "2211", amount: amount}
+      - {cr: BANK, amount: amount}
+
+  - id: G-CLAIM-PAID
+    event: claims.ClaimSettled
+    models: [IFRS9]
+    description: An IFRS 9 account's claim paid
+    lines:
+      - {dr: "2340", amount: amount}
+      - {cr: BANK, amount: amount}
+
+  # ---- Surrenders (C-05, C-06) ---------------------------------------------------------------------------------------
+
+  - id: C-05
+    event: policy.SurrenderPayoutRequested
+    models: [GMM, VFA, PAA]
+    description: Surrender approved -- the value is all investment component (no loan offset at exit yet)
+    lines:
+      - {dr: "2124", amount: amount, movement: IC_SUR}
+      - {cr: "2213", amount: amount}
+
+  - id: G-SURRENDER-APPROVED
+    event: policy.SurrenderPayoutRequested
+    models: [IFRS9]
+    description: An IFRS 9 account surrendered -- its account ledger books the payable (G-04)
+    post: false
+
+  - id: C-06
+    event: policy.SurrenderPaid
+    models: [GMM, VFA, PAA]
+    description: Surrender paid
+    lines:
+      - {dr: "2213", amount: amount}
+      - {cr: BANK, amount: amount}
+
+  - id: G-SURRENDER-PAID
+    event: policy.SurrenderPaid
+    models: [IFRS9]
+    description: An IFRS 9 account's surrender paid
+    lines:
+      - {dr: "2340", amount: amount}
+      - {cr: BANK, amount: amount}
+
+  # ---- Benefit payouts: due (C-01, D-01, D-05, H-02, A-17) and paid (C-03, D-02, H-03, A-18) -----------------------
+
+  - id: C-01
+    event: benefitpayout.PayoutRequested
+    models: [ANY]
+    when: {kind: MATURITY}
+    description: Maturity due -- the investment component to 2124, anything above it to 5115
+    lines:
+      - {dr: "2124", amount: investmentComponent, movement: IC_MAT}
+      - {dr: "5115", amount: insured}
+      - {cr: "2212", amount: gross}
+
+  - id: D-01
+    event: benefitpayout.PayoutRequested
+    models: [ANY]
+    when: {kind: SURVIVAL}
+    description: Survival benefit due -- the version's investment component share to 2124, the rest to 5115
+    lines:
+      - {dr: "2124", amount: investmentComponent, movement: IC_SB}
+      - {dr: "5115", amount: insured}
+      - {cr: "2214", amount: gross}
+
+  - id: D-05
+    event: benefitpayout.PayoutRequested
+    models: [ANY]
+    when: {kind: INCOME}
+    description: Income instalment due -- the version's investment component share to 2124, the rest to 5115
+    lines:
+      - {dr: "2124", amount: investmentComponent, movement: IC_SB}
+      - {dr: "5115", amount: insured}
+      - {cr: "2214", amount: gross}
+
+  - id: PLAT-D-PREMIUM-RETURN
+    event: benefitpayout.PayoutRequested
+    models: [ANY]
+    when: {kind: RETURN_OF_PREMIUM}
+    description: Premiums returned -- repaid in all circumstances, so all investment component
+    lines:
+      - {dr: "2124", amount: investmentComponent, movement: IC_MAT}
+      - {dr: "5115", amount: insured}
+      - {cr: "2214", amount: gross}
+
+  - id: PLAT-D-COMMUTATION
+    event: benefitpayout.PayoutRequested
+    models: [ANY]
+    when: {kind: COMMUTATION}
+    description: A pension's lump sum at vesting -- repayment of its savings, all investment component
+    lines:
+      - {dr: "2124", amount: investmentComponent, movement: IC_MAT}
+      - {dr: "5115", amount: insured}
+      - {cr: "2214", amount: gross}
+
+  - id: H-02
+    event: benefitpayout.PayoutRequested
+    models: [ANY]
+    when: {kind: ANNUITY}
+    description: Annuity instalment due
+    lines:
+      - {dr: "5120", amount: insured}
+      - {dr: "2124", amount: investmentComponent}
+      - {cr: "2215", amount: gross}
+
+  - id: A-17
+    event: benefitpayout.PayoutRequested
+    models: [GMM, VFA, PAA]
+    when: {kind: FREE_LOOK}
+    description: Free-look cancellation -- only the refunded part leaves the liability
+    lines:
+      - {dr: "2121", amount: gross}
+      - {cr: "2430", amount: gross}
+
+  - id: G-FREE-LOOK
+    event: benefitpayout.PayoutRequested
+    models: [IFRS9]
+    when: {kind: FREE_LOOK}
+    description: An IFRS 9 account's free-look refund -- out of what its account ledger made payable
+    lines:
+      - {dr: "2340", amount: gross}
+      - {cr: "2430", amount: gross}
+
+  - id: C-03
+    event: benefitpayout.PayoutPaid
+    models: [ANY]
+    when: {kind: MATURITY}
+    description: Maturity paid, tax withheld where it applies
+    lines:
+      - {dr: "2212", amount: gross}
+      - {cr: BANK, amount: paid}
+      - {cr: "2615", amount: withheld}
+
+  - id: D-02
+    event: benefitpayout.PayoutPaid
+    models: [ANY]
+    when: {kind: SURVIVAL}
+    description: Survival benefit paid, tax withheld where it applies
+    lines:
+      - {dr: "2214", amount: gross}
+      - {cr: BANK, amount: paid}
+      - {cr: "2615", amount: withheld}
+
+  - id: D-02-INCOME
+    event: benefitpayout.PayoutPaid
+    models: [ANY]
+    when: {kind: INCOME}
+    description: Income instalment paid, tax withheld where it applies
+    lines:
+      - {dr: "2214", amount: gross}
+      - {cr: BANK, amount: paid}
+      - {cr: "2615", amount: withheld}
+
+  - id: D-02-PREMIUM-RETURN
+    event: benefitpayout.PayoutPaid
+    models: [ANY]
+    when: {kind: RETURN_OF_PREMIUM}
+    description: Premiums returned, paid
+    lines:
+      - {dr: "2214", amount: gross}
+      - {cr: BANK, amount: paid}
+      - {cr: "2615", amount: withheld}
+
+  - id: D-02-COMMUTATION
+    event: benefitpayout.PayoutPaid
+    models: [ANY]
+    when: {kind: COMMUTATION}
+    description: A pension's lump sum paid, tax withheld where it applies
+    lines:
+      - {dr: "2214", amount: gross}
+      - {cr: BANK, amount: paid}
+      - {cr: "2615", amount: withheld}
+
+  - id: H-03
+    event: benefitpayout.PayoutPaid
+    models: [ANY]
+    when: {kind: ANNUITY}
+    description: Annuity instalment paid, tax withheld where it applies
+    lines:
+      - {dr: "2215", amount: gross}
+      - {cr: BANK, amount: paid}
+      - {cr: "2615", amount: withheld}
+
+  - id: A-18
+    event: benefitpayout.FreeLookRefundPaid
+    models: [ANY]
+    description: Refund paid
+    lines:
+      - {dr: "2430", amount: amount}
+      - {cr: BANK, amount: amount}
+
+  # ---- Policy loans (E) ----------------------------------------------------------------------------------------------
 
   - id: E-01
     event: policyloan.LoanDisbursed
@@ -184,15 +477,123 @@ rules:
     description: Policy loan disbursed
     lines:
       - {dr: "2125", amount: amount}
-      - {cr: "1140", amount: amount}
+      - {cr: BANK, amount: amount}
+
+  - id: E-02
+    event: policyloan.LoanInterestAccrued
+    models: [ANY]
+    description: A month's loan interest -- a contract inflow (the register's POLICY_LOANS = INSIDE_CONTRACT)
+    lines:
+      - {dr: "2126", amount: amount}
+      - {cr: "2121", amount: amount, movement: LN_INT}
 
   - id: E-03
     event: policyloan.LoanRepaid
-    models: [NONE]
-    description: Policy loan repayment
+    models: [ANY]
+    description: Loan repayment -- interest accrued first, then principal
     lines:
       - {dr: "1140", amount: amount}
-      - {cr: "2125", amount: amount}
+      - {cr: "2126", amount: interest}
+      - {cr: "2125", amount: principal}
+
+  - id: E-06
+    event: policyloan.LoanForcedLapseTriggered
+    models: [ANY]
+    description: Loan exceeds the surrender value -- the investment component repays it
+    lines:
+      - {dr: "2124", amount: total, movement: IC_SUR}
+      - {cr: "2125", amount: principal}
+      - {cr: "2126", amount: interest}
+
+  # ---- IFRS 9 accounts (G): the account ledger's postings ------------------------------------------------------------
+
+  - id: G-05
+    event: accumulation.PostingRecorded
+    models: [IFRS9]
+    when: {flow: IN}
+    description: Contribution, top-up or transfer in
+    lines:
+      - {dr: "1140", amount: amount}
+      - {cr: "2320", amount: amount}
+
+  - id: G-06
+    event: accumulation.PostingRecorded
+    models: [IFRS9]
+    when: {flow: CHARGE}
+    description: Allocation charge or policy fee -- fee income (IFRS 15)
+    lines:
+      - {dr: "2320", amount: amount}
+      - {cr: "7310", amount: amount}
+
+  - id: G-07
+    event: accumulation.PostingRecorded
+    models: [IFRS9]
+    when: {flow: INTEREST}
+    description: Return credited to the account
+    lines:
+      - {dr: "7320", amount: amount}
+      - {cr: "2320", amount: amount}
+
+  - id: G-04
+    event: accumulation.PostingRecorded
+    models: [IFRS9]
+    when: {flow: OUT}
+    description: Withdrawal, surrender, maturity, death claim or free-look refund -- payable until paid
+    lines:
+      - {dr: "2320", amount: amount}
+      - {cr: "2340", amount: amount}
+
+  - id: G-04-REVERSED
+    event: accumulation.PostingRecorded
+    models: [IFRS9]
+    when: {flow: REVERSAL_UP}
+    description: A payout that failed -- the money back on the account
+    lines:
+      - {dr: "2340", amount: amount}
+      - {cr: "2320", amount: amount}
+
+  - id: G-ADJUSTED-UP
+    event: accumulation.PostingRecorded
+    models: [IFRS9]
+    when: {flow: ADJUSTMENT_UP}
+    description: An approved adjustment credited to the account
+    lines:
+      - {dr: "7320", amount: amount}
+      - {cr: "2320", amount: amount}
+
+  - id: G-ADJUSTED-DOWN
+    event: accumulation.PostingRecorded
+    models: [IFRS9]
+    when: {flow: ADJUSTMENT_DOWN}
+    description: An approved adjustment debited from the account
+    lines:
+      - {dr: "2320", amount: amount}
+      - {cr: "7320", amount: amount}
+
+  - id: G-08
+    event: accumulation.PostingRecorded
+    models: [ANY]
+    when: {flow: VESTING}
+    description: Retirement -- the balance buys the annuity, a new insurance contract (its lump sum leaves as a payout)
+    lines:
+      - {dr: "2320", amount: amount}
+      - {cr: "2121", amount: amount, movement: PRM_SGL}
+
+  - id: G-06-SURRENDER
+    event: accumulation.PayoutRequested
+    models: [IFRS9]
+    description: An IFRS 9 account's surrender charge -- fee income
+    lines:
+      - {dr: "2340", amount: charge}
+      - {cr: "7310", amount: charge}
+
+  - id: G-04-PAID
+    event: accumulation.PayoutPaid
+    models: [IFRS9]
+    description: An IFRS 9 account's withdrawal or maturity paid
+    lines:
+      - {dr: "2340", amount: amount}
+      - {cr: BANK, amount: amount}
 
   # ---- Reinsurance (I3c rebuilds both on the monthly bordereau) -------------------------------------------------------
 
@@ -326,7 +727,7 @@ rules:
     description: An exit's or a withdrawal's payout, keyed on the disbursement
     lines:
       - {dr: "5110", amount: amount}
-      - {cr: "1140", amount: amount}
+      - {cr: BANK, amount: amount}
 
   - id: PLAT-UL-PAYOUT-CORRECTION
     event: unitlinked.PayoutPaid
@@ -335,7 +736,7 @@ rules:
     description: An adjustment paid to the customer
     lines:
       - {dr: "2213", amount: amount}
-      - {cr: "1140", amount: amount}
+      - {cr: BANK, amount: amount}
 
   - id: PLAT-UL-PAYOUT-TOPUP
     event: unitlinked.PayoutPaid
@@ -344,7 +745,7 @@ rules:
     description: A top-up refunded whole -- it never bought a unit, so it leaves 2121 where it arrived
     lines:
       - {dr: "2121", amount: amount, movement: PRM_TOP}
-      - {cr: "1140", amount: amount}
+      - {cr: BANK, amount: amount}
 
   - id: F-06
     event: unitlinked.SwitchExecuted

@@ -93,4 +93,8 @@ public record PublishVersionRequest(
     // IFRS 17 I2 (spec §6), both optional: what the actuary signs off. Absent bucket = REMAINING; absent override =
     // the accounting policy register's model, which is the ordinary case.
     ProfitabilityBucket expectedProfitabilityBucket,
-    Ifrs17Model measurementModelOverride) {}
+    Ifrs17Model measurementModelOverride,
+
+    // IFRS 17 I3b, optional: the investment component share (%) of a survival or income instalment, set by the actuary.
+    @jakarta.validation.constraints.DecimalMin("0") @jakarta.validation.constraints.DecimalMax("100")
+    java.math.BigDecimal survivalInvestmentComponentPercent) {}

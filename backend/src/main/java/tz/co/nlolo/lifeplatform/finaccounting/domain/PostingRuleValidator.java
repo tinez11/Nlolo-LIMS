@@ -89,11 +89,21 @@ public final class PostingRuleValidator {
                 }
             }
         }
+        if (!rule.post()) {
+            if (!rule.lines().isEmpty()) {
+                problems.add(id + ": a rule that posts nothing (post: false) has no lines");
+            }
+            return;
+        }
         boolean dr = false;
         boolean cr = false;
         for (PostingRuleSet.Line line : rule.lines()) {
             dr |= line.side() == PostingDirection.DR;
             cr |= line.side() == PostingDirection.CR;
+            if (PostingRuleSet.BANK.equals(line.account())) {
+                checkAmountAndMovement(rule, id, line, shape, problems);
+                continue;
+            }
             ChartOfAccountBlueprint.Seed account = chart.stream()
                 .filter(s -> s.code().equals(line.account())).findFirst().orElse(null);
             if (account == null) {
@@ -103,22 +113,27 @@ public final class PostingRuleValidator {
             } else if (account.mode() == PostingMode.MAN) {
                 problems.add(id + ": account " + line.account() + " is MAN (manual journals only)");
             }
-            if (shape != null && (line.amount() == null || !shape.amounts().contains(line.amount()))) {
-                problems.add(id + ": amount '" + line.amount() + "' is not a fact " + rule.event() + " states "
-                    + shape.amounts());
-            }
-            String movement = line.movement();
-            if (movement != null && !movement.startsWith("attr:") && !MovementTypes.CODES.contains(movement)) {
-                problems.add(id + ": movement '" + movement + "' is not one of the guide's movement types");
-            }
-            if (movement != null && movement.startsWith("attr:") && shape != null
-                    && !shape.attributes().contains(movement.substring(5))) {
-                problems.add(id + ": movement names attribute '" + movement.substring(5) + "', which " + rule.event()
-                    + " does not have");
-            }
+            checkAmountAndMovement(rule, id, line, shape, problems);
         }
         if (!dr || !cr) {
             problems.add(id + ": a rule needs at least one Dr and one Cr line");
+        }
+    }
+
+    private static void checkAmountAndMovement(PostingRuleSet.Rule rule, String id, PostingRuleSet.Line line,
+                                               EventShape shape, List<String> problems) {
+        if (shape != null && (line.amount() == null || !shape.amounts().contains(line.amount()))) {
+            problems.add(id + ": amount '" + line.amount() + "' is not a fact " + rule.event() + " states "
+                + shape.amounts());
+        }
+        String movement = line.movement();
+        if (movement != null && !movement.startsWith("attr:") && !MovementTypes.CODES.contains(movement)) {
+            problems.add(id + ": movement '" + movement + "' is not one of the guide's movement types");
+        }
+        if (movement != null && movement.startsWith("attr:") && shape != null
+                && !shape.attributes().contains(movement.substring(5))) {
+            problems.add(id + ": movement names attribute '" + movement.substring(5) + "', which " + rule.event()
+                + " does not have");
         }
     }
 

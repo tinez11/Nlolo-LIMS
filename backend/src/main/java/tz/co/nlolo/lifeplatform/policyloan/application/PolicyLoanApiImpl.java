@@ -6,6 +6,7 @@ import tz.co.nlolo.lifeplatform.policy.api.CashValueView;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policyloan.api.*;
 import tz.co.nlolo.lifeplatform.policyloan.domain.LoanInterestTerm;
+import tz.co.nlolo.lifeplatform.policyloan.domain.LoanPosition;
 import tz.co.nlolo.lifeplatform.policyloan.domain.LoanTransaction;
 import tz.co.nlolo.lifeplatform.policyloan.domain.PolicyLoan;
 import tz.co.nlolo.lifeplatform.policyloan.infrastructure.LoanInterestTermRepository;
@@ -208,6 +209,9 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         // the publish below). LoanTransaction.loanTransactionId is application-assigned in the
         // constructor via UUID.randomUUID() -- NOT @GeneratedValue -- so it is already real and
         // non-null here, whether or not Hibernate has flushed the INSERT yet.
+        // IFRS 17 I3b (guide E-03): interest accrued so far is paid first, then principal -- measured BEFORE this
+        // repayment is written, so the split is this repayment's own.
+        BigDecimal interestPart = position(loan).interestPartOf(amount);
         LoanTransaction repayment = loanTransactionRepository.save(
             new LoanTransaction(tenantId, loanId, "REPAYMENT", amount, currency, paymentReference));
         loan.markRepaying();
@@ -238,6 +242,9 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         // a loan is disbursed exactly once, so there that key is still correct.
         eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanRepaid", tenantId,
             Map.of("loanId", loanId, "loanTransactionId", repayment.getLoanTransactionId(),
+                   "policyNumber", loan.getPolicyNumber(),
+                   "interestAmount", interestPart.toPlainString(),
+                   "principalAmount", amount.subtract(interestPart).toPlainString(),
                    "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency),
                    "repaidAt", Instant.now().toString(),
                    "outstandingBalance", Map.of("amount", outstanding.max(BigDecimal.ZERO).toPlainString(), "currencyCode", loan.getPrincipalCurrency()))));
@@ -424,6 +431,11 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         // Carried so a consumer (and any later reconciliation) can tell a forced lapse that
         // actually terminated cover from one that only recorded the loan-side transition.
         payload.put("policyLapsed", policyLapsed);
+        // IFRS 17 I3b (guide E-06): what the surrender value repays -- the principal and the interest still owed.
+        LoanPosition position = position(loan);
+        payload.put("principalOutstanding", position.principalOutstanding().max(BigDecimal.ZERO).toPlainString());
+        payload.put("interestOutstanding", position.interestOutstanding().max(BigDecimal.ZERO).toPlainString());
+        payload.put("currencyCode", loan.getPrincipalCurrency());
         eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanForcedLapseTriggered", tenantId, payload));
 
         return toView(loan);
@@ -446,6 +458,10 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
             }
         }
         return balance;
+    }
+
+    private LoanPosition position(PolicyLoan loan) {
+        return LoanPosition.of(loan.getPrincipalAmount(), loanTransactionRepository.findByLoanIdOrderByOccurredAt(loan.getLoanId()));
     }
 
     private PolicyLoan findLoanOrThrow(UUID loanId, UUID tenantId) {

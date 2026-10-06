@@ -81,6 +81,7 @@ class ProductApiIntegrationTest {
             "db-migrations/product/V22__annuity_terms.sql",
             "db-migrations/product/V23__vesting_terms.sql",
             "db-migrations/product/V27__ifrs17_classification.sql",
+            "db-migrations/product/V28__survival_investment_component.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",

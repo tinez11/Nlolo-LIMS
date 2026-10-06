@@ -68,6 +68,7 @@ class WithholdingIntegrationTest {
         "db-migrations/finaccounting/V10__ifrs17_ledger_foundation.sql",
         "db-migrations/finaccounting/V11__groups_and_policy_classification.sql",
         "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
+        "db-migrations/finaccounting/V13__disbursement_method.sql",
     };
 
     @BeforeAll
@@ -147,8 +148,10 @@ class WithholdingIntegrationTest {
         List<GlPosting> legs = asTenant(tenant, () ->
             postings.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(tenant, payout.getJournalEntryId()));
         assertThat(legs).hasSize(3);
+        // IFRS 17 I3b (guide H-03): paid, the gross clears the annuity instalment payable that H-02 raised when it fell
+        // due (2215); the expense was booked then, not here.
         assertThat(legs).anySatisfy(l -> {
-            assertThat(l.getAccountCode()).isEqualTo("5110");
+            assertThat(l.getAccountCode()).isEqualTo("2215");
             assertThat(l.getDirection()).isEqualTo(PostingDirection.DR);
             assertThat(l.getAmount()).isEqualByComparingTo("294000.00");
         });

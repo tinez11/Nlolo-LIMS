@@ -408,6 +408,10 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     /** Ask payment to disburse. The key carries the attempt, so a retry is a NEW request rather
      *  than a duplicate payment dedupes away. */
     void publishPayoutRequested(PayoutInstalment i) {
+        // IFRS 17 I3b: what falls due, for the ledger -- the gross, the tax withheld from it, and the share of it that
+        // is an investment component (posting guide C-01, D-01, D-05, H-02). Computed here, never by finaccounting.
+        BigDecimal gross = i.getGrossAmount() != null ? i.getGrossAmount() : i.payableAmount();
+        BigDecimal withheld = i.getWithheldAmount() != null ? i.getWithheldAmount() : BigDecimal.ZERO;
         eventPublisher.publishEvent(DomainEventEnvelope.of("benefitpayout.PayoutRequested", TenantContext.get(),
             Map.of("instalmentId", i.getInstalmentId().toString(),
                    "idempotencyKey", i.getInstalmentId() + ":" + i.getAttempts(),
@@ -416,7 +420,30 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
                    "purpose", purposeFor(i.kind()),
                    // The NET when tax was withheld (product step 5): the rail pays what leaves the bank.
                    "amount", Map.of("amount", i.payableAmount().toPlainString(),
-                        "currencyCode", i.getCurrency()))));
+                        "currencyCode", i.getCurrency()),
+                   "kind", i.kind().name(),
+                   "grossAmount", gross.toPlainString(),
+                   "withheldAmount", withheld.toPlainString(),
+                   "investmentComponent", investmentComponent(i, gross).toPlainString())));
+    }
+
+    /**
+     * The share of a payout that is an investment component -- repaid in all circumstances, so neither revenue nor
+     * expense (IFRS 17 para 85). A maturity, a return of premium and a pension's lump sum are all of it (C-01); a life
+     * annuity none (H-02); a survival benefit or income instalment the share the actuary set on the version (D-01,
+     * D-05; user decision 4), none where it is not set.
+     */
+    BigDecimal investmentComponent(PayoutInstalment i, BigDecimal gross) {
+        return switch (i.kind()) {
+            case MATURITY, RETURN_OF_PREMIUM, COMMUTATION -> gross;
+            case ANNUITY -> BigDecimal.ZERO;
+            case SURVIVAL, INCOME -> {
+                BigDecimal percent = productApi.getSnapshotByVersionId(policyApi.getPolicy(i.getPolicyNumber())
+                    .productVersionId()).survivalInvestmentComponentPercent();
+                yield percent == null ? BigDecimal.ZERO
+                    : gross.multiply(percent).divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_EVEN);
+            }
+        };
     }
 
     static String purposeFor(PayoutKind kind) {
@@ -571,8 +598,16 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     @Transactional
     public void markFreeLookRefunded(UUID cancellationId, UUID disbursementId) {
         cancellations.findById(cancellationId).ifPresent(c -> {
+            boolean wasApproved = "APPROVED".equals(c.getStatus());
             c.markPaid(disbursementId);
             cancellations.save(c);
+            // IFRS 17 I3b (guide A-18): the refund left the bank. On the real transition only, so a redelivery posts
+            // nothing twice.
+            if (wasApproved) {
+                eventPublisher.publishEvent(DomainEventEnvelope.of("benefitpayout.FreeLookRefundPaid", TenantContext.get(),
+                    Map.of("cancellationId", cancellationId.toString(), "policyNumber", c.getPolicyNumber(),
+                           "amount", Map.of("amount", c.getRefundAmount().toPlainString(), "currencyCode", c.getCurrency()))));
+            }
         });
     }
 

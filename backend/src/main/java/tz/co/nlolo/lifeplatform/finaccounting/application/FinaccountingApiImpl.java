@@ -18,6 +18,7 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import tz.co.nlolo.lifeplatform.finaccounting.api.TrialBalanceView;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccount;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.ElectionKey;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPosting;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountRepository;
@@ -504,6 +505,18 @@ public class FinaccountingApiImpl implements FinaccountingApi {
     @Override
     public List<tz.co.nlolo.lifeplatform.finaccounting.api.PolicyClassificationView> policyClassifications(String policyNumber) {
         return classifier.classifications(TenantContext.get(), policyNumber);
+    }
+
+    @Override
+    public Optional<BigDecimal> rateInForce(String key, java.time.LocalDate on) {
+        // No seeding: a rate is never in the baseline -- until Finance approves one, none is in force.
+        return register.inForce(key, "*", on).flatMap(e -> ElectionKey.rate(e.value()));
+    }
+
+    @Override
+    public Optional<String> investmentComponentRule(String portfolioCode, java.time.LocalDate on) {
+        seeder.seedPolicyRegisterIfAbsent(TenantContext.get());
+        return register.inForce("INVESTMENT_COMPONENT_RULE", portfolioCode, on).map(PolicyElectionView::value);
     }
 
     @Override

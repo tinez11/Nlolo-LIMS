@@ -194,6 +194,9 @@ public class PaymentApiImpl implements PaymentApi {
         recomputeBatchStatusIfBatched(tenantId, instruction);
         eventPublisher.publishEvent(DomainEventEnvelope.of("payment.DisbursementCompleted", tenantId,
             Map.of("disbursementId", disbursementId,
+                   // The rail it went by (MOBILE_MONEY or EFT), so the ledger pays it out of the right account
+                   // (IFRS 17 I3b: mobile money 1140, a bank transfer 1130).
+                   "method", instruction.getMethod(),
                    "idempotencyKey", instruction.getIdempotencyKey(),
                    "sourceRef", instruction.getSourceRef(),
                    "purpose", instruction.getPurpose(),
@@ -275,6 +278,9 @@ public class PaymentApiImpl implements PaymentApi {
                                     "currencyCode", instruction.getCurrency()))));
         eventPublisher.publishEvent(DomainEventEnvelope.of("payment.DisbursementCompleted", tenantId,
             Map.of("disbursementId", disbursementId,
+                   // The rail it went by (MOBILE_MONEY or EFT), so the ledger pays it out of the right account
+                   // (IFRS 17 I3b: mobile money 1140, a bank transfer 1130).
+                   "method", instruction.getMethod(),
                    "idempotencyKey", instruction.getIdempotencyKey(),
                    "sourceRef", instruction.getSourceRef(),
                    "purpose", instruction.getPurpose(),
