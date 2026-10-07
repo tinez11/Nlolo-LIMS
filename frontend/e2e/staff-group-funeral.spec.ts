@@ -8,11 +8,11 @@ import { acceptProposedScheme, pickParty } from './groupSchemes';
  * A group funeral scheme through the real stack (2026-10-07): a FUNERAL product sold to group schemes,
  * plan A1 at 3,000 per member per month; an association's scheme proposed with one family -- Juma and
  * his child -- underwritten and accepted by a second person; the first bill paid; a second member
- * joining, which moves the bill to 2 x 3,000; and the child's death claimed and paid at plan A1's
- * child benefit.
+ * joining, which moves the bill to 2 x 3,000; and the child's accidental death claimed and paid at
+ * plan A1's child benefit inside the six-month waiting period, which the version waives for accidents.
  *
- * The version has no waiting period and pays a dependant's death to the beneficiary the main member
- * named, so the seeded Amina Owner can file it without a promotion step.
+ * The version pays a dependant's death to the beneficiary the main member named, so the seeded Amina
+ * Owner can file it without a promotion step.
  */
 
 async function asStaff<T>(page: Page, state: string, url: string, work: (other: Page) => Promise<T>): Promise<T> {
@@ -121,7 +121,9 @@ test.describe('group funeral schemes', () => {
     await page.getByLabel('Date of event').fill(dmy(today));
     await page.getByLabel('Claim type').selectOption('DEATH');
     await page.getByLabel('Who died?').selectOption({ label: `M001 ${juma} — ${neema} (child)` });
-    await page.getByLabel('Cause of death').fill('Malaria');
+    // An accident: the version's six-month waiting period (the form's default) waives it, so it is paid on day one.
+    await page.getByLabel('Accidental death').check();
+    await page.getByLabel('Cause of death').fill('Road accident');
     await page.getByLabel('Place of death').fill('Dar es Salaam');
     await page.getByLabel('Date of death').fill(dmy(today));
     await page.getByLabel('Attending physician').fill('Dr. E2E Test');
