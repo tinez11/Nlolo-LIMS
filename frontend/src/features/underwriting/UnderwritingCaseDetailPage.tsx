@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { getFuneralApplication } from '@/api/funeral';
 import type { FuneralApplicationView } from '@/api/types';
 import { FuneralApplicationSummary } from './FuneralApplicationSummary';
+import { GroupFuneralProposalPanel } from './GroupFuneralProposalPanel';
 import { useForm } from 'react-hook-form';
 import { useAuth } from 'react-oidc-context';
 import { Link, useParams } from 'react-router-dom';
@@ -247,6 +248,10 @@ export function UnderwritingCaseDetailPage() {
               )}
             </dl>
           </Panel>
+        )}
+        {view?.groupScheme && (
+          <GroupFuneralProposalPanel caseId={caseId}
+            canReplace={view.status !== 'DECIDED' && roles.UNDERWRITER} />
         )}
         {funeralApplication && (
           <Panel title="Funeral plan" subtitle="The plan, the family it covers, and what each life costs today">
