@@ -1,14 +1,16 @@
 import { expect, type Page } from '@playwright/test';
 
 /**
- * A month of its own for a spec that posts into a closing month and then locks it (the IFRS 17 engine and expense
- * allocation specs): the one before the earliest period the ledger knows -- dev's own postings start in 2026.
+ * A month of its own for a spec that posts into a closing month and then locks it (the IFRS 17 engine, expense
+ * allocation and year-end specs): in the year before the earliest period the ledger knows -- dev's own postings start in
+ * 2026 -- so each spec run has a whole year to itself. November by default; December for the year-end spec (only
+ * December's lock waits for a year-end close).
  *
  * Earlier, not just untouched: the engine's closing figures are balances to date, so a month after an earlier run's would
  * carry that run's postings too -- and a month with an unlocked earlier month holding postings cannot lock. Each spec
  * locks its month at the end: a closing month with postings would stop every later month from locking.
  */
-export async function untouchedPeriod(page: Page): Promise<string> {
+export async function untouchedPeriod(page: Page, month: '11' | '12' = '11'): Promise<string> {
   await page.goto('/staff/periods');
   const list = page.getByRole('list', { name: 'Accounting periods' });
   await expect(list).toBeVisible({ timeout: 15_000 });
@@ -16,9 +18,8 @@ export async function untouchedPeriod(page: Page): Promise<string> {
     .map((label) => label.replace('Period ', ''))
     .filter((p) => /^\d{4}-\d{2}$/.test(p))
     .sort();
-  const before = known[0] !== undefined && known[0] < '2001-01' ? known[0] : '2001-01';
-  const [y, m] = before.split('-').map(Number);
-  const period = m === 1 ? `${y - 1}-12` : `${y}-${`${m - 1}`.padStart(2, '0')}`;
+  const earliestYear = Math.min(known[0] !== undefined ? Number(known[0].slice(0, 4)) : 2001, 2001);
+  const period = `${earliestYear - 1}-${month}`;
   await page.getByLabel('Another period (YYYY-MM)').fill(period);
   await page.getByRole('button', { name: 'Show', exact: true }).click();
   await expect(page.getByRole('listitem', { name: `Period ${period}` }).getByRole('button', { name: 'Start closing' }))

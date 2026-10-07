@@ -203,7 +203,7 @@ public class ExpenseAllocations {
                 + " -p.amount END), 0) FROM finaccounting.gl_posting p JOIN finaccounting.journal_entry j"
                 + " ON j.journal_entry_id = p.journal_entry_id WHERE p.tenant_id = ? AND p.period = ?"
                 + " AND p.account_code BETWEEN '8100' AND '8499' AND p.account_code <> '8490'"
-                + " AND j.expense_allocation_id IS NULL", BigDecimal.class, tenantId, period);
+                + " AND j.expense_allocation_id IS NULL AND j.year_end_close_id IS NULL", BigDecimal.class, tenantId, period);
         return (pool == null ? BigDecimal.ZERO : pool).setScale(2, RoundingMode.HALF_UP);
     }
 

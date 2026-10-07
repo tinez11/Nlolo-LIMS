@@ -193,3 +193,9 @@ export const EngineRunPage = lazy(() =>
 export const ExpenseAllocationPage = lazy(() =>
   import('@/features/finance/ExpenseAllocationPage').then((m) => ({ default: m.ExpenseAllocationPage })),
 );
+export const YearEndPage = lazy(() =>
+  import('@/features/finance/YearEndPage').then((m) => ({ default: m.YearEndPage })),
+);
+export const YearEndClosePage = lazy(() =>
+  import('@/features/finance/YearEndClosePage').then((m) => ({ default: m.YearEndClosePage })),
+);

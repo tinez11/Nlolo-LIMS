@@ -3,6 +3,7 @@ import {
   BookText,
   Building2,
   CalendarCheck,
+  CalendarClock,
   ClipboardCheck,
   FileWarning,
   FileText,
@@ -90,6 +91,8 @@ import {
   EnginePage,
   EngineRunPage,
   ExpenseAllocationPage,
+  YearEndPage,
+  YearEndClosePage,
 } from '@/lazyPages';
 
 /**
@@ -559,6 +562,13 @@ const STAFF_SCREENS: Screen[] = [
   { path: 'ifrs17-engine/runs/:runId', element: <EngineRunPage />, reach: 'drill-in' },
   // IFRS 17 I5b: P-19's expense allocation, decided by a second person.
   { path: 'ifrs17-engine/allocations/:allocationId', element: <ExpenseAllocationPage />, reach: 'drill-in' },
+  // IFRS 17 I6: the year-end close -- classes 4-8 to retained earnings, two people; December locks only after it.
+  {
+    path: 'year-end',
+    element: <YearEndPage />,
+    reach: { group: 'finance', label: 'Year-end close', icon: CalendarClock },
+  },
+  { path: 'year-end/closes/:closeId', element: <YearEndClosePage />, reach: 'drill-in' },
   {
     path: 'treaties',
     element: <TreatiesPage />,

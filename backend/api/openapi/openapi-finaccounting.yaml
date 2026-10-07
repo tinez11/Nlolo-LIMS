@@ -1262,6 +1262,118 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/StateConflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /ifrs17/year-end/{year}/preview:
+    parameters:
+      - { name: year, in: path, required: true, schema: { type: integer, minimum: 1900, maximum: 2999 } }
+    get:
+      summary: The year's class 4-8 accounts, profit, dividends and the closing journal as it would post now (IFRS 17 I6)
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The preview
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/YearEndCloseView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /ifrs17/year-end/{year}/closes:
+    parameters:
+      - { name: year, in: path, required: true, schema: { type: integer, minimum: 1900, maximum: 2999 } }
+    post:
+      summary: >-
+        Prepare the close of the year -- FINANCE_OFFICER or ADMIN; December must be closing with nothing else standing in
+        the way of its lock, and the year must have something to close
+      security:
+        - staffAuth: []
+      responses:
+        '201':
+          description: The prepared close, its figures computed now
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/YearEndCloseView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+    get:
+      summary: The year's closes, newest first
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The closes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/YearEndCloseView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /ifrs17/year-end-closes/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: One close -- its figures computed now while prepared, as posted once decided
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The close
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/YearEndCloseView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /ifrs17/year-end-closes/{id}/approval:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: >-
+        Approve and post the close in December -- FINANCE_APPROVER who did not prepare it; a posted close of the year is
+        reversed and replaced
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The posted close
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/YearEndCloseView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /ifrs17/year-end-closes/{id}/rejection:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Reject with a reason -- FINANCE_APPROVER who did not prepare it
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: The rejected close
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/YearEndCloseView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
 components:
   parameters:
     ManualJournalId:
@@ -1813,6 +1925,54 @@ components:
         documentRef: { type: [string, "null"] }
         createdBy: { type: string }
         createdAt: { type: string, format: date-time }
+    YearEndCloseView:
+      type: object
+      additionalProperties: false
+      required: [year, classTotals, profit, dividends, accounts, lines, stale]
+      description: >-
+        A year's close (IFRS 17 I6, guide 5.7): PREPARED (figures computed on read), POSTED as one SYSTEM journal in
+        December clearing classes 4-8 to 3310, then 3310 to 3210 (M-07) and dividends 3320 to 3210 (M-11), REJECTED, or
+        REPLACED. A preview carries no record fields. Balances net Dr - Cr; profit positive, a loss negative. stale --
+        classes 4-8 or 3320 posted in the year since approval; December will not lock until a new close is approved.
+      properties:
+        closeId: { type: [string, "null"], format: uuid }
+        year: { type: integer }
+        status: { type: [string, "null"], enum: [PREPARED, POSTED, REJECTED, REPLACED, null] }
+        classTotals:
+          type: object
+          additionalProperties: { type: number }
+        profit: { type: number }
+        dividends: { type: number }
+        accounts:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, name, accountClass, balance]
+            properties:
+              code: { type: string }
+              name: { type: string }
+              accountClass: { type: string }
+              balance: { type: number }
+        lines:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [account, side, amount]
+            properties:
+              account: { type: string }
+              side: { type: string, enum: [DR, CR] }
+              amount: { type: number }
+        stale: { type: boolean }
+        preparedBy: { type: [string, "null"] }
+        preparedAt: { type: [string, "null"], format: date-time }
+        decidedBy: { type: [string, "null"] }
+        decidedAt: { type: [string, "null"], format: date-time }
+        decisionReason: { type: [string, "null"] }
+        replacesId: { type: [string, "null"], format: uuid }
+        journalEntryId: { type: [string, "null"], format: uuid }
+        reversalJournalId: { type: [string, "null"], format: uuid }
     ExpenseAllocationInput:
       type: object
       additionalProperties: false
