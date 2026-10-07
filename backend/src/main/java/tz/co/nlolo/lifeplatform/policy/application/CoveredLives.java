@@ -51,9 +51,12 @@ class CoveredLives {
     private final ProductApi productApi;
     private final PartyApi partyApi;
     private final ApplicationEventPublisher eventPublisher;
+    private final tz.co.nlolo.lifeplatform.policy.infrastructure.GroupSchemeRepository schemes;
 
     CoveredLives(CoveredLifeRepository lives, FuneralPolicyRepository funeralPolicies, ProductApi productApi,
-                 PartyApi partyApi, ApplicationEventPublisher eventPublisher) {
+                 PartyApi partyApi, ApplicationEventPublisher eventPublisher,
+                 tz.co.nlolo.lifeplatform.policy.infrastructure.GroupSchemeRepository schemes) {
+        this.schemes = schemes;
         this.lives = lives;
         this.funeralPolicies = funeralPolicies;
         this.productApi = productApi;
@@ -64,6 +67,12 @@ class CoveredLives {
     /** From the category the policy was issued under -- no product call, and no funeral table touched. */
     boolean isFuneral(Policy policy) {
         return "FUNERAL".equals(policy.getProductCategory());
+    }
+
+    /** A group funeral scheme (2026-10-07): its lives belong to members' families, not to the policy's own family. */
+    boolean isScheme(Policy policy) {
+        return isFuneral(policy) && schemes.findByPolicyNumberAndTenantId(policy.getPolicyNumber(), TenantContext.get())
+            .isPresent();
     }
 
     /**
@@ -223,6 +232,12 @@ class CoveredLives {
             }
         }
         LocalDate issued = policy.getIssueDate();
+        if (isScheme(policy)) {
+            // A group funeral scheme's lives carry no premium of their own -- the association pays per member -- so
+            // there is nothing to re-price and no instalment to restate. The families' cover follows in
+            // GroupFuneralFamilies.restateCovers, which the caller runs after this.
+            return active.stream().anyMatch(CoveredLife::isActive);
+        }
         // By calendar year, not Period.between: a policy issued on 29 February has its anniversary on 28
         // February in a common year (plusYears' own rule), where Period.between counts no whole year yet.
         int years = today.getYear() - issued.getYear();

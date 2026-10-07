@@ -300,7 +300,18 @@ public class Policy {
      * would leave a lender's contract stating the total it was issued with.
      */
     public void restateSumAssured(BigDecimal total) {
-        if (!"GROUP_LIFE".equals(productCategory) && !"CREDIT_LIFE".equals(productCategory)) {
+        restateSumAssured(total, false);
+    }
+
+    /**
+     * As above; {@code groupFuneralScheme} when the caller has found this FUNERAL policy's group scheme row -- an
+     * association's families (2026-10-07), whose total moves with its members as any scheme's does. An individual
+     * funeral policy's sum assured is its main member's benefit and still changes by endorsement only.
+     */
+    public void restateSumAssured(BigDecimal total, boolean groupFuneralScheme) {
+        boolean scheme = "GROUP_LIFE".equals(productCategory) || "CREDIT_LIFE".equals(productCategory)
+            || (groupFuneralScheme && "FUNERAL".equals(productCategory));
+        if (!scheme) {
             throw new InvalidPolicyStateException(
                 "Only a scheme's sum assured is restated from its members; policy "
                     + policyNumber + " is " + productCategory + " and changes by endorsement");

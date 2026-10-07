@@ -190,7 +190,7 @@ public class UnderwritingController {
     @GetMapping(value = "/group-schedule-template", produces = "text/csv")
     @PreAuthorize("hasRole('REALM_STAFF')")
     public ResponseEntity<String> groupScheduleTemplate() {
-        String csv = String.join(",", tz.co.nlolo.lifeplatform.underwriting.domain.FuneralScheduleFile.HEADER) + "\n"
+        String csv = String.join(",", tz.co.nlolo.lifeplatform.underwriting.api.FuneralScheduleFile.HEADER) + "\n"
             + "M001,MAIN_MEMBER,Juma Ali,1980-05-12,MALE,,,Asha Juma,SPOUSE,0712000000\n"
             + "M001,SPOUSE,Asha Juma,1983-02-01,FEMALE,,,,,\n"
             + "M001,CHILD,Neema Juma,2012-07-20,FEMALE,,,,,\n";

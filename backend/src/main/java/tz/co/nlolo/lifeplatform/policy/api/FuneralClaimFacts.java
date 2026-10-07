@@ -13,12 +13,25 @@ import java.util.UUID;
  * @param role                 MAIN_MEMBER, SPOUSE, CHILD, PARENT or EXTENDED
  * @param dependantClaimPayee  MAIN_MEMBER or MAIN_MEMBER_BENEFICIARY: who files when a dependant dies
  * @param beneficiaryPartyIds  the policy's active beneficiaries who are registered parties
+ * @param groupScheme          a group funeral scheme's life (2026-10-07): the policyholder is the association, so the
+ *                             family's main member and the beneficiary they named (below) stand where an individual
+ *                             policy's policyholder and beneficiaries do
+ * @param mainMemberPartyId    on a scheme, the family's main member once registered as a party (at claim); else null
+ * @param mainMemberName       on a scheme, the family's main member
+ * @param beneficiaryName      on a scheme, the beneficiary the main member named, if any
  */
 public record FuneralClaimFacts(String role, UUID policyholderPartyId, String dependantClaimPayee,
-                                List<UUID> beneficiaryPartyIds) {
+                                List<UUID> beneficiaryPartyIds, boolean groupScheme, UUID mainMemberPartyId,
+                                String mainMemberName, String beneficiaryName) {
 
     public FuneralClaimFacts {
         beneficiaryPartyIds = beneficiaryPartyIds != null ? List.copyOf(beneficiaryPartyIds) : List.of();
+    }
+
+    /** An individual funeral policy's facts. */
+    public FuneralClaimFacts(String role, UUID policyholderPartyId, String dependantClaimPayee,
+                             List<UUID> beneficiaryPartyIds) {
+        this(role, policyholderPartyId, dependantClaimPayee, beneficiaryPartyIds, false, null, null, null);
     }
 
     public boolean mainMember() {

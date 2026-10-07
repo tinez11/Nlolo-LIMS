@@ -95,6 +95,7 @@ public final class DepositTestMigrations {
         "db-migrations/policy/V31__free_look_status.sql",
         "db-migrations/policy/V32__attached_bonus_projection.sql",
         "db-migrations/policy/V37__sale_classification.sql",
+        "db-migrations/policy/V38__group_funeral_scheme.sql",
         "db-migrations/audit/V1__create_audit_schema.sql",
         "db-migrations/audit/V2__rls_fail_closed.sql",
         "db-migrations/audit/V3__q4_2026_partitions.sql",

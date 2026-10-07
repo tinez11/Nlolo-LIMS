@@ -175,6 +175,7 @@ class ClaimsContractTest {
             "db-migrations/policy/V30__surrender.sql",
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/policy/V37__sale_classification.sql",
+            "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V7__journal_support_document_type.sql",

@@ -195,4 +195,27 @@ class FuneralQuoterTest {
         refused(() -> FuneralQuoter.yearlyPremiumAt(FuneralPlans.familia(), "B", MAIN_MEMBER, 101),
             "Plan B has no premium for a main member aged 101");
     }
+
+    /** Familia sold to groups -- the joiner rule refuses any product that is not. */
+    private static FuneralPlan groupFamilia() {
+        FuneralPlan f = FuneralPlans.familia();
+        return new FuneralPlan(true, f.plans(), f.benefits(), List.of(), f.roles(), f.maxPricedAge(),
+            f.waitingPeriodMonths(), f.accidentWaivesWaiting(), f.dependantClaimPayee(), f.onMainMemberDeath(),
+            f.freeCoverToPaidDate(), tz.co.nlolo.lifeplatform.product.api.FuneralSoldAs.GROUP);
+    }
+
+    @Test
+    void aJoinerIsCheckedAloneBesideTheCountAlreadyInItsRole() {
+        assertThat(FuneralQuoter.joinerProblems(groupFamilia(), "A", ON, life(CHILD, "Zuri", 12), 5)).isEmpty();
+        assertThat(FuneralQuoter.joinerProblems(groupFamilia(), "A", ON, life(CHILD, "Zuri", 12), 6))
+            .containsExactly("At most 6 children may be covered, not 7");
+        assertThat(FuneralQuoter.joinerProblems(groupFamilia(), "A", ON, life(SPOUSE, "Mwanaisha", 30), 1))
+            .containsExactly("At most 1 spouse may be covered, not 2");
+        assertThat(FuneralQuoter.joinerProblems(groupFamilia(), "A", ON, life(CHILD, "Old", 30), 0))
+            .singleElement().asString().startsWith("Old: a child must be 0 to 20");
+        assertThat(FuneralQuoter.joinerProblems(groupFamilia(), "A", ON, life(MAIN_MEMBER, "Second", 30), 0))
+            .containsExactly("Second: a family has exactly one main member");
+        assertThat(FuneralQuoter.joinerProblems(FuneralPlans.familia(), "A", ON, life(CHILD, "Zuri", 12), 0))
+            .containsExactly("This product is not sold to group schemes");
+    }
 }

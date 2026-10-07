@@ -2,7 +2,7 @@ package tz.co.nlolo.lifeplatform.underwriting;
 
 import org.junit.jupiter.api.Test;
 import tz.co.nlolo.lifeplatform.product.api.FuneralRole;
-import tz.co.nlolo.lifeplatform.underwriting.domain.FuneralScheduleFile;
+import tz.co.nlolo.lifeplatform.underwriting.api.FuneralScheduleFile;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;

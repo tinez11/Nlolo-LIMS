@@ -92,7 +92,16 @@ public class FuneralTestFixtures {
      * (plan A) and 5,000 (plan B), and no premium table.
      */
     public Product publishGroupFamilia(UUID tenant) {
-        FuneralPlan f = FuneralPlans.familia();
+        return publishGroupFamilia(tenant, FuneralPlans.familia());
+    }
+
+    /** {@link #publishGroupFamilia(UUID)} with other claim rules: who a dependant's death pays, and a main member's death. */
+    public Product publishGroupFamilia(UUID tenant, tz.co.nlolo.lifeplatform.product.api.DependantClaimPayee payee,
+                                       tz.co.nlolo.lifeplatform.product.api.MainMemberDeathRule onDeath) {
+        return publishGroupFamilia(tenant, FuneralPlans.familia(6, payee, onDeath, false));
+    }
+
+    private Product publishGroupFamilia(UUID tenant, FuneralPlan f) {
         return publish(tenant, new FuneralPlan(true,
             f.plans().stream().map(p -> new tz.co.nlolo.lifeplatform.product.api.FuneralPlanOption(p.planCode(), p.name(),
                 new BigDecimal(p.planCode().equals("A") ? "3000.00" : "5000.00"))).toList(),
@@ -130,6 +139,15 @@ public class FuneralTestFixtures {
                               tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal proposal) {
         return asTenant(tenant, () -> underwritingApi.openCase(association, product.productId(), product.versionId(), null,
             proposal, "staff-opener").caseId());
+    }
+
+    /** A group funeral case opened and accepted, which issues the scheme. Returns its policy number. */
+    public String issueGroupScheme(UUID tenant, Product product, UUID association,
+                                   tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal proposal) {
+        UUID caseId = openGroupCase(tenant, product, association, proposal);
+        decide(tenant, caseId, DecisionOutcome.ACCEPT, null);
+        return asTenant(tenant, () -> policyApi.searchPolicies(association, null, null, null, null,
+            org.springframework.data.domain.PageRequest.of(0, 5)).getContent().get(0).policyNumber());
     }
 
     /** A main member aged {@code age} last birthday today. */

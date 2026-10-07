@@ -408,6 +408,13 @@ public interface ProductApi {
     List<String> funeralFamilyProblems(UUID productVersionId, String planCode, LocalDate asOf, List<FuneralLifeInput> lives);
 
     /**
+     * One life joining a family already on a group scheme, beside {@code alreadyInRole} lives in its role: its entry
+     * rules on {@code asOf} and the role's count, the family's covered lives not re-checked. Empty when it may join.
+     */
+    List<String> funeralJoinerProblems(UUID productVersionId, String planCode, LocalDate asOf, FuneralLifeInput life,
+                                       int alreadyInRole);
+
+    /**
      * One existing life's yearly premium at {@code age} -- no entry-age check: the anniversary re-prices a
      * life long past the age it joined at.
      *

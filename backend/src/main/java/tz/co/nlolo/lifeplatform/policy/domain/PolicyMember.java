@@ -203,6 +203,18 @@ public class PolicyMember {
     }
 
     /**
+     * A group funeral family's spouse takes it over after the main member's death (2026-10-07): the member row -- what
+     * the association's bill counts -- now names them. Only a name-only member: a party member's identity is a party's.
+     */
+    public void takenOverBy(String spouseName, LocalDate spouseDateOfBirth) {
+        if (memberType != MemberType.FREEFORM) {
+            throw new IllegalStateException("Only a name-only member is taken over by name");
+        }
+        this.memberName = spouseName;
+        this.memberDateOfBirth = spouseDateOfBirth;
+    }
+
+    /**
      * Record that this member has left the scheme.
      *
      * <p>The row is kept rather than deleted: a claim can arrive after someone leaves, and

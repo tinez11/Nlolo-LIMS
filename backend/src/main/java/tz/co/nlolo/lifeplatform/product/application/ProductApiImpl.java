@@ -1135,6 +1135,13 @@ public class ProductApiImpl implements ProductApi {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<String> funeralJoinerProblems(UUID productVersionId, String planCode, LocalDate asOf, FuneralLifeInput life,
+                                              int alreadyInRole) {
+        return FuneralQuoter.joinerProblems(resolveFuneralPlan(productVersionId), planCode, asOf, life, alreadyInRole);
+    }
+
+    @Override
     @Transactional(readOnly = true, noRollbackFor = FuneralQuoteRefusedException.class)
     public BigDecimal funeralYearlyPremium(UUID productVersionId, String planCode, FuneralRole role, int age) {
         return FuneralQuoter.yearlyPremiumAt(resolveFuneralPlan(productVersionId), planCode, role, age);

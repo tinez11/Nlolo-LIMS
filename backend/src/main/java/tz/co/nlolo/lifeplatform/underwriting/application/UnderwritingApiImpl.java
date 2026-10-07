@@ -28,7 +28,7 @@ import tz.co.nlolo.lifeplatform.underwriting.infrastructure.ProposalGroupGradeRe
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.ProposalGroupMemberRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.ProposalGroupLifeRepository;
 import tz.co.nlolo.lifeplatform.underwriting.domain.ProposalGroupLife;
-import tz.co.nlolo.lifeplatform.underwriting.domain.FuneralScheduleFile;
+import tz.co.nlolo.lifeplatform.underwriting.api.FuneralScheduleFile;
 import tz.co.nlolo.lifeplatform.underwriting.api.GroupBenefitBasis;
 import tz.co.nlolo.lifeplatform.underwriting.api.GroupScheduleResult;
 import tz.co.nlolo.lifeplatform.underwriting.domain.ProposalGroupScheme;

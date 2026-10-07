@@ -38,8 +38,18 @@ public class CoveredLife {
     @Column(name = "ended_on") private LocalDate endedOn;
     @Column(name = "created_at", nullable = false) private Instant createdAt = Instant.now();
     @Column(name = "created_by", nullable = false) private String createdBy;
+    /** Group funeral (V39): the main member whose family this life is in. Null on an individual funeral policy. */
+    @Column(name = "policy_member_id") private UUID policyMemberId;
 
     protected CoveredLife() {}
+
+    /** This life belongs to a scheme member's family. */
+    public CoveredLife inFamilyOf(UUID policyMemberId) {
+        this.policyMemberId = policyMemberId;
+        return this;
+    }
+
+    public UUID getPolicyMemberId() { return policyMemberId; }
 
     public CoveredLife(UUID tenantId, String policyNumber, String role, String fullName, LocalDate dateOfBirth,
                        String sex, String idNumber, boolean student, UUID partyId, BigDecimal benefit,

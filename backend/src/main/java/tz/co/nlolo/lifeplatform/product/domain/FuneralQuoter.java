@@ -109,6 +109,30 @@ public final class FuneralQuoter {
         return problems;
     }
 
+    /**
+     * One life joining a family already on a group scheme, which has {@code alreadyInRole} lives in its role: that
+     * life's entry rules and the role's count. The family's lives already on cover are not re-checked -- a child who
+     * joined at 18 and is 22 now as a student is covered, not a new entrant. Empty when the life may join.
+     */
+    public static List<String> joinerProblems(FuneralPlan plan, String planCode, LocalDate asOf, FuneralLifeInput life,
+                                              int alreadyInRole) {
+        if (!plan.funeral() || !plan.soldAs().group()) {
+            return List.of("This product is not sold to group schemes");
+        }
+        String who = life.name() == null || life.name().isBlank() ? "A life" : life.name();
+        if (life.role() == FuneralRole.MAIN_MEMBER) {
+            return List.of(who + ": a family has exactly one main member");
+        }
+        List<String> problems = new ArrayList<>(lifeProblems(plan, planCode, life, asOf));
+        plan.rule(life.role()).ifPresent(rule -> {
+            if (alreadyInRole + 1 > rule.maxLives()) {
+                problems.add("At most " + rule.maxLives() + " " + (rule.maxLives() == 1 ? life.role().label()
+                    : life.role().plural()) + " may be covered, not " + (alreadyInRole + 1));
+            }
+        });
+        return problems;
+    }
+
     /** One life's entry problems, unpriced and without the count rule (the family's or the caller's to apply). */
     public static List<String> lifeProblems(FuneralPlan plan, String planCode, FuneralLifeInput life, LocalDate asOf) {
         String who = life.name() == null || life.name().isBlank() ? "A life" : life.name();

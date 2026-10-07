@@ -35,5 +35,12 @@ public enum BenefitBasis {
      * the stored figure is its ceiling. Materialising one row per repayment date would be
      * tens of thousands of rows per enrolment file.
      */
-    AMORTISING_LOAN
+    AMORTISING_LOAN,
+
+    /**
+     * Group funeral (2026-10-07): each life's cover comes from its role in the FUNERAL product's plan -- main member,
+     * spouse, child. No scheme-level parameter: the plan code is on the scheme's funeral_policy row, and the lives and
+     * their benefits are covered lives linked to their main member.
+     */
+    FUNERAL_PLAN
 }

@@ -351,6 +351,84 @@ public class PolicyController {
         return ResponseEntity.status(HttpStatus.CREATED).body(PolicyMemberResponseDto.from(view));
     }
 
+    // ---- Group funeral schemes (2026-10-07): an association's families ----
+
+    /** Every family on a group funeral scheme: the main member's member row, the beneficiary, every life. */
+    @GetMapping("/group-schemes/{policyNumber}/families")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<List<GroupFuneralFamilyView>> getGroupFuneralFamilies(@PathVariable String policyNumber) {
+        return ResponseEntity.ok(policyApi.groupFuneralFamilies(policyNumber));
+    }
+
+    /**
+     * A family joins an in-force group funeral scheme. UNDERWRITER, as admitting a member to any scheme is: a new main
+     * member raises the association's bill by one group rate from the next billing date.
+     */
+    @PostMapping("/group-schemes/{policyNumber}/families")
+    @PreAuthorize("hasRole('UNDERWRITER')")
+    public ResponseEntity<PolicyMemberResponseDto> addGroupFuneralFamily(@PathVariable String policyNumber,
+            @RequestBody GroupFuneralRequests.Join request, @AuthenticationPrincipal Jwt jwt) {
+        PolicyMemberView view = policyApi.addGroupFuneralFamily(policyNumber, request.toInputs(), request.joinedOn(),
+            jwt.getSubject());
+        return ResponseEntity.status(HttpStatus.CREATED).body(PolicyMemberResponseDto.from(view));
+    }
+
+    /**
+     * Families join from the association's file -- the proposal's format, the template at
+     * GET /underwriting/group-schedule-template. 200 either way: the report says which families joined and every
+     * problem of the ones that did not.
+     */
+    @PostMapping(value = "/group-schemes/{policyNumber}/funeral-joiners",
+        consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('UNDERWRITER')")
+    public ResponseEntity<GroupFuneralJoiningReport> joinGroupFuneralFamilies(@PathVariable String policyNumber,
+            @org.springframework.web.bind.annotation.RequestPart("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam(required = false) LocalDate joinedOn, @AuthenticationPrincipal Jwt jwt) {
+        try {
+            return ResponseEntity.ok(policyApi.joinGroupFuneralFamilies(policyNumber, file.getBytes(), joinedOn,
+                jwt.getSubject()));
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException("Failed to read the uploaded joining file", e);
+        }
+    }
+
+    /** A life joins a member's family from today. Staff: it changes the family's cover, never the bill. */
+    @PostMapping("/group-schemes/{policyNumber}/members/{policyMemberId}/lives")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<CoveredLifeView> addGroupFuneralLife(@PathVariable String policyNumber,
+            @PathVariable UUID policyMemberId, @RequestBody GroupFuneralRequests.Life request, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(policyApi.addGroupFuneralLife(policyNumber, policyMemberId, request.toInput(), jwt.getSubject()));
+    }
+
+    /** A dependant comes off a member's family at the end of this month. */
+    @PostMapping("/group-schemes/{policyNumber}/covered-lives/{coveredLifeId}/removal")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<CoveredLifeView> removeGroupFuneralLife(@PathVariable String policyNumber,
+            @PathVariable UUID coveredLifeId, @RequestBody(required = false) GroupFuneralRequests.Remove request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(policyApi.removeGroupFuneralLife(policyNumber, coveredLifeId,
+            request != null ? request.reason() : null, jwt.getSubject()));
+    }
+
+    /**
+     * A member leaves a group funeral scheme with their family, covered to the end of the month they leave in; the bill
+     * falls from the first billing date after. Only a group funeral scheme: an employer's leavers and a lender's exits
+     * have their own routes.
+     */
+    @PostMapping("/group-schemes/{policyNumber}/members/{policyMemberId}/departure")
+    @PreAuthorize("hasRole('UNDERWRITER')")
+    public ResponseEntity<PolicyMemberResponseDto> groupFuneralMemberLeaves(@PathVariable String policyNumber,
+            @PathVariable UUID policyMemberId, @RequestBody GroupFuneralRequests.Leave request, @AuthenticationPrincipal Jwt jwt) {
+        if (policyApi.getGroupScheme(policyNumber).benefitBasis() != BenefitBasis.FUNERAL_PLAN) {
+            throw new InvalidPolicyStateException(policyNumber + " is not a group funeral scheme");
+        }
+        PolicyMemberView view = policyApi.exitMember(policyNumber, policyMemberId, request.leftOn(),
+            request.reason() != null ? request.reason() : tz.co.nlolo.lifeplatform.policy.api.ExitReason.CANCELLED,
+            null, jwt.getSubject());
+        return ResponseEntity.ok(PolicyMemberResponseDto.from(view));
+    }
+
     @PostMapping("/policies/{policyNumber}/endorsements")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<PolicyResponseDto> applyEndorsement(@PathVariable String policyNumber, @Valid @RequestBody EndorsementRequestDto request,
