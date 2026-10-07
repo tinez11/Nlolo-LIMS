@@ -132,6 +132,7 @@ class RowLevelSecurityIntegrationTest {
             // access to it anyway.
             "db-migrations/underwriting/V12__proposal_beneficiary_rls.sql",
             "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
+            "db-migrations/underwriting/V19__group_funeral_proposal.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             // M3 (Task 6) additions: policyLoanIsTenantIsolatedUnderRls below needs refdata

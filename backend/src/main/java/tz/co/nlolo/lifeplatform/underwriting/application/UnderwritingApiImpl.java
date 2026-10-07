@@ -26,6 +26,15 @@ import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.ProposalGroupSchemeRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.ProposalGroupGradeRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.ProposalGroupMemberRepository;
+import tz.co.nlolo.lifeplatform.underwriting.infrastructure.ProposalGroupLifeRepository;
+import tz.co.nlolo.lifeplatform.underwriting.domain.ProposalGroupLife;
+import tz.co.nlolo.lifeplatform.underwriting.domain.FuneralScheduleFile;
+import tz.co.nlolo.lifeplatform.underwriting.api.GroupBenefitBasis;
+import tz.co.nlolo.lifeplatform.underwriting.api.GroupScheduleResult;
+import tz.co.nlolo.lifeplatform.underwriting.domain.ProposalGroupScheme;
+import tz.co.nlolo.lifeplatform.product.api.FuneralLifeInput;
+import java.util.ArrayList;
+import java.util.Optional;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.RiskAssessmentRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.UnderwritingCaseRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -63,6 +72,8 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     private final ProposalGroupSchemeRepository proposalGroupSchemeRepository;
     private final ProposalGroupGradeRepository proposalGroupGradeRepository;
     private final ProposalGroupMemberRepository proposalGroupMemberRepository;
+    /** Group funeral schemes: the opening families (underwriting V19). */
+    private final ProposalGroupLifeRepository proposalGroupLifeRepository;
     private final AnnuityChoiceRepository annuityChoiceRepository;
     private final DeferredAnnuityChoiceRepository deferredAnnuityChoiceRepository;
     private final FuneralApplications funeralApplications;
@@ -83,7 +94,9 @@ public class UnderwritingApiImpl implements UnderwritingApi {
                                 ProposalGroupMemberRepository proposalGroupMemberRepository,
                                 AnnuityChoiceRepository annuityChoiceRepository,
                                 DeferredAnnuityChoiceRepository deferredAnnuityChoiceRepository,
-                                FuneralApplications funeralApplications, UnitLinkedChoices unitLinkedChoices) {
+                                FuneralApplications funeralApplications, UnitLinkedChoices unitLinkedChoices,
+                                ProposalGroupLifeRepository proposalGroupLifeRepository) {
+        this.proposalGroupLifeRepository = proposalGroupLifeRepository;
         this.funeralApplications = funeralApplications;
         this.unitLinkedChoices = unitLinkedChoices;
         this.annuityChoiceRepository = annuityChoiceRepository;
@@ -238,6 +251,33 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         // or the scheme is decided and can then never be issued.
         requireRealAgent(agentOfRecordId);
 
+        ProductCategory category = productApi.getSnapshotByVersionId(productVersionId).category();
+        boolean funeralPlan = proposal != null && proposal.benefitBasis() == GroupBenefitBasis.FUNERAL_PLAN;
+        if (category == ProductCategory.FUNERAL || funeralPlan) {
+            // Group funeral schemes (2026-10-07): an association's members and their families, priced at the plan's
+            // group rate per member -- checked here, family by family, so a case is never decided into an issuance
+            // that would refuse it.
+            if (category != ProductCategory.FUNERAL || !funeralPlan) {
+                throw new UnderwritingValidationException(category == ProductCategory.FUNERAL
+                    ? "A group proposal on a FUNERAL product uses the FUNERAL_PLAN basis"
+                    : "The FUNERAL_PLAN basis needs a FUNERAL product; this one is " + category);
+            }
+            requireFuneralSchedule(productVersionId, proposal.planCode(), proposal.commencementDate(), proposal.lives());
+            UnderwritingCase funeralCase = new UnderwritingCase(tenantId, applicantPartyId, productId,
+                productVersionId, null, proposal.currency(), agentOfRecordId, openedBy);
+            // A scheme bills monthly: members x the plan's group rate.
+            funeralCase.recordGroupProposal(nextProposalNumber(), proposal.commencementDate(), "MONTHLY");
+            defaultSale(funeralCase, agentOfRecordId, category);
+            underwritingCaseRepository.save(funeralCase);
+            persistGroupProposal(tenantId, funeralCase.getCaseId(), proposal, openedBy);
+            return toViewWithNominations(funeralCase);
+        }
+        if (proposal != null && (proposal.premiumAmount() == null || proposal.premiumAmount().signum() <= 0
+                || proposal.premiumCurrency() == null || proposal.premiumFrequency() == null)) {
+            // Optional on the wire only because a FUNERAL_PLAN proposal computes its premium at issue.
+            throw new UnderwritingValidationException("A group proposal states the premium agreed with the employer, its"
+                + " currency and how often it is paid");
+        }
         if (proposal == null || proposal.openingSchedule() == null || proposal.openingSchedule().isEmpty()) {
             // The rule issueGroupScheme already enforces, moved to where the proposal is taken.
             // A scheme's sum assured IS the total of its schedule, so an empty one is a
@@ -245,7 +285,6 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             // reaches an underwriter's queue in the first place.
             throw new UnderwritingValidationException("A group proposal names at least one life");
         }
-        ProductCategory category = productApi.getSnapshotByVersionId(productVersionId).category();
         if (category != ProductCategory.GROUP_LIFE) {
             // The mirror of issueGroupScheme's own check, applied at proposal time so a case
             // cannot be decided into an issuance that will then refuse it -- which would leave
@@ -285,11 +324,19 @@ public class UnderwritingApiImpl implements UnderwritingApi {
      * case row first, then its children, all inside the caller's transaction.
      */
     private void persistGroupProposal(UUID tenantId, UUID caseId, GroupProposal proposal, String createdBy) {
+        boolean funeralPlan = proposal.benefitBasis() == GroupBenefitBasis.FUNERAL_PLAN;
         proposalGroupSchemeRepository.save(new ProposalGroupScheme(tenantId, caseId,
             proposal.benefitBasis().name(), proposal.flatBenefitAmount(), proposal.salaryMultiple(),
             proposal.fclAmount(), proposal.currency(),
-            proposal.premiumAmount(), proposal.premiumCurrency(), proposal.premiumFrequency(),
-            proposal.commencementDate(), proposal.policyTermMonths(), createdBy));
+            // A funeral scheme's premium is computed at issue (members x the plan's group rate), never typed.
+            funeralPlan ? null : proposal.premiumAmount(),
+            proposal.premiumCurrency() != null ? proposal.premiumCurrency() : proposal.currency(),
+            funeralPlan ? "MONTHLY" : proposal.premiumFrequency(),
+            proposal.commencementDate(), proposal.policyTermMonths(), createdBy)
+            .withPlanCode(funeralPlan ? proposal.planCode() : null));
+        for (int i = 0; i < proposal.lives().size(); i++) {
+            proposalGroupLifeRepository.save(new ProposalGroupLife(tenantId, caseId, i, proposal.lives().get(i)));
+        }
 
         for (GroupProposal.GradeLine grade : proposal.grades()) {
             proposalGroupGradeRepository.save(
@@ -322,8 +369,70 @@ public class UnderwritingApiImpl implements UnderwritingApi {
                     .map(m -> new GroupProposal.MemberLine(m.getMemberPartyId(), m.getGradeCode(), m.getSalaryAmount()))
                     .toList(),
                 scheme.getPremiumAmount(), scheme.getPremiumCurrency(), scheme.getPremiumFrequency(),
-                scheme.getCommencementDate(), scheme.getPolicyTermMonths()))
+                scheme.getCommencementDate(), scheme.getPolicyTermMonths(), scheme.getPlanCode(),
+                proposalGroupLifeRepository.findByTenantIdAndCaseIdOrderByPositionAsc(tenantId, caseId).stream()
+                    .map(ProposalGroupLife::toLine).toList()))
             .orElse(null);
+    }
+
+    @Override
+    @Transactional
+    public GroupScheduleResult replaceGroupSchedule(UUID caseId, byte[] csv, String uploadedBy) {
+        UUID tenantId = TenantContext.get();
+        UnderwritingCase underwritingCase = findOrThrow(caseId, tenantId);
+        ProposalGroupScheme scheme = proposalGroupSchemeRepository.findByCaseIdAndTenantId(caseId, tenantId)
+            .filter(s -> GroupBenefitBasis.FUNERAL_PLAN.name().equals(s.getBenefitBasis()))
+            .orElseThrow(() -> new UnderwritingValidationException(
+                "Only a group funeral proposal takes a schedule file"));
+        if (isDecided(underwritingCase)) {
+            throw new UnderwritingCaseAlreadyDecidedException(caseId);
+        }
+        FuneralScheduleFile.Parsed parsed = FuneralScheduleFile.parse(csv);
+        List<String> problems = new ArrayList<>(parsed.errors());
+        if (problems.isEmpty()) {
+            problems.addAll(funeralScheduleProblems(underwritingCase.getProductVersionId(), scheme.getPlanCode(),
+                scheme.getCommencementDate(), parsed.lives()));
+        }
+        long families = parsed.lives().stream().map(GroupProposal.LifeLine::memberReference).distinct().count();
+        if (!problems.isEmpty()) {
+            return new GroupScheduleResult(false, (int) families, parsed.lives().size(), problems);
+        }
+        proposalGroupLifeRepository.deleteByCase(tenantId, caseId);
+        for (int i = 0; i < parsed.lives().size(); i++) {
+            proposalGroupLifeRepository.save(new ProposalGroupLife(tenantId, caseId, i, parsed.lives().get(i)));
+        }
+        return new GroupScheduleResult(true, (int) families, parsed.lives().size(), List.of());
+    }
+
+    /**
+     * A group funeral schedule against its plan: the file's shape (one main member per reference) and each family
+     * against the plan's role rules on the commencement date. Every problem at once, prefixed by the member, so the
+     * association can correct the schedule in one pass.
+     */
+    private void requireFuneralSchedule(UUID productVersionId, String planCode, LocalDate commencement,
+                                        List<GroupProposal.LifeLine> lives) {
+        List<String> problems = funeralScheduleProblems(productVersionId, planCode, commencement, lives);
+        if (!problems.isEmpty()) {
+            throw new UnderwritingValidationException(String.join("; ", problems));
+        }
+    }
+
+    private List<String> funeralScheduleProblems(UUID productVersionId, String planCode, LocalDate commencement,
+                                                 List<GroupProposal.LifeLine> lives) {
+        if (planCode == null || planCode.isBlank()) {
+            return List.of("Choose the plan the scheme is on");
+        }
+        if (lives == null || lives.isEmpty()) {
+            return List.of("A group funeral proposal names at least one member");
+        }
+        List<String> problems = new ArrayList<>(FuneralScheduleFile.familyShape(lives, null));
+        LocalDate asOf = commencement != null ? commencement : LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"));
+        Map<String, List<GroupProposal.LifeLine>> families = new LinkedHashMap<>();
+        lives.forEach(l -> families.computeIfAbsent(l.memberReference(), r -> new ArrayList<>()).add(l));
+        families.forEach((reference, family) -> productApi.funeralFamilyProblems(productVersionId, planCode, asOf,
+                family.stream().map(l -> new FuneralLifeInput(l.role(), l.fullName(), l.dateOfBirth(), l.student())).toList())
+            .forEach(p -> problems.add("Member " + reference + ": " + p)));
+        return problems.stream().distinct().toList();
     }
 
     /**
@@ -471,8 +580,23 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         if (annuity) {
             checkAnnuityDecision(underwritingCase, decision, annuityPlan);
         }
-        // A funeral plan is priced by its table (plan R2), and accepted only with a family that still prices.
-        if (!annuity && funeralApplications.isFuneral(underwritingCase)) {
+        // A group funeral scheme (2026-10-07) is priced at its plan's group rate, so never loaded; accepted only while
+        // every family still passes the plan's rules -- a child may have aged out since the proposal was taken.
+        Optional<ProposalGroupScheme> groupFuneral = proposalGroupSchemeRepository.findByCaseIdAndTenantId(caseId, tenantId)
+            .filter(s -> GroupBenefitBasis.FUNERAL_PLAN.name().equals(s.getBenefitBasis()));
+        if (groupFuneral.isPresent()) {
+            if (decision.outcome() == DecisionOutcome.LOADED) {
+                throw new UnderwritingValidationException(
+                    "A group funeral scheme is priced at its plan's group rate; accept, decline or postpone it");
+            }
+            if (decision.outcome() == DecisionOutcome.ACCEPT) {
+                requireFuneralSchedule(underwritingCase.getProductVersionId(), groupFuneral.get().getPlanCode(),
+                    groupFuneral.get().getCommencementDate(),
+                    proposalGroupLifeRepository.findByTenantIdAndCaseIdOrderByPositionAsc(tenantId, caseId).stream()
+                        .map(ProposalGroupLife::toLine).toList());
+            }
+        } else if (!annuity && funeralApplications.isFuneral(underwritingCase)) {
+            // A funeral plan is priced by its table (plan R2), and accepted only with a family that still prices.
             funeralApplications.checkDecision(underwritingCase, decision.outcome());
         }
         // A unit-linked policy is not loaded, and is accepted only with a choice that still fits the version.

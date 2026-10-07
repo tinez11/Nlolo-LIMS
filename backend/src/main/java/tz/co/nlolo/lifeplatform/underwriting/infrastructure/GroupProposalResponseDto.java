@@ -31,7 +31,7 @@ public record GroupProposalResponseDto(GroupBenefitBasis benefitBasis, String fl
                                         List<GradeLineDto> grades, List<MemberLineDto> openingSchedule,
                                         String premiumAmount, String premiumCurrency,
                                         String premiumFrequency, LocalDate commencementDate,
-                                        Integer policyTermMonths) {
+                                        Integer policyTermMonths, String planCode, List<GroupProposal.LifeLine> lives) {
 
     public record GradeLineDto(String gradeCode, String benefitAmount) {}
 
@@ -46,7 +46,7 @@ public record GroupProposalResponseDto(GroupBenefitBasis benefitBasis, String fl
             proposal.openingSchedule().stream()
                 .map(m -> new MemberLineDto(m.memberPartyId(), m.gradeCode(), plain(m.salaryAmount()))).toList(),
             plain(proposal.premiumAmount()), proposal.premiumCurrency(), proposal.premiumFrequency(),
-            proposal.commencementDate(), proposal.policyTermMonths());
+            proposal.commencementDate(), proposal.policyTermMonths(), proposal.planCode(), proposal.lives());
     }
 
     /** toPlainString, so 1200000.00 stays 1200000.00 and never becomes 1.2E+6. */

@@ -13,4 +13,8 @@ package tz.co.nlolo.lifeplatform.underwriting.api;
  * {@code policy.api.BeneficiaryInput} already have, and for the same reason. Two identical
  * records here are a module boundary, not duplication to be tidied away.
  */
-public enum GroupBenefitBasis { FLAT, SALARY_MULTIPLE, GRADED }
+public enum GroupBenefitBasis {
+    FLAT, SALARY_MULTIPLE, GRADED,
+    /** Group funeral schemes: each life's cover from its role in the FUNERAL product's chosen plan. */
+    FUNERAL_PLAN
+}

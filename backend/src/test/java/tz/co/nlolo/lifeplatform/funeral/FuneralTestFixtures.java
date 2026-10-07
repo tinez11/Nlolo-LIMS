@@ -85,6 +85,53 @@ public class FuneralTestFixtures {
         });
     }
 
+    // ---- group funeral schemes (2026-10-07) ----
+
+    /**
+     * Familia sold to group schemes only: the same plans, benefits and roles, each plan at 3,000 per member per month
+     * (plan A) and 5,000 (plan B), and no premium table.
+     */
+    public Product publishGroupFamilia(UUID tenant) {
+        FuneralPlan f = FuneralPlans.familia();
+        return publish(tenant, new FuneralPlan(true,
+            f.plans().stream().map(p -> new tz.co.nlolo.lifeplatform.product.api.FuneralPlanOption(p.planCode(), p.name(),
+                new BigDecimal(p.planCode().equals("A") ? "3000.00" : "5000.00"))).toList(),
+            f.benefits(), List.of(), f.roles(), f.maxPricedAge(), f.waitingPeriodMonths(), f.accidentWaivesWaiting(),
+            f.dependantClaimPayee(), f.onMainMemberDeath(), f.freeCoverToPaidDate(),
+            tz.co.nlolo.lifeplatform.product.api.FuneralSoldAs.GROUP));
+    }
+
+    /** An association: the scheme's policyholder, an organisation rather than a life. */
+    public UUID association(UUID tenant) {
+        return asTenant(tenant, () -> {
+            int n = SEQ.incrementAndGet();
+            return partyApi.registerCorporate("Chama cha Walimu " + n, "ASSOC-" + n + "-" + tenant.toString().substring(0, 4),
+                "+25571800" + String.format("%04d", n % 10000), null, "test-staff").partyId();
+        });
+    }
+
+    /** One life on a group funeral schedule, aged {@code age} last birthday today. */
+    public static tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal.LifeLine life(String reference, FuneralRole role,
+                                                                                        String name, int age) {
+        return new tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal.LifeLine(reference, role, name,
+            TODAY.minusYears(age).minusDays(30), null, null, false, null, null, null);
+    }
+
+    /** A group funeral proposal on {@code plan}, commencing today, with {@code lives}. */
+    public static tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal groupProposal(String plan,
+            List<tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal.LifeLine> lives) {
+        return new tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal(
+            tz.co.nlolo.lifeplatform.underwriting.api.GroupBenefitBasis.FUNERAL_PLAN, null, null, null, "TZS",
+            List.of(), List.of(), null, "TZS", "MONTHLY", TODAY, null, plan, lives);
+    }
+
+    /** Opens a group funeral case for {@code association} on {@code product}. */
+    public UUID openGroupCase(UUID tenant, Product product, UUID association,
+                              tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal proposal) {
+        return asTenant(tenant, () -> underwritingApi.openCase(association, product.productId(), product.versionId(), null,
+            proposal, "staff-opener").caseId());
+    }
+
     /** A main member aged {@code age} last birthday today. */
     public UUID person(UUID tenant, int age, Sex sex) {
         return asTenant(tenant, () -> {

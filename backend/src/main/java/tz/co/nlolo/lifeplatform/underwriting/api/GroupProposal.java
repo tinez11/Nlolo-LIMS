@@ -24,7 +24,32 @@ public record GroupProposal(GroupBenefitBasis benefitBasis, BigDecimal flatBenef
                              BigDecimal salaryMultiple, BigDecimal fclAmount, String currency,
                              List<GradeLine> grades, List<MemberLine> openingSchedule,
                              BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
-                             LocalDate commencementDate, Integer policyTermMonths) {
+                             LocalDate commencementDate, Integer policyTermMonths,
+                             String planCode, List<LifeLine> lives) {
+
+    public GroupProposal {
+        grades = grades != null ? List.copyOf(grades) : List.of();
+        openingSchedule = openingSchedule != null ? List.copyOf(openingSchedule) : List.of();
+        lives = lives != null ? List.copyOf(lives) : List.of();
+    }
+
+    /** An employer proposal: no funeral plan, no families. */
+    public GroupProposal(GroupBenefitBasis benefitBasis, BigDecimal flatBenefitAmount, BigDecimal salaryMultiple,
+                         BigDecimal fclAmount, String currency, List<GradeLine> grades, List<MemberLine> openingSchedule,
+                         BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
+                         LocalDate commencementDate, Integer policyTermMonths) {
+        this(benefitBasis, flatBenefitAmount, salaryMultiple, fclAmount, currency, grades, openingSchedule, premiumAmount,
+            premiumCurrency, premiumFrequency, commencementDate, policyTermMonths, null, List.of());
+    }
+
+    /**
+     * One life on a group funeral proposal's opening schedule (2026-10-07): a main member or one of their family,
+     * a name on the schedule rather than a registered party. Lives of one family share {@code memberReference}, the
+     * association's own number for the member; exactly one of them is the MAIN_MEMBER.
+     */
+    public record LifeLine(String memberReference, tz.co.nlolo.lifeplatform.product.api.FuneralRole role,
+                           String fullName, LocalDate dateOfBirth, String sex, String idNumber, boolean student,
+                           String beneficiaryName, String beneficiaryRelationship, String beneficiaryPhone) {}
 
     /** One band on a GRADED proposal: a staff category and what it is worth. */
     public record GradeLine(String gradeCode, BigDecimal benefitAmount) {}

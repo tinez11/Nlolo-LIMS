@@ -441,6 +441,49 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/GroupProposal' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /underwriting/cases/{caseId}/group-schedule:
+    post:
+      summary: Replace a group funeral proposal's members and families from a CSV file
+      description: >-
+        Group funeral schemes (2026-10-07). All or nothing: accepted replaces the schedule; otherwise nothing changes
+        and problems names every row or member at fault. Columns: member_reference, role, full_name, date_of_birth,
+        sex, id_number, student, beneficiary_name, beneficiary_relationship, beneficiary_phone.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: The upload's outcome
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupScheduleResult' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { description: The case is decided }
+        '422': { description: Not a group funeral proposal }
+  /underwriting/group-schedule-template:
+    get:
+      summary: The group funeral schedule file's header and an example family
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: CSV
+          content:
+            text/csv:
+              schema: { type: string }
   /underwriting/cases/{caseId}/sale:
     put:
       summary: Record the channel the sale came through and the branch it belongs to
@@ -754,13 +797,23 @@ components:
         A group scheme proposal plus who is asking for it. No sumAssured: it is derived from
         the schedule at issuance, in the policy module that owns the benefit calculation.
       type: object
-      required: [policyholderPartyId, productId, productVersionId, benefitBasis, currency, openingSchedule, premiumAmount, premiumCurrency, premiumFrequency]
+      required: [policyholderPartyId, productId, productVersionId, benefitBasis, currency]
       properties:
         policyholderPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
         agentOfRecordId: { type: [string, "null"], format: uuid }
-        benefitBasis: { type: string, enum: [FLAT, SALARY_MULTIPLE, GRADED] }
+        benefitBasis:
+          type: string
+          enum: [FLAT, SALARY_MULTIPLE, GRADED, FUNERAL_PLAN]
+          description: >-
+            FUNERAL_PLAN (group funeral schemes) on a FUNERAL product sold to groups: planCode and lives required;
+            no openingSchedule, no premium (members x the plan's group rate, computed at issue). Every other basis:
+            openingSchedule and the premium are required.
+        planCode: { type: [string, "null"] }
+        lives:
+          type: [array, "null"]
+          items: { $ref: '#/components/schemas/GroupFuneralLife' }
         flatBenefitAmount: { type: [string, "null"] }
         salaryMultiple: { type: [number, "null"] }
         fclAmount: { type: [string, "null"] }
@@ -780,8 +833,8 @@ components:
               memberPartyId: { type: string, format: uuid }
               gradeCode: { type: [string, "null"] }
               salaryAmount: { type: [string, "null"] }
-        premiumAmount: { type: string }
-        premiumCurrency: { type: string }
+        premiumAmount: { type: [string, "null"] }
+        premiumCurrency: { type: [string, "null"] }
         # SINGLE included: a family or employer scheme bought with one contribution for a
         # year of cover is a group scheme whose premium does not arrive per enrolment file.
         premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
@@ -803,7 +856,11 @@ components:
       type: object
       required: [benefitBasis, currency, openingSchedule, premiumAmount, premiumCurrency, premiumFrequency]
       properties:
-        benefitBasis: { type: string, enum: [FLAT, SALARY_MULTIPLE, GRADED] }
+        benefitBasis: { type: string, enum: [FLAT, SALARY_MULTIPLE, GRADED, FUNERAL_PLAN] }
+        planCode: { type: [string, "null"] }
+        lives:
+          type: array
+          items: { $ref: '#/components/schemas/GroupFuneralLife' }
         flatBenefitAmount: { type: [string, "null"] }
         salaryMultiple: { type: [number, "null"] }
         fclAmount:
@@ -829,14 +886,44 @@ components:
           description: >-
             The premium AGREED with the employer, not a computed one. A scheme is not priced
             by the individual formula — that prices one life from one age band, and the age it
-            would read is the employer's. Carried verbatim to issuance.
-          type: string
+            would read is the employer's. Carried verbatim to issuance. Null on a FUNERAL_PLAN proposal (members x
+            the plan's group rate, computed at issue).
+          type: [string, "null"]
         premiumCurrency: { type: string }
         # SINGLE included: a family or employer scheme bought with one contribution for a
         # year of cover is a group scheme whose premium does not arrive per enrolment file.
         premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         commencementDate: { type: [string, "null"], format: date }
         policyTermMonths: { type: [integer, "null"] }
+    GroupFuneralLife:
+      description: >-
+        One life on a group funeral schedule (2026-10-07): a main member or one of their family, a name rather than a
+        registered party. A family's lives share memberReference; exactly one is MAIN_MEMBER.
+      type: object
+      properties:
+        memberReference: { type: [string, "null"], maxLength: 40 }
+        role: { type: [string, "null"], enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED, null] }
+        fullName: { type: [string, "null"], maxLength: 200 }
+        dateOfBirth: { type: [string, "null"], format: date }
+        sex: { type: [string, "null"] }
+        idNumber: { type: [string, "null"] }
+        student: { type: [boolean, "null"] }
+        beneficiaryName: { type: [string, "null"] }
+        beneficiaryRelationship: { type: [string, "null"] }
+        beneficiaryPhone: { type: [string, "null"] }
+    GroupScheduleResult:
+      description: >-
+        A group funeral schedule uploaded onto a proposal: replaced when accepted, unchanged otherwise, with every
+        problem naming its row or member.
+      type: object
+      required: [accepted, families, lives, problems]
+      properties:
+        accepted: { type: boolean }
+        families: { type: integer }
+        lives: { type: integer }
+        problems:
+          type: array
+          items: { type: string }
     BeneficiaryNomination:
       type: object
       # Field-for-field identical to policy's BeneficiaryInput, deliberately. The two say the

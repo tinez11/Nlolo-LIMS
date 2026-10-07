@@ -401,6 +401,13 @@ public interface ProductApi {
     FuneralQuote quoteFuneral(UUID productVersionId, FuneralQuoteInput input);
 
     /**
+     * A family on a group funeral scheme (2026-10-07): the plan's role rules -- covered role, most lives per role, entry
+     * ages on {@code asOf} -- unpriced, since a scheme pays its plan's group rate per member. Every problem at once;
+     * empty when the family may join.
+     */
+    List<String> funeralFamilyProblems(UUID productVersionId, String planCode, LocalDate asOf, List<FuneralLifeInput> lives);
+
+    /**
      * One existing life's yearly premium at {@code age} -- no entry-age check: the anniversary re-prices a
      * life long past the age it joined at.
      *
