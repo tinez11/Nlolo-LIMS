@@ -8,6 +8,7 @@ import tz.co.nlolo.lifeplatform.product.api.FuneralPlanOption;
 import tz.co.nlolo.lifeplatform.product.api.FuneralPremiumRow;
 import tz.co.nlolo.lifeplatform.product.api.FuneralRole;
 import tz.co.nlolo.lifeplatform.product.api.FuneralRoleRule;
+import tz.co.nlolo.lifeplatform.product.api.FuneralSoldAs;
 import tz.co.nlolo.lifeplatform.product.api.MainMemberDeathRule;
 
 import java.math.BigDecimal;
@@ -21,9 +22,11 @@ import java.util.List;
 public record FuneralRequest(@Valid List<Plan> plans, @Valid List<Benefit> benefits, @Valid List<Premium> premiums,
                              @Valid List<RoleRule> roles, Integer maxPricedAge, Integer waitingPeriodMonths,
                              Boolean accidentWaivesWaiting, DependantClaimPayee dependantClaimPayee,
-                             MainMemberDeathRule onMainMemberDeath, Boolean freeCoverToPaidDate) {
+                             MainMemberDeathRule onMainMemberDeath, Boolean freeCoverToPaidDate,
+                             FuneralSoldAs soldAs) {
 
-    public record Plan(String planCode, String name) {}
+    /** {@code groupMonthlyRate}: per member per month on a group scheme; absent on a version not sold to groups. */
+    public record Plan(String planCode, String name, BigDecimal groupMonthlyRate) {}
 
     public record Benefit(String planCode, FuneralRole role, BigDecimal benefit) {}
 
@@ -34,7 +37,8 @@ public record FuneralRequest(@Valid List<Plan> plans, @Valid List<Benefit> benef
 
     public FuneralPlan toPlan() {
         return new FuneralPlan(true,
-            plans == null ? List.of() : plans.stream().map(p -> new FuneralPlanOption(p.planCode(), p.name())).toList(),
+            plans == null ? List.of() : plans.stream()
+                .map(p -> new FuneralPlanOption(p.planCode(), p.name(), p.groupMonthlyRate())).toList(),
             benefits == null ? List.of() : benefits.stream()
                 .map(b -> new FuneralPlanBenefit(b.planCode(), b.role(), b.benefit())).toList(),
             premiums == null ? List.of() : premiums.stream()
@@ -44,7 +48,8 @@ public record FuneralRequest(@Valid List<Plan> plans, @Valid List<Benefit> benef
                 .map(r -> new FuneralRoleRule(r.role(), orMinusOne(r.maxLives()), orMinusOne(r.minEntryAge()),
                     orMinusOne(r.maxEntryAge()), r.coverStopAge(), r.studentStopAge())).toList(),
             orMinusOne(maxPricedAge), waitingPeriodMonths, Boolean.TRUE.equals(accidentWaivesWaiting),
-            dependantClaimPayee, onMainMemberDeath, Boolean.TRUE.equals(freeCoverToPaidDate));
+            dependantClaimPayee, onMainMemberDeath, Boolean.TRUE.equals(freeCoverToPaidDate),
+            soldAs != null ? soldAs : FuneralSoldAs.INDIVIDUAL);
     }
 
     private static int orMinusOne(Integer value) {

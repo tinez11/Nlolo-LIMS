@@ -357,6 +357,40 @@ FUN_VERSION_RESP=$(curl -sfi -X POST "$API/products/$FUN_PRODUCT_ID/versions" \
   }')
 echo "$FUN_VERSION_RESP" | head -1
 
+# A FUNERAL product sold to GROUP schemes only (2026-10-07): an association's members and their families on one
+# plan. Plan A1 covers the main member for 2,000,000, a spouse for 1,000,000 and each child for 500,000; the
+# association pays 3,000 per member per month, whatever the family's size. No premium table -- a scheme pays the
+# plan's group rate. The waiting period and claim rules mirror Familia's.
+FUNG_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
+  '{"productCode":"FUN-GRP-01","productName":"Nlolo Chama Funeral","category":"FUNERAL","portfolioCode":"FUN","defaultCurrency":"TZS"}')
+FUNG_PRODUCT_ID=$(jsonval "$FUNG_PRODUCT_JSON" productId)
+echo "groupFuneralProductId=$FUNG_PRODUCT_ID"
+
+FUNG_VERSION_RESP=$(curl -sfi -X POST "$API/products/$FUNG_PRODUCT_ID/versions" \
+  -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuid)" -d '{
+    "ifrsMeasurementModel":"PAA","effectiveDate":"2020-01-01",
+    "payoutTerms":{"freeLookDays":15},
+    "tiraFiling":{"reference":"TIRA/DEMO/FUN/0002","approvalDate":"2020-01-01"},
+    "frequencyLoading":{"monthlyPercent":0,"quarterlyPercent":0},
+    "ratingTable":[],
+    "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
+    "funeral":{
+      "soldAs":"GROUP",
+      "plans":[{"planCode":"A1","name":"Plan A1","groupMonthlyRate":3000}],
+      "benefits":[
+        {"planCode":"A1","role":"MAIN_MEMBER","benefit":2000000},{"planCode":"A1","role":"SPOUSE","benefit":1000000},
+        {"planCode":"A1","role":"CHILD","benefit":500000}],
+      "premiums":[],
+      "roles":[
+        {"role":"MAIN_MEMBER","maxLives":1,"minEntryAge":18,"maxEntryAge":65},
+        {"role":"SPOUSE","maxLives":1,"minEntryAge":18,"maxEntryAge":65},
+        {"role":"CHILD","maxLives":6,"minEntryAge":0,"maxEntryAge":20,"coverStopAge":21,"studentStopAge":25}],
+      "maxPricedAge":100,"waitingPeriodMonths":6,"accidentWaivesWaiting":true,
+      "dependantClaimPayee":"MAIN_MEMBER","onMainMemberDeath":"POLICY_ENDS","freeCoverToPaidDate":false}
+  }')
+echo "$FUNG_VERSION_RESP" | head -1
+
 # A UNIT_LINKED product (product step 6) and the two register funds it offers. Finance adds the funds and
 # proposes yesterday's prices; the admin -- a second person -- approves them, after their cut-off. Premiums buy
 # units at the first price approved after they arrive, so a policy sold today waits for tomorrow's price.

@@ -126,6 +126,8 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   }, [policyNumber, loadDetail, loadCoverage, loadAccount, loadBonuses, loadAnnuity, isStaff]);
 
   const policy = detail.data;
+  // A group funeral scheme (2026-10-07): category FUNERAL, issued as a scheme -- every scheme number is GRP-.
+  const isGroupFuneral = policy?.productCategory === 'FUNERAL' && policyNumber.startsWith('GRP-');
 
   // isInitialLoad, not a 'loading'-only check: the load fires from an effect that
   // runs AFTER first render, so status is briefly 'idle' -- a 'loading'-only check
@@ -174,6 +176,15 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 403 rather than a page. A group policy read here answers "one
                 contract, 500 lives, sum assured X", which is true and useless to
                 somebody administering the schedule; this is the way across. */}
+            {/* A group funeral scheme (2026-10-07): an association's families, administered on the scheme page. */}
+            {isStaff && isGroupFuneral && (
+              <Button asChild size="sm">
+                <Link to={`/staff/group-schemes/${encodeURIComponent(policyNumber)}`}>
+                  <Users />
+                  Families
+                </Link>
+              </Button>
+            )}
             {isStaff && policy?.productCategory === 'GROUP_LIFE' && (
               <Button asChild size="sm">
                 <Link to={`/staff/group-schemes/${encodeURIComponent(policyNumber)}`}>
@@ -322,7 +333,8 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     ];
 
     // Family funeral cover: who the policy covers, each life's benefit and premium. Staff change the family.
-    if (policy?.productCategory === 'FUNERAL') {
+    // A group funeral scheme's families are administered on its scheme page (linked above), not here.
+    if (policy?.productCategory === 'FUNERAL' && !isGroupFuneral) {
       tabs.push({
         value: 'lives',
         label: 'Covered lives',
@@ -518,7 +530,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 // typed -- it is the total of the member schedule, restated
                 // whenever somebody joins or leaves. Saying so stops it being
                 // read as a fixed sum that has quietly changed.
-                {...(policy.productCategory === 'GROUP_LIFE' || policy.productCategory === 'CREDIT_LIFE'
+                {...(policy.productCategory === 'GROUP_LIFE' || policy.productCategory === 'CREDIT_LIFE' || isGroupFuneral
                   ? {
                       note: 'The total of every covered member — it moves as the schedule does, and keeps its last figure once nobody is covered.',
                     }

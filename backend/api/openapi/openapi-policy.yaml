@@ -635,6 +635,190 @@ paths:
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /group-schemes/{policyNumber}/families:
+    get:
+      summary: Every family on a group funeral scheme
+      description: >-
+        Group funeral schemes (2026-10-07). One entry per main member -- the member row the association's
+        bill counts -- with the association's number for them, the beneficiary they named, the family's cover
+        today and every life, the main member first. 409 when the scheme is not a group funeral scheme.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GroupFuneralFamilyView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+    post:
+      summary: A family joins an in-force group funeral scheme
+      description: >-
+        One main member and their lives, all sharing the member reference, checked by the plan's role rules on
+        the joining date (today when omitted; never in the future or before commencement). The association's
+        bill rises by one group rate from the next billing date (policy.PremiumRestated). Underwriters only.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                joinedOn: { type: [string, "null"], format: date }
+                lives:
+                  type: array
+                  items: { $ref: '#/components/schemas/GroupFuneralLifeInput' }
+      responses:
+        '201':
+          description: Joined
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyMemberView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /group-schemes/{policyNumber}/funeral-joiners:
+    post:
+      summary: Families join a group funeral scheme from the association's file
+      description: >-
+        The proposal's file format (GET /underwriting/group-schedule-template). Each family is all or nothing:
+        those with no problem join on joinedOn (today when omitted), the rest come back with every problem, by row
+        where there is one; the bill is restated once for the file. 200 whatever joined. Underwriters only.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - { name: joinedOn, in: query, required: false, schema: { type: string, format: date } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: What joined and what was refused
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupFuneralJoiningReport' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /group-schemes/{policyNumber}/members/{policyMemberId}/lives:
+    post:
+      summary: A life joins a member's family on a group funeral scheme, from today
+      description: >-
+        Checked by the plan: the role covered, its entry age today and the role's count beside the family's lives
+        still covered (those lives are not re-checked). The family's cover rises; the bill does not.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - { name: policyMemberId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupFuneralLifeInput' }
+      responses:
+        '201':
+          description: Added
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoveredLifeView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /group-schemes/{policyNumber}/covered-lives/{coveredLifeId}/removal:
+    post:
+      summary: A dependant comes off a member's family at the end of this month
+      description: >-
+        Covered up to (not on) the first day of next month. The main member is never removed: the member leaves
+        the scheme instead (departure). The bill does not change.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - { name: coveredLifeId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: [string, "null"], maxLength: 200 }
+      responses:
+        '200':
+          description: Scheduled to come off cover
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoveredLifeView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /group-schemes/{policyNumber}/members/{policyMemberId}/departure:
+    post:
+      summary: A member leaves a group funeral scheme with their family
+      description: >-
+        Whole months: the member and every life of their family are covered to the end of the month they leave
+        in, and the association's bill falls from the first billing date after. Underwriters only; group funeral
+        schemes only.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - { name: policyMemberId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [leftOn]
+              properties:
+                leftOn: { type: string, format: date }
+                reason: { type: [string, "null"], enum: [SETTLED_EARLY, REFINANCED, WRITTEN_OFF, CANCELLED, null] }
+      responses:
+        '200':
+          description: Left; covered to that month's end
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyMemberView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
   /policies/{policyNumber}/in-force:
     get:
       summary: Lightweight boolean in-force check (Deliverable 3 Rev 2, Po3)
@@ -1529,6 +1713,63 @@ paths:
 
 components:
   schemas:
+    GroupFuneralLifeInput:
+      type: object
+      properties:
+        memberReference: { type: [string, "null"], maxLength: 30, description: "The association's number for the main member; a family's lives share it" }
+        role: { type: [string, "null"], enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED, null] }
+        fullName: { type: [string, "null"], maxLength: 200 }
+        dateOfBirth: { type: [string, "null"], format: date }
+        sex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+        idNumber: { type: [string, "null"], maxLength: 50 }
+        student: { type: [boolean, "null"] }
+        beneficiaryName: { type: [string, "null"], maxLength: 200, description: "Read from the main member's line" }
+        beneficiaryRelationship: { type: [string, "null"], maxLength: 40 }
+        beneficiaryPhone: { type: [string, "null"], maxLength: 30 }
+    GroupFuneralJoiningReport:
+      type: object
+      additionalProperties: false
+      required: [joined, refused, fileProblems]
+      properties:
+        joined:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [memberReference, mainMemberName, lives]
+            properties:
+              memberReference: { type: string }
+              mainMemberName: { type: string }
+              lives: { type: integer }
+        refused:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [memberReference, problems]
+            properties:
+              memberReference: { type: string }
+              problems: { type: array, items: { type: string } }
+        fileProblems: { type: array, items: { type: string }, description: "Problems no family owns: the header, a row naming no member" }
+    GroupFuneralFamilyView:
+      type: object
+      additionalProperties: false
+      required: [policyMemberId, memberReference, mainMemberName, status, joinedOn, leftOn, beneficiaryName,
+                 beneficiaryRelationship, beneficiaryPhone, familyCover, lives]
+      properties:
+        policyMemberId: { type: string, format: uuid }
+        memberReference: { type: [string, "null"] }
+        mainMemberName: { type: [string, "null"] }
+        status: { type: string, enum: [ACTIVE, EXITED] }
+        joinedOn: { type: string, format: date }
+        leftOn: { type: [string, "null"], format: date, description: "Covered to and including this day" }
+        beneficiaryName: { type: [string, "null"] }
+        beneficiaryRelationship: { type: [string, "null"] }
+        beneficiaryPhone: { type: [string, "null"] }
+        familyCover: { type: number, description: "Every life covered today, its benefit summed" }
+        lives:
+          type: array
+          items: { $ref: '#/components/schemas/CoveredLifeView' }
     IdentifyCoveredLife:
       type: object
       properties:
@@ -2175,7 +2416,8 @@ components:
         # AMORTISING_LOAN is credit life: the member IS a loan and the amount insured is the
         # declining balance. It was missing from both enums here while schemes were being issued
         # with it, so the generated client could not even express the value the server returns.
-        benefitBasis: { type: string, enum: [FLAT, SALARY_MULTIPLE, GRADED, AMORTISING_LOAN] }
+        # FUNERAL_PLAN (2026-10-07): an association's families, each life's cover from its role in the plan.
+        benefitBasis: { type: string, enum: [FLAT, SALARY_MULTIPLE, GRADED, AMORTISING_LOAN, FUNERAL_PLAN] }
         flatBenefit:
           description: Null unless the basis is FLAT.
           allOf:

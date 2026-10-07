@@ -55,6 +55,7 @@ import {
   IssueCreditLifeSchemePage,
   GroupSchemePage,
   IssueGroupSchemePage,
+  ProposeGroupFuneralPage,
   IssuePolicyPage,
   PoliciesPage,
   PolicyDetailPage,
@@ -288,6 +289,14 @@ const STAFF_SCREENS: Screen[] = [
   //
   // Until it existed, the console could not create a credit-life scheme at all: every one on
   // this platform was made with curl.
+  // An association's families on one funeral plan (2026-10-07). Its own form, as credit life has: the
+  // lives are families typed or read from the association's file, and there is no premium to type --
+  // the bill is members x the plan's group rate.
+  {
+    path: 'group-funeral-schemes/new',
+    element: <ProposeGroupFuneralPage />,
+    reach: { group: 'new-business', label: 'Group funeral scheme', icon: Users },
+  },
   {
     path: 'credit-life-schemes/new',
     element: <IssueCreditLifeSchemePage />,

@@ -16,18 +16,36 @@ import java.util.Optional;
  *                              null = none
  * @param freeCoverToPaidDate   when the main member dies, whether the rest of the family stays covered to
  *                              the next premium date (plan R5); layered on either death rule
+ * @param soldAs                individual policies, group schemes, or both (group funeral schemes, 2026-10-07)
  */
 public record FuneralPlan(boolean funeral, List<FuneralPlanOption> plans, List<FuneralPlanBenefit> benefits,
                           List<FuneralPremiumRow> premiums, List<FuneralRoleRule> roles, int maxPricedAge,
                           Integer waitingPeriodMonths, boolean accidentWaivesWaiting,
                           DependantClaimPayee dependantClaimPayee, MainMemberDeathRule onMainMemberDeath,
-                          boolean freeCoverToPaidDate) {
+                          boolean freeCoverToPaidDate, FuneralSoldAs soldAs) {
 
     public FuneralPlan {
         plans = plans != null ? List.copyOf(plans) : List.of();
         benefits = benefits != null ? List.copyOf(benefits) : List.of();
         premiums = premiums != null ? List.copyOf(premiums) : List.of();
         roles = roles != null ? List.copyOf(roles) : List.of();
+        soldAs = soldAs != null ? soldAs : FuneralSoldAs.INDIVIDUAL;
+    }
+
+    /** A version sold to individuals only -- every version written before group schemes. */
+    public FuneralPlan(boolean funeral, List<FuneralPlanOption> plans, List<FuneralPlanBenefit> benefits,
+                       List<FuneralPremiumRow> premiums, List<FuneralRoleRule> roles, int maxPricedAge,
+                       Integer waitingPeriodMonths, boolean accidentWaivesWaiting,
+                       DependantClaimPayee dependantClaimPayee, MainMemberDeathRule onMainMemberDeath,
+                       boolean freeCoverToPaidDate) {
+        this(funeral, plans, benefits, premiums, roles, maxPricedAge, waitingPeriodMonths, accidentWaivesWaiting,
+            dependantClaimPayee, onMainMemberDeath, freeCoverToPaidDate, FuneralSoldAs.INDIVIDUAL);
+    }
+
+    /** What a group scheme on this plan pays per member per month; empty when the plan has no group rate. */
+    public Optional<BigDecimal> groupMonthlyRate(String planCode) {
+        return plans.stream().filter(p -> p.planCode().equals(planCode)).map(FuneralPlanOption::groupMonthlyRate)
+            .filter(java.util.Objects::nonNull).findFirst();
     }
 
     public static FuneralPlan none() {

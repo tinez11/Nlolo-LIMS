@@ -33,6 +33,10 @@ public final class FuneralQuoter {
         if (!plan.funeral()) {
             throw new FuneralQuoteRefusedException("This product is not a funeral plan");
         }
+        if (!plan.soldAs().individual()) {
+            throw new FuneralQuoteRefusedException("This product is sold to group schemes only; a scheme pays its plan's"
+                + " group rate per member");
+        }
         if (!plan.offersPlan(in.planCode())) {
             throw new FuneralQuoteRefusedException("There is no plan " + in.planCode() + " on this product");
         }
@@ -68,6 +72,94 @@ public final class FuneralQuoter {
             throw new FuneralQuoteRefusedException("A funeral plan covers exactly one main member");
         }
         return priced(plan, planCode, life, alreadyInRole + 1, asOf);
+    }
+
+    /**
+     * A family on a group scheme (group funeral schemes, 2026-10-07): the role rules a quote applies -- the plan covers
+     * the role, the role's most lives, entry ages on {@code asOf}, a student only a child -- but unpriced, since a
+     * scheme pays its plan's group rate per member. Every problem at once, in the quote's words prefixed by the life's
+     * name, so a schedule can be corrected in one pass. Empty when the family may join.
+     */
+    public static List<String> familyProblems(FuneralPlan plan, String planCode, LocalDate asOf, List<FuneralLifeInput> lives) {
+        List<String> problems = new ArrayList<>();
+        if (!plan.funeral()) {
+            return List.of("This product is not a funeral plan");
+        }
+        if (!plan.soldAs().group()) {
+            return List.of("This product is not sold to group schemes");
+        }
+        if (!plan.offersPlan(planCode)) {
+            return List.of("There is no plan " + planCode + " on this product");
+        }
+        long mains = lives.stream().filter(l -> l.role() == FuneralRole.MAIN_MEMBER).count();
+        if (mains != 1) {
+            problems.add("A family has exactly one main member, not " + mains);
+        }
+        Map<FuneralRole, Integer> counts = new EnumMap<>(FuneralRole.class);
+        lives.stream().filter(l -> l.role() != null).forEach(l -> counts.merge(l.role(), 1, Integer::sum));
+        counts.forEach((role, n) -> plan.rule(role).ifPresent(rule -> {
+            if (n > rule.maxLives()) {
+                problems.add("At most " + rule.maxLives() + " " + (rule.maxLives() == 1 ? role.label() : role.plural())
+                    + " may be covered, not " + n);
+            }
+        }));
+        for (FuneralLifeInput life : lives) {
+            problems.addAll(lifeProblems(plan, planCode, life, asOf));
+        }
+        return problems;
+    }
+
+    /**
+     * One life joining a family already on a group scheme, which has {@code alreadyInRole} lives in its role: that
+     * life's entry rules and the role's count. The family's lives already on cover are not re-checked -- a child who
+     * joined at 18 and is 22 now as a student is covered, not a new entrant. Empty when the life may join.
+     */
+    public static List<String> joinerProblems(FuneralPlan plan, String planCode, LocalDate asOf, FuneralLifeInput life,
+                                              int alreadyInRole) {
+        if (!plan.funeral() || !plan.soldAs().group()) {
+            return List.of("This product is not sold to group schemes");
+        }
+        String who = life.name() == null || life.name().isBlank() ? "A life" : life.name();
+        if (life.role() == FuneralRole.MAIN_MEMBER) {
+            return List.of(who + ": a family has exactly one main member");
+        }
+        List<String> problems = new ArrayList<>(lifeProblems(plan, planCode, life, asOf));
+        plan.rule(life.role()).ifPresent(rule -> {
+            if (alreadyInRole + 1 > rule.maxLives()) {
+                problems.add("At most " + rule.maxLives() + " " + (rule.maxLives() == 1 ? life.role().label()
+                    : life.role().plural()) + " may be covered, not " + (alreadyInRole + 1));
+            }
+        });
+        return problems;
+    }
+
+    /** One life's entry problems, unpriced and without the count rule (the family's or the caller's to apply). */
+    public static List<String> lifeProblems(FuneralPlan plan, String planCode, FuneralLifeInput life, LocalDate asOf) {
+        String who = life.name() == null || life.name().isBlank() ? "A life" : life.name();
+        FuneralRole role = life.role();
+        if (role == null) {
+            return List.of(who + ": the role is required");
+        }
+        if (plan.rule(role).isEmpty()) {
+            return List.of(who + ": this product does not cover " + withArticle(role));
+        }
+        if (plan.benefit(planCode, role).isEmpty()) {
+            return List.of(who + ": plan " + planCode + " does not cover " + role.plural());
+        }
+        if (life.dateOfBirth() == null) {
+            return List.of(who + ": the date of birth is required");
+        }
+        List<String> problems = new ArrayList<>();
+        FuneralRoleRule rule = plan.rule(role).orElseThrow();
+        int age = Period.between(life.dateOfBirth(), asOf).getYears();
+        if (age < rule.minEntryAge() || age > rule.maxEntryAge()) {
+            problems.add(who + ": " + withArticle(role) + " must be " + rule.minEntryAge() + " to " + rule.maxEntryAge()
+                + " at entry, not " + age);
+        }
+        if (life.student() && role != FuneralRole.CHILD) {
+            problems.add(who + ": only a child can be marked as a student");
+        }
+        return problems;
     }
 
     /** {@code inRole}: how many lives will hold this life's role, this one included. */

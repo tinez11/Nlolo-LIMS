@@ -208,14 +208,15 @@ public class ExpenseAllocations {
     }
 
     /**
-     * The groups with their driver counts: policies in force now (the snapshot keeps current status, not history),
+     * The groups with their driver counts: lives in force now (the snapshot keeps current status and lives, not history),
      * distinct claims with 22xx postings in the month, policies issued in the month. Insurance groups only.
      */
     List<ExpenseAllocationSplit.Group> groups(UUID tenantId, String period) {
         YearMonth month = YearMonth.parse(period);
         Map<String, long[]> counts = new TreeMap<>();
         Map<String, String> models = new HashMap<>();
-        jdbc.query("SELECT c.group_key, c.measurement_model, count(*) AS n FROM finaccounting.policy_snapshot s"
+        // LIVES in force, not contracts (V18): a scheme of 150 lives is 150 units of maintenance, an individual policy 1.
+        jdbc.query("SELECT c.group_key, c.measurement_model, sum(s.lives) AS n FROM finaccounting.policy_snapshot s"
                 + " JOIN (SELECT DISTINCT ON (policy_number) policy_number, group_key, measurement_model"
                 + "       FROM finaccounting.policy_classification WHERE tenant_id = ?"
                 + "       ORDER BY policy_number, effective_from DESC) c ON c.policy_number = s.policy_number"

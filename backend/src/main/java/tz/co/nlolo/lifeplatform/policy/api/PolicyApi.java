@@ -323,6 +323,59 @@ public interface PolicyApi {
                                      UUID underwritingCaseId, String issuedByName);
 
     /**
+     * One life of a group funeral family (2026-10-07): the main member and each dependant share the association's
+     * {@code memberReference}. The beneficiary is the main member's, read from their row.
+     */
+    record GroupFuneralLifeInput(String memberReference, tz.co.nlolo.lifeplatform.product.api.FuneralRole role,
+                                 String fullName, java.time.LocalDate dateOfBirth, String sex, String idNumber,
+                                 boolean student, String beneficiaryName, String beneficiaryRelationship,
+                                 String beneficiaryPhone) {}
+
+    /** A group funeral scheme: an association's families on one plan of a FUNERAL product sold to groups. */
+    record IssueGroupFuneralSchemeRequest(UUID policyholderPartyId, UUID productId, UUID productVersionId,
+                                          UUID agentOfRecordId, String planCode, String currency,
+                                          java.time.LocalDate commencementDate, Integer policyTermMonths,
+                                          List<GroupFuneralLifeInput> lives, String reasonForManualIssue) {}
+
+    /**
+     * Issues a group funeral scheme (2026-10-07): one member per family's main member, every life of the family a
+     * covered life linked to them at its plan benefit, and a MONTHLY premium of the plan's group rate times the
+     * families. An offer until the association's first premium clears, like every scheme.
+     *
+     * @throws InvalidPolicyStateException if the product is not a FUNERAL product sold to groups, the plan has no
+     *     group rate, there are no families, or any family breaks the plan's rules (every problem named)
+     */
+    GroupSchemeView issueGroupFuneralScheme(IssueGroupFuneralSchemeRequest request, String issuedBy,
+                                            UUID underwritingCaseId, String issuedByName);
+
+    /**
+     * A family joins an in-force group funeral scheme on {@code joinedOn} (today when null; never in the future or
+     * before commencement), checked by the plan's role rules on that date. The bill rises by one group rate from the
+     * next billing date (policy.PremiumRestated).
+     */
+    PolicyMemberView addGroupFuneralFamily(String policyNumber, List<GroupFuneralLifeInput> lives, LocalDate joinedOn,
+                                           String addedBy);
+
+    /** A life joins a member's family from today, checked by the plan's role rules with the family; the bill is unchanged. */
+    CoveredLifeView addGroupFuneralLife(String policyNumber, UUID policyMemberId, GroupFuneralLifeInput life, String addedBy);
+
+    /**
+     * A dependant comes off a member's family at the end of this month; the main member never does (the member leaves
+     * instead, {@link #exitMember}). The bill is unchanged.
+     */
+    CoveredLifeView removeGroupFuneralLife(String policyNumber, UUID coveredLifeId, String reason, String removedBy);
+
+    /** Every family on a group funeral scheme, in the order they joined. */
+    List<GroupFuneralFamilyView> groupFuneralFamilies(String policyNumber);
+
+    /**
+     * Families join an in-force group funeral scheme from the association's file (the proposal's format,
+     * {@code FuneralScheduleFile.HEADER}), on {@code joinedOn} (today when null). Each family is checked whole: the
+     * ones with no problem join, the rest come back with every problem; the bill is restated once for the file.
+     */
+    GroupFuneralJoiningReport joinGroupFuneralFamilies(String policyNumber, byte[] csv, LocalDate joinedOn, String addedBy);
+
+    /**
      * A scheme's configuration and current totals.
      *
      * @throws PolicyNotFoundException if no such policy exists in this tenant

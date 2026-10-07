@@ -59,6 +59,9 @@ public final class GroupBenefitCalculator {
             // once evaluate() has applied the free cover limit.
             case AMORTISING_LOAN -> require(loanPrincipalAmount,
                 "A credit-life member needs the principal of their own loan");
+            // A family's cover is its lives' plan benefits, summed when the family joins; never computed here.
+            case FUNERAL_PLAN -> throw new IllegalArgumentException(
+                "A group funeral member's cover comes from their family's plan benefits");
         };
     }
 

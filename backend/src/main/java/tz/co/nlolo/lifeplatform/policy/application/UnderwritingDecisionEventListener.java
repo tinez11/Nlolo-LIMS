@@ -150,6 +150,20 @@ public class UnderwritingDecisionEventListener {
      */
     private void issueSchemeFromProposal(UnderwritingCaseView decidedCase) {
         GroupProposal proposal = decidedCase.groupProposal();
+        if (proposal.benefitBasis() == tz.co.nlolo.lifeplatform.underwriting.api.GroupBenefitBasis.FUNERAL_PLAN) {
+            // An association's families on one plan (group funeral, 2026-10-07): the premium is the plan's group
+            // rate times the families, computed at issue -- the proposal carries none.
+            policyApi.issueGroupFuneralScheme(new PolicyApi.IssueGroupFuneralSchemeRequest(
+                decidedCase.applicantPartyId(), decidedCase.productId(), decidedCase.productVersionId(),
+                decidedCase.agentOfRecordId(), proposal.planCode(), proposal.currency(), proposal.commencementDate(),
+                proposal.policyTermMonths(),
+                proposal.lives().stream().map(l -> new PolicyApi.GroupFuneralLifeInput(l.memberReference(), l.role(),
+                    l.fullName(), l.dateOfBirth(), l.sex(), l.idNumber(), l.student(), l.beneficiaryName(),
+                    l.beneficiaryRelationship(), l.beneficiaryPhone())).toList(),
+                "Issued on underwriting decision " + decidedCase.caseId()),
+                "system:underwriting-decision-listener", decidedCase.caseId(), null);
+            return;
+        }
         policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
             decidedCase.applicantPartyId(), decidedCase.productId(), decidedCase.productVersionId(),
             decidedCase.agentOfRecordId(),

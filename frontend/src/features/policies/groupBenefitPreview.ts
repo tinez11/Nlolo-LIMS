@@ -159,6 +159,9 @@ function benefitFor(scheme: SchemeBasis, member: MemberBasisInput): string | nul
     // inventing one from a grade or a salary would be a different product's answer.
     case 'AMORTISING_LOAN':
       return null;
+    // A group funeral family's cover is its lives' plan benefits; the family forms show them.
+    case 'FUNERAL_PLAN':
+      return null;
     case 'FLAT':
       return normalise(scheme.flatBenefitAmount);
     case 'GRADED': {

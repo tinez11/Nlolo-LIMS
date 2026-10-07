@@ -111,6 +111,7 @@ class FinaccountingApiIntegrationTest {
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/product/V28__survival_investment_component.sql",
+            "db-migrations/product/V29__funeral_group_rate.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -133,7 +134,8 @@ class FinaccountingApiIntegrationTest {
             "db-migrations/finaccounting/V14__manual_journals.sql",
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             "db-migrations/finaccounting/V16__expense_allocation.sql",
-            "db-migrations/finaccounting/V17__year_end_close.sql");
+            "db-migrations/finaccounting/V17__year_end_close.sql",
+            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

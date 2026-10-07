@@ -34,6 +34,7 @@ import {
 } from './addMemberForm';
 import { previewBenefit, type SchemeBasis } from './groupBenefitPreview';
 import { exitSummary } from './memberStanding';
+import { GroupFuneralFamiliesPanel } from './GroupFuneralFamiliesPanel';
 import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
 import { FilterChip } from '@/components/FilterChip';
@@ -174,7 +175,7 @@ export function GroupSchemePage() {
                 and `chk_policy_member_loan_complete` refuses the row without them. Offering it
                 was the more expensive half of a real confusion: somebody on the roll looking for
                 the CSV upload found one primary button, and it was the wrong one. */}
-            {data?.benefitBasis === 'AMORTISING_LOAN' ? (
+            {data?.benefitBasis === 'FUNERAL_PLAN' ? null : data?.benefitBasis === 'AMORTISING_LOAN' ? (
               <Button asChild size="sm" variant="primary">
                 <Link to={`/staff/credit-life-schemes/${encodeURIComponent(policyNumber)}`}>
                   <Upload />
@@ -216,6 +217,10 @@ export function GroupSchemePage() {
           It was in the header beside the title, which made the heading share a row with seven
           controls and wrap before any of them did.
         */}
+        {/* A group funeral scheme (2026-10-07): families under their main members, and the acts on them. */}
+        {data?.benefitBasis === 'FUNERAL_PLAN' ? (
+          <GroupFuneralFamiliesPanel policyNumber={policyNumber} onChanged={() => void loadScheme(policyNumber)} />
+        ) : (
         <Panel
           title="Members"
           subtitle={
@@ -274,6 +279,7 @@ export function GroupSchemePage() {
           </div>
           {renderMembers()}
         </Panel>
+        )}
       </DetailLayout>
     </>
   );
@@ -638,6 +644,8 @@ function describeBasis(scheme: GroupSchemeView): string {
       // what this line has to say. Until it was added, the fourth basis fell through to the
       // default and a live credit-life scheme reported its benefit basis as an em dash.
       return 'Outstanding loan balance';
+    case 'FUNERAL_PLAN':
+      return 'Funeral plan — each life covered for its role';
     default:
       return NO_VALUE;
   }

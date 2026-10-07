@@ -170,6 +170,11 @@ public class GroupScheme {
                             + "disbursed amount, per annum on it, or per year on the declining balance");
                 }
             }
+            case FUNERAL_PLAN -> {
+                requireAbsent(flatBenefitAmount, "A group funeral scheme takes each life's cover from its plan");
+                requireAbsent(salaryMultiple, "A group funeral scheme takes each life's cover from its plan");
+                requireAbsent(fclAmount, "A group funeral scheme takes each life's cover from its plan");
+            }
         }
         if (benefitBasis != BenefitBasis.AMORTISING_LOAN
                 && (interestMethod != null || repaymentFrequency != null

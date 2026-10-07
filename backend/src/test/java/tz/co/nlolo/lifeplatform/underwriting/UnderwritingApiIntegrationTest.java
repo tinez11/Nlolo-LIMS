@@ -67,6 +67,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/product/V28__survival_investment_component.sql",
+            "db-migrations/product/V29__funeral_group_rate.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -83,6 +84,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/underwriting/V10__issuance_failure.sql",
             "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
+            "db-migrations/underwriting/V19__group_funeral_proposal.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/refdata/V9__journal_reason_codes.sql");

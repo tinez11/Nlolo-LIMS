@@ -104,6 +104,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/product/V28__survival_investment_component.sql",
+            "db-migrations/product/V29__funeral_group_rate.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -131,6 +132,7 @@ class RowLevelSecurityIntegrationTest {
             // access to it anyway.
             "db-migrations/underwriting/V12__proposal_beneficiary_rls.sql",
             "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
+            "db-migrations/underwriting/V19__group_funeral_proposal.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             // M3 (Task 6) additions: policyLoanIsTenantIsolatedUnderRls below needs refdata
@@ -172,6 +174,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/policy/V30__surrender.sql",
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/policy/V37__sale_classification.sql",
+            "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/refdata/V9__journal_reason_codes.sql",
@@ -232,6 +235,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             "db-migrations/finaccounting/V16__expense_allocation.sql",
             "db-migrations/finaccounting/V17__year_end_close.sql",
+            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql",
             // M10 (Task 9) additions. regreporting/V1 enabled RLS on NEITHER of its two original
             // tables and granted app_role nothing at all; V2 is what adds both, for
             // policy_dimension/policy_movement/regulatory_return/return_line among others. Until now

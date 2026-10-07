@@ -15,6 +15,7 @@ import tz.co.nlolo.lifeplatform.policy.infrastructure.*;
 import tz.co.nlolo.lifeplatform.product.api.AnnuityPlan;
 import tz.co.nlolo.lifeplatform.product.api.VestingTerms;
 import tz.co.nlolo.lifeplatform.product.api.BenefitType;
+import tz.co.nlolo.lifeplatform.product.api.FuneralPlan;
 import tz.co.nlolo.lifeplatform.product.api.BonusPlan;
 import tz.co.nlolo.lifeplatform.product.api.BonusSurrenderBasis;
 import tz.co.nlolo.lifeplatform.product.api.DepositPlan;
@@ -89,6 +90,7 @@ public class PolicyApiImpl implements PolicyApi {
     private final UnderwritingApi underwritingApi;
     /** A funeral policy's lives (family funeral cover); touched only once the product says FUNERAL. */
     private final CoveredLives coveredLives;
+    private final GroupFuneralFamilies groupFuneralFamilies;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
@@ -103,11 +105,13 @@ public class PolicyApiImpl implements PolicyApi {
                           PolicyBonusRepository policyBonusRepository,
                           AnnuityVestingRepository annuityVestingRepository,
                           CoveredLives coveredLives,
+                          GroupFuneralFamilies groupFuneralFamilies,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
                           DistributionApi distributionApi, UnderwritingApi underwritingApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
         this.policyRepository = policyRepository;
         this.coveredLives = coveredLives;
+        this.groupFuneralFamilies = groupFuneralFamilies;
         this.annuityVestingRepository = annuityVestingRepository;
         this.policyBonusRepository = policyBonusRepository;
         this.policyAccountRepository = policyAccountRepository;
@@ -451,6 +455,12 @@ public class PolicyApiImpl implements PolicyApi {
         // members, and for those the sumAssured above is the TOTAL of that schedule rather than
         // one person's cover -- a difference reinsurance in particular must not miss.
         payload.put("productCategory", policy.getProductCategory());
+        // A group funeral scheme is category FUNERAL, yet its sum assured is an association's families added together
+        // (2026-10-07): the category alone no longer tells one life from many.
+        boolean groupScheme = isSchemeCategory(policy.getProductCategory()) || coveredLives.isScheme(policy);
+        payload.put("groupScheme", groupScheme);
+        // Every life the contract covers now -- what the expense allocation's in-force driver counts.
+        payload.put("livesCovered", livesCovered(policy, groupScheme));
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyActivated", tenantId, payload));
     }
 
@@ -492,13 +502,194 @@ public class PolicyApiImpl implements PolicyApi {
     @Transactional
     public CoveredLifeView addCoveredLife(String policyNumber, tz.co.nlolo.lifeplatform.underwriting.api.FuneralApplication.Life life,
                                           String addedBy) {
-        return coveredLives.add(funeralPolicyOrThrow(policyNumber), life, addedBy);
+        return coveredLives.add(individualFuneralPolicyOrThrow(policyNumber), life, addedBy);
     }
 
     @Override
     @Transactional
     public CoveredLifeView removeCoveredLife(String policyNumber, UUID coveredLifeId, String reason, String removedBy) {
-        return coveredLives.remove(funeralPolicyOrThrow(policyNumber), coveredLifeId, reason, removedBy);
+        return coveredLives.remove(individualFuneralPolicyOrThrow(policyNumber), coveredLifeId, reason, removedBy);
+    }
+
+    // ---- Group funeral schemes (2026-10-07): families joining, growing, shrinking and leaving ----
+
+    @Override
+    @Transactional
+    public PolicyMemberView addGroupFuneralFamily(String policyNumber, List<GroupFuneralLifeInput> lives, LocalDate joinedOn,
+                                                  String addedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = groupFuneralSchemeOrThrow(policyNumber);
+        LocalDate joining = requireFamiliesMayJoin(policy, joinedOn);
+        List<GroupFuneralFamilies.Family> families = GroupFuneralFamilies.families(lives != null ? lives : List.of());
+        if (families.size() != 1) {
+            throw new InvalidPolicyStateException("Add one family at a time -- one member reference, not " + families.size());
+        }
+        String planCode = groupFuneralFamilies.planCode(policy);
+        groupFuneralFamilies.requireAdmissible(policy.getProductVersionId(), planCode, joining, families);
+        FuneralPlan plan = productApi.resolveFuneralPlan(policy.getProductVersionId());
+        UUID memberId = groupFuneralFamilies.record(policy, plan, planCode, families.get(0), joining, true, addedBy);
+        BigDecimal total = familiesJoined(policy);
+        BigDecimal cover = GroupFuneralFamilies.familyCover(plan, planCode, families.get(0));
+        PolicyMember member = publishFamilyJoined(policy, memberId, cover, joining, total);
+        return toMemberView(member, new GroupBenefitCalculator.Valuation(cover, cover, MemberUnderwritingStatus.WITHIN_FCL),
+            null, policy.getSumAssuredCurrency(), joining);
+    }
+
+    @Override
+    @Transactional
+    public GroupFuneralJoiningReport joinGroupFuneralFamilies(String policyNumber, byte[] csv, LocalDate joinedOn,
+                                                             String addedBy) {
+        Policy policy = groupFuneralSchemeOrThrow(policyNumber);
+        LocalDate joining = requireFamiliesMayJoin(policy, joinedOn);
+        var parsed = tz.co.nlolo.lifeplatform.underwriting.api.FuneralScheduleFile.parse(csv);
+        // Every problem by the family it names; a row naming no member refuses nothing else.
+        Map<String, List<String>> problems = new LinkedHashMap<>();
+        List<String> fileProblems = new ArrayList<>();
+        for (var p : parsed.problems()) {
+            if (p.reference() == null || p.reference().isBlank()) {
+                fileProblems.add(p.text());
+            } else {
+                problems.computeIfAbsent(p.reference().trim(), k -> new ArrayList<>()).add(p.text());
+            }
+        }
+        List<GroupFuneralLifeInput> lives = parsed.lives().stream().map(l -> new GroupFuneralLifeInput(l.memberReference(),
+            l.role(), l.fullName(), l.dateOfBirth(), l.sex(), l.idNumber(), l.student(), l.beneficiaryName(),
+            l.beneficiaryRelationship(), l.beneficiaryPhone())).toList();
+        String planCode = groupFuneralFamilies.planCode(policy);
+        FuneralPlan plan = productApi.resolveFuneralPlan(policy.getProductVersionId());
+        List<GroupFuneralFamilies.Family> admissible = new ArrayList<>();
+        for (GroupFuneralFamilies.Family family : GroupFuneralFamilies.families(lives)) {
+            if (problems.containsKey(family.reference())) {
+                continue; // a row of it was unreadable: never join a family short of a life
+            }
+            List<String> found = groupFuneralFamilies.problems(policy, planCode, joining, family);
+            if (found.isEmpty()) {
+                admissible.add(family);
+            } else {
+                problems.put(family.reference(), found);
+            }
+        }
+        if (!fileProblems.isEmpty() && parsed.lives().isEmpty()) {
+            return new GroupFuneralJoiningReport(List.of(), List.of(), fileProblems); // the header, or no CSV at all
+        }
+        List<GroupFuneralJoiningReport.Joined> joined = new ArrayList<>();
+        Map<UUID, BigDecimal> covers = new LinkedHashMap<>();
+        for (GroupFuneralFamilies.Family family : admissible) {
+            UUID memberId = groupFuneralFamilies.record(policy, plan, planCode, family, joining, true, addedBy);
+            covers.put(memberId, GroupFuneralFamilies.familyCover(plan, planCode, family));
+            joined.add(new GroupFuneralJoiningReport.Joined(family.reference(), family.mainMember().fullName(),
+                family.lives().size()));
+        }
+        if (!admissible.isEmpty()) {
+            // One restatement for the whole file: the bill moves once, by every family that joined.
+            BigDecimal total = familiesJoined(policy);
+            covers.forEach((memberId, cover) -> publishFamilyJoined(policy, memberId, cover, joining, total));
+        }
+        return new GroupFuneralJoiningReport(joined, problems.entrySet().stream()
+            .map(e -> new GroupFuneralJoiningReport.Refused(e.getKey(), e.getValue())).toList(), fileProblems);
+    }
+
+    /** The scheme in force, and the joining day: today when null, never in the future or before commencement. */
+    private static LocalDate requireFamiliesMayJoin(Policy policy, LocalDate joinedOn) {
+        if (!policy.isInForce()) {
+            throw new InvalidPolicyStateException("Scheme " + policy.getPolicyNumber()
+                + " must be in force to add a member (current: " + policy.getStatus() + ")");
+        }
+        LocalDate today = LocalDate.now();
+        LocalDate joining = joinedOn != null ? joinedOn : today;
+        if (joining.isAfter(today)) {
+            throw new InvalidPolicyStateException(
+                "A member cannot be added with a future join date; record them on the day cover starts");
+        }
+        if (policy.getCommencementDate() != null && joining.isBefore(policy.getCommencementDate())) {
+            throw new InvalidPolicyStateException("A member cannot join before the scheme commenced on "
+                + policy.getCommencementDate());
+        }
+        return joining;
+    }
+
+    /** After families joined: the scheme's total restated, and the bill from the next billing date. Returns the total. */
+    private BigDecimal familiesJoined(Policy policy) {
+        LocalDate today = LocalDate.now();
+        policyMemberBenefitRepository.flush();
+        BigDecimal total = restateSchemeTotal(policy, TenantContext.get(), today);
+        groupFuneralFamilies.restateBill(policy, InstalmentDates.nextAfter(policy.getIssueDate(), "MONTHLY", today));
+        policyRepository.save(policy);
+        return total;
+    }
+
+    /** policy.GroupMemberAdded for a family that joined -- the payload every scheme's joiner carries. */
+    private PolicyMember publishFamilyJoined(Policy policy, UUID memberId, BigDecimal cover, LocalDate joining,
+                                             BigDecimal total) {
+        UUID tenantId = TenantContext.get();
+        PolicyMember member = policyMemberRepository.findByPolicyMemberIdAndTenantId(memberId, tenantId).orElseThrow();
+        Map<String, Object> memberAdded = new LinkedHashMap<>();
+        memberAdded.put("policyNumber", policy.getPolicyNumber());
+        memberAdded.put("memberPartyId", null);
+        memberAdded.put("memberType", MemberType.FREEFORM.name());
+        memberAdded.put("memberName", member.getMemberName());
+        memberAdded.put("joinedOn", joining.toString());
+        memberAdded.put("coveredAmount", Map.of("amount", cover.toPlainString(), "currencyCode", policy.getSumAssuredCurrency()));
+        memberAdded.put("underwritingStatus", MemberUnderwritingStatus.WITHIN_FCL.name());
+        memberAdded.put("schemeTotalCovered", Map.of("amount", total.toPlainString(),
+            "currencyCode", policy.getSumAssuredCurrency()));
+        memberAdded.put("livesCovered", livesCovered(policy, true));
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.GroupMemberAdded", tenantId, memberAdded));
+        return member;
+    }
+
+    @Override
+    @Transactional
+    public CoveredLifeView addGroupFuneralLife(String policyNumber, UUID policyMemberId, GroupFuneralLifeInput life,
+                                              String addedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = groupFuneralSchemeOrThrow(policyNumber);
+        if (!policy.isInForce()) {
+            throw new InvalidPolicyStateException("Scheme " + policyNumber
+                + " must be in force to add a life (current: " + policy.getStatus() + ")");
+        }
+        CoveredLifeView added = groupFuneralFamilies.addLife(policy, policyMemberId, life, LocalDate.now(), addedBy);
+        policyMemberBenefitRepository.flush();
+        restateSchemeTotal(policy, tenantId, LocalDate.now());
+        policyRepository.save(policy);
+        return added;
+    }
+
+    @Override
+    @Transactional
+    public CoveredLifeView removeGroupFuneralLife(String policyNumber, UUID coveredLifeId, String reason, String removedBy) {
+        Policy policy = groupFuneralSchemeOrThrow(policyNumber);
+        if (!policy.isInForce()) {
+            throw new InvalidPolicyStateException("Scheme " + policyNumber
+                + " must be in force to remove a life (current: " + policy.getStatus() + ")");
+        }
+        return groupFuneralFamilies.removeLife(policy, coveredLifeId, LocalDate.now(), removedBy);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<GroupFuneralFamilyView> groupFuneralFamilies(String policyNumber) {
+        return groupFuneralFamilies.list(groupFuneralSchemeOrThrow(policyNumber));
+    }
+
+    private Policy groupFuneralSchemeOrThrow(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        GroupScheme scheme = findSchemeOrThrow(policyNumber, tenantId);
+        if (scheme.getBenefitBasis() != BenefitBasis.FUNERAL_PLAN) {
+            throw new InvalidPolicyStateException("Scheme " + policyNumber + " is not a group funeral scheme, so it has no families");
+        }
+        return policy;
+    }
+
+    /** A family funeral policy sold to one family -- not a group funeral scheme, whose families have their own operations. */
+    private Policy individualFuneralPolicyOrThrow(String policyNumber) {
+        Policy policy = funeralPolicyOrThrow(policyNumber);
+        if (coveredLives.isScheme(policy)) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber
+                + " is a group funeral scheme; add or remove a life on its member's family instead");
+        }
+        return policy;
     }
 
     /**
@@ -514,7 +705,14 @@ public class PolicyApiImpl implements PolicyApi {
         if (!"ACTIVE".equals(policy.getStatus()) && !"REINSTATED".equals(policy.getStatus())) {
             return;
         }
-        if (!coveredLives.sweep(policy, today)) {
+        boolean anyLeft = coveredLives.sweep(policy, today);
+        if (anyLeft && coveredLives.isScheme(policy)) {
+            // A life that ended or aged out took its benefit off its family's cover, and the scheme's total with it.
+            if (groupFuneralFamilies.restateCovers(policy, today, "system:covered-life-sweep")) {
+                policyMemberBenefitRepository.flush();
+                restateSchemeTotal(policy, tenantId, today);
+            }
+        } else if (!anyLeft) {
             closeAsSurrendered(policy, null, tenantId);
         }
         policyRepository.save(policy);
@@ -526,6 +724,9 @@ public class PolicyApiImpl implements PolicyApi {
         Policy policy = findPolicyOrThrow(policyNumber, TenantContext.get());
         if (!coveredLives.isFuneral(policy) || coveredLifeId == null) {
             return java.util.Optional.empty();
+        }
+        if (coveredLives.isScheme(policy)) {
+            return java.util.Optional.of(groupFuneralFamilies.claimFacts(policy, coveredLifeId));
         }
         List<UUID> beneficiaries = beneficiaryRepository.findByPolicyNumberAndActiveTrue(policyNumber).stream()
             .map(Beneficiary::getPartyId).filter(java.util.Objects::nonNull).toList();
@@ -542,7 +743,7 @@ public class PolicyApiImpl implements PolicyApi {
     @Override
     @Transactional
     public UUID takeOverFuneralPolicy(String policyNumber, PromoteMemberRequest identity, String by) {
-        Policy policy = funeralPolicyOrThrow(policyNumber);
+        Policy policy = individualFuneralPolicyOrThrow(policyNumber);
         UUID partyId = coveredLives.takeOver(policy, identity, by);
         policyRepository.save(policy);
         return partyId;
@@ -1671,8 +1872,9 @@ public class PolicyApiImpl implements PolicyApi {
         if (coveredLives.isFuneral(policy)) {
             if (policyMemberId != null) {
                 throw new InvalidPolicyStateException("Policy " + policyNumber
-                    + " is a funeral plan, not a group scheme, so a claim on it names a covered life, not a member");
+                    + " is a funeral plan, so a claim on it names a covered life, not a member");
             }
+            // A scheme's lapse is claims' date check (was it on risk on the date of death), as an individual policy's is.
             return coveredLives.claimable(policy, coveredLifeId, asOf, benefitType);
         }
         if (coveredLifeId != null) {
@@ -1791,6 +1993,29 @@ public class PolicyApiImpl implements PolicyApi {
                                           UUID claimId, String dischargedBy) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        // A GROUP FUNERAL SCHEME (2026-10-07): the life ends; a main member's death takes their family off at the end
+        // of that month -- the scheme and every other family carry on -- unless the spouse takes the family over.
+        if (coveredLives.isScheme(policy)) {
+            if (coveredLifeId == null) {
+                throw new InvalidPolicyStateException("Claim " + claimId + " on group funeral scheme " + policyNumber
+                    + " names no covered life, so there is no life to discharge");
+            }
+            GroupFuneralFamilies.Discharge discharge =
+                groupFuneralFamilies.dischargeDeath(policy, coveredLifeId, dateOfEvent, dischargedBy);
+            if (discharge.outcome() == GroupFuneralFamilies.DeathOutcome.MEMBER_LEAVES) {
+                LocalDate monthEnd = dateOfEvent.with(java.time.temporal.TemporalAdjusters.lastDayOfMonth());
+                exitOneMember(policy, findSchemeOrThrow(policyNumber, tenantId), discharge.policyMemberId(), monthEnd,
+                    ExitReason.CLAIM_SETTLED, null, claimId, tenantId);
+                if (policy.isInForce()) {
+                    groupFuneralFamilies.restateBill(policy, InstalmentDates.nextAfter(policy.getIssueDate(), "MONTHLY", monthEnd));
+                }
+            } else if (discharge.outcome() != GroupFuneralFamilies.DeathOutcome.ALREADY_DISCHARGED) {
+                policyMemberBenefitRepository.flush();
+                restateSchemeTotal(policy, tenantId, LocalDate.now());
+            }
+            policyRepository.save(policy);
+            return;
+        }
         // A FAMILY IS NOT DISCHARGED BY ONE DEATH either: the named life ends, and only the main member's
         // death can end the policy -- by the version's rule, not by this method's default below.
         if (coveredLives.isFuneral(policy)) {
@@ -2062,6 +2287,7 @@ public class PolicyApiImpl implements PolicyApi {
                 "currencyCode", scheme.getCurrency()));
         }
         addRefundDetail(payload, member, scheme, reason, dateOfEvent, tenantId);
+        payload.put("livesCovered", livesCovered(policy, true));
 
         eventPublisher.publishEvent(
             DomainEventEnvelope.of("policy.GroupMemberExited", tenantId, Map.copyOf(payload)));
@@ -2160,8 +2386,23 @@ public class PolicyApiImpl implements PolicyApi {
                     + " settles, dated to the death, not by an exit");
             });
 
+        boolean funeralScheme = scheme.getBenefitBasis() == BenefitBasis.FUNERAL_PLAN;
+        if (funeralScheme) {
+            if (exitDate == null) {
+                throw new InvalidPolicyStateException("A member leaving a group funeral scheme needs the date they leave");
+            }
+            // Whole months (group funeral Q6 a): a member who leaves is covered, with their family, to the end of
+            // the month they leave in -- the month the association has already paid for.
+            exitDate = exitDate.with(java.time.temporal.TemporalAdjusters.lastDayOfMonth());
+            groupFuneralFamilies.endFamily(policy, policyMemberId, exitDate.plusDays(1));
+        }
+
         Optional<PolicyMember> exited = exitOneMember(policy, scheme, policyMemberId, exitDate,
             reason, outstandingBalanceAtExit, null, tenantId);
+        if (funeralScheme && exited.isPresent() && policy.isInForce()) {
+            groupFuneralFamilies.restateBill(policy, InstalmentDates.nextAfter(policy.getIssueDate(), "MONTHLY", exitDate));
+            policyRepository.save(policy);
+        }
 
         // Already gone: return them as they are rather than as they would have been. The
         // caller asked for this member to be off the scheme, and they are.
@@ -2736,6 +2977,115 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
+    @Transactional
+    public GroupSchemeView issueGroupFuneralScheme(IssueGroupFuneralSchemeRequest request, String issuedBy,
+                                                   UUID underwritingCaseId, String issuedByName) {
+        UUID tenantId = TenantContext.get();
+        if (underwritingCaseId != null) {
+            policyRepository.findByTenantIdAndUnderwritingCaseId(tenantId, underwritingCaseId)
+                .ifPresent(existing -> {
+                    throw new PolicyAlreadyIssuedForCaseException(underwritingCaseId, existing.getPolicyNumber());
+                });
+            var underwritten = underwritingApi.getCase(underwritingCaseId);
+            if (!underwritten.groupScheme()
+                    || !request.policyholderPartyId().equals(underwritten.applicantPartyId())
+                    || !request.productVersionId().equals(underwritten.productVersionId())) {
+                throw new InvalidPolicyStateException("Underwriting case " + underwritingCaseId
+                    + " is not a group proposal by this association on this product version, so it cannot"
+                    + " stand behind this scheme");
+            }
+        }
+        partyApi.getParty(request.policyholderPartyId()); // the association must exist
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(request.productId(), LocalDate.now());
+        if (snapshot.category() != ProductCategory.FUNERAL) {
+            throw new InvalidPolicyStateException(
+                "A group funeral scheme needs a FUNERAL product; this one is " + snapshot.category());
+        }
+        FuneralPlan plan = productApi.resolveFuneralPlan(request.productVersionId());
+        if (!plan.soldAs().group()) {
+            throw new InvalidPolicyStateException("This product is not sold to group schemes");
+        }
+        String planCode = request.planCode();
+        BigDecimal rate = plan.groupMonthlyRate(planCode).orElseThrow(() -> new InvalidPolicyStateException(
+            "Plan " + planCode + " has no group rate, so a scheme on it cannot be billed"));
+
+        LocalDate today = LocalDate.now();
+        LocalDate commencement = request.commencementDate() != null ? request.commencementDate() : today;
+        if (commencement.isAfter(today)) {
+            throw new InvalidPolicyStateException(
+                "A scheme cannot commence in the future yet: its sum assured is the total of its families' cover");
+        }
+        List<GroupFuneralFamilies.Family> families =
+            GroupFuneralFamilies.families(request.lives() != null ? request.lives() : List.of());
+        if (families.isEmpty()) {
+            // A scheme with nobody on it can never go on cover: its premium is the families times the rate, so the
+            // association's first premium -- the acceptance -- would be nil.
+            throw new InvalidPolicyStateException(
+                "A group funeral scheme must be issued with at least one family: its premium is "
+                    + rate.toPlainString() + " per member per month, and a scheme of nobody owes nothing");
+        }
+        // Every family checked before anything is written: one bad family refuses the whole schedule.
+        groupFuneralFamilies.requireAdmissible(request.productVersionId(), planCode, commencement, families);
+
+        BigDecimal total = families.stream().map(f -> GroupFuneralFamilies.familyCover(plan, planCode, f))
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // The bill (R3): the plan's group rate for every main member, monthly.
+        BigDecimal premium = rate.multiply(BigDecimal.valueOf(families.size())).setScale(2, java.math.RoundingMode.HALF_UP);
+
+        String policyNumber = "GRP-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        UUID agentOfRecordId = agentOfRecordFor(request.policyholderPartyId(), request.agentOfRecordId());
+        Policy policy = new Policy(policyNumber, tenantId, request.policyholderPartyId(), request.productId(),
+            request.productVersionId(), snapshot.category().name(), agentOfRecordId,
+            total, request.currency(), premium, request.currency(), "MONTHLY", underwritingCaseId, issuedBy);
+        policy.applyTerm(commencement, request.policyTermMonths(), null);
+        policy.recordIssuedOn(today);
+        recordIssuance(policy, null, request.reasonForManualIssue(), underwritingCaseId, issuedByName);
+        policy.classifyAtSale(saleClassification(productApi.getSnapshotByVersionId(request.productVersionId()),
+            underwritingCaseId, agentOfRecordId, today));
+        // An offer until the association's first premium clears, as every scheme is.
+        policyRepository.save(policy);
+
+        policyAccountRepository.save(new PolicyAccount(policyNumber, tenantId, BigDecimal.ZERO, request.currency()));
+        coverageRepository.save(new Coverage(tenantId, policyNumber, BenefitType.DEATH.name(), total, request.currency()));
+        groupSchemeRepository.save(new GroupScheme(policyNumber, tenantId, BenefitBasis.FUNERAL_PLAN,
+            null, null, null, request.currency(), issuedBy));
+        groupFuneralFamilies.recordPlan(policyNumber, planCode);
+        for (GroupFuneralFamilies.Family family : families) {
+            groupFuneralFamilies.record(policy, plan, planCode, family, commencement, false, issuedBy);
+        }
+
+        // The payload every scheme emits: billing raises the association's monthly schedule from it, distribution
+        // and regreporting record the contract. Billed from the policy's premium, never per enrolment.
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("policyNumber", policyNumber);
+        payload.put("policyholderPartyId", request.policyholderPartyId());
+        payload.put("productId", request.productId());
+        payload.put("productVersionId", request.productVersionId());
+        payload.put("sumAssured", Map.of("amount", total.toPlainString(), "currencyCode", request.currency()));
+        payload.put("issueDate", policy.getIssueDate().toString());
+        payload.put("premium", Map.of("amount", premium.toPlainString(), "currencyCode", request.currency()));
+        payload.put("premiumFrequency", "MONTHLY");
+        payload.put("agentOfRecordId", policy.getAgentOfRecordId());
+        payload.put("status", policy.getStatus());
+        payload.put("premiumPerEnrolment", false);
+        putPremiumPayingUntil(payload, policy);
+        putIssuanceRecord(payload, policy, issuedBy);
+        putSaleClassification(payload, policy);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
+        if (policy.getUnderwritingCaseId() != null) {
+            underwritingApi.lockSale(policy.getUnderwritingCaseId());
+        }
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.GroupSchemeIssued", tenantId, Map.of(
+            "policyNumber", policyNumber,
+            "benefitBasis", BenefitBasis.FUNERAL_PLAN.name(),
+            "memberCount", families.size(),
+            "totalCovered", Map.of("amount", total.toPlainString(), "currencyCode", request.currency()))));
+
+        policyMemberBenefitRepository.flush();
+        return getGroupScheme(policyNumber);
+    }
+
+    @Override
     public GroupSchemeView getGroupScheme(String policyNumber) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
@@ -2862,6 +3212,10 @@ public class PolicyApiImpl implements PolicyApi {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
         GroupScheme scheme = findSchemeOrThrow(policyNumber, tenantId);
+        if (scheme.getBenefitBasis() == BenefitBasis.FUNERAL_PLAN) {
+            throw new InvalidPolicyStateException("Scheme " + policyNumber
+                + " is a group funeral scheme: a member joins with their family, on the family's plan benefits");
+        }
         if (!policy.isInForce()) {
             throw new InvalidPolicyStateException("Scheme " + policyNumber
                 + " must be in force to add a member (current: " + policy.getStatus() + ")");
@@ -2942,6 +3296,7 @@ public class PolicyApiImpl implements PolicyApi {
         memberAdded.put("underwritingStatus", valuation.underwritingStatus().name());
         memberAdded.put("schemeTotalCovered", Map.of("amount", total.toPlainString(),
             "currencyCode", scheme.getCurrency()));
+        memberAdded.put("livesCovered", livesCovered(policy, true));
         eventPublisher.publishEvent(
             DomainEventEnvelope.of("policy.GroupMemberAdded", tenantId, memberAdded));
 
@@ -3002,6 +3357,24 @@ public class PolicyApiImpl implements PolicyApi {
      */
     private static boolean isSchemeCategory(String productCategory) {
         return "GROUP_LIFE".equals(productCategory) || "CREDIT_LIFE".equals(productCategory);
+    }
+
+    /**
+     * Every life the contract covers now (IFRS 17 expense allocation, 2026-10-07): a funeral policy's or scheme's covered
+     * lives, another scheme's active members, one for any other policy.
+     */
+    private int livesCovered(Policy policy, boolean groupScheme) {
+        if (coveredLives.isFuneral(policy)) {
+            return coveredLives.activeLives(policy);
+        }
+        // Only a policy issued as a scheme (always GRP-): a GROUP_LIFE policy issued the individual way has no member
+        // schedule, and in a database without policy V9 not even the table -- a failed query there would abort the
+        // whole transaction, not merely this count.
+        if (groupScheme && policy.getPolicyNumber().startsWith("GRP-")) {
+            return (int) policyMemberRepository.countByTenantIdAndPolicyNumberAndStatus(TenantContext.get(),
+                policy.getPolicyNumber(), MemberStatus.ACTIVE.name());
+        }
+        return 1;
     }
 
     /**
@@ -3511,7 +3884,8 @@ public class PolicyApiImpl implements PolicyApi {
 
     private BigDecimal restateSchemeTotal(Policy policy, UUID tenantId, LocalDate asOf) {
         BigDecimal total = policyMemberBenefitRepository.totalCovered(tenantId, policy.getPolicyNumber(), asOf);
-        policy.restateSumAssured(total);
+        // Only ever called for a scheme; on a FUNERAL policy that means a group funeral scheme.
+        policy.restateSumAssured(total, coveredLives.isFuneral(policy));
         coverageRepository.findByPolicyNumberAndActiveTrue(policy.getPolicyNumber()).stream()
             .filter(c -> BenefitType.DEATH.name().equals(c.getBenefitType()))
             .forEach(c -> c.restateSumAssured(total));

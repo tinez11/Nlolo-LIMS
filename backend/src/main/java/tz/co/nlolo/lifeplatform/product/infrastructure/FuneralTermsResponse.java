@@ -6,6 +6,7 @@ import tz.co.nlolo.lifeplatform.product.api.FuneralPlanBenefit;
 import tz.co.nlolo.lifeplatform.product.api.FuneralPlanOption;
 import tz.co.nlolo.lifeplatform.product.api.FuneralPremiumRow;
 import tz.co.nlolo.lifeplatform.product.api.FuneralRoleRule;
+import tz.co.nlolo.lifeplatform.product.api.FuneralSoldAs;
 import tz.co.nlolo.lifeplatform.product.api.MainMemberDeathRule;
 
 import java.util.List;
@@ -18,11 +19,11 @@ public record FuneralTermsResponse(List<FuneralPlanOption> plans, List<FuneralPl
                                    List<FuneralPremiumRow> premiums, List<FuneralRoleRule> roles, int maxPricedAge,
                                    Integer waitingPeriodMonths, boolean accidentWaivesWaiting,
                                    DependantClaimPayee dependantClaimPayee, MainMemberDeathRule onMainMemberDeath,
-                                   boolean freeCoverToPaidDate) {
+                                   boolean freeCoverToPaidDate, FuneralSoldAs soldAs) {
 
     static FuneralTermsResponse from(FuneralPlan plan) {
         return new FuneralTermsResponse(plan.plans(), plan.benefits(), plan.premiums(), plan.roles(), plan.maxPricedAge(),
             plan.waitingPeriodMonths(), plan.accidentWaivesWaiting(), plan.dependantClaimPayee(),
-            plan.onMainMemberDeath(), plan.freeCoverToPaidDate());
+            plan.onMainMemberDeath(), plan.freeCoverToPaidDate(), plan.soldAs());
     }
 }

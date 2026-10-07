@@ -66,6 +66,34 @@ class FuneralQuoterTest {
         assertThat(quote.frequency()).isEqualTo(PremiumFrequency.MONTHLY);
     }
 
+    /** Group funeral schemes: a version sold to groups only is never quoted to one family. */
+    @Test
+    void aVersionSoldToGroupSchemesOnlyIsNotQuotedToAFamily() {
+        FuneralPlan f = FuneralPlans.familia();
+        FuneralPlan groupOnly = new FuneralPlan(true, f.plans(), f.benefits(), List.of(), f.roles(), f.maxPricedAge(),
+            f.waitingPeriodMonths(), f.accidentWaivesWaiting(), f.dependantClaimPayee(), f.onMainMemberDeath(),
+            f.freeCoverToPaidDate(), tz.co.nlolo.lifeplatform.product.api.FuneralSoldAs.GROUP);
+        refused(() -> FuneralQuoter.quote(groupOnly, FIVE_PERCENT_MONTHLY,
+                new FuneralQuoteInput("B", PremiumFrequency.MONTHLY, ON, family())),
+            "This product is sold to group schemes only; a scheme pays its plan's group rate per member");
+    }
+
+    /** A spouse and children included at 0: the family pays the main member's premium alone (a flat family rate). */
+    @Test
+    void dependantsIncludedAtZeroAddNothingToTheFamily() {
+        FuneralPlan f = FuneralPlans.familia();
+        FuneralPlan flat = new FuneralPlan(true, f.plans(), f.benefits(), f.premiums().stream()
+                .map(p -> p.role() == MAIN_MEMBER ? p
+                    : new tz.co.nlolo.lifeplatform.product.api.FuneralPremiumRow(p.planCode(), p.role(), p.ageFrom(),
+                        p.ageTo(), BigDecimal.ZERO)).toList(),
+            f.roles(), f.maxPricedAge(), f.waitingPeriodMonths(), f.accidentWaivesWaiting(), f.dependantClaimPayee(),
+            f.onMainMemberDeath(), f.freeCoverToPaidDate());
+        FuneralQuote quote = FuneralQuoter.quote(flat, FIVE_PERCENT_MONTHLY,
+            new FuneralQuoteInput("B", PremiumFrequency.ANNUALLY, ON, family()));
+        assertThat(quote.lines()).hasSize(5);
+        assertThat(quote.instalment()).isEqualByComparingTo(quote.lines().get(0).yearlyPremium());
+    }
+
     @Test
     void annualPaymentIsTheTotalUnloaded() {
         assertThat(quote("B", PremiumFrequency.ANNUALLY, family()).instalment()).isEqualByComparingTo("138000.00");
@@ -166,5 +194,28 @@ class FuneralQuoterTest {
         assertThat(FuneralQuoter.yearlyPremiumAt(FuneralPlans.familia(), "B", MAIN_MEMBER, 80)).isEqualByComparingTo("150000");
         refused(() -> FuneralQuoter.yearlyPremiumAt(FuneralPlans.familia(), "B", MAIN_MEMBER, 101),
             "Plan B has no premium for a main member aged 101");
+    }
+
+    /** Familia sold to groups -- the joiner rule refuses any product that is not. */
+    private static FuneralPlan groupFamilia() {
+        FuneralPlan f = FuneralPlans.familia();
+        return new FuneralPlan(true, f.plans(), f.benefits(), List.of(), f.roles(), f.maxPricedAge(),
+            f.waitingPeriodMonths(), f.accidentWaivesWaiting(), f.dependantClaimPayee(), f.onMainMemberDeath(),
+            f.freeCoverToPaidDate(), tz.co.nlolo.lifeplatform.product.api.FuneralSoldAs.GROUP);
+    }
+
+    @Test
+    void aJoinerIsCheckedAloneBesideTheCountAlreadyInItsRole() {
+        assertThat(FuneralQuoter.joinerProblems(groupFamilia(), "A", ON, life(CHILD, "Zuri", 12), 5)).isEmpty();
+        assertThat(FuneralQuoter.joinerProblems(groupFamilia(), "A", ON, life(CHILD, "Zuri", 12), 6))
+            .containsExactly("At most 6 children may be covered, not 7");
+        assertThat(FuneralQuoter.joinerProblems(groupFamilia(), "A", ON, life(SPOUSE, "Mwanaisha", 30), 1))
+            .containsExactly("At most 1 spouse may be covered, not 2");
+        assertThat(FuneralQuoter.joinerProblems(groupFamilia(), "A", ON, life(CHILD, "Old", 30), 0))
+            .singleElement().asString().startsWith("Old: a child must be 0 to 20");
+        assertThat(FuneralQuoter.joinerProblems(groupFamilia(), "A", ON, life(MAIN_MEMBER, "Second", 30), 0))
+            .containsExactly("Second: a family has exactly one main member");
+        assertThat(FuneralQuoter.joinerProblems(FuneralPlans.familia(), "A", ON, life(CHILD, "Zuri", 12), 0))
+            .containsExactly("This product is not sold to group schemes");
     }
 }

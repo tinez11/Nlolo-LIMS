@@ -138,6 +138,7 @@ class PremiumPostingEndToEndTest {
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/product/V28__survival_investment_component.sql",
+            "db-migrations/product/V29__funeral_group_rate.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -154,6 +155,7 @@ class PremiumPostingEndToEndTest {
             "db-migrations/underwriting/V10__issuance_failure.sql",
             "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
+            "db-migrations/underwriting/V19__group_funeral_proposal.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
@@ -170,6 +172,7 @@ class PremiumPostingEndToEndTest {
             "db-migrations/policy/V30__surrender.sql",
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/policy/V37__sale_classification.sql",
+            "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
             "db-migrations/billing/V3__amount_paid.sql",
@@ -194,7 +197,8 @@ class PremiumPostingEndToEndTest {
             "db-migrations/finaccounting/V14__manual_journals.sql",
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             "db-migrations/finaccounting/V16__expense_allocation.sql",
-            "db-migrations/finaccounting/V17__year_end_close.sql");
+            "db-migrations/finaccounting/V17__year_end_close.sql",
+            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

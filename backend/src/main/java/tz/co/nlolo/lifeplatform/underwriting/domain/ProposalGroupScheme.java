@@ -59,8 +59,12 @@ public class ProposalGroupScheme {
      * assured is every member's cover added together. Neither produces a number anybody would
      * charge, so a scheme's premium is negotiated and recorded, and issuance uses it verbatim.
      */
-    @Column(name = "premium_amount", nullable = false)
+    @Column(name = "premium_amount")
     private BigDecimal premiumAmount;
+
+    /** Group funeral schemes (underwriting V19): the FUNERAL product's plan; null on every other basis. */
+    @Column(name = "plan_code")
+    private String planCode;
 
     @Column(name = "premium_currency", nullable = false)
     private String premiumCurrency;
@@ -115,4 +119,11 @@ public class ProposalGroupScheme {
     public String getPremiumFrequency() { return premiumFrequency; }
     public LocalDate getCommencementDate() { return commencementDate; }
     public Integer getPolicyTermMonths() { return policyTermMonths; }
+    public String getPlanCode() { return planCode; }
+
+    /** A group funeral proposal's plan: set once, when the proposal is taken. */
+    public ProposalGroupScheme withPlanCode(String planCode) {
+        this.planCode = planCode;
+        return this;
+    }
 }

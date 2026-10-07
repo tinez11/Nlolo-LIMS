@@ -84,6 +84,9 @@ export const GroupSchemePage = lazy(() =>
 export const IssueGroupSchemePage = lazy(() =>
   import('@/features/policies/IssueGroupSchemePage').then((m) => ({ default: m.IssueGroupSchemePage })),
 );
+export const ProposeGroupFuneralPage = lazy(() =>
+  import('@/features/policies/ProposeGroupFuneralPage').then((m) => ({ default: m.ProposeGroupFuneralPage })),
+);
 export const IssuePolicyPage = lazy(() =>
   import('@/features/policies/IssuePolicyPage').then((m) => ({ default: m.IssuePolicyPage })),
 );

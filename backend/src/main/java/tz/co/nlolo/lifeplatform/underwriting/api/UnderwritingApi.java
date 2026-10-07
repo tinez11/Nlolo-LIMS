@@ -66,6 +66,13 @@ public interface UnderwritingApi {
      */
     UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId,
                                    UUID agentOfRecordId, GroupProposal proposal, String openedBy);
+
+    /**
+     * Group funeral schemes (2026-10-07): replace an undecided proposal's members and families with those in a CSV
+     * file ({@code FuneralScheduleFile.HEADER}). All or nothing -- a file with any problem changes nothing and says
+     * every problem.
+     */
+    GroupScheduleResult replaceGroupSchedule(UUID caseId, byte[] csv, String uploadedBy);
     /**
      * Record a piece of evidence against the case and recompute the engine's recommendation.
      *

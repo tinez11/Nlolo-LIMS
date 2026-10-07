@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
 
 import tz.co.nlolo.lifeplatform.underwriting.api.GroupBenefitBasis;
 import tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal;
+import tz.co.nlolo.lifeplatform.product.api.FuneralRole;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -46,15 +47,17 @@ public record OpenGroupCaseRequest(
     @NotNull @Pattern(regexp = "^[A-Z]{3}$") String currency,
 
     List<@Valid GradeLineDto> grades,
-    @NotEmpty List<@Valid MemberLineDto> openingSchedule,
+    /** An employer scheme's registered lives; the service requires at least one (not on a FUNERAL_PLAN proposal). */
+    List<@Valid MemberLineDto> openingSchedule,
 
     /**
      * The premium agreed with the employer. Not computed: the individual formula prices one
-     * life from one age band, and the age it would read is the employer's.
+     * life from one age band, and the age it would read is the employer's. Required on every basis
+     * but FUNERAL_PLAN, whose premium is members x the plan's group rate (the service checks).
      */
-    @NotNull @Pattern(regexp = "^\\d+(\\.\\d{1,2})?$") String premiumAmount,
-    @NotNull @Pattern(regexp = "^[A-Z]{3}$") String premiumCurrency,
-    @NotNull String premiumFrequency,
+    @Pattern(regexp = "^\\d+(\\.\\d{1,2})?$") String premiumAmount,
+    @Pattern(regexp = "^[A-Z]{3}$") String premiumCurrency,
+    String premiumFrequency,
 
     LocalDate commencementDate,
     /** Null for the usual annually renewable scheme. */
@@ -62,7 +65,16 @@ public record OpenGroupCaseRequest(
 
     /** IFRS 17 I2, optional refdata codes -- see {@link OpenCaseRequest#salesChannel}. */
     String salesChannel,
-    String branchCode) {
+    String branchCode,
+
+    /** Group funeral schemes (FUNERAL_PLAN basis): the plan, and the opening members with their families. */
+    String planCode,
+    List<@Valid LifeLineDto> lives) {
+
+    /** One life on a group funeral schedule; a family's lives share {@code memberReference}. */
+    public record LifeLineDto(String memberReference, FuneralRole role, String fullName, LocalDate dateOfBirth,
+                              String sex, String idNumber, Boolean student, String beneficiaryName,
+                              String beneficiaryRelationship, String beneficiaryPhone) {}
 
     public record GradeLineDto(@NotNull String gradeCode,
                                 @NotNull @Pattern(regexp = "^\\d+(\\.\\d{1,2})?$") String benefitAmount) {}
@@ -77,11 +89,18 @@ public record OpenGroupCaseRequest(
             grades != null
                 ? grades.stream().map(g -> new GroupProposal.GradeLine(g.gradeCode(), decimal(g.benefitAmount()))).toList()
                 : List.of(),
-            openingSchedule.stream()
-                .map(m -> new GroupProposal.MemberLine(m.memberPartyId(), m.gradeCode(), decimal(m.salaryAmount())))
-                .toList(),
-            new BigDecimal(premiumAmount), premiumCurrency, premiumFrequency,
-            commencementDate, policyTermMonths);
+            openingSchedule != null
+                ? openingSchedule.stream()
+                    .map(m -> new GroupProposal.MemberLine(m.memberPartyId(), m.gradeCode(), decimal(m.salaryAmount())))
+                    .toList()
+                : List.of(),
+            decimal(premiumAmount), premiumCurrency, premiumFrequency,
+            commencementDate, policyTermMonths, planCode,
+            lives != null
+                ? lives.stream().map(l -> new GroupProposal.LifeLine(l.memberReference(), l.role(), l.fullName(),
+                    l.dateOfBirth(), l.sex(), l.idNumber(), Boolean.TRUE.equals(l.student()), l.beneficiaryName(),
+                    l.beneficiaryRelationship(), l.beneficiaryPhone())).toList()
+                : List.of());
     }
 
     private static BigDecimal decimal(String amount) {

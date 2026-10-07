@@ -147,8 +147,12 @@ public class PolicyProjection {
      */
     public boolean isScheme() { return isScheme(productCategory); }
 
+    /** This module's own name for a group funeral scheme: a FUNERAL product sold to an association's families. */
+    public static final String GROUP_FUNERAL = "GROUP_FUNERAL";
+
     public static boolean isScheme(String productCategory) {
-        return "GROUP_LIFE".equals(productCategory) || "CREDIT_LIFE".equals(productCategory);
+        return "GROUP_LIFE".equals(productCategory) || "CREDIT_LIFE".equals(productCategory)
+            || GROUP_FUNERAL.equals(productCategory);
     }
     public Instant getCreatedAt() { return createdAt; }
 }

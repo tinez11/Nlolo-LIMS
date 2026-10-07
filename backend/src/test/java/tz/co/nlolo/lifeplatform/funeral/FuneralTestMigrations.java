@@ -28,9 +28,12 @@ public final class FuneralTestMigrations {
         "db-migrations/finaccounting/V15__engine_period_cycle.sql",
         "db-migrations/finaccounting/V16__expense_allocation.sql",
         "db-migrations/finaccounting/V17__year_end_close.sql",
+        "db-migrations/finaccounting/V18__policy_snapshot_lives.sql",
         "db-migrations/product/V24__funeral_terms.sql",
+        "db-migrations/product/V29__funeral_group_rate.sql",
         "db-migrations/underwriting/V16__funeral_application.sql",
         "db-migrations/policy/V35__covered_life.sql",
+        "db-migrations/policy/V39__covered_life_member.sql",
         "db-migrations/claims/V10__funeral_claims.sql",
     };
 

@@ -9,6 +9,7 @@ import tz.co.nlolo.lifeplatform.policy.api.MemberUnderwritingStatus;
 import tz.co.nlolo.lifeplatform.policy.domain.PolicyMember;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -133,4 +134,18 @@ public interface PolicyMemberRepository extends JpaRepository<PolicyMember, UUID
      */
     long countByTenantIdAndPolicyNumberAndStatusAndUnderwritingStatus(
         UUID tenantId, String policyNumber, String status, MemberUnderwritingStatus underwritingStatus);
+
+    /**
+     * Members covered on {@code day}: joined by then and not yet gone -- a member who has left is covered to and
+     * including the day they left. What a group funeral scheme's bill counts on a billing date.
+     */
+    @Query("""
+        select count(m) from PolicyMember m
+         where m.tenantId = :tenantId and m.policyNumber = :policyNumber
+           and m.joinedOn <= :day and (m.leftOn is null or m.leftOn >= :day)
+        """)
+    long countCoveredOn(@Param("tenantId") UUID tenantId, @Param("policyNumber") String policyNumber,
+                        @Param("day") java.time.LocalDate day);
+
+    List<PolicyMember> findByTenantIdAndPolicyNumberOrderByJoinedOnAscCreatedAtAsc(UUID tenantId, String policyNumber);
 }

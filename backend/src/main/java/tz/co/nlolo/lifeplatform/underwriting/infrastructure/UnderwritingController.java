@@ -168,6 +168,60 @@ public class UnderwritingController {
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
+    /**
+     * Group funeral schemes (2026-10-07): replace an undecided proposal's members and families from a CSV file. 200
+     * either way -- {@code accepted} says whether the schedule changed, {@code problems} every row or member at fault.
+     */
+    @PostMapping(value = "/cases/{caseId}/group-schedule",
+        consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('UNDERWRITER')")
+    public ResponseEntity<tz.co.nlolo.lifeplatform.underwriting.api.GroupScheduleResult> replaceGroupSchedule(
+            @PathVariable UUID caseId,
+            @org.springframework.web.bind.annotation.RequestPart("file") org.springframework.web.multipart.MultipartFile file,
+            @AuthenticationPrincipal Jwt jwt) {
+        try {
+            return ResponseEntity.ok(underwritingApi.replaceGroupSchedule(caseId, file.getBytes(), jwt.getSubject()));
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException("Failed to read the uploaded schedule", e);
+        }
+    }
+
+    /** The lives an association's file names and every row's problem, read by the server's own parser. */
+    public record GroupScheduleReading(List<tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal.LifeLine> lives,
+                                       List<String> problems) {}
+
+    /**
+     * Reads a group funeral schedule file without storing anything (2026-10-07), so a proposal being written can take
+     * its families from the association's file: the console fills its form from the lives and shows the problems.
+     * The plan's role rules are applied when the proposal is opened.
+     */
+    @PostMapping(value = "/group-schedule/reading", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('UNDERWRITER')")
+    public ResponseEntity<GroupScheduleReading> readGroupSchedule(
+            @org.springframework.web.bind.annotation.RequestPart("file") org.springframework.web.multipart.MultipartFile file) {
+        try {
+            var parsed = tz.co.nlolo.lifeplatform.underwriting.api.FuneralScheduleFile.parse(file.getBytes());
+            return ResponseEntity.ok(new GroupScheduleReading(parsed.lives(), parsed.errors()));
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException("Failed to read the uploaded schedule", e);
+        }
+    }
+
+    /** The schedule file's header and one example family, for an association to fill. */
+    @GetMapping(value = "/group-schedule-template", produces = "text/csv")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<String> groupScheduleTemplate() {
+        String csv = String.join(",", tz.co.nlolo.lifeplatform.underwriting.api.FuneralScheduleFile.HEADER) + "\n"
+            + "M001,MAIN_MEMBER,Juma Ali,1980-05-12,MALE,,,Asha Juma,SPOUSE,0712000000\n"
+            + "M001,SPOUSE,Asha Juma,1983-02-01,FEMALE,,,,,\n"
+            + "M001,CHILD,Neema Juma,2012-07-20,FEMALE,,,,,\n";
+        return ResponseEntity.ok()
+            .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"group-funeral-schedule-template.csv\"")
+            .contentType(org.springframework.http.MediaType.parseMediaType("text/csv"))
+            .body(csv);
+    }
+
     @GetMapping("/cases/{caseId}")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<UnderwritingCaseView> getCase(@PathVariable UUID caseId) {

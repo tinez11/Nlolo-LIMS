@@ -54,10 +54,14 @@ public class EnginePolicySnapshots {
         this.requiresNew.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
+    /** Events that move how many lives a policy covers (finaccounting V18); each carries livesCovered, the new count. */
+    private static final List<String> LIVES = List.of("policy.CoveredLifeAdded", "policy.CoveredLifeEnded",
+        "policy.GroupMemberAdded", "policy.GroupMemberExited");
+
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         String type = envelope.eventType();
-        if (!"policy.PolicyActivated".equals(type) && !STATUS.containsKey(type)) {
+        if (!"policy.PolicyActivated".equals(type) && !STATUS.containsKey(type) && !LIVES.contains(type)) {
             return;
         }
         if (!(envelope.payload() instanceof Map<?, ?> p) || p.get("policyNumber") == null) {
@@ -69,6 +73,15 @@ public class EnginePolicySnapshots {
             requiresNew.executeWithoutResult(status -> {
                 if ("policy.PolicyActivated".equals(type)) {
                     activated(envelope.tenantId(), p);
+                } else if (LIVES.contains(type)) {
+                    // Only a policy already in the snapshot: a life joining an offer not yet taken up counts from the
+                    // activation, which carries the whole count.
+                    Integer lives = lives(p);
+                    if (lives != null) {
+                        jdbc.update("UPDATE finaccounting.policy_snapshot SET lives = ?, updated_at = now()"
+                            + " WHERE tenant_id = ? AND policy_number = ?", lives, envelope.tenantId(),
+                            p.get("policyNumber").toString());
+                    }
                 } else {
                     jdbc.update("UPDATE finaccounting.policy_snapshot SET status = ?, updated_at = now()"
                         + " WHERE tenant_id = ? AND policy_number = ?", STATUS.get(type), envelope.tenantId(),
@@ -84,15 +97,24 @@ public class EnginePolicySnapshots {
 
     private void activated(UUID tenantId, Map<?, ?> p) {
         Object issue = p.get("issueDate");
+        Integer lives = lives(p);
         jdbc.update("INSERT INTO finaccounting.policy_snapshot (tenant_id, policy_number, issue_date, sum_assured, premium,"
-                + " premium_frequency, currency, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE')"
+                + " premium_frequency, currency, status, lives) VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)"
                 + " ON CONFLICT (tenant_id, policy_number) DO UPDATE SET issue_date = EXCLUDED.issue_date,"
                 + " sum_assured = EXCLUDED.sum_assured, premium = EXCLUDED.premium,"
                 + " premium_frequency = EXCLUDED.premium_frequency, currency = EXCLUDED.currency, status = 'ACTIVE',"
-                + " updated_at = now()",
+                + " lives = EXCLUDED.lives, updated_at = now()",
             tenantId, p.get("policyNumber").toString(), issue == null ? null : Date.valueOf(LocalDate.parse(issue.toString())),
             amount(p.get("sumAssured")), amount(p.get("premium")),
-            p.get("premiumFrequency") == null ? null : p.get("premiumFrequency").toString(), currency(p.get("premium")));
+            p.get("premiumFrequency") == null ? null : p.get("premiumFrequency").toString(), currency(p.get("premium")),
+            lives != null ? lives : 1);
+    }
+
+    /** The policy's lives after the event, when it says; null when it does not (an event from before V18). */
+    private static Integer lives(Map<?, ?> p) {
+        Object lives = p.get("livesCovered");
+        return lives instanceof Number n ? Integer.valueOf(Math.max(0, n.intValue()))
+            : lives != null ? Integer.valueOf(Math.max(0, Integer.parseInt(lives.toString()))) : null;
     }
 
     /** Policies in force for the engine, by policy number. */

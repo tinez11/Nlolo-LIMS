@@ -53,6 +53,10 @@ class FuneralClaims {
         if (facts.mainMember()) {
             return;
         }
+        if (facts.groupScheme()) {
+            checkSchemeClaimant(request, facts);
+            return;
+        }
         boolean allowed = "MAIN_MEMBER".equals(facts.dependantClaimPayee())
             ? facts.policyholderPartyId().equals(request.claimantPartyId())
             : facts.beneficiaryPartyIds().contains(request.claimantPartyId());
@@ -62,6 +66,28 @@ class FuneralClaims {
                     + facts.policyholderPartyId() + "); this claim names " + request.claimantPartyId()
                 : "A dependant's death on " + request.policyNumber() + " is claimed by a beneficiary the main member"
                     + " nominated; " + request.claimantPartyId() + " is not one");
+        }
+    }
+
+    /**
+     * A dependant's death on a group funeral scheme (2026-10-07). The association is the policyholder, so the payee
+     * is the family's: the main member -- registered as a party at claim, as any name-only life is -- or, when the
+     * version pays the beneficiary, the beneficiary the main member named, registered at claim and checked against
+     * that name by the assessor.
+     */
+    private static void checkSchemeClaimant(ClaimsApi.RegisterClaimRequest request, FuneralClaimFacts facts) {
+        if (!"MAIN_MEMBER".equals(facts.dependantClaimPayee())) {
+            return;
+        }
+        if (facts.mainMemberPartyId() == null) {
+            throw new ClaimValidationException("A dependant's death on " + request.policyNumber() + " is paid to the main"
+                + " member, " + facts.mainMemberName() + ", who is not yet a registered party: register them from their"
+                + " identity document (promote the covered life) and file the claim in their name");
+        }
+        if (!facts.mainMemberPartyId().equals(request.claimantPartyId())) {
+            throw new ClaimValidationException("A dependant's death on " + request.policyNumber() + " is claimed by the"
+                + " main member, " + facts.mainMemberName() + " (" + facts.mainMemberPartyId() + "); this claim names "
+                + request.claimantPartyId());
         }
     }
 
