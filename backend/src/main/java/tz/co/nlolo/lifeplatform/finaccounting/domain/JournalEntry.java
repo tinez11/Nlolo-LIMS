@@ -109,6 +109,10 @@ public class JournalEntry {
     @Column(name = "engine_run_id")
     private UUID engineRunId;
 
+    /** The P-19 expense allocation the journal posts or reverses (IFRS 17 I5b, finaccounting V16). */
+    @Column(name = "expense_allocation_id")
+    private UUID expenseAllocationId;
+
     /** One leg's facts, before it becomes a persistent {@link GlPosting} row. */
     public record Leg(String accountCode, PostingDirection direction, BigDecimal amount, String currency,
                       LineDimensions dimensions) {}
@@ -195,6 +199,7 @@ public class JournalEntry {
     public int getPolicyRegisterVersion() { return policyRegisterVersion; }
     public String getRuleVersion() { return ruleVersion; }
     public UUID getEngineRunId() { return engineRunId; }
+    public UUID getExpenseAllocationId() { return expenseAllocationId; }
 
     /** A journal the platform or the IFRS 17 engine writes, not an event's. */
     public JournalEntry withSource(JournalSource source) {
@@ -226,6 +231,13 @@ public class JournalEntry {
     public JournalEntry fromEngineRun(UUID runId) {
         this.sourceType = JournalSource.ENGINE_RUN;
         this.engineRunId = runId;
+        return this;
+    }
+
+    /** A P-19 expense allocation's journal (IFRS 17 I5b): the platform's own approved run, so SYSTEM. */
+    public JournalEntry fromExpenseAllocation(UUID allocationId) {
+        this.sourceType = JournalSource.SYSTEM;
+        this.expenseAllocationId = allocationId;
         return this;
     }
 
