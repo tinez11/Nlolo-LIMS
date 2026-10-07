@@ -71,7 +71,8 @@ expenses, so the engine sees actual attributable expenses next to the expected o
   - Acquisition: policies whose classification takes effect in the month (issued then).
 - **Split:** each category in proportion to its driver, rounded to cents; the remaining cents go to the groups with
   the largest fractional remainders (ties: group key order), so the lines add up exactly to the total. A category whose
-  driver is zero in every group falls back to the in-force count. No IFRS 17 group at all: preparation is refused
+  driver is zero in every group falls back to the in-force count, and if that is zero too, to equal shares (driver
+`EQUAL`). No IFRS 17 group at all: preparation is refused
   ("No group of insurance contracts to allocate to").
 - **Acquisition account:** by the group's measurement model and the register's ACQUISITION_CASH_FLOWS election in force
   at the month's last day for that model -- GMM and VFA -> 2123; PAA -> 5310 when EXPENSE_WHEN_INCURRED, else 2123.
@@ -79,8 +80,8 @@ expenses, so the engine sees actual attributable expenses next to the expected o
 
 ## 5. Posting
 
-One `SYSTEM` journal per approved allocation, event type `ifrs17.ExpenseAllocation`, dated the month's last day, with
-`expense_allocation_id` on `journal_entry`:
+One `SYSTEM` journal per approved allocation, event type `ifrs17.ExpenseAllocation`, in the allocation's period (a
+journal carries a period, not a date), with `expense_allocation_id` on `journal_entry`:
 
 - Dr 5210 per group (maintenance), Dr 5215 per group (claims handling), Dr 2123 or 5310 per group (acquisition) --
   each line with its group and measurement model; 2123 lines with movement `EXP_ACQ`, the others none.
@@ -120,8 +121,9 @@ included -- only ENGINE_RUN journals are left out.
 | POST `/ifrs17/expense-allocations/{id}/rejection` `{reason}` | APPROVER | |
 
 Errors: 409 `ALLOCATION_STATE` (period not CLOSING; one already PREPARED; deciding your own; above the pool without
-`aboveThePool`; no IFRS 17 group; replacing in a LOCKED month); 400 validation (negative, more than two decimals,
-blank study reference, all zero without a nil reason); 404 `ALLOCATION_NOT_FOUND` across tenants; 403 by role.
+`aboveThePool`; no IFRS 17 group; replacing in a LOCKED month); 422 `FINACCOUNTING_VALIDATION_FAILED` (negative, more
+than two decimals, blank study reference on a non-nil allocation, all zero without a nil reason) -- the module's
+existing validation status; 404 `ALLOCATION_NOT_FOUND` across tenants; 403 by role.
 Money as numbers, as the I5a engine views.
 
 ## 9. Console
