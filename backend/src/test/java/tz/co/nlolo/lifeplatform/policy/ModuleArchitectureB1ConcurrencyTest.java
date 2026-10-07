@@ -122,7 +122,8 @@ class ModuleArchitectureB1ConcurrencyTest {
             "db-migrations/policy/V30__surrender.sql",
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/policy/V37__sale_classification.sql",
-            "db-migrations/policy/V38__group_funeral_scheme.sql");
+            "db-migrations/policy/V38__group_funeral_scheme.sql",
+            "db-migrations/policy/V40__commencement_never_null.sql");
     }
 
     @Autowired private PartyApi partyApi;

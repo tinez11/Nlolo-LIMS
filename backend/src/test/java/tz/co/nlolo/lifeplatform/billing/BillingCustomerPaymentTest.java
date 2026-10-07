@@ -112,6 +112,7 @@ class BillingCustomerPaymentTest {
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/policy/V37__sale_classification.sql",
             "db-migrations/policy/V38__group_funeral_scheme.sql",
+            "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/refdata/V9__journal_reason_codes.sql",

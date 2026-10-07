@@ -477,6 +477,13 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
             throw new PayoutStateException("Free-look applies to individual policies; a "
                 + policy.productCategory() + " scheme is cancelled under its contract");
         }
+        // A group funeral scheme (2026-10-07) is category FUNERAL, so the category test above let it
+        // through: one click cancelled an association's whole scheme from inception. Every scheme is
+        // issued as GRP-, which is the test that holds whatever the category.
+        if (policyNumber.startsWith("GRP-")) {
+            throw new PayoutStateException("Free-look applies to individual policies; scheme " + policyNumber
+                + " is cancelled under the terms its policyholder agreed");
+        }
         if (policy.status() != PolicyStatus.ACTIVE) {
             throw new PayoutStateException("Policy " + policyNumber + " is " + policy.status()
                 + "; only an ACTIVE policy can be cancelled in free-look");

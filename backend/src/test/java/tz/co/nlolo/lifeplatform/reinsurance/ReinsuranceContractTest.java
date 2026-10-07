@@ -176,6 +176,7 @@ class ReinsuranceContractTest {
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/policy/V37__sale_classification.sql",
             "db-migrations/policy/V38__group_funeral_scheme.sql",
+            "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
             "db-migrations/reinsurance/V4__projection_product_category.sql",

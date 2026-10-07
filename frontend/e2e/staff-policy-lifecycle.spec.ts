@@ -92,23 +92,19 @@ test.describe('staff policy lifecycle', () => {
     await expect(page.getByRole('button', { name: 'Suspend' })).toBeVisible();
   });
 
-  test('rejects suspending an ineligible (TERM_LIFE) product category with a real 409', async ({ page }) => {
+  // Audit 2026-10-07: the console offered Suspend on every policy and the server refused it on all but the
+  // categories POLICY_SUSPENSION_ELIGIBLE_CATEGORIES names. It now reads that list and says why instead; the
+  // server's own 409 stays covered by PolicyApiIntegrationTest.
+  test('does not offer to suspend an ineligible (TERM_LIFE) product category, and says why', async ({ page }) => {
     const policyNumber = await issuePolicyAgainst(
       page,
       'Demo Term Life (DEMO-TERM-01)',
       'E2E ineligible-suspend fixture',
     );
 
-    await page.getByRole('button', { name: 'Suspend' }).click();
-    await page.getByLabel('Reason').fill('Should be rejected -- TERM_LIFE is not suspension-eligible');
-    await page.getByRole('button', { name: 'Suspend policy' }).click();
-
-    await expect(page.getByRole('alert')).toBeVisible({ timeout: 15_000 });
-    // Still ACTIVE, and the Suspend form is still open (not dismissed as if it
-    // had succeeded) -- confirmed by re-checking the URL stayed put, matching
-    // this policy's own number.
     await expect(page).toHaveURL(new RegExp(`/staff/policies/${policyNumber}$`));
-    await expect(page.getByLabel('Reason')).toBeVisible();
+    await expect(page.getByText('This kind of policy is not suspended')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Suspend' })).toHaveCount(0);
   });
 
   test('the search bar finds a real policy by its policy number', async ({ page }) => {

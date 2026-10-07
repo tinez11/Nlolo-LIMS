@@ -267,10 +267,16 @@ public class PolicyApiImpl implements PolicyApi {
             request.sumAssuredAmount(), request.sumAssuredCurrency(),
             request.premiumAmount(), request.premiumCurrency(), request.premiumFrequency(), underwritingCaseId, issuedBy);
         // Before activate, so an invalid term is refused before the policy is put in
-        // force rather than after. All three may be null: a product that does not term
+        // force rather than after. The term may be null: a product that does not term
         // is not the same as a term nobody recorded.
-        policy.applyTerm(request.commencementDate(), request.policyTermMonths(),
-            request.premiumPayingTermMonths());
+        //
+        // COMMENCEMENT IS NEVER NULL (audit 2026-10-07). A case that stated no start date issued a
+        // policy with none, and Policy.wasOnRiskOn read a missing commencement as "on risk on any
+        // earlier day" -- so a death claim dated years before the policy existed passed the on-risk
+        // check. 773 policies were affected. Cover starts when the policy is issued unless the case
+        // says otherwise.
+        policy.applyTerm(request.commencementDate() != null ? request.commencementDate() : LocalDate.now(),
+            request.policyTermMonths(), request.premiumPayingTermMonths());
         // Self-insured resolves to the policyholder here, so the column always answers
         // "whose life is this" rather than leaving every reader to infer it from a null.
         policy.recordLifeAssured(request.resolveLifeAssured());

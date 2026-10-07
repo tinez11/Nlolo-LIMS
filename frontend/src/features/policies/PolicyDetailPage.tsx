@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Pause, Play, RotateCcw, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { getReferenceCodes } from '@/api/refdata';
 import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
@@ -294,7 +295,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     if (isStaff && policy) {
       overview.push(
         <Panel key="lifecycle" title="Lifecycle">
-          <LifecycleActions policyNumber={policyNumber} status={policy.status} />
+          <LifecycleActions policyNumber={policyNumber} status={policy.status} category={policy.productCategory ?? undefined} />
         </Panel>,
       );
       // Only on a policy that could have value. A term policy has none, and a panel offering to
@@ -309,7 +310,8 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       // Free-look is an INDIVIDUAL buyer's statutory right (guide §21.3). A group or credit-life
       // scheme is cancelled under the terms its employer or lender negotiated, and the server
       // refuses the window for one, so offering it here would be an action that can only 422.
-      if (INDIVIDUAL_CATEGORIES.includes(policy.productCategory ?? '')) {
+      // Not on a group funeral scheme, which is category FUNERAL but an association's contract (audit 2026-10-07).
+      if (INDIVIDUAL_CATEGORIES.includes(policy.productCategory ?? '') && !isGroupFuneral) {
         overview.push(
           <Panel
             key="free-look"
@@ -756,13 +758,31 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
 function LifecycleActions({
   policyNumber,
   status,
+  category,
 }: {
   policyNumber: string;
   status: string | undefined;
+  category: string | undefined;
 }) {
   const [suspendFormOpen, setSuspendFormOpen] = useState(false);
+  // Which kinds of policy may be suspended is reference data (POLICY_SUSPENSION_ELIGIBLE_CATEGORIES), read
+  // here from the same list the server enforces: Suspend was offered on every policy and could only work on
+  // the one kind the list names (audit 2026-10-07).
+  const [suspendable, setSuspendable] = useState<string[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    getReferenceCodes('POLICY_SUSPENSION_ELIGIBLE_CATEGORIES').then(
+      (codes) => { if (live) setSuspendable(codes.map((c) => c.code ?? '')); },
+      () => { if (live) setSuspendable([]); },
+    );
+    return () => { live = false; };
+  }, []);
 
-  if (status === 'ACTIVE') {
+  if (status === 'ACTIVE' && suspendable !== null && !suspendable.includes(category ?? '')) {
+    return <p className="px-4 pb-4 text-xs text-muted-foreground">This kind of policy is not suspended; it lapses through dunning when premiums stop.</p>;
+  }
+
+  if (status === 'ACTIVE' && suspendable !== null) {
     return suspendFormOpen ? (
       <SuspendForm policyNumber={policyNumber} onDone={() => setSuspendFormOpen(false)} />
     ) : (

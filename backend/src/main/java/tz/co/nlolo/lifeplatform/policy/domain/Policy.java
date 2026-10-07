@@ -587,14 +587,12 @@ public class Policy {
      * and EXPIRED was on risk for the whole term -- expiry records that the term closed, not that
      * cover failed.
      *
-     * <p><b>The lower bound is the commencement date when one is recorded, and nothing when it is
-     * not.</b> A deliberately backdated or future-dated contract carries a commencement, and cover
-     * before it is no cover -- provable, so refused. A normally issued policy carries no
-     * commencement (cover starts at activation, and the platform stamps no date for that), so there
-     * is no recorded cover-start to refuse against; the issue date is administrative, not the
-     * moment risk began, and asserting a boundary the platform does not truly record is exactly
-     * what this class must not do. The console still advises on the issue date at intake. This is
-     * unchanged from the behaviour before this method existed, which never lower-bounded at all.
+     * <p><b>The lower bound is the commencement date, else the issue date.</b> A deliberately
+     * backdated or future-dated contract carries its own commencement, and cover before it is no
+     * cover. Every policy issued since the 2026-10-07 audit carries one (the issue date when the case
+     * stated none), and policy V40 backfilled the rest. The issue-date fallback remains for a row
+     * that somehow has neither: it was "no lower bound at all", which let a death claim dated years
+     * before the policy existed through.
      *
      * <p><b>Known limit.</b> A REINSTATED policy keeps its {@code lapsedAt} and records no
      * reinstatement date, so the gap between the two cannot be told apart from cover. It is
@@ -604,7 +602,11 @@ public class Policy {
         if (day == null) {
             return false;
         }
-        if (commencementDate != null && day.isBefore(commencementDate)) {
+        // Falls back to the issue date (audit 2026-10-07): with no commencement recorded, a death
+        // years before the policy was issued passed this check. Whatever the issue date is
+        // administratively, no contract covered a day before it existed.
+        LocalDate coverFrom = commencementDate != null ? commencementDate : issueDate;
+        if (coverFrom != null && day.isBefore(coverFrom)) {
             return false;
         }
         if (maturityDate != null && !day.isBefore(maturityDate)) {

@@ -143,6 +143,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/policy/V37__sale_classification.sql",
             "db-migrations/policy/V38__group_funeral_scheme.sql",
+            "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             // The offer-validity window the expiry sweep reads.
             "db-migrations/refdata/V5__seed_offer_validity.sql",
@@ -1768,7 +1769,8 @@ class PolicyApiIntegrationTest {
         String policyNumber = issueDirectly(tenantId, fixture, List.of(), new BigDecimal("800.00"), "TZS", "MONTHLY");
 
         PolicyView view = policyApi.getPolicy(policyNumber);
-        assertNull(view.commencementDate());
+        // Cover still starts somewhere (audit 2026-10-07): the issue date when the request states none.
+        assertEquals(view.issueDate(), view.commencementDate());
         assertNull(view.policyTermMonths());
         assertNull(view.maturityDate());
     }
