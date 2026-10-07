@@ -72,6 +72,13 @@ public class EngineExtracts {
                 + period + " or before; post or dismiss " + (waiting == 1 ? "it" : "them")
                 + " first -- the engine must see every actual cash flow");
         }
+        // Step 5 before step 6 (IFRS 17 I5b): the extract carries the month's allocated attributable expenses.
+        Integer allocated = jdbc.queryForObject("SELECT count(*) FROM finaccounting.expense_allocation WHERE tenant_id = ?"
+            + " AND period = ? AND status = 'POSTED'", Integer.class, tenantId, period);
+        if (allocated == null || allocated == 0) {
+            throw new EngineStateException("Step 5 first: " + period + " has no posted expense allocation; prepare one,"
+                + " or record that there is none this month, and have it approved");
+        }
         EngineExtractSheets sheets = new EngineExtractSheets(ledger.cashFlows(tenantId, period),
             ledger.balances(tenantId, period), policies(tenantId, period));
         Integer last = jdbc.queryForObject("SELECT max(number) FROM finaccounting.engine_extract WHERE tenant_id = ?"

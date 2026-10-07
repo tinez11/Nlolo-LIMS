@@ -75,7 +75,8 @@ class ChartOfAccountMigrationV5Test {
             "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
             "db-migrations/finaccounting/V13__disbursement_method.sql",
             "db-migrations/finaccounting/V14__manual_journals.sql",
-            "db-migrations/finaccounting/V15__engine_period_cycle.sql");
+            "db-migrations/finaccounting/V15__engine_period_cycle.sql",
+            "db-migrations/finaccounting/V16__expense_allocation.sql");
     }
 
     /** The nine flat accounts as M9 seeded them -- no parent, no level, no status. */

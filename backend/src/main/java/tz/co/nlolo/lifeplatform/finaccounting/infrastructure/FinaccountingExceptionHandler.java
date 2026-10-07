@@ -99,6 +99,16 @@ public class FinaccountingExceptionHandler {
         return problem(HttpStatus.CONFLICT, ex.getMessage(), "ENGINE_STATE");
     }
 
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.finaccounting.api.ExpenseAllocationStateException.class)
+    public ProblemDetail handleAllocationState(tz.co.nlolo.lifeplatform.finaccounting.api.ExpenseAllocationStateException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "ALLOCATION_STATE");
+    }
+
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.finaccounting.api.ExpenseAllocationNotFoundException.class)
+    public ProblemDetail handleAllocationNotFound(tz.co.nlolo.lifeplatform.finaccounting.api.ExpenseAllocationNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "ALLOCATION_NOT_FOUND");
+    }
+
     @ExceptionHandler(ManualJournalNotFoundException.class)
     public ProblemDetail handleManualJournalNotFound(ManualJournalNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "MANUAL_JOURNAL_NOT_FOUND");

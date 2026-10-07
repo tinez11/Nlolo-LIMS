@@ -1,36 +1,15 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { approverPage } from './approverSession';
+import { lockPeriod, startClosing, untouchedPeriod } from './periods';
 import { xlsx } from './xlsx';
 
 /**
- * IFRS 17 I5a through the real stack, month-end steps 6 and 7: finance starts closing a month and makes the engine's
- * extract; the engine's results come back in the template and are uploaded; a finance approver who did not upload them
- * approves with the appointed actuary's sign-off and report, the run is posted through 9160, the ledger agrees with the
- * engine group by group, and the month locks.
- *
- * The month is the one before the earliest the ledger knows (dev's own postings start in 2026), so each run has its
- * own. Earlier, not just untouched: the engine's closing figures are balances to date, so a month after an earlier
- * run's would carry that run's postings too -- and a month with an unlocked earlier month holding postings cannot
- * lock. The month is locked at the end: a closing month with postings would stop every later month from locking.
+ * IFRS 17 I5a through the real stack, month-end steps 6 and 7: finance starts closing a month, records that it has no
+ * expense allocation (step 5, I5b -- approved by a second person) and makes the engine's extract; the engine's results
+ * come back in the template and are uploaded; a finance approver who did not upload them approves with the appointed
+ * actuary's sign-off and report, the run is posted through 9160, the ledger agrees with the engine group by group, and
+ * the month locks. The month is its own (see periods.ts).
  */
-
-async function untouchedPeriod(page: Page): Promise<string> {
-  await page.goto('/staff/periods');
-  const list = page.getByRole('list', { name: 'Accounting periods' });
-  await expect(list).toBeVisible({ timeout: 15_000 });
-  const known = (await list.getByRole('listitem').evaluateAll((items) => items.map((i) => i.getAttribute('aria-label') ?? '')))
-    .map((label) => label.replace('Period ', ''))
-    .filter((p) => /^\d{4}-\d{2}$/.test(p))
-    .sort();
-  const before = known[0] !== undefined && known[0] < '2001-01' ? known[0] : '2001-01';
-  const [y, m] = before.split('-').map(Number);
-  const period = m === 1 ? `${y - 1}-12` : `${y}-${`${m - 1}`.padStart(2, '0')}`;
-  await page.getByLabel('Another period (YYYY-MM)').fill(period);
-  await page.getByRole('button', { name: 'Show', exact: true }).click();
-  await expect(page.getByRole('listitem', { name: `Period ${period}` }).getByRole('button', { name: 'Start closing' }))
-    .toBeVisible();
-  return period;
-}
 
 const lastDay = (period: string) => {
   const [y, m] = period.split('-').map(Number);
@@ -42,14 +21,26 @@ test.describe('IFRS 17 engine period cycle', () => {
 
   test('extract, results uploaded, approved with the sign-off, posted and agreed, period locked', async ({ page, browser }) => {
     const period = await untouchedPeriod(page);
-    const row = page.getByRole('listitem', { name: `Period ${period}` });
-    await row.getByRole('button', { name: 'Start closing' }).click();
-    await row.getByRole('button', { name: 'Start closing' }).click();
-    await expect(row).toContainText('Closing since', { timeout: 15_000 });
+    await startClosing(page, period);
+
+    // Step 5: nothing to allocate this month -- which a second person approves too.
+    await page.goto(`/staff/ifrs17-engine?period=${period}`);
+    await expect(page.getByRole('button', { name: 'Create extract' })).toBeDisabled({ timeout: 15_000 });
+    await page.getByLabel('No allocation this month').check();
+    await page.getByLabel('Reason there is none').fill('E2E: nothing attributable this month');
+    await page.getByRole('button', { name: 'Record no allocation' }).click();
+    await page.getByRole('table', { name: 'Expense allocations' }).getByRole('link').first().click({ timeout: 15_000 });
+    await expect(page.getByText('A finance approver other than you will approve or reject it.')).toBeVisible({ timeout: 15_000 });
+    const allocationUrl = page.url();
+    const { page: allocationApprover, context: allocationContext } = await approverPage(browser);
+    await allocationApprover.goto(allocationUrl);
+    await allocationApprover.getByRole('button', { name: 'Approve and post' }).click();
+    await expect(allocationApprover.getByText(/^Posted · total/)).toBeVisible({ timeout: 15_000 });
+    await allocationContext.close();
 
     // Step 6: the extract, and the groups it names.
     await page.goto(`/staff/ifrs17-engine?period=${period}`);
-    await page.getByRole('button', { name: 'Create extract' }).click();
+    await page.getByRole('button', { name: 'Create extract' }).click({ timeout: 15_000 });
     const extracts = page.getByRole('table', { name: 'Extracts' });
     await expect(extracts).toContainText(`${period} #1`, { timeout: 30_000 });
     await extracts.getByText(/ groups · /).click();
@@ -106,11 +97,6 @@ test.describe('IFRS 17 engine period cycle', () => {
     await approverContext.close();
 
     // Agreed everywhere and 9160 back at zero: the month locks.
-    await page.goto('/staff/periods');
-    await page.getByLabel('Another period (YYYY-MM)').fill(period);
-    await page.getByRole('button', { name: 'Show', exact: true }).click();
-    await row.getByRole('button', { name: 'Lock period' }).click();
-    await row.getByRole('button', { name: 'Lock period' }).click();
-    await expect(row).toContainText('Locked by', { timeout: 15_000 });
+    await lockPeriod(page, period);
   });
 });

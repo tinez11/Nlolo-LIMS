@@ -1133,6 +1133,135 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/StateConflict' }
+  /ifrs17/periods/{period}/expense-allocation-preview:
+    parameters:
+      - { name: period, in: path, required: true, schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$' } }
+    get:
+      summary: The month's pool and how three totals would split over the groups now (IFRS 17 I5b, P-19) -- finance
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: maintenance, in: query, required: false, schema: { type: number, minimum: 0 } }
+        - { name: claimsHandling, in: query, required: false, schema: { type: number, minimum: 0 } }
+        - { name: acquisition, in: query, required: false, schema: { type: number, minimum: 0 } }
+      responses:
+        '200':
+          description: The preview
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExpenseAllocationPreview' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /ifrs17/periods/{period}/expense-allocations:
+    parameters:
+      - { name: period, in: path, required: true, schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$' } }
+    post:
+      summary: >-
+        Prepare the month's expense allocation (month-end step 5) -- FINANCE_OFFICER or ADMIN; the period must be
+        closing. All three totals zero, with a nil reason, records that there is none this month.
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExpenseAllocationInput' }
+      responses:
+        '201':
+          description: The prepared allocation, its split computed now
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExpenseAllocationView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+    get:
+      summary: The month's expense allocations, newest first
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The allocations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ExpenseAllocationView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /ifrs17/expense-allocations/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: One expense allocation -- the split computed now while prepared, as posted once decided
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The allocation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExpenseAllocationView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /ifrs17/expense-allocations/{id}/approval:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: >-
+        Approve and post P-19 -- FINANCE_APPROVER who did not prepare it; above the month's pool only with
+        aboveThePool. A posted allocation of the month is reversed and replaced.
+      security:
+        - staffAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                aboveThePool: { type: boolean }
+      responses:
+        '200':
+          description: The posted allocation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExpenseAllocationView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+  /ifrs17/expense-allocations/{id}/rejection:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Reject with a reason -- FINANCE_APPROVER who did not prepare it
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: The rejected allocation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExpenseAllocationView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
 components:
   parameters:
     ManualJournalId:
@@ -1684,6 +1813,80 @@ components:
         documentRef: { type: [string, "null"] }
         createdBy: { type: string }
         createdAt: { type: string, format: date-time }
+    ExpenseAllocationInput:
+      type: object
+      additionalProperties: false
+      description: >-
+        A month's expense allocation as finance types it (IFRS 17 I5b, P-19): three totals and the study they come from,
+        or -- all three zero -- why there is none this month. A missing total is zero.
+      properties:
+        maintenance: { type: [number, "null"], minimum: 0 }
+        claimsHandling: { type: [number, "null"], minimum: 0 }
+        acquisition: { type: [number, "null"], minimum: 0 }
+        studyReference: { type: [string, "null"], maxLength: 200 }
+        note: { type: [string, "null"], maxLength: 500 }
+        nilReason: { type: [string, "null"], maxLength: 500 }
+    ExpenseAllocationLine:
+      type: object
+      additionalProperties: false
+      required: [group, measurementModel, category, account, driver, driverCount, amount]
+      description: A group's share of one category, the account it posts to (Dr) and the driver it was shared by.
+      properties:
+        group: { type: string }
+        measurementModel: { type: string, enum: [GMM, VFA, PAA] }
+        category: { type: string, enum: [MAINTENANCE, CLAIMS_HANDLING, ACQUISITION] }
+        account: { type: string, enum: ['5210', '5215', '2123', '5310'] }
+        driver: { type: string, enum: [IN_FORCE, CLAIMS, ISSUED, EQUAL] }
+        driverCount: { type: integer }
+        amount: { type: number }
+    ExpenseAllocationPreview:
+      type: object
+      additionalProperties: false
+      required: [period, pool, total, overPool, lines]
+      description: The month's pool (net Dr - Cr on 8100-8499 but 8490) beside the total, and the split as it would post now.
+      properties:
+        period: { type: string }
+        pool: { type: number }
+        total: { type: number }
+        overPool: { type: boolean }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/ExpenseAllocationLine' }
+    ExpenseAllocationView:
+      type: object
+      additionalProperties: false
+      required: [allocationId, period, status, maintenance, claimsHandling, acquisition, total, currency, overPool,
+                 preparedBy, preparedAt, lines]
+      description: >-
+        A month's expense allocation (IFRS 17 I5b, P-19): PREPARED (its pool and split computed on read), POSTED as one
+        SYSTEM journal Dr 5210 / 5215 / 2123 or 5310, Cr 8490 (nothing for a nil one), REJECTED, or REPLACED by a later
+        one of the month. staleExtract is the latest extract's number when every extract of the month predates it.
+      properties:
+        allocationId: { type: string, format: uuid }
+        period: { type: string }
+        status: { type: string, enum: [PREPARED, POSTED, REJECTED, REPLACED] }
+        maintenance: { type: number }
+        claimsHandling: { type: number }
+        acquisition: { type: number }
+        total: { type: number }
+        currency: { type: string }
+        studyReference: { type: [string, "null"] }
+        note: { type: [string, "null"] }
+        nilReason: { type: [string, "null"] }
+        pool: { type: [number, "null"] }
+        overPool: { type: boolean }
+        preparedBy: { type: string }
+        preparedAt: { type: string, format: date-time }
+        decidedBy: { type: [string, "null"] }
+        decidedAt: { type: [string, "null"], format: date-time }
+        decisionReason: { type: [string, "null"] }
+        replacesId: { type: [string, "null"], format: uuid }
+        journalEntryId: { type: [string, "null"], format: uuid }
+        reversalJournalId: { type: [string, "null"], format: uuid }
+        staleExtract: { type: [integer, "null"] }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/ExpenseAllocationLine' }
     EngineRunView:
       type: object
       additionalProperties: false

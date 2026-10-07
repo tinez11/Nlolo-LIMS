@@ -305,6 +305,11 @@ export type EngineExtractView = FinaccountingComponents['schemas']['EngineExtrac
 export type EngineRunView = FinaccountingComponents['schemas']['EngineRunView'];
 export type EngineRunGroup = EngineRunView['groups'][number];
 export type EngineReconciliation = EngineRunView['reconciliation'][number];
+// IFRS 17 I5b: P-19's expense allocation (month-end step 5).
+export type ExpenseAllocationView = FinaccountingComponents['schemas']['ExpenseAllocationView'];
+export type ExpenseAllocationPreview = FinaccountingComponents['schemas']['ExpenseAllocationPreview'];
+export type ExpenseAllocationLine = FinaccountingComponents['schemas']['ExpenseAllocationLine'];
+export type ExpenseAllocationInput = FinaccountingComponents['schemas']['ExpenseAllocationInput'];
 export type ManualJournalInput = FinaccountingComponents['schemas']['ManualJournalInput'];
 export type ManualJournalLineInput = FinaccountingComponents['schemas']['ManualJournalLineInput'];
 export type JournalTemplateView = FinaccountingComponents['schemas']['JournalTemplateView'];

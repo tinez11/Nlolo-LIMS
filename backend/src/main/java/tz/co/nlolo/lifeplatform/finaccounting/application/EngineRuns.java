@@ -93,6 +93,7 @@ public class EngineRuns {
         EngineResults results = parsed.results();
         if (results != null) {
             errors.addAll(results.problems(context(tenantId, results.header(), null)));
+            staleExtract(tenantId, results.header()).ifPresent(errors::add);
         }
         EngineResults.Header h = results == null ? new EngineResults.Header(null, null, null, null, null) : results.header();
         String status = errors.isEmpty() ? "VALIDATED" : "REJECTED";
@@ -144,6 +145,7 @@ public class EngineRuns {
         }
         EngineResults results = stored(tenantId, run);
         problems.addAll(results.problems(context(tenantId, results.header(), runId)));
+        staleExtract(tenantId, results.header()).ifPresent(problems::add);
         if (!problems.isEmpty()) {
             throw new FinaccountingValidationException(String.join("; ", problems));
         }
@@ -321,6 +323,22 @@ public class EngineRuns {
             + " WHERE tenant_id = ? AND status <> 'REJECTED' AND engine_reference IS NOT NULL"
             + " AND (?::uuid IS NULL OR run_id <> ?)", String.class, tenantId, self, self));
         return new EngineResults.Context(status, groups, known, POSTING_ACCOUNTS);
+    }
+
+    /**
+     * Results answer the period's latest extract (IFRS 17 I5b): an older one no longer shows the month -- a replaced
+     * expense allocation, say, after it was made.
+     */
+    private Optional<String> staleExtract(UUID tenantId, EngineResults.Header h) {
+        if (h.period() == null || h.extractNumber() == null) {
+            return Optional.empty();
+        }
+        Integer latest = jdbc.queryForObject("SELECT max(number) FROM finaccounting.engine_extract WHERE tenant_id = ?"
+            + " AND period = ?", Integer.class, tenantId, h.period());
+        return latest != null && h.extractNumber() < latest
+            ? Optional.of("Header: extract #" + h.extractNumber() + " is not the latest (#" + latest
+                + "); results answer the latest extract")
+            : Optional.empty();
     }
 
     /** The run as stored, read back into the shape the validator checks. */

@@ -82,7 +82,8 @@ class ManualJournalIntegrationTest {
             "db-migrations/finaccounting/V12__unposted_events_and_paa_earning.sql",
             "db-migrations/finaccounting/V13__disbursement_method.sql",
             "db-migrations/finaccounting/V14__manual_journals.sql",
-            "db-migrations/finaccounting/V15__engine_period_cycle.sql");
+            "db-migrations/finaccounting/V15__engine_period_cycle.sql",
+            "db-migrations/finaccounting/V16__expense_allocation.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

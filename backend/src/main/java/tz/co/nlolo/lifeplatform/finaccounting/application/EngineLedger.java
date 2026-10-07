@@ -47,15 +47,16 @@ public class EngineLedger {
 
     /**
      * The period's actual cash flows by group, movement, account and side -- what the engine must use and leave out of
-     * its future cash flows. The engine's own journals are not actuals and are left out.
+     * its future cash flows. The engine's own journals are not actuals and are left out. Policy groups also carry their
+     * attributable expenses: allocated by P-19 (5210, 5215; IFRS 17 I5b) or expensed when incurred (5310).
      */
     List<CashFlowRow> cashFlows(UUID tenantId, String period) {
         return jdbc.query("SELECT a.grp, a.movement_type, a.account_code, a.direction, a.currency, sum(a.amount) AS amount"
                 + " FROM (" + ATTRIBUTED + ") a"
                 + " JOIN finaccounting.journal_entry j ON j.journal_entry_id = a.journal_entry_id"
                 + " WHERE a.period = ? AND a.grp IS NOT NULL AND j.source_type <> 'ENGINE_RUN'"
-                + " AND ((a.grp NOT LIKE 'RI-%' AND (a.account_code LIKE '21%' OR a.account_code LIKE '22%')"
-                + "      AND a.account_code <> '2190')"
+                + " AND ((a.grp NOT LIKE 'RI-%' AND (a.account_code LIKE '21%' OR a.account_code LIKE '22%'"
+                + "      OR a.account_code IN ('5210','5215','5310')) AND a.account_code <> '2190')"
                 + "   OR (a.grp LIKE 'RI-%' AND a.account_code IN ('1430','1431','1436','1420')))"
                 + " GROUP BY a.grp, a.movement_type, a.account_code, a.direction, a.currency"
                 + " ORDER BY a.grp, a.account_code, a.direction, a.movement_type",

@@ -11,7 +11,10 @@ import { formatInstant } from '@/lib/dates';
 import { saveBlob } from '@/lib/download';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useEngineStore } from '@/store/engineStore';
+import { useExpenseAllocationStore } from '@/store/expenseAllocationStore';
 import { RUN_STATUS_LABEL, previousMonth } from './enginePeriod';
+import { extractGate } from './expenseAllocation';
+import { ExpenseAllocationSection } from './ExpenseAllocationSection';
 
 /**
  * The IFRS 17 engine for one period (IFRS 17 I5a, month-end steps 6 and 7): make the extract the engine is sent, upload
@@ -27,11 +30,18 @@ export function EnginePage() {
   const upload = useEngineStore((s) => s.upload);
   const extracting = useEngineStore((s) => s.acting[`extract.${period}`]);
   const uploading = useEngineStore((s) => s.acting[`upload.${period}`]);
+  const allocations = useExpenseAllocationStore((s) => s.allocations);
+  const loadAllocations = useExpenseAllocationStore((s) => s.loadPeriod);
   const file = useRef<HTMLInputElement>(null);
+  // Step 5 before step 6 (IFRS 17 I5b): the extract waits for a posted expense allocation.
+  const gate = allocations.data ? extractGate(allocations.data) : null;
 
   useEffect(() => {
-    if (/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) void loadPeriod(period);
-  }, [period, loadPeriod]);
+    if (/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) {
+      void loadPeriod(period);
+      void loadAllocations(period);
+    }
+  }, [period, loadPeriod, loadAllocations]);
 
   return (
     <>
@@ -53,14 +63,17 @@ export function EnginePage() {
           </Button>
         </div>
 
+        <ExpenseAllocationSection period={period} />
+
         <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Extracts">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium">Extracts (step 6)</p>
-            <Button type="button" size="sm" variant="primary" disabled={extracting?.status === 'loading'}
+            <Button type="button" size="sm" variant="primary" disabled={extracting?.status === 'loading' || gate !== null}
               onClick={() => void createExtract(period)}>
               Create extract
             </Button>
           </div>
+          {gate && <p className="text-xs text-muted-foreground">{gate}</p>}
           {extracting?.status === 'error' && extracting.error && <InlineError error={extracting.error} />}
           {isInitialLoad(extracts) ? <LoadingBlock /> : (extracts.data ?? []).length === 0 ? (
             <p className="text-sm text-muted-foreground">
