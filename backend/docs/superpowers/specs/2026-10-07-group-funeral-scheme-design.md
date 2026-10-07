@@ -35,9 +35,11 @@ this is that variant.
    family changes allowed any time (a new life's waiting period from its own date); the main member's death follows
    the product's setting (§6).
 
-Accounting recommendations (stated with the design; not separately answered -- the user can overturn): group funeral
-stays in portfolio **FUN** (set on the product); the expense allocation's in-force driver counts **covered lives** for
-schemes.
+9. **Accounting (user confirmed):** group funeral stays in portfolio **FUN** (set on the product); the expense
+   allocation's in-force driver counts **covered lives** for schemes.
+10. **0-premium dependants (user approved, built with this):** on the individual FUNERAL premium table a dependant
+    role's yearly premium may be **0** -- "included in the main member's premium" -- so a flat family rate is
+    expressible on an individual policy too. The main member's rows stay > 0, so no policy is ever free.
 
 ## 3. The product (design part 1)
 
