@@ -1,26 +1,17 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { issuePolicyAgainst } from './manualIssue';
 
 /**
- * Opens the first seeded policy's full detail page, or returns false if the tenant
- * genuinely has no policies.
+ * Opens a fresh endowment's record on its Loans tab.
  *
- * Waits for the list to settle before probing. `isVisible()` is an immediate snapshot,
- * not a wait, so testing it directly races the initial fetch and reports "no policies"
- * for a list that had merely not arrived -- silently SKIPPING the gate instead of
- * failing it. Same reasoning as `staff-policies.spec.ts`'s own helper.
+ * It used to open the FIRST policy in the list, whatever kind it was. Since the audit of 2026-10-07 the Loans
+ * tab shows only where a loan is possible -- a policy with a cash value to lend against -- so this issues one: the
+ * seeded Demo Endowment, by hand, in force, with no cash value yet. Always true; kept a boolean so the tests read
+ * as before.
  */
 async function openFirstPolicyDetail(page: Page): Promise<boolean> {
-  await page.goto('/staff/policies');
-  const table = page.getByRole('table', { name: 'Policies' });
-  const empty = page.getByText('No policies yet');
-  await expect(table.or(empty)).toBeVisible();
-  if (await empty.isVisible()) return false;
-
-  const row = table.getByRole('button').first();
-  await expect(row).toBeVisible();
-  await row.click();
-  await page.getByRole('dialog').getByRole('link', { name: /full detail/i }).click();
-  // Loans is a tab on the record now. Clicked rather than deep-linked, because this helper
+  await issuePolicyAgainst(page, 'Demo Endowment (DEMO-END-01)', 'E2E policy-loans fixture', { termMonths: 240 });
+  // Loans is a tab on the record. Clicked rather than deep-linked, because this helper
   // exists to walk the way a person actually gets here.
   await page.getByRole('tab', { name: 'Loans' }).click();
   await expect(page.getByRole('heading', { name: 'Loans' })).toBeVisible();

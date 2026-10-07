@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
+import { issuePolicyAgainst } from './manualIssue';
 import { issueGroupScheme } from './groupSchemes';
 
 /**
@@ -22,29 +22,6 @@ import { issueGroupScheme } from './groupSchemes';
  * contract-test level only; this file covers the button's absence on a
  * non-LAPSED policy implicitly (only Suspend/Resume ever render below).
  */
-
-async function issuePolicyAgainst(
-  page: import('@playwright/test').Page,
-  productLabel: string,
-  reason: string,
-): Promise<string> {
-  // Manual issue names a real, unissued case now. This one still selects the product by
-  // hand after the prefill, because these tests issue against a product they published
-  // themselves rather than the case's seeded one.
-  const caseId = await caseAwaitingManualIssue(page);
-  await page.goto('/staff/policies/new');
-  await selectUnderwritingCase(page, caseId);
-  await page.getByLabel('Product').selectOption({ label: productLabel });
-  await expect(page.getByText('Resolving product version…')).not.toBeVisible();
-  await page.getByLabel('Sum assured').fill('2000000.00');
-  await page.getByLabel('Premium', { exact: true }).fill('800.00');
-  // Required, and MIGRATION so the policy is in force rather than an offer.
-  await page.getByLabel('Why is this being issued by hand?').selectOption('MIGRATION');
-  await page.getByLabel('Reason for manual issue').fill(reason);
-  await page.getByRole('button', { name: 'Issue policy' }).click();
-  await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
-  return page.url().split('/').pop() as string;
-}
 
 test.describe('staff policy lifecycle', () => {
   /*

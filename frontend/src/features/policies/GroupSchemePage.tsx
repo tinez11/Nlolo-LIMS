@@ -35,6 +35,7 @@ import {
 import { previewBenefit, type SchemeBasis } from './groupBenefitPreview';
 import { exitSummary } from './memberStanding';
 import { GroupFuneralFamiliesPanel } from './GroupFuneralFamiliesPanel';
+import { listGroupFuneralFamilies } from '@/api/groupFuneral';
 import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
 import { FilterChip } from '@/components/FilterChip';
@@ -110,6 +111,22 @@ export function GroupSchemePage() {
   }
 
   const data = scheme.data;
+  // A group funeral scheme's lives (audit 2026-10-07): one member can be eight lives, so "Members" alone
+  // understated who is covered. Reloaded whenever the member count moves.
+  const funeralScheme = data?.benefitBasis === 'FUNERAL_PLAN';
+  const [funeralLives, setFuneralLives] = useState<number | null>(null);
+  useEffect(() => {
+    if (!funeralScheme || !policyNumber) return undefined;
+    let live = true;
+    listGroupFuneralFamilies(policyNumber).then(
+      (families) => {
+        if (live) setFuneralLives(families.filter((f) => f.status === 'ACTIVE')
+          .reduce((n, f) => n + f.lives.filter((l) => l.status === 'ACTIVE').length, 0));
+      },
+      () => undefined,
+    );
+    return () => { live = false; };
+  }, [funeralScheme, policyNumber, data?.activeMemberCount, data?.totalCovered?.amount]);
 
   if (isInitialLoad(scheme)) {
     return <LoadingBlock label={`Loading ${policyNumber}`} />;
@@ -131,12 +148,25 @@ export function GroupSchemePage() {
   // Counts only, per StatCards' own rule: the platform has no analytics endpoint,
   // and the total covered is money rather than a count, so it belongs in the
   // summary panel beside the basis that produced it.
-  const stats: Stat[] = [
+  const stats: Stat[] = funeralScheme ? [
     {
       label: 'Members',
       value: data?.activeMemberCount ?? null,
       pending: isInitialLoad(scheme),
-      hint: 'lives currently covered',
+      hint: 'what the bill counts',
+    },
+    {
+      label: 'Lives',
+      value: funeralLives,
+      pending: funeralLives === null,
+      hint: 'members and their families',
+    },
+  ] : [
+    {
+      label: 'Members',
+      value: data?.activeMemberCount ?? null,
+      pending: isInitialLoad(scheme),
+      hint: 'people currently covered',
     },
     {
       label: 'Awaiting evidence',
