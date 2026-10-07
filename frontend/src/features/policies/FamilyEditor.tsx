@@ -2,6 +2,7 @@ import { Plus, X } from 'lucide-react';
 import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
+import { CheckboxField } from '@/components/ui/checkbox';
 import { Input, Select } from '@/components/ui/input';
 import { FUNERAL_ROLE_LABELS } from '@/features/products/funeralSchema';
 import { blankDependant, type DependantRole, type DependantRow, type FamilyRow } from './groupFuneral';
@@ -90,11 +91,8 @@ export function DependantFields({
       <FormField label="Date of birth">
         <DatePicker value={dependant.dateOfBirth || null} onChange={(iso) => onChange({ dateOfBirth: iso ?? '' })} />
       </FormField>
-      <label className="mb-2 flex items-center gap-1 text-xs">
-        <input type="checkbox" checked={dependant.student} disabled={dependant.role !== 'CHILD'}
-          onChange={(e) => onChange({ student: e.target.checked })} />
-        Student
-      </label>
+      <CheckboxField label="Student" className="mb-1" checked={dependant.student} disabled={dependant.role !== 'CHILD'}
+        onChange={(e) => onChange({ student: e.target.checked })} />
       {onRemove ? (
         <Button type="button" size="icon" variant="ghost" aria-label={`Remove ${dependant.fullName || 'dependant'}`}
           onClick={onRemove}>
