@@ -52,6 +52,7 @@ class BillingSweepPsqlTest {
             "db-migrations/refdata/V9__journal_reason_codes.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
+            "db-migrations/billing/V10__premium_receipt.sql",
             // The policy schema is new to this list, and not incidental: the arrears step of the
             // sweep now joins policy.policy to skip offers nobody has accepted, so the function
             // will not even parse without these. The test inserts its own policy rows below.

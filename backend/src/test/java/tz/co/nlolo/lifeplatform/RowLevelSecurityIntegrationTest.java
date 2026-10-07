@@ -189,6 +189,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/billing/V6__premium_credit.sql",
             "db-migrations/billing/V7__policy_inception_invoice.sql",
             "db-migrations/billing/V8__schedule_premium_paying_until.sql",
+            "db-migrations/billing/V10__premium_receipt.sql",
             // M5 (Task 1) additions: disbursementInstructionIsTenantIsolatedUnderRls/
             // disbursementIdempotencyRegistryIsTenantIsolatedUnderRls below need payment's own
             // schema/grants/RLS -- V1 alone shipped zero GRANTs and zero RLS on any table.

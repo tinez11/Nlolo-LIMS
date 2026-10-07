@@ -121,5 +121,6 @@ public final class DepositTestMigrations {
         "db-migrations/billing/V7__policy_inception_invoice.sql",
         "db-migrations/billing/V8__schedule_premium_paying_until.sql",
         "db-migrations/billing/V9__schedules_due_for_invoicing.sql",
+        "db-migrations/billing/V10__premium_receipt.sql",
     };
 }

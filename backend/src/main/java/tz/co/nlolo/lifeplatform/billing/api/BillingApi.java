@@ -69,6 +69,9 @@ public interface BillingApi {
     InvoiceView getNextDueInvoice(String policyNumber);
     List<InvoiceView> listInvoices(String policyNumber, InvoiceStatus status);
 
+    /** Every payment applied to the policy's invoices, oldest first (billing V10). */
+    List<ReceiptView> listReceipts(String policyNumber);
+
     /**
      * Every premium credit on a policy, oldest first -- what was given back, for whom, and why.
      *

@@ -1,0 +1,286 @@
+package tz.co.nlolo.lifeplatform.omnichannel.application;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import tz.co.nlolo.lifeplatform.accumulation.api.AccumulationApi;
+import tz.co.nlolo.lifeplatform.accumulation.api.EntryType;
+import tz.co.nlolo.lifeplatform.accumulation.api.LedgerEntryView;
+import tz.co.nlolo.lifeplatform.accumulation.api.StatementView;
+import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
+import tz.co.nlolo.lifeplatform.billing.api.InvoiceStatus;
+import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
+import tz.co.nlolo.lifeplatform.billing.api.ReceiptView;
+import tz.co.nlolo.lifeplatform.omnichannel.api.PaymentScheduleView;
+import tz.co.nlolo.lifeplatform.omnichannel.api.SavingsStatementView;
+import tz.co.nlolo.lifeplatform.omnichannel.domain.CustomerDocument;
+import tz.co.nlolo.lifeplatform.omnichannel.domain.CustomerDocument.Column;
+import tz.co.nlolo.lifeplatform.omnichannel.domain.CustomerDocument.Field;
+import tz.co.nlolo.lifeplatform.omnichannel.domain.CustomerDocument.Kind;
+import tz.co.nlolo.lifeplatform.omnichannel.domain.DocumentPdf;
+import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
+import tz.co.nlolo.lifeplatform.product.api.ProductApi;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+/**
+ * The documents a customer can ask for (2026-10-07): a policy's payment schedule, and a savings plan's account
+ * statement. Each is built once as a view (what the console shows) and once as a {@link CustomerDocument} (what
+ * the PDF and Excel downloads render), from the same rows.
+ */
+@Service
+public class PolicyDocuments {
+
+    /** The issuer printed at the top of every document, until the company's letterhead is supplied. */
+    static final String ISSUER = "Nlolo Life";
+    private static final ZoneId CIVIL_ZONE = ZoneId.of("Africa/Dar_es_Salaam");
+    private static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+    private final PolicyApi policyApi;
+    private final BillingApi billingApi;
+    private final PartyApi partyApi;
+    private final ProductApi productApi;
+    private final AccumulationApi accumulationApi;
+
+    public PolicyDocuments(PolicyApi policyApi, BillingApi billingApi, PartyApi partyApi, ProductApi productApi,
+                           AccumulationApi accumulationApi) {
+        this.policyApi = policyApi;
+        this.billingApi = billingApi;
+        this.partyApi = partyApi;
+        this.productApi = productApi;
+        this.accumulationApi = accumulationApi;
+    }
+
+    // ---- the payment schedule ----
+
+    @Transactional(readOnly = true)
+    public PaymentScheduleView paymentSchedule(String policyNumber) {
+        PolicyView policy = policyApi.getPolicy(policyNumber);
+        LocalDate today = LocalDate.now(CIVIL_ZONE);
+        Map<UUID, List<ReceiptView>> receipts = billingApi.listReceipts(policyNumber).stream()
+            .collect(Collectors.groupingBy(ReceiptView::invoiceId));
+        List<InvoiceView> invoices = billingApi.listInvoices(policyNumber, null).stream()
+            .sorted(Comparator.comparing(InvoiceView::dueDate)).toList();
+
+        List<PaymentScheduleView.Line> lines = new ArrayList<>();
+        BigDecimal charged = BigDecimal.ZERO;
+        BigDecimal outstanding = BigDecimal.ZERO;
+        BigDecimal upcoming = BigDecimal.ZERO;
+        LocalDate nextDue = null;
+        BigDecimal nextAmount = null;
+        int number = 1;
+        for (InvoiceView i : invoices) {
+            List<ReceiptView> paid = receipts.getOrDefault(i.invoiceId(), List.of());
+            boolean waived = i.status() == InvoiceStatus.WAIVED;
+            BigDecimal balance = waived ? BigDecimal.ZERO : nz(i.balanceDue());
+            if (!waived) charged = charged.add(i.amount());
+            if (balance.signum() > 0) {
+                if (i.dueDate().isAfter(today)) upcoming = upcoming.add(balance); else outstanding = outstanding.add(balance);
+                if (nextDue == null) { nextDue = i.dueDate(); nextAmount = balance; }
+            }
+            lines.add(new PaymentScheduleView.Line(number++, i.invoiceId(), i.dueDate(), i.amount(), nz(i.amountPaid()),
+                paid.stream().map(r -> r.receivedAt().atZone(CIVIL_ZONE).toLocalDate()).max(Comparator.naturalOrder()).orElse(null),
+                joined(paid.stream().map(ReceiptView::paymentReference).toList()),
+                joined(paid.stream().map(ReceiptView::payerRef).toList()),
+                status(i, today), balance));
+        }
+        BigDecimal received = invoices.stream().map(i -> nz(i.amountPaid())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new PaymentScheduleView(policyNumber, holderName(policy), productName(policy),
+            policy.status() != null ? policy.status().name() : null, policy.premiumAmount(), policy.premiumFrequency(),
+            policy.premiumCurrency(), policy.commencementDate() != null ? policy.commencementDate() : policy.issueDate(),
+            lines, new PaymentScheduleView.Totals(charged, received, outstanding, upcoming, nextDue, nextAmount));
+    }
+
+    public CustomerDocument paymentScheduleDocument(String policyNumber) {
+        PaymentScheduleView v = paymentSchedule(policyNumber);
+        PolicyView policy = policyApi.getPolicy(policyNumber);
+        String c = v.currency();
+        List<Column> columns = List.of(new Column("No.", Kind.TEXT, 0.5f), new Column("Due date", Kind.DATE, 1.1f),
+            new Column("Amount due (" + c + ")", Kind.MONEY, 1.3f), new Column("Paid (" + c + ")", Kind.MONEY, 1.3f),
+            new Column("Paid on", Kind.DATE, 1.1f), new Column("Receipt ref", Kind.TEXT, 1.6f),
+            new Column("Paid by", Kind.TEXT, 1.4f), new Column("Status", Kind.TEXT, 1.0f),
+            new Column("Balance (" + c + ")", Kind.MONEY, 1.3f));
+        List<List<Object>> rows = v.lines().stream().map(l -> List.<Object>of(String.valueOf(l.number()), l.dueDate(),
+            l.amountDue(), l.amountPaid(), opt(l.paidOn()), opt(l.receipts()), opt(l.paidBy()), l.status(), l.balance())).toList();
+        List<Field> totals = new ArrayList<>(List.of(
+            new Field("Total charged", money(v.totals().charged(), c)),
+            new Field("Total paid", money(v.totals().paid(), c)),
+            new Field("Outstanding now", money(v.totals().outstanding(), c)),
+            new Field("Still to come", money(v.totals().upcoming(), c))));
+        if (v.totals().nextDueDate() != null) {
+            totals.add(new Field("Next payment", money(v.totals().nextDueAmount(), c) + " due " + DMY.format(v.totals().nextDueDate())));
+        }
+        return new CustomerDocument(ISSUER, "Premium payment schedule", header(policy, v.productName(), List.of(
+                new Field("Premium", money(v.premium(), c) + " " + frequency(v.premiumFrequency())),
+                new Field("Cover from", v.coverStart() != null ? DMY.format(v.coverStart()) : "-"),
+                new Field("Status", v.policyStatus()))),
+            columns, rows, totals,
+            List.of("A premium is paid when its balance is nil. Receipt references are the payment rail's own.",
+                "Waived premiums were cancelled and are not owed."),
+            true);
+    }
+
+    // ---- the savings statement ----
+
+    @Transactional(readOnly = true)
+    public SavingsStatementView savingsStatement(String policyNumber, LocalDate from, LocalDate to) {
+        PolicyView policy = policyApi.getPolicy(policyNumber);
+        StatementView s = accumulationApi.statement(policyNumber, from, to);
+        List<LedgerEntryView> entries = s.groups().stream().flatMap(g -> g.entries().stream())
+            .sorted(Comparator.comparingInt(LedgerEntryView::seq)).toList();
+        List<SavingsStatementView.Line> lines = entries.stream().map(e -> new SavingsStatementView.Line(e.effectiveDate(),
+            describe(e), e.amount().signum() >= 0 ? e.amount() : null, e.amount().signum() < 0 ? e.amount().negate() : null,
+            e.balanceAfter())).toList();
+        Map<EntryType, BigDecimal> byType = new EnumMap<>(EntryType.class);
+        s.groups().forEach(g -> byType.merge(g.type(), g.total(), BigDecimal::add));
+        List<SavingsStatementView.Total> totals = byType.entrySet().stream()
+            .map(e -> new SavingsStatementView.Total(label(e.getKey()), e.getValue())).toList();
+        return new SavingsStatementView(policyNumber, holderName(policy), productName(policy), s.currency(),
+            s.periodFrom(), s.periodTo(), s.openingBalance(), s.closingBalance(), lines, totals);
+    }
+
+    public CustomerDocument savingsStatementDocument(String policyNumber, LocalDate from, LocalDate to) {
+        SavingsStatementView v = savingsStatement(policyNumber, from, to);
+        PolicyView policy = policyApi.getPolicy(policyNumber);
+        String c = v.currency();
+        List<Column> columns = List.of(new Column("Date", Kind.DATE, 1.0f), new Column("Description", Kind.TEXT, 3.2f),
+            new Column("Money in (" + c + ")", Kind.MONEY, 1.3f), new Column("Money out (" + c + ")", Kind.MONEY, 1.3f),
+            new Column("Balance (" + c + ")", Kind.MONEY, 1.4f));
+        List<List<Object>> rows = new ArrayList<>();
+        rows.add(java.util.Arrays.asList(v.periodFrom(), "Opening balance", null, null, v.openingBalance()));
+        v.lines().forEach(l -> rows.add(java.util.Arrays.asList(l.date(), l.description(), l.moneyIn(), l.moneyOut(), l.balance())));
+        rows.add(java.util.Arrays.asList(v.periodTo(), "Closing balance", null, null, v.closingBalance()));
+        List<Field> totals = new ArrayList<>();
+        v.totals().forEach(t -> totals.add(new Field(t.label(), money(t.amount(), c))));
+        totals.add(new Field("Closing balance", money(v.closingBalance(), c)));
+        return new CustomerDocument(ISSUER, "Savings account statement", header(policy, v.productName(), List.of(
+                new Field("Period", DMY.format(v.periodFrom()) + " to " + DMY.format(v.periodTo())),
+                new Field("Opening balance", money(v.openingBalance(), c)))),
+            columns, rows, totals,
+            List.of("Money in and money out are shown as entered on the account; the balance is after each entry.",
+                "A correction made after this statement appears on the next one."),
+            false);
+    }
+
+    // ---- shared ----
+
+    private List<Field> header(PolicyView policy, String productName, List<Field> extra) {
+        PartyDetailView holder = holder(policy);
+        List<Field> fields = new ArrayList<>();
+        fields.add(new Field("Policyholder", holder != null ? holder.displayName() : "-"));
+        fields.add(new Field("Phone", holder != null && holder.phoneNumber() != null ? holder.phoneNumber() : "-"));
+        fields.add(new Field("Address", holder != null ? address(holder) : "-"));
+        fields.add(new Field("Policy number", policy.policyNumber()));
+        fields.add(new Field("Product", productName));
+        fields.addAll(extra);
+        fields.add(new Field("Printed on", DMY.format(LocalDate.now(CIVIL_ZONE))));
+        return fields;
+    }
+
+    private PartyDetailView holder(PolicyView policy) {
+        try {
+            return policy.policyholderPartyId() != null ? partyApi.getPartyDetail(policy.policyholderPartyId()) : null;
+        } catch (RuntimeException e) {
+            return null; // a document still prints without the name rather than failing
+        }
+    }
+
+    private String holderName(PolicyView policy) {
+        PartyDetailView h = holder(policy);
+        return h != null ? h.displayName() : null;
+    }
+
+    private String productName(PolicyView policy) {
+        try {
+            return productApi.getProduct(policy.productId()).productName();
+        } catch (RuntimeException e) {
+            return "-";
+        }
+    }
+
+    private static String address(PartyDetailView p) {
+        if (p.address() == null) return "-";
+        String a = java.util.stream.Stream.of(p.address().line(), p.address().ward(), p.address().district(),
+                p.address().region()).filter(Objects::nonNull).filter(s -> !s.isBlank()).collect(Collectors.joining(", "));
+        return a.isBlank() ? "-" : a;
+    }
+
+    private static String status(InvoiceView i, LocalDate today) {
+        return switch (i.status()) {
+            case PAID -> "Paid";
+            case PARTIALLY_PAID -> "Partly paid";
+            case WAIVED -> "Waived";
+            case OVERDUE -> "Overdue";
+            case IN_GRACE -> "In grace";
+            case DUE -> i.dueDate().isAfter(today) ? "Upcoming" : "Due";
+        };
+    }
+
+    private static String frequency(String f) {
+        if (f == null) return "";
+        return switch (f) {
+            case "MONTHLY" -> "a month";
+            case "QUARTERLY" -> "a quarter";
+            case "ANNUALLY" -> "a year";
+            case "SINGLE" -> "once";
+            default -> f.toLowerCase(java.util.Locale.ROOT);
+        };
+    }
+
+    private static String describe(LedgerEntryView e) {
+        // The entry's own wording ("Top-up from +255...", "Allocation charge 5% (policy year 1)") already names it.
+        String reason = e.reason();
+        return reason != null && !reason.isBlank() ? reason : label(e.type());
+    }
+
+    static String label(EntryType t) {
+        return switch (t) {
+            case CONTRIBUTION -> "Premium";
+            case TOP_UP -> "Top-up";
+            case TRANSFER_IN -> "Transfer in";
+            case ALLOCATION_CHARGE -> "Allocation charge";
+            case POLICY_FEE -> "Policy fee";
+            case INTEREST -> "Interest";
+            case WITHDRAWAL -> "Withdrawal";
+            case SURRENDER -> "Surrender";
+            case MATURITY -> "Maturity";
+            case VESTING -> "Pension vested";
+            case DEATH_CLAIM -> "Death claim";
+            case FREE_LOOK_REFUND -> "Free-look cancellation";
+            case ADJUSTMENT -> "Adjustment";
+            case REVERSAL -> "Reversal";
+        };
+    }
+
+    private static String joined(List<String> values) {
+        String s = new LinkedHashSet<>(values.stream().filter(Objects::nonNull).filter(v -> !v.isBlank()).toList())
+            .stream().collect(Collectors.joining(", "));
+        return s.isEmpty() ? null : s;
+    }
+
+    private static Object opt(Object v) {
+        return v == null ? "" : v;
+    }
+
+    private static BigDecimal nz(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
+    }
+
+    private static String money(BigDecimal amount, String currency) {
+        return amount == null ? "-" : currency + " " + DocumentPdf.money(amount);
+    }
+}

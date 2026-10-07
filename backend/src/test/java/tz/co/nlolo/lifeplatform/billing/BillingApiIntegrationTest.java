@@ -172,6 +172,7 @@ class BillingApiIntegrationTest {
             "db-migrations/billing/V7__policy_inception_invoice.sql",
             "db-migrations/billing/V8__schedule_premium_paying_until.sql",
             "db-migrations/billing/V9__schedules_due_for_invoicing.sql",
+            "db-migrations/billing/V10__premium_receipt.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             // M5 final-review fix wave: V3's callback resolvers and V4's widened status CHECK
