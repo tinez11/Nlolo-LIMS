@@ -303,6 +303,38 @@ class ExpenseAllocationIntegrationTest {
     }
 
     @Test
+    void theExtractWaitsForAPostedAllocationAndCarriesItsLines() throws Exception {
+        closingMonth();
+        assertThatThrownBy(() -> extracts.create(PERIOD, "finance-one"))
+            .isInstanceOf(EngineStateException.class).hasMessageContaining("Step 5 first");
+        var prepared = allocations.prepare(PERIOD, totals("300.00", "100.00", "60.00"), "finance-one");
+        assertThatThrownBy(() -> extracts.create(PERIOD, "finance-one")).hasMessageContaining("Step 5 first");
+        allocations.approve(prepared.allocationId(), false, "finance-approver");
+        assertThat(allocations.get(prepared.allocationId()).staleExtract()).as("no extract yet").isNull();
+
+        var extract = extracts.create(PERIOD, "finance-one");
+        String cash = new String(extracts.render(extract.extractId(), "csv", "cash-flows"), StandardCharsets.UTF_8);
+        assertThat(cash).contains(TERM + ",,5210,DR,200.00,TZS")
+            .contains(TERM + ",,5215,DR,100.00,TZS")
+            .contains(FUN + ",,5310,DR,60.00,TZS")
+            .doesNotContain("8490");
+        assertThat(allocations.get(prepared.allocationId()).staleExtract()).as("the extract has it").isNull();
+
+        var replacement = allocations.prepare(PERIOD, totals("10.00", "0", "0"), "finance-one");
+        assertThat(allocations.approve(replacement.allocationId(), false, "finance-approver").staleExtract())
+            .as("extract #1 predates the replacement").isEqualTo(1);
+    }
+
+    @Test
+    void aPendingAllocationKeepsTheMonthFromLocking() throws Exception {
+        UUID tenant = closingMonth();
+        allocations.prepare(PERIOD, totals("1.00", "0", "0"), "finance-one");
+        TenantContext.set(tenant);
+        assertThatThrownBy(() -> ledgerApi.lockPeriod(PERIOD, "finance-one"))
+            .hasMessageContaining("Expense allocation awaiting a decision");
+    }
+
+    @Test
     void refusedOutsideAClosingMonthAndAcrossTenants() throws Exception {
         UUID stranger = UUID.randomUUID();
         TenantContext.set(stranger);

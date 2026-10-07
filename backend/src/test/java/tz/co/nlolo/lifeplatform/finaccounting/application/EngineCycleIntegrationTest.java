@@ -174,6 +174,17 @@ class EngineCycleIntegrationTest {
         return tenant;
     }
 
+    @Autowired private ExpenseAllocations allocations;
+
+    /** Step 5 before step 6 (IFRS 17 I5b): none this month, approved by a second person. */
+    private void noAllocation(UUID tenant) {
+        TenantContext.set(tenant);
+        var nil = allocations.prepare(PERIOD, new tz.co.nlolo.lifeplatform.finaccounting.api.ExpenseAllocationInput(
+            java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, null, null,
+            "No attributable spend in the test month"), "finance-one");
+        allocations.approve(nil.allocationId(), false, "finance-approver");
+    }
+
     @Test
     void anExtractIsRefusedUntilThePeriodIsClosing() throws Exception {
         UUID tenant = monthWithAPolicyAndATreaty();
@@ -189,6 +200,7 @@ class EngineCycleIntegrationTest {
         UUID tenant = monthWithAPolicyAndATreaty();
         TenantContext.set(tenant);
         ledgerApi.startClosing(PERIOD, "finance-one");
+        noAllocation(tenant);
         var first = extracts.create(PERIOD, "finance-one");
         assertThat(first.number()).isEqualTo(1);
         assertThat(first.groups()).containsExactly(RI_GROUP, GROUP);
@@ -267,6 +279,7 @@ class EngineCycleIntegrationTest {
         UUID tenant = monthWithAPolicyAndATreaty();
         TenantContext.set(tenant);
         ledgerApi.startClosing(PERIOD, "finance-one");
+        noAllocation(tenant);
         extracts.create(PERIOD, "finance-one");
         return tenant;
     }
@@ -415,5 +428,16 @@ class EngineCycleIntegrationTest {
             "reinsuranceGroup", "RI-AB12CD34-2026"));
         TenantContext.set(UUID.randomUUID());
         assertThat(groups.groupOf(TenantContext.get(), "BORDEREAU", bordereau.toString())).as("another tenant").isEmpty();
+    }
+
+    /** IFRS 17 I5b: once a later extract exists, results answering an older one are rejected with the reason. */
+    @Test
+    void resultsMustAnswerTheLatestExtract() throws Exception {
+        UUID tenant = closingMonthWithItsExtract();
+        TenantContext.set(tenant);
+        extracts.create(PERIOD, "finance-one");   // #2
+        var run = runs.upload(results("RUN-OLD-EXTRACT", RUN_LINES, closing("14000000.00")), "r.xlsx", "finance-one");
+        assertThat(run.status()).isEqualTo("REJECTED");
+        assertThat(run.errors()).contains("Header: extract #1 is not the latest (#2); results answer the latest extract");
     }
 }
