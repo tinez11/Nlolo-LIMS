@@ -34,7 +34,20 @@ const funeralPlanSchema = z.object({
   name: z.string().trim(),
   /** The benefit per role, in FUNERAL_ROLES order; blank = this plan does not cover the role. */
   benefits: z.array(z.string().trim()),
+  /** Group funeral schemes: per member per month, the member's family included; blank on an individual-only version. */
+  groupRate: z.string().trim(),
 });
+
+/** How a funeral version may be sold (group funeral schemes, 2026-10-07). */
+export const FUNERAL_SOLD_AS = ['INDIVIDUAL', 'GROUP', 'BOTH'] as const;
+export type FuneralSoldAsName = (typeof FUNERAL_SOLD_AS)[number];
+export const FUNERAL_SOLD_AS_LABELS: Record<FuneralSoldAsName, string> = {
+  INDIVIDUAL: 'Individual policies',
+  GROUP: 'Group schemes',
+  BOTH: 'Both',
+};
+const soldToIndividuals = (s: string) => s !== 'GROUP';
+const soldToGroups = (s: string) => s === 'GROUP' || s === 'BOTH';
 export type FuneralPlanValues = z.infer<typeof funeralPlanSchema>;
 
 const funeralRoleSchema = z.object({
@@ -58,6 +71,7 @@ export const funeralFieldsShape = {
   funeralPayee: z.string().trim(),
   funeralOnMainMemberDeath: z.string().trim(),
   funeralFreeCover: z.boolean(),
+  funeralSoldAs: z.string().trim(),
 };
 
 export interface FuneralFields {
@@ -70,6 +84,7 @@ export interface FuneralFields {
   funeralPayee: string;
   funeralOnMainMemberDeath: string;
   funeralFreeCover: boolean;
+  funeralSoldAs: string;
 }
 
 /** The spec's defaults, which staff edit: one spouse, six children to 21 (25 a student), parents to 75. */
@@ -92,11 +107,12 @@ export function blankFuneralFields(): FuneralFields {
     funeralPayee: '',
     funeralOnMainMemberDeath: '',
     funeralFreeCover: true,
+    funeralSoldAs: 'INDIVIDUAL',
   };
 }
 
 export function blankFuneralPlan(): FuneralPlanValues {
-  return { planCode: '', name: '', benefits: FUNERAL_ROLES.map(() => '') };
+  return { planCode: '', name: '', benefits: FUNERAL_ROLES.map(() => ''), groupRate: '' };
 }
 
 export interface ParsedPremium {
@@ -121,7 +137,7 @@ export function parsePremiums(text: string): { rows: ParsedPremium[]; error?: st
     const yearlyPremium = Number(premium);
     if (cells.length !== 5 || !planCode || !(FUNERAL_ROLES as readonly string[]).includes(role)
         || !Number.isInteger(ageFrom) || !Number.isInteger(ageTo) || ageFrom < 0 || ageTo < ageFrom
-        || !(yearlyPremium > 0)) {
+        || premium === '' || !(yearlyPremium >= 0)) {
       return { rows, error: `Line ${i + 1} is not plan,role,ageFrom,ageTo,yearlyPremium: "${line}"` };
     }
     rows.push({ planCode, role: role as FuneralRoleName, ageFrom, ageTo, yearlyPremium });
@@ -174,9 +190,34 @@ export function validateFuneral(category: ProductCategory, v: FuneralFields, ctx
   if (v.funeralPayee === '') issue(['funeralPayee'], 'Choose who is paid when a dependant dies');
   if (v.funeralOnMainMemberDeath === '') issue(['funeralOnMainMemberDeath'], 'Choose what happens when the main member dies');
 
+  // Group funeral schemes: each plan's rate per member per month when sold to groups, none otherwise.
+  v.funeralPlans.forEach((plan, i) => {
+    if (soldToGroups(v.funeralSoldAs)) {
+      if (!(Number(plan.groupRate) > 0)) {
+        issue(['funeralPlans', i, 'groupRate'],
+          `Plan ${plan.planCode || i + 1} needs a group rate per member per month above zero: this version is sold to group schemes`);
+      }
+    } else if (plan.groupRate !== '') {
+      issue(['funeralPlans', i, 'groupRate'],
+        `Plan ${plan.planCode || i + 1} has a group rate, but this version is sold to individual policies only`);
+    }
+  });
+  if (!soldToIndividuals(v.funeralSoldAs)) {
+    if (v.funeralPremiumsText.trim() !== '') {
+      issue(['funeralPremiumsText'], 'A version sold to group schemes only is priced by its group rates; remove the premium table');
+    }
+    return;
+  }
+
   const { rows, error } = parsePremiums(v.funeralPremiumsText);
   if (error) {
     issue(['funeralPremiumsText'], error);
+    return;
+  }
+  // A dependant may be included in the main member's premium (0); the main member may not.
+  const freeMain = rows.find((p) => p.role === 'MAIN_MEMBER' && p.yearlyPremium === 0);
+  if (freeMain) {
+    issue(['funeralPremiumsText'], `Plan ${freeMain.planCode}: a main member's premium must be above zero; nobody is covered free`);
     return;
   }
   // FuneralPlanValidator's coverage rule: every age a covered role can reach is priced exactly once.
@@ -209,10 +250,14 @@ export function validateFuneral(category: ProductCategory, v: FuneralFields, ctx
 export function toFuneralRequest(v: FuneralFields): NonNullable<ProductVersionSpec['funeral']> {
   const num = (s: string) => (s === '' ? null : Number(s));
   return {
-    plans: v.funeralPlans.map((p) => ({ planCode: p.planCode, name: p.name })),
+    plans: v.funeralPlans.map((p) => ({
+      planCode: p.planCode,
+      name: p.name,
+      groupMonthlyRate: soldToGroups(v.funeralSoldAs) && p.groupRate !== '' ? Number(p.groupRate) : null,
+    })),
     benefits: v.funeralPlans.flatMap((p) =>
       FUNERAL_ROLES.flatMap((role, r) => (p.benefits[r] === '' ? [] : [{ planCode: p.planCode, role, benefit: Number(p.benefits[r]) }]))),
-    premiums: parsePremiums(v.funeralPremiumsText).rows,
+    premiums: soldToIndividuals(v.funeralSoldAs) ? parsePremiums(v.funeralPremiumsText).rows : [],
     roles: v.funeralRoles.filter((r) => r.allowed).map((r) => ({
       role: r.role,
       maxLives: num(r.maxLives),
@@ -227,5 +272,6 @@ export function toFuneralRequest(v: FuneralFields): NonNullable<ProductVersionSp
     dependantClaimPayee: (v.funeralPayee || null) as 'MAIN_MEMBER' | 'MAIN_MEMBER_BENEFICIARY' | null,
     onMainMemberDeath: (v.funeralOnMainMemberDeath || null) as 'POLICY_ENDS' | 'SPOUSE_TAKES_OVER' | null,
     freeCoverToPaidDate: v.funeralFreeCover,
+    soldAs: (v.funeralSoldAs || 'INDIVIDUAL') as FuneralSoldAsName,
   };
 }

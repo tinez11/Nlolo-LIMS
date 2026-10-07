@@ -52,6 +52,31 @@ describe('funeral terms on the publish form (FuneralPlanValidator)', () => {
     expect(messages({ ...valid(), funeralPlans: [plan, plan] })).toContain('Plan code B appears twice');
   });
 
+  it('includes a dependant at 0 but never the main member (a flat family rate)', () => {
+    expect(messages({ ...valid(), funeralPremiumsText: 'B,MAIN_MEMBER,18,70,36000\nB,CHILD,0,24,0' })).toEqual([]);
+    expect(messages({ ...valid(), funeralPremiumsText: 'B,MAIN_MEMBER,18,70,0\nB,CHILD,0,24,0' }))
+      .toContain('Plan B: a main member’s premium must be above zero; nobody is covered free'.replace('’', "'"));
+  });
+
+  it('prices a version sold to group schemes only by its group rates', () => {
+    const group = { ...valid(), funeralSoldAs: 'GROUP', funeralPremiumsText: '' };
+    expect(messages(group)).toContain(
+      'Plan B needs a group rate per member per month above zero: this version is sold to group schemes');
+    const rated = { ...group, funeralPlans: [{ ...valid().funeralPlans[0], groupRate: '3000' }] };
+    expect(messages(rated)).toEqual([]);
+    expect(messages({ ...rated, funeralPremiumsText: PREMIUMS }))
+      .toContain('A version sold to group schemes only is priced by its group rates; remove the premium table');
+    const request = toApiRequest(publishVersionFormSchema('FUNERAL').parse(rated), 'FUNERAL');
+    expect(request.funeral?.soldAs).toBe('GROUP');
+    expect(request.funeral?.plans[0].groupMonthlyRate).toBe(3000);
+    expect(request.funeral?.premiums).toEqual([]);
+  });
+
+  it('refuses a group rate on a version sold to individuals only', () => {
+    const rated = { ...valid(), funeralPlans: [{ ...valid().funeralPlans[0], groupRate: '3000' }] };
+    expect(messages(rated)).toContain('Plan B has a group rate, but this version is sold to individual policies only');
+  });
+
   it('names the first age the premium table does not price', () => {
     // A student child is covered to 25, so the table must price 0-24.
     const text = 'B,MAIN_MEMBER,18,70,60000\nB,CHILD,0,20,6000';
@@ -81,7 +106,8 @@ describe('funeral terms on the publish form (FuneralPlanValidator)', () => {
   it('sends the terms only on a FUNERAL product, roles switched off left out', () => {
     const parsed = publishVersionFormSchema('FUNERAL').parse(valid());
     const request = toApiRequest(parsed, 'FUNERAL');
-    expect(request.funeral?.plans).toEqual([{ planCode: 'B', name: 'Familia B' }]);
+    expect(request.funeral?.plans).toEqual([{ planCode: 'B', name: 'Familia B', groupMonthlyRate: null }]);
+    expect(request.funeral?.soldAs).toBe('INDIVIDUAL');
     expect(request.funeral?.benefits).toEqual([
       { planCode: 'B', role: 'MAIN_MEMBER', benefit: 2000000 },
       { planCode: 'B', role: 'CHILD', benefit: 1000000 },
