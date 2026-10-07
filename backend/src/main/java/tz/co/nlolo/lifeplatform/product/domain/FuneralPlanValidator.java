@@ -60,17 +60,45 @@ public final class FuneralPlanValidator {
                 throw refused("Plan " + benefit.planCode() + ": the " + benefit.role().label() + "'s benefit must be above zero");
             }
         }
+        checkGroupRates(terms);
+        if (!terms.soldAs().individual()) {
+            // Group funeral schemes: a scheme pays its plan's rate per member, so a premium table would price nothing.
+            if (!terms.premiums().isEmpty()) {
+                throw refused("A version sold to group schemes only is priced by its group rates; remove the premium table");
+            }
+            return;
+        }
         for (FuneralPremiumRow row : terms.premiums()) {
             if (terms.benefit(row.planCode(), row.role()).isEmpty()) {
                 throw refused("Plan " + row.planCode() + " prices " + row.role() + " but does not cover it");
             }
-            if (row.yearlyPremium() == null || row.yearlyPremium().signum() <= 0 || row.ageFrom() < 0 || row.ageTo() < row.ageFrom()) {
+            if (row.yearlyPremium() == null || row.yearlyPremium().signum() < 0 || row.ageFrom() < 0 || row.ageTo() < row.ageFrom()) {
                 throw refused("Plan " + row.planCode() + ", " + row.role() + ": ages " + row.ageFrom() + "-" + row.ageTo()
-                    + " need a premium above zero and an end age no earlier than the start");
+                    + " need a premium of zero or more and an end age no earlier than the start");
+            }
+            // A dependant may be included in the main member's premium (0, a flat family rate); the main member may
+            // not, or a policy would be free.
+            if (row.role() == FuneralRole.MAIN_MEMBER && row.yearlyPremium().signum() == 0) {
+                throw refused("Plan " + row.planCode() + ": a main member's premium must be above zero; nobody is covered free");
             }
         }
         for (FuneralPlanBenefit benefit : terms.benefits()) {
             checkCoverage(terms, benefit.planCode(), benefit.role());
+        }
+    }
+
+    /** A version sold to groups gives every plan a rate per member per month; one sold to individuals only gives none. */
+    private static void checkGroupRates(FuneralPlan terms) {
+        for (FuneralPlanOption option : terms.plans()) {
+            if (terms.soldAs().group()) {
+                if (option.groupMonthlyRate() == null || option.groupMonthlyRate().signum() <= 0) {
+                    throw refused("Plan " + option.planCode() + " needs a group rate per member per month above zero:"
+                        + " this version is sold to group schemes");
+                }
+            } else if (option.groupMonthlyRate() != null) {
+                throw refused("Plan " + option.planCode() + " has a group rate, but this version is sold to individual"
+                    + " policies only");
+            }
         }
     }
 
@@ -120,7 +148,8 @@ public final class FuneralPlanValidator {
         }
         int oldestEntry = terms.roles().stream().filter(r -> r.coverStopAge() == null)
             .mapToInt(FuneralRoleRule::maxEntryAge).max().orElse(0);
-        if (terms.maxPricedAge() < oldestEntry) {
+        // The highest priced age bounds the premium table; a version sold to groups only has none.
+        if (terms.soldAs().individual() && terms.maxPricedAge() < oldestEntry) {
             throw refused("The highest priced age, " + terms.maxPricedAge() + ", is below the oldest entry age, " + oldestEntry);
         }
     }

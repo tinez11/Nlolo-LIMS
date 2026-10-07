@@ -175,6 +175,59 @@ class FuneralPlanValidatorTest {
             "Choose what happens when the main member dies");
     }
 
+    // ---- group funeral schemes (2026-10-07) and dependants included at 0 ----
+
+    private static List<FuneralPlanOption> ratedPlans() {
+        return plans().stream().map(p -> new FuneralPlanOption(p.planCode(), p.name(), new BigDecimal("3000.00"))).toList();
+    }
+
+    private static FuneralPlan soldAs(tz.co.nlolo.lifeplatform.product.api.FuneralSoldAs soldAs,
+                                      List<FuneralPlanOption> plans, List<FuneralPremiumRow> premiums) {
+        return new FuneralPlan(true, plans, benefits(), premiums, roles(), 90, 6, true,
+            DependantClaimPayee.MAIN_MEMBER, MainMemberDeathRule.POLICY_ENDS, true, soldAs);
+    }
+
+    @Test
+    void aDependantMayBeIncludedAtZeroButNeverTheMainMember() {
+        List<FuneralPremiumRow> spouseFree = premiums().stream()
+            .map(p -> p.role() == FuneralRole.SPOUSE
+                ? new FuneralPremiumRow(p.planCode(), p.role(), p.ageFrom(), p.ageTo(), BigDecimal.ZERO) : p).toList();
+        assertThatCode(() -> validate(ProductCategory.FUNERAL, of(plans(), benefits(), spouseFree, roles())))
+            .doesNotThrowAnyException();
+        List<FuneralPremiumRow> mainFree = premiums().stream()
+            .map(p -> p.role() == FuneralRole.MAIN_MEMBER && p.planCode().equals("A")
+                ? new FuneralPremiumRow(p.planCode(), p.role(), p.ageFrom(), p.ageTo(), BigDecimal.ZERO) : p).toList();
+        refused(() -> validate(ProductCategory.FUNERAL, of(plans(), benefits(), mainFree, roles())),
+            "Plan A: a main member's premium must be above zero; nobody is covered free");
+    }
+
+    @Test
+    void aVersionSoldToGroupsOnlyIsPricedByItsGroupRatesAlone() {
+        var group = tz.co.nlolo.lifeplatform.product.api.FuneralSoldAs.GROUP;
+        assertThatCode(() -> validate(ProductCategory.FUNERAL, soldAs(group, ratedPlans(), List.of())))
+            .doesNotThrowAnyException();
+        refused(() -> validate(ProductCategory.FUNERAL, soldAs(group, plans(), List.of())),
+            "Plan A needs a group rate per member per month above zero: this version is sold to group schemes");
+        refused(() -> validate(ProductCategory.FUNERAL, soldAs(group, ratedPlans(), premiums())),
+            "A version sold to group schemes only is priced by its group rates; remove the premium table");
+    }
+
+    @Test
+    void aVersionSoldBothWaysNeedsBothPrices() {
+        var both = tz.co.nlolo.lifeplatform.product.api.FuneralSoldAs.BOTH;
+        assertThatCode(() -> validate(ProductCategory.FUNERAL, soldAs(both, ratedPlans(), premiums())))
+            .doesNotThrowAnyException();
+        refused(() -> validate(ProductCategory.FUNERAL, soldAs(both, ratedPlans(), List.of())),
+            "Plan A, MAIN_MEMBER: no premium for age 18");
+    }
+
+    @Test
+    void aGroupRateOnAVersionSoldToIndividualsOnlyIsRefused() {
+        refused(() -> validate(ProductCategory.FUNERAL, soldAs(tz.co.nlolo.lifeplatform.product.api.FuneralSoldAs.INDIVIDUAL,
+                ratedPlans(), premiums())),
+            "Plan A has a group rate, but this version is sold to individual policies only");
+    }
+
     @Test
     void theHighestPricedAgeMustCoverEveryEntryAge() {
         FuneralPlan low = new FuneralPlan(true, plans(), benefits(), premiums(), roles(), 60, 6, true,

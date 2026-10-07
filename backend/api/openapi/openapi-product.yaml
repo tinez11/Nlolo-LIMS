@@ -701,6 +701,10 @@ components:
                 properties:
                   planCode: { type: [string, "null"], maxLength: 20 }
                   name: { type: [string, "null"], maxLength: 100 }
+                  groupMonthlyRate:
+                    type: [number, "null"]
+                    exclusiveMinimum: 0
+                    description: Per member per month on a group scheme, the member's family included; required when soldAs is GROUP or BOTH, absent otherwise
             benefits:
               type: array
               items:
@@ -718,7 +722,10 @@ components:
                   role: { type: [string, "null"], enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED, null] }
                   ageFrom: { type: [integer, "null"], minimum: 0 }
                   ageTo: { type: [integer, "null"], minimum: 0 }
-                  yearlyPremium: { type: [number, "null"], exclusiveMinimum: 0 }
+                  yearlyPremium:
+                    type: [number, "null"]
+                    minimum: 0
+                    description: Zero for a dependant included in the main member's premium (a flat family rate); a main member's premium must be above zero
             roles:
               type: array
               items:
@@ -736,6 +743,10 @@ components:
             dependantClaimPayee: { type: [string, "null"], enum: [MAIN_MEMBER, MAIN_MEMBER_BENEFICIARY, null] }
             onMainMemberDeath: { type: [string, "null"], enum: [POLICY_ENDS, SPOUSE_TAKES_OVER, null] }
             freeCoverToPaidDate: { type: [boolean, "null"] }
+            soldAs:
+              type: [string, "null"]
+              enum: [INDIVIDUAL, GROUP, BOTH, null]
+              description: Individual policies (priced by the premium table), group schemes (priced at each plan's group rate), or both; absent = INDIVIDUAL
         unitLinked:
           description: >-
             Required on a UNIT_LINKED version and refused on every other (product step 6, U1). The register
@@ -1111,17 +1122,18 @@ components:
       type: object
       additionalProperties: false
       required: [plans, benefits, premiums, roles, maxPricedAge, waitingPeriodMonths, accidentWaivesWaiting,
-                 dependantClaimPayee, onMainMemberDeath, freeCoverToPaidDate]
+                 dependantClaimPayee, onMainMemberDeath, freeCoverToPaidDate, soldAs]
       properties:
         plans:
           type: array
           items:
             type: object
             additionalProperties: false
-            required: [planCode, name]
+            required: [planCode, name, groupMonthlyRate]
             properties:
               planCode: { type: string }
               name: { type: string }
+              groupMonthlyRate: { type: [number, "null"] }
         benefits:
           type: array
           items:
@@ -1163,6 +1175,7 @@ components:
         dependantClaimPayee: { type: string, enum: [MAIN_MEMBER, MAIN_MEMBER_BENEFICIARY] }
         onMainMemberDeath: { type: string, enum: [POLICY_ENDS, SPOUSE_TAKES_OVER] }
         freeCoverToPaidDate: { type: boolean }
+        soldAs: { type: string, enum: [INDIVIDUAL, GROUP, BOTH] }
     FuneralRole:
       type: string
       enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED]

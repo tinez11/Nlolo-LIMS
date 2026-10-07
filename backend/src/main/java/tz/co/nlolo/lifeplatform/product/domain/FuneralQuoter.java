@@ -33,6 +33,10 @@ public final class FuneralQuoter {
         if (!plan.funeral()) {
             throw new FuneralQuoteRefusedException("This product is not a funeral plan");
         }
+        if (!plan.soldAs().individual()) {
+            throw new FuneralQuoteRefusedException("This product is sold to group schemes only; a scheme pays its plan's"
+                + " group rate per member");
+        }
         if (!plan.offersPlan(in.planCode())) {
             throw new FuneralQuoteRefusedException("There is no plan " + in.planCode() + " on this product");
         }

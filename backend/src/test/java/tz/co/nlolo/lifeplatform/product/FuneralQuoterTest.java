@@ -66,6 +66,34 @@ class FuneralQuoterTest {
         assertThat(quote.frequency()).isEqualTo(PremiumFrequency.MONTHLY);
     }
 
+    /** Group funeral schemes: a version sold to groups only is never quoted to one family. */
+    @Test
+    void aVersionSoldToGroupSchemesOnlyIsNotQuotedToAFamily() {
+        FuneralPlan f = FuneralPlans.familia();
+        FuneralPlan groupOnly = new FuneralPlan(true, f.plans(), f.benefits(), List.of(), f.roles(), f.maxPricedAge(),
+            f.waitingPeriodMonths(), f.accidentWaivesWaiting(), f.dependantClaimPayee(), f.onMainMemberDeath(),
+            f.freeCoverToPaidDate(), tz.co.nlolo.lifeplatform.product.api.FuneralSoldAs.GROUP);
+        refused(() -> FuneralQuoter.quote(groupOnly, FIVE_PERCENT_MONTHLY,
+                new FuneralQuoteInput("B", PremiumFrequency.MONTHLY, ON, family())),
+            "This product is sold to group schemes only; a scheme pays its plan's group rate per member");
+    }
+
+    /** A spouse and children included at 0: the family pays the main member's premium alone (a flat family rate). */
+    @Test
+    void dependantsIncludedAtZeroAddNothingToTheFamily() {
+        FuneralPlan f = FuneralPlans.familia();
+        FuneralPlan flat = new FuneralPlan(true, f.plans(), f.benefits(), f.premiums().stream()
+                .map(p -> p.role() == MAIN_MEMBER ? p
+                    : new tz.co.nlolo.lifeplatform.product.api.FuneralPremiumRow(p.planCode(), p.role(), p.ageFrom(),
+                        p.ageTo(), BigDecimal.ZERO)).toList(),
+            f.roles(), f.maxPricedAge(), f.waitingPeriodMonths(), f.accidentWaivesWaiting(), f.dependantClaimPayee(),
+            f.onMainMemberDeath(), f.freeCoverToPaidDate());
+        FuneralQuote quote = FuneralQuoter.quote(flat, FIVE_PERCENT_MONTHLY,
+            new FuneralQuoteInput("B", PremiumFrequency.ANNUALLY, ON, family()));
+        assertThat(quote.lines()).hasSize(5);
+        assertThat(quote.instalment()).isEqualByComparingTo(quote.lines().get(0).yearlyPremium());
+    }
+
     @Test
     void annualPaymentIsTheTotalUnloaded() {
         assertThat(quote("B", PremiumFrequency.ANNUALLY, family()).instalment()).isEqualByComparingTo("138000.00");

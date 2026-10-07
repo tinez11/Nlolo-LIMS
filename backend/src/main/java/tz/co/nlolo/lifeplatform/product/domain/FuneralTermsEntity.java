@@ -10,6 +10,7 @@ import tz.co.nlolo.lifeplatform.product.api.FuneralPlanBenefit;
 import tz.co.nlolo.lifeplatform.product.api.FuneralPlanOption;
 import tz.co.nlolo.lifeplatform.product.api.FuneralPremiumRow;
 import tz.co.nlolo.lifeplatform.product.api.FuneralRoleRule;
+import tz.co.nlolo.lifeplatform.product.api.FuneralSoldAs;
 import tz.co.nlolo.lifeplatform.product.api.MainMemberDeathRule;
 
 import java.util.List;
@@ -27,6 +28,8 @@ public class FuneralTermsEntity {
     @Column(name = "dependant_claim_payee", nullable = false) private String dependantClaimPayee;
     @Column(name = "on_main_member_death", nullable = false) private String onMainMemberDeath;
     @Column(name = "free_cover_to_paid_date", nullable = false) private boolean freeCoverToPaidDate;
+    /** Group funeral schemes (product V29): INDIVIDUAL, GROUP or BOTH. */
+    @Column(name = "sold_as", nullable = false) private String soldAs = FuneralSoldAs.INDIVIDUAL.name();
 
     protected FuneralTermsEntity() {}
 
@@ -39,12 +42,13 @@ public class FuneralTermsEntity {
         this.dependantClaimPayee = plan.dependantClaimPayee().name();
         this.onMainMemberDeath = plan.onMainMemberDeath().name();
         this.freeCoverToPaidDate = plan.freeCoverToPaidDate();
+        this.soldAs = plan.soldAs().name();
     }
 
     public FuneralPlan toPlan(List<FuneralPlanOption> plans, List<FuneralPlanBenefit> benefits,
                               List<FuneralPremiumRow> premiums, List<FuneralRoleRule> roles) {
         return new FuneralPlan(true, plans, benefits, premiums, roles, maxPricedAge, waitingPeriodMonths,
             accidentWaivesWaiting, DependantClaimPayee.valueOf(dependantClaimPayee),
-            MainMemberDeathRule.valueOf(onMainMemberDeath), freeCoverToPaidDate);
+            MainMemberDeathRule.valueOf(onMainMemberDeath), freeCoverToPaidDate, FuneralSoldAs.valueOf(soldAs));
     }
 }
