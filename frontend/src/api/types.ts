@@ -310,6 +310,8 @@ export type ExpenseAllocationView = FinaccountingComponents['schemas']['ExpenseA
 export type ExpenseAllocationPreview = FinaccountingComponents['schemas']['ExpenseAllocationPreview'];
 export type ExpenseAllocationLine = FinaccountingComponents['schemas']['ExpenseAllocationLine'];
 export type ExpenseAllocationInput = FinaccountingComponents['schemas']['ExpenseAllocationInput'];
+// IFRS 17 I6: the year-end close.
+export type YearEndCloseView = FinaccountingComponents['schemas']['YearEndCloseView'];
 export type ManualJournalInput = FinaccountingComponents['schemas']['ManualJournalInput'];
 export type ManualJournalLineInput = FinaccountingComponents['schemas']['ManualJournalLineInput'];
 export type JournalTemplateView = FinaccountingComponents['schemas']['JournalTemplateView'];

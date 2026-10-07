@@ -241,7 +241,8 @@ class ClaimAndCommissionPostingEndToEndTest {
             "db-migrations/finaccounting/V13__disbursement_method.sql",
             "db-migrations/finaccounting/V14__manual_journals.sql",
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
-            "db-migrations/finaccounting/V16__expense_allocation.sql");
+            "db-migrations/finaccounting/V16__expense_allocation.sql",
+            "db-migrations/finaccounting/V17__year_end_close.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

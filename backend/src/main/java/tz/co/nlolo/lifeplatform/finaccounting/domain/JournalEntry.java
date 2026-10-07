@@ -113,6 +113,10 @@ public class JournalEntry {
     @Column(name = "expense_allocation_id")
     private UUID expenseAllocationId;
 
+    /** The year-end close the journal posts or reverses (IFRS 17 I6, finaccounting V17). */
+    @Column(name = "year_end_close_id")
+    private UUID yearEndCloseId;
+
     /** One leg's facts, before it becomes a persistent {@link GlPosting} row. */
     public record Leg(String accountCode, PostingDirection direction, BigDecimal amount, String currency,
                       LineDimensions dimensions) {}
@@ -200,6 +204,7 @@ public class JournalEntry {
     public String getRuleVersion() { return ruleVersion; }
     public UUID getEngineRunId() { return engineRunId; }
     public UUID getExpenseAllocationId() { return expenseAllocationId; }
+    public UUID getYearEndCloseId() { return yearEndCloseId; }
 
     /** A journal the platform or the IFRS 17 engine writes, not an event's. */
     public JournalEntry withSource(JournalSource source) {
@@ -238,6 +243,13 @@ public class JournalEntry {
     public JournalEntry fromExpenseAllocation(UUID allocationId) {
         this.sourceType = JournalSource.SYSTEM;
         this.expenseAllocationId = allocationId;
+        return this;
+    }
+
+    /** A year-end close's journal (IFRS 17 I6): the platform's own approved run, so SYSTEM. */
+    public JournalEntry fromYearEndClose(UUID closeId) {
+        this.sourceType = JournalSource.SYSTEM;
+        this.yearEndCloseId = closeId;
         return this;
     }
 

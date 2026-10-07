@@ -109,6 +109,16 @@ public class FinaccountingExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "ALLOCATION_NOT_FOUND");
     }
 
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.finaccounting.api.YearEndCloseStateException.class)
+    public ProblemDetail handleYearEndState(tz.co.nlolo.lifeplatform.finaccounting.api.YearEndCloseStateException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "YEAR_END_STATE");
+    }
+
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.finaccounting.api.YearEndCloseNotFoundException.class)
+    public ProblemDetail handleYearEndNotFound(tz.co.nlolo.lifeplatform.finaccounting.api.YearEndCloseNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "YEAR_END_NOT_FOUND");
+    }
+
     @ExceptionHandler(ManualJournalNotFoundException.class)
     public ProblemDetail handleManualJournalNotFound(ManualJournalNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "MANUAL_JOURNAL_NOT_FOUND");

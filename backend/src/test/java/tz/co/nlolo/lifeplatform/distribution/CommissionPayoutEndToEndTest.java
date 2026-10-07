@@ -192,6 +192,7 @@ class CommissionPayoutEndToEndTest {
             "db-migrations/finaccounting/V14__manual_journals.sql",
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             "db-migrations/finaccounting/V16__expense_allocation.sql",
+            "db-migrations/finaccounting/V17__year_end_close.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",

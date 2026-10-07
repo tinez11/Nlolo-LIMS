@@ -158,7 +158,8 @@ class FinaccountingContractTest {
             "db-migrations/finaccounting/V13__disbursement_method.sql",
             "db-migrations/finaccounting/V14__manual_journals.sql",
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
-            "db-migrations/finaccounting/V16__expense_allocation.sql");
+            "db-migrations/finaccounting/V16__expense_allocation.sql",
+            "db-migrations/finaccounting/V17__year_end_close.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -915,6 +916,57 @@ class FinaccountingContractTest {
         mockMvc.perform(get("/ifrs17/engine-runs/{id}", runId).with(financeStaffOf(UUID.randomUUID())))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("ENGINE_NOT_FOUND"));
+    }
+
+    /** IFRS 17 I6: the year-end close over HTTP -- a December payroll closed to retained earnings by two people. */
+    @Test
+    void theYearEndCloseOverHttp() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(post("/ifrs17/year-end/{y}/closes", 2026).with(financeStaffOf(tenantId)))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("YEAR_END_STATE"));
+
+        TenantContext.set(tenantId);
+        var payroll = manualJournals.create(new tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalInput("2026-12",
+            CURRENCY, "December payroll", "Payroll summary from HR", null, "O-01", null, java.util.List.of(
+                new tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalInput.Line("8110", PostingDirection.DR,
+                    new BigDecimal("100.00"), "Salaries", null, null, null, null),
+                new tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalInput.Line("2640", PostingDirection.CR,
+                    new BigDecimal("100.00"), "NSSF and PAYE", null, null, null, null))), "finance-officer");
+        manualJournals.attachDocument(payroll.id(), "doc-1", "finance-officer");
+        manualJournals.submit(payroll.id(), "finance-officer");
+        manualJournals.approve(payroll.id(), "finance-approver");
+        TenantContext.clear();
+
+        mockMvc.perform(post("/finance/periods/{p}/closing", "2026-12").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk());
+        mockMvc.perform(get("/ifrs17/year-end/{y}/preview", 2026).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.profit").value(-100.0))
+            .andExpect(jsonPath("$.accounts[0].code").value("8110"));
+        String created = mockMvc.perform(post("/ifrs17/year-end/{y}/closes", 2026).with(financeStaffOf(tenantId)))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("PREPARED"))
+            .andReturn().getResponse().getContentAsString();
+        String id = com.jayway.jsonpath.JsonPath.read(created, "$.closeId");
+        mockMvc.perform(post("/ifrs17/year-end-closes/{id}/approval", id).with(financeStaffOf(tenantId, "finance-two")))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/ifrs17/year-end-closes/{id}/approval", id).with(financeApproverOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("POSTED"));
+        mockMvc.perform(get("/ifrs17/year-end/{y}/closes", 2026).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.length()").value(1));
+        mockMvc.perform(get("/ifrs17/year-end-closes/{id}", id).with(financeStaffOf(UUID.randomUUID())))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("YEAR_END_NOT_FOUND"));
+        mockMvc.perform(post("/finance/periods/{p}/lock", "2026-12").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk());
     }
 
     /** IFRS 17 I5b: P-19's expense allocation over HTTP -- prepared by finance, decided by another person. */

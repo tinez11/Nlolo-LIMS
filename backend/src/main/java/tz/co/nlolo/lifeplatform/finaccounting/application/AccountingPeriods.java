@@ -30,13 +30,15 @@ class AccountingPeriods {
     private final GlPostingRepository postings;
     private final UnpostedEvents unposted;
     private final EngineLockGate engineGate;
+    private final YearEndLockGate yearEndGate;
 
     AccountingPeriods(AccountingPeriodRepository periods, GlPostingRepository postings, UnpostedEvents unposted,
-                      EngineLockGate engineGate) {
+                      EngineLockGate engineGate, YearEndLockGate yearEndGate) {
         this.periods = periods;
         this.postings = postings;
         this.unposted = unposted;
         this.engineGate = engineGate;
+        this.yearEndGate = yearEndGate;
     }
 
     @Transactional(readOnly = true)
@@ -62,34 +64,52 @@ class AccountingPeriods {
     AccountingPeriodView lock(String period, String by) {
         UUID tenantId = TenantContext.get();
         AccountingPeriod p = load(period);
+        List<String> blockers = blockers(tenantId, period);
+        // IFRS 17 I6: a December whose year has anything to close locks only once the year is closed.
+        yearEndGate.blocking(tenantId, period).ifPresent(blockers::add);
+        if (!blockers.isEmpty()) {
+            throw new PeriodStateException(blockers.get(0));
+        }
+        p.lock(by, Instant.now());
+        return toView(periods.save(p));
+    }
+
+    /**
+     * Why {@code period} cannot lock now, in the order the lock checks -- but not the year-end close, its own gate: the
+     * close's preparation runs this to see that everything else about December is done. Empty when nothing else
+     * blocks it.
+     */
+    List<String> blockers(UUID tenantId, String period) {
+        List<String> blockers = new java.util.ArrayList<>();
         for (String earlier : postings.periodsWithPostingsBefore(tenantId, period)) {
             boolean locked = periods.findByTenantIdAndPeriod(tenantId, earlier)
                 .map(e -> e.getStatus() == PeriodStatus.LOCKED).orElse(false);
             if (!locked) {
-                throw new PeriodStateException("Period " + earlier + " must be locked first");
+                blockers.add("Period " + earlier + " must be locked first");
+                break;
             }
         }
         List<Object[]> clearing = postings.nonZeroNetByAccountPrefix(tenantId, period, "9");
         if (!clearing.isEmpty()) {
             Object[] first = clearing.get(0);
-            throw new PeriodStateException("Clearing account " + first[0] + " holds "
+            blockers.add("Clearing account " + first[0] + " holds "
                 + String.format("%,.2f", ((BigDecimal) first[1]).abs()) + " TZS in " + period
                 + "; clearing accounts must return to zero before the period locks");
         }
         // Spec §7.6: an event the rules could not post is a hole in the period until it is posted or dismissed.
         int waiting = unposted.openUpTo(tenantId, period);
         if (waiting > 0) {
-            throw new PeriodStateException(waiting + (waiting == 1 ? " event is" : " events are") + " not posted;"
+            blockers.add(waiting + (waiting == 1 ? " event is" : " events are") + " not posted;"
                 + " post or dismiss " + (waiting == 1 ? "it" : "them") + " before the period locks");
         }
         // IFRS 17 I5a (user answer Q4): the ledger must agree with the engine's closing figures, or the difference be
-        // explained and accepted by two people -- or a replacement run make them agree.
+        // explained and accepted by two people -- or a replacement run make them agree. (And I5b: no expense
+        // allocation awaiting its decision.)
         List<String> engine = engineGate.blocking(tenantId, period);
         if (!engine.isEmpty()) {
-            throw new PeriodStateException(engine.get(0) + (engine.size() > 1 ? " (and " + (engine.size() - 1) + " more)" : ""));
+            blockers.add(engine.get(0) + (engine.size() > 1 ? " (and " + (engine.size() - 1) + " more)" : ""));
         }
-        p.lock(by, Instant.now());
-        return toView(periods.save(p));
+        return blockers;
     }
 
     @Transactional
