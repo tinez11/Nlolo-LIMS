@@ -89,6 +89,7 @@ import {
   JournalTemplatesPage,
   EnginePage,
   EngineRunPage,
+  ExpenseAllocationPage,
 } from '@/lazyPages';
 
 /**
@@ -556,6 +557,8 @@ const STAFF_SCREENS: Screen[] = [
     reach: { group: 'finance', label: 'IFRS 17 engine', icon: Percent },
   },
   { path: 'ifrs17-engine/runs/:runId', element: <EngineRunPage />, reach: 'drill-in' },
+  // IFRS 17 I5b: P-19's expense allocation, decided by a second person.
+  { path: 'ifrs17-engine/allocations/:allocationId', element: <ExpenseAllocationPage />, reach: 'drill-in' },
   {
     path: 'treaties',
     element: <TreatiesPage />,

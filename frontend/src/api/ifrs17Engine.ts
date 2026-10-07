@@ -1,5 +1,11 @@
 import { get, post } from '@/lib/http';
-import type { EngineExtractView, EngineRunView } from './types';
+import type {
+  EngineExtractView,
+  EngineRunView,
+  ExpenseAllocationInput,
+  ExpenseAllocationPreview,
+  ExpenseAllocationView,
+} from './types';
 
 /**
  * The IFRS 17 engine period cycle (IFRS 17 I5a): a closing period's extract for the engine (month-end step 6), the
@@ -70,4 +76,42 @@ export function explainDifference(id: string, group: string, figure: string, tex
 
 export function acceptDifference(id: string, group: string, figure: string): Promise<EngineRunView> {
   return post<EngineRunView>(`${exception(id, group, figure)}/acceptance`, {});
+}
+
+// ---- P-19, the month's expense allocation (IFRS 17 I5b, month-end step 5) ----
+
+/** The month's pool and how three totals would split over the groups now. */
+export function previewAllocation(
+  period: string,
+  maintenance: number,
+  claimsHandling: number,
+  acquisition: number,
+): Promise<ExpenseAllocationPreview> {
+  return get<ExpenseAllocationPreview>(`/ifrs17/periods/${encodeURIComponent(period)}/expense-allocation-preview`, {
+    params: {
+      maintenance: String(maintenance),
+      claimsHandling: String(claimsHandling),
+      acquisition: String(acquisition),
+    },
+  });
+}
+
+export function prepareAllocation(period: string, input: ExpenseAllocationInput): Promise<ExpenseAllocationView> {
+  return post<ExpenseAllocationView>(`/ifrs17/periods/${encodeURIComponent(period)}/expense-allocations`, input);
+}
+
+export function listAllocations(period: string): Promise<ExpenseAllocationView[]> {
+  return get<ExpenseAllocationView[]>(`/ifrs17/periods/${encodeURIComponent(period)}/expense-allocations`);
+}
+
+export function getAllocation(id: string): Promise<ExpenseAllocationView> {
+  return get<ExpenseAllocationView>(`/ifrs17/expense-allocations/${encodeURIComponent(id)}`);
+}
+
+export function approveAllocation(id: string, aboveThePool: boolean): Promise<ExpenseAllocationView> {
+  return post<ExpenseAllocationView>(`/ifrs17/expense-allocations/${encodeURIComponent(id)}/approval`, { aboveThePool });
+}
+
+export function rejectAllocation(id: string, reason: string): Promise<ExpenseAllocationView> {
+  return post<ExpenseAllocationView>(`/ifrs17/expense-allocations/${encodeURIComponent(id)}/rejection`, { reason });
 }

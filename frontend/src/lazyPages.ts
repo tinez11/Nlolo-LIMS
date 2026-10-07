@@ -190,3 +190,6 @@ export const EnginePage = lazy(() =>
 export const EngineRunPage = lazy(() =>
   import('@/features/finance/EngineRunPage').then((m) => ({ default: m.EngineRunPage })),
 );
+export const ExpenseAllocationPage = lazy(() =>
+  import('@/features/finance/ExpenseAllocationPage').then((m) => ({ default: m.ExpenseAllocationPage })),
+);
