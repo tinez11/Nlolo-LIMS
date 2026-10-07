@@ -186,6 +186,27 @@ public class UnderwritingController {
         }
     }
 
+    /** The lives an association's file names and every row's problem, read by the server's own parser. */
+    public record GroupScheduleReading(List<tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal.LifeLine> lives,
+                                       List<String> problems) {}
+
+    /**
+     * Reads a group funeral schedule file without storing anything (2026-10-07), so a proposal being written can take
+     * its families from the association's file: the console fills its form from the lives and shows the problems.
+     * The plan's role rules are applied when the proposal is opened.
+     */
+    @PostMapping(value = "/group-schedule/reading", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('UNDERWRITER')")
+    public ResponseEntity<GroupScheduleReading> readGroupSchedule(
+            @org.springframework.web.bind.annotation.RequestPart("file") org.springframework.web.multipart.MultipartFile file) {
+        try {
+            var parsed = tz.co.nlolo.lifeplatform.underwriting.api.FuneralScheduleFile.parse(file.getBytes());
+            return ResponseEntity.ok(new GroupScheduleReading(parsed.lives(), parsed.errors()));
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException("Failed to read the uploaded schedule", e);
+        }
+    }
+
     /** The schedule file's header and one example family, for an association to fill. */
     @GetMapping(value = "/group-schedule-template", produces = "text/csv")
     @PreAuthorize("hasRole('REALM_STAFF')")

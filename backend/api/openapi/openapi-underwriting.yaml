@@ -473,6 +473,31 @@ paths:
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '409': { description: The case is decided }
         '422': { description: Not a group funeral proposal }
+  /underwriting/group-schedule/reading:
+    post:
+      summary: Read a group funeral schedule file without storing anything
+      description: >-
+        Group funeral schemes (2026-10-07). The lives the file names and every row's problem, by the server's own
+        parser, so a proposal being written can take its families from the association's file. The plan's role rules
+        are applied when the proposal is opened. Underwriters only.
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: The lives read and every problem
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupScheduleReading' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /underwriting/group-schedule-template:
     get:
       summary: The group funeral schedule file's header and an example family
@@ -911,6 +936,16 @@ components:
         beneficiaryName: { type: [string, "null"] }
         beneficiaryRelationship: { type: [string, "null"] }
         beneficiaryPhone: { type: [string, "null"] }
+    GroupScheduleReading:
+      type: object
+      required: [lives, problems]
+      properties:
+        lives:
+          type: array
+          items: { $ref: '#/components/schemas/GroupFuneralLife' }
+        problems:
+          type: array
+          items: { type: string }
     GroupScheduleResult:
       description: >-
         A group funeral schedule uploaded onto a proposal: replaced when accepted, unchanged otherwise, with every

@@ -455,6 +455,12 @@ public class PolicyApiImpl implements PolicyApi {
         // members, and for those the sumAssured above is the TOTAL of that schedule rather than
         // one person's cover -- a difference reinsurance in particular must not miss.
         payload.put("productCategory", policy.getProductCategory());
+        // A group funeral scheme is category FUNERAL, yet its sum assured is an association's families added together
+        // (2026-10-07): the category alone no longer tells one life from many.
+        boolean groupScheme = isSchemeCategory(policy.getProductCategory()) || coveredLives.isScheme(policy);
+        payload.put("groupScheme", groupScheme);
+        // Every life the contract covers now -- what the expense allocation's in-force driver counts.
+        payload.put("livesCovered", livesCovered(policy, groupScheme));
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyActivated", tenantId, payload));
     }
 
@@ -627,6 +633,7 @@ public class PolicyApiImpl implements PolicyApi {
         memberAdded.put("underwritingStatus", MemberUnderwritingStatus.WITHIN_FCL.name());
         memberAdded.put("schemeTotalCovered", Map.of("amount", total.toPlainString(),
             "currencyCode", policy.getSumAssuredCurrency()));
+        memberAdded.put("livesCovered", livesCovered(policy, true));
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.GroupMemberAdded", tenantId, memberAdded));
         return member;
     }
@@ -2280,6 +2287,7 @@ public class PolicyApiImpl implements PolicyApi {
                 "currencyCode", scheme.getCurrency()));
         }
         addRefundDetail(payload, member, scheme, reason, dateOfEvent, tenantId);
+        payload.put("livesCovered", livesCovered(policy, true));
 
         eventPublisher.publishEvent(
             DomainEventEnvelope.of("policy.GroupMemberExited", tenantId, Map.copyOf(payload)));
@@ -3060,8 +3068,6 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("agentOfRecordId", policy.getAgentOfRecordId());
         payload.put("status", policy.getStatus());
         payload.put("premiumPerEnrolment", false);
-        // Every life the scheme covers, main members included: what the expense allocation's in-force driver counts.
-        payload.put("lives", families.stream().mapToInt(f -> f.lives().size()).sum());
         putPremiumPayingUntil(payload, policy);
         putIssuanceRecord(payload, policy, issuedBy);
         putSaleClassification(payload, policy);
@@ -3290,6 +3296,7 @@ public class PolicyApiImpl implements PolicyApi {
         memberAdded.put("underwritingStatus", valuation.underwritingStatus().name());
         memberAdded.put("schemeTotalCovered", Map.of("amount", total.toPlainString(),
             "currencyCode", scheme.getCurrency()));
+        memberAdded.put("livesCovered", livesCovered(policy, true));
         eventPublisher.publishEvent(
             DomainEventEnvelope.of("policy.GroupMemberAdded", tenantId, memberAdded));
 
@@ -3350,6 +3357,24 @@ public class PolicyApiImpl implements PolicyApi {
      */
     private static boolean isSchemeCategory(String productCategory) {
         return "GROUP_LIFE".equals(productCategory) || "CREDIT_LIFE".equals(productCategory);
+    }
+
+    /**
+     * Every life the contract covers now (IFRS 17 expense allocation, 2026-10-07): a funeral policy's or scheme's covered
+     * lives, another scheme's active members, one for any other policy.
+     */
+    private int livesCovered(Policy policy, boolean groupScheme) {
+        if (coveredLives.isFuneral(policy)) {
+            return coveredLives.activeLives(policy);
+        }
+        // Only a policy issued as a scheme (always GRP-): a GROUP_LIFE policy issued the individual way has no member
+        // schedule, and in a database without policy V9 not even the table -- a failed query there would abort the
+        // whole transaction, not merely this count.
+        if (groupScheme && policy.getPolicyNumber().startsWith("GRP-")) {
+            return (int) policyMemberRepository.countByTenantIdAndPolicyNumberAndStatus(TenantContext.get(),
+                policy.getPolicyNumber(), MemberStatus.ACTIVE.name());
+        }
+        return 1;
     }
 
     /**

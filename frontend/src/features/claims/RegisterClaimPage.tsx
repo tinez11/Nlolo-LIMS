@@ -4,6 +4,8 @@ import { useForm, Controller } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { CLAIM_TYPES, type CoveredLifeView, type PolicyMemberView } from '@/api/types';
 import { getCoveredLives } from '@/api/funeral';
+import { listGroupFuneralFamilies } from '@/api/groupFuneral';
+import { familyLabels } from '@/features/policies/groupFuneral';
 import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
 import { DatePicker } from '@/components/DatePicker';
@@ -175,8 +177,14 @@ export function RegisterClaimPage() {
     if (!isFuneral) return undefined;
     let live = true;
     getCoveredLives(policyNumber).then((l) => { if (live) setCoveredLives(l); }, () => undefined);
+    // A group funeral scheme (2026-10-07): the same lives, labelled by the family they are in. Refused (409) on an
+    // individual funeral policy, which is one family and needs no label.
+    if (policyNumber.startsWith('GRP-')) {
+      listGroupFuneralFamilies(policyNumber).then((f) => { if (live) setFamilyOf(familyLabels(f)); }, () => undefined);
+    }
     return () => { live = false; };
   }, [isFuneral, policyNumber]);
+  const [familyOf, setFamilyOf] = useState<Record<string, string>>({});
   const members = usePolicyStore(selectMembers(policyNumber));
   const loadMembers = usePolicyStore((s) => s.loadMembers);
   const [memberQuery, setMemberQuery] = useState('');
@@ -347,7 +355,7 @@ export function RegisterClaimPage() {
                 <option value="">Choose who died…</option>
                 {coveredLives.filter((l) => l.status === 'ACTIVE').map((l) => (
                   <option key={l.coveredLifeId} value={l.coveredLifeId}>
-                    {l.fullName} ({l.role.replace('_', ' ').toLowerCase()})
+                    {familyOf[l.coveredLifeId] ? `${familyOf[l.coveredLifeId]} — ` : ''}{l.fullName} ({l.role.replace('_', ' ').toLowerCase()})
                   </option>
                 ))}
               </Select>

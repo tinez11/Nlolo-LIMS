@@ -40,6 +40,13 @@ export type FuneralQuoteRequest = ProductComponents['schemas']['FuneralQuoteRequ
 export type FuneralQuoteView = ProductComponents['schemas']['FuneralQuote'];
 export type FuneralApplicationView = UnderwritingComponents['schemas']['FuneralApplication'];
 export type FuneralApplicationRequest = UnderwritingComponents['schemas']['FuneralApplicationRequest'];
+// Group funeral schemes (2026-10-07).
+export type GroupFuneralFamilyView = PolicyComponents['schemas']['GroupFuneralFamilyView'];
+export type GroupFuneralLifeInput = PolicyComponents['schemas']['GroupFuneralLifeInput'];
+export type GroupFuneralJoiningReport = PolicyComponents['schemas']['GroupFuneralJoiningReport'];
+export type GroupFuneralLife = UnderwritingComponents['schemas']['GroupFuneralLife'];
+export type GroupScheduleResult = UnderwritingComponents['schemas']['GroupScheduleResult'];
+export type GroupScheduleReading = UnderwritingComponents['schemas']['GroupScheduleReading'];
 export type PolicyStatus = NonNullable<PolicyView['status']>;
 /** A customer surrender in flight (product step 1). */
 export type SurrenderRequestView = PolicyComponents['schemas']['SurrenderRequest'];

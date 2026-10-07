@@ -439,8 +439,16 @@ class CoveredLives {
             .orElseThrow(() -> new InvalidPolicyStateException("Policy " + policy.getPolicyNumber() + " has no covered lives"));
     }
 
+    /** The lives on cover now, across every family on the policy. */
+    int activeLives(Policy policy) {
+        return (int) lives.findByPolicy(TenantContext.get(), policy.getPolicyNumber()).stream()
+            .filter(CoveredLife::isActive).count();
+    }
+
     void publishLife(String eventType, Policy policy, CoveredLife life, Map<String, Object> extra) {
         Map<String, Object> payload = new HashMap<>(extra);
+        // The policy's lives after this change: what the expense allocation's in-force driver counts.
+        payload.put("livesCovered", activeLives(policy));
         payload.put("policyNumber", policy.getPolicyNumber());
         payload.put("policyholderPartyId", policy.getPolicyholderPartyId());
         payload.put("coveredLifeId", life.getCoveredLifeId());

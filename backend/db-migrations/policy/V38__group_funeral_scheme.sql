@@ -9,6 +9,14 @@
 -- * group_funeral_member: per main member, the association's number for them and the beneficiary they named. A side
 --   table, so policy_member's entity (read by every scheme) does not change. A spouse taking over a family needs no
 --   pending state here: the association stays policyholder, so the takeover completes when the death claim settles.
+--
+-- Tolerant of a database without group schemes (policy V9): a test database for a module that never reaches them
+-- applies this file and skips it.
+DO $$
+BEGIN
+IF to_regclass('policy.group_scheme') IS NULL THEN
+    RETURN;
+END IF;
 
 ALTER TABLE policy.group_scheme DROP CONSTRAINT group_scheme_basis_parameter_present;
 ALTER TABLE policy.group_scheme DROP CONSTRAINT group_scheme_benefit_basis_check;
@@ -46,3 +54,4 @@ ALTER TABLE policy.group_funeral_member ENABLE ROW LEVEL SECURITY;
 CREATE POLICY group_funeral_member_tenant_isolation ON policy.group_funeral_member
     USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
 GRANT SELECT, INSERT, UPDATE ON policy.group_funeral_member TO app_role;
+END $$;

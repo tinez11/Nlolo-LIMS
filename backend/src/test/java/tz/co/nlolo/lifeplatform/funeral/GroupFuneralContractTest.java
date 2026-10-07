@@ -72,6 +72,24 @@ class GroupFuneralContractTest {
     }
 
     @Test
+    void anAssociationsFileIsReadForAProposalToSpec() throws Exception {
+        String csv = String.join(",", tz.co.nlolo.lifeplatform.underwriting.api.FuneralScheduleFile.HEADER) + "\n"
+            + "M001,MAIN_MEMBER,Juma Ali,12/05/1986,MALE,,,Asha Juma,Spouse,\n"
+            + "M001,CHILD,Neema Juma,2016-07-20,,,,,,\n"
+            + "M002,CHILD,Orphan,2019-01-01,,,,,,\n";
+        mockMvc.perform(as(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                    .multipart("/underwriting/group-schedule/reading")
+                    .file(new org.springframework.mock.web.MockMultipartFile("file", "families.csv", "text/csv",
+                        csv.getBytes(java.nio.charset.StandardCharsets.UTF_8))), "REALM_STAFF", "UNDERWRITER"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.lives.length()").value(3))
+            .andExpect(jsonPath("$.lives[0].role").value("MAIN_MEMBER"))
+            .andExpect(jsonPath("$.lives[0].dateOfBirth").value("1986-05-12"))
+            .andExpect(jsonPath("$.lives[0].beneficiaryName").value("Asha Juma"))
+            .andExpect(jsonPath("$.problems[0]").value("Row 4: member M002 has no MAIN_MEMBER row"));
+    }
+
+    @Test
     void familiesJoinGrowShrinkAndLeaveToSpec() throws Exception {
         var product = fixtures.publishGroupFamilia(TENANT);
         UUID association = fixtures.association(TENANT);

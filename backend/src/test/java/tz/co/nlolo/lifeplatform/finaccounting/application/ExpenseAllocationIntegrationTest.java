@@ -93,7 +93,8 @@ class ExpenseAllocationIntegrationTest {
             "db-migrations/finaccounting/V14__manual_journals.sql",
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             "db-migrations/finaccounting/V16__expense_allocation.sql",
-            "db-migrations/finaccounting/V17__year_end_close.sql");
+            "db-migrations/finaccounting/V17__year_end_close.sql",
+            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -235,6 +236,31 @@ class ExpenseAllocationIntegrationTest {
                 "5215 DR 100.00 " + TERM + " - SYSTEM", "5310 DR 60.00 " + FUN + " - SYSTEM", "8490 CR 460.00 - - SYSTEM");
         assertThat(allocations.preview(PERIOD, BigDecimal.ONE, null, null).pool())
             .as("the allocation's own journal is not in the pool").isEqualByComparingTo("1000.00");
+    }
+
+    /** A lives-changing policy event (finaccounting V18): {@code livesCovered} is the policy's count after it. */
+    private void lives(UUID tenant, String policyNumber, String eventType, int livesCovered) {
+        TenantContext.set(tenant);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+            events.publishEvent(DomainEventEnvelope.of(eventType, tenant,
+                Map.of("policyNumber", policyNumber, "livesCovered", livesCovered))));
+    }
+
+    @Test
+    void theInForceDriverCountsLivesSoASchemeWeighsWhatItCovers() throws Exception {
+        UUID tenant = closingMonth();
+        // POL-C becomes a group funeral scheme of 6 lives: TERM's 2 policies (2 lives) against FUN's 6.
+        lives(tenant, "POL-C", "policy.CoveredLifeAdded", 6);
+        var preview = allocations.preview(PERIOD, new BigDecimal("400.00"), null, null);
+        assertThat(preview.lines()).filteredOn(l -> l.category().equals("MAINTENANCE"))
+            .extracting(l -> l.group() + " " + l.driverCount() + " " + l.amount())
+            .containsExactly(FUN + " 6 300.00", TERM + " 2 100.00");
+
+        lives(tenant, "POL-C", "policy.CoveredLifeEnded", 2);
+        assertThat(allocations.preview(PERIOD, new BigDecimal("400.00"), null, null).lines())
+            .filteredOn(l -> l.category().equals("MAINTENANCE"))
+            .extracting(l -> l.group() + " " + l.driverCount() + " " + l.amount())
+            .containsExactly(FUN + " 2 200.00", TERM + " 2 200.00");
     }
 
     @Test

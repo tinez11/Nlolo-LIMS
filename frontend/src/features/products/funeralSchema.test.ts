@@ -68,7 +68,7 @@ describe('funeral terms on the publish form (FuneralPlanValidator)', () => {
       .toContain('A version sold to group schemes only is priced by its group rates; remove the premium table');
     const request = toApiRequest(publishVersionFormSchema('FUNERAL').parse(rated), 'FUNERAL');
     expect(request.funeral?.soldAs).toBe('GROUP');
-    expect(request.funeral?.plans[0].groupMonthlyRate).toBe(3000);
+    expect(request.funeral?.plans?.[0].groupMonthlyRate).toBe(3000);
     expect(request.funeral?.premiums).toEqual([]);
   });
 

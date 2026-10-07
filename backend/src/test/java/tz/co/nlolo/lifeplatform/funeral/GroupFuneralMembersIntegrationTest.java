@@ -96,6 +96,7 @@ class GroupFuneralMembersIntegrationTest {
     @Test
     void aJoiningFamilyRaisesTheNextBillByOneRate() {
         String policyNumber = inForceScheme();
+        assertThat(snapshotLives(policyNumber)).as("the expense allocation counts the scheme's lives").isEqualTo(4);
         asTenant(TENANT, () -> policyApi.addGroupFuneralFamily(policyNumber, List.of(
             joiner("M003", FuneralRole.MAIN_MEMBER, "Hamisi Juma", TODAY.minusYears(35)),
             joiner("M003", FuneralRole.CHILD, "Mtoto Hamisi", TODAY.minusYears(2))), null, "staff"));
@@ -108,6 +109,14 @@ class GroupFuneralMembersIntegrationTest {
             .isEqualByComparingTo("5000000");
         assertThat(family(policyNumber, "M003").lives()).extracting(CoveredLifeView::fullName)
             .containsExactly("Hamisi Juma", "Mtoto Hamisi");
+        assertThat(snapshotLives(policyNumber)).isEqualTo(6);
+    }
+
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    private int snapshotLives(String policyNumber) {
+        return jdbc.queryForObject("SELECT lives FROM finaccounting.policy_snapshot WHERE tenant_id = ? AND policy_number = ?",
+            Integer.class, TENANT, policyNumber);
     }
 
     @Test

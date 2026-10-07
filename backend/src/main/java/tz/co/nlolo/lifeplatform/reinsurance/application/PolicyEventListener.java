@@ -196,7 +196,11 @@ public class PolicyEventListener {
         // The projection is written FIRST and unconditionally: it is the only place this module
         // ever learns this policy's sum assured and premium, and recovery (ClaimEventListener)
         // needs it later even if no treaty applies today.
-        String productCategory = (String) payload.get("productCategory");
+        // A group funeral scheme (2026-10-07) is category FUNERAL with an association's families behind its sum assured:
+        // recorded here as GROUP_FUNERAL so every scheme guard in this module -- cession, bordereau, recovery -- holds.
+        String productCategory = "FUNERAL".equals(payload.get("productCategory"))
+                && Boolean.TRUE.equals(payload.get("groupScheme"))
+            ? PolicyProjection.GROUP_FUNERAL : (String) payload.get("productCategory");
         if (policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber).isEmpty()) {
             policyProjectionRepository.save(new PolicyProjection(tenantId, policyNumber, productId,
                 sumAssuredAmount, sumAssuredCurrency, premiumAmount, premiumCurrency, issueDate,
