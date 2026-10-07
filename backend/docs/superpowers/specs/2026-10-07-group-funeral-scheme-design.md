@@ -63,7 +63,14 @@ this is that variant.
 - The scheme records the product version and plan it was set up on (pinned): a later product version does not change an
   existing scheme's cover or rate.
 - Policyholder: the association, a registered organisation party. Start date as group schemes today (not in the
-  future). Opening members optional (members may come by file).
+  future).
+- **The proposal carries the opening members and their families** (user answer 2026-10-07, found while planning):
+  every scheme is an offer until its first bill is paid, a policy's premium may not be zero
+  (`chk_premium_amount_positive`), and members join only an in-force scheme -- so an empty funeral scheme could never
+  go on cover. The group proposal's opening schedule (today registered parties with a grade or salary only) gains
+  freeform lives and families, typed or **uploaded as a file** in the joining-file format; the underwriter sees the
+  whole proposal; issuance creates the scheme with those lives and a first bill of opening members x rate; the
+  association's first payment puts everyone on cover. Later joiners come by the scheme page or the joining file.
 
 ## 5. Members and families (design part 2)
 
