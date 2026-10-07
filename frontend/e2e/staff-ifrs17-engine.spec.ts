@@ -26,7 +26,7 @@ test.describe('IFRS 17 engine period cycle', () => {
     // Step 5: nothing to allocate this month -- which a second person approves too.
     await page.goto(`/staff/ifrs17-engine?period=${period}`);
     await expect(page.getByRole('button', { name: 'Create extract' })).toBeDisabled({ timeout: 15_000 });
-    await page.getByText('No allocation this month').click();
+    await page.getByLabel('No allocation this month').check();
     await page.getByLabel('Reason there is none').fill('E2E: nothing attributable this month');
     await page.getByRole('button', { name: 'Record no allocation' }).click();
     await page.getByRole('table', { name: 'Expense allocations' }).getByRole('link').first().click({ timeout: 15_000 });

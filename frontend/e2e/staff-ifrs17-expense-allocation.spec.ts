@@ -38,7 +38,7 @@ test.describe('IFRS 17 expense allocation', () => {
     const { page: approver, context } = await approverPage(browser);
     await approver.goto(url);
     await expect(approver.getByRole('button', { name: 'Approve and post' })).toBeDisabled({ timeout: 15_000 });
-    await approver.getByText('Approve above the pool').click();
+    await approver.getByLabel('Approve above the pool').check();
     await approver.getByRole('button', { name: 'Approve and post' }).click();
     await expect(approver.getByText(/^Posted · total 1,500.00/)).toBeVisible({ timeout: 15_000 });
     const lines = approver.getByRole('table', { name: 'Allocation lines' });
