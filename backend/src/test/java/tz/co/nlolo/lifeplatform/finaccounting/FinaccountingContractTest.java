@@ -917,6 +917,59 @@ class FinaccountingContractTest {
             .andExpect(jsonPath("$.errorCode").value("ENGINE_NOT_FOUND"));
     }
 
+    /** IFRS 17 I5b: P-19's expense allocation over HTTP -- prepared by finance, decided by another person. */
+    @Test
+    void theExpenseAllocationOverHttp() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String period = "2026-08";
+        String nil = "{\"maintenance\":0,\"claimsHandling\":0,\"acquisition\":0,\"nilReason\":\"None this month\"}";
+        mockMvc.perform(post("/ifrs17/periods/{p}/expense-allocations", period).with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON).content(nil))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("ALLOCATION_STATE"));
+        mockMvc.perform(post("/finance/periods/{p}/closing", period).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk());
+        mockMvc.perform(post("/ifrs17/periods/{p}/expense-allocations", period).with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"maintenance\":1.005,\"studyReference\":\"S\"}"))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.errorCode").value("FINACCOUNTING_VALIDATION_FAILED"));
+        mockMvc.perform(get("/ifrs17/periods/{p}/expense-allocation-preview", period).param("maintenance", "10.00")
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.overPool").value(true));
+
+        String created = mockMvc.perform(post("/ifrs17/periods/{p}/expense-allocations", period)
+                .with(financeStaffOf(tenantId)).contentType(MediaType.APPLICATION_JSON).content(nil))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("PREPARED"))
+            .andReturn().getResponse().getContentAsString();
+        String id = com.jayway.jsonpath.JsonPath.read(created, "$.allocationId");
+        mockMvc.perform(post("/ifrs17/expense-allocations/{id}/approval", id).with(financeStaffOf(tenantId, "finance-two"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"aboveThePool\":false}"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/ifrs17/expense-allocations/{id}/approval", id).with(financeApproverOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"aboveThePool\":false}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("POSTED"));
+        mockMvc.perform(get("/ifrs17/periods/{p}/expense-allocations", period).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.length()").value(1));
+        mockMvc.perform(get("/ifrs17/expense-allocations/{id}", id).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        mockMvc.perform(get("/ifrs17/expense-allocations/{id}", id).with(financeStaffOf(UUID.randomUUID())))
+            .andExpect(status().isNotFound())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("ALLOCATION_NOT_FOUND"));
+        mockMvc.perform(post("/ifrs17/periods/{p}/extracts", period).with(financeStaffOf(tenantId)))
+            .andExpect(status().isCreated());
+    }
+
     /** FINANCE_APPROVER on top of FINANCE_OFFICER: the finance manager who approves manual journals (IFRS 17 I4). */
     private static RequestPostProcessor financeApproverOf(UUID tenantId) {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
