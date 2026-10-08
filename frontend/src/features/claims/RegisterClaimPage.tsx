@@ -5,7 +5,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { CLAIM_TYPES, type CoveredLifeView, type GroupFuneralFamilyView, type PolicyMemberView } from '@/api/types';
 import { getCoveredLives } from '@/api/funeral';
 import { listGroupFuneralFamilies } from '@/api/groupFuneral';
-import { claimableLives, familyLabel, familyOfClaimant, lifeLabel, matchFamilies } from './schemeLives';
+import { claimableLives, familyOfClaimant, lifeLabel } from './schemeLives';
+import { SchemeFamilyChooser } from './SchemeFamilyChooser';
+import { matchCount, searchEnter } from '@/lib/searchKeys';
 import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
 import { DatePicker } from '@/components/DatePicker';
@@ -188,18 +190,20 @@ export function RegisterClaimPage() {
     }
     return () => { live = false; };
   }, [isFuneral, isScheme, policyNumber]);
-  const [familyQuery, setFamilyQuery] = useState('');
   const [chosenFamilyId, setChosenFamilyId] = useState<string | null>(null);
   // The family chosen, else the one the claimant heads: a dependant's death is paid to the main member.
   const family = (families ?? []).find((f) => f.policyMemberId === chosenFamilyId)
     ?? familyOfClaimant(families ?? [], claimantPartyId);
-  const familyChoices = (() => {
-    const matched = matchFamilies(families ?? [], familyQuery);
-    return family && !matched.includes(family) ? [family, ...matched] : matched;
-  })();
+  /** A different family: its lives replace the last one's, so who died is chosen again. */
+  function chooseFamily(policyMemberId: string | null) {
+    if (policyMemberId === (family?.policyMemberId ?? null)) return;
+    setChosenFamilyId(policyMemberId);
+    setValue('coveredLifeId', '');
+  }
   const members = usePolicyStore(selectMembers(policyNumber));
   const loadMembers = usePolicyStore((s) => s.loadMembers);
   const [memberQuery, setMemberQuery] = useState('');
+  const memberTotal = members.data?.page?.totalElements ?? members.data?.items?.length ?? 0;
 
   useEffect(() => {
     if (!insuresManyLives) return;
@@ -359,31 +363,7 @@ export function RegisterClaimPage() {
           )}
         </FormField>
 
-        {isScheme && (
-          <>
-            {/* Outside the FormField, as the member search below is: FormField labels its first control. */}
-            <Input
-              inputSize="sm"
-              className="mb-1.5"
-              placeholder="Search families by member number or name…"
-              aria-label="Search families"
-              value={familyQuery}
-              onChange={(e) => setFamilyQuery(e.target.value)}
-            />
-            <FormField label="Family">
-              <Select inputSize="sm" value={family?.policyMemberId ?? ''}
-                onChange={(e) => { setChosenFamilyId(e.target.value || null); setValue('coveredLifeId', ''); }}>
-                <option value="">{families === null ? 'Loading families…' : 'Choose the family…'}</option>
-                {familyChoices.map((f) => (
-                  <option key={f.policyMemberId} value={f.policyMemberId}>{familyLabel(f)}</option>
-                ))}
-              </Select>
-              {families !== null && familyQuery.trim() !== '' && familyChoices.length === 0 && (
-                <p className="mt-1 text-xs text-subtle-foreground">No family matches &ldquo;{familyQuery.trim()}&rdquo;.</p>
-              )}
-            </FormField>
-          </>
-        )}
+        {isScheme && <SchemeFamilyChooser families={families} family={family} onChoose={chooseFamily} />}
         {isFuneral && (
           <>
             <FormField label="Who died?" error={errors.coveredLifeId?.message}>
@@ -411,7 +391,20 @@ export function RegisterClaimPage() {
             aria-label="Search members by name"
             value={memberQuery}
             onChange={(e) => setMemberQuery(e.target.value)}
+            onKeyDown={searchEnter(() => {
+              const found = members.data?.items ?? [];
+              if (memberQuery.trim() && found.length === 1 && found[0]?.policyMemberId) {
+                setValue('policyMemberId', found[0].policyMemberId, { shouldValidate: true });
+              }
+            })}
           />
+          {memberQuery.trim() !== '' && members.data && (
+            <p className="mb-1.5 text-xs text-subtle-foreground" role="status">
+              {memberTotal === 0
+                ? <>No member matches &ldquo;{memberQuery.trim()}&rdquo;.</>
+                : `${matchCount(memberTotal, 'member', 'members')} — choose below${memberTotal === 1 ? ', or press Enter' : ''}.`}
+            </p>
+          )}
           <FormField label="Who died" error={errors.policyMemberId?.message}>
             {/* A scheme insures many lives, so "a claim on GL-000123" names none of them, and
                 nothing else on the claim can say which employee it was. The claimant field
