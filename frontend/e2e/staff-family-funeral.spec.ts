@@ -100,8 +100,10 @@ test.describe('family funeral cover', () => {
       await admin.getByLabel('Main member benefit').fill(String(mainBenefit));
       await admin.getByLabel('Spouse benefit').fill('2000000');
       await admin.getByLabel('Child benefit').fill('1000000');
-      await admin.getByLabel('Premium rows').fill(
-        'plan,role,ageFrom,ageTo,yearlyPremium\nB,MAIN_MEMBER,18,100,60000\nB,SPOUSE,18,100,60000\nB,CHILD,0,24,6000');
+      // The premium grid: one box per covered role, at the default entry ages.
+      await admin.getByLabel('B Main member ages 18–100 yearly premium').fill('60000');
+      await admin.getByLabel('B Spouse ages 18–100 yearly premium').fill('60000');
+      await admin.getByLabel('B Child ages 0–24 yearly premium').fill('6000');
       await admin.getByLabel('Waiting period (months)').fill('6');
       await admin.getByLabel('When a dependant dies, pay').selectOption('MAIN_MEMBER');
       await admin.getByLabel('When the main member dies').selectOption('POLICY_ENDS');
