@@ -39,7 +39,7 @@ Contract tests assert a customer token gets 403 on each. (Loan **repayments** st
 
 ### Step 1 — Invite and sign-in (D1)
 - **Keycloak**: add the `lifeplatform-spa` public client (PKCE S256) to the `customers` realm; enable
-  `resetPasswordAllowed`; password policy (length 10, not username); brute-force detection. Same additions mirrored into
+  `resetPasswordAllowed`; password policy (at least 8 characters, not the username; lowered from 10 on 2026-10-08 at the user's request); brute-force detection. Same additions mirrored into
   `scripts/apply-spa-client.sh` for existing dev databases.
 - **Server**: a confidential `lifeplatform-admin` client with a service account holding `manage-users` in the
   `customers` realm only; the backend calls the Keycloak Admin API through it. Secret from the environment.

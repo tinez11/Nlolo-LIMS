@@ -103,7 +103,7 @@ async function main() {
     body: JSON.stringify({
       ...realm,
       resetPasswordAllowed: true,
-      passwordPolicy: 'length(10) and notUsername(undefined)',
+      passwordPolicy: 'length(8) and notUsername(undefined)',
       bruteForceProtected: true,
       failureFactor: 5,
       waitIncrementSeconds: 60,
