@@ -28,6 +28,8 @@ import {
   Wallet,
 } from 'lucide-react';
 import { CustomerHomePage } from '@/features/customer/CustomerHomePage';
+import { CustomerPoliciesPage } from '@/features/customer/CustomerPoliciesPage';
+import { CustomerPolicyPage } from '@/features/customer/CustomerPolicyPage';
 import type { ReactNode } from 'react';
 import { canSeeFinance, staffRoles, type StaffRoles, type readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
@@ -672,10 +674,12 @@ const AGENTS_SCREENS: Screen[] = [
  */
 /**
  * The customer portal (2026-10-08, the customer portal design): a policyholder invited by staff. Step 1 is the home
- * page; the dashboard, policies, documents, claims, products, payments and notifications follow.
+ * page; step 2 the dashboard (home) and My policies; documents, claims, products, payments and notifications follow.
  */
 const CUSTOMER_SCREENS: Screen[] = [
   { path: 'home', element: <CustomerHomePage />, reach: { group: 'my-cover', label: 'Home', icon: House } },
+  { path: 'policies', element: <CustomerPoliciesPage />, reach: { group: 'my-cover', label: 'My policies', icon: Shield } },
+  { path: 'policies/:policyNumber', element: <CustomerPolicyPage />, reach: 'drill-in' },
 ];
 
 export const SCREENS: Record<Realm, Screen[]> = {

@@ -190,6 +190,42 @@ paths:
                   displayName: { type: string }
                   email: { type: [string, "null"] }
                   phoneNumber: { type: [string, "null"] }
+  /customer/dashboard:
+    get:
+      summary: The signed-in customer's dashboard
+      description: >-
+        Policies held, in-force count, the earliest premium due, claims in progress and what savings and unit-linked
+        plans are worth -- for the token's own party only (2026-10-08, customer portal step 2). accountValue and
+        nextPremium are null when they do not apply.
+      security:
+        - customersAuth: [profile]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerDashboard' }
+  /customer/policies/{policyNumber}:
+    get:
+      summary: One of the signed-in customer's policies, customer-safe
+      description: >-
+        Names rather than ids, and nothing a staff member alone sees. 403 for a policy the customer does not hold.
+        The blocks that do not apply to the product are null.
+      security:
+        - customersAuth: [profile]
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerPolicy' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
 components:
   securitySchemes:
     staffAuth:
@@ -208,6 +244,150 @@ components:
           scopes:
             profile: The customer's own records
   schemas:
+    CustomerAmount:
+      type: object
+      additionalProperties: false
+      required: [amount, currency]
+      properties:
+        amount: { type: number }
+        currency: { type: [string, "null"] }
+    CustomerPolicySummary:
+      type: object
+      additionalProperties: false
+      required: [policyNumber, productName, productCategory, status, sumAssured, currency, premium, premiumFrequency,
+                 nextDueDate, nextDueAmount, value]
+      properties:
+        policyNumber: { type: string }
+        productName: { type: [string, "null"] }
+        productCategory: { type: [string, "null"] }
+        status: { type: string }
+        sumAssured: { type: [number, "null"] }
+        currency: { type: [string, "null"] }
+        premium: { type: [number, "null"] }
+        premiumFrequency: { type: [string, "null"] }
+        nextDueDate: { type: [string, "null"], format: date }
+        nextDueAmount: { type: [number, "null"] }
+        value: { type: [number, "null"], description: "A savings balance or unit-linked fund value; null on cover alone" }
+    CustomerDashboard:
+      type: object
+      additionalProperties: false
+      required: [displayName, activePolicies, claimsInProgress, nextPremium, accountValue, policies]
+      properties:
+        displayName: { type: string }
+        activePolicies: { type: integer }
+        claimsInProgress: { type: integer }
+        nextPremium:
+          anyOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [policyNumber, productName, amount, currency, dueDate, status]
+              properties:
+                policyNumber: { type: string }
+                productName: { type: [string, "null"] }
+                amount: { type: number }
+                currency: { type: string }
+                dueDate: { type: string, format: date }
+                status: { type: string }
+        accountValue:
+          anyOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/CustomerAmount'
+        policies:
+          type: array
+          items: { $ref: '#/components/schemas/CustomerPolicySummary' }
+    CustomerPolicy:
+      type: object
+      additionalProperties: false
+      required: [summary, lifeAssuredName, commencementDate, maturityDate, termMonths, beneficiaries, coveredLives,
+                 savings, units, annuity, claims]
+      properties:
+        summary: { $ref: '#/components/schemas/CustomerPolicySummary' }
+        lifeAssuredName: { type: [string, "null"] }
+        commencementDate: { type: [string, "null"], format: date }
+        maturityDate: { type: [string, "null"], format: date }
+        termMonths: { type: [integer, "null"] }
+        beneficiaries:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, sharePercent]
+            properties:
+              name: { type: [string, "null"] }
+              sharePercent: { type: [number, "null"] }
+        coveredLives:
+          type: [array, "null"]
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, role, benefit, status, waitingPeriodEnds]
+            properties:
+              name: { type: string }
+              role: { type: string }
+              benefit: { type: [number, "null"] }
+              status: { type: string }
+              waitingPeriodEnds: { type: [string, "null"], format: date }
+        savings:
+          anyOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [balance, currency, status, openedOn]
+              properties:
+                balance: { type: number }
+                currency: { type: string }
+                status: { type: string }
+                openedOn: { type: [string, "null"], format: date }
+        units:
+          anyOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [totalValue, currency, holdings]
+              properties:
+                totalValue: { type: [number, string, "null"] }
+                currency: { type: [string, "null"] }
+                holdings:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [fundName, units, price, priceDate, value]
+                    properties:
+                      fundName: { type: [string, "null"] }
+                      units: { type: [number, "null"] }
+                      price: { type: [number, "null"] }
+                      priceDate: { type: [string, "null"], format: date }
+                      value: { type: [number, "null"] }
+        annuity:
+          anyOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [status, annualIncome, instalment, frequency, firstPaymentDate, guaranteedUntil, purchasePrice, currency]
+              properties:
+                status: { type: string }
+                annualIncome: { type: [number, "null"] }
+                instalment: { type: [number, "null"] }
+                frequency: { type: [string, "null"] }
+                firstPaymentDate: { type: [string, "null"], format: date }
+                guaranteedUntil: { type: [string, "null"], format: date }
+                purchasePrice: { type: [number, "null"] }
+                currency: { type: [string, "null"] }
+        claims:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [claimId, claimType, status, dateOfEvent, approvedAmount, currency]
+            properties:
+              claimId: { type: string, format: uuid }
+              claimType: { type: string }
+              status: { type: string }
+              dateOfEvent: { type: string, format: date }
+              approvedAmount: { type: [number, "null"] }
+              currency: { type: [string, "null"] }
     PortalAccess:
       type: object
       additionalProperties: false
