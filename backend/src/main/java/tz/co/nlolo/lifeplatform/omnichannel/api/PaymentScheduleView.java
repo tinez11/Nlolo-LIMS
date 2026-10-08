@@ -23,7 +23,9 @@ public record PaymentScheduleView(String policyNumber, String policyholderName, 
      * @param paidBy   who paid (phone, "cash"), comma-separated; null when nothing has
      */
     public record Line(int number, UUID invoiceId, LocalDate dueDate, BigDecimal amountDue, BigDecimal amountPaid,
-                       LocalDate paidOn, String receipts, String paidBy, String status, BigDecimal balance) {}
+                       LocalDate paidOn, String receipts, String paidBy, String status, BigDecimal balance,
+                       /* The cover the premium pays for (billing V11); null where not recorded. */
+                       LocalDate coversFrom, LocalDate coversTo) {}
 
     /**
      * @param charged     every premium due on the schedule, waived ones left out

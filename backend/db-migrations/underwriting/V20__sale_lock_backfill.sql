@@ -5,10 +5,12 @@
 -- issued before V18 left their cases unlocked (846 on the dev database), so they would reappear on that list as if
 -- still waiting. Locked here at the moment their policy was created.
 --
--- Tolerant: a database (or test) without the policy schema has no issued policies to backfill.
+-- Tolerant: a database (or test) without the policy schema -- or without policy V4's case link yet -- has no issued
+-- policies to backfill.
 DO $$
 BEGIN
-    IF to_regclass('policy.policy') IS NOT NULL THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'policy'
+               AND table_name = 'policy' AND column_name = 'underwriting_case_id') THEN
         UPDATE underwriting.underwriting_case c
            SET sale_locked_at = p.created_at
           FROM policy.policy p

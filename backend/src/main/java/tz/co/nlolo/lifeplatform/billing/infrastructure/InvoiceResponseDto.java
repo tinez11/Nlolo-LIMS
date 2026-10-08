@@ -9,14 +9,14 @@ import java.util.UUID;
 public record InvoiceResponseDto(UUID invoiceId, String policyNumber, LocalDate dueDate, MoneyDto amount,
                                   InvoiceStatus status, LocalDate gracePeriodEndsAt, Integer dunningLevel,
                                   MoneyDto amountPaid, MoneyDto amountCredited, MoneyDto balanceDue,
-                                  UUID enrolmentSubmissionId) {
+                                  UUID enrolmentSubmissionId, LocalDate coversFrom, LocalDate coversTo) {
 
     public static InvoiceResponseDto from(InvoiceView view) {
         return new InvoiceResponseDto(view.invoiceId(), view.policyNumber(), view.dueDate(),
             money(view.amount(), view.currency()), view.status(),
             view.gracePeriodEndsAt(), view.dunningLevel(),
             money(view.amountPaid(), view.currency()), money(view.amountCredited(), view.currency()),
-            money(view.balanceDue(), view.currency()), view.enrolmentSubmissionId());
+            money(view.balanceDue(), view.currency()), view.enrolmentSubmissionId(), view.coversFrom(), view.coversTo());
     }
 
     private static MoneyDto money(java.math.BigDecimal amount, String currency) {
