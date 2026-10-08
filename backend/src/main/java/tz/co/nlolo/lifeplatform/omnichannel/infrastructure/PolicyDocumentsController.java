@@ -77,6 +77,33 @@ public class PolicyDocumentsController {
             "savings-statement-" + policyNumber + "-" + from + "-to-" + to);
     }
 
+    /** The policy schedule (2026-10-08, the customer portal step 3): what the policy is, on one page. PDF only. */
+    @GetMapping("/policies/{policyNumber}/policy-schedule/pdf")
+    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_CUSTOMERS')")
+    public ResponseEntity<byte[]> policySchedule(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt,
+                                                 Authentication authentication) {
+        ownPolicyOnly(policyNumber, jwt, authentication);
+        return file(documents.policyScheduleDocument(policyNumber), "pdf", "policy-schedule-" + policyNumber);
+    }
+
+    /** Every premium received on the policy, newest first (2026-10-08, the customer portal step 3). */
+    @GetMapping("/policies/{policyNumber}/receipts")
+    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_CUSTOMERS')")
+    public java.util.List<tz.co.nlolo.lifeplatform.omnichannel.api.ReceiptLine> receipts(@PathVariable String policyNumber,
+            @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        ownPolicyOnly(policyNumber, jwt, authentication);
+        return documents.receipts(policyNumber);
+    }
+
+    /** One premium receipt as a PDF. */
+    @GetMapping("/policies/{policyNumber}/receipts/{receiptId}/pdf")
+    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_CUSTOMERS')")
+    public ResponseEntity<byte[]> receipt(@PathVariable String policyNumber, @PathVariable java.util.UUID receiptId,
+                                          @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        ownPolicyOnly(policyNumber, jwt, authentication);
+        return file(documents.receiptDocument(policyNumber, receiptId), "pdf", "receipt-" + policyNumber + "-" + receiptId);
+    }
+
     private static ResponseEntity<byte[]> file(CustomerDocument document, String format, String name) {
         boolean pdf = "pdf".equalsIgnoreCase(format);
         if (!pdf && !"xlsx".equalsIgnoreCase(format)) {

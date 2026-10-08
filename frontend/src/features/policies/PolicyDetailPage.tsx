@@ -3,6 +3,7 @@ import { Pause, Play, RotateCcw, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getReferenceCodes } from '@/api/refdata';
 import { PaymentScheduleTable } from '@/features/documents/PaymentScheduleTable';
+import { PolicyScheduleDownload } from '@/features/documents/PolicyScheduleDownload';
 import { SchemeCoverPanel } from './SchemeCoverPanel';
 import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router-dom';
@@ -420,6 +421,9 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 contributions ended then. Any premiums left unpaid were waived.
               </p>
             )}
+            <Panel title="Policy schedule" subtitle="The one-page summary to give the client">
+              <PolicyScheduleDownload policyNumber={policyNumber} />
+            </Panel>
             <Panel title="Payment schedule" subtitle="Every premium due, what was paid, when and under which receipt">
               <PaymentScheduleTable policyNumber={policyNumber} />
             </Panel>

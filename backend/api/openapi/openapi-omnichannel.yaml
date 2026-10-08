@@ -98,6 +98,69 @@ paths:
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /policies/{policyNumber}/policy-schedule/pdf:
+    get:
+      summary: The policy schedule, as a PDF
+      description: >-
+        What the policy is on one page (2026-10-08, customer portal step 3): who holds it and who it insures, what it
+        pays (each covered life on a funeral plan), the beneficiaries, the premium, and what a savings plan is worth.
+        Staff any policy; a customer their own.
+      security:
+        - staffAuth: []
+        - customersAuth: [profile]
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: The file
+          content:
+            application/pdf: { schema: { type: string, format: binary } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /policies/{policyNumber}/receipts:
+    get:
+      summary: Every premium received on the policy, newest first
+      security:
+        - staffAuth: []
+        - customersAuth: [profile]
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ReceiptLine' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /policies/{policyNumber}/receipts/{receiptId}/pdf:
+    get:
+      summary: One premium receipt, as a PDF
+      security:
+        - staffAuth: []
+        - customersAuth: [profile]
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: receiptId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The file
+          content:
+            application/pdf: { schema: { type: string, format: binary } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /parties/{partyId}/portal-access:
     parameters:
       - name: partyId
@@ -244,6 +307,18 @@ components:
           scopes:
             profile: The customer's own records
   schemas:
+    ReceiptLine:
+      type: object
+      additionalProperties: false
+      required: [receiptId, receivedOn, amount, currency, reference, paidBy, forPremiumDue]
+      properties:
+        receiptId: { type: string, format: uuid }
+        receivedOn: { type: string, format: date }
+        amount: { type: number }
+        currency: { type: string }
+        reference: { type: [string, "null"] }
+        paidBy: { type: [string, "null"] }
+        forPremiumDue: { type: [string, "null"], format: date }
     CustomerAmount:
       type: object
       additionalProperties: false

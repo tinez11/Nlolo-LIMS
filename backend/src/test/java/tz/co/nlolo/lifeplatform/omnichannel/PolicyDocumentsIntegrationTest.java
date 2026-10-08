@@ -156,6 +156,53 @@ class PolicyDocumentsIntegrationTest {
                 org.hamcrest.Matchers.containsString("payment-schedule-" + policyNumber + ".xlsx")));
     }
 
+    /** The policy schedule and premium receipts (2026-10-08, the customer portal step 3). */
+    @Test
+    void thePolicyScheduleSaysWhatThePolicyIsAndEachPaymentHasAReceipt() throws Exception {
+        String policyNumber = paidSavingsPlan("MM-DOC-4");
+        UUID holder = asTenant(() -> policyApi.getPolicy(policyNumber)).policyholderPartyId();
+
+        byte[] schedule = mockMvc.perform(get("/policies/" + policyNumber + "/policy-schedule/pdf")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(b -> b.claim("tenant_id", TENANT.toString()).claim("party_id", holder.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Type", "application/pdf"))
+            .andReturn().getResponse().getContentAsByteArray();
+        try (var doc = Loader.loadPDF(schedule)) {
+            assertThat(new PDFTextStripper().getText(doc)).contains("Policy schedule", policyNumber,
+                "Savings Test Product", "Life insured", "Account value today", "Beneficiaries:",
+                "The policy terms and conditions govern");
+        }
+
+        String receipts = mockMvc.perform(staff(get("/policies/" + policyNumber + "/receipts")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].reference").value("MM-DOC-4"))
+            .andExpect(jsonPath("$[0].amount").value(50000.0))
+            .andExpect(jsonPath("$[0].receivedOn").value(TODAY.toString()))
+            .andReturn().getResponse().getContentAsString();
+        String receiptId = com.jayway.jsonpath.JsonPath.read(receipts, "$[0].receiptId");
+
+        byte[] receipt = mockMvc.perform(staff(get("/policies/" + policyNumber + "/receipts/" + receiptId + "/pdf")))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsByteArray();
+        try (var doc = Loader.loadPDF(receipt)) {
+            assertThat(new PDFTextStripper().getText(doc)).contains("Premium receipt", policyNumber, "MM-DOC-4",
+                "50,000.00", "Received with thanks");
+        }
+
+        // Another customer gets neither.
+        mockMvc.perform(get("/policies/" + policyNumber + "/policy-schedule/pdf")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(b -> b.claim("tenant_id", TENANT.toString()).claim("party_id", UUID.randomUUID().toString()))))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/policies/" + policyNumber + "/receipts")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(b -> b.claim("tenant_id", TENANT.toString()).claim("party_id", UUID.randomUUID().toString()))))
+            .andExpect(status().isForbidden());
+    }
+
     @Test
     void aCustomerReadsOnlyTheirOwnPolicysDocuments() throws Exception {
         String policyNumber = paidSavingsPlan("MM-DOC-3");
