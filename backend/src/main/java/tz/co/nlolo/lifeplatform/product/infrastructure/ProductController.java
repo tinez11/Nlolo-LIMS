@@ -167,6 +167,14 @@ public class ProductController {
         return ResponseEntity.ok(productApi.getProduct(productId));
     }
 
+    /** Every published version, the most recently published first, the one priced today marked current (2026-10-08). */
+    @GetMapping("/products/{productId}/versions")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<java.util.List<tz.co.nlolo.lifeplatform.product.api.ProductVersionSummaryView>> listVersions(
+            @PathVariable UUID productId) {
+        return ResponseEntity.ok(productApi.listVersions(productId));
+    }
+
     @GetMapping("/products/{productId}/active-snapshot")
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<ProductSnapshotView> getActiveSnapshot(@PathVariable UUID productId, @RequestParam(required = false) LocalDate effectiveDate) {

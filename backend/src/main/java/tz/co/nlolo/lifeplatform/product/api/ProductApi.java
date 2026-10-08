@@ -195,6 +195,14 @@ public interface ProductApi {
     ProductSummaryView getProduct(UUID productId);
 
     /**
+     * Every published version of a product, the most recently published first, the one a sale today is priced on
+     * marked current (2026-10-08).
+     *
+     * @throws ProductNotFoundException if no such product exists for this tenant
+     */
+    java.util.List<ProductVersionSummaryView> listVersions(UUID productId);
+
+    /**
      * Publish a version with no base rate table. Such a version is valid and
      * sellable but **cannot be priced**: a premium quote against it fails with a
      * clear error rather than guessing.

@@ -36,6 +36,7 @@ export type PolicyView = PolicyComponents['schemas']['PolicyView'];
 export type CoveredLifeView = PolicyComponents['schemas']['CoveredLifeView'];
 export type IdentifyCoveredLife = PolicyComponents['schemas']['IdentifyCoveredLife'];
 export type FuneralTermsView = ProductComponents['schemas']['FuneralTerms'];
+export type ProductVersionSummaryView = ProductComponents['schemas']['ProductVersionSummaryView'];
 export type FuneralQuoteRequest = ProductComponents['schemas']['FuneralQuoteRequest'];
 export type FuneralQuoteView = ProductComponents['schemas']['FuneralQuote'];
 export type FuneralApplicationView = UnderwritingComponents['schemas']['FuneralApplication'];

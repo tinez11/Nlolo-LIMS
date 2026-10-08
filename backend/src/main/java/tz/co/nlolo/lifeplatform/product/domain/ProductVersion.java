@@ -155,6 +155,9 @@ public class ProductVersion {
     public LocalDate getEffectiveDate() { return effectiveDate; }
     public LocalDate getRetirementDate() { return retirementDate; }
     public boolean isActiveForNewBusiness() { return activeForNewBusiness; }
+    /** When the version was published, and by whom (the product page's version list). */
+    public java.time.Instant getCreatedAt() { return createdAt; }
+    public String getCreatedBy() { return createdBy; }
     /** Null clears a window; a product with no such exclusion is the normal case. */
     public void setExclusionPeriods(Integer suicideMonths, Integer preExistingMonths) {
         requirePositiveOrAbsent("suicide", suicideMonths);

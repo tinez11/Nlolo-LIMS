@@ -5,6 +5,7 @@ import type {
   ProductSnapshot,
   ProductSummary,
   ProductVersionSpec,
+  ProductVersionSummaryView,
   VersionRatingView,
 } from './types';
 
@@ -71,6 +72,14 @@ export function getActiveSnapshot(productId: string): Promise<ProductSnapshot> {
 }
 
 /**
+ * `GET /products/{productId}/versions` -- staff. Every published version, the most recently published first, the
+ * one a sale today is priced on marked `current` (2026-10-08).
+ */
+export function listProductVersions(productId: string): Promise<ProductVersionSummaryView[]> {
+  return get<ProductVersionSummaryView[]>(`/products/${encodeURIComponent(productId)}/versions`);
+}
+
+/**
  * `GET /products/{productId}/versions/{versionId}/rating` -- the base rate table,
  * rating multipliers and benefit schedule a version was published with.
  *
@@ -79,9 +88,7 @@ export function getActiveSnapshot(productId: string): Promise<ProductSnapshot> {
  * use, and it could not be narrowed to staff without breaking them. This one is
  * staff-only, so it lives on its own endpoint.
  *
- * It needs a versionId, which only the snapshot exposes -- there is no endpoint
- * that lists a product's versions, so the only version reachable from this
- * console is the one active today.
+ * It takes any version's id, from {@link listProductVersions} or the snapshot.
  */
 export function getVersionRating(productId: string, versionId: string): Promise<VersionRatingView> {
   return get<VersionRatingView>(

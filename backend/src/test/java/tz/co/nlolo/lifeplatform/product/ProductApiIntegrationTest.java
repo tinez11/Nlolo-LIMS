@@ -189,6 +189,42 @@ class ProductApiIntegrationTest {
         assertEquals(PortfolioCode.TERM, productApi.getSnapshotByVersionId(olderSnapshot.productVersionId()).portfolioCode());
     }
 
+    private UUID publishTerm(UUID productId, LocalDate effective, String by) {
+        productApi.publishVersion(productId, null, effective, null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            null, ANY_FILING, by);
+        return productApi.listVersions(productId).get(0).productVersionId();
+    }
+
+    /**
+     * The product page lists every version (2026-10-08), and marks current the one a sale today is priced on. Two
+     * versions effective the same day -- a mistake and its correction, published an hour apart -- were in whatever
+     * order the database returned them; the later-published one is current now.
+     */
+    @Test
+    void everyVersionIsListedNewestFirstAndTheLaterPublishedWinsATieOnEffectiveDate() throws InterruptedException {
+        UUID productId = productApi.createProduct("TERM-VER-01", "Term", ProductCategory.TERM_LIFE, "TZS", "actuary").productId();
+        UUID yesterday = publishTerm(productId, LocalDate.now().minusDays(1), "actuary-1");
+        UUID mistake = publishTerm(productId, LocalDate.now(), "actuary-2");
+        Thread.sleep(5);
+        UUID correction = publishTerm(productId, LocalDate.now(), "actuary-3");
+        Thread.sleep(5);
+        UUID tomorrow = publishTerm(productId, LocalDate.now().plusDays(1), "actuary-4");
+
+        List<ProductVersionSummaryView> versions = productApi.listVersions(productId);
+        assertEquals(List.of(tomorrow, correction, mistake, yesterday),
+            versions.stream().map(ProductVersionSummaryView::productVersionId).toList());
+        assertEquals(List.of(correction), versions.stream().filter(ProductVersionSummaryView::current)
+            .map(ProductVersionSummaryView::productVersionId).toList(), "a version effective tomorrow is not priced today");
+        assertEquals("actuary-3", versions.get(1).publishedBy());
+        assertNotNull(versions.get(1).publishedAt());
+        assertEquals(correction, productApi.getActiveSnapshot(productId, LocalDate.now()).productVersionId());
+
+        assertThrows(ProductNotFoundException.class, () -> productApi.listVersions(UUID.randomUUID()));
+    }
+
     /**
      * This class does NOT apply product V24, on purpose: an ordinary version must answer
      * resolveFuneralPlan from its category alone, never by touching a funeral table (plan gate rule).

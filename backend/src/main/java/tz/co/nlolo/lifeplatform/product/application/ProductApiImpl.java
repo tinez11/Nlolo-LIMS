@@ -182,6 +182,20 @@ public class ProductApiImpl implements ProductApi {
             .orElseThrow(() -> new ProductNotFoundException(productId));
     }
 
+    @Override
+    public List<ProductVersionSummaryView> listVersions(UUID productId) {
+        UUID tenantId = TenantContext.get();
+        productDefinitionRepository.findByTenantIdAndProductId(tenantId, productId)
+            .orElseThrow(() -> new ProductNotFoundException(productId));
+        UUID current = productVersionRepository.findActiveAsOf(tenantId, productId, LocalDate.now()).stream()
+            .findFirst().map(ProductVersion::getProductVersionId).orElse(null);
+        return productVersionRepository.findByTenantIdAndProductIdOrderByCreatedAtDesc(tenantId, productId).stream()
+            .map(v -> new ProductVersionSummaryView(v.getProductVersionId(), v.getEffectiveDate(), v.getRetirementDate(),
+                v.getProductVersionId().equals(current), v.getCreatedAt(), v.getCreatedBy(), v.getGracePeriodDays(),
+                v.getExpectedProfitabilityBucket(), v.getMeasurementModelOverride(), v.getSurvivalInvestmentComponentPercent()))
+            .toList();
+    }
+
     /**
      * The two convenience overloads, each carrying {@code @Transactional} itself.
      *
