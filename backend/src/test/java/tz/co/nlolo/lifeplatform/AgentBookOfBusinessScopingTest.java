@@ -116,6 +116,7 @@ class AgentBookOfBusinessScopingTest {
             "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/product/V28__survival_investment_component.sql",
             "db-migrations/product/V29__funeral_group_rate.sql",
+            "db-migrations/product/V30__funeral_group_rate_period.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -150,6 +151,7 @@ class AgentBookOfBusinessScopingTest {
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/policy/V37__sale_classification.sql",
             "db-migrations/policy/V38__group_funeral_scheme.sql",
+            "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V7__journal_support_document_type.sql",
@@ -221,7 +223,7 @@ class AgentBookOfBusinessScopingTest {
         TenantContext.set(tenantId);
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
             fixture.productVersionId(), new BigDecimal("2000000"), "TZS", new BigDecimal("40000.00"), "TZS",
-            "MONTHLY", agentOfRecordId, List.of(), "Agent book scoping test fixture");
+            "MONTHLY", agentOfRecordId, List.of(), "Agent book scoping test fixture", java.time.LocalDate.now().minusYears(1), null, null, null, null);
         String policyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
         // Cover starts with the first premium. This fixture needs a policy on risk.
         policyApi.activateOnFirstPremium(policyNumber);

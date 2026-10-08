@@ -42,7 +42,13 @@ public record FuneralPlan(boolean funeral, List<FuneralPlanOption> plans, List<F
             dependantClaimPayee, onMainMemberDeath, freeCoverToPaidDate, FuneralSoldAs.INDIVIDUAL);
     }
 
-    /** What a group scheme on this plan pays per member per month; empty when the plan has no group rate. */
+    /** What a group scheme on this plan bills at: per month, or once a year (2026-10-08). MONTHLY for an unknown plan. */
+    public GroupRatePeriod groupRatePeriod(String planCode) {
+        return plans.stream().filter(p -> p.planCode().equals(planCode)).map(FuneralPlanOption::groupRatePeriod)
+            .findFirst().orElse(GroupRatePeriod.MONTHLY);
+    }
+
+    /** What a group scheme on this plan pays per member per {@link #groupRatePeriod} period; empty when it has no group rate. */
     public Optional<BigDecimal> groupMonthlyRate(String planCode) {
         return plans.stream().filter(p -> p.planCode().equals(planCode)).map(FuneralPlanOption::groupMonthlyRate)
             .filter(java.util.Objects::nonNull).findFirst();

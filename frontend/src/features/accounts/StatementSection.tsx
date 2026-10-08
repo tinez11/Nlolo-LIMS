@@ -1,18 +1,17 @@
 import { useEffect, useState } from 'react';
-import { getStatement, downloadStatementPdf } from '@/api/accumulation';
+import { downloadStatementPdf } from '@/api/accumulation';
+import { getSavingsStatement, type SavingsStatementView } from '@/api/documents';
 import type { ApiError } from '@/lib/apiError';
-import type { StatementRecordView, StatementView } from '@/api/types';
+import type { StatementRecordView } from '@/api/types';
 import { DatePicker } from '@/components/DatePicker';
-import { Field } from '@/components/Field';
 import { FormField } from '@/components/FormField';
+import { SavingsStatementTable } from '@/features/documents/SavingsStatementTable';
 import { InlineError } from '@/components/InlineError';
 import { LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { startMutation } from '@/lib/idempotency';
-import { formatMoney } from '@/lib/money';
 import { useAccumulationStore } from '@/store/accumulationStore';
-import { ENTRY_LABEL } from './entryLabels';
 
 /** The last full calendar year: the period the annual statement covers. */
 function lastYear(): { from: string; to: string } {
@@ -30,7 +29,7 @@ function lastYear(): { from: string; to: string } {
  */
 export function StatementSection({ policyNumber }: { policyNumber: string }) {
   const [period, setPeriod] = useState(lastYear);
-  const [statement, setStatement] = useState<StatementView | null>(null);
+  const [statement, setStatement] = useState<SavingsStatementView | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [loading, setLoading] = useState(false);
   const [filedNote, setFiledNote] = useState<string | null>(null);
@@ -49,7 +48,7 @@ export function StatementSection({ policyNumber }: { policyNumber: string }) {
     setError(null);
     setFiledNote(null);
     try {
-      setStatement(await getStatement(policyNumber, period.from, period.to));
+      setStatement(await getSavingsStatement(policyNumber, period.from, period.to));
     } catch (cause) {
       setStatement(null);
       setError(cause as ApiError);
@@ -93,29 +92,8 @@ export function StatementSection({ policyNumber }: { policyNumber: string }) {
         </p>
       )}
       {loading && <LoadingBlock />}
-      {statement && <StatementBody statement={statement} />}
+      {statement && <SavingsStatementTable statement={statement} />}
       <FiledStatements records={records?.data ?? []} />
-    </div>
-  );
-}
-
-function StatementBody({ statement }: { statement: StatementView }) {
-  return (
-    <div className="space-y-2">
-      <dl className="divide-y divide-border rounded-md border border-border">
-        <Field label={`Opening balance, ${formatDate(statement.periodFrom)}`} value={formatMoney(statement.openingBalance)} />
-        {statement.groups.map((group) => (
-          <Field
-            key={group.type}
-            label={`${ENTRY_LABEL[group.type as keyof typeof ENTRY_LABEL] ?? group.type} (${group.entries.length})`}
-            value={formatMoney(group.total)}
-          />
-        ))}
-        <Field label={`Closing balance, ${formatDate(statement.periodTo)}`} value={formatMoney(statement.closingBalance)} emphasis />
-      </dl>
-      <p className="text-xs text-muted-foreground">
-        Includes every entry up to number {statement.lastSeq}. A later correction appears on the next statement.
-      </p>
     </div>
   );
 }

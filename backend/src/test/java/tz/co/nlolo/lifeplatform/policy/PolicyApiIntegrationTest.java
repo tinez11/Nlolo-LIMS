@@ -104,6 +104,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/product/V28__survival_investment_component.sql",
             "db-migrations/product/V29__funeral_group_rate.sql",
+            "db-migrations/product/V30__funeral_group_rate_period.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -143,6 +144,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/policy/V37__sale_classification.sql",
             "db-migrations/policy/V38__group_funeral_scheme.sql",
+            "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             // The offer-validity window the expiry sweep reads.
             "db-migrations/refdata/V5__seed_offer_validity.sql",
@@ -1768,7 +1770,8 @@ class PolicyApiIntegrationTest {
         String policyNumber = issueDirectly(tenantId, fixture, List.of(), new BigDecimal("800.00"), "TZS", "MONTHLY");
 
         PolicyView view = policyApi.getPolicy(policyNumber);
-        assertNull(view.commencementDate());
+        // Cover still starts somewhere (audit 2026-10-07): the issue date when the request states none.
+        assertEquals(view.issueDate(), view.commencementDate());
         assertNull(view.policyTermMonths());
         assertNull(view.maturityDate());
     }

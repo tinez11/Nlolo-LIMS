@@ -1,0 +1,195 @@
+openapi: 3.1.0
+info:
+  title: Customer Documents API
+  version: "0.1.0-draft"
+  description: >
+    The documents a customer can ask for (2026-10-07): a policy's premium payment schedule and a savings plan's
+    account statement, as JSON for the console's tables and as PDF or Excel to hand over. Staff read any policy in
+    their tenant; a customer only their own (the token's party_id must be the policyholder).
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /policies/{policyNumber}/payment-schedule:
+    get:
+      summary: A policy's premium payment schedule
+      description: >-
+        Every premium due, oldest first, with what was paid against it, the day the last payment arrived, the
+        receipt references and who paid, its status (Paid, Partly paid, Due, Upcoming, In grace, Overdue, Waived)
+        and its balance; and the totals -- charged, paid, outstanding now, still to come, and the next payment.
+      security:
+        - staffAuth: []
+        - customersAuth: [profile]
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentSchedule' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /policies/{policyNumber}/payment-schedule/{format}:
+    get:
+      summary: The payment schedule as a PDF or Excel file
+      security:
+        - staffAuth: []
+        - customersAuth: [profile]
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - { name: format, in: path, required: true, schema: { type: string, enum: [pdf, xlsx] } }
+      responses:
+        '200':
+          description: The file
+          content:
+            application/pdf: { schema: { type: string, format: binary } }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /policies/{policyNumber}/savings-statement:
+    get:
+      summary: A savings plan's account statement for a period
+      description: >-
+        Every entry in the period in date order with money in, money out and the balance after it, framed by the
+        opening and closing balance, and each kind of movement totalled. 404 for a policy with no savings account.
+      security:
+        - staffAuth: []
+        - customersAuth: [profile]
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SavingsStatement' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /policies/{policyNumber}/savings-statement/{format}:
+    get:
+      summary: The savings statement as a PDF or Excel file
+      security:
+        - staffAuth: []
+        - customersAuth: [profile]
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - { name: format, in: path, required: true, schema: { type: string, enum: [pdf, xlsx] } }
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: The file
+          content:
+            application/pdf: { schema: { type: string, format: binary } }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    staffAuth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/staff/protocol/openid-connect/auth
+          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/staff/protocol/openid-connect/token
+          scopes: {}
+    customersAuth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/customers/protocol/openid-connect/auth
+          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/customers/protocol/openid-connect/token
+          scopes:
+            profile: The customer's own records
+  schemas:
+    PaymentSchedule:
+      type: object
+      additionalProperties: false
+      required: [policyNumber, policyholderName, productName, policyStatus, premium, premiumFrequency, currency,
+                 coverStart, lines, totals]
+      properties:
+        policyNumber: { type: string }
+        policyholderName: { type: [string, "null"] }
+        productName: { type: [string, "null"] }
+        policyStatus: { type: [string, "null"] }
+        premium: { type: [number, "null"] }
+        premiumFrequency: { type: [string, "null"] }
+        currency: { type: [string, "null"] }
+        coverStart: { type: [string, "null"], format: date }
+        lines:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [number, invoiceId, dueDate, amountDue, amountPaid, paidOn, receipts, paidBy, status, balance]
+            properties:
+              number: { type: integer }
+              invoiceId: { type: string, format: uuid }
+              dueDate: { type: string, format: date }
+              amountDue: { type: number }
+              amountPaid: { type: number }
+              paidOn: { type: [string, "null"], format: date }
+              receipts: { type: [string, "null"], description: "Receipt references, comma-separated" }
+              paidBy: { type: [string, "null"], description: "Who paid (a phone number, cash), comma-separated" }
+              status: { type: string, enum: [Paid, Partly paid, Due, Upcoming, In grace, Overdue, Waived] }
+              balance: { type: number }
+        totals:
+          type: object
+          additionalProperties: false
+          required: [charged, paid, outstanding, upcoming, nextDueDate, nextDueAmount]
+          properties:
+            charged: { type: number }
+            paid: { type: number }
+            outstanding: { type: number, description: "Unpaid on premiums already due" }
+            upcoming: { type: number, description: "Unpaid on premiums not yet due" }
+            nextDueDate: { type: [string, "null"], format: date }
+            nextDueAmount: { type: [number, "null"] }
+    SavingsStatement:
+      type: object
+      additionalProperties: false
+      required: [policyNumber, policyholderName, productName, currency, periodFrom, periodTo, openingBalance,
+                 closingBalance, lines, totals]
+      properties:
+        policyNumber: { type: string }
+        policyholderName: { type: [string, "null"] }
+        productName: { type: [string, "null"] }
+        currency: { type: string }
+        periodFrom: { type: string, format: date }
+        periodTo: { type: string, format: date }
+        openingBalance: { type: number }
+        closingBalance: { type: number }
+        lines:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [date, description, moneyIn, moneyOut, balance]
+            properties:
+              date: { type: string, format: date }
+              description: { type: string }
+              moneyIn: { type: [number, "null"] }
+              moneyOut: { type: [number, "null"] }
+              balance: { type: number }
+        totals:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [label, amount]
+            properties:
+              label: { type: string }
+              amount: { type: number }

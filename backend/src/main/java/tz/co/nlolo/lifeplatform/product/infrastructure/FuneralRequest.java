@@ -25,8 +25,12 @@ public record FuneralRequest(@Valid List<Plan> plans, @Valid List<Benefit> benef
                              MainMemberDeathRule onMainMemberDeath, Boolean freeCoverToPaidDate,
                              FuneralSoldAs soldAs) {
 
-    /** {@code groupMonthlyRate}: per member per month on a group scheme; absent on a version not sold to groups. */
-    public record Plan(String planCode, String name, BigDecimal groupMonthlyRate) {}
+    /**
+     * {@code groupMonthlyRate}: the group rate per member, per {@code groupRatePeriod} (MONTHLY when absent; YEARLY bills
+     * a scheme once a year with its member list fixed); absent on a version not sold to groups.
+     */
+    public record Plan(String planCode, String name, BigDecimal groupMonthlyRate,
+                       tz.co.nlolo.lifeplatform.product.api.GroupRatePeriod groupRatePeriod) {}
 
     public record Benefit(String planCode, FuneralRole role, BigDecimal benefit) {}
 
@@ -38,7 +42,7 @@ public record FuneralRequest(@Valid List<Plan> plans, @Valid List<Benefit> benef
     public FuneralPlan toPlan() {
         return new FuneralPlan(true,
             plans == null ? List.of() : plans.stream()
-                .map(p -> new FuneralPlanOption(p.planCode(), p.name(), p.groupMonthlyRate())).toList(),
+                .map(p -> new FuneralPlanOption(p.planCode(), p.name(), p.groupMonthlyRate(), p.groupRatePeriod())).toList(),
             benefits == null ? List.of() : benefits.stream()
                 .map(b -> new FuneralPlanBenefit(b.planCode(), b.role(), b.benefit())).toList(),
             premiums == null ? List.of() : premiums.stream()

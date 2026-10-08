@@ -168,6 +168,43 @@ class GroupFuneralMembersIntegrationTest {
     }
 
     @Test
+    void aYearlyPlanBillsOnceForTheYearAndKeepsItsMembersFixedWhileInForce() {
+        // 2026-10-08: the association pays members x 42,000 once a year and alone is liable for it.
+        var product = fixtures.publishYearlyGroupFamilia(TENANT);
+        UUID association = fixtures.association(TENANT);
+        String policyNumber = fixtures.issueGroupScheme(TENANT, product, association, groupProposal("A", List.of(
+            life("M001", FuneralRole.MAIN_MEMBER, "Juma Ali", 40), life("M001", FuneralRole.CHILD, "Neema Juma", 10),
+            life("M002", FuneralRole.MAIN_MEMBER, "Rehema Said", 50))));
+
+        var policy = asTenant(TENANT, () -> policyApi.getPolicy(policyNumber));
+        assertThat(policy.premiumFrequency()).isEqualTo("ANNUALLY");
+        assertThat(policy.premiumAmount()).as("2 members x 42,000").isEqualByComparingTo("84000");
+        List<InvoiceView> invoices = asTenant(TENANT, () -> billingApi.listInvoices(policyNumber, null));
+        assertThat(invoices).isNotEmpty().allSatisfy(i -> assertThat(i.amount()).isEqualByComparingTo("84000"));
+        assertThat(invoices.stream().map(InvoiceView::dueDate).distinct().count())
+            .as("one invoice a year, not twelve").isEqualTo(invoices.size());
+        assertThat(invoices).hasSizeLessThanOrEqualTo(2);
+
+        annuityFixtures.collect(TENANT, policyNumber, "84000.00", TODAY);
+        String fixed = "is on a yearly plan: its members and their families are fixed while it is in force";
+        UUID juma = family(policyNumber, "M001").policyMemberId();
+        assertThatThrownBy(() -> asTenant(TENANT, () -> policyApi.addGroupFuneralFamily(policyNumber, List.of(
+            joiner("M003", FuneralRole.MAIN_MEMBER, "Hamisi Juma", TODAY.minusYears(35))), null, "staff")))
+            .isInstanceOf(InvalidPolicyStateException.class).hasMessageContaining(fixed);
+        assertThatThrownBy(() -> asTenant(TENANT, () -> policyApi.addGroupFuneralLife(policyNumber, juma,
+            joiner(null, FuneralRole.SPOUSE, "Asha Juma", TODAY.minusYears(38)), "staff")))
+            .isInstanceOf(InvalidPolicyStateException.class).hasMessageContaining(fixed);
+        UUID neema = family(policyNumber, "M001").lives().stream().filter(l -> l.fullName().equals("Neema Juma"))
+            .findFirst().orElseThrow().coveredLifeId();
+        assertThatThrownBy(() -> asTenant(TENANT, () -> policyApi.removeGroupFuneralLife(policyNumber, neema, null, "staff")))
+            .isInstanceOf(InvalidPolicyStateException.class).hasMessageContaining(fixed);
+        assertThatThrownBy(() -> asTenant(TENANT, () -> policyApi.exitMember(policyNumber, juma, TODAY,
+            ExitReason.CANCELLED, null, "staff")))
+            .isInstanceOf(InvalidPolicyStateException.class).hasMessageContaining(fixed);
+        assertThat(asTenant(TENANT, () -> policyApi.groupFuneralFamilies(policyNumber))).hasSize(2);
+    }
+
+    @Test
     void aJoiningFileTakesEveryGoodFamilyWholeAndNamesTheRest() {
         String policyNumber = inForceScheme();
         String file = String.join(",", tz.co.nlolo.lifeplatform.underwriting.api.FuneralScheduleFile.HEADER) + "\n"

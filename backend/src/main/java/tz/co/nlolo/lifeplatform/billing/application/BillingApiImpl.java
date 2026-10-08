@@ -10,6 +10,8 @@ import tz.co.nlolo.lifeplatform.billing.domain.BillingSchedule;
 import tz.co.nlolo.lifeplatform.billing.domain.FieldReceipt;
 import tz.co.nlolo.lifeplatform.billing.domain.PremiumCredit;
 import tz.co.nlolo.lifeplatform.billing.domain.PremiumInvoice;
+import tz.co.nlolo.lifeplatform.billing.domain.PremiumReceipt;
+import tz.co.nlolo.lifeplatform.billing.infrastructure.PremiumReceiptRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.ArrearsCaseRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.BillingScheduleRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.FieldReceiptRepository;
@@ -60,6 +62,7 @@ public class BillingApiImpl implements BillingApi {
     private final PremiumInvoiceRepository premiumInvoiceRepository;
     /** Premium given back when a loan ends before its term. See creditUnearnedPremium. */
     private final PremiumCreditRepository premiumCreditRepository;
+    private final PremiumReceiptRepository premiumReceiptRepository;
     private final ArrearsCaseRepository arrearsCaseRepository;
     private final FieldReceiptRepository fieldReceiptRepository;
     private final ProductApi productApi;
@@ -79,7 +82,9 @@ public class BillingApiImpl implements BillingApi {
                            ArrearsCaseRepository arrearsCaseRepository, FieldReceiptRepository fieldReceiptRepository,
                            ProductApi productApi, PolicyApi policyApi,
                            ApplicationEventPublisher eventPublisher,
-                           ArrearsNotificationSweep arrearsNotificationSweep) {
+                           ArrearsNotificationSweep arrearsNotificationSweep,
+                           PremiumReceiptRepository premiumReceiptRepository) {
+        this.premiumReceiptRepository = premiumReceiptRepository;
         this.billingScheduleRepository = billingScheduleRepository;
         this.premiumInvoiceRepository = premiumInvoiceRepository;
         this.premiumCreditRepository = premiumCreditRepository;
@@ -200,6 +205,14 @@ public class BillingApiImpl implements BillingApi {
                 policyNumber, tenantId, List.of("DUE", "IN_GRACE"))
             .map(this::toView)
             .orElseThrow(() -> new InvoiceNotFoundException("No invoice currently due for policy " + policyNumber));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ReceiptView> listReceipts(String policyNumber) {
+        return premiumReceiptRepository.findByTenantIdAndPolicyNumberOrderByReceivedAtAsc(TenantContext.get(), policyNumber)
+            .stream().map(r -> new ReceiptView(r.getReceiptId(), r.getInvoiceId(), r.getAmount(), r.getCurrency(),
+                r.getReceivedAt(), r.getPaymentReference(), r.getPayerRef())).toList();
     }
 
     @Override
@@ -369,9 +382,19 @@ public class BillingApiImpl implements BillingApi {
         PremiumInvoice invoice = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoiceId, tenantId)
             .orElseThrow(() -> new InvoiceNotFoundException(invoiceId));
         String statusBefore = invoice.getStatus();
+        // A redelivered confirmation carries the same reference: recorded and applied once (billing V10).
+        if (paymentReference != null
+                && premiumReceiptRepository.existsByTenantIdAndInvoiceIdAndPaymentReference(tenantId, invoiceId, paymentReference)) {
+            return toView(invoice);
+        }
         // Credits count towards settling it -- see PremiumInvoice.applyPayment(paid, credited).
         invoice.applyPayment(amount, creditedAgainst(invoice));
         premiumInvoiceRepository.save(invoice);
+        // The payment itself, for the customer's schedule: when, which reference, who paid (billing V10).
+        if (amount != null && amount.signum() > 0) {
+            premiumReceiptRepository.save(new PremiumReceipt(tenantId, invoice.getPolicyNumber(), invoiceId, amount,
+                currency != null ? currency : invoice.getCurrency(), Instant.now(), paymentReference, payerRef));
+        }
         arrearsCaseRepository.findByInvoiceIdAndTenantIdAndResolvedAtIsNull(invoiceId, tenantId)
             .ifPresent(ArrearsCase::resolve);
         // M7: until now this method recorded a premium as paid and published NOTHING at all, so no

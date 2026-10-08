@@ -39,6 +39,7 @@ public final class DepositTestMigrations {
         "db-migrations/product/V27__ifrs17_classification.sql",
         "db-migrations/product/V28__survival_investment_component.sql",
         "db-migrations/product/V29__funeral_group_rate.sql",
+        "db-migrations/product/V30__funeral_group_rate_period.sql",
         "db-migrations/accumulation/V1__create_accumulation_schema.sql",
         "db-migrations/accumulation/V2__request_keys.sql",
         "db-migrations/accumulation/V3__deposit_periods.sql",
@@ -96,6 +97,7 @@ public final class DepositTestMigrations {
         "db-migrations/policy/V32__attached_bonus_projection.sql",
         "db-migrations/policy/V37__sale_classification.sql",
         "db-migrations/policy/V38__group_funeral_scheme.sql",
+        "db-migrations/policy/V40__commencement_never_null.sql",
         "db-migrations/audit/V1__create_audit_schema.sql",
         "db-migrations/audit/V2__rls_fail_closed.sql",
         "db-migrations/audit/V3__q4_2026_partitions.sql",
@@ -120,5 +122,6 @@ public final class DepositTestMigrations {
         "db-migrations/billing/V7__policy_inception_invoice.sql",
         "db-migrations/billing/V8__schedule_premium_paying_until.sql",
         "db-migrations/billing/V9__schedules_due_for_invoicing.sql",
+        "db-migrations/billing/V10__premium_receipt.sql",
     };
 }

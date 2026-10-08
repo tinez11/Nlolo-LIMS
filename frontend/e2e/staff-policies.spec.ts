@@ -93,10 +93,11 @@ test.describe('staff policies', () => {
     // the drawer led to the FULL record rather than another summary. Coverage is what the
     // default tab opens on, and it is the thing the drawer deliberately does not carry.
     await expect(page.getByRole('heading', { name: 'Coverage' })).toBeVisible();
-    // The registers are one click away rather than one scroll. Asserting the TAB exists is
+    // The registers are one click away rather than one scroll. Asserting a TAB exists is
     // the same proof the old `Loans` heading gave -- that this is the record and not the
-    // preview -- without reaching into a section this test is not about.
-    await expect(page.getByRole('tab', { name: 'Loans' })).toBeVisible();
+    // preview. Billing, because every policy has one; Loans now shows only where a loan is
+    // possible (audit 2026-10-07), and the first policy in the list may be any kind.
+    await expect(page.getByRole('tab', { name: 'Billing' })).toBeVisible();
   });
 
   test('a term policy offers no surrender at all, because it has nothing to surrender', async ({

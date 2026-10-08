@@ -77,7 +77,9 @@ describe('group funeral plans', () => {
   } as unknown as FuneralTermsView;
 
   it('offers only plans with a group rate, on a version sold to groups', () => {
-    expect(groupPlans(terms)).toEqual([{ planCode: 'A1', name: 'Plan A1', rate: 3000 }]);
+    expect(groupPlans(terms)).toEqual([{ planCode: 'A1', name: 'Plan A1', rate: 3000, period: 'MONTHLY' }]);
+    expect(groupPlans({ ...terms, plans: [{ planCode: 'G1', name: 'Group 42K', groupMonthlyRate: 42000, groupRatePeriod: 'YEARLY' }] }))
+      .toEqual([{ planCode: 'G1', name: 'Group 42K', rate: 42000, period: 'YEARLY' }]);
     expect(groupPlans({ ...terms, soldAs: 'INDIVIDUAL' })).toEqual([]);
     expect(groupPlans(null)).toEqual([]);
   });
@@ -95,5 +97,6 @@ describe('group funeral plans', () => {
   it('states the bill as members x rate', () => {
     expect(monthlyBill(2, 3000, 'TZS')).toBe('2 members x TZS 3,000.00 = TZS 6,000.00 a month');
     expect(monthlyBill(1, 3000, 'TZS')).toBe('1 member x TZS 3,000.00 = TZS 3,000.00 a month');
+    expect(monthlyBill(10, 42000, 'TZS', 'YEARLY')).toBe('10 members x TZS 42,000.00 = TZS 420,000.00 a year');
   });
 });

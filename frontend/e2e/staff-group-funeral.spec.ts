@@ -56,7 +56,7 @@ test.describe('group funeral schemes', () => {
       await admin.getByRole('button', { name: 'Add plan' }).click();
       await admin.getByLabel('Plan code').fill('A1');
       await admin.getByLabel('Plan name').fill('Plan A1');
-      await admin.getByLabel('Group rate per member per month').fill('3000');
+      await admin.getByLabel('Group rate per member').fill('3000');
       await admin.getByLabel('Main member benefit').fill('2000000');
       await admin.getByLabel('Spouse benefit').fill('1000000');
       await admin.getByLabel('Child benefit').fill('500000');

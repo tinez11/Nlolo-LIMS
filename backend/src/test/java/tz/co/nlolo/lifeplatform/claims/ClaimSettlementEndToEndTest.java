@@ -158,6 +158,7 @@ class ClaimSettlementEndToEndTest {
             "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/product/V28__survival_investment_component.sql",
             "db-migrations/product/V29__funeral_group_rate.sql",
+            "db-migrations/product/V30__funeral_group_rate_period.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -205,6 +206,7 @@ class ClaimSettlementEndToEndTest {
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/policy/V37__sale_classification.sql",
             "db-migrations/policy/V38__group_funeral_scheme.sql",
+            "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -280,8 +282,12 @@ class ClaimSettlementEndToEndTest {
 
     private String issuePolicyWithNullUnderwritingCase(UUID tenantId, Fixture fixture) {
         TenantContext.set(tenantId);
+        // Cover from a month ago: the claims below date the death yesterday, and a policy issued today with no start
+        // date of its own covers nothing before today (audit 2026-10-07 -- this fixture had relied on there being no
+        // lower bound at all).
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
-            new BigDecimal("2000000"), "TZS", new BigDecimal("40000.00"), "TZS", "MONTHLY", null, List.of(), "Claims E2E test");
+            new BigDecimal("2000000"), "TZS", new BigDecimal("40000.00"), "TZS", "MONTHLY", null, List.of(), "Claims E2E test",
+            LocalDate.now().minusMonths(1), null, null, null, null);
         String issuedPolicyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
         // Cover starts with the first premium. This fixture needs a policy on risk.
         policyApi.activateOnFirstPremium(issuedPolicyNumber);

@@ -1,6 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Pause, Play, RotateCcw, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { getReferenceCodes } from '@/api/refdata';
+import { PaymentScheduleTable } from '@/features/documents/PaymentScheduleTable';
+import { SchemeCoverPanel } from './SchemeCoverPanel';
 import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
@@ -128,6 +131,15 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   const policy = detail.data;
   // A group funeral scheme (2026-10-07): category FUNERAL, issued as a scheme -- every scheme number is GRP-.
   const isGroupFuneral = policy?.productCategory === 'FUNERAL' && policyNumber.startsWith('GRP-');
+  // Every scheme -- employer, lender or association -- is issued as GRP-.
+  const isScheme = policyNumber.startsWith('GRP-');
+  // A deferred pension that has vested (audit 2026-10-07): its contributions ended at vesting, so the premium on
+  // the policy is history, not a bill. Undefined when this is not one; null when vested with no date recorded.
+  const annuity = annuityContract?.data;
+  const vestedOn: string | null | undefined =
+    annuity && annuity.status !== 'ACCUMULATING' && policy?.premiumFrequency && policy.premiumFrequency !== 'SINGLE'
+      ? (annuity.lockedOn ?? null)
+      : undefined;
 
   // isInitialLoad, not a 'loading'-only check: the load fires from an effect that
   // runs AFTER first render, so status is briefly 'idle' -- a 'loading'-only check
@@ -291,10 +303,17 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     // Suspend/resume/reinstate are all hasRole('REALM_STAFF') only -- shown only in the staff
     // console, not just left to always-403 on click, the same "don't render a button that can
     // never work for this session" discipline the deferred surrender action already follows.
+    // A scheme's overview says who it covers (audit 2026-10-07), not only the total. Staff only, as the member
+    // reads are.
+    if (isStaff && policy && isScheme) {
+      overview.unshift(
+        <SchemeCoverPanel key="who" policyNumber={policyNumber} category={policy.productCategory} groupFuneral={isGroupFuneral} />,
+      );
+    }
     if (isStaff && policy) {
       overview.push(
         <Panel key="lifecycle" title="Lifecycle">
-          <LifecycleActions policyNumber={policyNumber} status={policy.status} />
+          <LifecycleActions policyNumber={policyNumber} status={policy.status} category={policy.productCategory ?? undefined} />
         </Panel>,
       );
       // Only on a policy that could have value. A term policy has none, and a panel offering to
@@ -309,7 +328,8 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       // Free-look is an INDIVIDUAL buyer's statutory right (guide §21.3). A group or credit-life
       // scheme is cancelled under the terms its employer or lender negotiated, and the server
       // refuses the window for one, so offering it here would be an action that can only 422.
-      if (INDIVIDUAL_CATEGORIES.includes(policy.productCategory ?? '')) {
+      // Not on a group funeral scheme, which is category FUNERAL but an association's contract (audit 2026-10-07).
+      if (INDIVIDUAL_CATEGORIES.includes(policy.productCategory ?? '') && !isGroupFuneral) {
         overview.push(
           <Panel
             key="free-look"
@@ -367,8 +387,10 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       });
     }
 
-    tabs.push(
-      {
+    // A scheme's beneficiaries belong to each member, not to the employer, lender or association that holds it
+    // (audit 2026-10-07): a policy-level list here was a form for something the contract does not have.
+    if (!isScheme) {
+      tabs.push({
         value: 'beneficiaries',
         label: 'Beneficiaries',
         content: (
@@ -383,29 +405,45 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             </Panel>
           </div>
         ),
-      },
+      });
+    }
+
+    tabs.push(
       {
         value: 'billing',
         label: 'Billing',
         content: (
-          <div className="pt-5">
-            <Panel title="Invoices" subtitle="All invoices for this policy">
+          <div className="space-y-5 pt-5">
+            {vestedOn !== undefined && (
+              <p className="rounded-md border border-border bg-hover px-4 py-2.5 text-sm" role="status">
+                No further premiums: this pension vested{vestedOn ? ` on ${formatDate(vestedOn)}` : ''}, and its
+                contributions ended then. Any premiums left unpaid were waived.
+              </p>
+            )}
+            <Panel title="Payment schedule" subtitle="Every premium due, what was paid, when and under which receipt">
+              <PaymentScheduleTable policyNumber={policyNumber} />
+            </Panel>
+            <Panel title="Invoices" subtitle="Request a payment, waive or follow up an invoice">
               <InvoicesPanel policyNumber={policyNumber} />
             </Panel>
           </div>
         ),
       },
-      {
-        value: 'loans',
-        label: 'Loans',
-        content: (
-          <div className="pt-5">
-            <Panel title="Loans" subtitle="Policy loans taken against cash value">
-              <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} />
-            </Panel>
-          </div>
-        ),
-      },
+      // Only where a loan is possible (audit 2026-10-07): a policy loan is lent against cash value, which only
+      // these categories build; on term, funeral, annuity, unit-linked and schemes the tab could never be used.
+      ...(VALUE_CATEGORIES.includes(policy?.productCategory ?? '')
+        ? [{
+            value: 'loans',
+            label: 'Loans',
+            content: (
+              <div className="pt-5">
+                <Panel title="Loans" subtitle="Policy loans taken against cash value">
+                  <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} />
+                </Panel>
+              </div>
+            ),
+          }]
+        : []),
       {
         value: 'payouts',
         label: 'Payouts',
@@ -557,6 +595,14 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                   // where the invoices actually are is the half that was carrying its
                   // weight, and it now names the tab rather than a panel that moved.
                   note="Single premium per borrower at the scheme's rate, invoiced when a file is accepted — see Billing."
+                />
+              ) : vestedOn !== undefined ? (
+                // A vested pension pays no more premiums; the figure on the policy is what it was paying.
+                <Field
+                  label="Premium"
+                  value="Ended at vesting"
+                  note={`Was ${formatMoney(policy.premium)} ${policy.premiumFrequency ? PREMIUM_FREQUENCY_SUFFIXES[policy.premiumFrequency] : ''}`
+                    + (vestedOn ? ` until ${formatDate(vestedOn)}.` : '.') + ' The pension now pays out; see the Annuity tab.'}
                 />
               ) : (
                 <Field
@@ -756,13 +802,31 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
 function LifecycleActions({
   policyNumber,
   status,
+  category,
 }: {
   policyNumber: string;
   status: string | undefined;
+  category: string | undefined;
 }) {
   const [suspendFormOpen, setSuspendFormOpen] = useState(false);
+  // Which kinds of policy may be suspended is reference data (POLICY_SUSPENSION_ELIGIBLE_CATEGORIES), read
+  // here from the same list the server enforces: Suspend was offered on every policy and could only work on
+  // the one kind the list names (audit 2026-10-07).
+  const [suspendable, setSuspendable] = useState<string[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    getReferenceCodes('POLICY_SUSPENSION_ELIGIBLE_CATEGORIES').then(
+      (codes) => { if (live) setSuspendable(codes.map((c) => c.code ?? '')); },
+      () => { if (live) setSuspendable([]); },
+    );
+    return () => { live = false; };
+  }, []);
 
-  if (status === 'ACTIVE') {
+  if (status === 'ACTIVE' && suspendable !== null && !suspendable.includes(category ?? '')) {
+    return <p className="px-4 pb-4 text-xs text-muted-foreground">This kind of policy is not suspended; it lapses through dunning when premiums stop.</p>;
+  }
+
+  if (status === 'ACTIVE' && suspendable !== null) {
     return suspendFormOpen ? (
       <SuspendForm policyNumber={policyNumber} onDone={() => setSuspendFormOpen(false)} />
     ) : (

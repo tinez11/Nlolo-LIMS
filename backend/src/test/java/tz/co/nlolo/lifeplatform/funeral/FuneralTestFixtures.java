@@ -101,6 +101,21 @@ public class FuneralTestFixtures {
         return publishGroupFamilia(tenant, FuneralPlans.familia(6, payee, onDeath, false));
     }
 
+    /**
+     * Familia sold to groups on YEARLY plans (2026-10-08): plan A at 42,000 per member per year, plan B at 60,000 --
+     * one bill a year, the member list fixed while a scheme is in force.
+     */
+    public Product publishYearlyGroupFamilia(UUID tenant) {
+        FuneralPlan f = FuneralPlans.familia();
+        return publish(tenant, new FuneralPlan(true,
+            f.plans().stream().map(p -> new tz.co.nlolo.lifeplatform.product.api.FuneralPlanOption(p.planCode(), p.name(),
+                new BigDecimal(p.planCode().equals("A") ? "42000.00" : "60000.00"),
+                tz.co.nlolo.lifeplatform.product.api.GroupRatePeriod.YEARLY)).toList(),
+            f.benefits(), List.of(), f.roles(), f.maxPricedAge(), f.waitingPeriodMonths(), f.accidentWaivesWaiting(),
+            f.dependantClaimPayee(), f.onMainMemberDeath(), f.freeCoverToPaidDate(),
+            tz.co.nlolo.lifeplatform.product.api.FuneralSoldAs.GROUP));
+    }
+
     private Product publishGroupFamilia(UUID tenant, FuneralPlan f) {
         return publish(tenant, new FuneralPlan(true,
             f.plans().stream().map(p -> new tz.co.nlolo.lifeplatform.product.api.FuneralPlanOption(p.planCode(), p.name(),

@@ -19,6 +19,8 @@ public class FuneralPlanEntity {
     @Column(nullable = false) private String name;
     /** Per member per month on a group scheme (product V29); null on a version not sold to groups. */
     @Column(name = "group_monthly_rate") private java.math.BigDecimal groupMonthlyRate;
+    /** What the group rate is per: MONTHLY or YEARLY (product V30). */
+    @Column(name = "group_rate_period", nullable = false) private String groupRatePeriod = "MONTHLY";
 
     protected FuneralPlanEntity() {}
 
@@ -28,9 +30,11 @@ public class FuneralPlanEntity {
         this.planCode = option.planCode();
         this.name = option.name();
         this.groupMonthlyRate = option.groupMonthlyRate();
+        this.groupRatePeriod = option.groupRatePeriod().name();
     }
 
     public FuneralPlanOption toOption() {
-        return new FuneralPlanOption(planCode, name, groupMonthlyRate);
+        return new FuneralPlanOption(planCode, name, groupMonthlyRate,
+            tz.co.nlolo.lifeplatform.product.api.GroupRatePeriod.valueOf(groupRatePeriod));
     }
 }

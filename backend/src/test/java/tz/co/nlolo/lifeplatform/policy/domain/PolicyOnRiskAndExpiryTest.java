@@ -62,13 +62,16 @@ class PolicyOnRiskAndExpiryTest {
     }
 
     @Test
-    void withNoCommencementRecordedThereIsNoLowerBound() {
-        // A normally issued policy carries no commencement; the platform records no cover-start,
-        // so no day is refused on the lower side -- the pre-existing behaviour, preserved.
+    void withNoCommencementRecordedCoverStartsAtTheIssueDate() {
+        // Audit 2026-10-07: this asserted "no lower bound", which let a death claim dated five years before
+        // the policy existed through the on-risk check. No contract covers a day before it was issued.
         Policy p = policy("TERM_LIFE");
-        p.recordIssuedOn(TODAY);
+        p.recordIssuedOn(TODAY.minusDays(10));
         p.activate();
-        assertTrue(p.wasOnRiskOn(TODAY.minusYears(5)));
+        assertFalse(p.wasOnRiskOn(TODAY.minusYears(5)));
+        assertFalse(p.wasOnRiskOn(TODAY.minusDays(11)));
+        assertTrue(p.wasOnRiskOn(TODAY.minusDays(10)));
+        assertTrue(p.wasOnRiskOn(TODAY));
     }
 
     @Test

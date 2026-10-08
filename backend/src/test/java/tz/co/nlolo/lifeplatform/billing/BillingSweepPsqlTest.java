@@ -52,6 +52,7 @@ class BillingSweepPsqlTest {
             "db-migrations/refdata/V9__journal_reason_codes.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
+            "db-migrations/billing/V10__premium_receipt.sql",
             // The policy schema is new to this list, and not incidental: the arrears step of the
             // sweep now joins policy.policy to skip offers nobody has accepted, so the function
             // will not even parse without these. The test inserts its own policy rows below.
@@ -71,7 +72,8 @@ class BillingSweepPsqlTest {
             "db-migrations/policy/V30__surrender.sql",
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/policy/V37__sale_classification.sql",
-            "db-migrations/policy/V38__group_funeral_scheme.sql");
+            "db-migrations/policy/V38__group_funeral_scheme.sql",
+            "db-migrations/policy/V40__commencement_never_null.sql");
 
         String fullFile = Files.readString(Path.of("db-migrations/_post-migration/configure-billing-sweep.sql"));
         String functionOnly = fullFile.substring(0, fullFile.indexOf("-- Every 15 minutes"));

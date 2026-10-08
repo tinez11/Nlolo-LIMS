@@ -118,6 +118,47 @@ class GroupFuneralSchemeIntegrationTest {
         assertThat(invoices).isNotEmpty().allSatisfy(i -> assertThat(i.amount()).isEqualByComparingTo("6000"));
     }
 
+    @Autowired private AnnuityTestFixtures annuityFixtures;
+    @Autowired private tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi underwritingApi;
+    @Autowired private tz.co.nlolo.lifeplatform.benefitpayout.api.BenefitPayoutApi benefitPayoutApi;
+
+    @Test
+    void aSchemeIsNeverCancelledInAnIndividualBuyersFreeLookWindow() {
+        // Audit 2026-10-07: category FUNERAL passed the free-look category gate, so one click cancelled an
+        // association's whole scheme from inception.
+        var product = fixtures.publishGroupFamilia(TENANT);
+        UUID association = fixtures.association(TENANT);
+        String policyNumber = fixtures.issueGroupScheme(TENANT, product, association, groupProposal("A", twoFamilies()));
+        annuityFixtures.collect(TENANT, policyNumber, "6000.00", TODAY);
+
+        assertThatThrownBy(() -> asTenant(TENANT, () -> benefitPayoutApi.requestFreeLook(policyNumber, "+255700000009",
+            List.of(), "csr-1")))
+            .hasMessageContaining("scheme " + policyNumber + " is cancelled under the terms its policyholder agreed");
+        assertThat(asTenant(TENANT, () -> policyApi.getPolicy(policyNumber)).status()).isEqualTo(PolicyStatus.ACTIVE);
+    }
+
+    @Test
+    void anIssuedPolicyAlwaysRecordsWhenCoverStarts() {
+        // Audit 2026-10-07: a case that stated no start date issued a policy with none, and a missing start
+        // read as "covered on every earlier day". The scheme commences today; so does any policy without one.
+        var product = fixtures.publishGroupFamilia(TENANT);
+        UUID association = fixtures.association(TENANT);
+        String policyNumber = fixtures.issueGroupScheme(TENANT, product, association, groupProposal("A", twoFamilies()));
+        assertThat(asTenant(TENANT, () -> policyApi.getPolicy(policyNumber)).commencementDate()).isEqualTo(TODAY);
+        // An individual case that states NO start date -- the shape the console sends when the field is blank.
+        var familia = fixtures.publishFamilia(TENANT);
+        UUID mainMember = fixtures.person(TENANT, 40, tz.co.nlolo.lifeplatform.party.api.Sex.MALE);
+        UUID caseId = asTenant(TENANT, () -> underwritingApi.openCase(mainMember, familia.productId(), familia.versionId(),
+            new BigDecimal("2000000.00"), "TZS", null,
+            new tz.co.nlolo.lifeplatform.underwriting.api.ProposalDetails(null, null, null, null, null, null, "MONTHLY",
+                List.of()), "staff-opener").caseId());
+        asTenant(TENANT, () -> underwritingApi.recordFuneralApplication(caseId, "B", List.of(), "staff-opener"));
+        fixtures.decide(TENANT, caseId, tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome.ACCEPT, null);
+        String individual = asTenant(TENANT, () -> policyApi.searchPolicies(mainMember, null, null, null, null,
+            org.springframework.data.domain.PageRequest.of(0, 5)).getContent().get(0).policyNumber());
+        assertThat(asTenant(TENANT, () -> policyApi.getPolicy(individual)).commencementDate()).isEqualTo(TODAY);
+    }
+
     @Test
     void aSchemeIsIssuedOnlyOnAFuneralProductSoldToGroups() {
         var product = fixtures.publishFamilia(TENANT); // individual only

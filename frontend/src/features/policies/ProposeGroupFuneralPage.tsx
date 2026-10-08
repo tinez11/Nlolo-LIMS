@@ -169,7 +169,7 @@ export function ProposeGroupFuneralPage() {
                   <option value="">Select a plan</option>
                   {plans.map((p) => (
                     <option key={p.planCode} value={p.planCode}>
-                      {p.name} — {currency} {p.rate.toLocaleString('en-US')} per member per month
+                      {p.name} — {currency} {p.rate.toLocaleString('en-US')} per member per {p.period === 'YEARLY' ? 'year' : 'month'}
                     </option>
                   ))}
                 </Select>
@@ -189,7 +189,7 @@ export function ProposeGroupFuneralPage() {
             <p className="rounded-md border border-border bg-hover px-3 py-2 text-xs">
               Covered per family: main member {fmt(planBenefit(terms, plan.planCode, 'MAIN_MEMBER'))}, spouse{' '}
               {fmt(planBenefit(terms, plan.planCode, 'SPOUSE'))}, child {fmt(planBenefit(terms, plan.planCode, 'CHILD'))}.
-              The bill: <strong>{monthlyBill(families.length, plan.rate, currency)}</strong>.
+              The bill: <strong>{monthlyBill(families.length, plan.rate, currency, plan.period)}</strong>.
             </p>
           )}
 
