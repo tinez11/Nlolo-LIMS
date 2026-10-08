@@ -1,17 +1,25 @@
 import { Plus, X } from 'lucide-react';
-import { useFieldArray, useWatch, type Control, type FieldErrors, type UseFormRegister } from 'react-hook-form';
+import {
+  useFieldArray,
+  useWatch,
+  type Control,
+  type FieldErrors,
+  type UseFormGetValues,
+  type UseFormRegister,
+  type UseFormSetValue,
+} from 'react-hook-form';
 import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox';
-import { Input, Select, Textarea } from '@/components/ui/input';
+import { Input, Select } from '@/components/ui/input';
 import {
   FUNERAL_ROLE_LABELS,
   FUNERAL_ROLES,
   FUNERAL_SOLD_AS,
   FUNERAL_SOLD_AS_LABELS,
   blankFuneralPlan,
-  parsePremiums,
 } from './funeralSchema';
+import { PremiumGrid } from './PremiumGrid';
 import type { PublishVersionFormInput, PublishVersionFormValues } from './publishVersionSchema';
 
 function Alert({ message }: { message: string | undefined }) {
@@ -28,17 +36,19 @@ export function FuneralTermsSection({
   register,
   control,
   errors,
+  setValue,
+  getValues,
 }: {
   register: UseFormRegister<PublishVersionFormInput>;
   control: Control<PublishVersionFormInput, unknown, PublishVersionFormValues>;
   errors: FieldErrors<PublishVersionFormInput>;
+  setValue: UseFormSetValue<PublishVersionFormInput>;
+  getValues: UseFormGetValues<PublishVersionFormInput>;
 }) {
   const plans = useFieldArray({ control, name: 'funeralPlans' });
-  const premiumsText = useWatch({ control, name: 'funeralPremiumsText' }) ?? '';
   const soldAs = useWatch({ control, name: 'funeralSoldAs' }) ?? 'INDIVIDUAL';
   const toGroups = soldAs === 'GROUP' || soldAs === 'BOTH';
   const toIndividuals = soldAs !== 'GROUP';
-  const parsed = parsePremiums(premiumsText);
 
   return (
     <div className="space-y-3 rounded-md border border-border p-3">
@@ -112,23 +122,11 @@ export function FuneralTermsSection({
         </Button>
       </fieldset>
 
-      {toIndividuals ? (
+      {toIndividuals && (
         <fieldset className="space-y-2 rounded-md border border-border p-3">
           <legend className="text-xs font-medium text-muted-foreground">Premium table</legend>
-          <p className="text-xs text-subtle-foreground">
-            One row per line: <code>plan,role,ageFrom,ageTo,yearlyPremium</code> — e.g. <code>B,CHILD,0,24,6000</code>. A
-            header line is ignored. Roles: {FUNERAL_ROLES.join(', ')}. A dependant’s premium may be 0 — included in the
-            main member’s premium, for a flat family rate; the main member’s may not.
-          </p>
-          <FormField label="Premium rows" error={errors.funeralPremiumsText?.message}>
-            <Textarea rows={8} className="font-mono text-xs" {...register('funeralPremiumsText')} />
-          </FormField>
-          {!parsed.error && parsed.rows.length > 0 && (
-            <p className="text-xs text-subtle-foreground">{parsed.rows.length} premium rows read.</p>
-          )}
+          <PremiumGrid register={register} control={control} errors={errors} setValue={setValue} getValues={getValues} />
         </fieldset>
-      ) : (
-        <Alert message={errors.funeralPremiumsText?.message} />
       )}
 
       <fieldset className="space-y-2 rounded-md border border-border p-3">

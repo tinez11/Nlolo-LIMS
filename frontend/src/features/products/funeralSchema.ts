@@ -5,9 +5,10 @@ import type { ProductCategory, ProductVersionSpec } from '@/api/types';
  * A FUNERAL version's terms as the publish form holds them (family funeral cover), and the rules of
  * `FuneralPlanValidator` the console can check before sending, in its words. The server checks the rest.
  *
- * The premium table is a pasted grid -- `plan,role,ageFrom,ageTo,yearlyPremium`, one row per line, an
- * optional header -- for annuitySchema's reason: two plans, five roles and a handful of age bands is
- * dozens of rows nobody types into boxes one by one.
+ * The premium table is a grid (2026-10-08): plans down the side, each priced role's age bands across, one
+ * yearly premium per box. A role's bands come from its youngest entry age and the ages staff split it at, and
+ * end at the last age the role is priced to, so a band can neither gap nor overlap. It replaced a textbox of
+ * `plan,role,ageFrom,ageTo,yearlyPremium` lines; those can still be pasted from a spreadsheet to fill the grid.
  */
 
 export const FUNERAL_ROLES = ['MAIN_MEMBER', 'SPOUSE', 'CHILD', 'PARENT', 'EXTENDED'] as const;
@@ -38,6 +39,8 @@ const funeralPlanSchema = z.object({
   groupRate: z.string().trim(),
   /** What the group rate is per (2026-10-08): MONTHLY, or YEARLY -- one bill a year, the member list fixed for the year. */
   groupRatePeriod: z.enum(['MONTHLY', 'YEARLY']),
+  /** The yearly premium per role and age band, keyed by {@link premiumKey}; blank = not yet priced. */
+  premiums: z.record(z.string(), z.string()),
 });
 
 /** How a funeral version may be sold (group funeral schemes, 2026-10-07). */
@@ -65,7 +68,8 @@ export type FuneralRoleValues = z.infer<typeof funeralRoleSchema>;
 
 export const funeralFieldsShape = {
   funeralPlans: z.array(funeralPlanSchema),
-  funeralPremiumsText: z.string(),
+  /** Per role, in FUNERAL_ROLES order: the ages a new price band starts at, e.g. "41, 56"; blank = one band. */
+  funeralBandSplits: z.array(z.string()),
   funeralRoles: z.array(funeralRoleSchema),
   funeralMaxPricedAge: z.string().trim(),
   funeralWaitingMonths: z.string().trim(),
@@ -78,7 +82,7 @@ export const funeralFieldsShape = {
 
 export interface FuneralFields {
   funeralPlans: FuneralPlanValues[];
-  funeralPremiumsText: string;
+  funeralBandSplits: string[];
   funeralRoles: FuneralRoleValues[];
   funeralMaxPricedAge: string;
   funeralWaitingMonths: string;
@@ -95,7 +99,7 @@ export function blankFuneralFields(): FuneralFields {
     ({ role: r, allowed, maxLives, minEntryAge: min, maxEntryAge: max, coverStopAge: stop, studentStopAge: student });
   return {
     funeralPlans: [],
-    funeralPremiumsText: '',
+    funeralBandSplits: FUNERAL_ROLES.map(() => ''),
     funeralRoles: [
       role('MAIN_MEMBER', true, '1', '18', '65'),
       role('SPOUSE', true, '1', '18', '65'),
@@ -114,7 +118,120 @@ export function blankFuneralFields(): FuneralFields {
 }
 
 export function blankFuneralPlan(): FuneralPlanValues {
-  return { planCode: '', name: '', benefits: FUNERAL_ROLES.map(() => ''), groupRate: '', groupRatePeriod: 'MONTHLY' };
+  return { planCode: '', name: '', benefits: FUNERAL_ROLES.map(() => ''), groupRate: '', groupRatePeriod: 'MONTHLY', premiums: {} };
+}
+
+/** One age band of a role's prices: the box in the grid it fills, and the ages it covers. */
+export interface PremiumBand {
+  key: string;
+  from: number;
+  to: number;
+}
+
+/**
+ * Where a band's price is kept on a plan. The first band is keyed by its role alone, so it keeps its price when
+ * the role's youngest entry age changes; a later band by the age it starts at. Letters and digits only -- a
+ * dot or a bare number would read as a path or an array index to the form.
+ */
+export function premiumKey(role: FuneralRoleName, from: number | 'first'): string {
+  return from === 'first' ? `${role}_first` : `${role}_${from}`;
+}
+
+/**
+ * The last age a role is priced to, FuneralPlanValidator's rule: the age before cover stops (a student's
+ * stop if later), or the version's highest priced age when cover never stops.
+ */
+export function lastPricedAge(rule: FuneralRoleValues, maxPricedAge: string): number {
+  return rule.coverStopAge !== ''
+    ? Math.max(Number(rule.coverStopAge), rule.studentStopAge !== '' ? Number(rule.studentStopAge) : 0) - 1
+    : Number(maxPricedAge);
+}
+
+/**
+ * A role's age bands: from its youngest entry age, split at the ages staff typed, to the last priced age.
+ * Every split must fall after the youngest entry age and no later than the last priced age, in order.
+ */
+export function bandsFor(rule: FuneralRoleValues, splits: string, maxPricedAge: string): { bands: PremiumBand[]; error?: string } {
+  const min = Number(rule.minEntryAge);
+  const last = lastPricedAge(rule, maxPricedAge);
+  if (rule.minEntryAge === '' || !Number.isInteger(min) || !Number.isInteger(last) || last < min) return { bands: [] };
+  const cells = splits.split(/[\s,]+/).filter((s) => s !== '');
+  const ages = cells.map(Number);
+  if (ages.some((a) => !Number.isInteger(a))) return { bands: [], error: 'Ages are whole numbers, separated by commas' };
+  for (let k = 0; k < ages.length; k++) {
+    if (ages[k] <= min || ages[k] > last) {
+      return { bands: [], error: `A band starts after the youngest entry age, ${min}, and no later than ${last}` };
+    }
+    if (k > 0 && ages[k] <= ages[k - 1]) return { bands: [], error: 'List the ages youngest first, each once' };
+  }
+  const starts = [min, ...ages];
+  return {
+    bands: starts.map((from, k) => ({
+      key: premiumKey(rule.role, k === 0 ? 'first' : from),
+      from,
+      to: k + 1 < starts.length ? (starts[k + 1] as number) - 1 : last,
+    })),
+  };
+}
+
+/** The roles the grid prices: allowed, and covered by at least one plan. */
+export function pricedRoles(v: Pick<FuneralFields, 'funeralPlans' | 'funeralRoles'>): number[] {
+  return FUNERAL_ROLES.map((_, r) => r).filter((r) => v.funeralRoles[r]?.allowed
+    && v.funeralPlans.some((p) => (p.benefits[r] ?? '') !== ''));
+}
+
+/** The grid as the server's premium rows: one per plan, covered role and band, where a price is entered. */
+export function premiumRows(v: FuneralFields): ParsedPremium[] {
+  const rows: ParsedPremium[] = [];
+  for (const r of pricedRoles(v)) {
+    const rule = v.funeralRoles[r] as FuneralRoleValues;
+    const { bands } = bandsFor(rule, v.funeralBandSplits[r] ?? '', v.funeralMaxPricedAge);
+    for (const plan of v.funeralPlans) {
+      if ((plan.benefits[r] ?? '') === '') continue;
+      for (const band of bands) {
+        const price = (plan.premiums[band.key] ?? '').trim();
+        if (price !== '' && Number(price) >= 0) {
+          rows.push({ planCode: plan.planCode, role: rule.role, ageFrom: band.from, ageTo: band.to, yearlyPremium: Number(price) });
+        }
+      }
+    }
+  }
+  return rows;
+}
+
+/**
+ * Rows pasted from a spreadsheet (`plan,role,ageFrom,ageTo,yearlyPremium`) as the grid: each role split where
+ * any row starts a band, and each box given the price of the row covering its first age.
+ */
+export function premiumsFromRows(text: string, v: FuneralFields):
+    { splits: string[]; premiums: Record<string, string>[]; error?: string } {
+  const { rows, error } = parsePremiums(text);
+  const keep = { splits: v.funeralBandSplits, premiums: v.funeralPlans.map((p) => p.premiums) };
+  if (error) return { ...keep, error };
+  const unknown = rows.find((row) => !v.funeralPlans.some((p) => p.planCode === row.planCode));
+  if (unknown) return { ...keep, error: `Plan ${unknown.planCode} is not one of the plans above — add it first` };
+  const splits = FUNERAL_ROLES.map((role, r) => {
+    const rule = v.funeralRoles[r];
+    if (!rule) return '';
+    const min = Number(rule.minEntryAge);
+    const last = lastPricedAge(rule, v.funeralMaxPricedAge);
+    const starts = [...new Set(rows.filter((row) => row.role === role && row.ageFrom > min && row.ageFrom <= last)
+      .map((row) => row.ageFrom))];
+    return starts.sort((a, b) => a - b).join(', ');
+  });
+  const premiums = v.funeralPlans.map((plan) => {
+    const prices: Record<string, string> = {};
+    FUNERAL_ROLES.forEach((role, r) => {
+      const rule = v.funeralRoles[r];
+      if (!rule) return;
+      for (const band of bandsFor(rule, splits[r] ?? '', v.funeralMaxPricedAge).bands) {
+        const row = rows.find((x) => x.planCode === plan.planCode && x.role === role && x.ageFrom <= band.from && band.from <= x.ageTo);
+        if (row) prices[band.key] = String(row.yearlyPremium);
+      }
+    });
+    return prices;
+  });
+  return { splits, premiums };
 }
 
 export interface ParsedPremium {
@@ -204,48 +321,32 @@ export function validateFuneral(category: ProductCategory, v: FuneralFields, ctx
         `Plan ${plan.planCode || i + 1} has a group rate, but this version is sold to individual policies only`);
     }
   });
-  if (!soldToIndividuals(v.funeralSoldAs)) {
-    if (v.funeralPremiumsText.trim() !== '') {
-      issue(['funeralPremiumsText'], 'A version sold to group schemes only is priced by its group rates; remove the premium table');
-    }
-    return;
-  }
+  // A version sold to group schemes only is priced by its group rates: its grid is not shown and not sent.
+  if (!soldToIndividuals(v.funeralSoldAs)) return;
 
-  const { rows, error } = parsePremiums(v.funeralPremiumsText);
-  if (error) {
-    issue(['funeralPremiumsText'], error);
-    return;
-  }
-  // A dependant may be included in the main member's premium (0); the main member may not.
-  const freeMain = rows.find((p) => p.role === 'MAIN_MEMBER' && p.yearlyPremium === 0);
-  if (freeMain) {
-    issue(['funeralPremiumsText'], `Plan ${freeMain.planCode}: a main member's premium must be above zero; nobody is covered free`);
-    return;
-  }
-  // FuneralPlanValidator's coverage rule: every age a covered role can reach is priced exactly once.
-  const maxPriced = Number(v.funeralMaxPricedAge);
-  for (const plan of v.funeralPlans) {
-    for (let r = 0; r < FUNERAL_ROLES.length; r++) {
-      const role = FUNERAL_ROLES[r];
-      const rule = v.funeralRoles[r];
-      if (plan.benefits[r] === '' || !rule?.allowed) continue;
-      const bands = rows.filter((p) => p.planCode === plan.planCode && p.role === role).sort((a, b) => a.ageFrom - b.ageFrom);
-      for (let k = 1; k < bands.length; k++) {
-        if (bands[k].ageFrom <= bands[k - 1].ageTo) {
-          issue(['funeralPremiumsText'], `Plan ${plan.planCode}, ${role}: ages ${bands[k - 1].ageFrom}-${bands[k - 1].ageTo} and ${bands[k].ageFrom}-${bands[k].ageTo} overlap`);
-          return;
-        }
-      }
-      const last = rule.coverStopAge !== ''
-        ? Math.max(Number(rule.coverStopAge), rule.studentStopAge !== '' ? Number(rule.studentStopAge) : 0) - 1
-        : maxPriced;
-      for (let age = Number(rule.minEntryAge); age <= last; age++) {
-        if (!bands.some((b) => b.ageFrom <= age && age <= b.ageTo)) {
-          issue(['funeralPremiumsText'], `Plan ${plan.planCode}, ${role}: no premium for age ${age}`);
-          return;
-        }
-      }
+  // FuneralPlanValidator's coverage rule -- every age a covered role can reach is priced exactly once -- holds by
+  // construction: a role's bands run from its youngest entry age to its last priced age. What is left is a box
+  // with no price, or one that is not a price.
+  for (const r of pricedRoles(v)) {
+    const rule = v.funeralRoles[r] as FuneralRoleValues;
+    const { bands, error } = bandsFor(rule, v.funeralBandSplits[r] ?? '', v.funeralMaxPricedAge);
+    if (error) {
+      issue(['funeralBandSplits', r], error);
+      continue;
     }
+    v.funeralPlans.forEach((plan, i) => {
+      if ((plan.benefits[r] ?? '') === '') return;
+      for (const band of bands) {
+        const price = (plan.premiums[band.key] ?? '').trim();
+        const where = `Plan ${plan.planCode || i + 1}, ${FUNERAL_ROLE_LABELS[rule.role].toLowerCase()} ${band.from}–${band.to}`;
+        if (price === '') issue(['funeralPlans', i, 'premiums', band.key], `${where}: enter the yearly premium`);
+        else if (!(Number(price) >= 0)) issue(['funeralPlans', i, 'premiums', band.key], `${where}: a premium is an amount, 0 or more`);
+        // A dependant may be included in the main member's premium (0); the main member may not.
+        else if (rule.role === 'MAIN_MEMBER' && Number(price) === 0) {
+          issue(['funeralPlans', i, 'premiums', band.key], `${where}: the main member's premium must be above zero; nobody is covered free`);
+        }
+      }
+    });
   }
 }
 
@@ -260,7 +361,7 @@ export function toFuneralRequest(v: FuneralFields): NonNullable<ProductVersionSp
     })),
     benefits: v.funeralPlans.flatMap((p) =>
       FUNERAL_ROLES.flatMap((role, r) => (p.benefits[r] === '' ? [] : [{ planCode: p.planCode, role, benefit: Number(p.benefits[r]) }]))),
-    premiums: soldToIndividuals(v.funeralSoldAs) ? parsePremiums(v.funeralPremiumsText).rows : [],
+    premiums: soldToIndividuals(v.funeralSoldAs) ? premiumRows(v) : [],
     roles: v.funeralRoles.filter((r) => r.allowed).map((r) => ({
       role: r.role,
       maxLives: num(r.maxLives),

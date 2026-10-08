@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { blankFuneralPlan, parsePremiums } from './funeralSchema';
+import { blankFuneralPlan, bandsFor, parsePremiums, premiumsFromRows, type FuneralFields } from './funeralSchema';
 import { blankPublishVersionForm, publishVersionFormSchema, toApiRequest } from './publishVersionSchema';
 
-/** Plan B: main member and children only, priced to 70 (parents and extended family switched off). */
-const PREMIUMS = 'plan,role,ageFrom,ageTo,yearlyPremium\nB,MAIN_MEMBER,18,70,60000\nB,CHILD,0,24,6000';
+/**
+ * Plan B: main member and children only (spouse, parents and extended family switched off). The defaults price a
+ * main member from 18 to the highest priced age, 70, and a child from 0 to 24 (cover stops at 21, 25 a student).
+ */
+const PRICES = { MAIN_MEMBER_first: '60000', CHILD_first: '6000' };
 
 const valid = () => {
   const form = blankPublishVersionForm();
@@ -15,8 +18,8 @@ const valid = () => {
     ratingTable: [],
     benefitSchedule: [{ benefitType: 'DEATH' as const, calculationMethod: 'SUM_ASSURED' as const, percent: '', flatAmount: '' }],
     freeLookDays: '30',
-    funeralPlans: [{ ...blankFuneralPlan(), planCode: 'B', name: 'Familia B', benefits: ['2000000', '', '1000000', '', ''] }],
-    funeralPremiumsText: PREMIUMS,
+    funeralPlans: [{ ...blankFuneralPlan(), planCode: 'B', name: 'Familia B', benefits: ['2000000', '', '1000000', '', ''],
+      premiums: PRICES }],
     funeralRoles: form.funeralRoles.map((r) =>
       r.role === 'SPOUSE' || r.role === 'PARENT' || r.role === 'EXTENDED' ? { ...r, allowed: false } : r),
     funeralMaxPricedAge: '70',
@@ -24,6 +27,9 @@ const valid = () => {
     funeralOnMainMemberDeath: 'POLICY_ENDS',
   };
 };
+
+const priced = (premiums: Record<string, string>, extra: object = {}) =>
+  ({ ...valid(), funeralPlans: [{ ...valid().funeralPlans[0], premiums }], ...extra });
 
 const messages = (input: unknown, category: 'FUNERAL' | 'TERM_LIFE' = 'FUNERAL') => {
   const r = publishVersionFormSchema(category).safeParse(input);
@@ -53,19 +59,45 @@ describe('funeral terms on the publish form (FuneralPlanValidator)', () => {
   });
 
   it('includes a dependant at 0 but never the main member (a flat family rate)', () => {
-    expect(messages({ ...valid(), funeralPremiumsText: 'B,MAIN_MEMBER,18,70,36000\nB,CHILD,0,24,0' })).toEqual([]);
-    expect(messages({ ...valid(), funeralPremiumsText: 'B,MAIN_MEMBER,18,70,0\nB,CHILD,0,24,0' }))
-      .toContain('Plan B: a main member’s premium must be above zero; nobody is covered free'.replace('’', "'"));
+    expect(messages(priced({ MAIN_MEMBER_first: '36000', CHILD_first: '0' }))).toEqual([]);
+    expect(messages(priced({ MAIN_MEMBER_first: '0', CHILD_first: '0' })))
+      .toContain("Plan B, main member 18–70: the main member's premium must be above zero; nobody is covered free");
   });
 
-  it('prices a version sold to group schemes only by its group rates', () => {
-    const group = { ...valid(), funeralSoldAs: 'GROUP', funeralPremiumsText: '' };
+  it('names the box with no price, and the one that is not a price', () => {
+    expect(messages(priced({ MAIN_MEMBER_first: '60000' }))).toContain('Plan B, child 0–24: enter the yearly premium');
+    expect(messages(priced({ ...PRICES, CHILD_first: 'six' }))).toContain('Plan B, child 0–24: a premium is an amount, 0 or more');
+  });
+
+  it('splits a role into age bands where staff say its price changes, each band a box to fill', () => {
+    const splits = ['41, 56', '', '', '', ''];
+    expect(messages(priced(PRICES, { funeralBandSplits: splits }))).toEqual(expect.arrayContaining([
+      'Plan B, main member 41–55: enter the yearly premium',
+      'Plan B, main member 56–70: enter the yearly premium',
+    ]));
+    const all = priced({ ...PRICES, MAIN_MEMBER_41: '80000', MAIN_MEMBER_56: '120000' }, { funeralBandSplits: splits });
+    expect(messages(all)).toEqual([]);
+    expect(toApiRequest(publishVersionFormSchema('FUNERAL').parse(all), 'FUNERAL').funeral?.premiums).toEqual([
+      { planCode: 'B', role: 'MAIN_MEMBER', ageFrom: 18, ageTo: 40, yearlyPremium: 60000 },
+      { planCode: 'B', role: 'MAIN_MEMBER', ageFrom: 41, ageTo: 55, yearlyPremium: 80000 },
+      { planCode: 'B', role: 'MAIN_MEMBER', ageFrom: 56, ageTo: 70, yearlyPremium: 120000 },
+      { planCode: 'B', role: 'CHILD', ageFrom: 0, ageTo: 24, yearlyPremium: 6000 },
+    ]);
+  });
+
+  it('refuses a band that starts outside the priced ages, or out of order', () => {
+    expect(messages(priced(PRICES, { funeralBandSplits: ['10', '', '', '', ''] })))
+      .toContain('A band starts after the youngest entry age, 18, and no later than 70');
+    expect(messages(priced(PRICES, { funeralBandSplits: ['56, 41', '', '', '', ''] })))
+      .toContain('List the ages youngest first, each once');
+  });
+
+  it('prices a version sold to group schemes only by its group rates, sending no premium table', () => {
+    const group = { ...valid(), funeralSoldAs: 'GROUP' };
     expect(messages(group)).toContain(
       'Plan B needs a group rate per member per month above zero: this version is sold to group schemes');
-    const rated = { ...group, funeralPlans: [{ ...valid().funeralPlans[0], groupRate: '3000' }] };
+    const rated = { ...group, funeralPlans: [{ ...valid().funeralPlans[0], groupRate: '3000', premiums: {} }] };
     expect(messages(rated)).toEqual([]);
-    expect(messages({ ...rated, funeralPremiumsText: PREMIUMS }))
-      .toContain('A version sold to group schemes only is priced by its group rates; remove the premium table');
     const request = toApiRequest(publishVersionFormSchema('FUNERAL').parse(rated), 'FUNERAL');
     expect(request.funeral?.soldAs).toBe('GROUP');
     expect(request.funeral?.plans?.[0].groupMonthlyRate).toBe(3000);
@@ -75,22 +107,6 @@ describe('funeral terms on the publish form (FuneralPlanValidator)', () => {
   it('refuses a group rate on a version sold to individuals only', () => {
     const rated = { ...valid(), funeralPlans: [{ ...valid().funeralPlans[0], groupRate: '3000' }] };
     expect(messages(rated)).toContain('Plan B has a group rate, but this version is sold to individual policies only');
-  });
-
-  it('names the first age the premium table does not price', () => {
-    // A student child is covered to 25, so the table must price 0-24.
-    const text = 'B,MAIN_MEMBER,18,70,60000\nB,CHILD,0,20,6000';
-    expect(messages({ ...valid(), funeralPremiumsText: text })).toContain('Plan B, CHILD: no premium for age 21');
-  });
-
-  it('refuses overlapping bands', () => {
-    const text = `${PREMIUMS}\nB,CHILD,5,10,100`;
-    expect(messages({ ...valid(), funeralPremiumsText: text })).toContain('Plan B, CHILD: ages 0-24 and 5-10 overlap');
-  });
-
-  it('refuses a premium line that does not parse, by number', () => {
-    expect(messages({ ...valid(), funeralPremiumsText: 'B,MAIN_MEMBER,18,70,60000\nB,DOG,0,5,1' }))
-      .toContain('Line 2 is not plan,role,ageFrom,ageTo,yearlyPremium: "B,DOG,0,5,1"');
   });
 
   it('refuses a benefit for a role that is switched off', () => {
@@ -123,6 +139,25 @@ describe('funeral terms on the publish form (FuneralPlanValidator)', () => {
         { factorType: 'SUM_ASSURED_BAND' as const, band: 'ALL', multiplier: 1, ageFrom: '', ageTo: '', sumAssuredFrom: '', sumAssuredTo: '' },
       ],
     }), 'TERM_LIFE').funeral).toBeUndefined();
+  });
+});
+
+describe('the premium grid', () => {
+  const roleRule = valid().funeralRoles[0];
+
+  it('runs a role from its youngest entry age to its last priced age, split where staff say', () => {
+    expect(bandsFor(roleRule, '', '70').bands).toEqual([{ key: 'MAIN_MEMBER_first', from: 18, to: 70 }]);
+    expect(bandsFor(roleRule, '41 56', '70').bands.map((b) => [b.from, b.to])).toEqual([[18, 40], [41, 55], [56, 70]]);
+  });
+
+  it('fills itself from rows pasted from a spreadsheet', () => {
+    const v = valid() as unknown as FuneralFields;
+    const rows = 'plan\trole\tfrom\tto\tpremium\nB\tMAIN_MEMBER\t18\t40\t60000\nB\tMAIN_MEMBER\t41\t70\t90000\nB\tCHILD\t0\t24\t0';
+    const filled = premiumsFromRows(rows, v);
+    expect(filled.error).toBeUndefined();
+    expect(filled.splits[0]).toBe('41');
+    expect(filled.premiums[0]).toEqual({ MAIN_MEMBER_first: '60000', MAIN_MEMBER_41: '90000', CHILD_first: '0' });
+    expect(premiumsFromRows('Z,MAIN_MEMBER,18,70,1', v).error).toBe('Plan Z is not one of the plans above — add it first');
   });
 });
 

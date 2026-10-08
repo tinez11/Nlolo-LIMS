@@ -1106,7 +1106,9 @@ export function PublishVersionForm({
         <AnnuityTermsSection register={register} control={control} errors={errors} setValue={setValue} />
       )}
       {/* Family funeral cover: required on a FUNERAL product, and offered on no other. */}
-      {category === 'FUNERAL' && <FuneralTermsSection register={register} control={control} errors={errors} />}
+      {category === 'FUNERAL' && (
+        <FuneralTermsSection register={register} control={control} errors={errors} setValue={setValue} getValues={getValues} />
+      )}
       {/* Product step 6: required on a UNIT_LINKED product, and offered on no other. */}
       {category === 'UNIT_LINKED' && (
         <UnitLinkedTermsSection register={register} control={control} errors={errors} currency={undefined} />
