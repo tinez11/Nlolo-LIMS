@@ -14,6 +14,39 @@ security:
   - agentsAuth: []
   - staffAuth: []
 paths:
+  /underwriting/cases/awaiting-issue:
+    get:
+      summary: Decided cases no policy has been issued from yet
+      description: >-
+        What manual issuance may pick (2026-10-08). Every case ever decided stays DECIDED, and nearly
+        all of them already have their policy, so the plain DECIDED list buried the few still waiting.
+        Declined cases are included -- an underwriting override issues against one; members' evidence
+        cases are not, they never issue a policy. Newest first.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: q
+          in: query
+          description: Part of a proposal number, any case.
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/UnderwritingCaseView' }
+                  page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
   /underwriting/cases:
     get:
       summary: List underwriting cases for the current tenant

@@ -1172,6 +1172,17 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     }
 
     @Override
+    public Page<UnderwritingCaseView> listCasesAwaitingIssue(String proposalNumber, Pageable pageable) {
+        UUID tenantId = TenantContext.get();
+        String q = proposalNumber == null ? "" : proposalNumber.trim().toLowerCase(java.util.Locale.ROOT);
+        Page<UnderwritingCase> page = q.isEmpty()
+            ? underwritingCaseRepository.awaitingIssue(tenantId, pageable)
+            : underwritingCaseRepository.awaitingIssueMatching(tenantId,
+                "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%", pageable);
+        return page.map(this::toView);
+    }
+
+    @Override
     @Transactional
     public void referToSeniorUnderwriter(UUID caseId) {
         UnderwritingCase underwritingCase = findOrThrow(caseId, TenantContext.get());

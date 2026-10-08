@@ -86,6 +86,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
             "db-migrations/underwriting/V19__group_funeral_proposal.sql",
+            "db-migrations/underwriting/V20__sale_lock_backfill.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
             "db-migrations/refdata/V9__journal_reason_codes.sql");
@@ -392,6 +393,33 @@ class UnderwritingApiIntegrationTest {
         assertEquals(DecisionOutcome.DECLINED, decided.decisionOutcome());
         assertTrue(decided.decisionOverrodeRecommendation());
         assertEquals("senior1", decided.decisionDecidedBy());
+    }
+
+    @Test
+    void manualIssuanceListsOnlyTheDecidedCasesNoPolicyHasComeFromYet() {
+        UUID accepted = assessedCase();
+        underwritingApi.decide(accepted, new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Agreed"), "decider1", false);
+        UUID declined = assessedCase();
+        underwritingApi.decide(declined, new UnderwritingApi.DecisionInput(DecisionOutcome.DECLINED, null, "Adverse history"),
+            "senior1", true);
+        UUID issued = assessedCase();
+        underwritingApi.decide(issued, new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Agreed"), "decider1", false);
+        underwritingApi.lockSale(issued);
+        UUID stillOpen = assessedCase();
+
+        java.util.function.Function<String, List<UUID>> awaiting = q -> underwritingApi
+            .listCasesAwaitingIssue(q, org.springframework.data.domain.PageRequest.of(0, 20)).getContent().stream()
+            .map(UnderwritingCaseView::caseId).toList();
+
+        List<UUID> all = awaiting.apply(null);
+        // A declined case stays: an underwriting override issues against one.
+        assertTrue(all.containsAll(List.of(accepted, declined)), all.toString());
+        assertFalse(all.contains(issued), "its policy is issued");
+        assertFalse(all.contains(stillOpen), "not decided");
+
+        String proposal = underwritingApi.getCase(declined).proposalNumber();
+        assertEquals(List.of(declined), awaiting.apply(" " + proposal.substring(proposal.length() - 5).toLowerCase() + " "));
+        assertEquals(List.of(), awaiting.apply("NO-SUCH%"));
     }
 
     @Test

@@ -207,6 +207,14 @@ public interface UnderwritingApi {
      */
     Page<UnderwritingCaseView> listCases(UnderwritingCaseStatus status, UUID applicantPartyId,
                                           Set<UUID> applicantPartyIds, Pageable pageable);
+
+    /**
+     * Decided cases no policy has been issued from yet -- what manual issuance may pick (2026-10-08). Declined
+     * cases included (an underwriting override issues against one); members' evidence cases excluded.
+     *
+     * @param proposalNumber part of a proposal number, any case; null or blank lists them all
+     */
+    Page<UnderwritingCaseView> listCasesAwaitingIssue(String proposalNumber, Pageable pageable);
     void referToSeniorUnderwriter(UUID caseId);
     boolean checkContestability(UUID caseId, LocalDate asOfDate);
 
