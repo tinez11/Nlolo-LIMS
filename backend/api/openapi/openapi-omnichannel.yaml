@@ -310,7 +310,7 @@ components:
     ReceiptLine:
       type: object
       additionalProperties: false
-      required: [receiptId, receivedOn, amount, currency, reference, paidBy, forPremiumDue]
+      required: [receiptId, receivedOn, amount, currency, reference, paidBy, coversFrom, coversTo]
       properties:
         receiptId: { type: string, format: uuid }
         receivedOn: { type: string, format: date }
@@ -318,7 +318,8 @@ components:
         currency: { type: string }
         reference: { type: [string, "null"] }
         paidBy: { type: [string, "null"] }
-        forPremiumDue: { type: [string, "null"], format: date }
+        coversFrom: { type: [string, "null"], format: date, description: "First day of cover the premium paid for" }
+        coversTo: { type: [string, "null"], format: date, description: "Last day of cover the premium paid for" }
     CustomerAmount:
       type: object
       additionalProperties: false
