@@ -73,6 +73,7 @@ export function OpenUnderwritingCasePage() {
     handleSubmit,
     watch,
     setValue,
+    getValues,
     control,
     formState: { errors },
   } = useForm<OpenCaseFormInput, unknown, OpenCaseFormValues>({
@@ -162,7 +163,10 @@ export function OpenUnderwritingCasePage() {
   }, [isFuneral, productId, productVersionId]);
   useEffect(() => {
     setValue('isFuneral', isFuneral);
-  }, [isFuneral, setValue]);
+    // A funeral plan is paid monthly, quarterly or annually (FuneralQuoter): a single premium chosen for another
+    // product is cleared rather than left selected behind an option the list no longer shows.
+    if (isFuneral && getValues('premiumFrequency') === 'SINGLE') setValue('premiumFrequency', '');
+  }, [isFuneral, setValue, getValues]);
 
   // A unit-linked case (product step 6): the version's funds, premium minimums and sum-assured multiples.
   // One split row per offered fund, set when the terms arrive.
@@ -489,7 +493,7 @@ export function OpenUnderwritingCasePage() {
                 {/* Blank first and selected by default: a frequency the applicant did not
                     state is not monthly, and it is what the issued policy is billed on. */}
                 <option value="">Not stated</option>
-                {PREMIUM_FREQUENCIES.map((f) => (
+                {PREMIUM_FREQUENCIES.filter((f) => !(isFuneral && f === 'SINGLE')).map((f) => (
                   <option key={f} value={f}>
                     {PREMIUM_FREQUENCY_LABELS[f]}
                   </option>
