@@ -176,6 +176,111 @@ public class PolicyDocuments {
             false);
     }
 
+    // ---- the policy schedule (2026-10-08, the customer portal design step 3) ----
+
+    /**
+     * What the policy is, in one page: who holds it and who it insures, what it pays and to whom, what it costs and
+     * from when. A funeral plan lists each covered life with what their death pays; any other policy its sum assured
+     * against the life insured; a savings or unit-linked plan adds what it is worth today. A summary -- the notes say
+     * the policy terms govern.
+     */
+    @Transactional(readOnly = true)
+    public CustomerDocument policyScheduleDocument(String policyNumber) {
+        PolicyView policy = policyApi.getPolicy(policyNumber);
+        String c = policy.premiumCurrency() != null ? policy.premiumCurrency() : policy.sumAssuredCurrency();
+        String lifeInsured = policy.lifeAssuredPartyId() == null ? "-" : partyName(policy.lifeAssuredPartyId());
+        List<Column> columns = List.of(new Column("Cover", Kind.TEXT, 2.0f), new Column("Life insured", Kind.TEXT, 2.4f),
+            new Column("Pays (" + c + ")", Kind.MONEY, 1.4f));
+        List<List<Object>> rows = new ArrayList<>();
+        if ("FUNERAL".equals(policy.productCategory())) {
+            policyApi.coveredLives(policyNumber).stream().filter(l -> "ACTIVE".equals(l.status()))
+                .forEach(l -> rows.add(List.of("Death of " + roleLabel(l.role().name()), l.fullName(), l.benefit())));
+        } else if (policy.sumAssuredAmount() != null && policy.sumAssuredAmount().signum() > 0) {
+            rows.add(List.of("Death benefit", lifeInsured, policy.sumAssuredAmount()));
+        }
+        accumulationApi.findAccount(policyNumber).ifPresent(a ->
+            rows.add(List.of("Account value today", lifeInsured, a.balance())));
+
+        List<Field> extra = new ArrayList<>(List.of(
+            new Field("Life insured", lifeInsured),
+            new Field("Status", policy.status() != null ? policy.status().name().replace('_', ' ').toLowerCase(java.util.Locale.ROOT) : "-"),
+            new Field("Cover from", policy.commencementDate() != null ? DMY.format(policy.commencementDate())
+                : policy.issueDate() != null ? DMY.format(policy.issueDate()) : "-"),
+            new Field("Ends", policy.maturityDate() != null ? DMY.format(policy.maturityDate()) : "No fixed end date")));
+        if (policy.premiumAmount() != null) {
+            extra.add(new Field("Premium", money(policy.premiumAmount(), c) + " " + frequency(policy.premiumFrequency())));
+        }
+        List<Field> totals = new ArrayList<>();
+        if (policy.premiumAmount() != null) {
+            totals.add(new Field("Premium", money(policy.premiumAmount(), c) + " " + frequency(policy.premiumFrequency())));
+        }
+        List<String> notes = new ArrayList<>();
+        String paidTo = policy.beneficiaries() == null ? "" : policy.beneficiaries().stream()
+            .map(b -> (b.partyId() != null ? partyName(b.partyId()) : b.freeformDesignee())
+                + (b.sharePercent() != null ? " (" + b.sharePercent().stripTrailingZeros().toPlainString() + "%)" : ""))
+            .collect(Collectors.joining(", "));
+        notes.add(paidTo.isBlank() ? "Beneficiaries: none named." : "Beneficiaries: " + paidTo + ".");
+        if ("FUNERAL".equals(policy.productCategory())) {
+            notes.add("Each covered life has its own waiting period from the day its cover started; an accident is covered from day one where the plan says so.");
+        }
+        notes.add("This schedule summarises the policy. The policy terms and conditions govern what is paid.");
+        return new CustomerDocument(ISSUER, "Policy schedule", header(policy, productName(policy), extra), columns, rows,
+            totals, notes, false);
+    }
+
+    // ---- premium receipts (2026-10-08, the customer portal design step 3) ----
+
+    /** Every premium received on the policy, newest first, with the premium it paid. */
+    @Transactional(readOnly = true)
+    public List<tz.co.nlolo.lifeplatform.omnichannel.api.ReceiptLine> receipts(String policyNumber) {
+        Map<UUID, InvoiceView> invoices = billingApi.listInvoices(policyNumber, null).stream()
+            .collect(Collectors.toMap(InvoiceView::invoiceId, i -> i, (a, b) -> a));
+        return billingApi.listReceipts(policyNumber).stream()
+            .sorted(Comparator.comparing(ReceiptView::receivedAt).reversed())
+            .map(r -> new tz.co.nlolo.lifeplatform.omnichannel.api.ReceiptLine(r.receiptId(),
+                r.receivedAt().atZone(CIVIL_ZONE).toLocalDate(), r.amount(), r.currency(), r.paymentReference(),
+                r.payerRef(), invoices.containsKey(r.invoiceId()) ? invoices.get(r.invoiceId()).dueDate() : null))
+            .toList();
+    }
+
+    /** One premium receipt, to keep or hand over. */
+    @Transactional(readOnly = true)
+    public CustomerDocument receiptDocument(String policyNumber, UUID receiptId) {
+        PolicyView policy = policyApi.getPolicy(policyNumber);
+        tz.co.nlolo.lifeplatform.omnichannel.api.ReceiptLine r = receipts(policyNumber).stream()
+            .filter(x -> x.receiptId().equals(receiptId)).findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("Policy " + policyNumber + " has no receipt " + receiptId));
+        List<Column> columns = List.of(new Column("For the premium due", Kind.DATE, 1.6f),
+            new Column("Received on", Kind.DATE, 1.4f), new Column("Reference", Kind.TEXT, 2.0f),
+            new Column("Amount (" + r.currency() + ")", Kind.MONEY, 1.4f));
+        List<List<Object>> rows = List.of(java.util.Arrays.asList(opt(r.forPremiumDue()), r.receivedOn(),
+            opt(r.reference()), r.amount()));
+        return new CustomerDocument(ISSUER, "Premium receipt", header(policy, productName(policy), List.of(
+                new Field("Received from", r.paidBy() != null ? r.paidBy() : "-"),
+                new Field("Receipt reference", r.reference() != null ? r.reference() : r.receiptId().toString()))),
+            columns, rows, List.of(new Field("Amount received", money(r.amount(), r.currency()))),
+            List.of("Received with thanks. This receipt is issued by the platform from the payment as recorded."), false);
+    }
+
+    private String partyName(UUID partyId) {
+        try {
+            return partyApi.getParty(partyId).displayName();
+        } catch (RuntimeException e) {
+            return "-";
+        }
+    }
+
+    private static String roleLabel(String role) {
+        return switch (role) {
+            case "MAIN_MEMBER" -> "main member";
+            case "SPOUSE" -> "spouse";
+            case "CHILD" -> "child";
+            case "PARENT" -> "parent";
+            case "EXTENDED" -> "extended family member";
+            default -> role.toLowerCase(java.util.Locale.ROOT);
+        };
+    }
+
     // ---- shared ----
 
     private List<Field> header(PolicyView policy, String productName, List<Field> extra) {

@@ -38,6 +38,24 @@ export function downloadSavingsStatement(policyNumber: string, format: DocumentF
     { params: { from, to }, responseType: 'blob', headers: { Accept: ACCEPT[format] } });
 }
 
+export type ReceiptLine = components['schemas']['ReceiptLine'];
+
+/** The policy schedule (2026-10-08, customer portal step 3): what the policy is, on one page. PDF only. */
+export function downloadPolicySchedule(policyNumber: string): Promise<Blob> {
+  return get<Blob>(`/policies/${enc(policyNumber)}/policy-schedule/pdf`,
+    { responseType: 'blob', headers: { Accept: ACCEPT.pdf } });
+}
+
+/** Every premium received on the policy, newest first. */
+export function listReceipts(policyNumber: string): Promise<ReceiptLine[]> {
+  return get<ReceiptLine[]>(`/policies/${enc(policyNumber)}/receipts`);
+}
+
+export function downloadReceipt(policyNumber: string, receiptId: string): Promise<Blob> {
+  return get<Blob>(`/policies/${enc(policyNumber)}/receipts/${enc(receiptId)}/pdf`,
+    { responseType: 'blob', headers: { Accept: ACCEPT.pdf } });
+}
+
 /** The file name a download is saved under. */
 export function documentFileName(kind: 'payment-schedule' | 'savings-statement', policyNumber: string,
                                  format: DocumentFormat, period?: { from: string; to: string }): string {
