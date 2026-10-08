@@ -170,6 +170,36 @@ class FuneralClaimIntegrationTest {
         assertThat(life(policyNumber, "Neema").status()).isEqualTo("ACTIVE");
     }
 
+    /**
+     * Reopening a claim declined with a coded reason was a 500 (2026-10-08): the claim went back to REOPENED with its
+     * WITHIN_WAITING_PERIOD still set, and chk_claim_decline_reason_only_when_rejected refused the save. Found by the
+     * user: a death declined for the waiting period, reopened on new evidence that it was an accident.
+     */
+    @Test
+    void aClaimDeclinedForTheWaitingPeriodReopensAndIsPaidOnceTheDeathIsRecordedAsAnAccident() {
+        String policyNumber = familyInForce();
+        UUID neema = life(policyNumber, "Neema").coveredLifeId();
+        ClaimView claim = register(policyNumber, neema, juma, false);
+        assess(claim.claimId());
+        asTenant(TENANT, () -> {
+            claimsApi.decideSettlement(claim.claimId(), false, null, null, "Died inside the waiting period",
+                ClaimDeclineReason.WITHIN_WAITING_PERIOD, null, null, "claims-manager");
+            return null;
+        });
+
+        asTenant(TENANT, () -> {
+            claimsApi.reopenClaim(claim.claimId(), "New evidence: a road accident", "claims-manager");
+            return null;
+        });
+        // The reopen saving at all is the fix: before it, the check constraint refused this row.
+        assertThat(status(claim.claimId())).isEqualTo(ClaimStatus.REOPENED);
+
+        asTenant(TENANT, () -> claimsApi.recordAccidentalDeath(claim.claimId(), true, "claims-assessor"));
+        assess(claim.claimId());
+        approve(claim.claimId(), "1000000.00");
+        assertThat(status(claim.claimId())).isEqualTo(ClaimStatus.SETTLED);
+    }
+
     @Test
     void theWaitingPeriodCannotBeCitedOnceItHasRun() {
         String policyNumber = familyInForce();

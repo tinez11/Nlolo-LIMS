@@ -13,6 +13,7 @@ import { formatMoney } from '@/lib/money';
 import { humanizeStatus } from '@/lib/status';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectClaimDetail, useClaimStore } from '@/store/claimStore';
+import { AccidentalDeathField } from './AccidentalDeathField';
 import { ClaimDetailsFields } from './ClaimDetailsFields';
 import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
@@ -162,6 +163,13 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
                         : 'Outside the non-disclosure window on the date of event'
                     }
                   />
+                  {/* A funeral plan's claim names the life who died; whether it was an accident decides the waiting period. */}
+                  {claim.coveredLifeId && (
+                    <AccidentalDeathField claimId={claimId} accidental={claim.accidental === true}
+                      canChange={(roles.CLAIMS_ASSESSOR || roles.CLAIMS_MANAGER)
+                        && (claim.status === 'REGISTERED' || claim.status === 'UNDER_ASSESSMENT' || claim.status === 'REOPENED')}
+                      onChanged={() => void loadDetail(claimId)} />
+                  )}
                 </dl>
               </Panel>
 

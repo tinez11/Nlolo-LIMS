@@ -328,6 +328,13 @@ public class Claim {
                 "Claim " + claimId + " is " + status + ", only a REJECTED or SETTLED claim can be reopened");
         }
         this.status = ClaimStatus.REOPENED;
+        // The decline it was rejected with is no longer its state (2026-10-08): chk_claim_decline_reason_only_when_rejected
+        // refused the save, so a claim declined for the waiting period or an exclusion could never be reopened -- a 500.
+        // The decision stays in the claim's audit trail; a fresh decision records its own reason. The window it cited
+        // goes with it -- chk_claim_decline_reason_complete holds the three together.
+        this.declineReason = null;
+        this.exclusionCoverStart = null;
+        this.exclusionWindowMonths = null;
     }
 
     public UUID getClaimId() { return claimId; }
