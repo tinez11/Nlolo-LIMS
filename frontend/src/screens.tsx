@@ -27,6 +27,9 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
+import { CustomerClaimPage } from '@/features/customer/CustomerClaimPage';
+import { CustomerClaimsPage } from '@/features/customer/CustomerClaimsPage';
+import { CustomerReportClaimPage } from '@/features/customer/CustomerReportClaimPage';
 import { CustomerDocumentsPage } from '@/features/customer/CustomerDocumentsPage';
 import { CustomerHomePage } from '@/features/customer/CustomerHomePage';
 import { CustomerPoliciesPage } from '@/features/customer/CustomerPoliciesPage';
@@ -681,6 +684,9 @@ const CUSTOMER_SCREENS: Screen[] = [
   { path: 'home', element: <CustomerHomePage />, reach: { group: 'my-cover', label: 'Home', icon: House } },
   { path: 'policies', element: <CustomerPoliciesPage />, reach: { group: 'my-cover', label: 'My policies', icon: Shield } },
   { path: 'policies/:policyNumber', element: <CustomerPolicyPage />, reach: 'drill-in' },
+  { path: 'claims', element: <CustomerClaimsPage />, reach: { group: 'my-cover', label: 'My claims', icon: ClipboardCheck } },
+  { path: 'claims/new', element: <CustomerReportClaimPage />, reach: 'drill-in' },
+  { path: 'claims/:claimId', element: <CustomerClaimPage />, reach: 'drill-in' },
   { path: 'documents', element: <CustomerDocumentsPage />, reach: { group: 'my-cover', label: 'Documents', icon: FileText } },
 ];
 

@@ -46,11 +46,14 @@ public class ClaimEvidenceController {
     private final ClaimsApi claimsApi;
     private final DocumentApi documentApi;
     private final PolicyApi policyApi;
+    private final tz.co.nlolo.lifeplatform.claims.api.ClaimJourneyApi journeyApi;
 
-    public ClaimEvidenceController(ClaimsApi claimsApi, DocumentApi documentApi, PolicyApi policyApi) {
+    public ClaimEvidenceController(ClaimsApi claimsApi, DocumentApi documentApi, PolicyApi policyApi,
+                                   tz.co.nlolo.lifeplatform.claims.api.ClaimJourneyApi journeyApi) {
         this.claimsApi = claimsApi;
         this.documentApi = documentApi;
         this.policyApi = policyApi;
+        this.journeyApi = journeyApi;
     }
 
     /**
@@ -66,10 +69,19 @@ public class ClaimEvidenceController {
     public ResponseEntity<ClaimEvidenceResponseDto> attachEvidence(@PathVariable UUID claimId,
             @RequestPart("file") MultipartFile file,
             @RequestPart(value = "description", required = false) String description,
+            @RequestPart(value = "requestId", required = false) String requestId,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ClaimView claim = claimsApi.getClaim(claimId);
         ClaimController.enforceCustomerOwnClaimOnly(claim, jwt, authentication);
         ClaimController.enforceAgentOwnClaimOnly(policyApi, claim, jwt, authentication);
+
+        // Answering a document request (2026-10-08): the request must be open on this claim BEFORE the file is stored,
+        // so a stale or foreign request id stores nothing.
+        UUID answering = requestId == null || requestId.isBlank() ? null : UUID.fromString(requestId.trim());
+        if (answering != null && journeyApi.documentRequests(claimId).stream()
+                .noneMatch(r -> r.requestId().equals(answering) && "OPEN".equals(r.status()))) {
+            throw new ClaimValidationException("That document request is not open on claim " + claimId);
+        }
 
         String contentType = allowedContentTypeOrThrow(file.getContentType());
 
@@ -83,6 +95,9 @@ public class ClaimEvidenceController {
 
         ClaimEvidenceView evidence = claimsApi.attachEvidence(claimId, documentRef, description, jwt.getSubject(),
             ClaimController.displayName(jwt));
+        if (answering != null) {
+            journeyApi.fulfil(claimId, answering, evidence.claimEvidenceId());
+        }
         return ResponseEntity.status(HttpStatus.CREATED).body(ClaimEvidenceResponseDto.from(evidence));
     }
 

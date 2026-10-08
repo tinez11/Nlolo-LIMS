@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { getCustomerPolicy, type CustomerPolicyView } from '@/api/portal';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
@@ -9,7 +9,7 @@ import { PaymentScheduleTable } from '@/features/documents/PaymentScheduleTable'
 import { toApiError, type ApiError } from '@/lib/apiError';
 import { formatDate } from '@/lib/dates';
 import { StatusPill } from './CustomerHomePage';
-import { categoryText, claimStatusText, money, perFrequency, roleText } from './customerText';
+import { categoryText, claimStatusText, claimTypeText, money, perFrequency, roleText } from './customerText';
 
 /**
  * One of the customer's policies (2026-10-08, the customer portal design step 2; PRD §11-12): what it covers, what it
@@ -148,9 +148,12 @@ export function CustomerPolicyPage() {
           ) : (
             <ul className="divide-y divide-border">
               {policy.claims.map((c) => (
-                <li key={c.claimId} className="flex flex-wrap justify-between gap-2 px-4 py-2.5 text-sm">
-                  <span>{c.claimType.toLowerCase().replaceAll('_', ' ')} · {formatDate(c.dateOfEvent)}</span>
-                  <span>{claimStatusText(c.status)}{c.approvedAmount != null ? ` · ${money(c.approvedAmount, c.currency)}` : ''}</span>
+                <li key={c.claimId}>
+                  <Link to={`/customers/claims/${c.claimId}`}
+                    className="flex flex-wrap justify-between gap-2 px-4 py-2.5 text-sm hover:bg-hover">
+                    <span>{claimTypeText(c.claimType)} · {formatDate(c.dateOfEvent)}</span>
+                    <span>{claimStatusText(c.status)}{c.approvedAmount != null ? ` · ${money(c.approvedAmount, c.currency)}` : ''}</span>
+                  </Link>
                 </li>
               ))}
             </ul>

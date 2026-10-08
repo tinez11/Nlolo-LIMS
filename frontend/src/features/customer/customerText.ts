@@ -62,6 +62,17 @@ export function claimStatusText(status: string): string {
   return CLAIM_STATUS[status] ?? status.toLowerCase().replaceAll('_', ' ');
 }
 
+const CLAIM_TYPE: Record<string, string> = {
+  DEATH: 'Death', DISABILITY: 'Disability', CRITICAL_ILLNESS: 'Critical illness', MATURITY: 'Maturity',
+};
+
+export function claimTypeText(type: string): string {
+  return CLAIM_TYPE[type] ?? type.toLowerCase().replaceAll('_', ' ');
+}
+
+/** The file types claims evidence accepts -- a doomed upload never leaves the browser (the server still decides). */
+export const EVIDENCE_ACCEPT = 'image/jpeg,image/png,application/pdf';
+
 const ROLE: Record<string, string> = {
   MAIN_MEMBER: 'Main member', SPOUSE: 'Spouse', CHILD: 'Child', PARENT: 'Parent', EXTENDED: 'Extended family',
 };

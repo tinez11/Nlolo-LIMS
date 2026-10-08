@@ -69,7 +69,8 @@ class CustomerPortalIntegrationTest {
                 "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
                 "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
                 "db-migrations/claims/V9__zero_annuity_settlement.sql",
-                "db-migrations/claims/V10__funeral_claims.sql")).toArray(String[]::new));
+                "db-migrations/claims/V10__funeral_claims.sql",
+                "db-migrations/claims/V11__claim_document_request.sql")).toArray(String[]::new));
     }
 
     private static final UUID TENANT = UUID.randomUUID();
@@ -78,6 +79,8 @@ class CustomerPortalIntegrationTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private AccumulationTestFixtures fixtures;
     @Autowired private PolicyApi policyApi;
+    @Autowired private tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimRepository claimRepository;
+    @Autowired private tz.co.nlolo.lifeplatform.claims.api.ClaimJourneyApi journeyApi;
 
     private static <T> T asTenant(Supplier<T> work) {
         TenantContext.set(TENANT);
@@ -116,6 +119,62 @@ class CustomerPortalIntegrationTest {
         // Somebody else's customer token: the policy is not theirs, and their dashboard is empty.
         UUID stranger = UUID.randomUUID();
         mockMvc.perform(customer(get("/customer/policies/" + policyNumber), stranger))
+            .andExpect(status().isForbidden());
+    }
+
+    /**
+     * Step 4: a claimant sees their claim in plain words, with the document staff asked for as an action -- a withdrawn
+     * request drops off, and the claim is nobody else's to read. A customer cannot file against a policy they do not hold.
+     */
+    @Test
+    void aClaimantFollowsTheirClaimAndSeesTheDocumentAskedFor() throws Exception {
+        String policyNumber = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, TODAY).policyNumber();
+        UUID holder = asTenant(() -> policyApi.getPolicy(policyNumber)).policyholderPartyId();
+        UUID claimId = asTenant(() -> claimRepository.save(new tz.co.nlolo.lifeplatform.claims.domain.Claim(TENANT,
+            policyNumber, null, holder, tz.co.nlolo.lifeplatform.claims.api.ClaimType.MATURITY, TODAY.minusDays(1),
+            new tz.co.nlolo.lifeplatform.claims.api.MaturityClaimDetails(TODAY.minusDays(1)), "test-registrar", null))
+            .getClaimId());
+        asTenant(() -> journeyApi.requestDocument(claimId, "Certified copy of ID", "We could not read the copy sent",
+            "assessor-sub", "Asha Assessor"));
+        UUID withdrawn = asTenant(() -> journeyApi.requestDocument(claimId, "Bank statement", null, "assessor-sub",
+            "Asha Assessor")).requestId();
+        asTenant(() -> journeyApi.withdraw(claimId, withdrawn));
+
+        mockMvc.perform(customer(get("/customer/claims"), holder))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].claimId").value(claimId.toString()))
+            .andExpect(jsonPath("$[0].statusText").value("Claim received"))
+            .andExpect(jsonPath("$[0].actionsRequired").value(1));
+
+        mockMvc.perform(customer(get("/customer/claims/" + claimId), holder))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.steps[0].label").value("Claim received"))
+            .andExpect(jsonPath("$.steps[0].state").value("DONE"))
+            .andExpect(jsonPath("$.steps[1].state").value("CURRENT"))
+            .andExpect(jsonPath("$.steps[2].state").value("PENDING"))
+            .andExpect(jsonPath("$.decision").doesNotExist())
+            .andExpect(jsonPath("$.requests.length()").value(1))
+            .andExpect(jsonPath("$.requests[0].document").value("Certified copy of ID"))
+            .andExpect(jsonPath("$.requests[0].reason").value("We could not read the copy sent"))
+            .andExpect(jsonPath("$.requests[0].status").value("OPEN"));
+
+        UUID stranger = UUID.randomUUID();
+        mockMvc.perform(customer(get("/customer/claims/" + claimId), stranger))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(customer(get("/customer/claims"), stranger))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(0));
+
+        // Naming themselves as claimant does not let a customer file on somebody else's policy.
+        mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/claims"), stranger)
+                .header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("{\"policyNumber\":\"" + policyNumber + "\",\"claimantPartyId\":\"" + stranger
+                    + "\",\"claimType\":\"MATURITY\",\"dateOfEvent\":\"" + TODAY.minusDays(1)
+                    + "\",\"details\":{\"claimType\":\"MATURITY\",\"maturityDate\":\"" + TODAY.minusDays(1) + "\"}}"))
             .andExpect(status().isForbidden());
     }
 

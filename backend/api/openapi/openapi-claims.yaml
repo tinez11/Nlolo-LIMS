@@ -385,6 +385,12 @@ paths:
               properties:
                 file: { type: string, format: binary }
                 description: { type: [string, "null"] }
+                requestId:
+                  type: [string, "null"]
+                  format: uuid
+                  description: >-
+                    The open document request this file answers. It is checked before the file is
+                    stored (422 when not open on this claim) and marked RECEIVED once attached.
       responses:
         '201':
           description: Evidence attached
@@ -424,6 +430,101 @@ paths:
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /claims/{claimId}/document-requests:
+    get:
+      summary: Documents asked of the claimant
+      description: >
+        Every request on the claim, oldest first, whatever its status. Same ownership checks as
+        GET /claims/{claimId}.
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ClaimDocumentRequest' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+    post:
+      summary: Ask the claimant for a document
+      description: >
+        Claims assessors and managers. The claimant sees it as an action on their claim and answers
+        by uploading evidence with the request's id. Refused once the claim is SETTLED.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [document]
+              properties:
+                document: { type: string, description: "What to send, e.g. Burial permit" }
+                reason: { type: [string, "null"], description: Shown to the claimant }
+      responses:
+        '201':
+          description: Requested
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimDocumentRequest' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: Claim is SETTLED
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422':
+          description: No document named
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /claims/{claimId}/document-requests/{requestId}/withdrawal:
+    post:
+      summary: Withdraw an open document request
+      security:
+        - staffAuth: []
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Withdrawn
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimDocumentRequest' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: The request is no longer open
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   schemas:
     RegisterClaimRequest:
@@ -558,6 +659,19 @@ components:
             The most this claim may pay. On credit life this is the outstanding loan balance on
             the date of event and therefore declines every month — a figure quoted last week is
             not the figure today.
+    ClaimDocumentRequest:
+      type: object
+      required: [requestId, claimId, document, reason, requestedByName, requestedAt, status, claimEvidenceId, receivedAt]
+      properties:
+        requestId: { type: string, format: uuid }
+        claimId: { type: string, format: uuid }
+        document: { type: string }
+        reason: { type: [string, "null"] }
+        requestedByName: { type: [string, "null"] }
+        requestedAt: { type: string, format: date-time }
+        status: { type: string, enum: [OPEN, RECEIVED, WITHDRAWN] }
+        claimEvidenceId: { type: [string, "null"], format: uuid, description: The evidence that answered it }
+        receivedAt: { type: [string, "null"], format: date-time }
     ClaimEvidenceView:
       type: object
       required: [claimEvidenceId, claimId, documentRef, uploadedBy, uploadedByName, uploadedAt]

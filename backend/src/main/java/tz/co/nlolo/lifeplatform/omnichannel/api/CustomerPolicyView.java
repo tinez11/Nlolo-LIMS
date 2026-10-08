@@ -17,7 +17,8 @@ public record CustomerPolicyView(CustomerDashboardView.CustomerPolicySummary sum
 
     public record Beneficiary(String name, BigDecimal sharePercent) {}
 
-    public record CoveredLife(String name, String role, BigDecimal benefit, String status, LocalDate waitingPeriodEnds) {}
+    /** @param coveredLifeId what a funeral claim names as the life that died */
+    public record CoveredLife(UUID coveredLifeId, String name, String role, BigDecimal benefit, String status, LocalDate waitingPeriodEnds) {}
 
     public record Savings(BigDecimal balance, String currency, String status, LocalDate openedOn) {}
 
