@@ -77,6 +77,15 @@ describe('toApiError', () => {
     expect(e.title).toBe('oops');
   });
 
+  // lib/http's helpers already throw an ApiError; a screen that normalized it again lost the server's words.
+  it('passes an error that is already normalized through unchanged', () => {
+    const refused = toApiError(axiosError(422, {
+      title: 'Unprocessable Entity', detail: 'A funeral plan is paid monthly, quarterly or annually', traceId: 't-1',
+    }));
+    expect(toApiError(refused)).toBe(refused);
+    expect(toApiError(refused).detail).toBe('A funeral plan is paid monthly, quarterly or annually');
+  });
+
   // A 404 on this platform is not always "missing": the refdata allowlist and the
   // IDOR guards deliberately return 404 for a denied resource so existence is not
   // leaked. The UI must not promise the user the record does not exist.

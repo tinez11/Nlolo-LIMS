@@ -85,8 +85,21 @@ function readFieldErrors(body: Record<string, unknown>): FieldError[] {
   });
 }
 
-/** Normalize anything thrown by the Axios layer into an ApiError. */
+/**
+ * An error already normalized -- what `lib/http`'s helpers throw. Normalizing it again read it as an unknown
+ * throw and replaced the server's own words with "Something went wrong" (2026-10-08): the funeral quote said that
+ * where the server had said "A funeral plan is paid monthly, quarterly or annually".
+ */
+function isApiError(cause: unknown): cause is ApiError {
+  if (typeof cause !== 'object' || cause === null) return false;
+  const c = cause as Record<string, unknown>;
+  return typeof c.status === 'number' && typeof c.kind === 'string' && typeof c.title === 'string'
+    && Array.isArray(c.fieldErrors);
+}
+
+/** Normalize anything thrown by the Axios layer into an ApiError; an ApiError passes through unchanged. */
 export function toApiError(cause: unknown): ApiError {
+  if (isApiError(cause)) return cause;
   if (cause instanceof AxiosError) {
     if (!cause.response) {
       return {
