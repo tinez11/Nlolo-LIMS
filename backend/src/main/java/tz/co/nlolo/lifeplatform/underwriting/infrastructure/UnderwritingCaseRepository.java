@@ -41,4 +41,20 @@ public interface UnderwritingCaseRepository extends JpaRepository<UnderwritingCa
                                    @Param("applicantPartyId") UUID applicantPartyId,
                                    @Param("applicantPartyIds") Set<UUID> applicantPartyIds,
                                    Pageable pageable);
+
+    /**
+     * Decided cases no policy has been issued from (2026-10-08): what manual issuance may still pick.
+     * Issuing a policy locks the case's sale, so an unlocked decided case has none; a member's evidence
+     * case never issues one. Declined cases stay in: an underwriting override issues against them.
+     */
+    String AWAITING_ISSUE = "SELECT c FROM UnderwritingCase c WHERE c.tenantId = :tenantId AND c.status = 'DECIDED' "
+        + "AND c.saleLockedAt IS NULL AND c.evidenceForPolicyNumber IS NULL";
+
+    @Query(AWAITING_ISSUE)
+    Page<UnderwritingCase> awaitingIssue(@Param("tenantId") UUID tenantId, Pageable pageable);
+
+    /** As {@link #awaitingIssue}, narrowed to proposal numbers containing {@code pattern} (lower case, with wildcards). */
+    @Query(AWAITING_ISSUE + " AND LOWER(c.proposalNumber) LIKE :pattern")
+    Page<UnderwritingCase> awaitingIssueMatching(@Param("tenantId") UUID tenantId, @Param("pattern") String pattern,
+                                                 Pageable pageable);
 }

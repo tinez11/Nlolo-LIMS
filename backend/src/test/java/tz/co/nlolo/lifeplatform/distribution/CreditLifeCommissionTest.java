@@ -121,6 +121,7 @@ class CreditLifeCommissionTest {
             "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
             "db-migrations/underwriting/V19__group_funeral_proposal.sql",
+            "db-migrations/underwriting/V20__sale_lock_backfill.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",

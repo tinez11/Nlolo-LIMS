@@ -73,6 +73,22 @@ export async function listCases(params: UnderwritingListParams = {}): Promise<Pa
   };
 }
 
+/**
+ * `GET /underwriting/cases/awaiting-issue` -- staff. Decided cases no policy has been issued from yet,
+ * newest first, optionally narrowed to proposal numbers containing `q` (2026-10-08).
+ */
+export async function listCasesAwaitingIssue(q = '', pageSize = 50): Promise<Page<UnderwritingCaseView>> {
+  const size = Math.min(pageSize, MAX_PAGE_SIZE);
+  const body = await get<{
+    items?: UnderwritingCaseView[];
+    page?: { page?: number; pageSize?: number; totalElements?: number };
+  }>('/underwriting/cases/awaiting-issue', { params: { ...(q.trim() ? { q: q.trim() } : {}), page: 0, pageSize: size } });
+  return {
+    items: body.items ?? [],
+    page: { page: body.page?.page ?? 0, pageSize: body.page?.pageSize ?? size, totalElements: body.page?.totalElements ?? 0 },
+  };
+}
+
 /** `POST /underwriting/cases` -- agent or staff. No Idempotency-Key enforcement
  *  yet (accepted, not required, per the controller's own comment). */
 export function openCase(request: OpenCaseRequest): Promise<UnderwritingCaseView> {

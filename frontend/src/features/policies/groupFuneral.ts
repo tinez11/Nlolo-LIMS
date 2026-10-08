@@ -177,13 +177,3 @@ export function monthlyBill(members: number, rate: number, currency: string, per
   return `${members} member${members === 1 ? '' : 's'} x ${currency} ${fmt(rate)} = ${currency} ${fmt(members * rate)} `
     + (period === 'YEARLY' ? 'a year' : 'a month');
 }
-
-/** Each life's family on a group funeral scheme, as "M001 Juma Ali" -- how a claim form says whose family a life is in. */
-export function familyLabels(families: { memberReference?: string | null; mainMemberName?: string | null;
-  lives: { coveredLifeId: string }[] }[]): Record<string, string> {
-  const labels: Record<string, string> = {};
-  for (const f of families) {
-    for (const life of f.lives) labels[life.coveredLifeId] = `${f.memberReference ?? ''} ${f.mainMemberName ?? ''}`.trim();
-  }
-  return labels;
-}

@@ -205,3 +205,13 @@ export function avatarHue(seed: string): number {
 export function canUnderwriteGroupSchemes(identity: TokenIdentity): boolean {
   return staffRoles(identity).UNDERWRITER;
 }
+
+/**
+ * Registering a name-only funeral life as a client from its identity document, when a death is
+ * claimed. Mirrors `hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER')` on
+ * `POST /policies/{n}/covered-lives/{id}/promotion`.
+ */
+export function canPromoteCoveredLives(identity: TokenIdentity): boolean {
+  const roles = staffRoles(identity);
+  return roles.CLAIMS_ASSESSOR || roles.CLAIMS_MANAGER;
+}

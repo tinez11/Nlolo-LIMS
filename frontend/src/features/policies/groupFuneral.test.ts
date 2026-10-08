@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { FuneralTermsView } from '@/api/types';
 import {
   blankFamily,
-  familyLabels,
   fromLives,
   groupPlans,
   incompleteFamilies,
@@ -87,11 +86,6 @@ describe('group funeral plans', () => {
   it("reads a role's benefit off the plan", () => {
     expect(planBenefit(terms, 'A1', 'CHILD')).toBe(500000);
     expect(planBenefit(terms, 'A1', 'PARENT')).toBeNull();
-  });
-
-  it('labels every life with its family for the claim form', () => {
-    expect(familyLabels([{ memberReference: 'M001', mainMemberName: 'Juma Ali',
-      lives: [{ coveredLifeId: 'a' }, { coveredLifeId: 'b' }] }])).toEqual({ a: 'M001 Juma Ali', b: 'M001 Juma Ali' });
   });
 
   it('states the bill as members x rate', () => {

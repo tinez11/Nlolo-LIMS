@@ -80,6 +80,20 @@ public class UnderwritingController {
         return ResponseEntity.ok(UnderwritingCaseSearchResponse.from(result));
     }
 
+    /**
+     * Decided cases no policy has been issued from (2026-10-08) -- the manual-issue screen's list. The decided
+     * set grows with every case ever decided; nearly all of them already have their policy.
+     */
+    @GetMapping("/cases/awaiting-issue")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<UnderwritingCaseSearchResponse> listCasesAwaitingIssue(
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int pageSize) {
+        Pageable pageable = PageRequest.of(page, Math.min(pageSize, 100), Sort.by(Sort.Direction.DESC, "createdAt"));
+        return ResponseEntity.ok(UnderwritingCaseSearchResponse.from(underwritingApi.listCasesAwaitingIssue(q, pageable)));
+    }
+
     // Transactional so an annuity choice refused below rolls back the case it would have opened:
     // a 422 must not leave a case behind (product step 5). Both service calls join this transaction.
     @PostMapping("/cases")

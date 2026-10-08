@@ -156,9 +156,9 @@ export async function caseAwaitingManualIssue(
 /**
  * Fills the manual-issue form's underwriting case field.
  *
- * A native select rather than a typeahead, because `GET /underwriting/cases` has no
- * free-text search to build one over. Options read `PRO-XXXXXXXX — DECLINED`, so the case is
- * matched on its id via the option value rather than on that label.
+ * The select lists the newest decided cases no policy has come from (`GET
+ * /underwriting/cases/awaiting-issue`); the case just decided is the newest. Options read
+ * `PRO-XXXXXXXX — DECLINED`, so the case is matched on its id via the option value.
  */
 export async function selectUnderwritingCase(page: Page, caseId: string): Promise<void> {
   await page.getByLabel('Underwriting case this policy is issued from').selectOption(caseId);

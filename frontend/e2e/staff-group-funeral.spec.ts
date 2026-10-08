@@ -120,7 +120,10 @@ test.describe('group funeral schemes', () => {
     await page.getByRole('option', { name: 'Amina Owner' }).click();
     await page.getByLabel('Date of event').fill(dmy(today));
     await page.getByLabel('Claim type').selectOption('DEATH');
-    await page.getByLabel('Who died?').selectOption({ label: `M001 ${juma} — ${neema} (child)` });
+    // The family first (searched by member number), then one of its lives.
+    await page.getByLabel('Search families').fill('M001');
+    await page.getByLabel('Family').selectOption({ label: `M001 · ${juma}` });
+    await page.getByLabel('Who died?').selectOption({ label: `${neema} (child)` });
     // An accident: the version's six-month waiting period (the form's default) waives it, so it is paid on day one.
     await page.getByLabel('Accidental death').check();
     await page.getByLabel('Cause of death').fill('Road accident');

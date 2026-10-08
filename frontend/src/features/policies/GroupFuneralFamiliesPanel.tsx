@@ -13,19 +13,25 @@ import {
 import { getPolicy } from '@/api/policies';
 import type { GroupFuneralFamilyView, GroupFuneralJoiningReport, PolicyView } from '@/api/types';
 import { toApiError, type ApiError } from '@/lib/apiError';
+import { promoteCoveredLife } from '@/api/funeral';
 import { asSex } from './groupFuneral';
-import { canUnderwriteGroupSchemes, readIdentity } from '@/auth/claims';
+import { canPromoteCoveredLives, canUnderwriteGroupSchemes, readIdentity } from '@/auth/claims';
 import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { Panel } from '@/components/Panel';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
+import { Pager } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { matchFamilies } from '@/features/claims/schemeLives';
 import { FUNERAL_ROLE_LABELS } from '@/features/products/funeralSchema';
 import { formatDate, todayIso } from '@/lib/dates';
 import { saveBlob } from '@/lib/download';
 import { formatMoney } from '@/lib/money';
+import { IdentifyForm } from './CoveredLivesPanel';
+import { toIdentify } from './coveredLifeForm';
 import { DependantFields, FamilyEditor } from './FamilyEditor';
 import { blankDependant, blankFamily, incompleteFamilies, toLives, type DependantRow, type FamilyRow } from './groupFuneral';
 
@@ -36,7 +42,9 @@ import { blankDependant, blankFamily, incompleteFamilies, toLives, type Dependan
  * server's to check against the plan; this shows its answer.
  */
 export function GroupFuneralFamiliesPanel({ policyNumber, onChanged }: { policyNumber: string; onChanged: () => void }) {
-  const canUnderwrite = canUnderwriteGroupSchemes(readIdentity(useAuth().user?.access_token));
+  const identity = readIdentity(useAuth().user?.access_token);
+  const canUnderwrite = canUnderwriteGroupSchemes(identity);
+  const canPromote = canPromoteCoveredLives(identity);
   const [families, setFamilies] = useState<GroupFuneralFamilyView[] | null>(null);
   const [policy, setPolicy] = useState<PolicyView | null>(null);
   const [loadError, setLoadError] = useState<ApiError | null>(null);
@@ -45,6 +53,14 @@ export function GroupFuneralFamiliesPanel({ policyNumber, onChanged }: { policyN
   const [error, setError] = useState<ApiError | null>(null);
   const [report, setReport] = useState<GroupFuneralJoiningReport | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // An association has tens of members, each a block of lives (2026-10-08): search them by member number or
+  // main member's name, a page at a time. Every family is already loaded, so this filters the whole list.
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const matched = matchFamilies(families ?? [], query);
+  const lastPage = Math.max(0, Math.ceil(matched.length / FAMILIES_PER_PAGE) - 1);
+  const shownPage = Math.min(page, lastPage);
+  const shown = matched.slice(shownPage * FAMILIES_PER_PAGE, (shownPage + 1) * FAMILIES_PER_PAGE);
 
   useEffect(() => {
     let live = true;
@@ -154,16 +170,32 @@ export function GroupFuneralFamiliesPanel({ policyNumber, onChanged }: { policyN
       ) : families.length === 0 ? (
         <EmptyState title="No members yet" description="Families join when the association's first premium clears." />
       ) : (
-        <div className="divide-y divide-border">
-          {families.map((family) => (
-            <FamilyBlock key={family.policyMemberId} family={family} policyNumber={policyNumber} currency={policy?.sumAssured?.currencyCode ?? 'TZS'}
-              canUnderwrite={canUnderwrite} inForce={mayChange} act={act} />
-          ))}
-        </div>
+        <>
+          <div className="border-b border-border px-4 py-2.5">
+            <Input inputSize="sm" className="max-w-sm" placeholder="Search by member number or name…"
+              aria-label="Search members" value={query}
+              onChange={(e) => { setQuery(e.target.value); setPage(0); }} />
+          </div>
+          {matched.length === 0 ? (
+            <p className="px-4 py-3 text-xs text-muted-foreground">No member matches &ldquo;{query.trim()}&rdquo;.</p>
+          ) : (
+            <div className="divide-y divide-border">
+              {shown.map((family) => (
+                <FamilyBlock key={family.policyMemberId} family={family} policyNumber={policyNumber} currency={policy?.sumAssured?.currencyCode ?? 'TZS'}
+                  canUnderwrite={canUnderwrite} canPromote={canPromote} inForce={mayChange} act={act} />
+              ))}
+            </div>
+          )}
+          {matched.length > FAMILIES_PER_PAGE && (
+            <Pager page={{ page: shownPage, pageSize: FAMILIES_PER_PAGE, totalElements: matched.length }} onPageChange={setPage} />
+          )}
+        </>
       )}
     </Panel>
   );
 }
+
+const FAMILIES_PER_PAGE = 10;
 
 function JoinFamilyActions({ family, onJoin, onCancel }: {
   family: FamilyRow; onJoin: (joinedOn: string) => Promise<void>; onCancel: () => void;
@@ -184,16 +216,20 @@ function JoinFamilyActions({ family, onJoin, onCancel }: {
   );
 }
 
-function FamilyBlock({ family, policyNumber, currency, canUnderwrite, inForce, act }: {
+function FamilyBlock({ family, policyNumber, currency, canUnderwrite, canPromote, inForce, act }: {
   family: GroupFuneralFamilyView;
   policyNumber: string;
   currency: string;
   canUnderwrite: boolean;
+  canPromote: boolean;
   inForce: boolean;
   act: (change: () => Promise<unknown>) => Promise<boolean>;
 }) {
   const [newLife, setNewLife] = useState<DependantRow | null>(null);
   const [leaving, setLeaving] = useState<string | null>(null);
+  // The life being registered as a client: a dependant's death is paid to the main member, who must be a
+  // registered party first. Not tied to the scheme taking changes -- a yearly plan's family is fixed, its claims are not.
+  const [promoting, setPromoting] = useState<string | null>(null);
   const memberActive = family.status === 'ACTIVE';
 
   return (
@@ -232,12 +268,33 @@ function FamilyBlock({ family, policyNumber, currency, canUnderwrite, inForce, a
                   : life.coverEnd ? `To ${formatDate(life.coverEnd)}` : 'Covered'}
               </td>
               <td className="text-right">
+                {life.partyId && <span className="mr-2 text-subtle-foreground">Client</span>}
+                {canPromote && !life.partyId && promoting !== life.coveredLifeId && (
+                  <Button size="sm" variant="ghost" aria-label={`Promote ${life.fullName} to client`}
+                    onClick={() => setPromoting(life.coveredLifeId)}>
+                    Promote to client
+                  </Button>
+                )}
                 {inForce && life.role !== 'MAIN_MEMBER' && life.status === 'ACTIVE' && !life.coverEnd && (
                   <Button size="sm" variant="ghost" aria-label={`Remove ${life.fullName}`}
                     onClick={() => void act(() => removeGroupFuneralLife(policyNumber, life.coveredLifeId, ''))}>
                     Remove
                   </Button>
                 )}
+              </td>
+            </tr>
+          ))}
+          {family.lives.filter((life) => life.coveredLifeId === promoting).map((life) => (
+            <tr key={`promote-${life.coveredLifeId}`}>
+              <td colSpan={7} className="py-2">
+                <p className="mb-2 text-subtle-foreground">
+                  Register {life.fullName} as a client from their identity document. A claim paid to them is filed in
+                  their name.
+                </p>
+                <IdentifyForm submitLabel="Promote to client" onCancel={() => setPromoting(null)}
+                  onSubmit={async (v) => {
+                    if (await act(() => promoteCoveredLife(policyNumber, life.coveredLifeId, toIdentify(v)))) setPromoting(null);
+                  }} />
               </td>
             </tr>
           ))}
