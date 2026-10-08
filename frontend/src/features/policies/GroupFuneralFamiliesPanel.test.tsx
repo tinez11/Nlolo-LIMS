@@ -77,6 +77,33 @@ describe('GroupFuneralFamiliesPanel', () => {
     expect(groupFuneralApi.listGroupFuneralFamilies).toHaveBeenCalledTimes(2);
   });
 
+  it('finds a family among thirty by member number or name, ten to a page', async () => {
+    const thirty = Array.from({ length: 30 }, (_, i) => {
+      const reference = `M${String(i + 1).padStart(3, '0')}`;
+      return { ...family, policyMemberId: `m-${i}`, memberReference: reference, mainMemberName: `Member ${i + 1}`,
+        lives: [life({ role: 'MAIN_MEMBER', fullName: `Member ${i + 1}` })] };
+    });
+    vi.mocked(groupFuneralApi.listGroupFuneralFamilies).mockResolvedValue(thirty);
+    render(<GroupFuneralFamiliesPanel policyNumber="GRP-1" onChanged={vi.fn()} />);
+
+    await screen.findByLabelText('Member M001');
+    expect(screen.queryByLabelText('Member M011')).not.toBeInTheDocument();
+    expect(screen.getByText('1–10 of 30')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(screen.getByLabelText('Member M011')).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Search members'), 'm027');
+    expect(screen.getByLabelText('Member M027')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Member M011')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Next page' })).not.toBeInTheDocument();
+
+    await userEvent.clear(screen.getByLabelText('Search members'));
+    await userEvent.type(screen.getByLabelText('Search members'), 'Member 3');
+    // Member 3 and Member 30.
+    expect(screen.getByLabelText('Member M003')).toBeInTheDocument();
+    expect(screen.getByLabelText('Member M030')).toBeInTheDocument();
+  });
+
   it('does not offer the promotion to staff the server would refuse', async () => {
     roles = ['UNDERWRITER'];
     render(<GroupFuneralFamiliesPanel policyNumber="GRP-1" onChanged={vi.fn()} />);

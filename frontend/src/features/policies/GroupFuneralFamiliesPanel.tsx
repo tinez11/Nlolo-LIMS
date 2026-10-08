@@ -22,7 +22,10 @@ import { InlineError } from '@/components/InlineError';
 import { Panel } from '@/components/Panel';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
+import { Pager } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { matchFamilies } from '@/features/claims/schemeLives';
 import { FUNERAL_ROLE_LABELS } from '@/features/products/funeralSchema';
 import { formatDate, todayIso } from '@/lib/dates';
 import { saveBlob } from '@/lib/download';
@@ -50,6 +53,14 @@ export function GroupFuneralFamiliesPanel({ policyNumber, onChanged }: { policyN
   const [error, setError] = useState<ApiError | null>(null);
   const [report, setReport] = useState<GroupFuneralJoiningReport | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // An association has tens of members, each a block of lives (2026-10-08): search them by member number or
+  // main member's name, a page at a time. Every family is already loaded, so this filters the whole list.
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const matched = matchFamilies(families ?? [], query);
+  const lastPage = Math.max(0, Math.ceil(matched.length / FAMILIES_PER_PAGE) - 1);
+  const shownPage = Math.min(page, lastPage);
+  const shown = matched.slice(shownPage * FAMILIES_PER_PAGE, (shownPage + 1) * FAMILIES_PER_PAGE);
 
   useEffect(() => {
     let live = true;
@@ -159,16 +170,32 @@ export function GroupFuneralFamiliesPanel({ policyNumber, onChanged }: { policyN
       ) : families.length === 0 ? (
         <EmptyState title="No members yet" description="Families join when the association's first premium clears." />
       ) : (
-        <div className="divide-y divide-border">
-          {families.map((family) => (
-            <FamilyBlock key={family.policyMemberId} family={family} policyNumber={policyNumber} currency={policy?.sumAssured?.currencyCode ?? 'TZS'}
-              canUnderwrite={canUnderwrite} canPromote={canPromote} inForce={mayChange} act={act} />
-          ))}
-        </div>
+        <>
+          <div className="border-b border-border px-4 py-2.5">
+            <Input inputSize="sm" className="max-w-sm" placeholder="Search by member number or name…"
+              aria-label="Search members" value={query}
+              onChange={(e) => { setQuery(e.target.value); setPage(0); }} />
+          </div>
+          {matched.length === 0 ? (
+            <p className="px-4 py-3 text-xs text-muted-foreground">No member matches &ldquo;{query.trim()}&rdquo;.</p>
+          ) : (
+            <div className="divide-y divide-border">
+              {shown.map((family) => (
+                <FamilyBlock key={family.policyMemberId} family={family} policyNumber={policyNumber} currency={policy?.sumAssured?.currencyCode ?? 'TZS'}
+                  canUnderwrite={canUnderwrite} canPromote={canPromote} inForce={mayChange} act={act} />
+              ))}
+            </div>
+          )}
+          {matched.length > FAMILIES_PER_PAGE && (
+            <Pager page={{ page: shownPage, pageSize: FAMILIES_PER_PAGE, totalElements: matched.length }} onPageChange={setPage} />
+          )}
+        </>
       )}
     </Panel>
   );
 }
+
+const FAMILIES_PER_PAGE = 10;
 
 function JoinFamilyActions({ family, onJoin, onCancel }: {
   family: FamilyRow; onJoin: (joinedOn: string) => Promise<void>; onCancel: () => void;
