@@ -175,6 +175,7 @@ class ClaimAndCommissionPostingEndToEndTest {
             "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/product/V28__survival_investment_component.sql",
             "db-migrations/product/V29__funeral_group_rate.sql",
+            "db-migrations/product/V30__funeral_group_rate_period.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -331,7 +332,7 @@ class ClaimAndCommissionPostingEndToEndTest {
         TenantContext.set(tenantId);
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
             new BigDecimal("2000000"), CURRENCY, new BigDecimal("40000.00"), CURRENCY, "MONTHLY", null, List.of(),
-            "Claim/Commission posting E2E test");
+            "Claim/Commission posting E2E test", java.time.LocalDate.now().minusYears(1), null, null, null, null);
         String issuedPolicyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
         // Cover starts with the first premium. This fixture needs a policy on risk.
         policyApi.activateOnFirstPremium(issuedPolicyNumber);
@@ -382,7 +383,7 @@ class ClaimAndCommissionPostingEndToEndTest {
             LocalDate.of(1980, 6, 1), "+25574" + String.format("%07d", Math.abs(tag.hashCode() % 10000000)), null, "test-agent");
         String policyNumber = policyApi.issuePolicy(null, new PolicyApi.IssueRequest(policyholder.partyId(),
             product.productId(), productVersionId, new BigDecimal("2000000"), CURRENCY, premium, CURRENCY,
-            "MONTHLY", agentId, List.of(), "Claim/Commission posting E2E test"), "test-staff").policyNumber();
+            "MONTHLY", agentId, List.of(), "Claim/Commission posting E2E test", java.time.LocalDate.now().minusYears(1), null, null, null, null), "test-staff").policyNumber();
         // Commission is only posted once there is cover to earn it on.
         policyApi.activateOnFirstPremium(policyNumber);
 

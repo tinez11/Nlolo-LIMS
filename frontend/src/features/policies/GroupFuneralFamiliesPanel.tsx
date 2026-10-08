@@ -85,12 +85,21 @@ export function GroupFuneralFamiliesPanel({ policyNumber, onChanged }: { policyN
 
   const active = (families ?? []).filter((f) => f.status === 'ACTIVE').length;
   const inForce = policy?.status === 'ACTIVE' || policy?.status === 'REINSTATED';
+  // A yearly plan (2026-10-08): one bill for the year, and the members and their families fixed while it is in force.
+  const yearly = policy?.premiumFrequency === 'ANNUALLY';
+  const mayChange = inForce && !yearly;
 
   return (
     <Panel title="Members and their families"
-      subtitle={policy ? `The bill: ${active} member${active === 1 ? '' : 's'}, ${formatMoney(policy.premium)} a month`
+      subtitle={policy ? `The bill: ${active} member${active === 1 ? '' : 's'}, ${formatMoney(policy.premium)} ${yearly ? 'a year' : 'a month'}`
         : 'Each family under its main member; the bill counts members, not lives.'}>
-      {canUnderwrite && (
+      {yearly && inForce && (
+        <p className="border-b border-border px-4 py-2.5 text-xs text-muted-foreground" role="status">
+          A yearly plan: the association is billed once for the year, and these members and their families are fixed
+          while the policy is in force. A death claim still ends that life.
+        </p>
+      )}
+      {canUnderwrite && !(yearly && inForce) && (
         <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
           <Button size="sm" variant="primary" disabled={!inForce || adding !== null}
             onClick={() => setAdding(blankFamily((families ?? []).map((f) => ({ ...blankFamily([]), reference: f.memberReference ?? '' }))))}>
@@ -148,7 +157,7 @@ export function GroupFuneralFamiliesPanel({ policyNumber, onChanged }: { policyN
         <div className="divide-y divide-border">
           {families.map((family) => (
             <FamilyBlock key={family.policyMemberId} family={family} policyNumber={policyNumber} currency={policy?.sumAssured?.currencyCode ?? 'TZS'}
-              canUnderwrite={canUnderwrite} inForce={inForce} act={act} />
+              canUnderwrite={canUnderwrite} inForce={mayChange} act={act} />
           ))}
         </div>
       )}

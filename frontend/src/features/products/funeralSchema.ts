@@ -34,8 +34,10 @@ const funeralPlanSchema = z.object({
   name: z.string().trim(),
   /** The benefit per role, in FUNERAL_ROLES order; blank = this plan does not cover the role. */
   benefits: z.array(z.string().trim()),
-  /** Group funeral schemes: per member per month, the member's family included; blank on an individual-only version. */
+  /** Group funeral schemes: per member per groupRatePeriod, the member's family included; blank on an individual-only version. */
   groupRate: z.string().trim(),
+  /** What the group rate is per (2026-10-08): MONTHLY, or YEARLY -- one bill a year, the member list fixed for the year. */
+  groupRatePeriod: z.enum(['MONTHLY', 'YEARLY']),
 });
 
 /** How a funeral version may be sold (group funeral schemes, 2026-10-07). */
@@ -112,7 +114,7 @@ export function blankFuneralFields(): FuneralFields {
 }
 
 export function blankFuneralPlan(): FuneralPlanValues {
-  return { planCode: '', name: '', benefits: FUNERAL_ROLES.map(() => ''), groupRate: '' };
+  return { planCode: '', name: '', benefits: FUNERAL_ROLES.map(() => ''), groupRate: '', groupRatePeriod: 'MONTHLY' };
 }
 
 export interface ParsedPremium {
@@ -254,6 +256,7 @@ export function toFuneralRequest(v: FuneralFields): NonNullable<ProductVersionSp
       planCode: p.planCode,
       name: p.name,
       groupMonthlyRate: soldToGroups(v.funeralSoldAs) && p.groupRate !== '' ? Number(p.groupRate) : null,
+      ...(soldToGroups(v.funeralSoldAs) ? { groupRatePeriod: p.groupRatePeriod } : {}),
     })),
     benefits: v.funeralPlans.flatMap((p) =>
       FUNERAL_ROLES.flatMap((role, r) => (p.benefits[r] === '' ? [] : [{ planCode: p.planCode, role, benefit: Number(p.benefits[r]) }]))),

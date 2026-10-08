@@ -525,6 +525,7 @@ public class PolicyApiImpl implements PolicyApi {
                                                   String addedBy) {
         UUID tenantId = TenantContext.get();
         Policy policy = groupFuneralSchemeOrThrow(policyNumber);
+        requireListMayChange(policy);
         LocalDate joining = requireFamiliesMayJoin(policy, joinedOn);
         List<GroupFuneralFamilies.Family> families = GroupFuneralFamilies.families(lives != null ? lives : List.of());
         if (families.size() != 1) {
@@ -546,6 +547,7 @@ public class PolicyApiImpl implements PolicyApi {
     public GroupFuneralJoiningReport joinGroupFuneralFamilies(String policyNumber, byte[] csv, LocalDate joinedOn,
                                                              String addedBy) {
         Policy policy = groupFuneralSchemeOrThrow(policyNumber);
+        requireListMayChange(policy);
         LocalDate joining = requireFamiliesMayJoin(policy, joinedOn);
         var parsed = tz.co.nlolo.lifeplatform.underwriting.api.FuneralScheduleFile.parse(csv);
         // Every problem by the family it names; a row naming no member refuses nothing else.
@@ -595,6 +597,23 @@ public class PolicyApiImpl implements PolicyApi {
             .map(e -> new GroupFuneralJoiningReport.Refused(e.getKey(), e.getValue())).toList(), fileProblems);
     }
 
+    /**
+     * A scheme on a YEARLY plan (2026-10-08) keeps its members and their families fixed while it is in force: the
+     * association pays once for the year and alone is liable for it, so nobody joins, leaves, or is added to or
+     * removed from a family mid-year. A death claim still ends that life.
+     */
+    private void requireListMayChange(Policy policy) {
+        if (!policy.isInForce()) {
+            return; // the in-force checks that follow say why in their own words
+        }
+        FuneralPlan plan = productApi.resolveFuneralPlan(policy.getProductVersionId());
+        if (plan.groupRatePeriod(groupFuneralFamilies.planCode(policy)) == tz.co.nlolo.lifeplatform.product.api.GroupRatePeriod.YEARLY) {
+            throw new InvalidPolicyStateException("Scheme " + policy.getPolicyNumber() + " is on a yearly plan: its "
+                + "members and their families are fixed while it is in force, and the association is billed once for "
+                + "the year");
+        }
+    }
+
     /** The scheme in force, and the joining day: today when null, never in the future or before commencement. */
     private static LocalDate requireFamiliesMayJoin(Policy policy, LocalDate joinedOn) {
         if (!policy.isInForce()) {
@@ -619,7 +638,7 @@ public class PolicyApiImpl implements PolicyApi {
         LocalDate today = LocalDate.now();
         policyMemberBenefitRepository.flush();
         BigDecimal total = restateSchemeTotal(policy, TenantContext.get(), today);
-        groupFuneralFamilies.restateBill(policy, InstalmentDates.nextAfter(policy.getIssueDate(), "MONTHLY", today));
+        groupFuneralFamilies.restateBill(policy, InstalmentDates.nextAfter(policy.getIssueDate(), policy.getPremiumFrequency(), today));
         policyRepository.save(policy);
         return total;
     }
@@ -650,6 +669,7 @@ public class PolicyApiImpl implements PolicyApi {
                                               String addedBy) {
         UUID tenantId = TenantContext.get();
         Policy policy = groupFuneralSchemeOrThrow(policyNumber);
+        requireListMayChange(policy);
         if (!policy.isInForce()) {
             throw new InvalidPolicyStateException("Scheme " + policyNumber
                 + " must be in force to add a life (current: " + policy.getStatus() + ")");
@@ -665,6 +685,7 @@ public class PolicyApiImpl implements PolicyApi {
     @Transactional
     public CoveredLifeView removeGroupFuneralLife(String policyNumber, UUID coveredLifeId, String reason, String removedBy) {
         Policy policy = groupFuneralSchemeOrThrow(policyNumber);
+        requireListMayChange(policy);
         if (!policy.isInForce()) {
             throw new InvalidPolicyStateException("Scheme " + policyNumber
                 + " must be in force to remove a life (current: " + policy.getStatus() + ")");
@@ -2013,7 +2034,7 @@ public class PolicyApiImpl implements PolicyApi {
                 exitOneMember(policy, findSchemeOrThrow(policyNumber, tenantId), discharge.policyMemberId(), monthEnd,
                     ExitReason.CLAIM_SETTLED, null, claimId, tenantId);
                 if (policy.isInForce()) {
-                    groupFuneralFamilies.restateBill(policy, InstalmentDates.nextAfter(policy.getIssueDate(), "MONTHLY", monthEnd));
+                    groupFuneralFamilies.restateBill(policy, InstalmentDates.nextAfter(policy.getIssueDate(), policy.getPremiumFrequency(), monthEnd));
                 }
             } else if (discharge.outcome() != GroupFuneralFamilies.DeathOutcome.ALREADY_DISCHARGED) {
                 policyMemberBenefitRepository.flush();
@@ -2394,6 +2415,7 @@ public class PolicyApiImpl implements PolicyApi {
 
         boolean funeralScheme = scheme.getBenefitBasis() == BenefitBasis.FUNERAL_PLAN;
         if (funeralScheme) {
+            requireListMayChange(policy);
             if (exitDate == null) {
                 throw new InvalidPolicyStateException("A member leaving a group funeral scheme needs the date they leave");
             }
@@ -2406,7 +2428,7 @@ public class PolicyApiImpl implements PolicyApi {
         Optional<PolicyMember> exited = exitOneMember(policy, scheme, policyMemberId, exitDate,
             reason, outstandingBalanceAtExit, null, tenantId);
         if (funeralScheme && exited.isPresent() && policy.isInForce()) {
-            groupFuneralFamilies.restateBill(policy, InstalmentDates.nextAfter(policy.getIssueDate(), "MONTHLY", exitDate));
+            groupFuneralFamilies.restateBill(policy, InstalmentDates.nextAfter(policy.getIssueDate(), policy.getPremiumFrequency(), exitDate));
             policyRepository.save(policy);
         }
 
@@ -3028,21 +3050,23 @@ public class PolicyApiImpl implements PolicyApi {
             // association's first premium -- the acceptance -- would be nil.
             throw new InvalidPolicyStateException(
                 "A group funeral scheme must be issued with at least one family: its premium is "
-                    + rate.toPlainString() + " per member per month, and a scheme of nobody owes nothing");
+                    + rate.toPlainString() + " per member, and a scheme of nobody owes nothing");
         }
         // Every family checked before anything is written: one bad family refuses the whole schedule.
         groupFuneralFamilies.requireAdmissible(request.productVersionId(), planCode, commencement, families);
 
         BigDecimal total = families.stream().map(f -> GroupFuneralFamilies.familyCover(plan, planCode, f))
             .reduce(BigDecimal.ZERO, BigDecimal::add);
-        // The bill (R3): the plan's group rate for every main member, monthly.
+        // The bill (R3): the plan's group rate for every main member, per the plan's period -- monthly, or once a
+        // year on a yearly plan (2026-10-08), whose member list is then fixed while the scheme is in force.
         BigDecimal premium = rate.multiply(BigDecimal.valueOf(families.size())).setScale(2, java.math.RoundingMode.HALF_UP);
+        String frequency = plan.groupRatePeriod(planCode).premiumFrequency();
 
         String policyNumber = "GRP-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         UUID agentOfRecordId = agentOfRecordFor(request.policyholderPartyId(), request.agentOfRecordId());
         Policy policy = new Policy(policyNumber, tenantId, request.policyholderPartyId(), request.productId(),
             request.productVersionId(), snapshot.category().name(), agentOfRecordId,
-            total, request.currency(), premium, request.currency(), "MONTHLY", underwritingCaseId, issuedBy);
+            total, request.currency(), premium, request.currency(), frequency, underwritingCaseId, issuedBy);
         policy.applyTerm(commencement, request.policyTermMonths(), null);
         policy.recordIssuedOn(today);
         recordIssuance(policy, null, request.reasonForManualIssue(), underwritingCaseId, issuedByName);
@@ -3070,7 +3094,7 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("sumAssured", Map.of("amount", total.toPlainString(), "currencyCode", request.currency()));
         payload.put("issueDate", policy.getIssueDate().toString());
         payload.put("premium", Map.of("amount", premium.toPlainString(), "currencyCode", request.currency()));
-        payload.put("premiumFrequency", "MONTHLY");
+        payload.put("premiumFrequency", frequency);
         payload.put("agentOfRecordId", policy.getAgentOfRecordId());
         payload.put("status", policy.getStatus());
         payload.put("premiumPerEnrolment", false);

@@ -106,6 +106,7 @@ class ClaimsApiIntegrationTest {
             "db-migrations/product/V27__ifrs17_classification.sql",
             "db-migrations/product/V28__survival_investment_component.sql",
             "db-migrations/product/V29__funeral_group_rate.sql",
+            "db-migrations/product/V30__funeral_group_rate_period.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -199,7 +200,7 @@ class ClaimsApiIntegrationTest {
     private String issuePolicyWithNullUnderwritingCase(UUID tenantId, Fixture fixture) {
         TenantContext.set(tenantId);
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
-            new BigDecimal("2000000"), "TZS", new BigDecimal("40000.00"), "TZS", "MONTHLY", null, List.of(), "Claims IT test");
+            new BigDecimal("2000000"), "TZS", new BigDecimal("40000.00"), "TZS", "MONTHLY", null, List.of(), "Claims IT test", java.time.LocalDate.now().minusYears(1), null, null, null, null);
         String issuedPolicyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
         // Cover starts with the first premium. This fixture needs a policy on risk.
         policyApi.activateOnFirstPremium(issuedPolicyNumber);

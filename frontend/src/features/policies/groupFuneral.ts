@@ -155,12 +155,15 @@ export function incompleteFamilies(families: FamilyRow[]): string[] {
   return problems;
 }
 
-/** The plans a scheme may be written on: a version sold to groups, each plan with its group rate. */
-export function groupPlans(terms: FuneralTermsView | null): { planCode: string; name: string; rate: number }[] {
+export type RatePeriod = 'MONTHLY' | 'YEARLY';
+
+/** The plans a scheme may be written on: a version sold to groups, each plan with its group rate and what it is per. */
+export function groupPlans(terms: FuneralTermsView | null): { planCode: string; name: string; rate: number; period: RatePeriod }[] {
   if (!terms || terms.soldAs === 'INDIVIDUAL') return [];
   return terms.plans
     .filter((p) => p.groupMonthlyRate != null)
-    .map((p) => ({ planCode: p.planCode, name: p.name, rate: p.groupMonthlyRate as number }));
+    .map((p) => ({ planCode: p.planCode, name: p.name, rate: p.groupMonthlyRate as number,
+      period: (p.groupRatePeriod ?? 'MONTHLY') as RatePeriod }));
 }
 
 /** What a plan pays for a life in a role; null when the plan does not cover it. */
@@ -168,10 +171,11 @@ export function planBenefit(terms: FuneralTermsView | null, planCode: string, ro
   return terms?.benefits.find((b) => b.planCode === planCode && b.role === role)?.benefit ?? null;
 }
 
-/** "2 members x 3,000.00 = 6,000.00 a month" -- the association's monthly bill, as the server computes it. */
-export function monthlyBill(members: number, rate: number, currency: string): string {
+/** "2 members x 3,000.00 = 6,000.00 a month" (or "a year") -- the association's bill, as the server computes it. */
+export function monthlyBill(members: number, rate: number, currency: string, period: RatePeriod = 'MONTHLY'): string {
   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `${members} member${members === 1 ? '' : 's'} x ${currency} ${fmt(rate)} = ${currency} ${fmt(members * rate)} a month`;
+  return `${members} member${members === 1 ? '' : 's'} x ${currency} ${fmt(rate)} = ${currency} ${fmt(members * rate)} `
+    + (period === 'YEARLY' ? 'a year' : 'a month');
 }
 
 /** Each life's family on a group funeral scheme, as "M001 Juma Ali" -- how a claim form says whose family a life is in. */

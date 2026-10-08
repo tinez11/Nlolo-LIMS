@@ -80,9 +80,18 @@ export function FuneralTermsSection({
                 <Input inputSize="sm" placeholder="Familia B" {...register(`funeralPlans.${i}.name`)} />
               </FormField>
               {toGroups && (
-                <FormField label="Group rate per member per month" error={errors.funeralPlans?.[i]?.groupRate?.message}>
-                  <Input inputSize="sm" inputMode="decimal" placeholder="3000" {...register(`funeralPlans.${i}.groupRate`)} />
-                </FormField>
+                <>
+                  <FormField label="Group rate per member" error={errors.funeralPlans?.[i]?.groupRate?.message}>
+                    <Input inputSize="sm" inputMode="decimal" placeholder="3000" {...register(`funeralPlans.${i}.groupRate`)} />
+                  </FormField>
+                  {/* Yearly (2026-10-08): one bill a year at members x rate, and the member list fixed while the scheme is in force. */}
+                  <FormField label="Charged">
+                    <Select inputSize="sm" {...register(`funeralPlans.${i}.groupRatePeriod`)}>
+                      <option value="MONTHLY">per month</option>
+                      <option value="YEARLY">per year (members fixed for the year)</option>
+                    </Select>
+                  </FormField>
+                </>
               )}
               <Button type="button" variant="ghost" size="sm" aria-label={`Remove plan ${i + 1}`} onClick={() => plans.remove(i)}>
                 <X className="size-4" />

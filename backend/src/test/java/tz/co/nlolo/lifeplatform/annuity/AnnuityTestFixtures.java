@@ -55,7 +55,22 @@ public class AnnuityTestFixtures {
      * path, which auto-issues the policy PROPOSED. Returns the policy number.
      */
     public String buy(UUID tenant, Product product, UUID annuitant, String price, AnnuityChoice choice) {
-        UUID caseId = openCase(tenant, product, annuitant, price, choice);
+        return buy(tenant, product, annuitant, price, choice, null);
+    }
+
+    /**
+     * As above, the case stating when cover starts -- for a test that dates events (a death, a collection) before
+     * today: a policy covers nothing before it started (audit 2026-10-07).
+     */
+    public String buy(UUID tenant, Product product, UUID annuitant, String price, AnnuityChoice choice, LocalDate commencement) {
+        UUID caseId = asTenant(tenant, () -> {
+            UUID id = underwritingApi.openCase(annuitant, product.productId(), product.versionId(), new BigDecimal(price),
+                "TZS", null, new ProposalDetails(null, null, null, commencement), "staff-opener").caseId();
+            if (choice != null) {
+                underwritingApi.recordAnnuityChoice(id, choice, "staff-opener");
+            }
+            return id;
+        });
         asTenant(tenant, () -> underwritingApi.decide(caseId,
             new UnderwritingApi.DecisionInput(tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome.ACCEPT, null,
                 "Age proven by passport", true), "senior-two", true));

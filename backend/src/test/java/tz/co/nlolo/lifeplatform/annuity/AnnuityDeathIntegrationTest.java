@@ -97,7 +97,8 @@ class AnnuityDeathIntegrationTest {
 
     /** Bought, collected three months ago, and the first {@code paid} instalments paid. */
     private String inPayment(AnnuityChoice choice, UUID annuitant, int paid) {
-        String policy = fixtures.buy(TENANT, product(), annuitant, PRICE, choice);
+        // Cover from the day the price was collected: the deaths below are dated after it, before today.
+        String policy = fixtures.buy(TENANT, product(), annuitant, PRICE, choice, COLLECTED);
         fixtures.collect(TENANT, policy, PRICE, COLLECTED);
         List<PayoutInstalmentView> rows = rows(policy);
         for (int n = 0; n < paid; n++) {

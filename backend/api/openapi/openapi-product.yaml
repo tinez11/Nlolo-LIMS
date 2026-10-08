@@ -704,7 +704,11 @@ components:
                   groupMonthlyRate:
                     type: [number, "null"]
                     exclusiveMinimum: 0
-                    description: Per member per month on a group scheme, the member's family included; required when soldAs is GROUP or BOTH, absent otherwise
+                    description: The group rate per member, per groupRatePeriod, the member's family included; required when soldAs is GROUP or BOTH, absent otherwise
+                  groupRatePeriod:
+                    type: [string, "null"]
+                    enum: [MONTHLY, YEARLY, null]
+                    description: What the group rate is per. MONTHLY when absent. YEARLY bills a scheme once a year and fixes its member list while it is in force.
             benefits:
               type: array
               items:
@@ -1129,11 +1133,12 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [planCode, name, groupMonthlyRate]
+            required: [planCode, name, groupMonthlyRate, groupRatePeriod]
             properties:
               planCode: { type: string }
               name: { type: string }
-              groupMonthlyRate: { type: [number, "null"] }
+              groupMonthlyRate: { type: [number, "null"], description: "The group rate per member, per groupRatePeriod" }
+              groupRatePeriod: { type: string, enum: [MONTHLY, YEARLY] }
         benefits:
           type: array
           items:
