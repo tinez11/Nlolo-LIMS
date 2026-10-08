@@ -9,6 +9,7 @@ import {
   FileText,
   HandCoins,
   Hourglass,
+  House,
   Landmark,
   MessageSquare,
   Scale,
@@ -26,6 +27,7 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
+import { CustomerHomePage } from '@/features/customer/CustomerHomePage';
 import type { ReactNode } from 'react';
 import { canSeeFinance, staffRoles, type StaffRoles, type readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
@@ -123,7 +125,8 @@ type NavGroupId =
   | 'records'
   | 'communications'
   | 'configuration'
-  | 'my-business';
+  | 'my-business'
+  | 'my-cover';
 
 /**
  * A count of WORK WAITING beside a nav item, never a count of total volume.
@@ -225,7 +228,7 @@ export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
     { id: 'configuration', label: 'Configuration' },
   ],
   agents: [{ id: 'my-business', label: 'My business' }],
-  customers: [],
+  customers: [{ id: 'my-cover', label: 'My cover' }],
   regulators: [],
 };
 
@@ -233,7 +236,7 @@ export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
 export const REALM_HOME: Record<Realm, string | null> = {
   staff: 'policies',
   agents: 'me',
-  customers: null,
+  customers: 'home',
   regulators: null,
 };
 
@@ -663,14 +666,22 @@ const AGENTS_SCREENS: Screen[] = [
 ];
 
 /**
- * `customers` and `regulators` are deliberately empty rather than stubbed: an
+ * `regulators` is deliberately empty rather than stubbed: an
  * authenticating route into an empty app is worse than a 404, so `App.tsx`
  * mounts no subtree for a realm with no screens.
  */
+/**
+ * The customer portal (2026-10-08, the customer portal design): a policyholder invited by staff. Step 1 is the home
+ * page; the dashboard, policies, documents, claims, products, payments and notifications follow.
+ */
+const CUSTOMER_SCREENS: Screen[] = [
+  { path: 'home', element: <CustomerHomePage />, reach: { group: 'my-cover', label: 'Home', icon: House } },
+];
+
 export const SCREENS: Record<Realm, Screen[]> = {
   staff: STAFF_SCREENS,
   agents: AGENTS_SCREENS,
-  customers: [],
+  customers: CUSTOMER_SCREENS,
   regulators: [],
 };
 

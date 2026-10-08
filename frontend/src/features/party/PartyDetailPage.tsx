@@ -50,6 +50,7 @@ import {
 import { Panel } from '@/components/Panel';
 import { RecordTabs, type TabDef } from '@/components/RecordTabs';
 import { DetailLayout } from '@/components/DetailLayout';
+import { PortalAccessPanel } from './PortalAccessPanel';
 
 const ACCEPTED_EVIDENCE_TYPES = {
   'image/jpeg': ['.jpg', '.jpeg'],
@@ -635,6 +636,19 @@ function clientTabs({
       content: (
         <Panel title="Also an agent" subtitle="Whether this client sells for us as well.">
           <AgentRecordList resource={agentRecords} onRetry={onRetryAgentRecords} />
+        </Panel>
+      ),
+    });
+  }
+
+  // The customer portal (2026-10-08): staff invite a person who holds a policy. Organisations have no portal login.
+  if (isStaff && !isOrganisation) {
+    tabs.push({
+      value: 'portal',
+      label: 'Portal',
+      content: (
+        <Panel title="Customer portal" subtitle="Whether this client can sign in to see their own policies, claims and payments.">
+          <PortalAccessPanel partyId={partyId} />
         </Panel>
       ),
     });

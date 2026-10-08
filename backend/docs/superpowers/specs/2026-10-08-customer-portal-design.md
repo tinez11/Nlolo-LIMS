@@ -51,8 +51,10 @@ Contract tests assert a customer token gets 403 on each. (Loan **repayments** st
   username = email (else phone), attributes `tenant_id` and `party_id` set by the server -- never typed -- and required
   action UPDATE_PASSWORD.
   - Client has an **email**: Keycloak sends its "set your password" link (execute-actions email; needs SMTP).
-  - **Phone only**: the server generates a one-time temporary password, shows it to the staff member once, and sends
-    it by SMS through the communication module; the customer must change it at first sign-in.
+  - **Phone only**: the server generates a one-time temporary password and shows it to the staff member once; staff
+    hand it over in person or by phone, and the customer must change it at first sign-in. **Not sent by SMS**
+    (changed while building): the communication module records every message body in its dispatch log, so an SMS
+    would have stored the password in the database.
 - **Re-send** and **revoke** (`DELETE` disables the Keycloak user; status REVOKED). A revoked client can be invited again.
 - **Status** becomes ACTIVE at the first successful sign-in (first authenticated customer request).
 - **Console**: on a client's page, a "Portal access" panel: Not invited / Invited (re-send) / Active / Revoked.

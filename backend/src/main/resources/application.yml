@@ -78,6 +78,17 @@ spring:
       connection-timeout: ${SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT_MS:10000}
 
 app:
+  # Customer portal (2026-10-08): staff invite a client, and the platform creates the client's login in the customers
+  # realm through the lifeplatform-admin service account (manage-users there only). The secret is never committed for a
+  # real environment; the default is the dev realm's own placeholder.
+  portal:
+    url: ${PORTAL_URL:http://localhost:5173/customers}
+    keycloak:
+      base-url: ${KEYCLOAK_BASE_URL:http://localhost:8081}
+      realm: customers
+      client-id: lifeplatform-admin
+      client-secret: ${KEYCLOAK_PORTAL_ADMIN_SECRET:dev-secret-portal-admin}
+      portal-client-id: lifeplatform-spa
   security:
     issuers:
       customers: ${KEYCLOAK_ISSUER_CUSTOMERS:http://localhost:8081/realms/customers}

@@ -202,6 +202,15 @@ export function avatarHue(seed: string): number {
  * Reading a scheme and its schedule is NOT gated and must not be: a claims assessor has to be
  * able to check whether a life was covered when a death is reported.
  */
+/**
+ * Inviting a client to the customer portal, re-sending or revoking it (2026-10-08). Mirrors
+ * `hasRole('CUSTOMER_SERVICE_REP') or hasRole('ADMIN')` on `/parties/{id}/portal-access`.
+ */
+export function canInviteToPortal(identity: TokenIdentity): boolean {
+  const roles = staffRoles(identity);
+  return roles.CUSTOMER_SERVICE_REP || roles.ADMIN;
+}
+
 export function canUnderwriteGroupSchemes(identity: TokenIdentity): boolean {
   return staffRoles(identity).UNDERWRITER;
 }
