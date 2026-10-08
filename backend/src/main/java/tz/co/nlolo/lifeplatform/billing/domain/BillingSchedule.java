@@ -47,6 +47,14 @@ public class BillingSchedule {
     @Column(name = "premium_paying_until")
     private LocalDate premiumPayingUntil;
 
+    /**
+     * Each instalment falls due at the START of the period it pays for (2026-10-08, billing V11). Every schedule created
+     * from then on; one created before keeps billing in arrears -- the period ENDING the day before it falls due -- so
+     * nothing already raised, paid or owed moves.
+     */
+    @Column(name = "billed_in_advance", nullable = false)
+    private boolean billedInAdvance;
+
     @Column(nullable = false)
     private String status = "ACTIVE";
 
@@ -70,6 +78,28 @@ public class BillingSchedule {
         this.premiumCurrency = premiumCurrency;
         this.nextDueDate = nextDueDate;
         this.premiumPayingUntil = premiumPayingUntil;
+    }
+
+    /** A new policy's schedule: billed in advance, its first instalment due the day cover starts. */
+    public static BillingSchedule inAdvance(UUID tenantId, String policyNumber, String premiumFrequency,
+                                            BigDecimal premiumAmount, String premiumCurrency, LocalDate firstDueDate,
+                                            LocalDate premiumPayingUntil) {
+        BillingSchedule schedule = new BillingSchedule(tenantId, policyNumber, premiumFrequency, premiumAmount,
+            premiumCurrency, firstDueDate, premiumPayingUntil);
+        schedule.billedInAdvance = true;
+        return schedule;
+    }
+
+    public boolean isBilledInAdvance() { return billedInAdvance; }
+
+    /**
+     * Whether an instalment falling due on {@code due} is still within the paying term. In advance it pays for the period
+     * STARTING on its due date, so it must fall before the paying end; in arrears for the period ENDING the day before,
+     * so it may fall on it. No paying end: always.
+     */
+    public boolean dueWithinPayingTerm(LocalDate due) {
+        if (premiumPayingUntil == null) return true;
+        return billedInAdvance ? due.isBefore(premiumPayingUntil) : !due.isAfter(premiumPayingUntil);
     }
 
     public void suspend() { this.status = "SUSPENDED"; }

@@ -506,8 +506,11 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [number, invoiceId, dueDate, amountDue, amountPaid, paidOn, receipts, paidBy, status, balance]
+            required: [number, invoiceId, dueDate, amountDue, amountPaid, paidOn, receipts, paidBy, status, balance,
+                       coversFrom, coversTo]
             properties:
+              coversFrom: { type: [string, "null"], format: date, description: "First day of the cover this premium pays for" }
+              coversTo: { type: [string, "null"], format: date, description: "Last day of the cover this premium pays for" }
               number: { type: integer }
               invoiceId: { type: string, format: uuid }
               dueDate: { type: string, format: date }
