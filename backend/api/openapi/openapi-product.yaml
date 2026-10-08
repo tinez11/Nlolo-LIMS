@@ -113,6 +113,32 @@ paths:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /products/{productId}/versions:
+    get:
+      summary: Every published version of a product (staff)
+      description: >-
+        The most recently published first; `current` marks the version a sale today is priced on -- what the active
+        snapshot resolves, the later-published winning a tie on effective date (2026-10-08). The product page listed
+        only that one, so earlier versions, and which of them the older policies were sold on, could not be seen.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProductVersionSummaryView' }
+        '404':
+          description: No such product
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
     post:
       summary: Publish a new product version (staff/actuarial only)
       description: >-
@@ -413,6 +439,22 @@ paths:
         '404': { description: "No such version in this tenant" }
 components:
   schemas:
+    ProductVersionSummaryView:
+      type: object
+      additionalProperties: false
+      required: [productVersionId, effectiveDate, retirementDate, current, publishedAt, publishedBy, gracePeriodDays,
+                 expectedProfitabilityBucket, measurementModelOverride, survivalInvestmentComponentPercent]
+      properties:
+        survivalInvestmentComponentPercent: { type: [number, "null"], description: "IFRS 17 I3b: the investment share (%) of a survival or income instalment" }
+        productVersionId: { type: string, format: uuid }
+        effectiveDate: { type: string, format: date }
+        retirementDate: { type: [string, "null"], format: date }
+        current: { type: boolean, description: "The version a sale today is priced on" }
+        publishedAt: { type: string, format: date-time }
+        publishedBy: { type: [string, "null"] }
+        gracePeriodDays: { type: integer }
+        expectedProfitabilityBucket: { type: [string, "null"] }
+        measurementModelOverride: { type: [string, "null"] }
     ProductSummary:
       type: object
       properties:

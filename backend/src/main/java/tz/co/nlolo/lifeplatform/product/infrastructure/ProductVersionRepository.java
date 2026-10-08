@@ -11,6 +11,9 @@ import java.util.UUID;
 public interface ProductVersionRepository extends JpaRepository<ProductVersion, UUID> {
     List<ProductVersion> findByTenantIdAndProductIdOrderByEffectiveDateDesc(UUID tenantId, UUID productId);
 
+    /** Every version of a product, the most recently published first: the product page's version list. */
+    List<ProductVersion> findByTenantIdAndProductIdOrderByCreatedAtDesc(UUID tenantId, UUID productId);
+
     // Used by publishVersion to roll over the prior active-for-new-business version before
     // inserting a new one -- ux_product_version_active permits at most one true row per
     // product_id. A List (not Optional) because the invariant is enforced by publishVersion
@@ -31,6 +34,8 @@ public interface ProductVersionRepository extends JpaRepository<ProductVersion, 
     @org.springframework.data.jpa.repository.Query(
         "SELECT v FROM ProductVersion v WHERE v.tenantId = :tenantId AND v.productId = :productId " +
         "AND v.effectiveDate <= :asOfDate AND (v.retirementDate IS NULL OR v.retirementDate > :asOfDate) " +
-        "ORDER BY v.effectiveDate DESC")
+        // The later-published version wins a tie on effective date (2026-10-08): two versions published the same
+        // day -- a mistake and its correction -- were otherwise in whatever order the database returned them.
+        "ORDER BY v.effectiveDate DESC, v.createdAt DESC")
     List<ProductVersion> findActiveAsOf(UUID tenantId, UUID productId, LocalDate asOfDate);
 }

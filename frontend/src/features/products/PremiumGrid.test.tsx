@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { PublishVersionForm } from './PublishVersionForm';
 
 /** The funeral premium table as a grid (2026-10-08): built from the plans and roles above it, one price per box. */
+// Each test renders the whole publish form and types into it: past the default 5s under a full parallel run.
 describe('PremiumGrid', () => {
   async function planA(user: ReturnType<typeof userEvent.setup>) {
     render(<PublishVersionForm productId="p-1" category="FUNERAL" onPublished={() => {}} />);
@@ -28,7 +29,7 @@ describe('PremiumGrid', () => {
     expect(screen.getByLabelText('A Main member ages 18–40 yearly premium')).toBeInTheDocument();
     expect(screen.getByLabelText('A Main member ages 41–55 yearly premium')).toBeInTheDocument();
     expect(screen.getByLabelText('A Main member ages 56–100 yearly premium')).toBeInTheDocument();
-  });
+  }, 20_000);
 
   it('fills from rows pasted from a spreadsheet', async () => {
     const user = userEvent.setup();
@@ -41,5 +42,5 @@ describe('PremiumGrid', () => {
     expect(screen.getByLabelText('Main member: new band at ages')).toHaveValue('41');
     expect(screen.getByLabelText('A Main member ages 18–40 yearly premium')).toHaveValue('100000');
     expect(screen.getByLabelText('A Main member ages 41–100 yearly premium')).toHaveValue('150000');
-  });
+  }, 20_000);
 });

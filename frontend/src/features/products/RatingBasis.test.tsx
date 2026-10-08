@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProductSnapshot, ProductSummary, VersionRatingView } from '@/api/types';
 import { idle, success } from '@/store/createResourceSlice';
 import { useProductStore } from '@/store/productStore';
+import * as productsApi from '@/api/products';
 import { ProductDetailPage } from './ProductDetailPage';
 
 /**
@@ -14,6 +15,9 @@ import { ProductDetailPage } from './ProductDetailPage';
  * for real, against real tokens, in the e2e suite rather than against a stub here.
  */
 vi.mock('react-oidc-context', () => ({ useAuth: () => ({ user: undefined }) }));
+
+/** The page reads its versions from GET /products/{id}/versions (2026-10-08); this product has one, current. */
+vi.mock('@/api/products', () => ({ listProductVersions: vi.fn() }));
 
 /**
  * The PRICED branch of the rating panel cannot be reached through this console:
@@ -64,7 +68,10 @@ const snapshot = {
   gracePeriodDays: 30,
 } as ProductSnapshot;
 
-function renderPage(rating: VersionRatingView) {
+async function renderPage(rating: VersionRatingView) {
+  vi.mocked(productsApi.listProductVersions).mockResolvedValue([{ productVersionId: VERSION_ID, effectiveDate: '2026-01-01',
+    retirementDate: null, current: true, publishedAt: '2026-01-01T08:00:00Z', publishedBy: 'actuary', gracePeriodDays: 30,
+    expectedProfitabilityBucket: 'REMAINING', measurementModelOverride: null, survivalInvestmentComponentPercent: null }]);
   useProductStore.setState({
     list: success([product]),
     snapshots: { [PRODUCT_ID]: success(snapshot) },
@@ -85,6 +92,7 @@ function renderPage(rating: VersionRatingView) {
       </Routes>
     </MemoryRouter>,
   );
+  await screen.findByText(/One version, current/);
 }
 
 describe('rating basis', () => {
@@ -92,8 +100,8 @@ describe('rating basis', () => {
     useProductStore.setState({ ratings: {} });
   });
 
-  it('renders a real rate table, with an inclusive upper age and rates padded to the column precision', () => {
-    renderPage({
+  it('renders a real rate table, with an inclusive upper age and rates padded to the column precision', async () => {
+    await renderPage({
       productId: PRODUCT_ID,
       productVersionId: VERSION_ID,
       effectiveDate: '2026-01-01',
@@ -135,12 +143,12 @@ describe('rating basis', () => {
     expect(screen.queryByText(/unpriced/)).not.toBeInTheDocument();
   });
 
-  it('shows what each benefit pays, not the name of its calculation method', () => {
+  it('shows what each benefit pays, not the name of its calculation method', async () => {
     // This is the number a claim against the benefit is settled at -- `claimableCover`
     // resolves the coverage row this schedule produces -- so a reviewer checking a rider
     // has to be able to read it here. The panel printed "Percentage of sum assured" and
     // stopped, leaving the one figure that matters on the wire and off the screen.
-    renderPage({
+    await renderPage({
       productId: PRODUCT_ID,
       productVersionId: VERSION_ID,
       effectiveDate: '2026-01-01',
@@ -160,11 +168,11 @@ describe('rating basis', () => {
     expect(screen.getByText('Flat 500,000')).toBeInTheDocument();
   });
 
-  it('shows the age bounds an AGE factor actually resolves against, not just its band label', () => {
+  it('shows the age bounds an AGE factor actually resolves against, not just its band label', async () => {
     // The band is free text an actuary typed; ageFrom/ageTo are what the platform resolves
     // against, and before product V5 they did not exist -- which is how age went unrated here.
     // A screen showing only the band cannot tell a reader whether the range behind it is right.
-    renderPage({
+    await renderPage({
       productId: PRODUCT_ID,
       productVersionId: VERSION_ID,
       effectiveDate: '2026-01-01',
@@ -201,8 +209,8 @@ describe('rating basis', () => {
    * no premium at all. Product V9 gave the row real amount bounds and they, not the label, are
    * what it resolves on -- so a screen an actuary reviews their own table on has to show them.
    */
-  it('shows the amount bounds a sum assured factor resolves against, and says when it has none', () => {
-    renderPage({
+  it('shows the amount bounds a sum assured factor resolves against, and says when it has none', async () => {
+    await renderPage({
       productId: PRODUCT_ID,
       productVersionId: VERSION_ID,
       effectiveDate: '2026-01-01',
@@ -248,8 +256,8 @@ describe('rating basis', () => {
    * Both shapes are asserted here, because a fixture that only tests the one the
    * wire does not send is how this got shipped.
    */
-  it('never prints a null age bound, whether the field is null or absent', () => {
-    renderPage({
+  it('never prints a null age bound, whether the field is null or absent', async () => {
+    await renderPage({
       productId: PRODUCT_ID,
       productVersionId: VERSION_ID,
       effectiveDate: '2026-01-01',
@@ -272,8 +280,8 @@ describe('rating basis', () => {
     expect(screen.getByText('CLASS_2')).toBeInTheDocument();
   });
 
-  it('says a version with no rate table is unpriced, rather than showing an empty table', () => {
-    renderPage({
+  it('says a version with no rate table is unpriced, rather than showing an empty table', async () => {
+    await renderPage({
       productId: PRODUCT_ID,
       productVersionId: VERSION_ID,
       effectiveDate: '2026-01-01',
@@ -292,22 +300,11 @@ describe('rating basis', () => {
     expect(screen.getByText('No benefits on this version.')).toBeInTheDocument();
   });
 
-  it('does not offer a rating basis when no version is active today', () => {
-    // The key is OMITTED, not set to undefined: `exactOptionalPropertyTypes`
-    // treats those as different types, and the wire shape is an absent field.
-    const { productVersionId: _absent, ...noVersion } = snapshot;
-
-    useProductStore.setState({
-      list: success([product]),
-      // A product whose snapshot resolves no version -- the rating endpoint is
-      // addressed by versionId, so there is nothing to request.
-      snapshots: { [PRODUCT_ID]: success(noVersion) },
-      ratings: {},
-      loadList: vi.fn(async () => {}),
-      loadSnapshot: vi.fn(async () => {}),
-      loadRating: vi.fn(async () => {}),
-    });
-
+  it('says when the only version starts later, rather than calling it current', async () => {
+    vi.mocked(productsApi.listProductVersions).mockResolvedValue([{ productVersionId: VERSION_ID, effectiveDate: '2099-01-01',
+      retirementDate: null, current: false, publishedAt: '2026-01-01T08:00:00Z', publishedBy: 'actuary', gracePeriodDays: 30,
+      expectedProfitabilityBucket: 'REMAINING', measurementModelOverride: null, survivalInvestmentComponentPercent: null }]);
+    useProductStore.setState({ list: success([product]), ratings: {}, loadList: vi.fn(async () => {}), loadRating: vi.fn(async () => {}) });
     render(
       <MemoryRouter initialEntries={[`/staff/products/${PRODUCT_ID}`]}>
         <Routes>
@@ -315,7 +312,6 @@ describe('rating basis', () => {
         </Routes>
       </MemoryRouter>,
     );
-
-    expect(screen.getByText(/No version is active today/)).toBeInTheDocument();
+    expect(await screen.findByText(/One version, starting Jan 1, 2099/)).toBeInTheDocument();
   });
 });
