@@ -53,7 +53,7 @@ describe('CustomerDocumentsPage', () => {
   it('lists the premiums received, each with its receipt', async () => {
     dashboardWith(policy());
     vi.mocked(documentsApi.listReceipts).mockResolvedValue([{ receiptId: 'r-1', receivedOn: '2026-10-08', amount: 100000,
-      currency: 'TZS', reference: 'MM-123', paidBy: '+255715000001', forPremiumDue: '2026-10-08' }]);
+      currency: 'TZS', reference: 'MM-123', paidBy: '+255715000001', coversFrom: '2026-10-08', coversTo: '2027-10-07' }]);
     vi.mocked(documentsApi.downloadReceipt).mockResolvedValue(new Blob(['pdf']));
     render(<CustomerDocumentsPage />);
 

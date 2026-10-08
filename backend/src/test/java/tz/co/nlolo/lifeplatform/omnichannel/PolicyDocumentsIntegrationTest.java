@@ -181,6 +181,8 @@ class PolicyDocumentsIntegrationTest {
             .andExpect(jsonPath("$[0].reference").value("MM-DOC-4"))
             .andExpect(jsonPath("$[0].amount").value(50000.0))
             .andExpect(jsonPath("$[0].receivedOn").value(TODAY.toString()))
+            // Paid on day one for the first period: it covers from today, not from the invoice's end-of-period date.
+            .andExpect(jsonPath("$[0].coversFrom").value(TODAY.toString()))
             .andReturn().getResponse().getContentAsString();
         String receiptId = com.jayway.jsonpath.JsonPath.read(receipts, "$[0].receiptId");
 
@@ -188,7 +190,7 @@ class PolicyDocumentsIntegrationTest {
             .andExpect(status().isOk())
             .andReturn().getResponse().getContentAsByteArray();
         try (var doc = Loader.loadPDF(receipt)) {
-            assertThat(new PDFTextStripper().getText(doc)).contains("Premium receipt", policyNumber, "MM-DOC-4",
+            assertThat(new PDFTextStripper().getText(doc)).contains("Premium receipt", policyNumber, "MM-DOC-4", "Cover paid for",
                 "50,000.00", "Received with thanks");
         }
 

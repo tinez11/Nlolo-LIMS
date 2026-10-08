@@ -161,6 +161,11 @@ function Receipts({ policyNumber }: { policyNumber: string }) {
                         <span>
                           {money(r.amount, r.currency)} <span className="text-xs text-muted-foreground">
                             received {formatDate(r.receivedOn)}{r.reference ? ` · ${r.reference}` : ''}</span>
+                          {r.coversFrom && r.coversTo && (
+                            <span className="block text-xs text-subtle-foreground">
+                              Cover {formatDate(r.coversFrom)} to {formatDate(r.coversTo)}
+                            </span>
+                          )}
                         </span>
                         <Button size="sm" variant="ghost" aria-label={`Download the receipt of ${formatDate(r.receivedOn)}`}
                           onClick={async () => saveBlob(await downloadReceipt(policyNumber, r.receiptId), `receipt-${policyNumber}-${r.receivedOn}.pdf`)}>

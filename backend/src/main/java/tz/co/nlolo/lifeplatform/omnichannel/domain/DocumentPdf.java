@@ -125,20 +125,44 @@ public final class DocumentPdf {
             footers();
         }
 
+        /**
+         * The header facts in two columns. A value too long for its column wraps onto the lines below and pushes the
+         * rest of its column down (2026-10-08) -- an address ran on into the second column's "Ends".
+         */
         private void writeHeader() throws IOException {
             float half = (size.getWidth() - 2 * MARGIN) / 2;
+            float valueWidth = half - 95 - 12;
             List<CustomerDocument.Field> fields = d.header();
             int perColumn = (fields.size() + 1) / 2;
-            float top = y;
-            float lowest = y;
+            float[] cursor = { y, y };
             for (int i = 0; i < fields.size(); i++) {
-                float x = MARGIN + (i < perColumn ? 0 : half);
-                float rowY = top - (i % perColumn) * 13;
-                text(regular, 8, x, rowY, fields.get(i).label(), MUTED);
-                text(bold, 9, x + 95, rowY, fields.get(i).value(), INK);
-                lowest = Math.min(lowest, rowY);
+                int column = i < perColumn ? 0 : 1;
+                float x = MARGIN + column * half;
+                text(regular, 8, x, cursor[column], fields.get(i).label(), MUTED);
+                List<String> lines = wrap(bold, 9, safe(fields.get(i).value()), valueWidth);
+                for (int k = 0; k < lines.size(); k++) {
+                    text(bold, 9, x + 95, cursor[column] - k * 11, lines.get(k), INK);
+                }
+                cursor[column] -= 13 + (lines.size() - 1) * 11;
             }
-            y = lowest - 12;
+            y = Math.min(cursor[0], cursor[1]) + 13 - 12;
+        }
+
+        /** Words onto lines no wider than {@code max}; a single word longer than a line is shortened to fit. */
+        private static List<String> wrap(PDType1Font font, float sz, String v, float max) throws IOException {
+            List<String> lines = new ArrayList<>();
+            StringBuilder line = new StringBuilder();
+            for (String word : v.split(" ")) {
+                String candidate = line.isEmpty() ? word : line + " " + word;
+                if (font.getStringWidth(candidate) / 1000 * sz <= max) {
+                    line = new StringBuilder(candidate);
+                } else {
+                    if (!line.isEmpty()) lines.add(line.toString());
+                    line = new StringBuilder(fit(font, sz, word, max));
+                }
+            }
+            if (!line.isEmpty() || lines.isEmpty()) lines.add(line.toString());
+            return lines;
         }
 
         private void tableHeader() throws IOException {

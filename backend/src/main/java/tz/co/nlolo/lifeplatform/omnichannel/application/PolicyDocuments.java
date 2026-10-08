@@ -193,8 +193,12 @@ public class PolicyDocuments {
             new Column("Pays (" + c + ")", Kind.MONEY, 1.4f));
         List<List<Object>> rows = new ArrayList<>();
         if ("FUNERAL".equals(policy.productCategory())) {
-            policyApi.coveredLives(policyNumber).stream().filter(l -> "ACTIVE".equals(l.status()))
-                .forEach(l -> rows.add(List.of("Death of " + roleLabel(l.role().name()), l.fullName(), l.benefit())));
+            // Lives still covered; on a policy whose cover has ended, every life it covered, each marked ended.
+            var lives = policyApi.coveredLives(policyNumber);
+            boolean anyCovered = lives.stream().anyMatch(l -> "ACTIVE".equals(l.status()));
+            lives.stream().filter(l -> !anyCovered || "ACTIVE".equals(l.status()))
+                .forEach(l -> rows.add(List.of("Death of " + roleLabel(l.role().name())
+                    + ("ACTIVE".equals(l.status()) ? "" : " (cover ended)"), l.fullName(), l.benefit())));
         } else if (policy.sumAssuredAmount() != null && policy.sumAssuredAmount().signum() > 0) {
             rows.add(List.of("Death benefit", lifeInsured, policy.sumAssuredAmount()));
         }
@@ -203,7 +207,7 @@ public class PolicyDocuments {
 
         List<Field> extra = new ArrayList<>(List.of(
             new Field("Life insured", lifeInsured),
-            new Field("Status", policy.status() != null ? policy.status().name().replace('_', ' ').toLowerCase(java.util.Locale.ROOT) : "-"),
+            new Field("Status", policy.status() != null ? statusWords(policy.status().name()) : "-"),
             new Field("Cover from", policy.commencementDate() != null ? DMY.format(policy.commencementDate())
                 : policy.issueDate() != null ? DMY.format(policy.issueDate()) : "-"),
             new Field("Ends", policy.maturityDate() != null ? DMY.format(policy.maturityDate()) : "No fixed end date")));
@@ -233,13 +237,16 @@ public class PolicyDocuments {
     /** Every premium received on the policy, newest first, with the premium it paid. */
     @Transactional(readOnly = true)
     public List<tz.co.nlolo.lifeplatform.omnichannel.api.ReceiptLine> receipts(String policyNumber) {
+        String frequency = policyApi.getPolicy(policyNumber).premiumFrequency();
         Map<UUID, InvoiceView> invoices = billingApi.listInvoices(policyNumber, null).stream()
             .collect(Collectors.toMap(InvoiceView::invoiceId, i -> i, (a, b) -> a));
         return billingApi.listReceipts(policyNumber).stream()
             .sorted(Comparator.comparing(ReceiptView::receivedAt).reversed())
             .map(r -> new tz.co.nlolo.lifeplatform.omnichannel.api.ReceiptLine(r.receiptId(),
                 r.receivedAt().atZone(CIVIL_ZONE).toLocalDate(), r.amount(), r.currency(), r.paymentReference(),
-                r.payerRef(), invoices.containsKey(r.invoiceId()) ? invoices.get(r.invoiceId()).dueDate() : null))
+                r.payerRef(), coversFrom(invoices.get(r.invoiceId()), frequency),
+                invoices.containsKey(r.invoiceId()) && coversFrom(invoices.get(r.invoiceId()), frequency) != null
+                    ? invoices.get(r.invoiceId()).dueDate().minusDays(1) : null))
             .toList();
     }
 
@@ -250,16 +257,30 @@ public class PolicyDocuments {
         tz.co.nlolo.lifeplatform.omnichannel.api.ReceiptLine r = receipts(policyNumber).stream()
             .filter(x -> x.receiptId().equals(receiptId)).findFirst()
             .orElseThrow(() -> new IllegalArgumentException("Policy " + policyNumber + " has no receipt " + receiptId));
-        List<Column> columns = List.of(new Column("For the premium due", Kind.DATE, 1.6f),
-            new Column("Received on", Kind.DATE, 1.4f), new Column("Reference", Kind.TEXT, 2.0f),
+        List<Column> columns = List.of(new Column("Cover paid for", Kind.TEXT, 2.2f),
+            new Column("Received on", Kind.DATE, 1.3f), new Column("Reference", Kind.TEXT, 1.9f),
             new Column("Amount (" + r.currency() + ")", Kind.MONEY, 1.4f));
-        List<List<Object>> rows = List.of(java.util.Arrays.asList(opt(r.forPremiumDue()), r.receivedOn(),
-            opt(r.reference()), r.amount()));
+        String period = r.coversFrom() != null ? DMY.format(r.coversFrom()) + " to " + DMY.format(r.coversTo()) : "";
+        List<List<Object>> rows = List.of(java.util.Arrays.asList(period, r.receivedOn(), opt(r.reference()), r.amount()));
         return new CustomerDocument(ISSUER, "Premium receipt", header(policy, productName(policy), List.of(
                 new Field("Received from", r.paidBy() != null ? r.paidBy() : "-"),
                 new Field("Receipt reference", r.reference() != null ? r.reference() : r.receiptId().toString()))),
             columns, rows, List.of(new Field("Amount received", money(r.amount(), r.currency()))),
             List.of("Received with thanks. This receipt is issued by the platform from the payment as recorded."), false);
+    }
+
+    /**
+     * The first day of cover an instalment buys. Billing dates it at the end of its period (premium in arrears), so the
+     * period starts one frequency step before the due date. Null for a single premium or an unknown invoice.
+     */
+    private static LocalDate coversFrom(InvoiceView invoice, String frequency) {
+        if (invoice == null || frequency == null) return null;
+        return switch (frequency) {
+            case "MONTHLY" -> invoice.dueDate().minusMonths(1);
+            case "QUARTERLY" -> invoice.dueDate().minusMonths(3);
+            case "ANNUALLY" -> invoice.dueDate().minusYears(1);
+            default -> null;
+        };
     }
 
     private String partyName(UUID partyId) {
@@ -268,6 +289,12 @@ public class PolicyDocuments {
         } catch (RuntimeException e) {
             return "-";
         }
+    }
+
+    /** "PAID_UP" as "Paid up". */
+    private static String statusWords(String status) {
+        String words = status.replace('_', ' ').toLowerCase(java.util.Locale.ROOT);
+        return Character.toUpperCase(words.charAt(0)) + words.substring(1);
     }
 
     private static String roleLabel(String role) {
