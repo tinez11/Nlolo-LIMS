@@ -258,7 +258,7 @@ class PolicyCustomerScopingTest {
      */
     private IssuedPolicy manualIssue(UUID tenantId, String productCode) throws Exception {
         String applicantResponse = mockMvc.perform(post("/parties/individuals")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""

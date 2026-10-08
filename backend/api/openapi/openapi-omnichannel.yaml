@@ -98,6 +98,98 @@ paths:
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /parties/{partyId}/portal-access:
+    parameters:
+      - name: partyId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: A client's customer-portal access
+      description: NOT_INVITED, INVITED (a login exists, never signed in), ACTIVE (has signed in) or REVOKED.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortalAccess' }
+    post:
+      summary: Invite a client to the customer portal (customer service or admin)
+      description: >-
+        Creates the client's login in the customers realm with their tenant and party written on by the platform
+        (2026-10-08, the customer portal design step 1). With an email the identity provider sends its set-your-password
+        link; without one the response carries a one-time password, shown to the staff member once and kept nowhere.
+        A revoked client is invited again on the same login. 422 for a corporate client, a client holding no policy,
+        or one with no email or phone; 409 when access is already open.
+      security:
+        - staffAuth: []
+      responses:
+        '201':
+          description: Invited
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortalInvite' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409':
+          description: Access is already open
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422':
+          description: The client cannot be invited
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    delete:
+      summary: Revoke a client's portal access (customer service or admin)
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: Revoked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortalAccess' }
+  /parties/{partyId}/portal-access/resend:
+    post:
+      summary: Send the set-your-password link again, or issue a new one-time password
+      security:
+        - staffAuth: []
+      parameters:
+        - name: partyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Sent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortalInvite' }
+  /customer/me:
+    get:
+      summary: The signed-in customer
+      description: >-
+        The client record the token's party_id names -- never one the request chooses. The portal's first call after
+        sign-in, so it also marks the invite used.
+      security:
+        - customersAuth: [profile]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [partyId, displayName, email, phoneNumber]
+                properties:
+                  partyId: { type: string, format: uuid }
+                  displayName: { type: string }
+                  email: { type: [string, "null"] }
+                  phoneNumber: { type: [string, "null"] }
 components:
   securitySchemes:
     staffAuth:
@@ -116,6 +208,29 @@ components:
           scopes:
             profile: The customer's own records
   schemas:
+    PortalAccess:
+      type: object
+      additionalProperties: false
+      required: [partyId, status, username, delivery, invitedBy, invitedAt, activatedAt, revokedBy, revokedAt]
+      properties:
+        partyId: { type: string, format: uuid }
+        status: { type: string, enum: [NOT_INVITED, INVITED, ACTIVE, REVOKED] }
+        username: { type: [string, "null"] }
+        delivery: { type: [string, "null"], enum: [EMAIL_LINK, TEMPORARY_PASSWORD, null] }
+        invitedBy: { type: [string, "null"] }
+        invitedAt: { type: [string, "null"], format: date-time }
+        activatedAt: { type: [string, "null"], format: date-time }
+        revokedBy: { type: [string, "null"] }
+        revokedAt: { type: [string, "null"], format: date-time }
+    PortalInvite:
+      type: object
+      additionalProperties: false
+      required: [access, temporaryPassword]
+      properties:
+        access: { $ref: '#/components/schemas/PortalAccess' }
+        temporaryPassword:
+          type: [string, "null"]
+          description: The one-time password for a client with no email; shown once, stored nowhere. Null when emailed.
     PaymentSchedule:
       type: object
       additionalProperties: false

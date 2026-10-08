@@ -53,7 +53,9 @@ public class PartyController {
     }
 
     @PostMapping("/parties/individuals")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    // Not a customer act (2026-10-08, the customer portal design, the user's D3): the portal reads and requests;
+    // it does not change this. Staff and agents only.
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<PartyView> registerIndividual(@Valid @RequestBody RegisterIndividualRequest request,
                                                           @AuthenticationPrincipal Jwt jwt,
                                                           Authentication authentication) {

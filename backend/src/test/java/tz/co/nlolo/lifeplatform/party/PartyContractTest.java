@@ -94,7 +94,7 @@ class PartyContractTest {
         UUID tenantId = UUID.randomUUID();
         mockMvc.perform(post("/parties/individuals")
                 .with(jwt()
-                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -177,40 +177,26 @@ class PartyContractTest {
     }
 
     /**
-     * A CUSTOMER REGISTERING THEMSELVES INTRODUCED NOBODY.
-     *
-     * <p>The customers realm mints a {@code party_id} claim too — it is how a customer reads
-     * their own record — so a claim-only check would have recorded the customer as their own
-     * introducing agent. That costs no commission, because they resolve to no agent profile, but
-     * the client record would have said "introduced by" somebody who introduced nobody. A wrong
-     * answer on screen is worse than a blank one, and this is the test that keeps the realm
-     * check from being simplified away as redundant.
+     * A CUSTOMER REGISTERS NO CLIENT RECORD (2026-10-08). Customers are invited by staff onto a record staff
+     * already hold; before this, the customers realm could create records -- and was recorded as its own
+     * introducing agent until a realm check stopped it.
      */
     @Test
-    void aSelfRegisteringCustomerIsNotRecordedAsTheirOwnIntroducingAgent() throws Exception {
+    void aCustomerCannotRegisterAClientRecord() throws Exception {
+        // Closed 2026-10-08 (the customer portal design, the user's D3): a customer is invited by staff, onto the
+        // record staff already hold; the portal creates no client records of its own.
         UUID tenantId = UUID.randomUUID();
-        UUID someExistingPartyId = UUID.randomUUID();
-
-        String created = mockMvc.perform(post("/parties/individuals")
+        mockMvc.perform(post("/parties/individuals")
                 .with(jwt()
                     .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
                     .jwt(builder -> builder
                         .claim("tenant_id", tenantId.toString())
-                        .claim("party_id", someExistingPartyId.toString())))
+                        .claim("party_id", UUID.randomUUID().toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"fullName":"Self Signup","dateOfBirth":"1990-05-12","contactInfo":{}}
                     """))
-            .andExpect(status().isCreated())
-            .andReturn().getResponse().getContentAsString();
-        String partyId = created.replaceAll(".*\"partyId\"\\s*:\\s*\"([0-9a-f-]{36})\".*", "$1");
-
-        mockMvc.perform(get("/parties/" + partyId)
-                .with(jwt()
-                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
-                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.registeredByPartyId").doesNotExist());
+            .andExpect(status().isForbidden());
     }
 
     /**
@@ -448,18 +434,17 @@ class PartyContractTest {
 
     /**
      * And the limit of the rule, stated so nobody widens it by accident: it is about the AGENT
-     * path, where new business is written. A customer registering themselves is not selling
-     * anything yet, and staff are often correcting a record rather than opening one.
+     * path, where new business is written. Staff are often correcting a record rather than opening one.
      */
     @Test
-    void aCustomerRegisteringThemselvesIsNotHeldToTheAgentsRule() throws Exception {
+    void staffRegisteringARecordIsNotHeldToTheAgentsRule() throws Exception {
         UUID tenantId = UUID.randomUUID();
         mockMvc.perform(post("/parties/individuals")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"fullName":"Self Registered","dateOfBirth":"1990-05-12",
+                    {"fullName":"Staff Registered","dateOfBirth":"1990-05-12",
                      "contactInfo":{"phoneNumber":"+255712347779"}}
                     """))
             .andExpect(status().isCreated());
@@ -643,7 +628,7 @@ class PartyContractTest {
         // Register individual under tenant A
         MvcResult resultA = mockMvc.perform(post("/parties/individuals")
                 .with(jwt()
-                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantA.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -656,7 +641,7 @@ class PartyContractTest {
         // Register individual under tenant B
         MvcResult resultB = mockMvc.perform(post("/parties/individuals")
                 .with(jwt()
-                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantB.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -781,7 +766,7 @@ class PartyContractTest {
         UUID tenantId = UUID.randomUUID();
         mockMvc.perform(post("/parties/individuals")
                 .with(jwt()
-                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{ this is not valid json"))
@@ -796,7 +781,7 @@ class PartyContractTest {
         // as a bare 500; post-fix Bean Validation rejects it before the controller ever runs.
         mockMvc.perform(post("/parties/individuals")
                 .with(jwt()
-                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -827,7 +812,7 @@ class PartyContractTest {
         UUID tenantId = UUID.randomUUID();
         mockMvc.perform(post("/parties/individuals")
                 .with(jwt()
-                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.TEXT_PLAIN)
                 .content("plain text, not json"))

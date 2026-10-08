@@ -194,7 +194,6 @@ paths:
         Enforces exactly-one-of (partyId, freeformDesignee) per beneficiary
         (Deliverable 3 Rev 2, Po2) and that active shares sum to 100%.
       security:
-        - customersAuth: [profile]
         - agentsAuth: [agent]
         - staffAuth: []
       parameters:

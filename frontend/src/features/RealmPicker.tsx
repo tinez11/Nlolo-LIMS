@@ -1,6 +1,7 @@
 import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { REALM_CONFIG, REALMS } from '@/auth/realms';
+import { SCREENS } from '@/screens';
 
 /**
  * Landing screen at `/`.
@@ -26,7 +27,9 @@ export function RealmPicker() {
         <ul className="mt-6 space-y-2">
           {REALMS.map((realm) => {
             const config = REALM_CONFIG[realm];
-            const available = realm === 'staff' || realm === 'agents';
+            // An area is offered once it has screens (App.tsx mounts no route for one without): the customer portal
+            // joined staff and agents on 2026-10-08.
+            const available = SCREENS[realm].length > 0;
 
             return (
               <li key={realm}>
