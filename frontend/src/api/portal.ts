@@ -32,3 +32,17 @@ export function revokePortal(partyId: string): Promise<PortalAccessView> {
 export function getMe(): Promise<CustomerMe> {
   return get<CustomerMe>('/customer/me');
 }
+
+export type CustomerDashboardView = components['schemas']['CustomerDashboard'];
+export type CustomerPolicySummary = components['schemas']['CustomerPolicySummary'];
+export type CustomerPolicyView = components['schemas']['CustomerPolicy'];
+
+/** Step 2: the customer's dashboard -- always their own, from the token. */
+export function getCustomerDashboard(): Promise<CustomerDashboardView> {
+  return get<CustomerDashboardView>('/customer/dashboard');
+}
+
+/** Step 2: one of the customer's own policies, customer-safe; 403 for one they do not hold. */
+export function getCustomerPolicy(policyNumber: string): Promise<CustomerPolicyView> {
+  return get<CustomerPolicyView>(`/customer/policies/${enc(policyNumber)}`);
+}
