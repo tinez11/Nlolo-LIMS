@@ -3,6 +3,7 @@ import { listCasesAwaitingIssue } from '@/api/underwriting';
 import type { UnderwritingCaseView } from '@/api/types';
 import { PartyName } from '@/components/PartyName';
 import { Input, Select } from '@/components/ui/input';
+import { matchCount, searchEnter } from '@/lib/searchKeys';
 import { useFieldControl } from './fieldControl';
 
 /**
@@ -63,7 +64,12 @@ export function UnderwritingCasePicker({
     };
   }, [query]);
 
-  const selected = value ? (cases.find((c) => c.caseId === value) ?? (chosen?.caseId === value ? chosen : null)) : null;
+  function choose(decidedCase: UnderwritingCaseView) {
+    setChosen(decidedCase);
+    onChange(decidedCase.caseId ?? null, decidedCase);
+  }
+
+  const selected = value ?(cases.find((c) => c.caseId === value) ?? (chosen?.caseId === value ? chosen : null)) : null;
   const options = selected && !cases.some((c) => c.caseId === selected.caseId) ? [selected, ...cases] : cases;
 
   if (status === 'error') {
@@ -81,15 +87,23 @@ export function UnderwritingCasePicker({
         aria-label="Search cases by proposal number"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={searchEnter(() => {
+          if (query.trim() && cases.length === 1 && cases[0]) choose(cases[0]);
+        })}
       />
+      {query.trim() !== '' && status === 'success' && cases.length > 0 && (
+        <p className="text-xs text-subtle-foreground" role="status">
+          {matchCount(total, 'case', 'cases')} — choose below{cases.length === 1 ? ', or press Enter' : ''}.
+        </p>
+      )}
       <Select
         id={fieldId}
         value={value ?? ''}
         onChange={(e) => {
           const caseId = e.target.value;
           const decidedCase = options.find((c) => c.caseId === caseId) ?? null;
-          setChosen(decidedCase);
-          onChange(caseId || null, decidedCase);
+          if (decidedCase) choose(decidedCase);
+          else { setChosen(null); onChange(null, null); }
         }}
       >
         <option value="">{status === 'success' ? 'Select a decided underwriting case' : 'Loading cases awaiting issue…'}</option>

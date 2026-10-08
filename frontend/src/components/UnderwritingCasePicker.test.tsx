@@ -44,6 +44,22 @@ describe('UnderwritingCasePicker', () => {
       expect.objectContaining({ proposalNumber: 'PRO-OLD99999' })));
   });
 
+  it('picks the one matching case on Enter, and Enter never submits the form around it', async () => {
+    vi.mocked(underwritingApi.listCasesAwaitingIssue).mockImplementation(async (q = '') =>
+      q === '' ? page([decided('PRO-AAAA1111', 'ACCEPT'), decided('PRO-BBBB2222', 'DECLINED')]) : page([decided('PRO-BBBB2222', 'DECLINED')]));
+    const onChange = vi.fn();
+    const onSubmit = vi.fn((e: { preventDefault: () => void }) => e.preventDefault());
+    render(<form onSubmit={onSubmit}><UnderwritingCasePicker value={null} onChange={onChange} /></form>);
+
+    await screen.findByRole('option', { name: 'PRO-AAAA1111 — ACCEPT' });
+    await userEvent.type(screen.getByLabelText('Search cases by proposal number'), 'bbbb');
+    expect(await screen.findByText('1 case matches — choose below, or press Enter.')).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Search cases by proposal number'), '{Enter}');
+
+    expect(onChange).toHaveBeenCalledWith('case-PRO-BBBB2222', expect.objectContaining({ proposalNumber: 'PRO-BBBB2222' }));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it('says plainly when no decided case is waiting for a policy', async () => {
     vi.mocked(underwritingApi.listCasesAwaitingIssue).mockResolvedValue(page([]));
     render(<UnderwritingCasePicker value={null} onChange={vi.fn()} />);
