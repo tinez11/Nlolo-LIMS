@@ -96,7 +96,7 @@ public class PolicyDocuments {
                 paid.stream().map(r -> r.receivedAt().atZone(CIVIL_ZONE).toLocalDate()).max(Comparator.naturalOrder()).orElse(null),
                 joined(paid.stream().map(ReceiptView::paymentReference).toList()),
                 joined(paid.stream().map(ReceiptView::payerRef).toList()),
-                status(i, today), balance));
+                status(i, today), balance, i.coversFrom(), i.coversTo()));
         }
         BigDecimal received = invoices.stream().map(i -> nz(i.amountPaid())).reduce(BigDecimal.ZERO, BigDecimal::add);
         return new PaymentScheduleView(policyNumber, holderName(policy), productName(policy),
@@ -110,11 +110,13 @@ public class PolicyDocuments {
         PolicyView policy = policyApi.getPolicy(policyNumber);
         String c = v.currency();
         List<Column> columns = List.of(new Column("No.", Kind.TEXT, 0.5f), new Column("Due date", Kind.DATE, 1.1f),
+            new Column("Cover", Kind.TEXT, 1.9f),
             new Column("Amount due (" + c + ")", Kind.MONEY, 1.3f), new Column("Paid (" + c + ")", Kind.MONEY, 1.3f),
             new Column("Paid on", Kind.DATE, 1.1f), new Column("Receipt ref", Kind.TEXT, 1.6f),
             new Column("Paid by", Kind.TEXT, 1.4f), new Column("Status", Kind.TEXT, 1.0f),
             new Column("Balance (" + c + ")", Kind.MONEY, 1.3f));
         List<List<Object>> rows = v.lines().stream().map(l -> List.<Object>of(String.valueOf(l.number()), l.dueDate(),
+            l.coversFrom() != null && l.coversTo() != null ? DMY.format(l.coversFrom()) + " - " + DMY.format(l.coversTo()) : "",
             l.amountDue(), l.amountPaid(), opt(l.paidOn()), opt(l.receipts()), opt(l.paidBy()), l.status(), l.balance())).toList();
         List<Field> totals = new ArrayList<>(List.of(
             new Field("Total charged", money(v.totals().charged(), c)),
@@ -244,9 +246,7 @@ public class PolicyDocuments {
             .sorted(Comparator.comparing(ReceiptView::receivedAt).reversed())
             .map(r -> new tz.co.nlolo.lifeplatform.omnichannel.api.ReceiptLine(r.receiptId(),
                 r.receivedAt().atZone(CIVIL_ZONE).toLocalDate(), r.amount(), r.currency(), r.paymentReference(),
-                r.payerRef(), coversFrom(invoices.get(r.invoiceId()), frequency),
-                invoices.containsKey(r.invoiceId()) && coversFrom(invoices.get(r.invoiceId()), frequency) != null
-                    ? invoices.get(r.invoiceId()).dueDate().minusDays(1) : null))
+                r.payerRef(), coversFrom(invoices.get(r.invoiceId()), frequency), coversTo(invoices.get(r.invoiceId()), frequency)))
             .toList();
     }
 
@@ -274,13 +274,22 @@ public class PolicyDocuments {
      * period starts one frequency step before the due date. Null for a single premium or an unknown invoice.
      */
     private static LocalDate coversFrom(InvoiceView invoice, String frequency) {
-        if (invoice == null || frequency == null) return null;
+        if (invoice == null) return null;
+        if (invoice.coversFrom() != null) return invoice.coversFrom(); // recorded on the invoice since billing V11
+        if (frequency == null) return null;
         return switch (frequency) {
             case "MONTHLY" -> invoice.dueDate().minusMonths(1);
             case "QUARTERLY" -> invoice.dueDate().minusMonths(3);
             case "ANNUALLY" -> invoice.dueDate().minusYears(1);
             default -> null;
         };
+    }
+
+    /** The last day of cover the instalment buys: recorded since billing V11, else the day before it fell due. */
+    private static LocalDate coversTo(InvoiceView invoice, String frequency) {
+        if (invoice == null) return null;
+        if (invoice.coversTo() != null) return invoice.coversTo();
+        return coversFrom(invoice, frequency) != null ? invoice.dueDate().minusDays(1) : null;
     }
 
     private String partyName(UUID partyId) {

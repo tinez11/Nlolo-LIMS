@@ -47,6 +47,14 @@ export function PaymentScheduleTable({ policyNumber }: { policyNumber: string })
   const columns: Column<PaymentScheduleLine>[] = [
     { key: 'number', header: 'No.', render: (l) => l.number },
     { key: 'due', header: 'Due date', render: (l) => formatDate(l.dueDate) },
+    // The cover each premium pays for, as billing recorded it (2026-10-08): from the due date on a policy billed in
+    // advance, ending the day before on one billed in arrears before then.
+    {
+      key: 'covers',
+      header: 'Cover',
+      secondary: true,
+      render: (l) => (l.coversFrom && l.coversTo ? `${formatDate(l.coversFrom)} – ${formatDate(l.coversTo)}` : '—'),
+    },
     { key: 'amount', header: 'Amount due', align: 'right', render: (l) => money(l.amountDue) },
     { key: 'paid', header: 'Paid', align: 'right', render: (l) => money(l.amountPaid) },
     { key: 'paidOn', header: 'Paid on', render: (l) => (l.paidOn ? formatDate(l.paidOn) : '') },
