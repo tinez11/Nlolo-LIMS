@@ -13,8 +13,9 @@ import {
 import { getPolicy } from '@/api/policies';
 import type { GroupFuneralFamilyView, GroupFuneralJoiningReport, PolicyView } from '@/api/types';
 import { toApiError, type ApiError } from '@/lib/apiError';
+import { promoteCoveredLife } from '@/api/funeral';
 import { asSex } from './groupFuneral';
-import { canUnderwriteGroupSchemes, readIdentity } from '@/auth/claims';
+import { canPromoteCoveredLives, canUnderwriteGroupSchemes, readIdentity } from '@/auth/claims';
 import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
@@ -26,6 +27,8 @@ import { FUNERAL_ROLE_LABELS } from '@/features/products/funeralSchema';
 import { formatDate, todayIso } from '@/lib/dates';
 import { saveBlob } from '@/lib/download';
 import { formatMoney } from '@/lib/money';
+import { IdentifyForm } from './CoveredLivesPanel';
+import { toIdentify } from './coveredLifeForm';
 import { DependantFields, FamilyEditor } from './FamilyEditor';
 import { blankDependant, blankFamily, incompleteFamilies, toLives, type DependantRow, type FamilyRow } from './groupFuneral';
 
@@ -36,7 +39,9 @@ import { blankDependant, blankFamily, incompleteFamilies, toLives, type Dependan
  * server's to check against the plan; this shows its answer.
  */
 export function GroupFuneralFamiliesPanel({ policyNumber, onChanged }: { policyNumber: string; onChanged: () => void }) {
-  const canUnderwrite = canUnderwriteGroupSchemes(readIdentity(useAuth().user?.access_token));
+  const identity = readIdentity(useAuth().user?.access_token);
+  const canUnderwrite = canUnderwriteGroupSchemes(identity);
+  const canPromote = canPromoteCoveredLives(identity);
   const [families, setFamilies] = useState<GroupFuneralFamilyView[] | null>(null);
   const [policy, setPolicy] = useState<PolicyView | null>(null);
   const [loadError, setLoadError] = useState<ApiError | null>(null);
@@ -157,7 +162,7 @@ export function GroupFuneralFamiliesPanel({ policyNumber, onChanged }: { policyN
         <div className="divide-y divide-border">
           {families.map((family) => (
             <FamilyBlock key={family.policyMemberId} family={family} policyNumber={policyNumber} currency={policy?.sumAssured?.currencyCode ?? 'TZS'}
-              canUnderwrite={canUnderwrite} inForce={mayChange} act={act} />
+              canUnderwrite={canUnderwrite} canPromote={canPromote} inForce={mayChange} act={act} />
           ))}
         </div>
       )}
@@ -184,16 +189,20 @@ function JoinFamilyActions({ family, onJoin, onCancel }: {
   );
 }
 
-function FamilyBlock({ family, policyNumber, currency, canUnderwrite, inForce, act }: {
+function FamilyBlock({ family, policyNumber, currency, canUnderwrite, canPromote, inForce, act }: {
   family: GroupFuneralFamilyView;
   policyNumber: string;
   currency: string;
   canUnderwrite: boolean;
+  canPromote: boolean;
   inForce: boolean;
   act: (change: () => Promise<unknown>) => Promise<boolean>;
 }) {
   const [newLife, setNewLife] = useState<DependantRow | null>(null);
   const [leaving, setLeaving] = useState<string | null>(null);
+  // The life being registered as a client: a dependant's death is paid to the main member, who must be a
+  // registered party first. Not tied to the scheme taking changes -- a yearly plan's family is fixed, its claims are not.
+  const [promoting, setPromoting] = useState<string | null>(null);
   const memberActive = family.status === 'ACTIVE';
 
   return (
@@ -232,12 +241,33 @@ function FamilyBlock({ family, policyNumber, currency, canUnderwrite, inForce, a
                   : life.coverEnd ? `To ${formatDate(life.coverEnd)}` : 'Covered'}
               </td>
               <td className="text-right">
+                {life.partyId && <span className="mr-2 text-subtle-foreground">Client</span>}
+                {canPromote && !life.partyId && promoting !== life.coveredLifeId && (
+                  <Button size="sm" variant="ghost" aria-label={`Promote ${life.fullName} to client`}
+                    onClick={() => setPromoting(life.coveredLifeId)}>
+                    Promote to client
+                  </Button>
+                )}
                 {inForce && life.role !== 'MAIN_MEMBER' && life.status === 'ACTIVE' && !life.coverEnd && (
                   <Button size="sm" variant="ghost" aria-label={`Remove ${life.fullName}`}
                     onClick={() => void act(() => removeGroupFuneralLife(policyNumber, life.coveredLifeId, ''))}>
                     Remove
                   </Button>
                 )}
+              </td>
+            </tr>
+          ))}
+          {family.lives.filter((life) => life.coveredLifeId === promoting).map((life) => (
+            <tr key={`promote-${life.coveredLifeId}`}>
+              <td colSpan={7} className="py-2">
+                <p className="mb-2 text-subtle-foreground">
+                  Register {life.fullName} as a client from their identity document. A claim paid to them is filed in
+                  their name.
+                </p>
+                <IdentifyForm submitLabel="Promote to client" onCancel={() => setPromoting(null)}
+                  onSubmit={async (v) => {
+                    if (await act(() => promoteCoveredLife(policyNumber, life.coveredLifeId, toIdentify(v)))) setPromoting(null);
+                  }} />
               </td>
             </tr>
           ))}

@@ -210,7 +210,7 @@ function AddLifeForm({ onSubmit, onCancel }: { onSubmit: (v: CoveredLifeFormValu
   );
 }
 
-function IdentifyForm({ submitLabel, onSubmit, onCancel }: {
+export function IdentifyForm({ submitLabel, onSubmit, onCancel }: {
   submitLabel: string; onSubmit: (v: IdentifyFormValues) => void; onCancel?: () => void;
 }) {
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<IdentifyFormValues>({
