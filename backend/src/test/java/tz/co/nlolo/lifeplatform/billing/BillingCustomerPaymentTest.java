@@ -201,7 +201,7 @@ class BillingCustomerPaymentTest {
         String productCode = "BILLING-CUSTPAY-" + UUID.randomUUID().toString().substring(0, 8);
 
         String applicantResponse = mockMvc.perform(post("/parties/individuals")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", TENANT.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""

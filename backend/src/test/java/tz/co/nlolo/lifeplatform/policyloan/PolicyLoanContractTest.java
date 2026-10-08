@@ -198,7 +198,7 @@ class PolicyLoanContractTest {
     private Fixture issuePolicyWithCashValue(String productCode, String cashValue) throws Exception {
         UUID tenantId = UUID.randomUUID();
         String applicantResponse = mockMvc.perform(post("/parties/individuals")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -416,8 +416,15 @@ class PolicyLoanContractTest {
     @Test
     void everyLoanEndpointAdmitsTheOwningCustomer() throws Exception {
         Fixture fixture = issuePolicyWithCashValue("LOAN-CONTRACT-04", "1000000.00");
-        String originateResponse = mockMvc.perform(post("/policies/" + fixture.policyNumber() + "/loans")
+        // Customers do not APPLY for a loan in the portal's V1 (2026-10-08, the user's D3): staff or the agent
+        // originate it; the owning customer reads it and repays it.
+        mockMvc.perform(post("/policies/" + fixture.policyNumber() + "/loans")
                 .with(customerOf(fixture.tenantId(), fixture.policyholderPartyId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(ORIGINATE_BODY))
+            .andExpect(status().isForbidden());
+        String originateResponse = mockMvc.perform(post("/policies/" + fixture.policyNumber() + "/loans")
+                .with(agentOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(ORIGINATE_BODY))
             .andExpect(status().isAccepted())

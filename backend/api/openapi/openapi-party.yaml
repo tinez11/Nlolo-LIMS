@@ -16,7 +16,6 @@ paths:
     post:
       summary: Register an individual (self-service signup, agent-assisted, or staff-assisted)
       security:
-        - customersAuth: []
         - agentsAuth: [agent]
         - staffAuth: []
       requestBody:
