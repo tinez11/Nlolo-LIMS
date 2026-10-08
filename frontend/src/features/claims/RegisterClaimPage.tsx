@@ -2,10 +2,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useRef, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
-import { CLAIM_TYPES, type CoveredLifeView, type PolicyMemberView } from '@/api/types';
+import { CLAIM_TYPES, type CoveredLifeView, type GroupFuneralFamilyView, type PolicyMemberView } from '@/api/types';
 import { getCoveredLives } from '@/api/funeral';
 import { listGroupFuneralFamilies } from '@/api/groupFuneral';
-import { familyLabels } from '@/features/policies/groupFuneral';
+import { claimableLives, familyLabel, familyOfClaimant, lifeLabel, matchFamilies } from './schemeLives';
 import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
 import { DatePicker } from '@/components/DatePicker';
@@ -173,18 +173,30 @@ export function RegisterClaimPage() {
   // Family funeral cover: a claim on a funeral plan names which covered life died.
   const isFuneral = policy.data?.productCategory === 'FUNERAL';
   const [coveredLives, setCoveredLives] = useState<CoveredLifeView[]>([]);
+  // A group funeral scheme (2026-10-07): its lives come by family, and the claim picks the family first
+  // (2026-10-08) -- one list of every life of thirty families was two hundred rows. Null on an individual
+  // funeral policy, which is one family (the endpoint refuses it with 409).
+  const isScheme = isFuneral && policyNumber.startsWith('GRP-');
+  const [families, setFamilies] = useState<GroupFuneralFamilyView[] | null>(null);
   useEffect(() => {
     if (!isFuneral) return undefined;
     let live = true;
-    getCoveredLives(policyNumber).then((l) => { if (live) setCoveredLives(l); }, () => undefined);
-    // A group funeral scheme (2026-10-07): the same lives, labelled by the family they are in. Refused (409) on an
-    // individual funeral policy, which is one family and needs no label.
-    if (policyNumber.startsWith('GRP-')) {
-      listGroupFuneralFamilies(policyNumber).then((f) => { if (live) setFamilyOf(familyLabels(f)); }, () => undefined);
+    if (isScheme) {
+      listGroupFuneralFamilies(policyNumber).then((f) => { if (live) setFamilies(f); }, () => undefined);
+    } else {
+      getCoveredLives(policyNumber).then((l) => { if (live) setCoveredLives(l); }, () => undefined);
     }
     return () => { live = false; };
-  }, [isFuneral, policyNumber]);
-  const [familyOf, setFamilyOf] = useState<Record<string, string>>({});
+  }, [isFuneral, isScheme, policyNumber]);
+  const [familyQuery, setFamilyQuery] = useState('');
+  const [chosenFamilyId, setChosenFamilyId] = useState<string | null>(null);
+  // The family chosen, else the one the claimant heads: a dependant's death is paid to the main member.
+  const family = (families ?? []).find((f) => f.policyMemberId === chosenFamilyId)
+    ?? familyOfClaimant(families ?? [], claimantPartyId);
+  const familyChoices = (() => {
+    const matched = matchFamilies(families ?? [], familyQuery);
+    return family && !matched.includes(family) ? [family, ...matched] : matched;
+  })();
   const members = usePolicyStore(selectMembers(policyNumber));
   const loadMembers = usePolicyStore((s) => s.loadMembers);
   const [memberQuery, setMemberQuery] = useState('');
@@ -347,16 +359,39 @@ export function RegisterClaimPage() {
           )}
         </FormField>
 
+        {isScheme && (
+          <>
+            {/* Outside the FormField, as the member search below is: FormField labels its first control. */}
+            <Input
+              inputSize="sm"
+              className="mb-1.5"
+              placeholder="Search families by member number or name…"
+              aria-label="Search families"
+              value={familyQuery}
+              onChange={(e) => setFamilyQuery(e.target.value)}
+            />
+            <FormField label="Family">
+              <Select inputSize="sm" value={family?.policyMemberId ?? ''}
+                onChange={(e) => { setChosenFamilyId(e.target.value || null); setValue('coveredLifeId', ''); }}>
+                <option value="">{families === null ? 'Loading families…' : 'Choose the family…'}</option>
+                {familyChoices.map((f) => (
+                  <option key={f.policyMemberId} value={f.policyMemberId}>{familyLabel(f)}</option>
+                ))}
+              </Select>
+              {families !== null && familyQuery.trim() !== '' && familyChoices.length === 0 && (
+                <p className="mt-1 text-xs text-subtle-foreground">No family matches &ldquo;{familyQuery.trim()}&rdquo;.</p>
+              )}
+            </FormField>
+          </>
+        )}
         {isFuneral && (
           <>
             <FormField label="Who died?" error={errors.coveredLifeId?.message}>
               {/* A family's policy: the claimant files, but the claim is for one covered life. */}
-              <Select inputSize="sm" {...register('coveredLifeId')}>
-                <option value="">Choose who died…</option>
-                {coveredLives.filter((l) => l.status === 'ACTIVE').map((l) => (
-                  <option key={l.coveredLifeId} value={l.coveredLifeId}>
-                    {familyOf[l.coveredLifeId] ? `${familyOf[l.coveredLifeId]} — ` : ''}{l.fullName} ({l.role.replace('_', ' ').toLowerCase()})
-                  </option>
+              <Select inputSize="sm" {...register('coveredLifeId')} disabled={isScheme && !family}>
+                <option value="">{isScheme && !family ? 'Choose the family first' : 'Choose who died…'}</option>
+                {claimableLives(isScheme ? family?.lives ?? [] : coveredLives).map((l) => (
+                  <option key={l.coveredLifeId} value={l.coveredLifeId}>{lifeLabel(l)}</option>
                 ))}
               </Select>
             </FormField>
