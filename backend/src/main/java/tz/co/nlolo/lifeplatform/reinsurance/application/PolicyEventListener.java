@@ -210,7 +210,17 @@ public class PolicyEventListener {
                 // always satisfies. See db-migrations/reinsurance/V4.
                 productCategory,
                 // IFRS 17 I3c: what turns the premium into the month's ceded premium.
-                (String) payload.get("premiumFrequency")));
+                (String) payload.get("premiumFrequency")).withPortfolio((String) payload.get("portfolioCode")));
+        }
+
+        // AN INVESTMENT CONTRACT IS NOT A RISK (2026-10-09). A deposit's, a savings account's or a pension's sum assured
+        // is the customer's own money: ceding it took half a deposit as ceded cover and as ceded premium, and its death
+        // claim recovered half the balance from the reinsurer. Projected (above), but never on risk and never ceded --
+        // see reinsurance/V8.
+        if (PolicyProjection.isInvestmentContract((String) payload.get("portfolioCode"))) {
+            log.info("Policy {} is an investment contract (portfolio {}) -- no insurance risk, so it is NOT ceded",
+                policyNumber, payload.get("portfolioCode"));
+            return;
         }
 
         // A GROUP SCHEME IS NOT ONE RISK, AND MUST NOT BE CEDED AS ONE.

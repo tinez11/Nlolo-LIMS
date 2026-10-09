@@ -39,7 +39,10 @@ export function CessionsPanel({ policyNumber }: { policyNumber: string }) {
             <span className="font-mono text-xs text-muted-foreground">
               treaty {c.treatyId.slice(0, 8)}
             </span>
-            <span className="font-medium">{formatMoney(c.cededAmount)}</span>
+            <span>
+              <span className="text-muted-foreground">Cover ceded </span>
+              <span className="font-medium">{formatMoney(c.cededAmount)}</span>
+            </span>
           </div>
           {c.cededPremium && (
             <p className="mt-1 text-xs text-muted-foreground">

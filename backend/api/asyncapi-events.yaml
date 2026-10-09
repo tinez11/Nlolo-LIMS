@@ -1048,7 +1048,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, sumAssured: {type: object}, premium: {type: object}, premiumFrequency: {type: string}, issueDate: {type: string, format: date}, agentOfRecordId: {type: string, format: uuid, nullable: true}, activatedAt: {type: string, format: date} }
+          properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, sumAssured: {type: object}, premium: {type: object}, premiumFrequency: {type: string}, issueDate: {type: string, format: date}, agentOfRecordId: {type: string, format: uuid, nullable: true}, activatedAt: {type: string, format: date}, portfolioCode: {type: string, nullable: true, description: 'IFRS 17 portfolio (2026-10-09). Reinsurance cedes nothing on SAV, DEP, PEN or DANN -- investment contracts.'} }
     PolicyNotTakenUpPayload:
       description: >
         policyholderPartyId is load-bearing rather than convenient: communication is the consumer

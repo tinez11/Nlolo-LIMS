@@ -169,6 +169,13 @@ public class ClaimEventListener {
                 + "this module does not have.", claimId, projection.getProductCategory(), policyNumber);
             return;
         }
+        // Nor is an investment contract (2026-10-09, reinsurance/V8): its death claim pays back the customer's own
+        // balance, which no reinsurer shares -- by either path, as PATH 2 needs no cession.
+        if (projection.isInvestmentContract()) {
+            log.info("Claim {} settled on investment contract {} (portfolio {}) -- never ceded, nothing recoverable",
+                claimId, policyNumber, projection.getPortfolioCode());
+            return;
+        }
 
         // PATH 1 -- the policy was ceded at issuance (QUOTA_SHARE or SURPLUS): the reinsurer's
         // share of this loss is the same fraction it took of the sum assured.

@@ -192,6 +192,7 @@ class RecoveryEndToEndTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
+            "db-migrations/reinsurance/V8__projection_portfolio.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -562,6 +563,39 @@ class RecoveryEndToEndTest {
         List<ClaimRecovery> recoveries = claimRecoveryRepository.findByTenantIdAndClaimId(tenantId, claimId);
         assertThat(recoveries).hasSize(1);
         assertThat(recoveries.get(0).getRecoverableAmount()).isEqualByComparingTo("500000.00");
+    }
+
+    /**
+     * 2026-10-09: a fixed-term deposit's death claim (the balance paid back) recovered half of it from the reinsurer
+     * (POL-CD17759E). An investment contract recovers nothing -- here on the XOL path, which needs no cession, on the
+     * same treaty and amounts as the ordinary policy above that recovers 500,000.
+     */
+    @Test
+    void anInvestmentContractsClaimRecoversNothingEvenUnderAnXolTreatyThatWouldOtherwisePay() {
+        UUID tenantId = UUID.randomUUID();
+        createTreaty(tenantId, TreatyType.XOL, new BigDecimal("1500000.00"), null);
+        UUID claimId = UUID.randomUUID();
+        String policyNumber = "POL-DEP-" + claimId.toString().substring(0, 8).toUpperCase();
+        eventRecorder.clear();
+
+        publishInTransaction(tenantId, DomainEventEnvelope.of("policy.PolicyActivated", tenantId, Map.of(
+            "policyNumber", policyNumber,
+            "productId", UUID.randomUUID(),
+            "productCategory", "ENDOWMENT",
+            "portfolioCode", "DEP",
+            "issueDate", LocalDate.now().toString(),
+            "sumAssured", Map.of("amount", "5000000.00", "currencyCode", CURRENCY),
+            "premium", Map.of("amount", "5000000.00", "currencyCode", CURRENCY))));
+
+        publishInTransaction(tenantId, DomainEventEnvelope.of("claims.ClaimApproved", tenantId, Map.of(
+            "claimId", claimId,
+            "policyNumber", policyNumber,
+            "approvedAmount", Map.of("amount", "2000000", "currencyCode", CURRENCY),
+            "investmentComponent", "0")));
+
+        TenantContext.set(tenantId);
+        assertThat(claimRecoveryRepository.findByTenantIdAndClaimId(tenantId, claimId)).isEmpty();
+        assertThat(eventRecorder.ofType("reinsurance.RecoveryCalculated")).isEmpty();
     }
 
     private void publishInTransaction(UUID tenantId, DomainEventEnvelope<?> envelope) {

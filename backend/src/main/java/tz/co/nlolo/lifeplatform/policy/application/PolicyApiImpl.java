@@ -471,6 +471,9 @@ public class PolicyApiImpl implements PolicyApi {
         // members, and for those the sumAssured above is the TOTAL of that schedule rather than
         // one person's cover -- a difference reinsurance in particular must not miss.
         payload.put("productCategory", policy.getProductCategory());
+        // The IFRS 17 portfolio (2026-10-09): a deposit and an endowment are both ENDOWMENT, and only the portfolio tells
+        // reinsurance which contracts are investment ones it must not cede. Null on a policy issued before I2.
+        payload.put("portfolioCode", policy.getPortfolioCode());
         // A group funeral scheme is category FUNERAL, yet its sum assured is an association's families added together
         // (2026-10-07): the category alone no longer tells one life from many.
         boolean groupScheme = isSchemeCategory(policy.getProductCategory()) || coveredLives.isScheme(policy);

@@ -192,7 +192,8 @@ class CessionEndToEndTest {
             "db-migrations/reinsurance/V4__projection_product_category.sql",
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
-            "db-migrations/reinsurance/V7__statement.sql");
+            "db-migrations/reinsurance/V7__statement.sql",
+            "db-migrations/reinsurance/V8__projection_portfolio.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -508,6 +509,42 @@ class CessionEndToEndTest {
         assertThat(eventRecorder.ofType("reinsurance.CessionRecorded"))
             .as("a redelivered PolicyIssued must not publish a second CessionRecorded")
             .hasSize(1);
+    }
+
+    /**
+     * 2026-10-09: a fixed-term deposit (portfolio DEP) was ceded 50% under a quota share -- half the customer's deposit
+     * as ceded cover and as ceded premium. An investment contract carries no insurance risk; it is projected (so a
+     * claim on it is known to be out of scope) but never ceded and never put on risk.
+     */
+    @Test
+    void anInvestmentContractIsProjectedButNeverCeded() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CESSION-E2E-DEP");
+        createTreaty(tenantId, TreatyType.QUOTA_SHARE, new BigDecimal("0.00"), new BigDecimal("50.00"));
+        eventRecorder.clear();
+
+        String policyNumber = "POL-DEP" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+        Map<String, Object> payload = Map.of(
+            "policyNumber", policyNumber,
+            "productId", fixture.productId(),
+            "issueDate", LocalDate.now().toString(),
+            "sumAssured", Map.of("amount", "3000000", "currencyCode", CURRENCY),
+            "premium", Map.of("amount", "3000000", "currencyCode", CURRENCY),
+            "premiumFrequency", "SINGLE",
+            "productCategory", "ENDOWMENT",
+            "portfolioCode", "DEP");
+        TenantContext.set(tenantId);
+        transactionTemplate().executeWithoutResult(status ->
+            eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyActivated", tenantId, payload)));
+
+        TenantContext.set(tenantId);
+        assertThat(cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber)).isEmpty();
+        assertThat(eventRecorder.ofType("reinsurance.CessionRecorded")).isEmpty();
+        TenantContext.set(tenantId);
+        PolicyProjection projection = policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)
+            .orElseThrow();
+        assertThat(projection.getPortfolioCode()).isEqualTo("DEP");
+        assertThat(projection.isInvestmentContract()).isTrue();
     }
 
     // ---- What has been ceded TO a treaty ------------------------------------------------------
