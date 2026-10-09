@@ -301,6 +301,15 @@ Not decided, so not in scope: sentence-case sidebar group labels instead of uppe
 
 ## Plan B — interaction feedback
 
+**Outcome (2026-10-09), branch `console-polish-b`:** all of B1–B8 done.
+- **B1:** press tones on every button variant, row, nav item, chip and section link, with `active:duration-0`; new Control Press token.
+- **B2:** `LoadingBlock` is three pulse lines with a **visible** label. Visible on purpose: e2e waits on `getByText(label)).not.toBeVisible()`, which an sr-only label would satisfy immediately. Pulses moved to the Control tone.
+- **B3:** most tabs already kept their data through the store's `loading(previous)`. Only the 4 local-state panels needed `lib/remembered`.
+- **B4:** 59 `useForm` calls spread `VALIDATE_ON_TOUCH`, enforced by a guard; a behaviour test fails without it.
+- **B5:** the "362 titles" was mostly component props; about 20 were real. The meaningful ones moved to `Tip`, focusable only where rare.
+- **B6/B7:** verified in the browser.
+- **B8:** `useListKeys` plus a hint in the palette.
+
 ### Task B1: A press you can feel (I1)
 
 **Files:** `components/ui/button.tsx`, `components/DataTable.tsx`, `components/AppShell.tsx` (nav items), tests
