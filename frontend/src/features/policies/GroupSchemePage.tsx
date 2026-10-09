@@ -40,6 +40,7 @@ import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
 import { FilterChip } from '@/components/FilterChip';
 import { Input, Select } from '@/components/ui/input';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * A group scheme: one master policy, many insured lives.
@@ -723,6 +724,7 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
     reset,
     formState: { errors },
   } = useForm<MemberFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(
       memberFormSchema({
         benefitBasis: scheme.benefitBasis ?? 'FLAT',

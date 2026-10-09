@@ -24,6 +24,7 @@ import {
   toIssueRequest,
   type CreditLifeSchemeIssueFormValues,
 } from './creditLifeSchemeIssueForm';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * Setting up a lender's credit-life scheme.
@@ -77,6 +78,7 @@ export function IssueCreditLifeSchemePage() {
     setValue,
     formState: { errors },
   } = useForm<CreditLifeSchemeIssueFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(creditLifeSchemeIssueFormSchema()),
     defaultValues: blankCreditLifeSchemeIssueForm(),
   });

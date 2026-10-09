@@ -27,6 +27,7 @@ import {
   type GroupSchemeIssueFormValues,
 } from './groupSchemeIssueForm';
 import { Input, Select } from '@/components/ui/input';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * `POST /group-schemes` — the master policy, the scheme and its opening schedule
@@ -76,6 +77,7 @@ export function IssueGroupSchemePage() {
     setValue,
     formState: { errors },
   } = useForm<GroupSchemeIssueFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(groupSchemeIssueFormSchema()),
     defaultValues: blankGroupSchemeIssueForm(),
   });

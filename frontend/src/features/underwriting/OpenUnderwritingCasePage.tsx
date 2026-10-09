@@ -38,6 +38,7 @@ import { FuneralLivesFields } from './FuneralLivesFields';
 import { getUnitLinkedTerms } from '@/api/unitlinked';
 import type { UnitLinkedTermsView } from '@/api/types';
 import { UnitLinkedChoiceFields } from './UnitLinkedChoiceFields';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * `POST /underwriting/cases` -- the only entry point onto this domain that
@@ -78,6 +79,7 @@ export function OpenUnderwritingCasePage() {
     control,
     formState: { errors },
   } = useForm<OpenCaseFormInput, unknown, OpenCaseFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(openCaseFormSchema),
     defaultValues: blankOpenCaseForm(),
   });

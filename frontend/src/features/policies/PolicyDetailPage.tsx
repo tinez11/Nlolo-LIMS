@@ -81,6 +81,7 @@ import { DetailLayout } from '@/components/DetailLayout';
 import type { ReactNode } from 'react';
 import { RecordTabs, type TabDef } from '@/components/RecordTabs';
 import { Input } from '@/components/ui/input';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * The "acts" half of drawer-previews-page-acts: the full record, and where any
@@ -883,6 +884,7 @@ function SuspendForm({ policyNumber, onDone }: { policyNumber: string; onDone: (
     handleSubmit,
     formState: { errors },
   } = useForm<SuspendPolicyFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(suspendPolicyFormSchema),
     defaultValues: blankSuspendPolicyForm(),
   });

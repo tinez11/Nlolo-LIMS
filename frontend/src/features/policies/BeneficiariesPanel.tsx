@@ -18,6 +18,7 @@ import {
 } from './beneficiaryForm';
 import { Field } from '@/components/Field';
 import { InlineError } from '@/components/InlineError';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * The one mutating form in this slice, deliberately placed on the full detail page
@@ -136,6 +137,7 @@ function EditForm({
     watch,
     formState: { errors },
   } = useForm<BeneficiaryFormInput, unknown, BeneficiaryFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(beneficiariesFormSchema),
     defaultValues: toFormValues(beneficiaries),
   });

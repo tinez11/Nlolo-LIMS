@@ -39,6 +39,7 @@ import {
   type WaiveInvoiceFormValues,
 } from './waiveInvoiceForm';
 import { Input } from '@/components/ui/input';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * `POST /invoices/{invoiceId}/waiver` (**finance staff only** -- FINANCE_OFFICER
@@ -324,6 +325,7 @@ function WaiveForm({
     handleSubmit,
     formState: { errors },
   } = useForm<WaiveInvoiceFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(waiveInvoiceFormSchema),
     defaultValues: blankWaiveInvoiceForm(),
   });
@@ -422,6 +424,7 @@ function PaymentRequestForm({
     handleSubmit,
     formState: { errors },
   } = useForm<RequestPaymentFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(requestPaymentFormSchema),
     defaultValues: blankRequestPaymentForm(),
   });

@@ -35,6 +35,7 @@ import {
 } from './accountForms';
 import { DepositSection } from './DepositSection';
 import { ENTRY_LABEL } from './entryLabels';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * The savings account behind a policy (product step 3): its balance, every entry on its ledger, and
@@ -254,7 +255,7 @@ function WithdrawalForm({
   const withdraw = useAccumulationStore((s) => s.withdraw);
   const acting = useAccumulationStore((s) => s.acting[`withdraw.${policyNumber}`]);
   const [armed, setArmed] = useState<WithdrawalValues | null>(null);
-  const form = useForm<WithdrawalValues>({ resolver: zodResolver(withdrawalSchema), defaultValues: { amount: '', payeeRef: '' } });
+  const form = useForm<WithdrawalValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(withdrawalSchema), defaultValues: { amount: '', payeeRef: '' } });
   const gates = requestWithdrawalGates(account, withdrawals);
   const refused = gates.some((g) => !g.ok && g.hard);
 
@@ -303,7 +304,7 @@ function WithdrawalForm({
 function TopUpForm({ policyNumber, onDone }: { policyNumber: string; onDone: () => void }) {
   const topUp = useAccumulationStore((s) => s.topUp);
   const acting = useAccumulationStore((s) => s.acting[`topup.${policyNumber}`]);
-  const form = useForm<TopUpValues>({ resolver: zodResolver(topUpSchema), defaultValues: { amount: '', payerRef: '' } });
+  const form = useForm<TopUpValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(topUpSchema), defaultValues: { amount: '', payerRef: '' } });
 
   return (
     <div className="space-y-3 rounded-md border border-border p-3">
@@ -340,6 +341,7 @@ function TransferInForm({ policyNumber, onDone }: { policyNumber: string; onDone
   const transferIn = useAccumulationStore((s) => s.transferIn);
   const acting = useAccumulationStore((s) => s.acting[`transfer.${policyNumber}`]);
   const form = useForm<TransferInValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(transferInSchema),
     defaultValues: { amount: '', sourceScheme: '', documentRef: '' },
   });
@@ -373,7 +375,7 @@ function TransferInForm({ policyNumber, onDone }: { policyNumber: string; onDone
 function AdjustmentForm({ policyNumber, onDone }: { policyNumber: string; onDone: () => void }) {
   const propose = useAccumulationStore((s) => s.proposeAdjustment);
   const acting = useAccumulationStore((s) => s.acting[`adjust.${policyNumber}`]);
-  const form = useForm<AdjustmentValues>({ resolver: zodResolver(adjustmentSchema), defaultValues: { amount: '', reason: '' } });
+  const form = useForm<AdjustmentValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(adjustmentSchema), defaultValues: { amount: '', reason: '' } });
 
   return (
     <div className="space-y-3 rounded-md border border-border p-3">

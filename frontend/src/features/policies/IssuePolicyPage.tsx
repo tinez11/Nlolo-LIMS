@@ -46,6 +46,7 @@ import {
 } from './policyIssueForm';
 import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * `POST /policies/manual-issue` -- the staff exception path.
@@ -97,6 +98,7 @@ export function IssuePolicyPage() {
     control,
     formState: { errors },
   } = useForm<PolicyIssueFormInput, unknown, PolicyIssueFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(policyIssueFormSchema),
     defaultValues: blankPolicyIssueForm(),
   });

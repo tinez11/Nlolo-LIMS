@@ -25,6 +25,7 @@ import {
   type CoveredLifeFormValues,
   type IdentifyFormValues,
 } from './coveredLifeForm';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 const END_REASON_LABELS: Record<string, string> = {
   DECEASED: 'Deceased',
@@ -170,6 +171,7 @@ export function CoveredLivesPanel({ policyNumber, canChange }: { policyNumber: s
 
 function AddLifeForm({ onSubmit, onCancel }: { onSubmit: (v: CoveredLifeFormValues) => void; onCancel: () => void }) {
   const { register, control, handleSubmit, formState: { errors, isSubmitting } } = useForm<CoveredLifeFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(coveredLifeFormSchema),
     defaultValues: blankCoveredLife(),
   });
@@ -217,6 +219,7 @@ export function IdentifyForm({ submitLabel, onSubmit, onCancel }: {
   submitLabel: string; onSubmit: (v: IdentifyFormValues) => void; onCancel?: () => void;
 }) {
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<IdentifyFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(identifyFormSchema),
     defaultValues: { idType: '', idNumber: '', phoneNumber: '', sex: '' },
   });

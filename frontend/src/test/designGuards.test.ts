@@ -244,6 +244,23 @@ describe('design guards', () => {
     expect(offenders(/font-mono[^\n]*formatMoney\(/)).toEqual([]);
   });
 
+  it('validates every form when a field is left, not only on submit', () => {
+    // All 59 forms took react-hook-form's default `onSubmit`: a wrong age band or rate said so only
+    // after the whole form was sent (review decision D10). One shared timing, so no form drifts.
+    const found: string[] = [];
+    for (const [path, source] of files) {
+      const text = code(source);
+      for (const call of text.matchAll(/\buseForm</g)) {
+        // From the call to its opening `({`, generics and all, then the first thing inside it.
+        const rest = text.slice(call.index);
+        if (!/^useForm<[^(]*\(\{\s*\.\.\.VALIDATE_ON_TOUCH\b/.test(rest)) {
+          found.push(`${path}:${text.slice(0, call.index).split('\n').length}`);
+        }
+      }
+    }
+    expect(found).toEqual([]);
+  });
+
   it('writes a dash in visible copy as a dash, never as two hyphens', () => {
     // ` -- ` is how this codebase's comments spell an em dash, and comments are stripped
     // before this runs. Anything left is a string or JSX text, where the browser shows the

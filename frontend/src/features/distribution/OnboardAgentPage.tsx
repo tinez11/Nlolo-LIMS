@@ -21,6 +21,7 @@ import { BranchSelect } from '@/components/BranchSelect';
 import { Input, Select } from '@/components/ui/input';
 import { channelLabel } from '@/lib/ifrs17';
 import { InlineError } from '@/components/InlineError';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * `POST /agents`.
@@ -53,6 +54,7 @@ export function OnboardAgentPage() {
     control,
     formState: { errors },
   } = useForm<OnboardAgentFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(onboardAgentFormSchema),
     defaultValues: blankOnboardAgentForm(),
   });

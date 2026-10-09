@@ -12,6 +12,7 @@ import { formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useLedgerControlsStore } from '@/store/ledgerControlsStore';
 import { dismissSchema, type DismissValues } from './postingQueueForms';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 const REASON_LABEL: Record<string, string> = {
   UNMAPPED: 'No rule posts it',
@@ -135,7 +136,7 @@ function OpenRow({ event }: { event: UnpostedEventView }) {
 
 function DismissForm({ id, disabled }: { id: string; disabled: boolean }) {
   const dismiss = useLedgerControlsStore((s) => s.dismissUnposted);
-  const form = useForm<DismissValues>({ resolver: zodResolver(dismissSchema), defaultValues: { reason: '' } });
+  const form = useForm<DismissValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(dismissSchema), defaultValues: { reason: '' } });
   return (
     <form
       className="flex items-end gap-2"

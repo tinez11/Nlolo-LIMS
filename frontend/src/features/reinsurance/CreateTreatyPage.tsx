@@ -18,6 +18,7 @@ import {
 } from './createTreatyForm';
 import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * `POST /treaties` -- staff FINANCE_OFFICER/ADMIN only. `treatyType` switches
@@ -48,6 +49,7 @@ export function CreateTreatyPage() {
     control,
     formState: { errors },
   } = useForm<CreateTreatyFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(createTreatyFormSchema),
     defaultValues: blankQuotaShareTreatyForm(),
   });

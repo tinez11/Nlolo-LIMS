@@ -44,6 +44,7 @@ import { recordSale } from '@/api/underwriting';
 import { BranchSelect } from '@/components/BranchSelect';
 import type { ApiError } from '@/lib/apiError';
 import { CHANNEL_LABEL, channelLabel } from '@/lib/ifrs17';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * Reached from `OpenUnderwritingCasePage`'s own redirect, a direct visit to a
@@ -146,6 +147,7 @@ export function UnderwritingCaseDetailPage() {
     reset: resetAssessmentForm,
     formState: { errors },
   } = useForm<SubmitAssessmentFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(submitAssessmentFormSchema),
     defaultValues: blankSubmitAssessmentForm(),
   });

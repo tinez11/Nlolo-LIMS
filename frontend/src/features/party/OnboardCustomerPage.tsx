@@ -28,6 +28,7 @@ import {
 } from './registerIndividualForm';
 import { Input } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 type CustomerType = 'INDIVIDUAL' | 'CORPORATE';
 
@@ -93,6 +94,7 @@ function RegisterIndividualForm() {
     reset,
     formState: { errors },
   } = useForm<RegisterIndividualFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(registerIndividualFormSchema),
     defaultValues: blankRegisterIndividualForm(),
   });
@@ -144,6 +146,7 @@ function RegisterCorporateForm() {
     reset,
     formState: { errors },
   } = useForm<RegisterCorporateFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(registerCorporateFormSchema),
     defaultValues: blankRegisterCorporateForm(),
   });

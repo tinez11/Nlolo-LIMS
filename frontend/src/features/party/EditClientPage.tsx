@@ -17,6 +17,7 @@ import {
   toApiRequest,
   type RegisterIndividualFormValues,
 } from './registerIndividualForm';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * Correct what the platform has recorded about a client.
@@ -53,6 +54,7 @@ export function EditClientPage() {
     reset,
     formState: { errors },
   } = useForm<RegisterIndividualFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(registerIndividualFormSchema),
   });
 

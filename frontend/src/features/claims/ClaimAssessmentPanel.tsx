@@ -18,6 +18,7 @@ import {
 import { Input, Textarea } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { CheckboxField } from '@/components/ui/checkbox';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * `POST /claims/{claimId}/assessments` -- `CLAIMS_ASSESSOR` role only, rendered
@@ -59,6 +60,7 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
     reset,
     formState: { errors, isDirty },
   } = useForm<SubmitClaimAssessmentFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(submitClaimAssessmentSchema(cover)),
     defaultValues: blankSubmitClaimAssessmentForm(),
   });

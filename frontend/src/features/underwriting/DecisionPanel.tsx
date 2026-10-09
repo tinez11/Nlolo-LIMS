@@ -20,6 +20,7 @@ import {
   type DecideFormInput,
   type DecideFormValues,
 } from './decideForm';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /** Ties the separation-of-duties refusal to the button it explains. */
 const BLOCKED_BY_RANK_ID = 'decision-blocked-by-rank';
@@ -98,6 +99,7 @@ export function DecisionPanel({
     watch,
     formState: { errors },
   } = useForm<DecideFormInput, unknown, DecideFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(decideFormSchema),
     defaultValues: blankDecideForm(annuity),
   });

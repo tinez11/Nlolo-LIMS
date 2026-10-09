@@ -10,6 +10,7 @@ import { Input, Select } from '@/components/ui/input';
 import { formatDate } from '@/lib/dates';
 import { useAnnuityStore } from '@/store/annuityStore';
 import { toVestingInstruction, vestingFormSchema, type VestingFormContext, type VestingFormValues } from './vestingForm';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 const FREQUENCY_LABEL: Record<string, string> = {
   MONTHLY: 'Monthly',
@@ -53,6 +54,7 @@ export function VestingInstructionForm({
     handleSubmit,
     formState: { errors },
   } = useForm<VestingFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(vestingFormSchema(context)),
     defaultValues: {
       vestingDate: vesting.vestingDate,

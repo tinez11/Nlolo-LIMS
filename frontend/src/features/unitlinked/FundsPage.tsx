@@ -30,6 +30,7 @@ import {
   type CreateFundValues,
   type ProposePriceValues,
 } from './fundForms';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /** The alert threshold the server applies (refdata UL_PRICE_MOVE_ALERT_PERCENT); the server's own figure decides. */
 const MOVE_ALERT_PERCENT = 10;
@@ -244,6 +245,7 @@ function ProposePriceForm({ fund, lastApproved }: { fund: FundView; lastApproved
   const propose = useUnitLinkedStore((s) => s.proposePrice);
   const acting = useUnitLinkedStore((s) => s.acting[`price.propose.${fund.code}`]);
   const form = useForm<ProposePriceValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(proposePriceSchema),
     defaultValues: { valuationDate: '', price: '', moveReason: '' },
   });
@@ -304,6 +306,7 @@ function CorrectionForm({ price, onDone }: { price: FundPriceView; onDone: () =>
   const correct = useUnitLinkedStore((s) => s.proposeCorrection);
   const acting = useUnitLinkedStore((s) => s.acting[`correct.${price.priceId}`]);
   const form = useForm<CorrectionValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(correctionSchema),
     defaultValues: { price: '', reason: '' },
   });
@@ -341,6 +344,7 @@ function CreateFundForm() {
   const create = useUnitLinkedStore((s) => s.createFund);
   const acting = useUnitLinkedStore((s) => s.acting['fund.create']);
   const form = useForm<CreateFundValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(createFundSchema),
     defaultValues: {
       code: '',

@@ -12,6 +12,7 @@ import {
 } from './reopenClaimForm';
 import { Textarea } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * `POST /claims/{claimId}/reopen` -- `CLAIMS_MANAGER` role only, rendered by
@@ -37,6 +38,7 @@ export function ClaimReopenPanel({ claimId, wasSettled }: { claimId: string; was
     handleSubmit,
     formState: { errors },
   } = useForm<ReopenClaimFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(reopenClaimFormSchema),
     defaultValues: blankReopenClaimForm(),
   });

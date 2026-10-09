@@ -18,6 +18,7 @@ import { formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useLedgerControlsStore } from '@/store/ledgerControlsStore';
 import { reopenSchema, type ReopenValues } from './registerForms';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -193,7 +194,7 @@ function PeriodRow({ view, viewerSubject }: { view: AccountingPeriodView; viewer
 
 function ReopenRequestForm({ period, busy }: { period: string; busy: boolean }) {
   const requestReopen = useLedgerControlsStore((s) => s.requestReopen);
-  const form = useForm<ReopenValues>({ resolver: zodResolver(reopenSchema), defaultValues: { reason: '' } });
+  const form = useForm<ReopenValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(reopenSchema), defaultValues: { reason: '' } });
   return (
     <form
       className="flex flex-wrap items-end gap-2"

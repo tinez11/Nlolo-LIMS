@@ -21,6 +21,7 @@ import {
 } from './generateReturnForm';
 import { RegulatoryReturnDrawer } from './RegulatoryReturnDrawer';
 import { Input } from '@/components/ui/input';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * `POST /regulatory-returns` + `GET` -- fully built and staff-reachable
@@ -133,6 +134,7 @@ function GenerateReturnForm({ onDone }: { onDone: (returnId?: string) => void })
     handleSubmit,
     formState: { errors },
   } = useForm<GenerateReturnFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(generateReturnFormSchema),
     defaultValues: blankGenerateReturnForm(),
   });
