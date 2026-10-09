@@ -199,14 +199,19 @@ class CustomerPortalIntegrationTest {
                 TODAY.minusDays(1), null,
                 List.of(new tz.co.nlolo.lifeplatform.product.api.ProductApi.RatingFactorInput(
                     tz.co.nlolo.lifeplatform.product.api.FactorType.SUM_ASSURED_BAND, "ANY", java.math.BigDecimal.ONE, null, null,
-                    java.math.BigDecimal.ZERO, new java.math.BigDecimal("100000000"))),
+                    java.math.BigDecimal.ZERO, new java.math.BigDecimal("100000000")),
+                    new tz.co.nlolo.lifeplatform.product.api.ProductApi.RatingFactorInput(
+                        tz.co.nlolo.lifeplatform.product.api.FactorType.OCCUPATION_CLASS, "CLASS_1", java.math.BigDecimal.ONE)),
                 List.of(new tz.co.nlolo.lifeplatform.product.api.ProductApi.BenefitInput(
                     tz.co.nlolo.lifeplatform.product.api.BenefitType.DEATH,
                     tz.co.nlolo.lifeplatform.product.api.BenefitCalculationMethod.SUM_ASSURED)),
                 null,
-                List.of(new tz.co.nlolo.lifeplatform.product.api.ProductApi.BaseRateInput(18, 60,
-                    tz.co.nlolo.lifeplatform.product.api.Sex.MALE, tz.co.nlolo.lifeplatform.product.api.SmokerStatus.UNKNOWN,
-                    new java.math.BigDecimal("10.0000"))),
+                // A priced version must price every life it accepts: both sexes, every smoker status.
+                java.util.Arrays.stream(tz.co.nlolo.lifeplatform.product.api.Sex.values())
+                    .flatMap(sex -> java.util.Arrays.stream(tz.co.nlolo.lifeplatform.product.api.SmokerStatus.values())
+                        .map(smoker -> new tz.co.nlolo.lifeplatform.product.api.ProductApi.BaseRateInput(18, 60, sex, smoker,
+                            new java.math.BigDecimal("10.0000"))))
+                    .toList(),
                 new tz.co.nlolo.lifeplatform.product.api.EligibilityBounds(18, 60, null, null, null, null),
                 tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING, "actuary");
             productApi.describeOnline(product.productId(), true, "Cover for your family if you die",
@@ -216,7 +221,7 @@ class CustomerPortalIntegrationTest {
         UUID me = asTenant(() -> partyApi.registerIndividual(new tz.co.nlolo.lifeplatform.party.api.IndividualRegistration(
             "Online Applicant", TODAY.minusYears(30).minusDays(10), "+255718999001", null,
             tz.co.nlolo.lifeplatform.party.api.Sex.MALE, null, tz.co.nlolo.lifeplatform.party.api.IdentityDocument.none(),
-            null, null, null, null, tz.co.nlolo.lifeplatform.party.api.Address.none()), "test-agent").partyId());
+            null, "CLASS_1", null, null, tz.co.nlolo.lifeplatform.party.api.Address.none()), "test-agent").partyId());
 
         mockMvc.perform(customer(get("/customer/products"), me))
             .andExpect(status().isOk())

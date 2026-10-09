@@ -67,16 +67,25 @@ public class CustomerProducts {
         }
         BigDecimal sumAssured = positive(request.sumAssured());
         PartyDetailView me = partyApi.getPartyDetail(customerPartyId);
-        if (me.dateOfBirth() == null || me.sex() == null) {
-            throw new tz.co.nlolo.lifeplatform.omnichannel.api.CustomerRequestRefusedException("We need your date of birth and sex on file to price this. Contact us to add"
-                + " them.");
+        // Every rating factor the engine prices on, asked for up front in a customer's words rather than surfacing the
+        // engine's own "OCCUPATION_CLASS is required" -- found by the test, 2026-10-09.
+        if (me.dateOfBirth() == null || me.sex() == null || me.occupationClass() == null) {
+            throw new tz.co.nlolo.lifeplatform.omnichannel.api.CustomerRequestRefusedException("We need your date of birth, sex and occupation on file to price this. Contact us to add them, or ask"
+                + " for the cover and an adviser will price it.");
         }
         PremiumFrequency frequency = frequency(request.frequency());
-        ProductApi.PremiumQuoteView quote = productApi.quotePremium(new ProductApi.PremiumQuoteInput(productId, sumAssured,
-            listing.defaultCurrency(), me.dateOfBirth(), Sex.valueOf(me.sex().name()),
-            me.smokerStatus() == null ? SmokerStatus.UNKNOWN : SmokerStatus.valueOf(me.smokerStatus().name()),
-            me.occupationClass(), frequency, LocalDate.now(DAR),
-            request.termYears() == null ? null : request.termYears() * 12));
+        ProductApi.PremiumQuoteView quote;
+        try {
+            quote = productApi.quotePremium(new ProductApi.PremiumQuoteInput(productId, sumAssured,
+                listing.defaultCurrency(), me.dateOfBirth(), Sex.valueOf(me.sex().name()),
+                me.smokerStatus() == null ? SmokerStatus.UNKNOWN : SmokerStatus.valueOf(me.smokerStatus().name()),
+                me.occupationClass(), frequency, LocalDate.now(DAR),
+                request.termYears() == null ? null : request.termYears() * 12));
+        } catch (tz.co.nlolo.lifeplatform.product.api.PremiumNotQuotableException e) {
+            // The engine's reason names rating tables and bands -- staff words. The customer is told what to do instead.
+            throw new tz.co.nlolo.lifeplatform.omnichannel.api.CustomerRequestRefusedException("We cannot price "
+                + listing.productName() + " for you online. Ask for the cover and an adviser will work out your price.");
+        }
         return new CustomerProductView.Quote(productId, listing.productName(), quote.currency(), sumAssured,
             frequency.name(), quote.instalmentAmount(), quote.annualAfterFrequencyLoading(), quote.ageAtEntry());
     }
