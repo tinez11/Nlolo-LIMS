@@ -167,6 +167,23 @@ public class ProductController {
         return ResponseEntity.ok(productApi.getProduct(productId));
     }
 
+    /** Body of a portfolio correction. */
+    public record PortfolioRequest(tz.co.nlolo.lifeplatform.product.api.PortfolioCode portfolioCode) {}
+
+    /**
+     * Correct a DRAFT product's IFRS 17 portfolio (2026-10-09). Without it, a savings product created in the defaulted END
+     * portfolio could neither be published (the savings-portfolio rule) nor fixed. 400 once a version is published.
+     */
+    @PutMapping("/products/{productId}/portfolio")
+    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
+    public ResponseEntity<ProductSummaryView> changePortfolio(@PathVariable UUID productId,
+                                                              @RequestBody PortfolioRequest request) {
+        if (request.portfolioCode() == null) {
+            throw new IllegalArgumentException("Name the portfolio");
+        }
+        return ResponseEntity.ok(productApi.changePortfolio(productId, request.portfolioCode()));
+    }
+
     /** Body of the online listing: offered to customers or not, what it is for, its key benefits (V31). */
     public record OnlineListingRequest(boolean available, String summary, List<String> benefits) {}
 

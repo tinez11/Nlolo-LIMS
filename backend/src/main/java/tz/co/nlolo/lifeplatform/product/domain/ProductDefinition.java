@@ -100,6 +100,9 @@ public class ProductDefinition {
 
     public String getPortfolioCode() { return portfolioCode; }
 
+    /** While DRAFT only -- the service refuses it after: issued policies are classified by the portfolio. */
+    public void changePortfolio(String portfolioCode) { this.portfolioCode = portfolioCode; }
+
     public UUID getProductId() { return productId; }
     public UUID getTenantId() { return tenantId; }
     public String getProductCode() { return productCode; }

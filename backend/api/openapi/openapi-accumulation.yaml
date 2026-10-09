@@ -614,6 +614,34 @@ components:
         defaultPayeeRef: { type: [string, "null"], description: "The number the deposit was collected from" }
         awaitingPayee: { type: boolean }
         termsOffered: { type: array, items: { type: integer } }
+        schedule:
+          description: >-
+            The running term worked forward (2026-10-09): what it pays at maturity, and what it would pay if closed
+            early at each monthly date -- interest to that day at the term's rate, before any early-closing charge.
+            Null when no term runs.
+          anyOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/DepositSchedule'
+    DepositSchedule:
+      type: object
+      required: [principal, termMonths, ratePercent, startDate, maturityDate, interestAtMaturity, amountAtMaturity, ifClosedEarly]
+      properties:
+        principal: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        termMonths: { type: integer }
+        ratePercent: { type: number, description: For the whole term, not a year }
+        startDate: { type: string, format: date }
+        maturityDate: { type: string, format: date }
+        interestAtMaturity: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        amountAtMaturity: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        ifClosedEarly:
+          type: array
+          items:
+            type: object
+            required: [closedOn, interest, paidOut]
+            properties:
+              closedOn: { type: string, format: date }
+              interest: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+              paidOut: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
     AwaitingPayee:
       type: object
       required: [policyNumber, balance, maturedOn]

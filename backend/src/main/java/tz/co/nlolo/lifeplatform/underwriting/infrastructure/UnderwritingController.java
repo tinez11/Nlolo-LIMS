@@ -129,6 +129,9 @@ public class UnderwritingController {
         if (request.unitLinked() != null) {
             underwritingApi.recordUnitLinkedChoice(view.caseId(), request.unitLinked(), jwt.getSubject());
         }
+        if (request.accountChargeIds() != null && !request.accountChargeIds().isEmpty()) {
+            underwritingApi.chooseAccountCharges(view.caseId(), request.accountChargeIds());
+        }
         view = applySale(view, request.salesChannel(), request.branchCode(), jwt);
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
@@ -158,6 +161,25 @@ public class UnderwritingController {
         return ResponseEntity.ok(underwritingApi.recordSale(caseId, request.salesChannel(), request.branchCode(),
             jwt.getSubject()));
     }
+
+    /** The account charges a savings case will be issued on (2026-10-09); empty for the product's own. */
+    @GetMapping("/cases/{caseId}/account-charges")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<AccountChargeChoice> accountCharges(@PathVariable UUID caseId) {
+        return ResponseEntity.ok(new AccountChargeChoice(underwritingApi.accountCharges(caseId)));
+    }
+
+    /** Choose or change them (empty clears) -- until the policy is issued. */
+    @PutMapping("/cases/{caseId}/account-charges")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<AccountChargeChoice> chooseAccountCharges(@PathVariable UUID caseId,
+                                                                    @RequestBody AccountChargeChoice request) {
+        underwritingApi.chooseAccountCharges(caseId, request.chargeIds());
+        return ResponseEntity.ok(new AccountChargeChoice(underwritingApi.accountCharges(caseId)));
+    }
+
+    /** {@code /underwriting/cases/{caseId}/account-charges}. */
+    public record AccountChargeChoice(List<UUID> chargeIds) {}
 
     /** {@code PUT /underwriting/cases/{caseId}/sale}. */
     public record SaleRequest(@jakarta.validation.constraints.NotBlank String salesChannel,

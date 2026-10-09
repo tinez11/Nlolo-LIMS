@@ -4,6 +4,7 @@ import type { DepositPeriodView, DepositView } from '@/api/types';
 import { Field } from '@/components/Field';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
+import { DepositScheduleDownload } from '@/features/documents/DepositScheduleDownload';
 import { EmptyState } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
@@ -12,6 +13,37 @@ import { startMutation } from '@/lib/idempotency';
 import { formatMoney } from '@/lib/money';
 import { useAccumulationStore } from '@/store/accumulationStore';
 import { instructionSchema, payeeSchema, toInstructionBody, type InstructionValues, type PayeeValues } from './depositForms';
+
+type DepositSchedule = NonNullable<DepositView['schedule']>;
+
+/** What the deposit would pay if closed at each month of its term -- interest to that day (2026-10-09). */
+function EarlyClosingTable({ schedule }: { schedule: DepositSchedule }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm" aria-label="If closed early">
+        <caption className="mb-1 text-left text-xs font-medium">If closed early</caption>
+        <thead>
+          <tr className="text-left text-xs text-muted-foreground">
+            <th className="py-1 pr-3 font-medium">Closed on</th>
+            <th className="py-1 pr-3 text-right font-medium">Interest earned</th>
+            <th className="py-1 text-right font-medium">Paid out</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {schedule.ifClosedEarly.map((r) => (
+            <tr key={r.closedOn}>
+              <td className="py-1.5 pr-3">
+                {formatDate(r.closedOn)}{r.closedOn === schedule.maturityDate ? ' (maturity)' : ''}
+              </td>
+              <td className="py-1.5 pr-3 text-right tabular-nums">{formatMoney(r.interest)}</td>
+              <td className="py-1.5 text-right tabular-nums">{formatMoney(r.paidOut)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 const STATUS_LABEL: Record<DepositPeriodView['status'], string> = {
   RUNNING: 'Running',
@@ -47,11 +79,19 @@ export function DepositSection({ deposit, isFinance }: { deposit: DepositView; i
             <Field label="Started" value={formatDate(running.startDate)} />
             <Field label="Matures" value={formatDate(running.maturityDate)} />
             <Field label="Interest earned so far" value={formatMoney(deposit.interestSoFar)} />
+            {deposit.schedule && (
+              <>
+                <Field label="Interest at maturity" value={formatMoney(deposit.schedule.interestAtMaturity)} />
+                <Field label="Paid at maturity" value={formatMoney(deposit.schedule.amountAtMaturity)} emphasis />
+              </>
+            )}
           </dl>
           <p className="text-xs text-muted-foreground">
-            This is a fixed-term deposit: nothing can be added or taken out until it matures on{' '}
-            {formatDate(running.maturityDate)}.
+            Nothing can be added or partly withdrawn. It can be closed early at any time with Surrender, which pays the
+            deposit and the interest earned to that day; otherwise it matures on {formatDate(running.maturityDate)}.
           </p>
+          {deposit.schedule && <EarlyClosingTable schedule={deposit.schedule} />}
+          <DepositScheduleDownload policyNumber={deposit.policyNumber} />
           <MaturityPanel deposit={deposit} />
         </>
       )}

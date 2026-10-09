@@ -116,7 +116,13 @@ public record OpenCaseRequest(
      * the case takes its defaults (the agent's, else DIRECT / BANCASSURANCE, and the opening staff member's branch).
      */
     String salesChannel,
-    String branchCode) {
+    String branchCode,
+
+    /**
+     * On an account-based savings product only (2026-10-09, product V32): the account charges the policy is charged by.
+     * Absent or empty, the product version's own charges apply.
+     */
+    List<UUID> accountChargeIds) {
 
     /** A deferred annuity applicant's retirement age. Unannotated: a missing age is refused by the window rule. */
     public record DeferredAnnuityDto(Integer retirementAge) {

@@ -252,6 +252,7 @@ public class PolicyApiImpl implements PolicyApi {
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(request.productId(), LocalDate.now());
         refuseUnlessAValidDeposit(request);
         refuseUnlessAValidAnnuity(request);
+        refuseAFirstDepositBelowTheMinimum(request);
 
         // Placeholder generation scheme (flagged): policy.policy's own column comment describes
         // a "tenant/product/year/sequence, human-meaningful for USSD/call-center lookup"
@@ -327,6 +328,15 @@ public class PolicyApiImpl implements PolicyApi {
         }
 
         beneficiaryRepository.saveAll(beneficiaries);
+
+        // The account charges chosen on the case go with the policy for life (2026-10-09, product V32).
+        if (underwritingCaseId != null && policyAccountCharges != null
+                && productApi.resolveAccumulationPlan(request.productVersionId()).isAccount()) {
+            for (UUID chargeId : underwritingApi.accountCharges(underwritingCaseId)) {
+                policyAccountCharges.save(new tz.co.nlolo.lifeplatform.policy.domain.PolicyAccountCharge(policyNumber,
+                    chargeId, tenantId));
+            }
+        }
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("policyNumber", policyNumber);
@@ -461,6 +471,9 @@ public class PolicyApiImpl implements PolicyApi {
         // members, and for those the sumAssured above is the TOTAL of that schedule rather than
         // one person's cover -- a difference reinsurance in particular must not miss.
         payload.put("productCategory", policy.getProductCategory());
+        // The IFRS 17 portfolio (2026-10-09): a deposit and an endowment are both ENDOWMENT, and only the portfolio tells
+        // reinsurance which contracts are investment ones it must not cede. Null on a policy issued before I2.
+        payload.put("portfolioCode", policy.getPortfolioCode());
         // A group funeral scheme is category FUNERAL, yet its sum assured is an association's families added together
         // (2026-10-07): the category alone no longer tells one life from many.
         boolean groupScheme = isSchemeCategory(policy.getProductCategory()) || coveredLives.isScheme(policy);
@@ -1836,6 +1849,35 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     /** A fixed-term deposit is one payment, of the deposit itself, for a term its grid offers (plan §R9). */
+    private tz.co.nlolo.lifeplatform.policy.infrastructure.PolicyAccountChargeRepository policyAccountCharges;
+
+    /** Setter-injected so tests that build this class by hand need not supply it (2026-10-09). */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setPolicyAccountCharges(tz.co.nlolo.lifeplatform.policy.infrastructure.PolicyAccountChargeRepository repository) {
+        this.policyAccountCharges = repository;
+    }
+
+    /**
+     * An account's minimum balance is a floor no withdrawal may cross -- so the first deposit must reach it (2026-10-09,
+     * the user's Mkakati test: "starting amount 20,000 ... never drop below 20,000"). A fixed-term deposit has its own
+     * band rule and is left to it.
+     */
+    private void refuseAFirstDepositBelowTheMinimum(IssueRequest request) {
+        if (productApi.resolveDepositPlan(request.productVersionId()).isDeposit()) {
+            return;
+        }
+        tz.co.nlolo.lifeplatform.product.api.AccumulationPlan account =
+            productApi.resolveAccumulationPlan(request.productVersionId());
+        if (!account.isAccount() || account.minimumBalance() == null || account.minimumBalance().signum() <= 0) {
+            return;
+        }
+        if (request.premiumAmount() == null || request.premiumAmount().compareTo(account.minimumBalance()) < 0) {
+            throw new IllegalArgumentException("The first deposit must be at least this product's minimum balance of "
+                + account.minimumBalance().stripTrailingZeros().toPlainString() + " "
+                + (request.premiumCurrency() == null ? "" : request.premiumCurrency()));
+        }
+    }
+
     private void refuseUnlessAValidDeposit(IssueRequest request) {
         DepositPlan deposit = productApi.resolveDepositPlan(request.productVersionId());
         if (!deposit.isDeposit()) {

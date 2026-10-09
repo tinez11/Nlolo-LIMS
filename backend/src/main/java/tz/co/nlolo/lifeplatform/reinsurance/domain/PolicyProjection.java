@@ -73,10 +73,21 @@ public class PolicyProjection {
     @Column(name = "premiums_end_on")
     private LocalDate premiumsEndOn;
 
+    /** The IFRS 17 portfolio (reinsurance/V8): SAV, DEP, PEN and DANN are investment contracts, outside reinsurance.
+     * NULL on a row written before that migration -- "not known to be one". */
+    @Column(name = "portfolio_code")
+    private String portfolioCode;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
     protected PolicyProjection() {}
+
+    /** The portfolio, recorded once when the policy is first projected. */
+    public PolicyProjection withPortfolio(String portfolioCode) {
+        this.portfolioCode = portfolioCode;
+        return this;
+    }
 
     public PolicyProjection(UUID tenantId, String policyNumber, UUID productId,
                              BigDecimal sumAssuredAmount, String sumAssuredCurrency,
@@ -154,5 +165,20 @@ public class PolicyProjection {
         return "GROUP_LIFE".equals(productCategory) || "CREDIT_LIFE".equals(productCategory)
             || GROUP_FUNERAL.equals(productCategory);
     }
+
+    public String getPortfolioCode() { return portfolioCode; }
+
+    /**
+     * An investment contract (2026-10-09): the portfolios accounting measures under IFRS 9, whose sum assured is the
+     * customer's own money. Never ceded, never recovered against -- see reinsurance/V8. NULL is false, as for
+     * {@link #isScheme()}.
+     */
+    public boolean isInvestmentContract() { return isInvestmentContract(portfolioCode); }
+
+    public static boolean isInvestmentContract(String portfolioCode) {
+        return "SAV".equals(portfolioCode) || "DEP".equals(portfolioCode) || "PEN".equals(portfolioCode)
+            || "DANN".equals(portfolioCode);
+    }
+
     public Instant getCreatedAt() { return createdAt; }
 }

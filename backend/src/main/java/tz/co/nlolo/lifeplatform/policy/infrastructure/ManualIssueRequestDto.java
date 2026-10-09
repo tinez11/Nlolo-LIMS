@@ -59,4 +59,10 @@ public record ManualIssueRequestDto(
      * <p>{@code reasonForManualIssue} stays alongside it and stays required too: the enum is what
      * a report groups by, the sentence is what a person reads.
      */
-    @NotNull tz.co.nlolo.lifeplatform.policy.api.IssuanceBasis issuanceBasis) {}
+    @NotNull tz.co.nlolo.lifeplatform.policy.api.IssuanceBasis issuanceBasis,
+
+    /**
+     * A savings policy's account charges (2026-10-09, product V32). Absent keeps what its case chose (or the product's
+     * own charges); present -- even empty -- replaces it.
+     */
+    java.util.List<java.util.UUID> accountChargeIds) {}

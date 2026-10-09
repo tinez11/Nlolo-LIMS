@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { portfolioLabel } from '@/lib/ifrs17';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useProductStore } from '@/store/productStore';
+import { DraftPortfolioField } from './DraftPortfolioField';
 import { OnlineListingPanel } from './OnlineListingPanel';
 import { ProductVersionsPanel } from './ProductVersionsPanel';
 import { PublishVersionForm } from './PublishVersionForm';
@@ -163,7 +164,12 @@ export function ProductDetailPage() {
           <dl className="px-4 pb-2">
             <Field label="Category" value={product.category?.replace(/_/g, ' ') ?? '—'} />
             <Field label="Default currency" value={product.defaultCurrency ?? '—'} />
-            <Field label="IFRS 17 portfolio" value={portfolioLabel(product.portfolioCode)} />
+            {canAuthor && product.status === 'DRAFT' && product.productId ? (
+              <DraftPortfolioField productId={product.productId} current={product.portfolioCode}
+                onChanged={() => void loadDrafts()} />
+            ) : (
+              <Field label="IFRS 17 portfolio" value={portfolioLabel(product.portfolioCode)} />
+            )}
           </dl>
         </Panel>
 

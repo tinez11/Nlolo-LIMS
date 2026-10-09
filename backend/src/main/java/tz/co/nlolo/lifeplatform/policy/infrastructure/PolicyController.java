@@ -40,8 +40,24 @@ public class PolicyController {
     /** Answers whether an agents-realm caller registered the party it is asking about. */
     private final PartyApi partyApi;
 
+    private final tz.co.nlolo.lifeplatform.policy.api.PolicyAccountChargeApi policyAccountChargeApi;
+    private final tz.co.nlolo.lifeplatform.product.api.AccountChargeApi accountChargeApi;
+
+    /** The account charges a savings policy is charged by (2026-10-09); empty for its product version's own. Staff. */
+    @GetMapping("/policies/{policyNumber}/account-charges")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<List<tz.co.nlolo.lifeplatform.product.api.AccountChargeView>> accountCharges(
+            @PathVariable String policyNumber) {
+        policyApi.getPolicy(policyNumber);
+        return ResponseEntity.ok(accountChargeApi.resolve(policyAccountChargeApi.accountCharges(policyNumber)));
+    }
+
     public PolicyController(PolicyApi policyApi, ProductApi productApi, DistributionApi distributionApi,
-                             PartyApi partyApi) {
+                             PartyApi partyApi,
+                             tz.co.nlolo.lifeplatform.policy.api.PolicyAccountChargeApi policyAccountChargeApi,
+                             tz.co.nlolo.lifeplatform.product.api.AccountChargeApi accountChargeApi) {
+        this.policyAccountChargeApi = policyAccountChargeApi;
+        this.accountChargeApi = accountChargeApi;
         this.policyApi = policyApi;
         this.productApi = productApi;
         this.distributionApi = distributionApi;
@@ -77,6 +93,8 @@ public class PolicyController {
 
     @PostMapping("/policies/manual-issue")
     @PreAuthorize("hasRole('REALM_STAFF')")
+    // One transaction with the account charges chosen here, so a refused charge issues nothing (2026-10-09).
+    @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<PolicyResponseDto> manualIssue(@Valid @RequestBody ManualIssueRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(request.productVersionId());
         // The backstop to underwriting's own refusal at openCase: a case opened before that
@@ -111,6 +129,10 @@ public class PolicyController {
             request.issuanceBasis());
         PolicyView view = policyApi.issuePolicy(request.underwritingCaseId(), issueRequest, jwt.getSubject(),
             TokenNames.displayName(jwt));
+        // In the issuing transaction: a refused charge leaves no policy behind (2026-10-09).
+        if (request.accountChargeIds() != null) {
+            policyAccountChargeApi.assignAccountCharges(view.policyNumber(), request.accountChargeIds());
+        }
         return ResponseEntity.status(HttpStatus.CREATED).body(PolicyResponseDto.from(view));
     }
 

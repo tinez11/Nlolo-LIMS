@@ -134,6 +134,7 @@ class CessionEndToEndTest {
             "db-migrations/product/V29__funeral_group_rate.sql",
             "db-migrations/product/V30__funeral_group_rate_period.sql",
             "db-migrations/product/V31__online_listing.sql",
+            "db-migrations/product/V32__account_charges.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -152,6 +153,7 @@ class CessionEndToEndTest {
             "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
             "db-migrations/underwriting/V19__group_funeral_proposal.sql",
             "db-migrations/underwriting/V20__sale_lock_backfill.sql",
+            "db-migrations/underwriting/V21__case_account_charges.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
@@ -184,12 +186,14 @@ class CessionEndToEndTest {
             "db-migrations/policy/V37__sale_classification.sql",
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
+            "db-migrations/policy/V41__policy_account_charges.sql",
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
             "db-migrations/reinsurance/V4__projection_product_category.sql",
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
-            "db-migrations/reinsurance/V7__statement.sql");
+            "db-migrations/reinsurance/V7__statement.sql",
+            "db-migrations/reinsurance/V8__projection_portfolio.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -505,6 +509,42 @@ class CessionEndToEndTest {
         assertThat(eventRecorder.ofType("reinsurance.CessionRecorded"))
             .as("a redelivered PolicyIssued must not publish a second CessionRecorded")
             .hasSize(1);
+    }
+
+    /**
+     * 2026-10-09: a fixed-term deposit (portfolio DEP) was ceded 50% under a quota share -- half the customer's deposit
+     * as ceded cover and as ceded premium. An investment contract carries no insurance risk; it is projected (so a
+     * claim on it is known to be out of scope) but never ceded and never put on risk.
+     */
+    @Test
+    void anInvestmentContractIsProjectedButNeverCeded() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CESSION-E2E-DEP");
+        createTreaty(tenantId, TreatyType.QUOTA_SHARE, new BigDecimal("0.00"), new BigDecimal("50.00"));
+        eventRecorder.clear();
+
+        String policyNumber = "POL-DEP" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+        Map<String, Object> payload = Map.of(
+            "policyNumber", policyNumber,
+            "productId", fixture.productId(),
+            "issueDate", LocalDate.now().toString(),
+            "sumAssured", Map.of("amount", "3000000", "currencyCode", CURRENCY),
+            "premium", Map.of("amount", "3000000", "currencyCode", CURRENCY),
+            "premiumFrequency", "SINGLE",
+            "productCategory", "ENDOWMENT",
+            "portfolioCode", "DEP");
+        TenantContext.set(tenantId);
+        transactionTemplate().executeWithoutResult(status ->
+            eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyActivated", tenantId, payload)));
+
+        TenantContext.set(tenantId);
+        assertThat(cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber)).isEmpty();
+        assertThat(eventRecorder.ofType("reinsurance.CessionRecorded")).isEmpty();
+        TenantContext.set(tenantId);
+        PolicyProjection projection = policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)
+            .orElseThrow();
+        assertThat(projection.getPortfolioCode()).isEqualTo("DEP");
+        assertThat(projection.isInvestmentContract()).isTrue();
     }
 
     // ---- What has been ceded TO a treaty ------------------------------------------------------

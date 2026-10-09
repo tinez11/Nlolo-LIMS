@@ -150,6 +150,56 @@ class DepositLifecycleIntegrationTest {
             .divide(BigDecimal.valueOf(termDays), 2, RoundingMode.HALF_EVEN));
     }
 
+    /** 2026-10-09: the running term worked forward -- maturity figures, and the value if closed at each month. */
+    @Test
+    void theScheduleWorksTheTermForwardToMaturity() {
+        LocalDate paid = LocalDate.now();
+        String policy = paidDeposit(MILLION, 3, paid, "+255700000777");   // the 500,000 band, 3 months: 3%
+
+        var schedule = deposit(policy).schedule();
+        assertThat(schedule).isNotNull();
+        assertThat(schedule.interestAtMaturity()).isEqualByComparingTo("30000.00");
+        assertThat(schedule.amountAtMaturity()).isEqualByComparingTo("1030000.00");
+        assertThat(schedule.ifClosedEarly()).hasSize(3);
+        assertThat(schedule.ifClosedEarly().get(0).closedOn()).isEqualTo(paid.plusMonths(1));
+        assertThat(schedule.ifClosedEarly().get(0).interest()).isEqualByComparingTo(
+            DepositInterest.accrued(MILLION, new BigDecimal("3"), paid, paid.plusMonths(3), paid.plusMonths(1)));
+        assertThat(schedule.ifClosedEarly().get(2)).satisfies(last -> {
+            assertThat(last.closedOn()).isEqualTo(paid.plusMonths(3));
+            assertThat(last.paidOut()).isEqualByComparingTo("1030000.00");
+        });
+    }
+
+    @Autowired private tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi underwritingApi;
+    @Autowired private tz.co.nlolo.lifeplatform.party.api.PartyApi partyApi;
+
+    /**
+     * 2026-10-09 (the user's test case PRO-976F0E37): a deposit case issuance would refuse is refused when it is opened
+     * -- paid other than once, on a term the product does not offer, or below its smallest band.
+     */
+    @Test
+    void aDepositCaseIssuanceWouldRefuseIsRefusedWhenOpened() {
+        var product = fixtures.issueDeposit(TENANT, MILLION, 3, LocalDate.now());
+        UUID applicant = asTenant(() -> partyApi.registerIndividual("Deposit Applicant", LocalDate.of(1980, 1, 1),
+            "+25570" + String.format("%07d", (int) (Math.random() * 9_999_999)), null, "test-agent").partyId());
+        java.util.function.BiFunction<String, Integer, tz.co.nlolo.lifeplatform.underwriting.api.ProposalDetails> proposal =
+            (frequency, term) -> new tz.co.nlolo.lifeplatform.underwriting.api.ProposalDetails(null, null, null, null, term,
+                null, frequency, List.of());
+
+        assertThatThrownBy(() -> asTenant(() -> underwritingApi.openCase(applicant, product.productId(),
+                product.productVersionId(), new BigDecimal("3000000"), "TZS", null, proposal.apply("QUARTERLY", 3), "csr")))
+            .hasMessageContaining("paid once");
+        assertThatThrownBy(() -> asTenant(() -> underwritingApi.openCase(applicant, product.productId(),
+                product.productVersionId(), new BigDecimal("3000000"), "TZS", null, proposal.apply("SINGLE", 9), "csr")))
+            .hasMessageContaining("offers terms of");
+        assertThatThrownBy(() -> asTenant(() -> underwritingApi.openCase(applicant, product.productId(),
+                product.productVersionId(), new BigDecimal("1000"), "TZS", null, proposal.apply("SINGLE", 3), "csr")))
+            .hasMessageContaining("below the smallest");
+        // As issuance wants it: accepted.
+        assertThat(asTenant(() -> underwritingApi.openCase(applicant, product.productId(), product.productVersionId(),
+            new BigDecimal("3000000"), "TZS", null, proposal.apply("SINGLE", 3), "csr")).caseId()).isNotNull();
+    }
+
     @Test
     void aCollectionThroughBillingRecordsTheNumberItCameFrom() {
         var issued = fixtures.issueDeposit(TENANT, MILLION, 3, LocalDate.now());

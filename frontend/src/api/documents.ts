@@ -46,6 +46,12 @@ export function downloadPolicySchedule(policyNumber: string): Promise<Blob> {
     { responseType: 'blob', headers: { Accept: ACCEPT.pdf } });
 }
 
+/** A fixed-term deposit's schedule (2026-10-09): maturity figures and the value if closed at each month. PDF only. */
+export function downloadDepositSchedule(policyNumber: string): Promise<Blob> {
+  return get<Blob>(`/policies/${enc(policyNumber)}/deposit-schedule/pdf`,
+    { responseType: 'blob', headers: { Accept: ACCEPT.pdf } });
+}
+
 /** Every premium received on the policy, newest first. */
 export function listReceipts(policyNumber: string): Promise<ReceiptLine[]> {
   return get<ReceiptLine[]>(`/policies/${enc(policyNumber)}/receipts`);

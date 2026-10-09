@@ -579,6 +579,52 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /underwriting/cases/{caseId}/account-charges:
+    get:
+      summary: The account charges a savings case will be issued on
+      description: Empty means the product version's own charges (2026-10-09).
+      security:
+        - staffAuth: []
+        - agentsAuth: [agent]
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountChargeChoice' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+    put:
+      summary: Choose or change them, until the policy is issued
+      security:
+        - staffAuth: []
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountChargeChoice' }
+      responses:
+        '200':
+          description: The charges now chosen
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountChargeChoice' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: "Not a savings product, a charge no longer offered, or the policy already issued"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /underwriting/cases/{caseId}/referral:
     post:
       summary: Refer a borderline case to a senior underwriter
@@ -771,6 +817,12 @@ components:
           description: >-
             IFRS 17 I2, a refdata BRANCH code. Omitted means the agent's home branch, else the opening staff member's.
           type: [string, "null"]
+        accountChargeIds:
+          description: >-
+            On a savings product that keeps an account only (2026-10-09): the account charges the policy will be charged
+            by. Omitted or empty means the product version's own charges. 422 for a charge no longer offered.
+          type: [array, "null"]
+          items: { type: string, format: uuid }
         proposedCommencementDate:
           description: >-
             When the applicant wants risk to start. A proposal taken today commonly asks for
@@ -1024,6 +1076,14 @@ components:
             nomination is a real instrument and cannot be revised without the beneficiary's
             consent. Defaults to true.
           type: boolean
+    AccountChargeChoice:
+      type: object
+      additionalProperties: false
+      required: [chargeIds]
+      properties:
+        chargeIds:
+          type: array
+          items: { type: string, format: uuid }
     SaleRequest:
       type: object
       required: [salesChannel, branchCode]

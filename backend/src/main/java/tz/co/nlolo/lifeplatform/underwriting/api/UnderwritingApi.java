@@ -95,6 +95,16 @@ public interface UnderwritingApi {
      */
     UnderwritingCaseView recordSale(UUID caseId, String salesChannel, String branchCode, String recordedBy);
 
+    /**
+     * The account charges a savings case will be issued on (2026-10-09, product V32), replacing any chosen before; an
+     * empty list means the product version's own charges. Refused unless the case's version keeps an account and every
+     * charge is still offered; fixed once the policy is issued.
+     */
+    void chooseAccountCharges(UUID caseId, List<UUID> chargeIds);
+
+    /** The account charges chosen on the case; empty for the version's own. */
+    List<UUID> accountCharges(UUID caseId);
+
     /** The case's policy is issued: its channel and branch are fixed. Idempotent; a no-op for an unknown case. */
     void lockSale(UUID caseId);
 

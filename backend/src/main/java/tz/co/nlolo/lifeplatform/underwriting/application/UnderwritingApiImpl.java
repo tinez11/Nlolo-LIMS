@@ -95,7 +95,11 @@ public class UnderwritingApiImpl implements UnderwritingApi {
                                 AnnuityChoiceRepository annuityChoiceRepository,
                                 DeferredAnnuityChoiceRepository deferredAnnuityChoiceRepository,
                                 FuneralApplications funeralApplications, UnitLinkedChoices unitLinkedChoices,
-                                ProposalGroupLifeRepository proposalGroupLifeRepository) {
+                                ProposalGroupLifeRepository proposalGroupLifeRepository,
+                                tz.co.nlolo.lifeplatform.underwriting.infrastructure.CaseAccountChargeRepository caseAccountCharges,
+                                tz.co.nlolo.lifeplatform.product.api.AccountChargeApi accountChargeApi) {
+        this.caseAccountCharges = caseAccountCharges;
+        this.accountChargeApi = accountChargeApi;
         this.proposalGroupLifeRepository = proposalGroupLifeRepository;
         this.funeralApplications = funeralApplications;
         this.unitLinkedChoices = unitLinkedChoices;
@@ -172,6 +176,32 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             agentOfRecordId, ProposalDetails.selfInsured(), openedBy, policyNumber, policyMemberId);
     }
 
+    /**
+     * A fixed-term deposit's case is refused at once when issuance would refuse it (2026-10-09, the user's test case
+     * PRO-976F0E37: quarterly, on a term the product does not offer, was accepted and could never be issued). The
+     * same three rules as PolicyApiImpl.refuseUnlessAValidDeposit: paid once, on an offered term, at least the lowest
+     * band. A frequency or term left blank is not refused here -- the issue screen asks for it.
+     */
+    private void refuseAnUnissuableDeposit(UUID productVersionId, BigDecimal amount, ProposalDetails details) {
+        tz.co.nlolo.lifeplatform.product.api.DepositPlan deposit = productApi.resolveDepositPlan(productVersionId);
+        if (!deposit.isDeposit()) {
+            return;
+        }
+        if (details.premiumFrequency() != null && !"SINGLE".equals(details.premiumFrequency())) {
+            throw new UnderwritingValidationException("A fixed-term deposit is paid once: choose SINGLE, not "
+                + details.premiumFrequency());
+        }
+        if (details.requestedTermMonths() != null && !deposit.terms().contains(details.requestedTermMonths())) {
+            throw new UnderwritingValidationException("This deposit offers terms of " + deposit.terms() + " months, not "
+                + details.requestedTermMonths());
+        }
+        if (amount != null && deposit.rateFor(amount, deposit.terms().get(0)).isEmpty()) {
+            throw new UnderwritingValidationException("A deposit of " + amount.stripTrailingZeros().toPlainString()
+                + " is below the smallest this product takes ("
+                + deposit.bandStarts().get(0).stripTrailingZeros().toPlainString() + ")");
+        }
+    }
+
     /** @param memberEvidence the free-cover-limit case for one scheme member, the one individual
      *  case a scheme product may carry -- see {@link UnderwritingApi#openMemberEvidenceCase}. */
     private UnderwritingCaseView openIndividualCase(UUID applicantPartyId, UUID productId, UUID productVersionId,
@@ -194,6 +224,14 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         requireRealAgent(agentOfRecordId);
 
         ProposalDetails details = proposal != null ? proposal : ProposalDetails.selfInsured();
+        refuseAnUnissuableDeposit(productVersionId, sumAssuredAmount, details);
+        // The SINGLE arm of Policy.applyTerm, on every product. Left to issuance it refused only after the
+        // decision, leaving a decided case with no policy (PRO-9A26219C, 2026-10-09: SINGLE over 3 months, paying 3).
+        if ("SINGLE".equals(details.premiumFrequency()) && details.premiumPayingTermMonths() != null
+                && details.premiumPayingTermMonths() != 1) {
+            throw new UnderwritingValidationException("A SINGLE premium is charged once, so its premium-paying term"
+                + " must be 1 month (or absent), not " + details.premiumPayingTermMonths());
+        }
         UUID lifeAssuredPartyId = details.resolveLifeAssured(applicantPartyId);
         // Validated the same way the applicant is, and for the same reason: a case naming
         // a life assured who does not exist in this tenant is unassessable, and
@@ -1305,6 +1343,46 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         } else {
             underwritingCase.recordSale(category == ProductCategory.CREDIT_LIFE ? "BANCASSURANCE" : "DIRECT", null);
         }
+    }
+
+    private final tz.co.nlolo.lifeplatform.underwriting.infrastructure.CaseAccountChargeRepository caseAccountCharges;
+    private final tz.co.nlolo.lifeplatform.product.api.AccountChargeApi accountChargeApi;
+
+    @Override
+    @Transactional
+    public void chooseAccountCharges(UUID caseId, List<UUID> chargeIds) {
+        UUID tenantId = TenantContext.get();
+        UnderwritingCase underwritingCase = findOrThrow(caseId, tenantId);
+        if (underwritingCase.getSaleLockedAt() != null) {
+            throw new UnderwritingValidationException("The policy is issued: its charges are fixed");
+        }
+        List<UUID> ids = chargeIds == null ? List.of() : chargeIds.stream().distinct().toList();
+        if (!ids.isEmpty()) {
+            if (!productApi.resolveAccumulationPlan(underwritingCase.getProductVersionId()).isAccount()
+                    || productApi.resolveDepositPlan(underwritingCase.getProductVersionId()).isDeposit()) {
+                throw new UnderwritingValidationException("Account charges are chosen only for a savings product that"
+                    + " keeps an account -- not a fixed-term deposit, which is priced by its rate grid");
+            }
+            try {
+                accountChargeApi.requireChoosable(ids);
+            } catch (IllegalArgumentException | tz.co.nlolo.lifeplatform.product.api.AccountChargeNotFoundException e) {
+                throw new UnderwritingValidationException(e.getMessage());
+            }
+        }
+        caseAccountCharges.clear(tenantId, caseId);
+        caseAccountCharges.flush();
+        ids.forEach(id -> caseAccountCharges.save(
+            new tz.co.nlolo.lifeplatform.underwriting.domain.CaseAccountCharge(caseId, id, tenantId)));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UUID> accountCharges(UUID caseId) {
+        // No existence check: issuance names case ids that are not underwriting cases (a migrated policy's reference),
+        // and a case with none chosen reads the same -- empty, the product's own charges.
+        UUID tenantId = TenantContext.get();
+        return caseAccountCharges.forCase(tenantId, caseId).stream()
+            .map(tz.co.nlolo.lifeplatform.underwriting.domain.CaseAccountCharge::getChargeId).toList();
     }
 
     @Override

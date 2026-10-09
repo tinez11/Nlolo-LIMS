@@ -27,6 +27,7 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
+import { AccountChargesPage } from '@/features/products/AccountChargesPage';
 import { CustomerApplicationsPage } from '@/features/customer/CustomerApplicationsPage';
 import { CustomerClaimPage } from '@/features/customer/CustomerClaimPage';
 import { CustomerClaimsPage } from '@/features/customer/CustomerClaimsPage';
@@ -372,6 +373,8 @@ const STAFF_SCREENS: Screen[] = [
     element: <ProductsPage />,
     reach: { group: 'configuration', label: 'Products', icon: Package },
   },
+  // Savings account charges (2026-10-09): chosen per savings policy on its case or at issue.
+  { path: 'account-charges', element: <AccountChargesPage />, reach: { group: 'configuration', label: 'Account charges', icon: Percent } },
   { path: 'products/new', element: <CreateProductPage />, reach: 'drill-in' },
   { path: 'products/:productId', element: <ProductDetailPage />, reach: 'drill-in' },
 

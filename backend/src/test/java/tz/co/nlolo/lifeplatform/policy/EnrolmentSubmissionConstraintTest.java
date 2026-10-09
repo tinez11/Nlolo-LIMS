@@ -77,7 +77,8 @@ class EnrolmentSubmissionConstraintTest {
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/policy/V37__sale_classification.sql",
             "db-migrations/policy/V38__group_funeral_scheme.sql",
-            "db-migrations/policy/V40__commencement_never_null.sql");
+            "db-migrations/policy/V40__commencement_never_null.sql",
+            "db-migrations/policy/V41__policy_account_charges.sql");
     }
 
     @Autowired private JdbcTemplate jdbcTemplate;

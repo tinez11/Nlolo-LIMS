@@ -27,6 +27,8 @@ test.describe('a fixed-term deposit', () => {
     await page.getByLabel('Product code').fill(code);
     await page.getByLabel('Product name').fill(name);
     await page.getByLabel('Category').selectOption('ENDOWMENT');
+    // A deposit is a savings contract: publishing refuses it outside the DEP portfolio (2026-10-09).
+    await page.getByLabel('IFRS 17 portfolio').selectOption('DEP');
     await page.getByLabel('Default currency').fill('TZS');
     await page.getByRole('button', { name: 'Create product' }).click();
     await expect(page.getByText('DRAFT')).toBeVisible();

@@ -147,8 +147,15 @@ public class CustomerPortal {
             .toList();
         String lifeAssured = policy.lifeAssuredPartyId() == null ? null
             : partyApi.getParty(policy.lifeAssuredPartyId()).displayName();
+        CustomerPolicyView.Deposit deposit = accumulationApi.findDeposit(policyNumber)
+            .filter(d -> d.schedule() != null)
+            .map(d -> new CustomerPolicyView.Deposit(d.schedule().principal(), d.schedule().currency(),
+                d.schedule().termMonths(), d.schedule().ratePercent().stripTrailingZeros(), d.schedule().startDate(),
+                d.schedule().maturityDate(), d.interestSoFar(), d.schedule().interestAtMaturity(),
+                d.schedule().amountAtMaturity()))
+            .orElse(null);
         return new CustomerPolicyView(summary, lifeAssured, policy.commencementDate(), policy.maturityDate(),
-            policy.policyTermMonths(), beneficiaries, lives, savings, units, annuity, claims);
+            policy.policyTermMonths(), beneficiaries, lives, savings, units, annuity, claims, deposit);
     }
 
     private CustomerPolicySummary summary(PolicyView policy, Map<UUID, String> productNames) {

@@ -120,6 +120,29 @@ paths:
             application/pdf: { schema: { type: string, format: binary } }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /policies/{policyNumber}/deposit-schedule/pdf:
+    get:
+      summary: A fixed-term deposit's schedule as a PDF
+      description: >-
+        The running term, what it pays at maturity, and what it would pay if closed early at each month (2026-10-09).
+        Staff, or the customer for a policy they hold. 400 for a policy that is not a deposit or has no term running.
+      security:
+        - staffAuth: []
+        - customersAuth: [profile]
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: The PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /policies/{policyNumber}/receipts:
     get:
       summary: Every premium received on the policy, newest first
@@ -539,8 +562,26 @@ components:
       type: object
       additionalProperties: false
       required: [summary, lifeAssuredName, commencementDate, maturityDate, termMonths, beneficiaries, coveredLives,
-                 savings, units, annuity, claims]
+                 savings, units, annuity, claims, deposit]
       properties:
+        deposit:
+          description: A fixed-term deposit's running term (2026-10-09); null on anything else
+          anyOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [principal, currency, termMonths, ratePercent, startDate, maturityDate, interestSoFar,
+                         interestAtMaturity, amountAtMaturity]
+              properties:
+                principal: { type: number }
+                currency: { type: string }
+                termMonths: { type: integer }
+                ratePercent: { type: number, description: For the whole term, not a year }
+                startDate: { type: string, format: date }
+                maturityDate: { type: string, format: date }
+                interestSoFar: { type: number }
+                interestAtMaturity: { type: number }
+                amountAtMaturity: { type: number }
         summary: { $ref: '#/components/schemas/CustomerPolicySummary' }
         lifeAssuredName: { type: [string, "null"] }
         commencementDate: { type: [string, "null"], format: date }

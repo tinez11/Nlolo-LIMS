@@ -60,7 +60,8 @@ class ReinsuranceApiIntegrationTest {
             "db-migrations/reinsurance/V4__projection_product_category.sql",
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
-            "db-migrations/reinsurance/V7__statement.sql");
+            "db-migrations/reinsurance/V7__statement.sql",
+            "db-migrations/reinsurance/V8__projection_portfolio.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

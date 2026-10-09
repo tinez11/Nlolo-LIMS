@@ -187,6 +187,26 @@ paths:
               schema: { $ref: '#/components/schemas/PolicyView' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
         '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+  /policies/{policyNumber}/account-charges:
+    get:
+      summary: The account charges a savings policy is charged by (staff)
+      description: Empty means its product version's own charges (2026-10-09).
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: 'openapi-product.yaml#/components/schemas/AccountCharge' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /policies/{policyNumber}/beneficiaries:
     put:
       summary: Replace the beneficiary designation set
@@ -2027,6 +2047,12 @@ components:
             waives evidence of insurability, but neither waives the premium.
           type: string
           enum: [MIGRATION, CONVERSION, REINSTATEMENT, UNDERWRITING_OVERRIDE, GUARANTEED_ISSUE]
+        accountChargeIds:
+          description: >-
+            A savings policy's account charges (2026-10-09). Omitted keeps what its case chose (or the product's own
+            charges); present, even empty, replaces it.
+          type: [array, "null"]
+          items: { type: string, format: uuid }
       required: [underwritingCaseId, policyholderPartyId, productVersionId, sumAssured, premiumAmount, agentOfRecordId, reasonForManualIssue, issuanceBasis]
     BeneficiaryInput:
       type: object

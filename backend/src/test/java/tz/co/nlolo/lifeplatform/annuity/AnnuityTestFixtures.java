@@ -191,7 +191,8 @@ public class AnnuityTestFixtures {
         return asTenant(tenant, () -> {
             int n = SEQ.incrementAndGet();
             ProductSummaryView product = productApi.createProduct("DEF-" + n + "-" + tenant.toString().substring(0, 4),
-                "Deferred Annuity Test", ProductCategory.ANNUITY, "TZS", "actuary");
+                "Deferred Annuity Test", ProductCategory.ANNUITY,
+                tz.co.nlolo.lifeplatform.product.api.PortfolioCode.PEN, "TZS", "actuary");
             return publishDeferredVersion(tenant, product.productId(), deferredPlan(surrenderBeforeVesting));
         });
     }

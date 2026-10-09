@@ -86,6 +86,15 @@ public class PolicyDocumentsController {
         return file(documents.policyScheduleDocument(policyNumber), "pdf", "policy-schedule-" + policyNumber);
     }
 
+    /** A fixed-term deposit's schedule (2026-10-09): maturity figures and the value if closed at each month. PDF. */
+    @GetMapping("/policies/{policyNumber}/deposit-schedule/pdf")
+    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_CUSTOMERS')")
+    public ResponseEntity<byte[]> depositSchedule(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt,
+                                                  Authentication authentication) {
+        ownPolicyOnly(policyNumber, jwt, authentication);
+        return file(documents.depositScheduleDocument(policyNumber), "pdf", "deposit-schedule-" + policyNumber);
+    }
+
     /** Every premium received on the policy, newest first (2026-10-08, the customer portal step 3). */
     @GetMapping("/policies/{policyNumber}/receipts")
     @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_CUSTOMERS')")

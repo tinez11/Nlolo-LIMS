@@ -146,7 +146,28 @@ public class Deposits {
         String defaultPayee = all.isEmpty() ? null : all.get(all.size() - 1).getDefaultPayeeRef();
         return Optional.of(new DepositView(policyNumber, account.getCurrency(), all.stream().map(Deposits::view).toList(),
             instruction, run.map(p -> interestTo(p, LocalDate.now())).orElse(BigDecimal.ZERO.setScale(2)), defaultPayee,
-            awaitingPayee(account, all), termsOfferedToday(account.getProductId())));
+            awaitingPayee(account, all), termsOfferedToday(account.getProductId()),
+            run.map(p -> schedule(p, account.getCurrency())).orElse(null)));
+    }
+
+    /**
+     * The running term worked forward: its maturity figures, and the value at each monthly date if closed then --
+     * interest to that day by {@link DepositInterest#accrued}, the same sum an early surrender pays (before any
+     * surrender charge). A date past maturity is clamped to it, so the last row is the maturity figure.
+     */
+    static tz.co.nlolo.lifeplatform.accumulation.api.DepositScheduleView schedule(DepositPeriod p, String currency) {
+        List<tz.co.nlolo.lifeplatform.accumulation.api.DepositScheduleView.Row> rows = new java.util.ArrayList<>();
+        for (int month = 1; month <= p.getTermMonths(); month++) {
+            LocalDate on = month == p.getTermMonths() ? p.getMaturityDate() : p.getStartDate().plusMonths(month);
+            BigDecimal interest = DepositInterest.accrued(p.getPrincipal(), p.getRatePercent(), p.getStartDate(),
+                p.getMaturityDate(), on);
+            rows.add(new tz.co.nlolo.lifeplatform.accumulation.api.DepositScheduleView.Row(on, interest,
+                p.getPrincipal().add(interest)));
+        }
+        BigDecimal atMaturity = DepositInterest.full(p.getPrincipal(), p.getRatePercent());
+        return new tz.co.nlolo.lifeplatform.accumulation.api.DepositScheduleView(p.getPrincipal(), currency,
+            p.getTermMonths(), p.getRatePercent(), p.getStartDate(), p.getMaturityDate(), atMaturity,
+            p.getPrincipal().add(atMaturity), List.copyOf(rows));
     }
 
     /** §R5: matured, nothing running, money still on an open account. */

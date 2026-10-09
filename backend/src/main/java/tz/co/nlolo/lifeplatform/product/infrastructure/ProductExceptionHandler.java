@@ -32,6 +32,11 @@ public class ProductExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "PRODUCT_NOT_FOUND");
     }
 
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.product.api.AccountChargeNotFoundException.class)
+    public ProblemDetail handleChargeNotFound(tz.co.nlolo.lifeplatform.product.api.AccountChargeNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "ACCOUNT_CHARGE_NOT_FOUND");
+    }
+
     /**
      * 404, like a missing product, but with its OWN errorCode — which is the entire point.
      *

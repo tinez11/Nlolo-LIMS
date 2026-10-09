@@ -5,6 +5,7 @@ import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
+import { DepositScheduleDownload } from '@/features/documents/DepositScheduleDownload';
 import { PaymentScheduleTable } from '@/features/documents/PaymentScheduleTable';
 import { toApiError, type ApiError } from '@/lib/apiError';
 import { formatDate } from '@/lib/dates';
@@ -88,6 +89,22 @@ export function CustomerPolicyPage() {
               <Field label="Balance" value={money(policy.savings.balance, policy.savings.currency)} emphasis />
               {policy.savings.openedOn && <Field label="Opened" value={formatDate(policy.savings.openedOn)} />}
             </dl>
+          </Panel>
+        )}
+
+        {policy.deposit && (
+          <Panel title="Your deposit" subtitle="What it earns, and what you get back.">
+            <dl className="px-4 pb-2">
+              <Field label="Deposited" value={`${money(policy.deposit.principal, policy.deposit.currency)} on ${formatDate(policy.deposit.startDate)}`} />
+              <Field label="Plan" value={`${policy.deposit.termMonths} months, ${Number(policy.deposit.ratePercent)}% for the term`} />
+              <Field label="Interest earned so far" value={money(policy.deposit.interestSoFar, policy.deposit.currency)} />
+              <Field label="Matures" value={formatDate(policy.deposit.maturityDate)} />
+              <Field label="You get at maturity" value={money(policy.deposit.amountAtMaturity, policy.deposit.currency)} emphasis />
+            </dl>
+            <p className="px-4 pb-2 text-xs text-muted-foreground">
+              You can close it early at any time: you get the deposit and the interest earned to that day. Contact us to close it.
+            </p>
+            <div className="px-4 pb-3"><DepositScheduleDownload policyNumber={s.policyNumber} /></div>
           </Panel>
         )}
 
