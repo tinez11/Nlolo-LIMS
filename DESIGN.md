@@ -910,8 +910,13 @@ the same fact.
 
 ### Loading, Empty and Error States
 
-One shared set, so every screen fails identically. Skeleton rows are Quiet-Paper
-pulses at staggered widths so a table does not jump when data lands. Empty states
+One shared set, so every screen fails identically. Skeleton rows are Control-tone
+pulses (`0.965`; Quiet Paper at `0.985` was all but invisible on Paper) at
+staggered widths so a table does not jump when data lands. `LoadingBlock` is the
+same idea for anything that is not a table — three lines and a small visible
+label, never a centred spinner (2026-10-09). The label stays on screen because
+e2e waits for it to disappear. A spinner remains only inside a button that is
+pending and on a stat whose value is pending. Empty states
 are centre-stacked with a 20px Subtle-Ink icon, a Body-weight-500 title and a
 Micro description. Error panels are the same silhouette with a danger-hue icon
 and copy written per error kind — a `403` is a permission boundary and offers no

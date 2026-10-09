@@ -10,14 +10,29 @@ export function Spinner({ className }: { className?: string }) {
   return <Loader2 className={cn('size-4 animate-spin', className)} aria-hidden />;
 }
 
+/**
+ * A block of placeholder lines, for content whose rows are on their way (2026-10-09).
+ *
+ * It was a spinner centred in a 150px void, in 82 feature files -- mostly inside panels, where the
+ * real content then replaced the void and moved everything below it. Lines at staggered widths say
+ * "rows of text go here", and the page moves less when they land. `TableSkeleton` is still the one
+ * for a table.
+ *
+ * The label stays visible, in Micro and Subtle Ink: e2e waits for a load to end with
+ * `getByText(label)).not.toBeVisible()`, which an sr-only label would satisfy immediately.
+ */
 export function LoadingBlock({ label = 'Loading' }: { label?: string }) {
   return (
-    <div
-      className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground"
-      role="status"
-    >
-      <Spinner />
-      {label}
+    <div className="space-y-2.5 px-4 py-5" role="status">
+      {[62, 48, 34].map((width) => (
+        <div
+          key={width}
+          className="h-3 animate-pulse rounded bg-control"
+          style={{ width: `${width}%` }}
+          aria-hidden
+        />
+      ))}
+      <p className="pt-1 text-xs text-subtle-foreground">{label}</p>
     </div>
   );
 }
@@ -31,7 +46,7 @@ export function TableSkeleton({ rows = 8, columns = 5 }: { rows?: number; column
           {Array.from({ length: columns }, (_, c) => (
             <div
               key={c}
-              className="h-3 animate-pulse rounded bg-surface-muted"
+              className="h-3 animate-pulse rounded bg-control"
               style={{ width: `${[22, 16, 14, 12, 10][c % 5]}%` }}
             />
           ))}
