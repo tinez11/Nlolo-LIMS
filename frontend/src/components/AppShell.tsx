@@ -354,7 +354,9 @@ function UserBlock({ identity }: { identity: ReturnType<typeof readIdentity> }) 
   const seed = identity.preferredUsername ?? name;
 
   return (
-    <div className="shrink-0 border-t border-border px-3 py-3">
+    // No rule above it (2026-10-09): the nav's own scroll shadow marks the edge when there is more
+    // nav above, and nothing needs marking when there is not.
+    <div className="shrink-0 px-3 py-3">
       <div className="flex items-center gap-2.5">
         <span
           className="grid size-7 shrink-0 place-items-center rounded-full text-xs font-semibold"

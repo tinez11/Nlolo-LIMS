@@ -72,8 +72,10 @@
      label identifies them. */
   --control: oklch(0.965 0 0);
   --control-hover: oklch(0.935 0 0);
-  /* A table header row and an empty-state ground: one step above the page. */
-  --band: oklch(0.982 0 0);
+  /* A table header row. Toned enough to read as a band on its own (2026-10-09), so it needs no
+     rule above or below it: at 0.982 it was near-white and read as two lines rather than a
+     band. Muted header ink on it is ~4.98:1 (Y ~ L cubed: 0.52 against 0.965). */
+  --band: oklch(0.965 0 0);
   --raise: 0 0 0 1px oklch(0 0 0 / 6%), 0 1px 2px oklch(0 0 0 / 10%);
 
   /* status: neutral / pending / active / success / warning / danger */
@@ -122,7 +124,9 @@
 
   --control: oklch(1 0 0 / 7%);
   --control-hover: oklch(1 0 0 / 11%);
-  --band: oklch(0.165 0 0);
+  /* Above --surface (0.185), not below it: a band darker than the panel it sits in read as a
+     hole. Muted header ink on it is ~6.2:1. */
+  --band: oklch(0.215 0 0);
   --raise: 0 0 0 1px oklch(1 0 0 / 8%), 0 1px 2px oklch(0 0 0 / 40%);
 
   /* Dark badges invert: a dim tinted ground with a bright foreground. The same

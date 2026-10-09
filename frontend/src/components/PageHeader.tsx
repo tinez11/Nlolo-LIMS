@@ -1,5 +1,5 @@
 import { ChevronRight } from 'lucide-react';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 /**
@@ -50,6 +50,19 @@ export function PageHeader({
   status?: ReactNode;
 }) {
   const bar = useRef<HTMLDivElement>(null);
+  // Read once at mount rather than assumed false: `main` is one element across every route, so a
+  // page can mount already scrolled.
+  const [scrolled, setScrolled] = useState(
+    () => (document.getElementById('main')?.scrollTop ?? 0) > 0,
+  );
+
+  useEffect(() => {
+    const main = document.getElementById('main');
+    if (!main) return;
+    const onScroll = () => setScrolled(main.scrollTop > 0);
+    main.addEventListener('scroll', onScroll, { passive: true });
+    return () => main.removeEventListener('scroll', onScroll);
+  }, []);
 
   useEffect(() => {
     const node = bar.current;
@@ -71,7 +84,12 @@ export function PageHeader({
       // Marked so `DetailLayout` can observe this element's height directly: a CSS custom
       // property is only reactive to CSS, and the rail has to re-measure when the bar grows.
       data-pagebar
-      className="sticky top-0 z-20 flex flex-wrap items-start justify-between gap-4 border-b border-border bg-background px-6 pt-4 pb-3"
+      // A rule only once content is passing under the bar (2026-10-09). At rest the page title sits
+      // on the page, and the space beneath it does the separating. Kept on a record with sticky
+      // tabs too: they span the work column only, and without this the record rail slid under the
+      // bar with no edge at all -- its text sliced off mid-line beneath the title.
+      data-scrolled={scrolled || undefined}
+      className="sticky top-0 z-20 flex flex-wrap items-start justify-between gap-4 border-b border-transparent bg-background px-6 pt-4 pb-3 transition-colors data-[scrolled]:border-border"
     >
       <div className="min-w-0">
         {breadcrumb && breadcrumb.length > 0 && (

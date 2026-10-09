@@ -21,8 +21,9 @@ import { scheduleStatusLiteral } from './documentLabels';
 
 /**
  * A policy's premium payment schedule (2026-10-07) as a table: every premium due, what was paid against it,
- * when, under which receipt and by whom, its status and balance, then the totals -- with the same schedule
- * downloadable as a PDF to hand over or an Excel file. Staff and the customer who holds the policy see the same.
+ * when, under which receipt and by whom, its status and balance, then the totals. The same schedule downloads as
+ * a PDF or Excel file through `PaymentScheduleDownloads`, which the page sets on the panel's title row. Staff
+ * and the customer who holds the policy see the same.
  */
 export function PaymentScheduleTable({ policyNumber }: { policyNumber: string }) {
   const [schedule, setSchedule] = useState<PaymentScheduleView | null>(null);
@@ -36,10 +37,6 @@ export function PaymentScheduleTable({ policyNumber }: { policyNumber: string })
     );
     return () => { live = false; };
   }, [policyNumber]);
-
-  async function download(format: DocumentFormat) {
-    saveBlob(await downloadPaymentSchedule(policyNumber, format), documentFileName('payment-schedule', policyNumber, format));
-  }
 
   if (error) return <div className="p-4"><InlineError error={error} /></div>;
   if (!schedule) return <TableSkeleton rows={4} />;
@@ -102,13 +99,6 @@ export function PaymentScheduleTable({ policyNumber }: { policyNumber: string })
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2.5 text-xs text-muted-foreground">
-        <span>
-          {schedule.policyholderName ?? '—'} · {schedule.productName ?? '—'} · {money(schedule.premium)}{' '}
-          {frequencyWord(schedule.premiumFrequency)}
-        </span>
-        <DownloadButtons what="payment schedule" onDownload={download} />
-      </div>
       {schedule.lines.length === 0 ? (
         <p className="px-4 py-6 text-sm text-muted-foreground">No premium has been billed on this policy yet.</p>
       ) : (
@@ -137,12 +127,14 @@ function Total({ label, value, strong, wrap }: { label: string; value: string; s
   );
 }
 
-function frequencyWord(f: string | null | undefined): string {
-  switch (f) {
-    case 'MONTHLY': return 'a month';
-    case 'QUARTERLY': return 'a quarter';
-    case 'ANNUALLY': return 'a year';
-    case 'SINGLE': return 'once';
-    default: return '';
+/**
+ * The schedule's PDF and Excel downloads, for the panel's title row (`Panel actions`). They used to sit on a
+ * toolbar row of their own inside the table, ruled off beneath a line restating the policyholder, product and
+ * premium -- three facts the page header and the record rail already show.
+ */
+export function PaymentScheduleDownloads({ policyNumber }: { policyNumber: string }) {
+  async function download(format: DocumentFormat) {
+    saveBlob(await downloadPaymentSchedule(policyNumber, format), documentFileName('payment-schedule', policyNumber, format));
   }
+  return <DownloadButtons what="payment schedule" onDownload={download} />;
 }

@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { DepositScheduleDownload } from '@/features/documents/DepositScheduleDownload';
-import { PaymentScheduleTable } from '@/features/documents/PaymentScheduleTable';
+import { PaymentScheduleDownloads, PaymentScheduleTable } from '@/features/documents/PaymentScheduleTable';
 import { toApiError, type ApiError } from '@/lib/apiError';
 import { formatDate } from '@/lib/dates';
 import { StatusPill } from './CustomerHomePage';
@@ -141,7 +141,11 @@ export function CustomerPolicyPage() {
         )}
 
         {s.premium != null && s.premiumFrequency !== 'SINGLE' && (
-          <Panel title="Premiums" subtitle="Every premium, what was paid and when. Download it to keep.">
+          <Panel
+            title="Premiums"
+            subtitle="Every premium, what was paid and when. Download it to keep."
+            actions={<PaymentScheduleDownloads policyNumber={s.policyNumber} />}
+          >
             <PaymentScheduleTable policyNumber={s.policyNumber} />
           </Panel>
         )}

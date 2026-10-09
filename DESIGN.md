@@ -13,7 +13,7 @@ colors:
   input: "oklch(0.66 0 0)"
   control: "oklch(0.965 0 0)"
   control-hover: "oklch(0.935 0 0)"
-  band: "oklch(0.982 0 0)"
+  band: "oklch(0.965 0 0)"
   hover: "oklch(0.968 0 0)"
   selected: "oklch(0.955 0 0)"
   status-neutral-bg: "oklch(0.96 0.002 250)"
@@ -230,7 +230,8 @@ tenants of the same console, so the identity belongs to the platform.
 **Key Characteristics:**
 
 - Achromatic by default; six status hues are the entire chromatic vocabulary
-- Hairline rules and tonal surfaces carry all structure — no shadows at rest
+- Space, tone and three kinds of hairline carry the structure — no shadows at rest
+  (see *The Three Lines Rule*)
 - Tabular figures globally, so every money and date column reads as a column
 - A compressed, functional type scale that prizes density over display
 - Dark mode is a first-class peer, not a filter: every token is defined twice
@@ -569,9 +570,10 @@ Row height and touch target are one number, so they cannot drift apart.
 
 ## Elevation & Depth
 
-**This system is flat, and that is law.** Structure is carried entirely by
-hairline rules and, in dark mode, by a two-step tonal relationship between the
-page ground and panel surfaces. Thirty container instances across the codebase
+**This system is flat, and that is law.** Structure is carried by space, by the
+three hairlines of *The Three Lines Rule*, by the table header's band, and, in
+dark mode, by a two-step tonal relationship between the page ground and panel
+surfaces. Thirty container instances across the codebase
 use a hairline border and no shadow. Nothing lifts on hover, nothing has a
 resting shadow, and there is no ambient depth of any kind.
 
@@ -592,7 +594,20 @@ as detached from it — the right-hand slide-over, and two popovers.
 
 **The Floating-Layer Rule.** A shadow means "this element is not on the page." If
 the element is on the page, it has a hairline and no shadow. There is no third
-option, and there is no such thing as a subtle resting elevation here.
+option, and there is no such thing as a subtle resting elevation here. (Two
+`box-shadow`s are not shadows in this sense and are the only exceptions: the 1px
+band-coloured seam cover on table header cells, and the inset 1px rule of the
+record tabs. Both are drawn in the colour of the surface or the rule they stand
+for, and neither lifts anything.)
+
+**The Three Lines Rule.** Only three kinds of line remain: **a box's outline, the
+faint rule between table rows, and the tab strip's rule.** Everything else is
+separated by space or by tone. The page bar draws its rule only while content is
+passing under it. A panel's title is not ruled off from its content, a table's
+header band is not ruled off from its rows, and a `Field` list is not ruled
+between fields. Adopted 2026-10-09 after a policy's Billing tab was counted at
+about twenty horizontal lines against about six on a reference settings page. Not
+covered: the edges of controls keep their 3:1 Input Rule border (WCAG 1.4.11).
 
 ## Shapes
 
@@ -703,9 +718,14 @@ Three behaviours that are the component's whole point:
 
 ### Tables
 
-- **Header:** Label type in Muted Ink, 16px/10px padding, left-aligned, one
-  hairline beneath the row.
-- **Rows:** 44px, hairline separated, last row unruled. Hover takes the Hover
+- **Header:** Label type in Muted Ink, 16px/10px padding, left-aligned, on the
+  Band ground (`0.965`, ~5:1 for its ink). The band's tone is the edge, so there
+  is no rule beneath it. Each header cell casts a 1px band-coloured shadow to its
+  right, covering the seam Chrome leaves between cells at fractional widths.
+- **Rows:** 44px, hairline separated, last row unruled. A cell whose value
+  answers a question about the row (a premium's cover period, when and how it
+  was paid) stacks it under the figure in Label type rather than taking a
+  column. Right-aligned and `nowrap` columns never wrap. Hover takes the Hover
   token; the row previewed in the drawer takes Selected and `aria-current`.
 - **Numerics:** right-aligned, always. Combined with global tabular figures, a
   money column is a true column.
@@ -721,10 +741,18 @@ Three behaviours that are the component's whole point:
 ### Panel
 
 The titled section every detail page is built from. 8px radius, Paper ground,
-hairline, and a ruled header block at 16px/12px carrying an `<h2>` and an optional
-Label-type subtitle. Content brings its own padding, because a panel wraps two
-different kinds of thing — a `<dl>` of `Field` rows, and a full-bleed table whose
-rows must reach the panel's edges.
+hairline outline, and an unruled header block (16px sides, 12px top, 8px bottom)
+carrying an `<h2>`, an optional Label-type subtitle, and optional `actions` on
+the right for controls that act on the whole panel, such as a download. Content
+brings its own padding, because a panel wraps two different kinds of thing — a
+`<dl>` of `Field` rows, and a full-bleed table whose rows must reach the panel's
+edges.
+
+`Field` rows are not ruled. Label left, value right, on one baseline, 8px above
+and below; a note takes its own line under the label, left-aligned, in Micro and
+Subtle Ink. A rail with a rule under every field read as lined paper. Two fields
+that would both be empty with an explanation each collapse into one ("Term and
+maturity: None on record").
 
 `emphasis` promotes exactly one panel per page to the Title tier with a
 Rule-Strong edge. See **The Acting-Panel Rule** for when that is earned. It is

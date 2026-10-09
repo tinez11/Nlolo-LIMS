@@ -267,6 +267,13 @@ Carried over from the console redesign plans, still binding:
 
 **Files:** `components/PageHeader.tsx`, `components/Panel.tsx`, `components/Field.tsx`, `components/DataTable.tsx`, `components/AppShell.tsx`, `index.css`, `features/documents/PaymentScheduleTable.tsx`, `features/policies/PolicyDetailPage.tsx` (rail), `DESIGN.md`
 
+**Outcome (2026-10-09):** steps 1, 3–9 and 11 done, verified at 1280×600 ×1.5. Deviations:
+- **Step 1:** the plan's idea of keeping the page bar unruled on tabbed records was tried and **reverted**. The tabs span only the work column, so the rail slid under the bar with no edge, its text sliced off under the title. That was screenshot 7's "leak". The bar is ruled whenever `main` is scrolled, on every page.
+- **Step 2:** the leak was not a sticky-offset mismatch. The probe measured `--pagebar-h` equal to the bar's rect height (101 = 101) and the tabs flush under it. The cause was the rail scrolling under an unruled bar; fixed by step 1.
+- **Step 5:** a toned band showed white hairline seams between every pair of header cells at 150% scaling. Switching to separate borders didn't help (reverted). A 1px band-coloured `box-shadow` to the right of each `th` covers them. Dark band is `0.215` (above `--surface`; it was below it).
+- **Step 7:** `Panel` gained an `actions` slot; `PaymentScheduleDownloads` is a separate export used by the policy Billing tab and the customer's Premiums panel.
+- **Step 9:** "Term" and "Matures" collapse to "Term and maturity: None on record" only when both are absent. "No fixed term" would claim something the backend can't distinguish.
+
 - [ ] **Step 1: Page header.** Remove the resting `border-b`. Show a hairline only while `main` is scrolled (a scroll listener sets `data-scrolled` on the bar, and CSS draws the rule). On a tabbed record the tab rule is then the only rule at the top.
 - [ ] **Step 2: Fix the leak under the sticky header.** Content shows through between the page bar and the sticky tabs at 150% scaling. Measure `--pagebar-h` against the bar's `getBoundingClientRect().height` (fractional versus `offsetHeight`'s rounded integer). If that's the cause, publish the fractional height, or overlap the tabs 1px under the bar.
 - [ ] **Step 3: Panel.** Keep the outline; drop the `border-b` under the title block, and keep the spacing.
