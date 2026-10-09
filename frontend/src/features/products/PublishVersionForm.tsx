@@ -750,7 +750,7 @@ export function PublishVersionForm({
                         // w-28, not w-24: the placeholder below is the only label this box
                         // has once the row wraps, and "Non-smoker" was being cut mid-word
                         // at 96px.
-                        inputSize="sm" className="w-28 shrink-0 text-right"
+                        inputSize="sm" className="text-right"
                         // The column header is hidden below the breakpoint, where this row
                         // wraps -- and three boxes all placeheld "—" on a second line name
                         // nothing at all. Each box says which rate it is instead, which
@@ -823,10 +823,12 @@ export function PublishVersionForm({
 
             return (
               <div key={field.id}>
-                <div className="flex flex-wrap items-center gap-2">
+                {/* One grid row that never wraps (2026-10-09): as a wrapping flex line of fixed widths
+                    the remove button fell onto a line of its own under the row it removes. The two
+                    selects share what is left; the amount and the button keep their size. */}
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_auto] items-center gap-2">
                   <Select
                     inputSize="sm"
-                    className="w-40 shrink-0"
                     aria-label={`Benefit ${index + 1} type`}
                     {...register(`benefitSchedule.${index}.benefitType`)}
                   >
@@ -839,7 +841,6 @@ export function PublishVersionForm({
                   </Select>
                   <Select
                     inputSize="sm"
-                    className="w-44 shrink-0"
                     aria-label={`Benefit ${index + 1} calculation method`}
                     aria-invalid={rowErrors?.calculationMethod ? true : undefined}
                     {...register(`benefitSchedule.${index}.calculationMethod`)}
@@ -859,7 +860,7 @@ export function PublishVersionForm({
                       type="number"
                       min={0}
                       step="0.01"
-                      inputSize="sm" className="w-28 shrink-0 text-right"
+                      inputSize="sm" className="text-right"
                       placeholder="%"
                       aria-label={`Benefit ${index + 1} percentage`}
                       aria-invalid={rowErrors?.percent ? true : undefined}
@@ -870,16 +871,16 @@ export function PublishVersionForm({
                       type="number"
                       min={0}
                       step="0.01"
-                      inputSize="sm" className="w-28 shrink-0 text-right"
+                      inputSize="sm" className="text-right"
                       placeholder="amount"
                       aria-label={`Benefit ${index + 1} flat amount`}
                       aria-invalid={rowErrors?.flatAmount ? true : undefined}
                       {...register(`benefitSchedule.${index}.flatAmount`)}
                     />
                   ) : (
-                    <span className="w-28 shrink-0 text-right text-xs text-subtle-foreground">
-                      —
-                    </span>
+                    // Not an em dash, which on this console means a value that is ABSENT. Nothing is
+                    // missing here: a full-sum-assured benefit needs no amount.
+                    <span className="text-right text-xs text-subtle-foreground">No amount</span>
                   )}
                   <Button
                     type="button"
@@ -1155,7 +1156,7 @@ export function PublishVersionForm({
                       <div key={field.id}>
                         <div className="flex flex-wrap items-center gap-2">
                           <Input
-                            type="number" min={0} inputSize="sm" className="w-28 shrink-0 text-right" placeholder="From year"
+                            type="number" min={0} inputSize="sm" className="text-right" placeholder="From year"
                             aria-label={`Bonus surrender row ${index + 1} from completed years`}
                             {...register(`bonusSurrenderRows.${index}.fromCompletedYears`)}
                           />
@@ -1268,14 +1269,14 @@ export function PublishVersionForm({
                       {...register(`cashValueRows.${index}.ageTo`)}
                     />
                     <Input
-                      type="number" min={0} step="0.0001" inputSize="sm" className="w-28 shrink-0 text-right"
+                      type="number" min={0} step="0.0001" inputSize="sm" className="text-right"
                       placeholder="Value per 1,000"
                       aria-label={`Cash value ${index + 1} value per 1,000`}
                       aria-invalid={rowErrors?.cashValuePerMille ? true : undefined}
                       {...register(`cashValueRows.${index}.cashValuePerMille`)}
                     />
                     <Input
-                      type="number" min={0} step="0.0001" inputSize="sm" className="w-28 shrink-0 text-right"
+                      type="number" min={0} step="0.0001" inputSize="sm" className="text-right"
                       placeholder="Paid-up per 1,000"
                       aria-label={`Cash value ${index + 1} paid-up per 1,000`}
                       aria-invalid={rowErrors?.paidUpPerMille ? true : undefined}

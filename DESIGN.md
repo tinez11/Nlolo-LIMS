@@ -186,7 +186,7 @@ components:
     shadow: "raise"
   sidebar:
     backgroundColor: "{colors.paper-muted}"
-    width: "224px"
+    width: "240px"
   slide-over:
     backgroundColor: "{colors.paper}"
     width: "28rem"
@@ -468,7 +468,7 @@ group caption. It is never used for a button, a badge, a status, or emphasis.
 
 ## Layout
 
-**The shell.** A fixed 224px sidebar in Quiet Paper with a hairline right rule,
+**The shell.** A fixed 240px sidebar (224px until 2026-10-09, where "Corporate/Group" beside its count truncated) in Quiet Paper with a hairline right rule,
 against a scrolling main column. The sidebar holds a wordmark block, the
 role-gated nav groups, and a user block pinned to the bottom by a top rule. Nav
 groups are ordered along the business flow — Clients, New business, Policies &
