@@ -24,6 +24,7 @@ import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -70,7 +71,67 @@ class CustomerPortalIntegrationTest {
                 "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
                 "db-migrations/claims/V9__zero_annuity_settlement.sql",
                 "db-migrations/claims/V10__funeral_claims.sql",
-                "db-migrations/claims/V11__claim_document_request.sql")).toArray(String[]::new));
+                "db-migrations/claims/V11__claim_document_request.sql",
+                // Communication: the dashboard counts unread messages and the inbox reads them (step 7).
+                "db-migrations/communication/V1__create_communication_schema.sql",
+                "db-migrations/communication/V2__template_identity.sql",
+                "db-migrations/communication/V3__seed_offer_templates.sql",
+                "db-migrations/communication/V4__dispatch_reason_and_policy.sql",
+                "db-migrations/communication/V5__dispatch_claimed_status.sql",
+                "db-migrations/communication/V6__grants_and_rls.sql",
+                "db-migrations/communication/V7__null_safe_rls_and_pending_reminders.sql",
+                "db-migrations/communication/V8__platform_default_templates.sql",
+                "db-migrations/communication/V9__payment_received_template.sql",
+                "db-migrations/communication/V10__account_statement_template.sql",
+                "db-migrations/communication/V11__vesting_reminder_template.sql",
+                "db-migrations/communication/V12__funeral_templates.sql",
+                "db-migrations/communication/V13__unit_linked_templates.sql",
+                "db-migrations/communication/V14__unit_linked_statement_template.sql",
+                "db-migrations/communication/V15__dispatch_body_and_inbox.sql")).toArray(String[]::new));
+    }
+
+    @Autowired private tz.co.nlolo.lifeplatform.communication.api.NotificationApi notificationApi;
+
+    /**
+     * Step 7: what we sent the customer is in their inbox once, however many channels carried it, with the text as
+     * sent; opening it marks it read and the dashboard's count falls. Another customer can neither see nor open it.
+     */
+    @Test
+    void aCustomerReadsWhatWeSentThemOnceAndOpensIt() throws Exception {
+        String policyNumber = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, TODAY).policyNumber();
+        UUID holder = asTenant(() -> policyApi.getPolicy(policyNumber)).policyholderPartyId();
+        asTenant(() -> { notificationApi.notify(UUID.randomUUID(), holder, policyNumber, "PAYMENT_RECEIVED",
+            java.util.Map.of("amount", "TZS 50,000.00", "policyNumber", policyNumber)); return null; });
+
+        String body = mockMvc.perform(customer(get("/customer/messages"), holder))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andReturn().getResponse().getContentAsString();
+        // Its SMS and its email (when both are on file) are one message here.
+        List<java.util.Map<String, Object>> payments =
+            com.jayway.jsonpath.JsonPath.read(body, "$[?(@.title == 'Payment received')]");
+        org.assertj.core.api.Assertions.assertThat(payments).hasSize(1);
+        org.assertj.core.api.Assertions.assertThat((String) payments.get(0).get("body")).contains("TZS 50,000.00");
+        org.assertj.core.api.Assertions.assertThat(payments.get(0).get("read")).isEqualTo(false);
+        String messageId = (String) payments.get(0).get("messageId");
+        int unread = com.jayway.jsonpath.JsonPath.<List<Object>>read(body, "$[?(@.read == false)]").size();
+
+        UUID stranger = UUID.randomUUID();
+        mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .post("/customer/messages/" + messageId + "/read"), stranger))
+            .andExpect(status().isNotFound());
+
+        mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .post("/customer/messages/" + messageId + "/read"), holder))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.read").value(true));
+        mockMvc.perform(customer(get("/customer/dashboard"), holder))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.unreadMessages").value(unread - 1));
+        mockMvc.perform(customer(get("/customer/messages"), stranger))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(0));
     }
 
     private static final UUID TENANT = UUID.randomUUID();
@@ -120,6 +181,92 @@ class CustomerPortalIntegrationTest {
         UUID stranger = UUID.randomUUID();
         mockMvc.perform(customer(get("/customer/policies/" + policyNumber), stranger))
             .andExpect(status().isForbidden());
+    }
+
+    @Autowired private tz.co.nlolo.lifeplatform.product.api.ProductApi productApi;
+    @Autowired private tz.co.nlolo.lifeplatform.party.api.PartyApi partyApi;
+
+    /**
+     * Step 5: a customer sees only what is offered online, prices it on their own details, and asking for it opens one
+     * application in their name -- a second ask while it is reviewed is refused, and another customer sees none of it.
+     */
+    @Test
+    void aCustomerPricesAnOnlineProductAndAsksForItOnce() throws Exception {
+        UUID productId = asTenant(() -> {
+            var product = productApi.createProduct("TERM-ONLINE-" + UUID.randomUUID().toString().substring(0, 6),
+                "Online Term Cover", tz.co.nlolo.lifeplatform.product.api.ProductCategory.TERM_LIFE, "TZS", "actuary");
+            productApi.publishVersion(product.productId(), tz.co.nlolo.lifeplatform.product.api.IfrsMeasurementModel.PAA,
+                TODAY.minusDays(1), null,
+                List.of(new tz.co.nlolo.lifeplatform.product.api.ProductApi.RatingFactorInput(
+                    tz.co.nlolo.lifeplatform.product.api.FactorType.SUM_ASSURED_BAND, "ANY", java.math.BigDecimal.ONE, null, null,
+                    java.math.BigDecimal.ZERO, new java.math.BigDecimal("100000000")),
+                    new tz.co.nlolo.lifeplatform.product.api.ProductApi.RatingFactorInput(
+                        tz.co.nlolo.lifeplatform.product.api.FactorType.OCCUPATION_CLASS, "CLASS_1", java.math.BigDecimal.ONE)),
+                List.of(new tz.co.nlolo.lifeplatform.product.api.ProductApi.BenefitInput(
+                    tz.co.nlolo.lifeplatform.product.api.BenefitType.DEATH,
+                    tz.co.nlolo.lifeplatform.product.api.BenefitCalculationMethod.SUM_ASSURED)),
+                null,
+                // A priced version must price every life it accepts: both sexes, every smoker status.
+                java.util.Arrays.stream(tz.co.nlolo.lifeplatform.product.api.Sex.values())
+                    .flatMap(sex -> java.util.Arrays.stream(tz.co.nlolo.lifeplatform.product.api.SmokerStatus.values())
+                        .map(smoker -> new tz.co.nlolo.lifeplatform.product.api.ProductApi.BaseRateInput(18, 60, sex, smoker,
+                            new java.math.BigDecimal("10.0000"))))
+                    .toList(),
+                new tz.co.nlolo.lifeplatform.product.api.EligibilityBounds(18, 60, null, null, null, null),
+                tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING, "actuary");
+            productApi.describeOnline(product.productId(), true, "Cover for your family if you die",
+                List.of("Pays the sum assured on death", " "));
+            return product.productId();
+        });
+        UUID me = asTenant(() -> partyApi.registerIndividual(new tz.co.nlolo.lifeplatform.party.api.IndividualRegistration(
+            "Online Applicant", TODAY.minusYears(30).minusDays(10), "+255718999001", null,
+            tz.co.nlolo.lifeplatform.party.api.Sex.MALE, null, tz.co.nlolo.lifeplatform.party.api.IdentityDocument.none(),
+            null, "CLASS_1", null, null, tz.co.nlolo.lifeplatform.party.api.Address.none()), "test-agent").partyId());
+
+        mockMvc.perform(customer(get("/customer/products"), me))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            // Only what is offered online: the savings products other tests publish are not.
+            .andExpect(jsonPath("$[?(@.productName == 'Savings Test Product')]").isEmpty())
+            .andExpect(jsonPath("$[?(@.productId == '" + productId + "')].quotable").value(true))
+            .andExpect(jsonPath("$[?(@.productId == '" + productId + "')].benefits[0]").value("Pays the sum assured on death"));
+
+        // 1,000,000 at 10 per mille: 10,000 a year.
+        mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .post("/customer/products/" + productId + "/quote"), me)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("{\"sumAssured\":1000000,\"frequency\":\"ANNUALLY\"}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.yearly").value(10000.0))
+            .andExpect(jsonPath("$.ageAtEntry").value(30));
+
+        String ask = "{\"productId\":\"" + productId + "\",\"sumAssured\":1000000,\"frequency\":\"MONTHLY\"}";
+        mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/customer/applications"), me)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content(ask))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.productName").value("Online Term Cover"))
+            .andExpect(jsonPath("$.statusText").value("Being reviewed"));
+        mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/customer/applications"), me)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content(ask))
+            .andExpect(status().isConflict());
+
+        mockMvc.perform(customer(get("/customer/applications"), me))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.length()").value(1));
+        mockMvc.perform(customer(get("/customer/applications"), UUID.randomUUID()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(0));
+
+        // Taken offline: no longer the customer's to price.
+        asTenant(() -> productApi.describeOnline(productId, false, null, List.of()));
+        mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .post("/customer/products/" + productId + "/quote"), me)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("{\"sumAssured\":1000000}"))
+            .andExpect(status().isNotFound());
     }
 
     /**

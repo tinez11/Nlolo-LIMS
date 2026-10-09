@@ -1475,6 +1475,42 @@ public class ProductApiImpl implements ProductApi {
         productVersionRepository.save(version);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public tz.co.nlolo.lifeplatform.product.api.OnlineListingView onlineListing(UUID productId) {
+        return toListing(productDefinitionRepository.findByTenantIdAndProductId(TenantContext.get(), productId)
+            .orElseThrow(() -> new ProductNotFoundException(productId)));
+    }
+
+    @Override
+    @Transactional
+    public tz.co.nlolo.lifeplatform.product.api.OnlineListingView describeOnline(UUID productId, boolean available,
+                                                                                String summary, List<String> benefits) {
+        ProductDefinition product = productDefinitionRepository.findByTenantIdAndProductId(TenantContext.get(), productId)
+            .orElseThrow(() -> new ProductNotFoundException(productId));
+        if (available && !"ACTIVE".equals(product.getStatus())) {
+            throw new IllegalArgumentException("Publish a version of the product before offering it online");
+        }
+        product.describeOnline(available, summary, benefits);
+        return toListing(productDefinitionRepository.save(product));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<tz.co.nlolo.lifeplatform.product.api.OnlineListingView> listOnlineProducts() {
+        return productDefinitionRepository.findByTenantIdAndStatus(TenantContext.get(), "ACTIVE").stream()
+            .filter(ProductDefinition::isAvailableOnline)
+            .sorted(java.util.Comparator.comparing(ProductDefinition::getProductName))
+            .map(ProductApiImpl::toListing)
+            .toList();
+    }
+
+    private static tz.co.nlolo.lifeplatform.product.api.OnlineListingView toListing(ProductDefinition p) {
+        return new tz.co.nlolo.lifeplatform.product.api.OnlineListingView(p.getProductId(), p.getProductName(),
+            ProductCategory.valueOf(p.getCategory()), p.getDefaultCurrency(), p.isAvailableOnline(), p.getOnlineSummary(),
+            p.getOnlineBenefits());
+    }
+
     private ProductSummaryView toSummaryView(ProductDefinition p) {
         return new ProductSummaryView(p.getProductId(), p.getProductCode(), p.getProductName(),
             ProductCategory.valueOf(p.getCategory()), ProductStatus.valueOf(p.getStatus()), p.getDefaultCurrency(),

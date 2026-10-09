@@ -167,6 +167,25 @@ public class ProductController {
         return ResponseEntity.ok(productApi.getProduct(productId));
     }
 
+    /** Body of the online listing: offered to customers or not, what it is for, its key benefits (V31). */
+    public record OnlineListingRequest(boolean available, String summary, List<String> benefits) {}
+
+    /** How the customer portal offers the product (2026-10-08, the customer portal design step 5). */
+    @GetMapping("/products/{productId}/online-listing")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<tz.co.nlolo.lifeplatform.product.api.OnlineListingView> onlineListing(@PathVariable UUID productId) {
+        return ResponseEntity.ok(productApi.onlineListing(productId));
+    }
+
+    /** ADMIN, like the rest of product authoring: what customers are offered is a product decision. */
+    @PutMapping("/products/{productId}/online-listing")
+    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
+    public ResponseEntity<tz.co.nlolo.lifeplatform.product.api.OnlineListingView> describeOnline(@PathVariable UUID productId,
+            @RequestBody OnlineListingRequest request) {
+        return ResponseEntity.ok(productApi.describeOnline(productId, request.available(), request.summary(),
+            request.benefits()));
+    }
+
     /** Every published version, the most recently published first, the one priced today marked current (2026-10-08). */
     @GetMapping("/products/{productId}/versions")
     @PreAuthorize("hasRole('REALM_STAFF')")

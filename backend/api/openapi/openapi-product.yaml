@@ -112,6 +112,57 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /products/{productId}/online-listing:
+    get:
+      summary: How the customer portal offers the product (staff)
+      security:
+        - staffAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OnlineListing' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+    put:
+      summary: Offer the product online or not, and say what it is (ADMIN)
+      description: >-
+        Off by default. Offering it needs a summary, and a published version -- 400 otherwise.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [available]
+              properties:
+                available: { type: boolean }
+                summary: { type: [string, "null"] }
+                benefits:
+                  type: [array, "null"]
+                  items: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OnlineListing' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /products/{productId}/versions:
     get:
       summary: Every published version of a product (staff)
@@ -439,6 +490,20 @@ paths:
         '404': { description: "No such version in this tenant" }
 components:
   schemas:
+    OnlineListing:
+      type: object
+      additionalProperties: false
+      required: [productId, productName, category, defaultCurrency, available, summary, benefits]
+      properties:
+        productId: { type: string, format: uuid }
+        productName: { type: string }
+        category: { type: string }
+        defaultCurrency: { type: string }
+        available: { type: boolean }
+        summary: { type: [string, "null"] }
+        benefits:
+          type: array
+          items: { type: string }
     ProductVersionSummaryView:
       type: object
       additionalProperties: false

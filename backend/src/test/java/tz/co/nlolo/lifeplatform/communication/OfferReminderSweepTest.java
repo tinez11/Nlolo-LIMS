@@ -126,6 +126,7 @@ class OfferReminderSweepTest {
             "db-migrations/product/V28__survival_investment_component.sql",
             "db-migrations/product/V29__funeral_group_rate.sql",
             "db-migrations/product/V30__funeral_group_rate_period.sql",
+            "db-migrations/product/V31__online_listing.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -164,6 +165,7 @@ class OfferReminderSweepTest {
             "db-migrations/communication/V6__grants_and_rls.sql",
             "db-migrations/communication/V7__null_safe_rls_and_pending_reminders.sql",
             "db-migrations/communication/V8__platform_default_templates.sql",
+            "db-migrations/communication/V15__dispatch_body_and_inbox.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");

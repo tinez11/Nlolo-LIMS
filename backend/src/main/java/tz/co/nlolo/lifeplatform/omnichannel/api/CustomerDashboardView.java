@@ -13,7 +13,9 @@ import java.util.List;
  *     card is left out rather than showing nothing worth TZS 0
  */
 public record CustomerDashboardView(String displayName, int activePolicies, int claimsInProgress, NextPremium nextPremium,
-                                    Amount accountValue, List<CustomerPolicySummary> policies) {
+                                    Amount accountValue, List<CustomerPolicySummary> policies,
+                                    /** Messages not yet opened in the portal (step 7). */
+                                    int unreadMessages) {
 
     public record NextPremium(String policyNumber, String productName, BigDecimal amount, String currency,
                               LocalDate dueDate, String status) {}

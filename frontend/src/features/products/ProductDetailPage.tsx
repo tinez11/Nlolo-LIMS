@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { portfolioLabel } from '@/lib/ifrs17';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useProductStore } from '@/store/productStore';
+import { OnlineListingPanel } from './OnlineListingPanel';
 import { ProductVersionsPanel } from './ProductVersionsPanel';
 import { PublishVersionForm } from './PublishVersionForm';
 import { Panel } from '@/components/Panel';
@@ -165,6 +166,12 @@ export function ProductDetailPage() {
             <Field label="IFRS 17 portfolio" value={portfolioLabel(product.portfolioCode)} />
           </dl>
         </Panel>
+
+        {product.status === 'ACTIVE' && (
+          <Panel title="Customer portal" subtitle="Whether customers can see, price and ask for it online">
+            <OnlineListingPanel productId={productId} canEdit={canAuthor} />
+          </Panel>
+        )}
 
         {showsRates(product.category, identity) && (
           <Panel title="Declared interest rates" subtitle="Credited on every account, never below its own version's guarantee">

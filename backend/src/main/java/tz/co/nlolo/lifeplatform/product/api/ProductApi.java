@@ -194,6 +194,15 @@ public interface ProductApi {
      */
     ProductSummaryView getProduct(UUID productId);
 
+    /** How the customer portal offers the product (V31). */
+    OnlineListingView onlineListing(UUID productId);
+
+    /** Offer it online or not, and say what it is. Refused (422) when offered with nothing said about it. */
+    OnlineListingView describeOnline(UUID productId, boolean available, String summary, List<String> benefits);
+
+    /** The published products offered online, by name -- what a customer may browse, quote and ask for. */
+    List<OnlineListingView> listOnlineProducts();
+
     /**
      * Every published version of a product, the most recently published first, the one a sale today is priced on
      * marked current (2026-10-08).

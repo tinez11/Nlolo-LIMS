@@ -42,6 +42,35 @@ export function getCustomerDashboard(): Promise<CustomerDashboardView> {
   return get<CustomerDashboardView>('/customer/dashboard');
 }
 
+export type CustomerProduct = components['schemas']['CustomerProduct'];
+export type CustomerQuote = components['schemas']['CustomerQuote'];
+export type CustomerApplication = components['schemas']['CustomerApplication'];
+
+/** Step 5: the products offered online. */
+export function getCustomerProducts(): Promise<CustomerProduct[]> {
+  return get<CustomerProduct[]>('/customer/products');
+}
+
+/** Step 5: an indicative price on the customer's own details -- not an offer. */
+export function quoteCustomerProduct(
+  productId: string,
+  request: { sumAssured: number; frequency: 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY' },
+): Promise<CustomerQuote> {
+  return post<CustomerQuote>(`/customer/products/${enc(productId)}/quote`, request);
+}
+
+/** Step 5: what the customer asked for, newest first. */
+export function getCustomerApplications(): Promise<CustomerApplication[]> {
+  return get<CustomerApplication[]>('/customer/applications');
+}
+
+/** Step 5: ask for a product -- one application per product while it is reviewed (409 for a second). */
+export function applyForProduct(request: {
+  productId: string; sumAssured: number | null; frequency: 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY' | null;
+}): Promise<CustomerApplication> {
+  return post<CustomerApplication>('/customer/applications', request);
+}
+
 export type CustomerClaimSummary = components['schemas']['CustomerClaimSummary'];
 export type CustomerClaimView = components['schemas']['CustomerClaim'];
 
@@ -53,6 +82,18 @@ export function getCustomerClaims(): Promise<CustomerClaimSummary[]> {
 /** Step 4: one of the customer's claims in plain words; 403 for one somebody else made. */
 export function getCustomerClaim(claimId: string): Promise<CustomerClaimView> {
   return get<CustomerClaimView>(`/customer/claims/${enc(claimId)}`);
+}
+
+export type CustomerMessage = components['schemas']['CustomerMessage'];
+
+/** Step 7: what we sent the customer, newest first, once per message. */
+export function getCustomerMessages(): Promise<CustomerMessage[]> {
+  return get<CustomerMessage[]>('/customer/messages');
+}
+
+/** Step 7: opened in the portal. */
+export function markMessageRead(messageId: string): Promise<CustomerMessage> {
+  return post<CustomerMessage>(`/customer/messages/${enc(messageId)}/read`, {});
 }
 
 /** Step 2: one of the customer's own policies, customer-safe; 403 for one they do not hold. */

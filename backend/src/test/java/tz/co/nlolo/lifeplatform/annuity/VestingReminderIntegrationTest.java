@@ -59,6 +59,7 @@ class VestingReminderIntegrationTest {
         "db-migrations/communication/V9__payment_received_template.sql",
         "db-migrations/communication/V10__account_statement_template.sql",
         "db-migrations/communication/V11__vesting_reminder_template.sql",
+        "db-migrations/communication/V15__dispatch_body_and_inbox.sql",
     };
 
     @BeforeAll

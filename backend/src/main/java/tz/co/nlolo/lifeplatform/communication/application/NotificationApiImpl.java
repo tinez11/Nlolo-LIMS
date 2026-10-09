@@ -97,6 +97,16 @@ public class NotificationApiImpl implements NotificationApi {
             NotificationDispatch dispatch =
                 new NotificationDispatch(tenantId, partyId, templateKey, NotificationChannel.SMS.name(), policyNumber);
             dispatch.markFailed("No phone number or email address on file for this party");
+            // Still worded and kept: the portal inbox is the one place an unreachable customer can read it.
+            dispatch.recordBody(eventId, findEffectiveTemplate(tenantId, templateKey, NotificationChannel.SMS.name())
+                .map(t -> {
+                    try {
+                        return TemplateRenderer.render(t.getBodyTemplate(), values);
+                    } catch (IllegalArgumentException e) {
+                        return null;
+                    }
+                })
+                .orElse(null));
             dispatchRepository.save(dispatch);
             processedEventRepository.save(new ProcessedEvent(eventId));
             return;
@@ -105,15 +115,16 @@ public class NotificationApiImpl implements NotificationApi {
         for (Reachable target : reachable) {
             // Per channel, and a failure on one must not suppress the other: an unreachable
             // phone is no reason to withhold an email that would have arrived.
-            sendOne(tenantId, partyId, policyNumber, templateKey, values, target);
+            sendOne(eventId, tenantId, partyId, policyNumber, templateKey, values, target);
         }
         processedEventRepository.save(new ProcessedEvent(eventId));
     }
 
-    private void sendOne(UUID tenantId, UUID partyId, String policyNumber, String templateKey,
+    private void sendOne(UUID eventId, UUID tenantId, UUID partyId, String policyNumber, String templateKey,
                           Map<String, String> values, Reachable target) {
         NotificationDispatch dispatch =
             new NotificationDispatch(tenantId, partyId, templateKey, target.channel().name(), policyNumber);
+        dispatch.recordBody(eventId, null);
 
         Optional<NotificationTemplate> template =
             findEffectiveTemplate(tenantId, templateKey, target.channel().name());
@@ -136,6 +147,8 @@ public class NotificationApiImpl implements NotificationApi {
             dispatchRepository.save(dispatch);
             return;
         }
+        // What the customer was told, kept as told: the template may be reworded tomorrow.
+        dispatch.recordBody(eventId, body);
 
         NotificationSender.SendResult result = senderFor(target.channel())
             .map(sender -> sender.send(target.destination(), body))
@@ -261,6 +274,47 @@ public class NotificationApiImpl implements NotificationApi {
             .filter(row -> status == null || status.isBlank() || status.equals(row.getStatus()))
             .map(NotificationApiImpl::toView)
             .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<tz.co.nlolo.lifeplatform.communication.api.InboxMessageView> inbox(UUID partyId) {
+        Map<Object, List<NotificationDispatch>> byMessage = new LinkedHashMap<>();
+        for (NotificationDispatch row : dispatchRepository.findByTenantIdAndPartyIdOrderByCreatedAtDesc(TenantContext.get(), partyId)) {
+            // Rows from before V15 carry no event: each stands alone, and only the ones that went are worth showing.
+            if (row.getEventId() == null && !"SENT".equals(row.getStatus())) {
+                continue;
+            }
+            byMessage.computeIfAbsent(row.getEventId() != null ? row.getEventId() : row.getDispatchId(),
+                k -> new ArrayList<>()).add(row);
+        }
+        return byMessage.values().stream()
+            .filter(copies -> copies.stream().anyMatch(c -> c.getBody() != null || "SENT".equals(c.getStatus())))
+            .map(NotificationApiImpl::toInboxView)
+            .toList();
+    }
+
+    @Override
+    @Transactional
+    public tz.co.nlolo.lifeplatform.communication.api.InboxMessageView markRead(UUID partyId, UUID messageId) {
+        UUID tenantId = TenantContext.get();
+        NotificationDispatch named = dispatchRepository.findById(messageId)
+            .filter(d -> tenantId.equals(d.getTenantId()) && partyId.equals(d.getPartyId()))
+            .orElseThrow(() -> new tz.co.nlolo.lifeplatform.communication.api.InboxMessageNotFoundException(messageId));
+        List<NotificationDispatch> copies = named.getEventId() == null ? List.of(named)
+            : dispatchRepository.findByTenantIdAndPartyIdOrderByCreatedAtDesc(tenantId, partyId).stream()
+                .filter(d -> named.getEventId().equals(d.getEventId())).toList();
+        copies.forEach(NotificationDispatch::markRead);
+        dispatchRepository.saveAll(copies);
+        return toInboxView(copies);
+    }
+
+    /** One message from the copies one event sent: the first with text names it, and it is read once any copy is. */
+    private static tz.co.nlolo.lifeplatform.communication.api.InboxMessageView toInboxView(List<NotificationDispatch> copies) {
+        NotificationDispatch lead = copies.stream().filter(c -> c.getBody() != null).findFirst().orElse(copies.get(0));
+        return new tz.co.nlolo.lifeplatform.communication.api.InboxMessageView(lead.getDispatchId(), lead.getTemplateKey(),
+            lead.getPolicyNumber(), lead.getBody(), lead.getCreatedAt(),
+            copies.stream().anyMatch(c -> c.getReadAt() != null));
     }
 
     private static NotificationTemplateView toView(NotificationTemplate template) {

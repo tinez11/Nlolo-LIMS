@@ -61,4 +61,10 @@ public interface NotificationApi {
      * question is "has this customer been told about this policy, and did it arrive".
      */
     java.util.List<NotificationDispatchView> listDispatches(UUID partyId, String policyNumber, String status);
+
+    /** The party's messages, newest first, one per event (customer portal step 7). */
+    java.util.List<InboxMessageView> inbox(UUID partyId);
+
+    /** Marks a message read -- every channel's copy of it. A message that is not this party's is not found. */
+    InboxMessageView markRead(UUID partyId, UUID messageId);
 }

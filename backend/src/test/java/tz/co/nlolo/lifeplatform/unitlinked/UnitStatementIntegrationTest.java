@@ -82,6 +82,7 @@ class UnitStatementIntegrationTest {
         "db-migrations/communication/V12__funeral_templates.sql",
         "db-migrations/communication/V13__unit_linked_templates.sql",
         "db-migrations/communication/V14__unit_linked_statement_template.sql",
+        "db-migrations/communication/V15__dispatch_body_and_inbox.sql",
     };
 
     @BeforeAll

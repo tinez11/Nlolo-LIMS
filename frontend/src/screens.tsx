@@ -27,11 +27,15 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
+import { CustomerApplicationsPage } from '@/features/customer/CustomerApplicationsPage';
 import { CustomerClaimPage } from '@/features/customer/CustomerClaimPage';
 import { CustomerClaimsPage } from '@/features/customer/CustomerClaimsPage';
 import { CustomerReportClaimPage } from '@/features/customer/CustomerReportClaimPage';
 import { CustomerDocumentsPage } from '@/features/customer/CustomerDocumentsPage';
+import { CustomerProductsPage } from '@/features/customer/CustomerProductsPage';
 import { CustomerHomePage } from '@/features/customer/CustomerHomePage';
+import { CustomerMessagesPage } from '@/features/customer/CustomerMessagesPage';
+import { CustomerPayPage } from '@/features/customer/CustomerPayPage';
 import { CustomerPoliciesPage } from '@/features/customer/CustomerPoliciesPage';
 import { CustomerPolicyPage } from '@/features/customer/CustomerPolicyPage';
 import type { ReactNode } from 'react';
@@ -688,6 +692,10 @@ const CUSTOMER_SCREENS: Screen[] = [
   { path: 'claims/new', element: <CustomerReportClaimPage />, reach: 'drill-in' },
   { path: 'claims/:claimId', element: <CustomerClaimPage />, reach: 'drill-in' },
   { path: 'documents', element: <CustomerDocumentsPage />, reach: { group: 'my-cover', label: 'Documents', icon: FileText } },
+  { path: 'products', element: <CustomerProductsPage />, reach: { group: 'my-cover', label: 'Products', icon: Package } },
+  { path: 'applications', element: <CustomerApplicationsPage />, reach: { group: 'my-cover', label: 'My applications', icon: ScrollText } },
+  { path: 'pay', element: <CustomerPayPage />, reach: { group: 'my-cover', label: 'Pay a premium', icon: Wallet } },
+  { path: 'messages', element: <CustomerMessagesPage />, reach: { group: 'my-cover', label: 'Messages', icon: MessageSquare } },
 ];
 
 export const SCREENS: Record<Realm, Screen[]> = {
