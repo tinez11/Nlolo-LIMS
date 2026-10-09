@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
-import { dmy } from './dates';
+import { dmy, todayIso } from './dates';
 import { fillPolicyNumberManually } from './guards';
 
 /**
@@ -65,10 +65,12 @@ test.describe('staff claim evidence', () => {
     await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
     await page.getByPlaceholder('Type a name to search').fill('Amina');
     await page.getByText('Amina Owner').click();
-    await page.getByLabel('Date of event').fill(dmy('2026-01-10'));
+    // Today: the policy is issued today and its cover starts then, so a fixed past date is now
+    // refused as "not on risk" -- correctly, and not what this fixture is about.
+    await page.getByLabel('Date of event').fill(dmy(todayIso()));
     await page.getByLabel('Cause of death').fill('E2E fixture');
     await page.getByLabel('Place of death').fill('Dar es Salaam');
-    await page.getByLabel('Date of death').fill(dmy('2026-01-10'));
+    await page.getByLabel('Date of death').fill(dmy(todayIso()));
     await page.getByLabel('Attending physician').fill('Dr E2E');
     await page.getByRole('button', { name: 'Register claim' }).click();
     await expect(page).toHaveURL(/\/staff\/claims\/[0-9a-f-]{36}$/, { timeout: 15_000 });
