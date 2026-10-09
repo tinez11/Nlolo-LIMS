@@ -51,6 +51,36 @@ public class ProductDefinition {
     @Column(name = "portfolio_code", nullable = false)
     private String portfolioCode;
 
+    /** Offered to customers in the portal (V31). */
+    @Column(name = "available_online", nullable = false)
+    private boolean availableOnline;
+
+    /** What the product is for, in a sentence a customer reads (V31). Required while offered online. */
+    @Column(name = "online_summary")
+    private String onlineSummary;
+
+    /** Its key benefits, one per line (V31). */
+    @Column(name = "online_benefits")
+    private String onlineBenefits;
+
+    public void describeOnline(boolean available, String summary, java.util.List<String> benefits) {
+        String trimmed = summary == null ? null : summary.trim();
+        if (available && (trimmed == null || trimmed.isEmpty())) {
+            throw new IllegalArgumentException("Say what the product is for before offering it online");
+        }
+        this.availableOnline = available;
+        this.onlineSummary = trimmed == null || trimmed.isEmpty() ? null : trimmed;
+        String lines = benefits == null ? "" : benefits.stream().map(String::trim).filter(b -> !b.isEmpty())
+            .collect(java.util.stream.Collectors.joining("\n"));
+        this.onlineBenefits = lines.isEmpty() ? null : lines;
+    }
+
+    public boolean isAvailableOnline() { return availableOnline; }
+    public String getOnlineSummary() { return onlineSummary; }
+    public java.util.List<String> getOnlineBenefits() {
+        return onlineBenefits == null ? java.util.List.of() : java.util.List.of(onlineBenefits.split("\n"));
+    }
+
     public ProductDefinition(UUID tenantId, String productCode, String productName, String category, String defaultCurrency, String createdBy) {
         this(tenantId, productCode, productName, category, null, defaultCurrency, createdBy);
     }

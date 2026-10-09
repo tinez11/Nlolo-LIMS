@@ -17,7 +17,8 @@ import { ProductDetailPage } from './ProductDetailPage';
 vi.mock('react-oidc-context', () => ({ useAuth: () => ({ user: undefined }) }));
 
 /** The page reads its versions from GET /products/{id}/versions (2026-10-08); this product has one, current. */
-vi.mock('@/api/products', () => ({ listProductVersions: vi.fn() }));
+// The customer-portal listing panel loads on its own; left pending here, it is not what this file is about.
+vi.mock('@/api/products', () => ({ listProductVersions: vi.fn(), getOnlineListing: vi.fn(() => new Promise(() => undefined)) }));
 
 /**
  * The PRICED branch of the rating panel cannot be reached through this console:

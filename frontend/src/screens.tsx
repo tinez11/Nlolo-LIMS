@@ -27,7 +27,9 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
+import { CustomerApplicationsPage } from '@/features/customer/CustomerApplicationsPage';
 import { CustomerDocumentsPage } from '@/features/customer/CustomerDocumentsPage';
+import { CustomerProductsPage } from '@/features/customer/CustomerProductsPage';
 import { CustomerHomePage } from '@/features/customer/CustomerHomePage';
 import { CustomerPoliciesPage } from '@/features/customer/CustomerPoliciesPage';
 import { CustomerPolicyPage } from '@/features/customer/CustomerPolicyPage';
@@ -682,6 +684,8 @@ const CUSTOMER_SCREENS: Screen[] = [
   { path: 'policies', element: <CustomerPoliciesPage />, reach: { group: 'my-cover', label: 'My policies', icon: Shield } },
   { path: 'policies/:policyNumber', element: <CustomerPolicyPage />, reach: 'drill-in' },
   { path: 'documents', element: <CustomerDocumentsPage />, reach: { group: 'my-cover', label: 'Documents', icon: FileText } },
+  { path: 'products', element: <CustomerProductsPage />, reach: { group: 'my-cover', label: 'Products', icon: Package } },
+  { path: 'applications', element: <CustomerApplicationsPage />, reach: { group: 'my-cover', label: 'My applications', icon: ScrollText } },
 ];
 
 export const SCREENS: Record<Realm, Screen[]> = {

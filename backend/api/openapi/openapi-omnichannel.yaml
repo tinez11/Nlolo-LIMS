@@ -289,6 +289,99 @@ paths:
               schema: { $ref: '#/components/schemas/CustomerPolicy' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /customer/products:
+    get:
+      summary: The products offered online
+      security:
+        - customersAuth: [profile]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CustomerProduct' }
+  /customer/products/{productId}/quote:
+    post:
+      summary: An indicative price on the customer's own details
+      description: >-
+        Their age, sex and smoker status as we hold them. Not an offer -- underwriting may load or decline. 422 when the
+        product is priced by an adviser or their details are missing; 404 for a product not offered online.
+      security:
+        - customersAuth: [profile]
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sumAssured]
+              properties:
+                sumAssured: { type: number }
+                frequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, ANNUALLY, null] }
+                termYears: { type: [integer, "null"] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerQuote' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Cannot be priced online
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /customer/applications:
+    get:
+      summary: What the customer has asked for
+      security:
+        - customersAuth: [profile]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CustomerApplication' }
+    post:
+      summary: Ask for a product
+      description: >-
+        Opens an application (an underwriting case) with the customer as applicant and life insured, on the version on
+        sale today. 409 while one for the same product is still being reviewed.
+      security:
+        - customersAuth: [profile]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productId]
+              properties:
+                productId: { type: string, format: uuid }
+                sumAssured: { type: [number, "null"] }
+                frequency: { type: [string, "null"] }
+                termYears: { type: [integer, "null"] }
+      responses:
+        '201':
+          description: Asked for
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerApplication' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: Already asked for
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   securitySchemes:
     staffAuth:
@@ -464,6 +557,44 @@ components:
               dateOfEvent: { type: string, format: date }
               approvedAmount: { type: [number, "null"] }
               currency: { type: [string, "null"] }
+    CustomerProduct:
+      type: object
+      additionalProperties: false
+      required: [productId, productName, category, currency, summary, benefits, quotable]
+      properties:
+        productId: { type: string, format: uuid }
+        productName: { type: string }
+        category: { type: string }
+        currency: { type: string }
+        summary: { type: [string, "null"] }
+        benefits: { type: array, items: { type: string } }
+        quotable: { type: boolean, description: Priced here from a sum assured; otherwise an adviser prices it }
+    CustomerQuote:
+      type: object
+      additionalProperties: false
+      required: [productId, productName, currency, sumAssured, frequency, instalment, yearly, ageAtEntry]
+      properties:
+        productId: { type: string, format: uuid }
+        productName: { type: string }
+        currency: { type: string }
+        sumAssured: { type: number }
+        frequency: { type: string }
+        instalment: { type: number }
+        yearly: { type: number }
+        ageAtEntry: { type: integer }
+    CustomerApplication:
+      type: object
+      additionalProperties: false
+      required: [caseId, proposalNumber, productId, productName, sumAssured, currency, status, statusText]
+      properties:
+        caseId: { type: string, format: uuid }
+        proposalNumber: { type: [string, "null"] }
+        productId: { type: string, format: uuid }
+        productName: { type: [string, "null"] }
+        sumAssured: { type: [number, "null"] }
+        currency: { type: [string, "null"] }
+        status: { type: string }
+        statusText: { type: string }
     PortalAccess:
       type: object
       additionalProperties: false

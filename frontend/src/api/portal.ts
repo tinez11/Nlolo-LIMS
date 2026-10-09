@@ -42,6 +42,35 @@ export function getCustomerDashboard(): Promise<CustomerDashboardView> {
   return get<CustomerDashboardView>('/customer/dashboard');
 }
 
+export type CustomerProduct = components['schemas']['CustomerProduct'];
+export type CustomerQuote = components['schemas']['CustomerQuote'];
+export type CustomerApplication = components['schemas']['CustomerApplication'];
+
+/** Step 5: the products offered online. */
+export function getCustomerProducts(): Promise<CustomerProduct[]> {
+  return get<CustomerProduct[]>('/customer/products');
+}
+
+/** Step 5: an indicative price on the customer's own details -- not an offer. */
+export function quoteCustomerProduct(
+  productId: string,
+  request: { sumAssured: number; frequency: 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY' },
+): Promise<CustomerQuote> {
+  return post<CustomerQuote>(`/customer/products/${enc(productId)}/quote`, request);
+}
+
+/** Step 5: what the customer asked for, newest first. */
+export function getCustomerApplications(): Promise<CustomerApplication[]> {
+  return get<CustomerApplication[]>('/customer/applications');
+}
+
+/** Step 5: ask for a product -- one application per product while it is reviewed (409 for a second). */
+export function applyForProduct(request: {
+  productId: string; sumAssured: number | null; frequency: 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY' | null;
+}): Promise<CustomerApplication> {
+  return post<CustomerApplication>('/customer/applications', request);
+}
+
 /** Step 2: one of the customer's own policies, customer-safe; 403 for one they do not hold. */
 export function getCustomerPolicy(policyNumber: string): Promise<CustomerPolicyView> {
   return get<CustomerPolicyView>(`/customer/policies/${enc(policyNumber)}`);

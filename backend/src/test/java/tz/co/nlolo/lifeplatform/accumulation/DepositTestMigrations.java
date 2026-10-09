@@ -40,6 +40,7 @@ public final class DepositTestMigrations {
         "db-migrations/product/V28__survival_investment_component.sql",
         "db-migrations/product/V29__funeral_group_rate.sql",
         "db-migrations/product/V30__funeral_group_rate_period.sql",
+        "db-migrations/product/V31__online_listing.sql",
         "db-migrations/accumulation/V1__create_accumulation_schema.sql",
         "db-migrations/accumulation/V2__request_keys.sql",
         "db-migrations/accumulation/V3__deposit_periods.sql",

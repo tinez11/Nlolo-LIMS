@@ -1,4 +1,20 @@
-import { get, post } from '@/lib/http';
+import { get, post, put } from '@/lib/http';
+import type { components as ProductComponents } from '@/types/api/product';
+
+/** How the customer portal offers a product (2026-10-08, the customer portal design step 5). */
+export type OnlineListingView = ProductComponents['schemas']['OnlineListing'];
+
+export function getOnlineListing(productId: string): Promise<OnlineListingView> {
+  return get<OnlineListingView>(`/products/${encodeURIComponent(productId)}/online-listing`);
+}
+
+/** ADMIN: offer it online or not, and say what it is. */
+export function describeOnline(
+  productId: string,
+  listing: { available: boolean; summary: string | null; benefits: string[] },
+): Promise<OnlineListingView> {
+  return put<OnlineListingView>(`/products/${encodeURIComponent(productId)}/online-listing`, listing);
+}
 import type {
   CreateProductRequest,
   ProductCategory,

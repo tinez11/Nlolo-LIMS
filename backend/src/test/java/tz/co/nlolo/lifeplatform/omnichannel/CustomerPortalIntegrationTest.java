@@ -24,6 +24,7 @@ import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -117,6 +118,87 @@ class CustomerPortalIntegrationTest {
         UUID stranger = UUID.randomUUID();
         mockMvc.perform(customer(get("/customer/policies/" + policyNumber), stranger))
             .andExpect(status().isForbidden());
+    }
+
+    @Autowired private tz.co.nlolo.lifeplatform.product.api.ProductApi productApi;
+    @Autowired private tz.co.nlolo.lifeplatform.party.api.PartyApi partyApi;
+
+    /**
+     * Step 5: a customer sees only what is offered online, prices it on their own details, and asking for it opens one
+     * application in their name -- a second ask while it is reviewed is refused, and another customer sees none of it.
+     */
+    @Test
+    void aCustomerPricesAnOnlineProductAndAsksForItOnce() throws Exception {
+        UUID productId = asTenant(() -> {
+            var product = productApi.createProduct("TERM-ONLINE-" + UUID.randomUUID().toString().substring(0, 6),
+                "Online Term Cover", tz.co.nlolo.lifeplatform.product.api.ProductCategory.TERM_LIFE, "TZS", "actuary");
+            productApi.publishVersion(product.productId(), tz.co.nlolo.lifeplatform.product.api.IfrsMeasurementModel.PAA,
+                TODAY.minusDays(1), null,
+                List.of(new tz.co.nlolo.lifeplatform.product.api.ProductApi.RatingFactorInput(
+                    tz.co.nlolo.lifeplatform.product.api.FactorType.SUM_ASSURED_BAND, "ANY", java.math.BigDecimal.ONE, null, null,
+                    java.math.BigDecimal.ZERO, new java.math.BigDecimal("100000000"))),
+                List.of(new tz.co.nlolo.lifeplatform.product.api.ProductApi.BenefitInput(
+                    tz.co.nlolo.lifeplatform.product.api.BenefitType.DEATH,
+                    tz.co.nlolo.lifeplatform.product.api.BenefitCalculationMethod.SUM_ASSURED)),
+                null,
+                List.of(new tz.co.nlolo.lifeplatform.product.api.ProductApi.BaseRateInput(18, 60,
+                    tz.co.nlolo.lifeplatform.product.api.Sex.MALE, tz.co.nlolo.lifeplatform.product.api.SmokerStatus.UNKNOWN,
+                    new java.math.BigDecimal("10.0000"))),
+                new tz.co.nlolo.lifeplatform.product.api.EligibilityBounds(18, 60, null, null, null, null),
+                tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING, "actuary");
+            productApi.describeOnline(product.productId(), true, "Cover for your family if you die",
+                List.of("Pays the sum assured on death", " "));
+            return product.productId();
+        });
+        UUID me = asTenant(() -> partyApi.registerIndividual(new tz.co.nlolo.lifeplatform.party.api.IndividualRegistration(
+            "Online Applicant", TODAY.minusYears(30).minusDays(10), "+255718999001", null,
+            tz.co.nlolo.lifeplatform.party.api.Sex.MALE, null, tz.co.nlolo.lifeplatform.party.api.IdentityDocument.none(),
+            null, null, null, null, tz.co.nlolo.lifeplatform.party.api.Address.none()), "test-agent").partyId());
+
+        mockMvc.perform(customer(get("/customer/products"), me))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            // Only what is offered online: the savings products other tests publish are not.
+            .andExpect(jsonPath("$[?(@.productName == 'Savings Test Product')]").isEmpty())
+            .andExpect(jsonPath("$[?(@.productId == '" + productId + "')].quotable").value(true))
+            .andExpect(jsonPath("$[?(@.productId == '" + productId + "')].benefits[0]").value("Pays the sum assured on death"));
+
+        // 1,000,000 at 10 per mille: 10,000 a year.
+        mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .post("/customer/products/" + productId + "/quote"), me)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("{\"sumAssured\":1000000,\"frequency\":\"ANNUALLY\"}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.yearly").value(10000.0))
+            .andExpect(jsonPath("$.ageAtEntry").value(30));
+
+        String ask = "{\"productId\":\"" + productId + "\",\"sumAssured\":1000000,\"frequency\":\"MONTHLY\"}";
+        mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/customer/applications"), me)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content(ask))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.productName").value("Online Term Cover"))
+            .andExpect(jsonPath("$.statusText").value("Being reviewed"));
+        mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/customer/applications"), me)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content(ask))
+            .andExpect(status().isConflict());
+
+        mockMvc.perform(customer(get("/customer/applications"), me))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.length()").value(1));
+        mockMvc.perform(customer(get("/customer/applications"), UUID.randomUUID()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(0));
+
+        // Taken offline: no longer the customer's to price.
+        asTenant(() -> productApi.describeOnline(productId, false, null, List.of()));
+        mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .post("/customer/products/" + productId + "/quote"), me)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("{\"sumAssured\":1000000}"))
+            .andExpect(status().isNotFound());
     }
 
     @Test
