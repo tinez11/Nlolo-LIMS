@@ -65,6 +65,17 @@ public class PremiumInvoice {
     @Column(name = "enrolment_submission_id")
     private UUID enrolmentSubmissionId;
 
+    /**
+     * The period of cover this invoice pays for (billing V11), stored rather than derived: in advance it starts on the
+     * due date, in arrears it ended the day before. Null on an enrolment file's invoice, and {@code coversTo} on a single
+     * premium whose end billing does not know.
+     */
+    @Column(name = "covers_from")
+    private LocalDate coversFrom;
+
+    @Column(name = "covers_to")
+    private LocalDate coversTo;
+
     protected PremiumInvoice() {}
 
     /** A scheduled invoice: one period of a recurring premium. */
@@ -78,6 +89,18 @@ public class PremiumInvoice {
         this.currency = currency;
         this.gracePeriodEndsAt = gracePeriodEndsAt;
     }
+
+    /** A scheduled invoice with the period of cover it pays for. */
+    public PremiumInvoice(UUID tenantId, UUID billingScheduleId, String policyNumber, LocalDate dueDate,
+                           BigDecimal amount, String currency, LocalDate gracePeriodEndsAt, LocalDate coversFrom,
+                           LocalDate coversTo) {
+        this(tenantId, billingScheduleId, policyNumber, dueDate, amount, currency, gracePeriodEndsAt);
+        this.coversFrom = coversFrom;
+        this.coversTo = coversTo;
+    }
+
+    public LocalDate getCoversFrom() { return coversFrom; }
+    public LocalDate getCoversTo() { return coversTo; }
 
     /**
      * A single-premium invoice: one charge for one accepted enrolment file.
@@ -123,6 +146,16 @@ public class PremiumInvoice {
         invoice.amount = amount;
         invoice.currency = currency;
         invoice.gracePeriodEndsAt = gracePeriodEndsAt;
+        invoice.coversFrom = dueDate;
+        return invoice;
+    }
+
+    /** A single premium's inception invoice, with the end of the cover it buys. */
+    public static PremiumInvoice forPolicyInception(UUID tenantId, String policyNumber, LocalDate dueDate,
+                                                     BigDecimal amount, String currency, LocalDate gracePeriodEndsAt,
+                                                     LocalDate coversTo) {
+        PremiumInvoice invoice = forPolicyInception(tenantId, policyNumber, dueDate, amount, currency, gracePeriodEndsAt);
+        invoice.coversTo = coversTo;
         return invoice;
     }
 

@@ -198,6 +198,7 @@ class DocumentContractTest {
             "db-migrations/claims/V6__exclusion_decline.sql",
             "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
             "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
+            "db-migrations/claims/V11__claim_document_request.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V7__journal_support_document_type.sql",

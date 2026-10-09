@@ -289,6 +289,41 @@ paths:
               schema: { $ref: '#/components/schemas/CustomerPolicy' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /customer/claims:
+    get:
+      summary: The claims the signed-in customer made
+      description: Newest event first, each with the number of documents still asked of the customer.
+      security:
+        - customersAuth: [profile]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CustomerClaimSummary' }
+  /customer/claims/{claimId}:
+    get:
+      summary: One of the customer's claims, in plain words
+      description: >-
+        Its stages, the decision in a customer's words, documents sent and documents asked for. Never an assessor's
+        findings or a staff note. 403 for a claim somebody else made.
+      security:
+        - customersAuth: [profile]
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerClaim' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /customer/products:
     get:
       summary: The products offered online
@@ -490,8 +525,9 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [name, role, benefit, status, waitingPeriodEnds]
+            required: [coveredLifeId, name, role, benefit, status, waitingPeriodEnds]
             properties:
+              coveredLifeId: { type: string, format: uuid }
               name: { type: string }
               role: { type: string }
               benefit: { type: [number, "null"] }
@@ -557,6 +593,70 @@ components:
               dateOfEvent: { type: string, format: date }
               approvedAmount: { type: [number, "null"] }
               currency: { type: [string, "null"] }
+    CustomerClaimSummary:
+      type: object
+      additionalProperties: false
+      required: [claimId, policyNumber, productName, claimType, status, statusText, dateOfEvent, actionsRequired]
+      properties:
+        claimId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        productName: { type: [string, "null"] }
+        claimType: { type: string }
+        status: { type: string }
+        statusText: { type: string }
+        dateOfEvent: { type: string, format: date }
+        actionsRequired: { type: integer, description: Documents still asked of the customer }
+    CustomerClaim:
+      type: object
+      additionalProperties: false
+      required: [claimId, policyNumber, productName, claimType, status, statusText, dateOfEvent, steps, decision,
+                 approvedAmount, currency, documents, requests]
+      properties:
+        claimId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        productName: { type: [string, "null"] }
+        claimType: { type: string }
+        status: { type: string }
+        statusText: { type: string }
+        dateOfEvent: { type: string, format: date }
+        steps:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [label, state, date]
+            properties:
+              label: { type: string }
+              state: { type: string, enum: [DONE, CURRENT, PENDING] }
+              date: { type: [string, "null"], format: date-time }
+        decision: { type: [string, "null"], description: The decision in a customer's words; null while undecided }
+        approvedAmount: { type: [number, "null"] }
+        currency: { type: [string, "null"] }
+        documents:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [documentRef, description, uploadedAt, uploadedByName]
+            properties:
+              documentRef: { type: string }
+              description: { type: [string, "null"] }
+              uploadedAt: { type: string, format: date-time }
+              uploadedByName: { type: [string, "null"] }
+        requests:
+          type: array
+          description: Documents asked for -- open and received; withdrawn ones are left out
+          items:
+            type: object
+            additionalProperties: false
+            required: [requestId, document, reason, requestedAt, status, receivedAt]
+            properties:
+              requestId: { type: string, format: uuid }
+              document: { type: string }
+              reason: { type: [string, "null"] }
+              requestedAt: { type: string, format: date-time }
+              status: { type: string, enum: [OPEN, RECEIVED] }
+              receivedAt: { type: [string, "null"], format: date-time }
     CustomerProduct:
       type: object
       additionalProperties: false
@@ -637,8 +737,11 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [number, invoiceId, dueDate, amountDue, amountPaid, paidOn, receipts, paidBy, status, balance]
+            required: [number, invoiceId, dueDate, amountDue, amountPaid, paidOn, receipts, paidBy, status, balance,
+                       coversFrom, coversTo]
             properties:
+              coversFrom: { type: [string, "null"], format: date, description: "First day of the cover this premium pays for" }
+              coversTo: { type: [string, "null"], format: date, description: "Last day of the cover this premium pays for" }
               number: { type: integer }
               invoiceId: { type: string, format: uuid }
               dueDate: { type: string, format: date }

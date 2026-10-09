@@ -160,13 +160,16 @@ class CoveredLifeSweepIntegrationTest {
         assertThat(main.benefit()).isEqualByComparingTo("2000000");
         // 60,000 + 60,000 + 18,000 = 138,000
         assertThat(premium(policyNumber)).isEqualByComparingTo("12075.00");
-        // The instalment due ON the anniversary is the first at the new rate; the one before is not.
+        // Premiums in advance (billing V11): the first year's twelve instalments fall due from issue to the month before
+        // the anniversary and pay for that year, so all stay at the old rate. The one due ON the anniversary pays for
+        // year two and is not raised yet (the horizon is 12 months, exclusive) -- the schedule it will be raised from
+        // already carries the new rate, which is what premium() read above.
         List<InvoiceView> invoices = asTenant(TENANT, () -> billingApi.listInvoices(policyNumber, null));
         // hasSize first: an allSatisfy over no invoices would pass while proving nothing.
-        assertThat(invoices).filteredOn(i -> i.dueDate().equals(anniversary)).hasSize(1)
-            .allSatisfy(i -> assertThat(i.amount()).isEqualByComparingTo("12075.00"));
-        assertThat(invoices).filteredOn(i -> i.dueDate().isBefore(anniversary)).hasSize(11)
+        assertThat(invoices).filteredOn(i -> i.dueDate().isBefore(anniversary)).hasSize(12)
             .allSatisfy(i -> assertThat(i.amount()).isEqualByComparingTo("9975.00"));
+        assertThat(invoices).filteredOn(i -> !i.dueDate().isBefore(anniversary))
+            .allSatisfy(i -> assertThat(i.amount()).isEqualByComparingTo("12075.00"));
     }
 
     @Test

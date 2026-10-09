@@ -151,6 +151,7 @@ class BillingContractTest {
             "db-migrations/billing/V7__policy_inception_invoice.sql",
             "db-migrations/billing/V8__schedule_premium_paying_until.sql",
             "db-migrations/billing/V10__premium_receipt.sql",
+            "db-migrations/billing/V11__premium_in_advance.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");

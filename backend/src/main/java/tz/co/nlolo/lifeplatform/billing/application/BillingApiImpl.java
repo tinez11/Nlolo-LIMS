@@ -482,9 +482,10 @@ public class BillingApiImpl implements BillingApi {
     void generateScheduleForNewPolicy(UUID tenantId, String policyNumber, UUID productVersionId,
                                        LocalDate issueDate, BigDecimal premiumAmount, String premiumCurrency,
                                        String premiumFrequency, LocalDate premiumPayingUntil) {
-        LocalDate firstDueDate = nextPeriodStart(issueDate, premiumFrequency);
-        BillingSchedule schedule = new BillingSchedule(tenantId, policyNumber, premiumFrequency, premiumAmount,
-            premiumCurrency, firstDueDate, premiumPayingUntil);
+        // In advance (2026-10-08, billing V11): the first instalment is due the day cover starts, and pays for the
+        // period starting then. Schedules created before this kept billing in arrears.
+        BillingSchedule schedule = BillingSchedule.inAdvance(tenantId, policyNumber, premiumFrequency, premiumAmount,
+            premiumCurrency, issueDate, premiumPayingUntil);
         billingScheduleRepository.save(schedule);
         generateInvoicesAhead(tenantId, schedule, productVersionId, issueDate);
     }
@@ -783,11 +784,10 @@ public class BillingApiImpl implements BillingApi {
             return null;
         }
 
-        PremiumInvoice invoice = premiumInvoiceRepository.save(
-            PremiumInvoice.forPolicyInception(tenantId, policyNumber, issueDate, amount, currency, graceEnd));
-
         LocalDate coverEnd = coverEndsOn != null && !coverEndsOn.isBefore(issueDate) ? coverEndsOn
             : issueDate.plusYears(1).minusDays(1);
+        PremiumInvoice invoice = premiumInvoiceRepository.save(
+            PremiumInvoice.forPolicyInception(tenantId, policyNumber, issueDate, amount, currency, graceEnd, coverEnd));
         eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumInvoiceGenerated", tenantId,
             Map.of("invoiceId", invoice.getInvoiceId(), "policyNumber", policyNumber,
                    "dueDate", issueDate.toString(),
@@ -892,8 +892,7 @@ public class BillingApiImpl implements BillingApi {
             return;
         }
         // Already reached the end of the contract between selection and now: nothing to raise.
-        if (schedule.getPremiumPayingUntil() != null
-                && schedule.getNextDueDate().isAfter(schedule.getPremiumPayingUntil())) {
+        if (!schedule.dueWithinPayingTerm(schedule.getNextDueDate())) {
             return;
         }
         UUID productVersionId = policyApi.getPolicy(schedule.getPolicyNumber()).productVersionId();
@@ -916,7 +915,9 @@ public class BillingApiImpl implements BillingApi {
         LocalDate paidTo = null;
         for (PremiumInvoice inv : premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId)) {
             if ("PAID".equals(inv.getStatus()) || "WAIVED".equals(inv.getStatus())) {
-                paidTo = inv.getDueDate();
+                // Paid to the day after the cover it bought. In arrears that is its due date; in advance, the start
+                // of the next period -- the recorded cover says which without knowing the convention.
+                paidTo = inv.getCoversTo() != null ? inv.getCoversTo().plusDays(1) : inv.getDueDate();
             } else {
                 break;
             }
@@ -935,30 +936,34 @@ public class BillingApiImpl implements BillingApi {
         // the horizon applies. The bound is INCLUSIVE: billing's first invoice falls one period
         // after issue (premium in arrears), so a 12-month monthly policy is due issue+1..issue+12,
         // and excluding the endpoint would drop the final month.
+        // In advance (billing V11) the last instalment falls due one period BEFORE the paying end -- see
+        // BillingSchedule.dueWithinPayingTerm; in arrears it may fall on it.
         LocalDate horizon = fromDate.plusMonths(SCHEDULE_HORIZON_MONTHS);
-        LocalDate payingEnd = schedule.getPremiumPayingUntil();
-        if (payingEnd != null && payingEnd.isBefore(horizon)) {
-            horizon = payingEnd;
-        }
         List<PremiumInvoice> toCreate = new ArrayList<>();
-        while (!cursor.isAfter(horizon)) {
+        // Twelve months of instalments: in advance the first falls on fromDate itself, so the horizon is exclusive
+        // (issue..issue+11 for a monthly whole-life policy); in arrears it fell a period later, so inclusive.
+        while ((schedule.isBilledInAdvance() ? cursor.isBefore(horizon) : !cursor.isAfter(horizon))
+                && schedule.dueWithinPayingTerm(cursor)) {
             LocalDate graceEnd = cursor.plusDays(snapshot.gracePeriodDays());
+            LocalDate next = nextPeriodStart(cursor, schedule.getPremiumFrequency());
+            // The period it pays for, stored on it: from its due date in advance, ending the day before in arrears.
+            LocalDate coversFrom = schedule.isBilledInAdvance() ? cursor
+                : previousPeriodStart(cursor, schedule.getPremiumFrequency());
+            LocalDate coversTo = schedule.isBilledInAdvance() ? next.minusDays(1) : cursor.minusDays(1);
             toCreate.add(new PremiumInvoice(tenantId, schedule.getBillingScheduleId(), schedule.getPolicyNumber(),
-                cursor, schedule.getPremiumAmount(), schedule.getPremiumCurrency(), graceEnd));
-            cursor = nextPeriodStart(cursor, schedule.getPremiumFrequency());
+                cursor, schedule.getPremiumAmount(), schedule.getPremiumCurrency(), graceEnd, coversFrom, coversTo));
+            cursor = next;
         }
         premiumInvoiceRepository.saveAll(toCreate);
         schedule.advanceNextDueDate(cursor);
         billingScheduleRepository.save(schedule);
         for (PremiumInvoice invoice : toCreate) {
-            // Premium is billed in arrears (the first falls one period after issue), so an instalment pays for the
-            // period that ENDS the day before it falls due.
+            // The cover it pays for, as recorded on it -- what the ledger's PAA earning reads (IFRS 17 I3a).
             LocalDate due = invoice.getDueDate();
-            LocalDate coversFrom = previousPeriodStart(due, schedule.getPremiumFrequency());
             eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumInvoiceGenerated", tenantId,
                 Map.of("invoiceId", invoice.getInvoiceId(), "policyNumber", invoice.getPolicyNumber(), "dueDate", due.toString(),
                        "amount", Map.of("amount", invoice.getAmount().toPlainString(), "currencyCode", invoice.getCurrency()),
-                       "covers", List.of(cover(coversFrom, due.minusDays(1), invoice.getAmount())))));
+                       "covers", List.of(cover(invoice.getCoversFrom(), invoice.getCoversTo(), invoice.getAmount())))));
         }
     }
 
@@ -1012,7 +1017,8 @@ public class BillingApiImpl implements BillingApi {
             invoice.getAmount(), invoice.getCurrency(), InvoiceStatus.valueOf(invoice.getStatus()),
             invoice.getGracePeriodEndsAt(), dunningLevel,
             (invoice.getAmountPaid() == null ? BigDecimal.ZERO : invoice.getAmountPaid()).setScale(2),
-            credited.setScale(2), invoice.balanceDue(credited), invoice.getEnrolmentSubmissionId());
+            credited.setScale(2), invoice.balanceDue(credited), invoice.getEnrolmentSubmissionId(),
+            invoice.getCoversFrom(), invoice.getCoversTo());
     }
 
     /** Everything credited back off one invoice. Zero when nothing was. */

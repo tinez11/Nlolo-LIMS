@@ -86,6 +86,12 @@ public class ClaimController {
                 + "index meaningless.");
         }
         enforceCustomerOwnClaimantOnly(request.claimantPartyId(), jwt, authentication);
+        // A customer claims only on a policy they hold (2026-10-08, the customer portal design D2): naming themselves as
+        // claimant is not enough to file against somebody else's policy number.
+        if (isCustomer(authentication)
+                && !ownPartyIdOrThrow(jwt).equals(policyApi.getPolicy(request.policyNumber()).policyholderPartyId())) {
+            throw new AccessDeniedException("A customer may only claim on a policy they hold");
+        }
 
         ClaimsApi.RegisterClaimRequest apiRequest = new ClaimsApi.RegisterClaimRequest(request.policyNumber(),
             request.policyMemberId(), request.claimantPartyId(), request.claimType(),

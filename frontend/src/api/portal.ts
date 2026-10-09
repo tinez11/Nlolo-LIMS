@@ -71,6 +71,19 @@ export function applyForProduct(request: {
   return post<CustomerApplication>('/customer/applications', request);
 }
 
+export type CustomerClaimSummary = components['schemas']['CustomerClaimSummary'];
+export type CustomerClaimView = components['schemas']['CustomerClaim'];
+
+/** Step 4: the claims the customer made, newest event first. */
+export function getCustomerClaims(): Promise<CustomerClaimSummary[]> {
+  return get<CustomerClaimSummary[]>('/customer/claims');
+}
+
+/** Step 4: one of the customer's claims in plain words; 403 for one somebody else made. */
+export function getCustomerClaim(claimId: string): Promise<CustomerClaimView> {
+  return get<CustomerClaimView>(`/customer/claims/${enc(claimId)}`);
+}
+
 /** Step 2: one of the customer's own policies, customer-safe; 403 for one they do not hold. */
 export function getCustomerPolicy(policyNumber: string): Promise<CustomerPolicyView> {
   return get<CustomerPolicyView>(`/customer/policies/${enc(policyNumber)}`);

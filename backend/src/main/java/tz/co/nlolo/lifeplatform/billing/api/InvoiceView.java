@@ -18,4 +18,6 @@ public record InvoiceView(UUID invoiceId, String policyNumber, LocalDate dueDate
                            BigDecimal amount, String currency, InvoiceStatus status,
                            LocalDate gracePeriodEndsAt, Integer dunningLevel,
                            BigDecimal amountPaid, BigDecimal amountCredited, BigDecimal balanceDue,
-                           UUID enrolmentSubmissionId) {}
+                           UUID enrolmentSubmissionId,
+                           /* The period of cover it pays for (billing V11); null where not recorded. */
+                           LocalDate coversFrom, LocalDate coversTo) {}

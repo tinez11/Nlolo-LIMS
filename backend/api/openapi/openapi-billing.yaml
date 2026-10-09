@@ -498,3 +498,14 @@ components:
           type: [string, "null"]
           format: uuid
           description: The monthly file that raised this invoice, on credit life. Null for a scheduled premium.
+        coversFrom:
+          type: [string, "null"]
+          format: date
+          description: >-
+            The first day of the cover this invoice pays for (billing V11). A policy issued from 2026-10-08 is billed in
+            advance -- its instalment falls due on this day; one issued before, in arrears -- the period ended the day
+            before it fell due. Null where not recorded (an enrolment file's invoice).
+        coversTo:
+          type: [string, "null"]
+          format: date
+          description: The last day of the cover it pays for; null where not recorded, or a single premium's open end.

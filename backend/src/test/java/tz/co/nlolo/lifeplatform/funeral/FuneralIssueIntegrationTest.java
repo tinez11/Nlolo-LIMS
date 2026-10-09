@@ -111,8 +111,8 @@ class FuneralIssueIntegrationTest {
             .sorted(Comparator.comparing(InvoiceView::dueDate)).toList();
         assertThat(invoices).isNotEmpty();
         assertThat(invoices.get(0).amount()).isEqualByComparingTo("12075.00");
-        assertThat(invoices.get(0).dueDate())
-            .isEqualTo(InstalmentDates.nextAfter(policy.issueDate(), "MONTHLY", policy.issueDate()));
+        // Premiums in advance (billing V11): the first instalment falls due the day cover starts.
+        assertThat(invoices.get(0).dueDate()).isEqualTo(policy.issueDate());
         // Every later invoice lands where InstalmentDates says the next one does.
         for (int i = 1; i < invoices.size(); i++) {
             assertThat(invoices.get(i).dueDate())

@@ -174,6 +174,7 @@ class CreditLifeCommissionTest {
             "db-migrations/billing/V7__policy_inception_invoice.sql",
             "db-migrations/billing/V8__schedule_premium_paying_until.sql",
             "db-migrations/billing/V10__premium_receipt.sql",
+            "db-migrations/billing/V11__premium_in_advance.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/distribution/V4__partial_reversals.sql",
