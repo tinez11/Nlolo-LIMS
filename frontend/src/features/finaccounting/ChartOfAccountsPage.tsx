@@ -415,6 +415,7 @@ export function ChartOfAccountsPage() {
                   inputSize="sm"
                   className="w-56 pl-7"
                   aria-label="Search accounts"
+                  data-list-filter
                   placeholder="Search code or name"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}

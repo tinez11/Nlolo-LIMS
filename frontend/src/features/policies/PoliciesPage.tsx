@@ -283,6 +283,7 @@ export function PoliciesPage({
                 inputSize="sm"
                 value={qInput}
                 onChange={(e) => setQInput(e.target.value)}
+                data-list-filter
                 placeholder="Search by policy number"
                 aria-label="Search by policy number"
                 className="pl-7 pr-2.5"

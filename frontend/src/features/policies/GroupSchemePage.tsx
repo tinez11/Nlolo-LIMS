@@ -301,6 +301,7 @@ export function GroupSchemePage() {
                 <Input
                   name="q"
                   defaultValue={q}
+                  data-list-filter
                   placeholder="Search by member name"
                   aria-label="Search members by name"
                   inputSize="sm"

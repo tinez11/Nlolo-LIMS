@@ -10,6 +10,7 @@ import { currentTheme, toggleTheme, type Theme } from '@/lib/theme';
 import { useNavBadges } from '@/navBadges';
 import { navFor } from '@/screens';
 import { CommandPalette } from './CommandPalette';
+import { useListKeys } from './listKeys';
 import { LoadingBlock } from './states';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -30,6 +31,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
   const location = useLocation();
   const groups = navFor(realm, identity);
   const badges = useNavBadges(realm, identity);
+  useListKeys();
 
   // Below `md` the sidebar is an overlay drawer rather than a column: at 240px
   // fixed it would otherwise eat half a phone screen. Desktop is the designed

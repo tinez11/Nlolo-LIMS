@@ -366,6 +366,7 @@ export function ClientsPage({
               <Input
                 name="q"
                 defaultValue={q}
+                data-list-filter
                 placeholder={area === 'organisations' ? 'Search by company or group' : 'Search by name'}
                 aria-label={copy?.searchLabel ?? 'Search by name'}
                 inputSize="sm" className="w-56 px-2.5 text-sm"
