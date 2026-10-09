@@ -22,9 +22,12 @@ import java.util.UUID;
 public class CustomerPortalController {
 
     private final CustomerPortal portal;
+    private final tz.co.nlolo.lifeplatform.omnichannel.application.CustomerClaims customerClaims;
 
-    public CustomerPortalController(CustomerPortal portal) {
+    public CustomerPortalController(CustomerPortal portal,
+                                    tz.co.nlolo.lifeplatform.omnichannel.application.CustomerClaims customerClaims) {
         this.portal = portal;
+        this.customerClaims = customerClaims;
     }
 
     @GetMapping("/customer/dashboard")
@@ -37,6 +40,22 @@ public class CustomerPortalController {
     @PreAuthorize("hasRole('REALM_CUSTOMERS')")
     public ResponseEntity<CustomerPolicyView> policy(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(portal.policy(customer(jwt), policyNumber));
+    }
+
+    /** Step 4: the claims the customer made, newest event first, each with how many documents are still asked for. */
+    @GetMapping("/customer/claims")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS')")
+    public ResponseEntity<java.util.List<tz.co.nlolo.lifeplatform.omnichannel.api.CustomerClaimView.Summary>> claims(
+            @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(customerClaims.claims(customer(jwt)));
+    }
+
+    /** Step 4: one of the customer's claims; 403 for a claim somebody else made. */
+    @GetMapping("/customer/claims/{claimId}")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS')")
+    public ResponseEntity<tz.co.nlolo.lifeplatform.omnichannel.api.CustomerClaimView> claim(@PathVariable UUID claimId,
+            @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(customerClaims.claim(customer(jwt), claimId));
     }
 
     static UUID customer(Jwt jwt) {

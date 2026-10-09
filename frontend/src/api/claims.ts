@@ -13,6 +13,7 @@ import type {
   SubmitClaimAssessmentRequest,
 } from './types';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './policies';
+import type { components as ClaimsComponents } from '@/types/api/claims';
 
 /**
  * Claims read/write surface, hand-written for the same reasons as api/policies.ts:
@@ -155,10 +156,13 @@ export function attachClaimEvidence(
   claimId: string,
   file: File,
   description?: string,
+  requestId?: string,
 ): Promise<ClaimEvidenceView> {
   const form = new FormData();
   form.append('file', file);
   if (description) form.append('description', description);
+  // Answering a document request: the server checks it is open before storing the file, then marks it received.
+  if (requestId) form.append('requestId', requestId);
   return post<ClaimEvidenceView>(`/claims/${encodeURIComponent(claimId)}/evidence`, form);
 }
 
@@ -178,4 +182,23 @@ export function downloadClaimEvidence(claimId: string, documentRef: string): Pro
   return get<Blob>(`/claims/${encodeURIComponent(claimId)}/evidence/${encodeURIComponent(documentRef)}`, {
     responseType: 'blob',
   });
+}
+
+/** A document claims staff asked the claimant for (2026-10-08, the customer portal design step 4). */
+export type ClaimDocumentRequestView = ClaimsComponents['schemas']['ClaimDocumentRequest'];
+
+/** `GET /claims/{claimId}/document-requests` -- every request, oldest first, whatever its status. */
+export function listDocumentRequests(claimId: string): Promise<ClaimDocumentRequestView[]> {
+  return get<ClaimDocumentRequestView[]>(`/claims/${encodeURIComponent(claimId)}/document-requests`);
+}
+
+/** `POST /claims/{claimId}/document-requests` -- assessors and managers ask the claimant for a document. */
+export function requestClaimDocument(claimId: string, document: string, reason: string | null): Promise<ClaimDocumentRequestView> {
+  return post<ClaimDocumentRequestView>(`/claims/${encodeURIComponent(claimId)}/document-requests`, { document, reason });
+}
+
+/** `POST .../document-requests/{requestId}/withdrawal` -- no longer needed. */
+export function withdrawDocumentRequest(claimId: string, requestId: string): Promise<ClaimDocumentRequestView> {
+  return post<ClaimDocumentRequestView>(
+    `/claims/${encodeURIComponent(claimId)}/document-requests/${encodeURIComponent(requestId)}/withdrawal`, {});
 }

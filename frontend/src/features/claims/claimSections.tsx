@@ -7,6 +7,7 @@ import { ClaimAssessmentPanel } from './ClaimAssessmentPanel';
 import { ClaimPaymentPanel } from './ClaimPaymentPanel';
 import { ClaimReopenPanel } from './ClaimReopenPanel';
 import { ClaimSettlementPanel } from './ClaimSettlementPanel';
+import { DocumentRequestsPanel } from './DocumentRequestsPanel';
 import { EvidencePanel } from './EvidencePanel';
 import { RecoveriesPanel } from '@/features/reinsurance/RecoveriesPanel';
 
@@ -142,6 +143,23 @@ export function claimSections({
           subtitle="Where the settlement is, and who it is waiting on"
         >
           <ClaimPaymentPanel claimId={claimId} claimStatus={claim.status} />
+        </Panel>
+      ),
+    });
+  }
+
+  // Claims people's own working list -- like the assessments, not shown to a session with no claims role.
+  if (roles.CLAIMS_ASSESSOR || roles.CLAIMS_MANAGER) {
+    sections.push({
+      id: 'document-requests',
+      label: 'Requests',
+      content: (
+        <Panel
+          id="document-requests"
+          title="Documents requested"
+          subtitle="What the claimant has been asked for; they answer from the customer portal"
+        >
+          <DocumentRequestsPanel claimId={claimId} canRequest={claim.status !== 'SETTLED'} />
         </Panel>
       ),
     });

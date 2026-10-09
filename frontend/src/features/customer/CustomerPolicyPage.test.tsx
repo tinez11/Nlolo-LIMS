@@ -15,7 +15,7 @@ const funeralPolicy: CustomerPolicyView = {
     value: null },
   lifeAssuredName: 'Nadine Kileo', commencementDate: '2026-10-08', maturityDate: null, termMonths: null,
   beneficiaries: [{ name: 'Amina Kileo', sharePercent: 100 }],
-  coveredLives: [{ name: 'Nadine Kileo', role: 'MAIN_MEMBER', benefit: 4000000, status: 'ACTIVE', waitingPeriodEnds: '2099-01-01' }],
+  coveredLives: [{ coveredLifeId: 'life-1', name: 'Nadine Kileo', role: 'MAIN_MEMBER', benefit: 4000000, status: 'ACTIVE', waitingPeriodEnds: '2099-01-01' }],
   savings: null, units: null, annuity: null,
   claims: [{ claimId: 'c-1', claimType: 'DEATH', status: 'SETTLED', dateOfEvent: '2026-10-08', approvedAmount: 4000000, currency: 'TZS' }],
 };
@@ -39,7 +39,8 @@ describe('CustomerPolicyPage', () => {
     expect(screen.getByText(/Waiting period to/)).toBeInTheDocument();
     expect(screen.getByText('payment schedule')).toBeInTheDocument();
     expect(screen.getByText('Amina Kileo')).toBeInTheDocument();
-    expect(screen.getByText(/Paid · TZS 4,000,000.00/)).toBeInTheDocument();
+    // Each claim opens on its own page.
+    expect(screen.getByRole('link', { name: /Death.*Paid · TZS 4,000,000.00/ })).toHaveAttribute('href', '/customers/claims/c-1');
     // A zero sum assured is not "Cover: TZS 0" -- a funeral plan's cover is per life.
     expect(screen.queryByText('Cover')).not.toBeInTheDocument();
     expect(screen.queryByText('Savings')).not.toBeInTheDocument();

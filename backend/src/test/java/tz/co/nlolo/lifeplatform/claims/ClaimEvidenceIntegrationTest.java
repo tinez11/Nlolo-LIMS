@@ -82,7 +82,8 @@ class ClaimEvidenceIntegrationTest {
             "db-migrations/claims/V5__claim_policy_member.sql",
             "db-migrations/claims/V6__exclusion_decline.sql",
             "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
-            "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql");
+            "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
+            "db-migrations/claims/V11__claim_document_request.sql");
 
         minioClient = MinioClient.builder()
             .endpoint(MINIO.getS3URL())

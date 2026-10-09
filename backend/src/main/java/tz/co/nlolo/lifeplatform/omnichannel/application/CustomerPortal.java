@@ -118,7 +118,7 @@ public class CustomerPortal {
             .toList();
         List<CustomerPolicyView.CoveredLife> lives = "FUNERAL".equals(policy.productCategory())
             ? policyApi.coveredLives(policyNumber).stream()
-                .map(l -> new CustomerPolicyView.CoveredLife(l.fullName(), l.role().name(), l.benefit(), l.status(),
+                .map(l -> new CustomerPolicyView.CoveredLife(l.coveredLifeId(), l.fullName(), l.role().name(), l.benefit(), l.status(),
                     l.waitingPeriodEnds()))
                 .toList()
             : null;
