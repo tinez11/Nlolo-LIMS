@@ -5,19 +5,22 @@ import type { ComponentProps } from 'react';
 import { cn } from '@/lib/cn';
 
 const button = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 aria-busy:cursor-progress [&_svg]:size-4 [&_svg]:shrink-0',
+  // `active:duration-0`: the press lands on pointer-down (2026-10-09). Through the 150ms colour
+  // transition a quick click let go before the press tone arrived, so nothing ever looked pressed.
+  // Colour only, never a transform or a lift -- DESIGN.md: hover and press are tone, not motion.
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors active:duration-0 disabled:pointer-events-none disabled:opacity-50 aria-busy:cursor-progress [&_svg]:size-4 [&_svg]:shrink-0',
   {
     variants: {
       variant: {
-        primary: 'bg-accent text-accent-foreground hover:opacity-90',
+        primary: 'bg-accent text-accent-foreground hover:opacity-90 active:opacity-80',
         // Espresso's default button: a filled ground, no border. A button needs no drawn
         // boundary to be identified -- its label does that -- so the 3:1 rule that keeps a
         // border on every text field does not reach it.
-        secondary: 'bg-control text-foreground hover:bg-control-hover',
-        outline: 'border border-border-strong bg-surface hover:bg-hover',
-        ghost: 'hover:bg-hover',
+        secondary: 'bg-control text-foreground hover:bg-control-hover active:bg-control-press',
+        outline: 'border border-border-strong bg-surface hover:bg-hover active:bg-selected',
+        ghost: 'hover:bg-hover active:bg-selected',
         // Reserved for genuinely destructive actions, so the colour keeps meaning.
-        danger: 'bg-status-danger-fg text-background hover:opacity-90',
+        danger: 'bg-status-danger-fg text-background hover:opacity-90 active:opacity-80',
       },
       size: {
         // Desktop density stays; a finger gets 44px. `pointer-coarse` rather than a width

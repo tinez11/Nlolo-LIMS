@@ -13,6 +13,7 @@ colors:
   input: "oklch(0.66 0 0)"
   control: "oklch(0.965 0 0)"
   control-hover: "oklch(0.935 0 0)"
+  control-press: "oklch(0.9 0 0)"
   band: "oklch(0.965 0 0)"
   hover: "oklch(0.968 0 0)"
   selected: "oklch(0.955 0 0)"
@@ -683,8 +684,13 @@ component is a mistake, not a texture.
 - **Disabled:** 50% opacity and pointer-events off. A `501` deferred endpoint
   renders its action disabled with a tooltip, never as a live button.
 
-*Target gap:* the chosen "confident and tactile" character asks for a real
-`:active` state on buttons — a perceptible press. The incumbent build has none.
+- **Press** (closed 2026-10-09, was a target gap): every variant takes a pressed
+  tone one step past its hover — primary and danger `opacity-80`, secondary the
+  new **Control Press** token (`0.9` / `16%` white in dark), outline and ghost
+  Selected — and `active:duration-0` lands it on pointer-down rather than after
+  the 150ms colour transition, which a quick click had already outrun. Table
+  rows, nav items, filter chips and section-bar links press the same way. Tone
+  only: no transform, no scale, no lift.
 
 ### Inputs / Fields
 

@@ -98,7 +98,7 @@ export function DataTable<T>({
                 className={cn(
                   'border-b border-border last:border-0',
                   selected && 'bg-selected',
-                  interactive && !selected && 'hover:bg-hover',
+                  interactive && !selected && 'hover:bg-hover active:bg-selected',
                 )}
               >
                 {columns.map((column, index) => (

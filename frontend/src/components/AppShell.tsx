@@ -256,7 +256,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
                           // both keep the weight, which is the signal that survives either.
                           isActive
                             ? 'bg-surface font-medium text-foreground shadow-raise dark:bg-selected'
-                            : 'text-muted-foreground hover:bg-hover hover:text-foreground',
+                            : 'text-muted-foreground hover:bg-hover hover:text-foreground active:bg-selected active:duration-0',
                         )
                       }
                     >

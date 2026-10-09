@@ -100,7 +100,7 @@ export function SectionNav({
           // which is what the weight change says to everybody else.
           aria-current={section.id === current ? true : undefined}
           className={cn(
-            'shrink-0 rounded-md px-2.5 py-1 text-sm transition-colors hover:bg-hover hover:text-foreground pointer-coarse:py-2.5',
+            'shrink-0 rounded-md px-2.5 py-1 text-sm transition-colors hover:bg-hover hover:text-foreground active:bg-selected active:duration-0 pointer-coarse:py-2.5',
             section.id === current
               ? 'bg-control font-medium text-foreground'
               : 'text-muted-foreground',

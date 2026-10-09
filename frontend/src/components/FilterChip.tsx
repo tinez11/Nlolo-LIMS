@@ -48,14 +48,14 @@ export function FilterChip({
         // Ink-filled when active, not a faint ring: three inactive chips beside one active
         // one have to be distinguishable at a glance from across a desk. `aria-pressed`
         // still carries the state for assistive tech, as it always did.
-        'inline-flex min-h-8 items-center rounded-full transition-colors pointer-coarse:min-h-11',
+        'inline-flex min-h-8 items-center rounded-full transition-colors active:duration-0 pointer-coarse:min-h-11',
         mono && 'font-mono',
         bare
           ? // The ring sits outside the badge, so the status hue underneath it is untouched.
             cn('p-0.5', active ? 'ring-2 ring-accent' : 'hover:bg-hover')
           : cn(
               'px-3 text-xs',
-              active ? 'bg-accent text-accent-foreground' : 'bg-control hover:bg-control-hover',
+              active ? 'bg-accent text-accent-foreground' : 'bg-control hover:bg-control-hover active:bg-control-press',
             ),
       )}
     >
