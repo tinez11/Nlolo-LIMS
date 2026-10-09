@@ -11,4 +11,6 @@ import java.util.List;
  */
 public record DepositView(String policyNumber, String currency, List<DepositPeriodView> periods,
                           MaturityInstructionView instruction, BigDecimal interestSoFar, String defaultPayeeRef,
-                          boolean awaitingPayee, List<Integer> termsOffered) {}
+                          boolean awaitingPayee, List<Integer> termsOffered,
+                          /** The running term worked forward (2026-10-09); null when no term runs. */
+                          DepositScheduleView schedule) {}

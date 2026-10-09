@@ -87,11 +87,28 @@ describe('AccountPanel', () => {
           defaultPayeeRef: '+255700000777',
           awaitingPayee: false,
           termsOffered: [3, 6, 12],
+          schedule: {
+            principal: money('1000000.00'), termMonths: 3, ratePercent: 3, startDate: '2026-10-01', maturityDate: '2027-01-01',
+            interestAtMaturity: money('30000.00'), amountAtMaturity: money('1030000.00'),
+            ifClosedEarly: [
+              { closedOn: '2026-11-01', interest: money('10108.70'), paidOut: money('1010108.70') },
+              { closedOn: '2026-12-01', interest: money('19891.30'), paidOut: money('1019891.30') },
+              { closedOn: '2027-01-01', interest: money('30000.00'), paidOut: money('1030000.00') },
+            ],
+          },
         }),
       },
     });
     render(<AccountPanel policyNumber="POL-1" />);
     expect(screen.getByText('3 months, 3% for the term')).toBeInTheDocument();
+    // The term worked forward (2026-10-09): what it pays at maturity, and if closed early.
+    expect(screen.getByText('Paid at maturity')).toBeInTheDocument();
+    // Once as the maturity figure, once as the table's last row.
+    expect(screen.getAllByText('TZS 1,030,000.00')).toHaveLength(2);
+    const early = screen.getByRole('table', { name: 'If closed early' });
+    expect(early).toHaveTextContent('TZS 1,010,108.70');
+    expect(early).toHaveTextContent('(maturity)');
+    expect(screen.getByRole('button', { name: 'Download the deposit schedule as PDF' })).toBeInTheDocument();
     expect(screen.getByText('No instruction: it will be paid out to +255700000777.')).toBeInTheDocument();
     for (const name of ['Request withdrawal', 'Request top-up', 'Record transfer in']) {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();

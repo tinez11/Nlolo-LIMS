@@ -21,7 +21,7 @@ const summary = { policyNumber: 'POL-F', productName: 'Nuru Funeral Cover', prod
   value: null };
 const funeral: CustomerPolicyView = {
   summary, lifeAssuredName: 'Nadine Kileo', commencementDate: '2026-01-01', maturityDate: null, termMonths: null,
-  beneficiaries: [], savings: null, units: null, annuity: null, claims: [],
+  beneficiaries: [], savings: null, units: null, annuity: null, claims: [], deposit: null,
   coveredLives: [
     { coveredLifeId: 'life-main', name: 'Nadine Kileo', role: 'MAIN_MEMBER', benefit: 4000000, status: 'ACTIVE', waitingPeriodEnds: null },
     { coveredLifeId: 'life-mum', name: 'Rehema Kileo', role: 'PARENT', benefit: 1500000, status: 'ACTIVE', waitingPeriodEnds: null },

@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
+import { CheckboxField } from '@/components/ui/checkbox';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { toApiError, type ApiError } from '@/lib/apiError';
 import { formatDate } from '@/lib/dates';
@@ -206,16 +207,12 @@ export function CustomerReportClaimPage() {
                 </>
               )}
               {funeral && (
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={form.accidental} onChange={(e) => set({ accidental: e.target.checked })} />
-                  It was an accident
-                </label>
+                <CheckboxField label="It was an accident" checked={form.accidental}
+                  onChange={(e) => set({ accidental: e.target.checked })} />
               )}
               {type === 'DISABILITY' && (
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={form.permanent} onChange={(e) => set({ permanent: e.target.checked })} />
-                  The doctor says it is permanent
-                </label>
+                <CheckboxField label="The doctor says it is permanent" checked={form.permanent}
+                  onChange={(e) => set({ permanent: e.target.checked })} />
               )}
             </div>
           </Panel>

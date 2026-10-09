@@ -178,6 +178,48 @@ public class PolicyDocuments {
             false);
     }
 
+    // ---- the deposit schedule (2026-10-09) ----
+
+    /**
+     * A fixed-term deposit's schedule (2026-10-09, the user's request for a schedule "like others"): the running term,
+     * what it pays at maturity, and what it would pay if closed early at each month -- interest to that day.
+     *
+     * @throws IllegalArgumentException for a policy that is not a deposit, or one with no term running
+     */
+    @Transactional(readOnly = true)
+    public CustomerDocument depositScheduleDocument(String policyNumber) {
+        PolicyView policy = policyApi.getPolicy(policyNumber);
+        var schedule = accumulationApi.findDeposit(policyNumber)
+            .orElseThrow(() -> new IllegalArgumentException("Policy " + policyNumber + " is not a fixed-term deposit"))
+            .schedule();
+        if (schedule == null) {
+            throw new IllegalArgumentException("No term is running on deposit " + policyNumber
+                + ": the schedule starts when the deposit is received");
+        }
+        String c = schedule.currency();
+        List<Column> columns = List.of(new Column("If closed on", Kind.TEXT, 1.6f),
+            new Column("Interest (" + c + ")", Kind.MONEY, 1.4f), new Column("Paid out (" + c + ")", Kind.MONEY, 1.6f));
+        List<List<Object>> rows = new ArrayList<>();
+        schedule.ifClosedEarly().forEach(r -> rows.add(List.of(
+            DMY.format(r.closedOn()) + (r.closedOn().equals(schedule.maturityDate()) ? " (maturity)" : ""),
+            r.interest(), r.paidOut())));
+        String rate = schedule.ratePercent().stripTrailingZeros().toPlainString();
+        List<Field> extra = List.of(
+            new Field("Deposited", money(schedule.principal(), c) + " on " + DMY.format(schedule.startDate())),
+            new Field("Plan", schedule.termMonths() + " months, " + rate + "% for the term"),
+            new Field("Matures", DMY.format(schedule.maturityDate())));
+        List<Field> totals = List.of(
+            new Field("Interest at maturity", money(schedule.interestAtMaturity(), c)),
+            new Field("Paid at maturity", money(schedule.amountAtMaturity(), c)));
+        List<String> notes = List.of(
+            "Interest is earned evenly day by day at the plan's rate; closing early pays the deposit and the interest"
+                + " earned to that day.",
+            "At maturity the deposit is paid out, or reinvested if you asked for that.",
+            "This schedule is a guide. The policy terms and conditions govern what is paid.");
+        return new CustomerDocument(ISSUER, "Deposit schedule", header(policy, productName(policy), extra), columns, rows,
+            totals, notes, false);
+    }
+
     // ---- the policy schedule (2026-10-08, the customer portal design step 3) ----
 
     /**

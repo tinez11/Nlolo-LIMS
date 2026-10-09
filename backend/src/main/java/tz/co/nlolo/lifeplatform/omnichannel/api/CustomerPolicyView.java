@@ -13,7 +13,17 @@ import java.util.UUID;
 public record CustomerPolicyView(CustomerDashboardView.CustomerPolicySummary summary, String lifeAssuredName,
                                  LocalDate commencementDate, LocalDate maturityDate, Integer termMonths,
                                  List<Beneficiary> beneficiaries, List<CoveredLife> coveredLives, Savings savings,
-                                 Units units, Annuity annuity, List<ClaimLine> claims) {
+                                 Units units, Annuity annuity, List<ClaimLine> claims,
+                                 /** A fixed-term deposit's running term (2026-10-09); null on anything else. */
+                                 Deposit deposit) {
+
+    /**
+     * A fixed-term deposit's running term as the customer reads it: the plan, what it has earned so far, and what it pays
+     * at maturity. Closing early pays the deposit and the interest to that day.
+     */
+    public record Deposit(BigDecimal principal, String currency, int termMonths, BigDecimal ratePercent,
+                          LocalDate startDate, LocalDate maturityDate, BigDecimal interestSoFar,
+                          BigDecimal interestAtMaturity, BigDecimal amountAtMaturity) {}
 
     public record Beneficiary(String name, BigDecimal sharePercent) {}
 

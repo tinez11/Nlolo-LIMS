@@ -16,7 +16,7 @@ const funeralPolicy: CustomerPolicyView = {
   lifeAssuredName: 'Nadine Kileo', commencementDate: '2026-10-08', maturityDate: null, termMonths: null,
   beneficiaries: [{ name: 'Amina Kileo', sharePercent: 100 }],
   coveredLives: [{ coveredLifeId: 'life-1', name: 'Nadine Kileo', role: 'MAIN_MEMBER', benefit: 4000000, status: 'ACTIVE', waitingPeriodEnds: '2099-01-01' }],
-  savings: null, units: null, annuity: null,
+  savings: null, units: null, annuity: null, deposit: null,
   claims: [{ claimId: 'c-1', claimType: 'DEATH', status: 'SETTLED', dateOfEvent: '2026-10-08', approvedAmount: 4000000, currency: 'TZS' }],
 };
 
@@ -44,6 +44,22 @@ describe('CustomerPolicyPage', () => {
     // A zero sum assured is not "Cover: TZS 0" -- a funeral plan's cover is per life.
     expect(screen.queryByText('Cover')).not.toBeInTheDocument();
     expect(screen.queryByText('Savings')).not.toBeInTheDocument();
+  });
+
+  it('shows a deposit as its holder reads it: the plan, what it has earned, and what it pays at maturity', async () => {
+    vi.mocked(portalApi.getCustomerPolicy).mockResolvedValue({
+      ...funeralPolicy,
+      summary: { ...funeralPolicy.summary, productName: 'Nlolo Fixed Deposit', productCategory: 'ENDOWMENT',
+        premiumFrequency: 'SINGLE', premium: 1000000 },
+      coveredLives: null, claims: [],
+      deposit: { principal: 1000000, currency: 'TZS', termMonths: 3, ratePercent: 3, startDate: '2026-10-09',
+        maturityDate: '2027-01-09', interestSoFar: 0, interestAtMaturity: 30000, amountAtMaturity: 1030000 },
+    });
+    renderPolicy();
+    expect(await screen.findByText('Your deposit')).toBeInTheDocument();
+    expect(screen.getByText('3 months, 3% for the term')).toBeInTheDocument();
+    expect(screen.getByText('TZS 1,030,000.00')).toBeInTheDocument();
+    expect(screen.getByText(/close it early at any time/)).toBeInTheDocument();
   });
 
   it('says plainly when the policy is not theirs', async () => {

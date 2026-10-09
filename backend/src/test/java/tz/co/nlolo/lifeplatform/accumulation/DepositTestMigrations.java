@@ -60,6 +60,8 @@ public final class DepositTestMigrations {
         "db-migrations/underwriting/V9__group_proposal.sql",
         "db-migrations/underwriting/V10__issuance_failure.sql",
         "db-migrations/underwriting/V11__member_evidence_case.sql",
+        // A deposit case is opened on SINGLE (2026-10-09), which V6's CHECK refused.
+        "db-migrations/underwriting/V13__single_premium_frequency.sql",
         "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
         "db-migrations/underwriting/V19__group_funeral_proposal.sql",
         "db-migrations/underwriting/V20__sale_lock_backfill.sql",

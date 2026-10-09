@@ -7,7 +7,25 @@ import java.util.List;
 
 /** A fixed-term deposit, its terms oldest first, and what happens at the end of the running one. */
 public record DepositResponse(String policyNumber, List<Period> periods, Instruction instruction, MoneyResponse interestSoFar,
-                              String defaultPayeeRef, boolean awaitingPayee, List<Integer> termsOffered) {
+                              String defaultPayeeRef, boolean awaitingPayee, List<Integer> termsOffered,
+                              Schedule schedule) {
+
+    /** The running term worked forward (2026-10-09): maturity figures, and the value if closed at each month. */
+    public record Schedule(MoneyResponse principal, int termMonths, BigDecimal ratePercent, String startDate,
+                           String maturityDate, MoneyResponse interestAtMaturity, MoneyResponse amountAtMaturity,
+                           List<Row> ifClosedEarly) {
+        public record Row(String closedOn, MoneyResponse interest, MoneyResponse paidOut) {}
+
+        static Schedule from(tz.co.nlolo.lifeplatform.accumulation.api.DepositScheduleView s) {
+            String c = s.currency();
+            return new Schedule(MoneyResponse.of(s.principal(), c), s.termMonths(),
+                new BigDecimal(s.ratePercent().stripTrailingZeros().toPlainString()), s.startDate().toString(),
+                s.maturityDate().toString(), MoneyResponse.of(s.interestAtMaturity(), c),
+                MoneyResponse.of(s.amountAtMaturity(), c),
+                s.ifClosedEarly().stream().map(r -> new Row(r.closedOn().toString(), MoneyResponse.of(r.interest(), c),
+                    MoneyResponse.of(r.paidOut(), c))).toList());
+        }
+    }
 
     public record Period(String periodId, int seq, MoneyResponse principal, int termMonths, BigDecimal ratePercent,
                          String rateVersionId, String startDate, String maturityDate, String status,
@@ -40,6 +58,7 @@ public record DepositResponse(String policyNumber, List<Period> periods, Instruc
     static DepositResponse from(DepositView d) {
         return new DepositResponse(d.policyNumber(), d.periods().stream().map(p -> Period.from(p, d.currency())).toList(),
             d.instruction() != null ? Instruction.from(d.instruction()) : null, MoneyResponse.of(d.interestSoFar(), d.currency()),
-            d.defaultPayeeRef(), d.awaitingPayee(), d.termsOffered());
+            d.defaultPayeeRef(), d.awaitingPayee(), d.termsOffered(),
+            d.schedule() != null ? Schedule.from(d.schedule()) : null);
     }
 }

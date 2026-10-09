@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { listAccountCharges, type AccountChargeView } from '@/api/accountCharges';
 import { InlineError } from '@/components/InlineError';
 import { LoadingBlock } from '@/components/states';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toApiError, type ApiError } from '@/lib/apiError';
 import { CHARGE_WHEN, chargeSize } from './chargeText';
 
@@ -37,7 +38,7 @@ export function AccountChargePicker({ value, onChange, legend = 'Account charges
         <>
           {charges.map((c) => (
             <label key={c.chargeId} className="flex items-start gap-2 text-sm">
-              <input type="checkbox" className="mt-1" checked={value.includes(c.chargeId)} onChange={() => toggle(c.chargeId)} />
+              <Checkbox className="mt-0.5" checked={value.includes(c.chargeId)} onChange={() => toggle(c.chargeId)} />
               <span>
                 {c.name}
                 <span className="block text-xs text-muted-foreground">{CHARGE_WHEN[c.when]} · {chargeSize(c)}</span>
