@@ -152,6 +152,8 @@ Carried over from the console redesign plans, still binding:
 
 ### Task A1: Remove the tab-strip scrollbar (F1)
 
+**Outcome (2026-10-09):** the tab strip's rule is now an inset shadow (`shadow-[inset_0_-1px_0_var(--color-border)]`) instead of `border-b` plus `-mb-px` triggers. Clipping the vertical axis alone would have cut the bottom pixel off the active underline. The triggers draw their focus ring inset (`focus-visible:-outline-offset-2`). `SectionNav` only needed `overflow-y-hidden`, since its links have 6px of padding to hold the ring. Probe: `scrollHeight` 40 = `clientHeight` 40. There's a guard for sticky sideways scrollers.
+
 **Files:** `components/RecordTabs.tsx`, `components/SectionNav.tsx`, `components/RecordTabs.test.tsx`
 
 - [ ] **Step 1:** Reproduce: open any policy at 1920×900, scale 1.5, and confirm the ▲▼ control at the right end of the tab strip. In devtools, confirm that `list.scrollHeight > list.clientHeight` by 1–2px.
@@ -159,7 +161,9 @@ Carried over from the console redesign plans, still binding:
 - [ ] **Step 3:** Add a guard: a `className` containing `overflow-x-auto` together with `sticky` must also contain `overflow-y-hidden`. The plain `DataTable` wrapper is not sticky, so it is unaffected.
 - [ ] **Step 4:** Re-capture. Check that the strip still scrolls sideways at a narrow width, the underline still sits on the rule, and the focus ring is still fully visible (it may need `outline-offset: -2px` on triggers now that vertical overflow is clipped).
 
-### Task A2: Stop the sidebar scrolling sideways (F2)
+### Task A2: Stop the sidebar scrolling sideways (F2) — NOT A DEFECT
+
+**Outcome (2026-10-09):** not reproduced. Probed at 1280×600, scale 1.5, on `products/new`, `products` and `policies`: the nav's `scrollWidth` equals its `clientWidth` (223 = 223), and `scrollLeft` is 0. In screenshot 5 *everything* sits about 10px left (the logo, the go-to box, the breadcrumb, the right-hand scrollbar), which points to the screenshot's crop, not the nav. No code change. The steps below are kept for reference only.
 
 **Files:** `components/AppShell.tsx`
 
@@ -168,6 +172,15 @@ Carried over from the console redesign plans, still binding:
 - [ ] **Step 3:** Capture every staff role's sidebar at scale 1.5 and check that all labels start at the 24px rhythm.
 
 ### Task A3: A billing schedule that reads as a ledger (F3, F11)
+
+**Outcome (2026-10-09), different from the steps below:** `nowrap` alone could not fix it. The user's 1920×900 screen at 150% is a **1280×600 CSS viewport**, where the record's work column is about 670px, and 10 columns cannot fit. The schedule went to **five columns**:
+- **Due:** the due date, with "covers to …" underneath, or the full range when the cover doesn't start on the due date.
+- **Amount due.**
+- **Paid:** the amount, with "date · payer" and then the receipt underneath.
+- **Status:** a `StatusBadge` of kind `invoice`, keeping the server's wording through a new `label` prop.
+- **Balance.**
+
+"No." was dropped from the screen (the PDF keeps it). Totals use an auto-fill grid instead of `sm:grid-cols-5`. `DataTable` gained `nowrap`, which `align: 'right'` implies. Verified at 1280×600 ×1.5: one line per premium, Balance visible, no horizontal scroll.
 
 **Files:** `components/DataTable.tsx`, `features/documents/PaymentScheduleTable.tsx`, the tests beside both, `e2e/staff-billing.spec.ts`
 
@@ -180,6 +193,8 @@ Carried over from the console redesign plans, still binding:
 - [ ] **Step 7:** Run `staff-billing.spec.ts` and every spec that opens the Billing tab (`grep -rln "name: 'Billing'" e2e`).
 
 ### Task A4: No `--` in visible copy (F4)
+
+**Outcome (2026-10-09):** the guard found 21 sites, all real copy, all changed to `—`. **Trap:** eleven e2e locators matched the short form `'Rating table -- must cover'`, which a search on the full sentence missed. Two of them were `not.toBeVisible()` checks, which would have gone on passing without checking anything. Search on each sentence's *opening words* before changing copy.
 
 **Files:** `test/designGuards.test.ts`, the sites it finds
 

@@ -80,7 +80,7 @@ export function GlPostingDetailPage() {
       {entry && (
         <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-5">
-            <Panel title="Postings" subtitle="Debits equal credits -- the ledger refuses an unbalanced journal">
+            <Panel title="Postings" subtitle="Debits equal credits — the ledger refuses an unbalanced journal">
               <ul className="divide-y divide-border">
                 {entry.postings.map((p) => {
                   const dims = dimensionText(p.dimensions);

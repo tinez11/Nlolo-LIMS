@@ -80,7 +80,7 @@ export function RegulatoryReturnDetailPage() {
                 <Field
                   label="Document ref"
                   value={view.documentRef ?? '—'}
-                  note="Always null -- TIRA submission rendering is deliberately deferred"
+                  note="Always null — TIRA submission rendering is deliberately deferred"
                 />
               </dl>
             </Panel>

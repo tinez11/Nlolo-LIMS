@@ -198,4 +198,20 @@ describe('design guards', () => {
     // `emphasis`, and not any later change to what a panel is.
     expect(offenders(/<section className="rounded-lg border border-border bg-surface"/)).toEqual([]);
   });
+
+  it('clips the vertical axis of every sticky sideways scroller', () => {
+    // `overflow-x: auto` computes `overflow-y` to `auto` as well. A sticky tab strip whose
+    // triggers sit `-mb-px` on its rule overflows itself by a pixel, and that pixel grew a
+    // vertical scrollbar -- the up/down arrows beside every policy's and client's tabs.
+    expect(
+      offenders(/^(?=.*\bsticky\b)(?=.*\boverflow-x-auto\b)(?!.*\boverflow-y-hidden\b)/),
+    ).toEqual([]);
+  });
+
+  it('writes a dash in visible copy as a dash, never as two hyphens', () => {
+    // ` -- ` is how this codebase's comments spell an em dash, and comments are stripped
+    // before this runs. Anything left is a string or JSX text, where the browser shows the
+    // two hyphens as they are: "then publish a version -- a product with no version".
+    expect(offenders(/\s--\s/)).toEqual([]);
+  });
 });

@@ -87,7 +87,7 @@ test.describe('family funeral cover', () => {
       await expect(admin.getByText('DRAFT')).toBeVisible();
 
       // No rating table on a funeral plan: its premium table is its whole price.
-      await expect(admin.getByText(/Rating table -- must cover/)).not.toBeVisible();
+      await expect(admin.getByText(/Rating table — must cover/)).not.toBeVisible();
       await admin.getByLabel('Effective date').fill(dmy('2026-01-01'));
       await admin.getByLabel('TIRA filing reference').fill('TIRA/E2E/FUN');
       await admin.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));

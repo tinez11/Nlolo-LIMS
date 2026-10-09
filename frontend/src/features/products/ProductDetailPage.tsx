@@ -96,7 +96,7 @@ export function ProductDetailPage() {
         <div className="mt-4 rounded-lg border border-border bg-surface px-6 py-10 text-center">
           <p className="text-sm font-medium">Not found among active products</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Either this product does not exist, or it has no published version yet -- a DRAFT
+            Either this product does not exist, or it has no published version yet — a DRAFT
             product is invisible everywhere in this console until one is published.
           </p>
         </div>

@@ -96,7 +96,7 @@ test.describe('unit-linked', () => {
       await expect(admin.getByText('DRAFT')).toBeVisible();
 
       // No rating table: the cost of insurance comes from the mortality table.
-      await expect(admin.getByText(/Rating table -- must cover/)).not.toBeVisible();
+      await expect(admin.getByText(/Rating table — must cover/)).not.toBeVisible();
       await admin.getByLabel('Effective date').fill(dmy('2026-01-01'));
       await admin.getByLabel('TIRA filing reference').fill('TIRA/E2E/UL');
       await admin.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));

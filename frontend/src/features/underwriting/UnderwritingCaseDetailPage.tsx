@@ -551,7 +551,7 @@ export function UnderwritingCaseDetailPage() {
           <Link to=".." relative="path" className="underline">
             Underwriting queue
           </Link>
-          . A policy later issued from this case still never re-exposes its id, though --
+          . A policy later issued from this case still never re-exposes its id, though —
           bookmark this page if you need direct access without going through the queue.
         </div>
       </>

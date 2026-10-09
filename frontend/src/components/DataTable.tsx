@@ -24,6 +24,15 @@ export interface Column<T> {
   className?: string;
   /** Hidden below `sm`, for columns that are useful but not identifying. */
   secondary?: boolean;
+  /**
+   * Never wrap the header or the value -- a date, a reference. Implied by `align: 'right'`: a
+   * figure broken across lines ("TZS / 3,000,000.00") no longer compares down its column.
+   */
+  nowrap?: boolean;
+}
+
+function noWrap<T>(column: Column<T>): boolean {
+  return column.nowrap === true || column.align === 'right';
 }
 
 export interface DataTableProps<T> {
@@ -65,6 +74,7 @@ export function DataTable<T>({
                 className={cn(
                   'px-4 py-2.5 text-left text-xs font-medium text-muted-foreground',
                   column.align === 'right' && 'text-right',
+                  noWrap(column) && 'whitespace-nowrap',
                   column.secondary && 'hidden sm:table-cell',
                   column.className,
                 )}
@@ -93,6 +103,7 @@ export function DataTable<T>({
                     className={cn(
                       'px-4 py-0 align-middle',
                       column.align === 'right' && 'text-right',
+                      noWrap(column) && 'whitespace-nowrap',
                       column.secondary && 'hidden sm:table-cell',
                     )}
                   >

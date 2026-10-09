@@ -210,7 +210,7 @@ export function OpenUnderwritingCasePage() {
       <PageHeader
         breadcrumb={[{ label: 'Underwriting', to: '/staff/underwriting' }]}
         title="Open an underwriting case"
-        description="Browsable afterward from the Underwriting queue -- but a policy later issued from it never re-exposes this case's id."
+        description="Browsable afterward from the Underwriting queue — but a policy later issued from it never re-exposes this case's id."
       />
 
       <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>

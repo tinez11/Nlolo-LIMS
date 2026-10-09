@@ -89,7 +89,7 @@ export function SectionNav({
       // page bar: a CSS custom property is only reactive to CSS, and the rail has to
       // re-measure when this bar appears.
       data-sectionbar
-      className="sticky top-[var(--pagebar-h,0px)] z-10 flex gap-1 overflow-x-auto border-b border-border bg-background px-6 py-1.5"
+      className="sticky top-[var(--pagebar-h,0px)] z-10 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-border bg-background px-6 py-1.5"
     >
       {sections.map((section) => (
         <a

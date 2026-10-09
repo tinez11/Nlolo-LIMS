@@ -76,7 +76,7 @@ export function claimSections({
           id="settlement"
           emphasis
           title="Decide settlement"
-          subtitle="Approve or reject -- distinct from assessing."
+          subtitle="Approve or reject — distinct from assessing."
         >
           <ClaimSettlementPanel
             claimId={claimId}

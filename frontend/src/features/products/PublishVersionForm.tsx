@@ -414,8 +414,8 @@ export function PublishVersionForm({
         */}
         <p className="mb-2 text-xs font-medium text-muted-foreground">
           {priced
-            ? 'Rating table -- must cover at least SUM_ASSURED_BAND'
-            : 'Rating table -- must cover at least AGE and SUM_ASSURED_BAND'}
+            ? 'Rating table — must cover at least SUM_ASSURED_BAND'
+            : 'Rating table — must cover at least AGE and SUM_ASSURED_BAND'}
         </p>
         {priced && (
           <p className="-mt-1 mb-2 text-xs text-subtle-foreground">

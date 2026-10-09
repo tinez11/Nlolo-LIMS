@@ -33,7 +33,7 @@ test.describe('a fixed-term deposit', () => {
     await page.getByRole('button', { name: 'Create product' }).click();
     await expect(page.getByText('DRAFT')).toBeVisible();
 
-    const ratingSection = page.locator('p', { hasText: 'Rating table -- must cover' }).locator('..');
+    const ratingSection = page.locator('p', { hasText: 'Rating table — must cover' }).locator('..');
     await ratingSection.getByLabel('Rating factor 1 band').fill('18-80');
     await ratingSection.getByLabel('Rating factor 1 from age').fill('18');
     await ratingSection.getByLabel('Rating factor 1 to age').fill('80');

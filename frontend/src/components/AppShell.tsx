@@ -2,7 +2,7 @@ import { LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react';
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
-import { avatarHue, displayName, initials, readIdentity } from '@/auth/claims';
+import { avatarHue, avatarInitials, displayName, readIdentity } from '@/auth/claims';
 import { REALM_CONFIG, type Realm } from '@/auth/realms';
 import { cn } from '@/lib/cn';
 import { currentTheme, toggleTheme, type Theme } from '@/lib/theme';
@@ -366,7 +366,7 @@ function UserBlock({ identity }: { identity: ReturnType<typeof readIdentity> }) 
           }}
           aria-hidden
         >
-          {initials(seed)}
+          {avatarInitials(identity)}
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium">{name}</p>

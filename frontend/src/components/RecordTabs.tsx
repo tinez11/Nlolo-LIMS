@@ -62,7 +62,13 @@ export function RecordTabs({
         // gutter put the tabs 48px from the edge while the record rail beside them sat at
         // 24px, with the sticky rule stopping short of both. The caller owns the gutter; the
         // bar owns only its stickiness and its rule.
-        className="sticky top-[var(--pagebar-h,0px)] z-10 flex gap-5 overflow-x-auto border-b border-border bg-background"
+        //
+        // The rule is an inset shadow, not a `border-b`, so a trigger's 2px underline can lie ON
+        // it without leaving the strip. It used to be a border with each trigger pulled `-mb-px`
+        // over it -- and since `overflow-x-auto` computes the vertical axis to `auto` as well,
+        // that overhanging pixel grew a vertical scrollbar: up/down arrows at the end of every
+        // record's tabs. `overflow-y-hidden` stays as the backstop.
+        className="sticky top-[var(--pagebar-h,0px)] z-10 flex gap-5 overflow-x-auto overflow-y-hidden bg-background shadow-[inset_0_-1px_0_var(--color-border)]"
       >
         {tabs.map((tab) => (
           <TabsPrimitive.Trigger
@@ -71,7 +77,9 @@ export function RecordTabs({
             aria-label={tab.count === undefined ? undefined : `${tab.label}, ${tab.count} items`}
             // Inactive tabs are --muted-foreground (~7:1), not Espresso's own text-light,
             // which measures 4.17:1 on white and fails AA at this size.
-            className="-mb-px inline-flex min-h-10 shrink-0 items-center gap-1.5 border-b-2 border-transparent text-sm text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-foreground data-[state=active]:font-medium data-[state=active]:text-foreground pointer-coarse:min-h-11"
+            // The focus ring is drawn INSIDE the trigger: the strip clips both axes, so the
+            // global 2px-outside ring would be cut off above and below.
+            className="inline-flex min-h-10 focus-visible:-outline-offset-2 shrink-0 items-center gap-1.5 border-b-2 border-transparent text-sm text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-foreground data-[state=active]:font-medium data-[state=active]:text-foreground pointer-coarse:min-h-11"
           >
             {tab.label}
             {tab.count !== undefined && (

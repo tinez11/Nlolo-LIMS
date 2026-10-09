@@ -72,7 +72,7 @@ export function CreateProductPage() {
       <PageHeader
         breadcrumb={[{ label: 'Products', to: '/staff/products' }]}
         title="New product"
-        description="Two steps: define the product, then publish a version -- a product with no version is invisible everywhere else in this console."
+        description="Two steps: define the product, then publish a version — a product with no version is invisible everywhere else in this console."
       />
 
       <div className="max-w-xl space-y-5 px-6 pb-8">

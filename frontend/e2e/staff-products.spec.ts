@@ -50,7 +50,7 @@ test.describe('staff products', () => {
     // a DRAFT product -- this IS the assertion that creation worked.
     await expect(page.getByText('DRAFT')).toBeVisible();
 
-    const ratingSection = page.locator('p', { hasText: 'Rating table -- must cover' }).locator('..');
+    const ratingSection = page.locator('p', { hasText: 'Rating table — must cover' }).locator('..');
 
     let versionsRequestFired = false;
     page.on('request', (req) => {
@@ -162,7 +162,7 @@ test.describe('staff products', () => {
 
     // Finish the job the draft represents.
     await page.getByRole('button', { name: 'Publish new version' }).click();
-    const ratingSection = page.locator('p', { hasText: 'Rating table -- must cover' }).locator('..');
+    const ratingSection = page.locator('p', { hasText: 'Rating table — must cover' }).locator('..');
     await ratingSection.getByLabel('Rating factor 1 band').fill('18-30');
     await ratingSection.getByLabel('Rating factor 1 from age').fill('18');
     await ratingSection.getByLabel('Rating factor 1 to age').fill('30');
@@ -212,7 +212,7 @@ test.describe('staff products', () => {
     await page.getByRole('button', { name: 'Create product' }).click();
     await expect(page.getByText('DRAFT')).toBeVisible();
 
-    const ratingSection = page.locator('p', { hasText: 'Rating table -- must cover' }).locator('..');
+    const ratingSection = page.locator('p', { hasText: 'Rating table — must cover' }).locator('..');
 
     // One age band, added for both sexes at once, priced for smoker and non-smoker.
     // Priced BEFORE the rating table is corrected, because that order is what a person
@@ -240,7 +240,7 @@ test.describe('staff products', () => {
     ).toBeVisible();
     await expect(ratingSection.getByText(/needs a from and to age/)).toHaveCount(0);
     await expect(
-      page.getByText('Rating table -- must cover at least SUM_ASSURED_BAND'),
+      page.getByText('Rating table — must cover at least SUM_ASSURED_BAND'),
     ).toBeVisible();
 
     // So the pre-filled AGE row goes, leaving SUM_ASSURED_BAND, which stays required

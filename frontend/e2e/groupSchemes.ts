@@ -64,7 +64,7 @@ export async function createGroupProduct(page: Page): Promise<string> {
 
   // A version must be published before the product can be issued against, and the rating
   // table must cover AGE and SUM_ASSURED_BAND or publishing is a 422.
-  const ratingSection = page.locator('p', { hasText: 'Rating table -- must cover' }).locator('..');
+  const ratingSection = page.locator('p', { hasText: 'Rating table — must cover' }).locator('..');
   await ratingSection.getByRole('button', { name: 'Remove rating factor' }).last().click();
   await ratingSection.getByLabel('Rating factor 1 band').fill('18-70');
   await ratingSection.getByLabel('Rating factor 1 from age').fill('18');

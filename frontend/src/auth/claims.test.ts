@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   avatarHue,
+  avatarInitials,
   canSeeFinance,
   displayName,
   initials,
@@ -129,6 +130,25 @@ describe('initials', () => {
     ['   ', '?'],
   ])('%s -> %s', (input, expected) => {
     expect(initials(input)).toBe(expected);
+  });
+});
+
+describe('avatarInitials', () => {
+  it("takes the person's name, not their username", () => {
+    // The user block showed "SA" for Daudi Assessor: initials of `staff-assessor`.
+    const identity = readIdentity(
+      unsignedToken({ name: 'Daudi Assessor', preferred_username: 'staff-assessor' }),
+    );
+    expect(avatarInitials(identity)).toBe('DA');
+  });
+
+  it('falls back to the username, then the email', () => {
+    expect(avatarInitials(readIdentity(unsignedToken({ preferred_username: 'staff.underwriter' })))).toBe('SU');
+    expect(avatarInitials(readIdentity(unsignedToken({ email: 'amina@example.tz' })))).toBe('AE');
+  });
+
+  it('never makes initials out of the "Signed in" placeholder', () => {
+    expect(avatarInitials(readIdentity(undefined))).toBe('?');
   });
 });
 

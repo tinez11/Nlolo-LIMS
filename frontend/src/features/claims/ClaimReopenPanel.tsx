@@ -50,7 +50,7 @@ export function ClaimReopenPanel({ claimId, wasSettled }: { claimId: string; was
       {wasSettled && (
         <p className="rounded-md bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg">
           This claim is SETTLED. Reopening it does not reverse the policy closure settlement already
-          caused -- coverage stays discharged and billing stays stopped.
+          caused — coverage stays discharged and billing stays stopped.
         </p>
       )}
 

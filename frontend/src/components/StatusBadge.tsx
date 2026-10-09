@@ -23,6 +23,12 @@ export type StatusBadgeProps = VariantProps<typeof badge> & {
   kind: StatusKind;
   /** Raw backend literal, e.g. `SETTLEMENT_REQUESTED`. */
   value: string | null | undefined;
+  /**
+   * The words to show, when the backend has already worded the status -- the payment schedule
+   * sends "Partly paid" and "Upcoming", which `humanizeStatus` cannot rebuild from the literal.
+   * The colour still comes from `value`.
+   */
+  label?: string;
   className?: string;
 };
 
@@ -34,7 +40,7 @@ export type StatusBadgeProps = VariantProps<typeof badge> & {
  * in lib/status.ts, keyed by domain because the same literal genuinely differs
  * between them.
  */
-export function StatusBadge({ kind, value, className }: StatusBadgeProps) {
+export function StatusBadge({ kind, value, label, className }: StatusBadgeProps) {
   // An absent status is not a status. Rendering a grey "Unknown" pill would imply
   // the backend said something when it said nothing.
   if (!value) return <span className="text-subtle-foreground">—</span>;
@@ -48,7 +54,7 @@ export function StatusBadge({ kind, value, className }: StatusBadgeProps) {
       // a deliberate neutral, so a newly-added backend enum is visible on screen.
       title={known ? undefined : `Unrecognised ${kind} status: ${value}`}
     >
-      {humanizeStatus(value)}
+      {label ?? humanizeStatus(value)}
       {!known && <span aria-hidden>?</span>}
     </span>
   );

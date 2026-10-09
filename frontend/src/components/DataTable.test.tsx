@@ -27,6 +27,22 @@ describe('DataTable', () => {
     expect(screen.getByText('20.00')).toBeInTheDocument();
   });
 
+  // A figure broken across lines ("TZS / 3,000,000.00") stops being comparable down its
+  // column, so a numeric column never wraps -- and neither does one that asks not to.
+  it('never wraps a right-aligned or nowrap column, header or cell', () => {
+    const dated: Column<Row>[] = [
+      ...columns,
+      { key: 'due', header: 'Due date', render: () => 'Oct 9, 2026', nowrap: true },
+    ];
+    render(<DataTable columns={dated} rows={rows} rowKey={(r) => r.id} />);
+    for (const name of ['Amount', 'Due date']) {
+      expect(screen.getByRole('columnheader', { name })).toHaveClass('whitespace-nowrap');
+    }
+    expect(screen.getByText('20.00').closest('td')).toHaveClass('whitespace-nowrap');
+    expect(screen.getAllByText('Oct 9, 2026')[0]?.closest('td')).toHaveClass('whitespace-nowrap');
+    expect(screen.getByText('First').closest('td')).not.toHaveClass('whitespace-nowrap');
+  });
+
   // A click handler on <tr> is invisible to keyboards and screen readers. The row's
   // activation must be a real control.
   it('exposes row activation as a button, reachable by keyboard', async () => {

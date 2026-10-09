@@ -241,7 +241,7 @@ export function IssuePolicyPage() {
       <PageHeader
         breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title="Issue a policy"
-        description="The staff exception path -- outside the normal underwriting-decision pipeline."
+        description="The staff exception path — outside the normal underwriting-decision pipeline."
       />
 
       <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
