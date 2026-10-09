@@ -490,7 +490,10 @@ export function OpenUnderwritingCasePage() {
                     label="Premium-paying term (months)"
                     error={errors.premiumPayingTermMonths?.message}
                   >
-                    <Input placeholder="Same as the term" {...register('premiumPayingTermMonths')} />
+                    <Input
+                      placeholder={watch('premiumFrequency') === 'SINGLE' ? 'Blank — paid once' : 'Same as the term'}
+                      {...register('premiumPayingTermMonths')}
+                    />
                   </FormField>
                 )}
               </>

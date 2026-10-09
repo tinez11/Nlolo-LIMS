@@ -221,6 +221,16 @@ export const openCaseFormSchema = z.object({
       message: 'Premiums cannot be paid for longer than cover runs',
     });
   }
+  // Mirrors the SINGLE arm of Policy.applyTerm, as the manual issue form does. Left to issuance
+  // it refused only after the decision, leaving a decided case with no policy (PRO-9A26219C,
+  // 2026-10-09: SINGLE over 3 months with a paying term of 3).
+  if (values.premiumFrequency === 'SINGLE' && payingTerm !== '' && Number(payingTerm) !== 1) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['premiumPayingTermMonths'],
+      message: 'A single premium is charged once, so this must be 1 month (or left blank)',
+    });
+  }
 });
 
 /**

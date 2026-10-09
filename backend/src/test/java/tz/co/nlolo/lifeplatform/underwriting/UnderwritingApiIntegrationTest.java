@@ -86,6 +86,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
             "db-migrations/underwriting/V11__member_evidence_case.sql",
+            "db-migrations/underwriting/V13__single_premium_frequency.sql",
             "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
             "db-migrations/underwriting/V19__group_funeral_proposal.sql",
             "db-migrations/underwriting/V20__sale_lock_backfill.sql",
@@ -221,6 +222,24 @@ class UnderwritingApiIntegrationTest {
 
         assertThrows(UnderwritingValidationException.class, () ->
             openWithProposal(p, new ProposalDetails(null, null, null, null, 360, null, null, List.of())));
+    }
+
+    /**
+     * PRO-9A26219C (2026-10-09): SINGLE over 3 months with a paying term of 3 was accepted, decided, and then refused
+     * by issuance, leaving a decided case with no policy. Refused at once now, on any product; blank or 1 is taken.
+     */
+    @Test
+    void aSinglePremiumPaidOverSeveralMonthsIsRefusedWhenOpened() {
+        BoundedProduct p = openBoundedProduct(null, null);
+
+        UnderwritingValidationException thrown = assertThrows(UnderwritingValidationException.class, () ->
+            openWithProposal(p, new ProposalDetails(null, null, null, null, 3, 3, "SINGLE", List.of())));
+        assertTrue(thrown.getMessage().contains("premium-paying term must be 1 month"), thrown.getMessage());
+
+        assertEquals(UnderwritingCaseStatus.OPEN,
+            openWithProposal(p, new ProposalDetails(null, null, null, null, 3, 1, "SINGLE", List.of())).status());
+        assertEquals(UnderwritingCaseStatus.OPEN,
+            openWithProposal(p, new ProposalDetails(null, null, null, null, 3, null, "SINGLE", List.of())).status());
     }
 
     /**

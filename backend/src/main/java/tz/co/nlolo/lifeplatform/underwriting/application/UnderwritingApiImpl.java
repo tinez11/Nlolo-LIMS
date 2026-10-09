@@ -225,6 +225,13 @@ public class UnderwritingApiImpl implements UnderwritingApi {
 
         ProposalDetails details = proposal != null ? proposal : ProposalDetails.selfInsured();
         refuseAnUnissuableDeposit(productVersionId, sumAssuredAmount, details);
+        // The SINGLE arm of Policy.applyTerm, on every product. Left to issuance it refused only after the
+        // decision, leaving a decided case with no policy (PRO-9A26219C, 2026-10-09: SINGLE over 3 months, paying 3).
+        if ("SINGLE".equals(details.premiumFrequency()) && details.premiumPayingTermMonths() != null
+                && details.premiumPayingTermMonths() != 1) {
+            throw new UnderwritingValidationException("A SINGLE premium is charged once, so its premium-paying term"
+                + " must be 1 month (or absent), not " + details.premiumPayingTermMonths());
+        }
         UUID lifeAssuredPartyId = details.resolveLifeAssured(applicantPartyId);
         // Validated the same way the applicant is, and for the same reason: a case naming
         // a life assured who does not exist in this tenant is unassessable, and

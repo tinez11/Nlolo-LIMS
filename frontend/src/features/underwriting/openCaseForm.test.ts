@@ -195,6 +195,16 @@ describe('what the applicant asks for about the contract', () => {
     expect(result.success).toBe(false);
   });
 
+  it('refuses a single premium paid over several months, and takes it blank or 1', () => {
+    // PRO-9A26219C: SINGLE over 3 months with a paying term of 3 was decided, then issuance refused it.
+    const single = { ...valid(), requestedTermMonths: '3', premiumFrequency: 'SINGLE' as const };
+    const refused = openCaseFormSchema.safeParse({ ...single, premiumPayingTermMonths: '3' });
+    expect(refused.success).toBe(false);
+    expect(refused.error?.issues.map((i) => i.path.join('.'))).toContain('premiumPayingTermMonths');
+    expect(openCaseFormSchema.safeParse({ ...single, premiumPayingTermMonths: '' }).success).toBe(true);
+    expect(openCaseFormSchema.safeParse({ ...single, premiumPayingTermMonths: '1' }).success).toBe(true);
+  });
+
   it('refuses a term that is not a whole number of months', () => {
     expect(
       openCaseFormSchema.safeParse({ ...valid(), requestedTermMonths: '12.5' }).success,
