@@ -927,10 +927,23 @@ the backend logs.
 
 ### Motion
 
-Almost none, deliberately. `transition-colors` on interactive surfaces, a 200ms
-slide-and-fade on the slide-over, a spinner, and a skeleton pulse. That is the
-complete motion vocabulary. Nothing eases in on scroll, nothing staggers, nothing
-parallaxes.
+Almost none, deliberately. `transition-colors` on interactive surfaces, an
+instant press tone, a 200ms slide-and-fade on the slide-over, a 150ms
+grow-from-the-trigger on popovers and tips (`POPOVER_MOTION` / `TOOLTIP_MOTION`
+in `components/ui/motion.ts`: fade plus 95%→100% scale from Radix's
+transform origin, reversed on close), a spinner, and a skeleton pulse. That is
+the complete motion vocabulary. Nothing eases in on scroll, nothing staggers,
+nothing parallaxes.
+
+**The person's settings win** (2026-10-09). Under `prefers-reduced-motion:
+reduce` every enter and exit keeps its fade but loses its slide and scale — the
+tw-animate-css translate and scale properties are zeroed globally, so the
+slide-over cross-fades — the skeleton stops pulsing, and the mobile drawer
+arrives at once. A pending button's spinner keeps turning, because it reports
+status. Under `prefers-contrast: more` hairlines take a Rule-Strong value,
+the control edge darkens, and Muted and Subtle Ink step one notch stronger,
+in both themes. Reduced transparency needs nothing: there is no translucent
+surface.
 
 ## Do's and Don'ts
 

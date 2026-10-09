@@ -1,5 +1,7 @@
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import type { ReactElement, ReactNode } from 'react';
+import { TOOLTIP_MOTION } from './motion';
+import { cn } from '@/lib/cn';
 
 /**
  * A short explanation that keyboard users reach too (2026-10-09, review B5).
@@ -43,7 +45,7 @@ export function Tip({
           <TooltipPrimitive.Content
             sideOffset={6}
             collisionPadding={8}
-            className="z-50 max-w-xs rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-foreground shadow-lg"
+            className={cn('z-50 max-w-xs rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-foreground shadow-lg', TOOLTIP_MOTION)}
           >
             {content}
           </TooltipPrimitive.Content>

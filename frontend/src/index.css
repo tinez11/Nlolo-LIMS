@@ -302,3 +302,62 @@
     caret-color: var(--color-foreground);
   }
 }
+
+/*
+  The person settings, honoured (2026-10-09, review B7). None of these existed: the slide-over
+  slid, skeletons pulsed and popovers zoomed for everyone.
+
+  Reduced motion keeps feedback and drops travel. Every enter and exit animation keeps its fade
+  -- the cue that something changed -- but loses its slide and its scale, which are what a
+  vestibular disorder reacts to: tw-animate-css drives those through per-element custom
+  properties, so zeroing them turns each slide into a cross-fade without touching a component.
+  The skeleton pulse stops. The spinner inside a pending button keeps turning: it is status, not
+  decoration. The mobile nav drawer arrives at once instead of sliding.
+*/
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-exit-translate-x: 0 !important;
+    --tw-exit-translate-y: 0 !important;
+    --tw-enter-scale: 1 !important;
+    --tw-exit-scale: 1 !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-pulse {
+    animation: none !important;
+  }
+
+  #sidebar {
+    transition-duration: 0s !important;
+  }
+}
+
+/*
+  More contrast: every hairline takes the Rule Strong value and the two secondary inks step
+  darker (lighter in dark mode), so structure and secondary text both read without effort.
+  Defined for both themes, light first so the dark block wins on a dark page (Both Themes Rule).
+*/
+@media (prefers-contrast: more) {
+  :root {
+    --border: oklch(0.8 0 0);
+    --muted-foreground: oklch(0.42 0 0);
+    --subtle-foreground: oklch(0.45 0 0);
+    --input: oklch(0.55 0 0);
+  }
+
+  .dark {
+    --border: oklch(1 0 0 / 28%);
+    --muted-foreground: oklch(0.8 0 0);
+    --subtle-foreground: oklch(0.76 0 0);
+    --input: oklch(1 0 0 / 55%);
+  }
+}
+
+/*
+  Reduced transparency needs nothing while the console has no translucent surface: the review
+  proposed glass bars, and the proposal was declined (DESIGN.md, Considered and declined).
+*/

@@ -6,6 +6,7 @@ import 'react-day-picker/style.css';
 import { cn } from '@/lib/cn';
 import { ISO_DATE_PATTERN } from '@/lib/patterns';
 import { useFieldControl } from './fieldControl';
+import { POPOVER_MOTION } from './ui/motion';
 
 /**
  * A date field in the shape of MUI X's DatePicker -- a three-section typed field
@@ -484,7 +485,7 @@ export function DatePicker({ value, onChange, disabled }: DatePickerProps) {
         <Popover.Content
           align="start"
           sideOffset={6}
-          className="z-50 w-71 rounded-md border border-border bg-surface p-2 shadow-lg"
+          className={cn('z-50 w-71 rounded-md border border-border bg-surface p-2 shadow-lg', POPOVER_MOTION)}
         >
           <div className="flex items-center justify-between">
             <button

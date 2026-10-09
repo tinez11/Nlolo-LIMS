@@ -10,6 +10,8 @@ import { StatusBadge } from '@/components/StatusBadge';
 import type { ApiError } from '@/lib/http';
 import { UUID_PATTERN } from '@/lib/patterns';
 import { useFieldControl } from './fieldControl';
+import { POPOVER_MOTION } from './ui/motion';
+import { cn } from '@/lib/cn';
 
 /**
  * Chooses the agent of record BY NAME.
@@ -162,7 +164,7 @@ export function AgentPicker({
           align="start"
           sideOffset={4}
           collisionPadding={8}
-          className="z-50 w-[--radix-popover-trigger-width] rounded-md border border-border bg-surface shadow-lg"
+          className={cn('z-50 w-[--radix-popover-trigger-width] rounded-md border border-border bg-surface shadow-lg', POPOVER_MOTION)}
         >
           <CommandPrimitive shouldFilter={false}>
             <CommandPrimitive.Input
