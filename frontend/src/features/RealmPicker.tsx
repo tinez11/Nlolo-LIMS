@@ -19,7 +19,7 @@ export function RealmPicker() {
   return (
     <div className="grid min-h-full place-items-center px-6 py-16">
       <div className="w-full max-w-md">
-        <h1 className="text-lg font-semibold tracking-tight">Life Platform</h1>
+        <h1 className="text-headline">Life Platform</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Choose how you are signing in.
         </p>

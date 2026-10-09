@@ -118,7 +118,7 @@ export function CommissionPanel({ policyNumber }: { policyNumber: string }) {
                 <span className="text-muted-foreground">
                   {a.period} · {a.reversesAccrualId ? 'clawback' : 'earned'}
                 </span>
-                <span className="font-mono">{formatMoney(a.amount)}</span>
+                <span>{formatMoney(a.amount)}</span>
               </li>
             ))}
           </ul>

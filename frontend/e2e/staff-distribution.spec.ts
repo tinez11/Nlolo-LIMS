@@ -55,7 +55,7 @@ async function createRealActiveProduct(page: Page): Promise<{ productId: string;
   await page.getByRole('button', { name: 'Create product' }).click();
   await expect(page.getByText('DRAFT')).toBeVisible();
 
-  const ratingSection = page.locator('p', { hasText: 'Rating table -- must cover' }).locator('..');
+  const ratingSection = page.locator('p', { hasText: 'Rating table — must cover' }).locator('..');
   await ratingSection.getByRole('button', { name: 'Remove rating factor' }).last().click();
   await ratingSection.getByLabel('Rating factor 1 band').fill('18-30');
   // AGE is rated by range now: the band text is a label, these two are what the platform

@@ -179,6 +179,16 @@ export function initials(source: string): string {
 }
 
 /**
+ * The signed-in person's avatar initials: from the name they are called by, so they agree with
+ * the name printed beside them. Built from the username they read "SA" for Daudi Assessor
+ * (`staff-assessor`). The username still seeds `avatarHue`, which must not move if a display
+ * name is corrected. Not `displayName`, whose "Signed in" placeholder would become "SI".
+ */
+export function avatarInitials(identity: TokenIdentity): string {
+  return initials(identity.name ?? identity.preferredUsername ?? identity.email ?? '');
+}
+
+/**
  * Deterministic hue from an identifier, so the same person is always the same
  * colour. A hash rather than a palette index because party ids are UUIDs.
  */

@@ -13,7 +13,7 @@ colors:
   input: "oklch(0.66 0 0)"
   control: "oklch(0.965 0 0)"
   control-hover: "oklch(0.935 0 0)"
-  band: "oklch(0.982 0 0)"
+  band: "oklch(0.965 0 0)"
   hover: "oklch(0.968 0 0)"
   selected: "oklch(0.955 0 0)"
   status-neutral-bg: "oklch(0.96 0.002 250)"
@@ -186,7 +186,7 @@ components:
     shadow: "raise"
   sidebar:
     backgroundColor: "{colors.paper-muted}"
-    width: "224px"
+    width: "240px"
   slide-over:
     backgroundColor: "{colors.paper}"
     width: "28rem"
@@ -230,7 +230,8 @@ tenants of the same console, so the identity belongs to the platform.
 **Key Characteristics:**
 
 - Achromatic by default; six status hues are the entire chromatic vocabulary
-- Hairline rules and tonal surfaces carry all structure — no shadows at rest
+- Space, tone and three kinds of hairline carry the structure — no shadows at rest
+  (see *The Three Lines Rule*)
 - Tabular figures globally, so every money and date column reads as a column
 - A compressed, functional type scale that prizes density over display
 - Dark mode is a first-class peer, not a filter: every token is defined twice
@@ -382,10 +383,16 @@ be white-on-light in dark mode.
 ## Typography
 
 **Display Font:** Inter (none — Inter carries the whole system)
-**Body Font:** Inter, with `ui-sans-serif`, `system-ui`, `-apple-system`,
-`'Segoe UI'`, `Roboto` behind it
+**Body Font:** Inter Variable, **self-hosted** (`@fontsource-variable/inter`,
+its `opsz` build, imported in `main.tsx`), with a locally installed Inter, then
+`ui-sans-serif`, `system-ui`, `-apple-system`, `'Segoe UI'`, `Roboto` behind it.
+Until 2026-10-09 it came from Google's font CDN: a third-party request on every
+load of a white-label console, no offline dev, and static 400/500/600 only. The
+variable file carries every weight and the optical-size axis, so the letterforms
+tighten for headings and open up at 12px on their own.
 **Mono Font:** `ui-monospace`, `'SF Mono'`, `'Cascadia Mono'`, `Menlo`, reserved
-almost entirely for trace IDs and machine identifiers
+for trace IDs and machine identifiers, and **never for money** (guarded):
+figures already line up through the global tabular figures.
 
 **Character:** One neutral grotesque doing every job, tuned for figures rather
 than for voice. The personality is not in the letterforms — it is in the
@@ -412,13 +419,13 @@ floor is 12px, and a guard test (`src/test/designGuards.test.ts`) keeps it.
 Where a caption and its neighbour are now the same size, hierarchy is carried by
 ink (Subtle against Muted) and by case, which it largely already was.
 
-- **Display** (600, 1.5rem, tracking-tight): the stat-card figure, and nothing
+- **Display** (600, 1.5rem, −0.015em): the stat-card figure, and nothing
   else. One occurrence in the codebase, by design — and now on **one screen**,
   the group-scheme member register, which is the only screen left with more than
   one number to compare. The other nine registers carried a single count in a
   four-column card grid; that count is a Micro line in the page header instead
   (`CountLine`), so a list screen no longer has a Display figure at all.
-- **Headline** (600, 1.25rem, tracking-tight): the page `<h1>` in `PageHeader`.
+- **Headline** (600, 1.25rem, −0.015em): the page `<h1>` in `PageHeader`.
   One occurrence, because one component owns it.
 - **Title** (600, 1rem): the slide-over title, the emphasised panel heading, and
   the heaviest in-panel headings. It went unused on detail pages for a long time
@@ -436,15 +443,24 @@ ink (Subtle against Muted) and by case, which it largely already was.
   gate-panel titles. The only uppercase in the system, and it is structural
   labelling, never a marketing device.
 
-Weights are three: 400, 500 and 600. A single 700 exists, on the 10px glyph
-inside a gate marker. Nothing lighter than 400 appears anywhere.
+**The tiers are utilities** (2026-10-09). `text-display`, `text-headline`,
+`text-title` and `text-eyebrow` are defined in `index.css` `@theme`, each carrying
+its size, leading, tracking and weight together. Body, Label and Micro stay
+`text-sm` / `text-xs`. Before this the tiers existed only in this file, and every
+heading rebuilt its tier by hand slightly differently: the page title took
+`tracking-tight` (−0.025em) where the scale says −0.015em, and the eyebrow had four
+spellings. Guards now refuse `tracking-*`, arbitrary `text-[…]` sizes and
+`text-lg` and above outside the tiers, and an uppercase `text-xs` line that is not
+`text-eyebrow`.
 
-**Two live exceptions, recorded rather than tidied away.** `ui/button.tsx`
-introduces a 0.8125rem for its small size, and `RealmPicker` uses a 1.125rem
-`<h1>`; neither size exists in the scale above, and both are drift rather than
-decision. Separately, 16 uses of 0.625rem sit below the stated floor — density
-justifies 0.75rem, but nothing justifies 10px, and those are the one part of the
-distribution worth raising.
+Weights are three: 400, 500 and 600. A single 700 exists, on the glyph inside a
+gate marker — a real 700 now, where the static web font made it a browser-faked
+bold. Nothing lighter than 400 appears anywhere.
+
+*Resolved drift:* the small button's 0.8125rem is Body (`text-sm`), as this file
+always specified; the filter chip's 0.8125rem is Label (`text-xs`), so the claims
+filter row still fits one line; `RealmPicker`'s 1.125rem `<h1>` is Headline; three
+1.125rem figures on the scheme cover panel and the vesting date are Title.
 
 ### Named Rules
 
@@ -467,7 +483,7 @@ group caption. It is never used for a button, a badge, a status, or emphasis.
 
 ## Layout
 
-**The shell.** A fixed 224px sidebar in Quiet Paper with a hairline right rule,
+**The shell.** A fixed 240px sidebar (224px until 2026-10-09, where "Corporate/Group" beside its count truncated) in Quiet Paper with a hairline right rule,
 against a scrolling main column. The sidebar holds a wordmark block, the
 role-gated nav groups, and a user block pinned to the bottom by a top rule. Nav
 groups are ordered along the business flow — Clients, New business, Policies &
@@ -569,9 +585,10 @@ Row height and touch target are one number, so they cannot drift apart.
 
 ## Elevation & Depth
 
-**This system is flat, and that is law.** Structure is carried entirely by
-hairline rules and, in dark mode, by a two-step tonal relationship between the
-page ground and panel surfaces. Thirty container instances across the codebase
+**This system is flat, and that is law.** Structure is carried by space, by the
+three hairlines of *The Three Lines Rule*, by the table header's band, and, in
+dark mode, by a two-step tonal relationship between the page ground and panel
+surfaces. Thirty container instances across the codebase
 use a hairline border and no shadow. Nothing lifts on hover, nothing has a
 resting shadow, and there is no ambient depth of any kind.
 
@@ -592,13 +609,28 @@ as detached from it — the right-hand slide-over, and two popovers.
 
 **The Floating-Layer Rule.** A shadow means "this element is not on the page." If
 the element is on the page, it has a hairline and no shadow. There is no third
-option, and there is no such thing as a subtle resting elevation here.
+option, and there is no such thing as a subtle resting elevation here. (Two
+`box-shadow`s are not shadows in this sense and are the only exceptions: the 1px
+band-coloured seam cover on table header cells, and the inset 1px rule of the
+record tabs. Both are drawn in the colour of the surface or the rule they stand
+for, and neither lifts anything.)
+
+**The Three Lines Rule.** Only three kinds of line remain: **a box's outline, the
+faint rule between table rows, and the tab strip's rule.** Everything else is
+separated by space or by tone. The page bar draws its rule only while content is
+passing under it. A panel's title is not ruled off from its content, a table's
+header band is not ruled off from its rows, and a `Field` list is not ruled
+between fields. Adopted 2026-10-09 after a policy's Billing tab was counted at
+about twenty horizontal lines against about six on a reference settings page. Not
+covered: the edges of controls keep their 3:1 Input Rule border (WCAG 1.4.11).
 
 ## Shapes
 
-A single 6px radius carries the system: 151 of the 207 radius applications in the
-codebase are `rounded-md`. It is soft enough not to read as brutalist and tight
-enough to keep a dense table from looking like a set of lozenges.
+A single radius carries the system: 151 of the 207 radius applications in the
+codebase are `rounded-md`, which is **8px** (`--radius: 0.5rem`, Espresso's
+control radius, since console-redesign plan 1; it was 6px before, and this
+section said 6px until 2026-10-09). It is soft enough not to read as brutalist
+and tight enough to keep a dense table from looking like a set of lozenges.
 
 Three exceptions, each meaning something specific:
 
@@ -623,21 +655,24 @@ suppressed.
 **The Pill-for-State Rule.** Full radius is reserved for elements reporting a
 state. A fully-rounded button would be lying about what it is.
 
-**The One-Radius Rule.** 6px unless there is a stated reason. Two radii inside one
+**The One-Radius Rule.** `rounded-md` (8px) unless there is a stated reason. Two radii inside one
 component is a mistake, not a texture.
 
 ## Components
 
 ### Buttons
 
-- **Shape:** 6px radius (`0.375rem`), 36px tall at default, 32px compact, 32px
+- **Shape:** 8px radius (`rounded-md`), 36px tall at default, 32px compact, 32px
   square for icon-only. Horizontal padding 14px / 10px. Icons are always 16px and
   never shrink.
 - **Primary:** Ledger Ink ground, inverse text. Reserved for the one action a
   screen exists to perform.
-- **Outline (the default variant):** Paper ground, hairline border, ink text. Most
-  buttons in the console are this — a page with three equally-weighted primary
-  buttons has no primary action.
+- **Secondary (the default variant):** the filled Control ground, ink text, no
+  border — Espresso's filled button, since console-redesign plan 1. Most buttons in
+  the console are this — a page with three equally-weighted primary buttons has no
+  primary action.
+- **Outline:** Paper ground, Rule-Strong border, ink text, for a control that
+  must read as a control on a filled ground.
 - **Ghost:** no ground until hover, when it takes the Hover token. Icon controls
   and toolbar actions.
 - **Danger:** the danger `-fg` hue as a solid ground with white text (the
@@ -703,9 +738,14 @@ Three behaviours that are the component's whole point:
 
 ### Tables
 
-- **Header:** Label type in Muted Ink, 16px/10px padding, left-aligned, one
-  hairline beneath the row.
-- **Rows:** 44px, hairline separated, last row unruled. Hover takes the Hover
+- **Header:** Label type in Muted Ink, 16px/10px padding, left-aligned, on the
+  Band ground (`0.965`, ~5:1 for its ink). The band's tone is the edge, so there
+  is no rule beneath it. Each header cell casts a 1px band-coloured shadow to its
+  right, covering the seam Chrome leaves between cells at fractional widths.
+- **Rows:** 44px, hairline separated, last row unruled. A cell whose value
+  answers a question about the row (a premium's cover period, when and how it
+  was paid) stacks it under the figure in Label type rather than taking a
+  column. Right-aligned and `nowrap` columns never wrap. Hover takes the Hover
   token; the row previewed in the drawer takes Selected and `aria-current`.
 - **Numerics:** right-aligned, always. Combined with global tabular figures, a
   money column is a true column.
@@ -721,10 +761,18 @@ Three behaviours that are the component's whole point:
 ### Panel
 
 The titled section every detail page is built from. 8px radius, Paper ground,
-hairline, and a ruled header block at 16px/12px carrying an `<h2>` and an optional
-Label-type subtitle. Content brings its own padding, because a panel wraps two
-different kinds of thing — a `<dl>` of `Field` rows, and a full-bleed table whose
-rows must reach the panel's edges.
+hairline outline, and an unruled header block (16px sides, 12px top, 8px bottom)
+carrying an `<h2>`, an optional Label-type subtitle, and optional `actions` on
+the right for controls that act on the whole panel, such as a download. Content
+brings its own padding, because a panel wraps two different kinds of thing — a
+`<dl>` of `Field` rows, and a full-bleed table whose rows must reach the panel's
+edges.
+
+`Field` rows are not ruled. Label left, value right, on one baseline, 8px above
+and below; a note takes its own line under the label, left-aligned, in Micro and
+Subtle Ink. A rail with a rule under every field read as lined paper. Two fields
+that would both be empty with an explanation each collapse into one ("Term and
+maturity: None on record").
 
 `emphasis` promotes exactly one panel per page to the Title tier with a
 Rule-Strong edge. See **The Acting-Panel Rule** for when that is earned. It is
@@ -757,7 +805,9 @@ total politely, and two regions reading out one number is worse than one.
 ### Navigation
 
 Sidebar items are Body type in Muted Ink at 6px/8px with a 6px radius and a 16px
-leading icon; active takes the Selected ground, full-strength ink and weight 500.
+leading icon; active takes the Paper ground lifted by the `raise` shadow (the
+Selected ground in dark mode, where Paper sits barely above the sidebar),
+full-strength ink and weight 500.
 Group captions are Eyebrow type in Subtle Ink. A count badge is a fully-rounded
 Selected-ground pill in Micro type, carrying both a `title` and screen-reader
 text naming what was counted — because "3" alone reads as "3 claims", which is
@@ -925,3 +975,21 @@ parallaxes.
 - **Don't** copy the input class string into a new file. It is already duplicated
   past seventy times; the next one should be extracting the component, not adding
   to the count.
+
+### Considered and declined (2026-10-09)
+
+From a review that measured the console against Apple's WWDC design guidance. Each
+was put to the product owner and declined; do not re-offer them unless this file
+changes first.
+
+- **Raising content text from 12px to 14px.** The compressed scale is a confirmed
+  decision (*Typography → Hierarchy*). The review's screenshots were at 150%
+  display scaling, where 12px renders at about 18 physical pixels.
+- **Translucent, blurred sticky bars** (an Apple "material"). The system is "not
+  … glassy", and flat is law.
+- **Spring physics and drag-to-dismiss** on the slide-over and mobile nav.
+  *Motion* is "almost none, deliberately", and the console is desk-first. Taken
+  instead, where they fit the Ledger: instant press feedback, popovers that grow
+  from their trigger, and honouring reduced motion.
+- **A receipt on every mutation.** Receipts are for outcomes the screen does not
+  otherwise reveal (*Receipt*).

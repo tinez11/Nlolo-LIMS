@@ -110,13 +110,13 @@ export function TreatyDetailPage() {
                   <Field
                     label="Cession at issuance"
                     value="None"
-                    note="Excess-of-loss cedes nothing on new business -- it participates only in claim recovery"
+                    note="Excess-of-loss cedes nothing on new business — it participates only in claim recovery"
                   />
                 )}
                 <Field
                   label="Reinsurance commission"
                   value={`${treaty.commissionPercent}%`}
-                  note="Not contingent on claims -- taken off each month's ceded premium"
+                  note="Not contingent on claims — taken off each month's ceded premium"
                 />
                 {treaty.xolAnnualPremium && (
                   <Field

@@ -51,10 +51,14 @@ const TOKENS = new Set(
   .add('white')
   .add('black');
 
+/** The type tiers index.css defines (`--text-headline: …`), read the same way as the colours. */
+const TYPE_TIERS = [...css.matchAll(/--text-([a-z]+):/g)].map((m) => m[1] as string);
+
 /** Utilities that share a colour prefix but are not colours. */
 const NOT_COLOURS: Record<string, Set<string>> = {
   text: new Set(['left', 'right', 'center', 'justify', 'start', 'end', 'xs', 'sm', 'base', 'lg',
-    'xl', '2xl', '3xl', '4xl', 'wrap', 'nowrap', 'balance', 'pretty', 'ellipsis', 'clip']),
+    'xl', '2xl', '3xl', '4xl', 'wrap', 'nowrap', 'balance', 'pretty', 'ellipsis', 'clip',
+    ...TYPE_TIERS]),
   bg: new Set(['clip', 'fixed', 'local', 'scroll', 'cover', 'contain', 'center', 'no-repeat',
     'repeat', 'none']),
   border: new Set(['t', 'b', 'l', 'r', 'x', 'y', 's', 'e',
@@ -197,5 +201,53 @@ describe('design guards', () => {
     // not the scroll margin that makes a jumped-to section land below the sticky bars, not
     // `emphasis`, and not any later change to what a panel is.
     expect(offenders(/<section className="rounded-lg border border-border bg-surface"/)).toEqual([]);
+  });
+
+  it('clips the vertical axis of every sticky sideways scroller', () => {
+    // `overflow-x: auto` computes `overflow-y` to `auto` as well. A sticky tab strip whose
+    // triggers sit `-mb-px` on its rule overflows itself by a pixel, and that pixel grew a
+    // vertical scrollbar -- the up/down arrows beside every policy's and client's tabs.
+    expect(
+      offenders(/^(?=.*\bsticky\b)(?=.*\boverflow-x-auto\b)(?!.*\boverflow-y-hidden\b)/),
+    ).toEqual([]);
+  });
+
+  it('sets letter-spacing only through a type tier', () => {
+    // Group captions had four spellings (tracking-wide x11, -wider, -[0.03em]) and the page title
+    // took tracking-tight where the scale says -0.015em. The tiers in index.css carry tracking.
+    // The one exception is a temporary password, spaced out so it can be read aloud letter by
+    // letter -- reading, not typesetting.
+    expect(
+      offenders(
+        /\btracking-(tight|tighter|wide|wider|widest|normal|\[)/,
+        (path) => path.endsWith('/features/party/PortalAccessPanel.tsx'),
+      ),
+    ).toEqual([]);
+  });
+
+  it('sets no font size off the scale', () => {
+    // `text-[13px]` on the small button and the filter chip: a size the scale does not have.
+    // And the large sizes only through a tier: `text-lg` (1.125rem) is in no tier at all, and
+    // `text-xl`/`text-2xl` were the headline and display tiers spelt by hand.
+    expect(offenders(/\btext-(\[\d+(\.\d+)?(px|rem)\]|lg|xl|2xl|3xl|4xl)\b/)).toEqual([]);
+  });
+
+  it('writes an uppercase caption with the eyebrow tier', () => {
+    // An uppercase line of small text IS a group caption (Uppercase-Is-Structure), and the
+    // caption has one spelling. Uppercase on an input -- a currency code -- is not text-xs.
+    expect(offenders(/^(?=.*\buppercase\b)(?=.*\btext-xs\b)/)).toEqual([]);
+  });
+
+  it('never sets money in monospace', () => {
+    // Mono is for machine identifiers. Figures already compare down a column through the
+    // global tabular-nums, and a mono TZS amount beside a sans one read as two kinds of number.
+    expect(offenders(/font-mono[^\n]*formatMoney\(/)).toEqual([]);
+  });
+
+  it('writes a dash in visible copy as a dash, never as two hyphens', () => {
+    // ` -- ` is how this codebase's comments spell an em dash, and comments are stripped
+    // before this runs. Anything left is a string or JSX text, where the browser shows the
+    // two hyphens as they are: "then publish a version -- a product with no version".
+    expect(offenders(/\s--\s/)).toEqual([]);
   });
 });

@@ -104,8 +104,9 @@ test.describe('staff group schemes', () => {
     await page.goto(`/staff/policies/${policyNumber}`);
     await expect(page.getByText('TZS 10,000,000.00').first()).toBeVisible();
     // And the policy page offers the way back across, only because this policy
-    // is a scheme.
-    await expect(page.getByRole('link', { name: 'Member schedule' })).toBeVisible();
+    // is a scheme. `exact`, because the Overview's cover panel (2026-10-08) carries a second
+    // way across, "Open the member schedule", and a substring match found both.
+    await expect(page.getByRole('link', { name: 'Member schedule', exact: true })).toBeVisible();
 
     /*
      * THE JOINER IS NOT ASSERTED HERE ANY MORE, and the reason is a real gap rather than a

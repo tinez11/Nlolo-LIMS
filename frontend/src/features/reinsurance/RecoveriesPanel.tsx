@@ -54,7 +54,7 @@ function RecoveryRow({ recovery }: { recovery: ClaimRecoveryView }) {
       <p className="mt-1 text-xs text-muted-foreground">
         {recovery.confirmedAt
           ? `Confirmed ${formatInstant(recovery.confirmedAt)}`
-          : 'Posted at approval -- agreed with the reinsurer on its statement'}
+          : 'Posted at approval — agreed with the reinsurer on its statement'}
       </p>
     </li>
   );

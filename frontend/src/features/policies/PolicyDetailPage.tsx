@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Pause, Play, RotateCcw, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getReferenceCodes } from '@/api/refdata';
-import { PaymentScheduleTable } from '@/features/documents/PaymentScheduleTable';
+import { PaymentScheduleDownloads, PaymentScheduleTable } from '@/features/documents/PaymentScheduleTable';
 import { PolicyScheduleDownload } from '@/features/documents/PolicyScheduleDownload';
 import { SchemeCoverPanel } from './SchemeCoverPanel';
 import { useForm } from 'react-hook-form';
@@ -425,7 +425,11 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             <Panel title="Policy schedule" subtitle="The one-page summary to give the client">
               <PolicyScheduleDownload policyNumber={policyNumber} />
             </Panel>
-            <Panel title="Payment schedule" subtitle="Every premium due, what was paid, when and under which receipt">
+            <Panel
+              title="Payment schedule"
+              subtitle="Every premium due, what was paid, when and under which receipt"
+              actions={<PaymentScheduleDownloads policyNumber={policyNumber} />}
+            >
               <PaymentScheduleTable policyNumber={policyNumber} />
             </Panel>
             <Panel title="Invoices" subtitle="Request a payment, waive or follow up an invoice">
@@ -678,21 +682,25 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                   ? {}
                   : { note: 'Not recorded — issued before the term was captured.' })}
               />
-              <Field
-                label="Term"
-                value={policy.policyTermMonths ? formatMonths(policy.policyTermMonths) : '—'}
-                {...(policy.premiumPayingTermMonths &&
-                policy.premiumPayingTermMonths !== policy.policyTermMonths
-                  ? { note: `Premiums paid for ${formatMonths(policy.premiumPayingTermMonths)}.` }
-                  : {})}
-              />
-              <Field
-                label="Matures"
-                value={formatDate(policy.maturityDate)}
-                {...(policy.maturityDate
-                  ? {}
-                  : { note: 'This product does not mature, or no term is on record.' })}
-              />
+              {/* With neither a term nor a maturity date there is one fact to state, not two dashes
+                  and a three-line note (2026-10-09). "None on record" rather than "No fixed term":
+                  the backend cannot tell a whole-life product from a policy issued before the
+                  term was captured, so the console does not claim to. */}
+              {policy.policyTermMonths || policy.maturityDate ? (
+                <>
+                  <Field
+                    label="Term"
+                    value={policy.policyTermMonths ? formatMonths(policy.policyTermMonths) : '—'}
+                    {...(policy.premiumPayingTermMonths &&
+                    policy.premiumPayingTermMonths !== policy.policyTermMonths
+                      ? { note: `Premiums paid for ${formatMonths(policy.premiumPayingTermMonths)}.` }
+                      : {})}
+                  />
+                  <Field label="Matures" value={formatDate(policy.maturityDate)} />
+                </>
+              ) : (
+                <Field label="Term and maturity" value="None on record" />
+              )}
               {/* Rendered only when the two differ. On a self-insured policy — the
                   common case — a second row repeating the same name would be noise
                   that teaches people to skip the panel. */}

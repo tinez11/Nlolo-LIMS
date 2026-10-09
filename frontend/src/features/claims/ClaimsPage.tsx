@@ -8,6 +8,7 @@ import { DataTable, Pager, type Column } from '@/components/DataTable';
 import { CountLine, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
@@ -130,11 +131,14 @@ export function ClaimsPage({
               on touch at all -- so on a phone this column said "CR" and nothing else. The
               abbreviation stays for the sighted reader scanning a column of them; the sentence
               is in the accessible name for everyone, and now reaches the row's own text. */}
+          {/* A word, not "CR" (2026-10-09): two amber letters beside the status meant nothing to a
+              sighted reader who had not been told. A badge, because it is a state the claim is in,
+              in the warning bucket the drawer and the claim page already use for it. */}
           {c.requiresContestabilityReview && (
-            <span className="text-xs text-status-warning-fg">
-              CR
+            <Badge className="bg-status-warning-bg text-status-warning-fg">
+              Contestable
               <span className="sr-only"> — falls inside the policy&apos;s contestability window</span>
-            </span>
+            </Badge>
           )}
         </span>
       ),

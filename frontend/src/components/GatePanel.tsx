@@ -34,7 +34,7 @@ export function GatePanel({ gates, title }: { gates: Gate[]; title?: string }) {
           gate text carries the meaning, and each gate states its own outcome to
           a screen reader, so the container needs no name of its own. */}
       {title && (
-        <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        <p className="mb-2 text-eyebrow text-muted-foreground uppercase">
           {title}
         </p>
       )}

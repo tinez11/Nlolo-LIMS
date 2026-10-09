@@ -24,6 +24,15 @@ export interface Column<T> {
   className?: string;
   /** Hidden below `sm`, for columns that are useful but not identifying. */
   secondary?: boolean;
+  /**
+   * Never wrap the header or the value -- a date, a reference. Implied by `align: 'right'`: a
+   * figure broken across lines ("TZS / 3,000,000.00") no longer compares down its column.
+   */
+  nowrap?: boolean;
+}
+
+function noWrap<T>(column: Column<T>): boolean {
+  return column.nowrap === true || column.align === 'right';
 }
 
 export interface DataTableProps<T> {
@@ -56,15 +65,20 @@ export function DataTable<T>({
       <table className="w-full border-collapse text-sm">
         {caption && <caption className="sr-only">{caption}</caption>}
         <thead>
-          {/* Espresso's grey header band. The muted header ink is ~7:1 on it. */}
-          <tr className="border-b border-border bg-band">
+          {/* Espresso's grey header band. The muted header ink is ~5:1 on it. No rule under it
+              (2026-10-09): the band's own tone ends where the rows begin. */}
+          <tr className="bg-band">
             {columns.map((column) => (
               <th
                 key={column.key}
                 scope="col"
+                // The 1px band-coloured shadow to the right covers a seam. Chrome paints a row's
+                // background cell by cell, and at fractional cell widths (150% display scaling)
+                // left a white hairline between every pair of header cells once the band was toned.
                 className={cn(
-                  'px-4 py-2.5 text-left text-xs font-medium text-muted-foreground',
+                  'bg-band px-4 py-2.5 text-left text-xs font-medium text-muted-foreground shadow-[1px_0_0_var(--color-band)]',
                   column.align === 'right' && 'text-right',
+                  noWrap(column) && 'whitespace-nowrap',
                   column.secondary && 'hidden sm:table-cell',
                   column.className,
                 )}
@@ -93,6 +107,7 @@ export function DataTable<T>({
                     className={cn(
                       'px-4 py-0 align-middle',
                       column.align === 'right' && 'text-right',
+                      noWrap(column) && 'whitespace-nowrap',
                       column.secondary && 'hidden sm:table-cell',
                     )}
                   >

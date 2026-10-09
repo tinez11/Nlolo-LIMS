@@ -1,18 +1,25 @@
 /**
- * How a schedule line's status reads on screen (2026-10-07): settled lines quiet, money owed now in the danger
- * colour, the rest plain. The words themselves are the server's.
+ * The invoice status a payment-schedule line's WORDED status stands for, so the line wears the same badge
+ * as the invoice it came from. The words are the server's own (`PolicyDocuments.status`), which splits DUE
+ * into "Upcoming" and "Due"; both are an invoice that is DUE. A word this map does not know is passed through
+ * unchanged, so the badge flags it as unrecognised instead of dressing it as a neutral.
  */
-export function scheduleTone(status: string): string {
+export function scheduleStatusLiteral(status: string): string {
   switch (status) {
     case 'Paid':
-    case 'Waived':
-      return 'text-muted-foreground';
-    case 'Overdue':
-    case 'Due':
-    case 'In grace':
+      return 'PAID';
     case 'Partly paid':
-      return 'font-medium text-status-danger-fg';
+      return 'PARTIALLY_PAID';
+    case 'Waived':
+      return 'WAIVED';
+    case 'Overdue':
+      return 'OVERDUE';
+    case 'In grace':
+      return 'IN_GRACE';
+    case 'Due':
+    case 'Upcoming':
+      return 'DUE';
     default:
-      return '';
+      return status;
   }
 }

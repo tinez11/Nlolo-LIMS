@@ -2,9 +2,10 @@ import { LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react';
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
-import { avatarHue, displayName, initials, readIdentity } from '@/auth/claims';
+import { avatarHue, avatarInitials, displayName, readIdentity } from '@/auth/claims';
 import { REALM_CONFIG, type Realm } from '@/auth/realms';
 import { cn } from '@/lib/cn';
+import { humanizeStatus } from '@/lib/status';
 import { currentTheme, toggleTheme, type Theme } from '@/lib/theme';
 import { useNavBadges } from '@/navBadges';
 import { navFor } from '@/screens';
@@ -29,7 +30,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
   const groups = navFor(realm, identity);
   const badges = useNavBadges(realm, identity);
 
-  // Below `md` the sidebar is an overlay drawer rather than a column: at 224px
+  // Below `md` the sidebar is an overlay drawer rather than a column: at 240px
   // fixed it would otherwise eat half a phone screen. Desktop is the designed
   // scene (PRODUCT.md), so the drawer is the narrow-width accommodation, not a
   // second layout to maintain -- the same markup, repositioned.
@@ -121,7 +122,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
       <aside
         id="sidebar"
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex w-56 shrink-0 flex-col border-r border-border bg-surface-muted transition-[transform,visibility] duration-200 ease-out',
+          'fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col border-r border-border bg-surface-muted transition-[transform,visibility] duration-200 ease-out',
           // From `md` up it is an ordinary flex column again and the transform
           // is neutralised, so the desktop scene keeps exactly its old layout.
           'md:visible md:static md:translate-x-0',
@@ -145,7 +146,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
               LP
             </span>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold tracking-tight">Life Platform</p>
+              <p className="truncate text-sm font-semibold">Life Platform</p>
               <p className="truncate text-xs text-muted-foreground">{config.label} console</p>
             </div>
           </div>
@@ -228,7 +229,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
         >
           {groups.map((group) => (
             <div key={group.label}>
-              <p className="px-2 pb-1.5 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
+              <p className="px-2 pb-1.5 text-eyebrow text-subtle-foreground uppercase">
                 {group.label}
               </p>
               <ul className="space-y-0.5">
@@ -310,7 +311,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
           >
             <Menu />
           </Button>
-          <p className="truncate text-sm font-semibold tracking-tight">{config.label} console</p>
+          <p className="truncate text-sm font-semibold">{config.label} console</p>
         </div>
 
         {/* tabIndex={-1} so the skip link's target can actually take focus --
@@ -352,9 +353,17 @@ function UserBlock({ identity }: { identity: ReturnType<typeof readIdentity> }) 
   const [theme, setTheme] = useState<Theme>(() => currentTheme());
   const name = displayName(identity);
   const seed = identity.preferredUsername ?? name;
+  // The platform's own roles only: they are SCREAMING_SNAKE, while Keycloak's built-ins that can
+  // ride the same claim (`offline_access`, `default-roles-…`) are not, and are nothing a person holds.
+  const roleLine = identity.roles
+    .filter((role) => /^[A-Z][A-Z_]*$/.test(role))
+    .map(humanizeStatus)
+    .join(' · ');
 
   return (
-    <div className="shrink-0 border-t border-border px-3 py-3">
+    // No rule above it (2026-10-09): the nav's own scroll shadow marks the edge when there is more
+    // nav above, and nothing needs marking when there is not.
+    <div className="shrink-0 px-3 py-3">
       <div className="flex items-center gap-2.5">
         <span
           className="grid size-7 shrink-0 place-items-center rounded-full text-xs font-semibold"
@@ -366,12 +375,14 @@ function UserBlock({ identity }: { identity: ReturnType<typeof readIdentity> }) 
           }}
           aria-hidden
         >
-          {initials(seed)}
+          {avatarInitials(identity)}
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium">{name}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {identity.roles.length > 0 ? identity.roles.join(', ') : 'No roles'}
+          {/* Roles as words, not enums (2026-10-09): "UNDERWRITER, FINANCE..." shouted, and at 240px
+              the full set still may not fit, so the whole of it is the title. */}
+          <p className="truncate text-xs text-muted-foreground" title={roleLine || undefined}>
+            {roleLine || 'No roles'}
           </p>
         </div>
       </div>

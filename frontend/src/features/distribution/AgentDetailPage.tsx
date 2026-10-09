@@ -105,7 +105,7 @@ export function AgentDetailPage() {
       />
 
       <DetailLayout record={renderRecord()}>
-        <Panel title="Commission plan" subtitle="Per product -- a plan hangs off a product, not this agent.">
+        <Panel title="Commission plan" subtitle="Per product — a plan hangs off a product, not this agent.">
           <CommissionPlanPanel agentId={agentId} products={products.data ?? []} canManage={canManage} />
         </Panel>
 

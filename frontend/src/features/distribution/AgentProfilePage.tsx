@@ -68,7 +68,7 @@ export function AgentProfilePage() {
                 <Field
                   label="Reports to"
                   value={<span className="font-mono text-xs">{agent.hierarchyParentId}</span>}
-                  note="No drill-in yet -- your supervisor's own profile is not reachable from here"
+                  note="No drill-in yet — your supervisor's own profile is not reachable from here"
                 />
               ) : (
                 <Field label="Reports to" value="Top of hierarchy" />
@@ -82,7 +82,7 @@ export function AgentProfilePage() {
           </Panel>
         }
       >
-        <Panel title="Commission plan" subtitle="Per product -- a plan hangs off a product, not you.">
+        <Panel title="Commission plan" subtitle="Per product — a plan hangs off a product, not you.">
           <CommissionPlanPanel agentId={agent.agentId ?? ''} products={products.data ?? []} canManage={false} />
         </Panel>
 

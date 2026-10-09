@@ -290,7 +290,7 @@ export function RatingBasis({
  */
 export function SectionHeading({ children }: { children: ReactNode }) {
   return (
-    <h3 className="px-4 pt-5 pb-2 text-xs font-medium tracking-[0.03em] text-subtle-foreground uppercase">
+    <h3 className="px-4 pt-5 pb-2 text-eyebrow text-subtle-foreground uppercase">
       {children}
     </h3>
   );

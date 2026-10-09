@@ -290,7 +290,7 @@ function ProposePriceForm({ fund, lastApproved }: { fund: FundView; lastApproved
         <p className={bigMove ? 'text-xs text-status-warning-fg' : 'text-xs text-muted-foreground'}>
           {move >= 0 ? '+' : ''}
           {move.toFixed(2)}% against the last approved price {lastApproved?.price}
-          {bigMove ? ` -- more than ${MOVE_ALERT_PERCENT}%, so the server asks why.` : '.'}
+          {bigMove ? ` — more than ${MOVE_ALERT_PERCENT}%, so the server asks why.` : '.'}
         </p>
       )}
       <Button type="submit" size="sm" disabled={acting?.status === 'loading'}>
@@ -460,7 +460,7 @@ function AdjustmentRow({ adjustment, viewerSubject }: { adjustment: PriceAdjustm
       {adjustment.decidedBy && (
         <p className="text-xs text-muted-foreground">
           {adjustment.status === 'WAIVED' ? 'Waived' : 'Settled'} by {adjustment.decidedBy}, {formatInstant(adjustment.decidedAt)}
-          {adjustment.reason ? ` -- ${adjustment.reason}` : ''}
+          {adjustment.reason ? ` — ${adjustment.reason}` : ''}
         </p>
       )}
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}

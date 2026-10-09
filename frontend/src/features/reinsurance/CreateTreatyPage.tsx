@@ -129,7 +129,7 @@ export function CreateTreatyPage() {
           <p className="text-xs text-muted-foreground">
             {treatyType === 'SURPLUS'
               ? 'SURPLUS cedes by retention limit, not a percent.'
-              : 'XOL cedes no policies -- it recovers the part of a claim above the retention.'}
+              : 'XOL cedes no policies — it recovers the part of a claim above the retention.'}
           </p>
         )}
 

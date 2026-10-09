@@ -118,7 +118,10 @@ test.describe('a savings account', () => {
     await page.getByRole('button', { name: 'Generate PDF' }).click();
     await expect(page.getByText('Filed as a PDF. It is listed below.')).toBeVisible({ timeout: 30_000 });
     const popup = page.waitForEvent('popup');
-    await page.getByRole('button', { name: 'Download' }).first().click();
+    // `exact`: the statement table above (2026-10-08) carries "Download the savings statement as
+    // PDF" and "... as Excel", which save a file and open no popup -- and a substring match took
+    // the first of those instead of the filed statement's own "Download".
+    await page.getByRole('button', { name: 'Download', exact: true }).first().click();
     await popup;
   });
 });

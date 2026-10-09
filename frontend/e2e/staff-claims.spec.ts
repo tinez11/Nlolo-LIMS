@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { issueRealPolicy } from './policies';
-import { dmy } from './dates';
+import { dmy, todayIso } from './dates';
 import { fillPolicyNumberManually } from './guards';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
 
@@ -41,10 +41,12 @@ async function policyWithRealClaim(page: Page): Promise<string> {
   await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
   await page.getByPlaceholder('Type a name to search').fill('Amina');
   await page.getByText('Amina Owner').click();
-  await page.getByLabel('Date of event').fill(dmy('2026-08-01'));
+  // Today, not a fixed date: the policy above is issued today and cover starts on issue, so a death
+  // on 2026-08-01 is correctly refused as "not on risk" -- which this success path is not about.
+  await page.getByLabel('Date of event').fill(dmy(todayIso()));
   await page.getByLabel('Cause of death').fill('Natural causes');
   await page.getByLabel('Place of death').fill('Dar es Salaam');
-  await page.getByLabel('Date of death').fill(dmy('2026-08-01'));
+  await page.getByLabel('Date of death').fill(dmy(todayIso()));
   await page.getByLabel('Attending physician').fill('Dr. E2E Claims Fixture');
   await page.getByRole('button', { name: 'Register claim' }).click();
   await expect(page).toHaveURL(/\/staff\/claims\/[0-9a-f-]{36}$/, { timeout: 15_000 });

@@ -22,7 +22,7 @@ const button = cva(
       size: {
         // Desktop density stays; a finger gets 44px. `pointer-coarse` rather than a width
         // breakpoint, because a touch laptop at 1440px needs the target as much as a phone.
-        sm: 'h-8 px-2.5 text-[13px] pointer-coarse:h-11',
+        sm: 'h-8 px-2.5 text-sm pointer-coarse:h-11',
         md: 'h-9 px-3.5 pointer-coarse:h-11',
         icon: 'size-8 pointer-coarse:size-11',
       },

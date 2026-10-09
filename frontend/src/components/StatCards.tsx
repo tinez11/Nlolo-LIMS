@@ -97,7 +97,7 @@ export function StatCards({ stats }: { stats: Stat[] }) {
             )}
           >
             <p className="text-xs text-muted-foreground">{stat.label}</p>
-            <p className="mt-1 text-2xl font-semibold tracking-tight">
+            <p className="mt-1 text-display">
               {stat.value !== null ? (
                 stat.value.toLocaleString()
               ) : stat.pending ? (

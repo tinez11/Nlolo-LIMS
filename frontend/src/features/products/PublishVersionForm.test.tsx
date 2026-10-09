@@ -45,7 +45,7 @@ describe('PublishVersionForm base rate double-count guard', () => {
     renderForm();
     expect(screen.queryByText(DOUBLE_COUNT)).not.toBeInTheDocument();
     expect(
-      screen.getByText('Rating table -- must cover at least AGE and SUM_ASSURED_BAND'),
+      screen.getByText('Rating table — must cover at least AGE and SUM_ASSURED_BAND'),
     ).toBeInTheDocument();
   });
 
@@ -97,10 +97,10 @@ describe('PublishVersionForm base rate double-count guard', () => {
     await priceOneCell(user);
 
     expect(
-      screen.getByText('Rating table -- must cover at least SUM_ASSURED_BAND'),
+      screen.getByText('Rating table — must cover at least SUM_ASSURED_BAND'),
     ).toBeInTheDocument();
     expect(
-      screen.queryByText('Rating table -- must cover at least AGE and SUM_ASSURED_BAND'),
+      screen.queryByText('Rating table — must cover at least AGE and SUM_ASSURED_BAND'),
     ).not.toBeInTheDocument();
   });
 });

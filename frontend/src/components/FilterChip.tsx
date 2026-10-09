@@ -54,7 +54,7 @@ export function FilterChip({
           ? // The ring sits outside the badge, so the status hue underneath it is untouched.
             cn('p-0.5', active ? 'ring-2 ring-accent' : 'hover:bg-hover')
           : cn(
-              'px-3 text-[13px]',
+              'px-3 text-xs',
               active ? 'bg-accent text-accent-foreground' : 'bg-control hover:bg-control-hover',
             ),
       )}

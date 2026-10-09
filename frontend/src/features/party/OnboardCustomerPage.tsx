@@ -220,7 +220,7 @@ function RegisteredResult({
         <Field
           label="KYC status"
           value={party.kycStatus ? <StatusBadge kind="kyc" value={party.kycStatus} /> : '—'}
-          note="Registration and verification are separate steps -- a new party always starts PENDING."
+          note="Registration and verification are separate steps — a new party always starts PENDING."
         />
       </dl>
       <Button size="sm" variant="outline" className="mt-3" onClick={onRegisterAnother}>

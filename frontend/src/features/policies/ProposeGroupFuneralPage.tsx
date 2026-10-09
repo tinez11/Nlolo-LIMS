@@ -194,7 +194,7 @@ export function ProposeGroupFuneralPage() {
           )}
 
           <fieldset className="border-t border-border pt-3">
-            <legend className="pr-2 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
+            <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
               Members and their families
             </legend>
             <div className="mb-2.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

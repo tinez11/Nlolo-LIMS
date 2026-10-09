@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { cn } from '@/lib/cn';
 
 /**
  * One label/value row in a detail panel.
@@ -31,14 +30,16 @@ export function Field({
   emphasis?: boolean;
 }) {
   return (
-    <div className="flex flex-wrap items-baseline justify-between gap-x-4 border-b border-border py-2.5 last:border-0">
+    // No rule between rows (2026-10-09): a record rail ruled under every field read as lined paper,
+    // one line every row. The label/value pairing across the row is carried by the baseline.
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 py-2">
       <dt className="shrink-0 text-xs text-muted-foreground">{label}</dt>
       <dd className="min-w-0 text-right">
-        <span className={cn('text-sm', emphasis && 'text-base font-semibold')}>{value}</span>
+        <span className={emphasis ? 'text-title' : 'text-sm'}>{value}</span>
       </dd>
-      {note && (
-        <dd className="mt-0.5 w-full text-right text-xs text-subtle-foreground">{note}</dd>
-      )}
+      {/* Left, under the label it explains. Right-aligned under the value it read as a ragged
+          block hanging off the figure, two or three lines deep in a 320px rail. */}
+      {note && <dd className="mt-0.5 w-full text-xs text-subtle-foreground">{note}</dd>}
     </div>
   );
 }

@@ -64,7 +64,7 @@ export function SheetHeader({
   return (
     <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
       <div className="min-w-0">
-        <Dialog.Title className="truncate text-base font-semibold">{title}</Dialog.Title>
+        <Dialog.Title className="truncate text-title">{title}</Dialog.Title>
         {subtitle ? (
           <Dialog.Description className="mt-0.5 truncate text-xs text-muted-foreground">
             {subtitle}

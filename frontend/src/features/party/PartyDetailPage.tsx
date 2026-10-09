@@ -277,8 +277,15 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
               {party && (
                 <dl className="px-4 pb-2">
                   <Field label="Type" value={partyTypeLabel(party.partyType)} />
-                  <Field label="Date of birth" value={formatDate(party.dateOfBirth) || '—'} />
-                  <Field label="Registration no." value={party.registrationNumber ?? '—'} />
+                  {/* Each field only where it applies to this kind of party (2026-10-09), or where one
+                      is recorded anyway. A company showed "Date of birth —", and the em dash, which
+                      means "not known", said something false: there is nothing to know. */}
+                  {(!isOrganisation || party.dateOfBirth) && (
+                    <Field label="Date of birth" value={formatDate(party.dateOfBirth) || '—'} />
+                  )}
+                  {(isOrganisation || party.registrationNumber) && (
+                    <Field label="Registration no." value={party.registrationNumber ?? '—'} />
+                  )}
                   <Field label="Phone" value={party.phoneNumber ?? '—'} />
                   <Field label="Email" value={party.email ?? '—'} />
                   {party.identityDocument?.type && (
@@ -291,7 +298,9 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
                       }
                     />
                   )}
-                  <Field label="Nationality" value={party.nationality ?? '—'} />
+                  {(!isOrganisation || party.nationality) && (
+                    <Field label="Nationality" value={party.nationality ?? '—'} />
+                  )}
                   {/*
                     Selectable and monospaced like the ID above it, because the only thing
                     anybody does with this number is copy it into another system.
@@ -892,7 +901,7 @@ function SchemeList({
             */}
             {sole && (
               <div className="border-t border-border">
-                <p className="px-4 pt-2 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
+                <p className="px-4 pt-2 text-eyebrow text-subtle-foreground uppercase">
                   Group members
                 </p>
                 {members.status === 'error' && members.error && members.data === null ? (

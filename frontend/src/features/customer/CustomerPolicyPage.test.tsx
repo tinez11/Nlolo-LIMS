@@ -7,7 +7,10 @@ import { CustomerPolicyPage } from './CustomerPolicyPage';
 
 vi.mock('@/api/portal');
 // The premium table loads its own rows; it is tested on its own.
-vi.mock('@/features/documents/PaymentScheduleTable', () => ({ PaymentScheduleTable: () => <p>payment schedule</p> }));
+vi.mock('@/features/documents/PaymentScheduleTable', () => ({
+  PaymentScheduleTable: () => <p>payment schedule</p>,
+  PaymentScheduleDownloads: () => null,
+}));
 
 const funeralPolicy: CustomerPolicyView = {
   summary: { policyNumber: 'POL-ABFE4139', productName: 'Nuru Funeral Cover', productCategory: 'FUNERAL', status: 'ACTIVE',
