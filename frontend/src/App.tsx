@@ -1,4 +1,11 @@
-import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import {
+  createBrowserRouter,
+  createRoutesFromElements,
+  Navigate,
+  Outlet,
+  Route,
+  RouterProvider,
+} from 'react-router-dom';
 import { RealmAuthProvider } from '@/auth/RealmAuthProvider';
 import { RequireAuth } from '@/auth/RequireAuth';
 import { REALM_CONFIG, type Realm } from '@/auth/realms';
@@ -20,14 +27,19 @@ import { REALM_HOME, SCREENS } from '@/screens';
  * deliberately absent rather than stubbed, because an authenticating route into
  * an empty app is worse than a 404.
  */
-export function App() {
-  const realms = (Object.keys(REALM_CONFIG) as Realm[]).filter(
-    (realm) => SCREENS[realm].length > 0,
-  );
+const realms = (Object.keys(REALM_CONFIG) as Realm[]).filter(
+  (realm) => SCREENS[realm].length > 0,
+);
 
-  return (
-    <BrowserRouter>
-      <Routes>
+/*
+  A DATA router (2026-10-09, review C1), not <BrowserRouter>. The route tree is the same JSX as
+  before; what changes is that `useBlocker` works, and `UnsavedGuard` needs it -- a sidebar click
+  on a half-built product version used to discard it without a word. Built once, at module level,
+  as React Router asks: the manifest it reads is static.
+*/
+const router = createBrowserRouter(
+  createRoutesFromElements(
+    <>
         <Route path="/" element={<RealmPicker />} />
 
         {realms.map((realm) => {
@@ -43,9 +55,12 @@ export function App() {
         })}
 
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
-  );
+    </>,
+  ),
+);
+
+export function App() {
+  return <RouterProvider router={router} />;
 }
 
 function RealmSubtree({ realm }: { realm: Realm }) {

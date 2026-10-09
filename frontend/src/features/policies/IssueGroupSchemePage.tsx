@@ -28,6 +28,7 @@ import {
 } from './groupSchemeIssueForm';
 import { Input, Select } from '@/components/ui/input';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { UnsavedGuard } from '@/components/UnsavedGuard';
 
 /**
  * `POST /group-schemes` — the master policy, the scheme and its opening schedule
@@ -75,7 +76,7 @@ export function IssueGroupSchemePage() {
     handleSubmit,
     control,
     setValue,
-    formState: { errors },
+    formState: { errors, isDirty, isSubmitting },
   } = useForm<GroupSchemeIssueFormValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(groupSchemeIssueFormSchema()),
@@ -171,6 +172,7 @@ export function IssueGroupSchemePage() {
 
       {canUnderwrite && (
       <form className="max-w-2xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+        <UnsavedGuard when={isDirty && !isSubmitting} what="This scheme proposal" />
         <FormField label="Policyholder (the employer or association)" error={errors.policyholderPartyId?.message}>
           <Controller
             control={control}

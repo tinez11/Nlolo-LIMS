@@ -29,6 +29,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { UnsavedGuard } from '@/components/UnsavedGuard';
 
 type CustomerType = 'INDIVIDUAL' | 'CORPORATE';
 
@@ -92,7 +93,7 @@ function RegisterIndividualForm() {
     control,
     handleSubmit,
     reset,
-    formState: { errors },
+    formState: { errors, isDirty, isSubmitting },
   } = useForm<RegisterIndividualFormValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(registerIndividualFormSchema),
@@ -117,6 +118,7 @@ function RegisterIndividualForm() {
 
   return (
     <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+      <UnsavedGuard when={isDirty && !isSubmitting} what="This customer" />
       <IndividualFields register={register} control={control} errors={errors} />
 
       {registering.status === 'error' && registering.error && (
@@ -144,7 +146,7 @@ function RegisterCorporateForm() {
     register,
     handleSubmit,
     reset,
-    formState: { errors },
+    formState: { errors, isDirty, isSubmitting },
   } = useForm<RegisterCorporateFormValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(registerCorporateFormSchema),
@@ -169,6 +171,7 @@ function RegisterCorporateForm() {
 
   return (
     <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+      <UnsavedGuard when={isDirty && !isSubmitting} what="This customer" />
       <FormField label="Registered name" error={errors.registeredName?.message}>
         <Input
           placeholder="Kilimanjaro SACCO"

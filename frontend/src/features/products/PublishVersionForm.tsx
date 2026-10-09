@@ -48,6 +48,7 @@ import { FuneralTermsSection } from './FuneralTermsSection';
 import { blankUnitLinkedFields } from './unitLinkedSchema';
 import { UnitLinkedTermsSection } from './UnitLinkedTermsSection';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { UnsavedGuard } from '@/components/UnsavedGuard';
 
 /**
  * An example shaped like the factor it belongs to.
@@ -129,7 +130,7 @@ export function PublishVersionForm({
     control,
     getValues,
     setValue,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<PublishVersionFormInput, unknown, PublishVersionFormValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(schema),
@@ -247,6 +248,13 @@ export function PublishVersionForm({
 
   return (
     <form className="space-y-4" onSubmit={(e) => void handleSubmit((v) => setPending(v))(e)}>
+      {/* Submitting only stages the confirmation; the publish, and the jump to the product
+          after it, come later -- so the guard stands down while that publish runs or once it
+          has succeeded, not while handleSubmit does. */}
+      <UnsavedGuard
+        when={isDirty && publishing.status !== 'loading' && publishing.status !== 'success'}
+        what="The product version you were building"
+      />
       <div className="grid grid-cols-2 gap-3">
         {/* IFRS 17 I2: what the actuary signs off. The model is the accounting policy register's; an override
             counts only where the register allows it for the product's portfolio. */}

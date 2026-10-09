@@ -18,6 +18,7 @@ import {
   type RegisterIndividualFormValues,
 } from './registerIndividualForm';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { UnsavedGuard } from '@/components/UnsavedGuard';
 
 /**
  * Correct what the platform has recorded about a client.
@@ -52,7 +53,7 @@ export function EditClientPage() {
     control,
     handleSubmit,
     reset,
-    formState: { errors },
+    formState: { errors, isDirty, isSubmitting },
   } = useForm<RegisterIndividualFormValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(registerIndividualFormSchema),
@@ -141,6 +142,7 @@ export function EditClientPage() {
           className="max-w-2xl space-y-4 px-6 pb-8"
           onSubmit={(e) => void handleSubmit(saveIndividual)(e)}
         >
+          <UnsavedGuard when={isDirty && !isSubmitting} what="These corrections" />
           <IndividualFields register={register} control={control} errors={errors} />
 
           {saveError && (

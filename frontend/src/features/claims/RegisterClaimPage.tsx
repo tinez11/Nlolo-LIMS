@@ -34,6 +34,7 @@ import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { CheckboxField } from '@/components/ui/checkbox';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { UnsavedGuard } from '@/components/UnsavedGuard';
 
 /**
  * `POST /claims` is one of only six endpoints on the platform that HARD-REQUIRES
@@ -83,7 +84,7 @@ export function RegisterClaimPage() {
     watch,
     setValue,
     control,
-    formState: { errors },
+    formState: { errors, isDirty, isSubmitting },
   } = useForm<RegisterClaimFormValues>({
     ...VALIDATE_ON_TOUCH,
     // The schema is a factory now, because whether a member is required depends on the policy
@@ -284,6 +285,7 @@ export function RegisterClaimPage() {
         className="max-w-xl space-y-5 px-6 pb-8 pt-5"
         onSubmit={(e) => void handleSubmit(onSubmit)(e)}
       >
+        <UnsavedGuard when={isDirty && !isSubmitting} what="This claim" />
         <Panel title="Who and which policy">
         <div className="space-y-4 p-4">
         {/* Claimant BEFORE policy, which is the order the conversation actually happens in:

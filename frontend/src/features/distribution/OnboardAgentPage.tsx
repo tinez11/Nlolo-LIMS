@@ -22,6 +22,7 @@ import { Input, Select } from '@/components/ui/input';
 import { channelLabel } from '@/lib/ifrs17';
 import { InlineError } from '@/components/InlineError';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { UnsavedGuard } from '@/components/UnsavedGuard';
 
 /**
  * `POST /agents`.
@@ -52,7 +53,7 @@ export function OnboardAgentPage() {
     register,
     handleSubmit,
     control,
-    formState: { errors },
+    formState: { errors, isDirty, isSubmitting },
   } = useForm<OnboardAgentFormValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(onboardAgentFormSchema),
@@ -76,6 +77,7 @@ export function OnboardAgentPage() {
       />
 
       <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+        <UnsavedGuard when={isDirty && !isSubmitting} what="This agent" />
         <FormField label="Party id" error={errors.partyId?.message}>
           <Controller
             control={control}

@@ -22,6 +22,7 @@ import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { PORTFOLIO_CODES, PORTFOLIO_LABEL, portfolioDefaultFor } from '@/lib/ifrs17';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { UnsavedGuard } from '@/components/UnsavedGuard';
 
 /**
  * A genuinely two-phase flow, not a stylistic choice: `GET /products` only
@@ -50,7 +51,7 @@ export function CreateProductPage() {
     register,
     handleSubmit,
     setValue,
-    formState: { errors, dirtyFields },
+    formState: { errors, dirtyFields, isDirty, isSubmitting },
   } = useForm<CreateProductFormValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(createProductFormSchema),
@@ -81,6 +82,9 @@ export function CreateProductPage() {
         <Step number={1} title="Product definition" done={created !== null}>
           {created === null ? (
             <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+              {/* Only while step 1 is unsaved: once the product exists it IS saved, and the jump
+                  to it after a version is published must not be held. */}
+              <UnsavedGuard when={isDirty && !isSubmitting && created === null} what="This product" />
               <FormField label="Product code" error={errors.productCode?.message}>
                 <Input
                   className="font-mono"
