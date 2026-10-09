@@ -42,6 +42,18 @@ export function getCustomerDashboard(): Promise<CustomerDashboardView> {
   return get<CustomerDashboardView>('/customer/dashboard');
 }
 
+export type CustomerMessage = components['schemas']['CustomerMessage'];
+
+/** Step 7: what we sent the customer, newest first, once per message. */
+export function getCustomerMessages(): Promise<CustomerMessage[]> {
+  return get<CustomerMessage[]>('/customer/messages');
+}
+
+/** Step 7: opened in the portal. */
+export function markMessageRead(messageId: string): Promise<CustomerMessage> {
+  return post<CustomerMessage>(`/customer/messages/${enc(messageId)}/read`, {});
+}
+
 /** Step 2: one of the customer's own policies, customer-safe; 403 for one they do not hold. */
 export function getCustomerPolicy(policyNumber: string): Promise<CustomerPolicyView> {
   return get<CustomerPolicyView>(`/customer/policies/${enc(policyNumber)}`);

@@ -60,10 +60,13 @@ public class CustomerPortal {
     private final AccumulationApi accumulationApi;
     private final UnitLinkedApi unitLinkedApi;
     private final AnnuityApi annuityApi;
+    private final tz.co.nlolo.lifeplatform.communication.api.NotificationApi notificationApi;
 
     public CustomerPortal(PolicyApi policyApi, PartyApi partyApi, ProductApi productApi, BillingApi billingApi,
                           ClaimsApi claimsApi, AccumulationApi accumulationApi, UnitLinkedApi unitLinkedApi,
-                          AnnuityApi annuityApi) {
+                          AnnuityApi annuityApi,
+                          tz.co.nlolo.lifeplatform.communication.api.NotificationApi notificationApi) {
+        this.notificationApi = notificationApi;
         this.policyApi = policyApi;
         this.partyApi = partyApi;
         this.productApi = productApi;
@@ -101,7 +104,8 @@ public class CustomerPortal {
             .collect(Collectors.toSet())).stream().filter(c -> !CLOSED.contains(c.status())).count();
         summaries.sort(Comparator.comparing(CustomerPolicySummary::policyNumber));
         return new CustomerDashboardView(partyApi.getParty(customerPartyId).displayName(), active, claimsInProgress,
-            next, value == null ? null : new Amount(value, valueCurrency), summaries);
+            next, value == null ? null : new Amount(value, valueCurrency), summaries,
+            (int) notificationApi.inbox(customerPartyId).stream().filter(m -> !m.read()).count());
     }
 
     @Transactional(readOnly = true)

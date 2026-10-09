@@ -31,7 +31,7 @@ beforeEach(() => {
 
 function dashboardWith(...policies: CustomerPolicySummary[]) {
   vi.mocked(portalApi.getCustomerDashboard).mockResolvedValue({
-    displayName: 'Nadine Kileo', activePolicies: policies.length, claimsInProgress: 0, nextPremium: null, accountValue: null, policies,
+    displayName: 'Nadine Kileo', activePolicies: policies.length, claimsInProgress: 0, unreadMessages: 0, nextPremium: null, accountValue: null, policies,
   });
 }
 

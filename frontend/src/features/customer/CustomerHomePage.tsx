@@ -44,14 +44,21 @@ export function CustomerHomePage() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Card label="Policies in force" value={String(dashboard.activePolicies)} />
           {next && (
-            <Card label="Next premium" value={money(next.amount, next.currency)}
-              note={`Due ${formatDate(next.dueDate)}${next.status === 'IN_GRACE' ? ' — in the grace period' : ''} · ${next.policyNumber}`}
-              warn={next.status === 'IN_GRACE'} />
+            <Link to="/customers/pay" className="rounded-lg hover:bg-hover">
+              <Card label="Next premium" value={money(next.amount, next.currency)}
+                note={`Due ${formatDate(next.dueDate)}${next.status === 'IN_GRACE' ? ' — in the grace period' : ''} · ${next.policyNumber} · Pay now`}
+                warn={next.status === 'IN_GRACE'} />
+            </Link>
           )}
           {dashboard.claimsInProgress > 0 && (
             <Card label="Claims in progress" value={String(dashboard.claimsInProgress)} />
           )}
           {value && <Card label="Savings and investments" value={money(value.amount, value.currency)} note="What your plans are worth today" />}
+          {dashboard.unreadMessages > 0 && (
+            <Link to="/customers/messages" className="rounded-lg hover:bg-hover">
+              <Card label="New messages" value={String(dashboard.unreadMessages)} note="Open your messages" />
+            </Link>
+          )}
         </div>
 
         <Panel title="My policies" subtitle="Open one for its cover, premiums and claims.">

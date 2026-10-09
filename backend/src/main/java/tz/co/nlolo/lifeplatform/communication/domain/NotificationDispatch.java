@@ -54,6 +54,18 @@ public class NotificationDispatch {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
+    /** The text as rendered for this send (V15); null when it never rendered, and on rows from before V15. */
+    @Column(name = "body")
+    private String body;
+
+    /** The event that owed the message (V15): its SMS and its email share it. Null on rows from before V15. */
+    @Column(name = "event_id")
+    private UUID eventId;
+
+    /** When the customer opened it in the portal (V15). */
+    @Column(name = "read_at")
+    private Instant readAt;
+
     protected NotificationDispatch() {}
 
     public NotificationDispatch(UUID tenantId, UUID partyId, String templateKey, String channel, String policyNumber) {
@@ -83,6 +95,20 @@ public class NotificationDispatch {
         this.dispatchedAt = Instant.now();
     }
 
+    public void recordBody(UUID eventId, String body) {
+        this.eventId = eventId;
+        this.body = body;
+    }
+
+    public void markRead() {
+        if (readAt == null) {
+            readAt = Instant.now();
+        }
+    }
+
+    public String getBody() { return body; }
+    public UUID getEventId() { return eventId; }
+    public Instant getReadAt() { return readAt; }
     public UUID getDispatchId() { return dispatchId; }
     public UUID getTenantId() { return tenantId; }
     public UUID getPartyId() { return partyId; }

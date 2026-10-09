@@ -151,7 +151,8 @@ class StatementIntegrationTest {
             "db-migrations/communication/V7__null_safe_rls_and_pending_reminders.sql",
             "db-migrations/communication/V8__platform_default_templates.sql",
             "db-migrations/communication/V9__payment_received_template.sql",
-            "db-migrations/communication/V10__account_statement_template.sql");
+            "db-migrations/communication/V10__account_statement_template.sql",
+            "db-migrations/communication/V15__dispatch_body_and_inbox.sql");
 
         // The container never runs compose's minio-init job, so the bucket is made here --
         // ACCOUNT_STATEMENT routes to the general bucket (MinioDocumentStorage.bucketFor's default arm).

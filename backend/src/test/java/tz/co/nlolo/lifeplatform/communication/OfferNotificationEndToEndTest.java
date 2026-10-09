@@ -169,6 +169,7 @@ class OfferNotificationEndToEndTest {
             "db-migrations/communication/V8__platform_default_templates.sql",
             "db-migrations/communication/V9__payment_received_template.sql",
             "db-migrations/communication/V10__account_statement_template.sql",
+            "db-migrations/communication/V15__dispatch_body_and_inbox.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");
