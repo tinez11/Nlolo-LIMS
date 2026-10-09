@@ -20,6 +20,7 @@ import {
   type FuneralRoleValues,
 } from './funeralSchema';
 import type { PublishVersionFormInput, PublishVersionFormValues } from './publishVersionSchema';
+import { Tip } from '@/components/ui/tooltip';
 
 /**
  * A funeral version's premium table as a grid (2026-10-08): the plans down the side, each priced role's age
@@ -139,7 +140,11 @@ export function PremiumGrid({ register, control, errors, setValue, getValues }: 
                             )}
                           </>
                         ) : (
-                          <span className="block w-24 px-2 py-1 text-subtle-foreground" title="This plan does not cover this role">—</span>
+                          <Tip content="This plan does not cover this role">
+                            <span className="block w-24 px-2 py-1 text-subtle-foreground">
+                              —<span className="sr-only">not covered by this plan</span>
+                            </span>
+                          </Tip>
                         )}
                       </td>
                     );

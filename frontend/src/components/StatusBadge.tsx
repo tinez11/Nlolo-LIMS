@@ -1,6 +1,7 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/cn';
 import { humanizeStatus, resolveStatus, type StatusKind } from '@/lib/status';
+import { Tip } from './ui/tooltip';
 
 const badge = cva(
   'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap',
@@ -47,15 +48,21 @@ export function StatusBadge({ kind, value, label, className }: StatusBadgeProps)
 
   const { bucket, known } = resolveStatus(kind, value);
 
-  return (
+  const pill = (
     <span
       className={cn(badge({ bucket }), !known && 'ring-1 ring-border-strong ring-inset', className)}
-      // A literal this build has never heard of is flagged rather than dressed up as
-      // a deliberate neutral, so a newly-added backend enum is visible on screen.
-      title={known ? undefined : `Unrecognised ${kind} status: ${value}`}
     >
       {label ?? humanizeStatus(value)}
       {!known && <span aria-hidden>?</span>}
     </span>
+  );
+  // A literal this build has never heard of is flagged rather than dressed up as a deliberate
+  // neutral, so a newly-added backend enum is visible on screen -- and the flag explains itself
+  // to a keyboard too (2026-10-09; it was a mouse-only title). Rare by design, so the tab stop
+  // costs little.
+  return known ? pill : (
+    <Tip content={`Unrecognised ${kind} status: ${value}`} focusable>
+      {pill}
+    </Tip>
   );
 }

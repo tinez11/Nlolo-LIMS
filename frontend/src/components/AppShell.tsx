@@ -13,6 +13,7 @@ import { CommandPalette } from './CommandPalette';
 import { LoadingBlock } from './states';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import { Tip } from './ui/tooltip';
 
 /**
  * The console chrome: sidebar, nav, user block.
@@ -263,18 +264,17 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
                       <item.icon className="size-4 shrink-0" aria-hidden />
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
                       {item.badge && badges[item.badge] && (
-                        <span
-                          className="shrink-0"
-                          // The count alone reads as "3 claims", which is not what
-                          // it means. Both the tooltip and the screen-reader text
-                          // say what was counted.
-                          title={badges[item.badge]!.title}
-                        >
-                          <Badge className="px-1.5 py-0 tabular-nums">
-                            {badges[item.badge]!.count}
-                            <span className="sr-only"> — {badges[item.badge]!.title}</span>
-                          </Badge>
-                        </span>
+                        // The count alone reads as "3 claims", which is not what it means. Both
+                        // the tip and the screen-reader text say what was counted; the link it
+                        // sits in already carries the text for a keyboard.
+                        <Tip content={badges[item.badge]!.title}>
+                          <span className="shrink-0">
+                            <Badge className="px-1.5 py-0 tabular-nums">
+                              {badges[item.badge]!.count}
+                              <span className="sr-only"> — {badges[item.badge]!.title}</span>
+                            </Badge>
+                          </span>
+                        </Tip>
                       )}
                     </NavLink>
                   </li>
@@ -381,9 +381,15 @@ function UserBlock({ identity }: { identity: ReturnType<typeof readIdentity> }) 
           <p className="truncate text-xs font-medium">{name}</p>
           {/* Roles as words, not enums (2026-10-09): "UNDERWRITER, FINANCE..." shouted, and at 240px
               the full set still may not fit, so the whole of it is the title. */}
-          <p className="truncate text-xs text-muted-foreground" title={roleLine || undefined}>
-            {roleLine || 'No roles'}
-          </p>
+          {roleLine ? (
+            <Tip content={roleLine}>
+              <p tabIndex={0} className="truncate rounded-sm text-xs text-muted-foreground">
+                {roleLine}
+              </p>
+            </Tip>
+          ) : (
+            <p className="truncate text-xs text-muted-foreground">No roles</p>
+          )}
         </div>
       </div>
 

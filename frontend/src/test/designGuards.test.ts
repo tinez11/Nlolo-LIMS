@@ -244,6 +244,13 @@ describe('design guards', () => {
     expect(offenders(/font-mono[^\n]*formatMoney\(/)).toEqual([]);
   });
 
+  it('explains with a Tip, never with a written-out title attribute', () => {
+    // A title shows only to a mouse that rests, never to a keyboard. A WRITTEN sentence in one on a
+    // DOM element is an explanation, and it belongs in a Tip (2026-10-09). A title bound to a raw
+    // value -- a party id behind a name, a truncated file name -- is a peek at data and may stay.
+    expect(offenders(/<[a-z][a-z0-9]*\b[^>]*\stitle="/)).toEqual([]);
+  });
+
   it('validates every form when a field is left, not only on submit', () => {
     // All 59 forms took react-hook-form's default `onSubmit`: a wrong age band or rate said so only
     // after the whole form was sent (review decision D10). One shared timing, so no form drifts.

@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { StatusBadge } from './StatusBadge';
 
@@ -29,15 +30,23 @@ describe('StatusBadge', () => {
     expect(container.firstElementChild?.className).not.toContain('status-');
   });
 
-  it('flags an unrecognised literal instead of silently showing neutral', () => {
+  // The flag explains itself to a keyboard as well as a mouse: it was a title attribute, which
+  // nobody tabbing through a list could ever read.
+  it('flags an unrecognised literal instead of silently showing neutral', async () => {
+    const user = userEvent.setup();
     render(<StatusBadge kind="policy" value="INVENTED_LATER" />);
-    const el = screen.getByTitle('Unrecognised policy status: INVENTED_LATER');
-    expect(el).toBeInTheDocument();
-    expect(el.textContent).toContain('Invented later');
+    expect(screen.getByText('Invented later')).toBeInTheDocument();
+    await user.tab();
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Unrecognised policy status: INVENTED_LATER',
+    );
   });
 
-  it('does not flag a known literal', () => {
+  it('does not flag a known literal, and adds no tab stop for it', async () => {
+    const user = userEvent.setup();
     render(<StatusBadge kind="policy" value="ACTIVE" />);
-    expect(screen.getByText('Active')).not.toHaveAttribute('title');
+    await user.tab();
+    expect(document.body).toHaveFocus();
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 });

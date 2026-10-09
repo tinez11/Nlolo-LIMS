@@ -28,6 +28,7 @@ import {
   type AccountFilters,
   type SortKey,
 } from './accountTree';
+import { Tip } from '@/components/ui/tooltip';
 
 const ACCOUNT_TYPES: AccountType[] = ['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE', 'CLEARING'];
 const POSTING_MODES: PostingMode[] = ['AUTO', 'MAN', 'BOTH'];
@@ -130,7 +131,14 @@ export function ChartOfAccountsPage() {
      * a query that answers a different question.
      */
     if (!account.postingAllowed) {
-      return <span title="A summary account: its postings are on the accounts beneath it">{figure}</span>;
+      return (
+        <Tip content="A summary account: its postings are on the accounts beneath it">
+          <span>
+            {figure}
+            <span className="sr-only"> (a summary account: its postings are on the accounts beneath it)</span>
+          </span>
+        </Tip>
+      );
     }
 
     return (

@@ -1,4 +1,5 @@
 import { cn } from '@/lib/cn';
+import { Tip } from '@/components/ui/tooltip';
 
 /**
  * A dispatch's state, coloured by what it means for the customer.
@@ -25,15 +26,20 @@ const TITLES: Record<string, string> = {
 
 export function DispatchStatusBadge({ status }: { status: string | undefined }) {
   if (!status) return <span className="text-subtle-foreground">—</span>;
+  const meaning = TITLES[status] ?? `Unrecognised status: ${status}`;
+  // One on every row of a message list, so not a tab stop each: the meaning is a hover tip for the
+  // eye and screen-reader text for everyone else (2026-10-09; it was a mouse-only title).
   return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap',
-        TONES[status] ?? 'bg-status-neutral-bg text-status-neutral-fg',
-      )}
-      title={TITLES[status] ?? `Unrecognised status: ${status}`}
-    >
-      {status}
-    </span>
+    <Tip content={meaning}>
+      <span
+        className={cn(
+          'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap',
+          TONES[status] ?? 'bg-status-neutral-bg text-status-neutral-fg',
+        )}
+      >
+        {status}
+        <span className="sr-only"> — {meaning}</span>
+      </span>
+    </Tip>
   );
 }

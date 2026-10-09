@@ -42,6 +42,7 @@ import { selectDetail, selectScheme, usePolicyStore } from '@/store/policyStore'
 import { CommissionPanel } from './CommissionPanel';
 import { FreeCoverLimitEditor } from './FreeCoverLimitEditor';
 import { SubmissionsPanel, type SubmissionRow } from './SubmissionsPanel';
+import { Tip } from '@/components/ui/tooltip';
 
 /**
  * A credit-life scheme: a lender's book of borrowers, run one monthly file at a time.
@@ -541,13 +542,19 @@ function Column({
       <dt className="font-mono text-xs whitespace-nowrap">
         {name}
         {required ? (
-          <span className="ml-1 text-status-danger-fg" title="Required">
-            *
-          </span>
+          <Tip content="Required">
+            <span className="ml-1 text-status-danger-fg">
+              <span aria-hidden>*</span>
+              <span className="sr-only">required</span>
+            </span>
+          </Tip>
         ) : (
-          <span className="ml-1 text-subtle-foreground" title="Optional">
-            ·
-          </span>
+          <Tip content="Optional">
+            <span className="ml-1 text-subtle-foreground">
+              <span aria-hidden>·</span>
+              <span className="sr-only">optional</span>
+            </span>
+          </Tip>
         )}
       </dt>
       <dd className="text-muted-foreground">{children}</dd>

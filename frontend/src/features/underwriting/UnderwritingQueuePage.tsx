@@ -15,6 +15,7 @@ import { useUnderwritingStore } from '@/store/underwritingStore';
 import { UnderwritingCaseDrawer } from './UnderwritingCaseDrawer';
 import { FilterChip } from '@/components/FilterChip';
 import { Badge } from '@/components/ui/badge';
+import { Tip } from '@/components/ui/tooltip';
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -82,9 +83,12 @@ export function UnderwritingQueuePage() {
         c.proposalNumber ? (
           <span className="font-mono text-xs font-medium">{c.proposalNumber}</span>
         ) : (
-          <span className="font-mono text-xs text-muted-foreground" title="Opened before proposal numbers existed">
-            {c.caseId ?? '—'}
-          </span>
+          <Tip content="Opened before proposal numbers existed">
+            <span className="font-mono text-xs text-muted-foreground">
+              {c.caseId ?? '—'}
+              <span className="sr-only"> (opened before proposal numbers existed)</span>
+            </span>
+          </Tip>
         ),
     },
     {
@@ -98,12 +102,13 @@ export function UnderwritingQueuePage() {
         <span className="inline-flex items-center gap-1.5">
           {c.status ? <StatusBadge kind="underwritingCase" value={c.status} /> : '—'}
           {c.issuanceFailureReason && (
-            <span
-              className="rounded bg-status-danger-bg px-1.5 py-0.5 text-xs font-medium text-status-danger-fg"
-              title={c.issuanceFailureReason}
-            >
-              No policy
-            </span>
+            // Why no policy was issued is the whole point of the flag, so it is reachable by
+            // keyboard; it is also rare, so the tab stop costs little.
+            <Tip content={c.issuanceFailureReason} focusable>
+              <span className="rounded bg-status-danger-bg px-1.5 py-0.5 text-xs font-medium text-status-danger-fg">
+                No policy
+              </span>
+            </Tip>
           )}
         </span>
       ),

@@ -40,6 +40,7 @@ import {
 } from './waiveInvoiceForm';
 import { Input } from '@/components/ui/input';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { Tip } from '@/components/ui/tooltip';
 
 /**
  * `POST /invoices/{invoiceId}/waiver` (**finance staff only** -- FINANCE_OFFICER
@@ -173,9 +174,12 @@ function InvoiceRow({
           <span className="ml-2 inline-flex items-center gap-1.5">
             <StatusBadge kind="invoice" value={invoice.status} />
             {typeof invoice.dunningLevel === 'number' && (
-              <span className="text-xs text-status-danger-fg" title="Dunning escalation level (1-5)">
-                L{invoice.dunningLevel}
-              </span>
+              <Tip content="Dunning escalation level (1-5)">
+                <span className="text-xs text-status-danger-fg">
+                  L{invoice.dunningLevel}
+                  <span className="sr-only"> — dunning escalation level, of 5</span>
+                </span>
+              </Tip>
             )}
           </span>
         </div>
