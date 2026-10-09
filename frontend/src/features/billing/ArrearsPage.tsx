@@ -277,7 +277,7 @@ export function ArrearsPage() {
             />
             <FilterChip label="All" active={resolved === undefined} onClick={() => update({ resolved: 'ALL' })} />
 
-            <span className="ml-3 text-xs text-subtle-foreground uppercase">Level</span>
+            <span className="ml-3 text-eyebrow text-subtle-foreground uppercase">Level</span>
             <FilterChip
               label="Any"
               active={minDunningLevel === undefined}

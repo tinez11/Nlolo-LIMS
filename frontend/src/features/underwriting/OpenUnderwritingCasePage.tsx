@@ -351,7 +351,7 @@ export function OpenUnderwritingCasePage() {
         {/* Where the business came from. Last and grouped: all three are optional, and the
             risk — who, what product, how much — is what the form is actually for. */}
         <fieldset className="border-t border-border pt-3">
-          <legend className="pr-2 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
+          <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
             Source
           </legend>
 

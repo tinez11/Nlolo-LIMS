@@ -64,7 +64,7 @@ export function PolicyVestingPanel({ policyNumber, productId }: { policyNumber: 
 
   return (
     <div className="space-y-4">
-      <p className="text-lg font-semibold">Vests on {formatDate(v.vestingDate)}</p>
+      <p className="text-title">Vests on {formatDate(v.vestingDate)}</p>
       {v.holdReason && (
         <div role="alert" className="rounded-md border border-status-danger-fg/40 bg-status-danger-bg px-4 py-3 text-sm">
           <p className="font-medium">Held from vesting since {formatInstant(v.heldAt)}. It is retried every day.</p>

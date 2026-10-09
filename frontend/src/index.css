@@ -183,9 +183,36 @@
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);
 
+  /* Inter Variable is the self-hosted file imported in main.tsx; a locally installed Inter is the
+     fallback before the platform fonts. */
   --font-sans:
-    Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+
+  /*
+    The type tiers of DESIGN.md, as utilities that carry size, leading, tracking and weight
+    together (2026-10-09). Before this they existed only as prose, and every heading rebuilt
+    its tier from raw utilities slightly differently: the page title took tracking-tight
+    (-0.025em) where the scale says -0.015em. Body, Label and Micro stay text-sm and text-xs,
+    which already map one to one.
+  */
+  --text-display: 1.5rem;
+  --text-display--line-height: 1.2;
+  --text-display--letter-spacing: -0.015em;
+  --text-display--font-weight: 600;
+  --text-headline: 1.25rem;
+  --text-headline--line-height: 1.3;
+  --text-headline--letter-spacing: -0.015em;
+  --text-headline--font-weight: 600;
+  --text-title: 1rem;
+  --text-title--line-height: 1.4;
+  --text-title--letter-spacing: -0.005em;
+  --text-title--font-weight: 600;
+  /* Group captions. Always used with uppercase, which a font token cannot carry. */
+  --text-eyebrow: 0.75rem;
+  --text-eyebrow--line-height: 1.4;
+  --text-eyebrow--letter-spacing: 0.03em;
+  --text-eyebrow--font-weight: 500;
 }
 
 @layer base {
@@ -203,8 +230,8 @@
        digits make a currency column visibly ragged. */
     font-variant-numeric: tabular-nums;
     /* Espresso's body tracking, halved: it sets 0.02em on InterVariable at weight 420, and
-       this console loads static Inter at 400, where 0.02em reads loose at 14px. Headings
-       keep their own negative tracking. */
+       this console sets 400, where 0.02em reads loose at 14px. The heading tiers above
+       carry their own negative tracking. */
     letter-spacing: 0.01em;
   }
 

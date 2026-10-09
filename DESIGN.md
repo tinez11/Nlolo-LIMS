@@ -383,10 +383,16 @@ be white-on-light in dark mode.
 ## Typography
 
 **Display Font:** Inter (none — Inter carries the whole system)
-**Body Font:** Inter, with `ui-sans-serif`, `system-ui`, `-apple-system`,
-`'Segoe UI'`, `Roboto` behind it
+**Body Font:** Inter Variable, **self-hosted** (`@fontsource-variable/inter`,
+its `opsz` build, imported in `main.tsx`), with a locally installed Inter, then
+`ui-sans-serif`, `system-ui`, `-apple-system`, `'Segoe UI'`, `Roboto` behind it.
+Until 2026-10-09 it came from Google's font CDN: a third-party request on every
+load of a white-label console, no offline dev, and static 400/500/600 only. The
+variable file carries every weight and the optical-size axis, so the letterforms
+tighten for headings and open up at 12px on their own.
 **Mono Font:** `ui-monospace`, `'SF Mono'`, `'Cascadia Mono'`, `Menlo`, reserved
-almost entirely for trace IDs and machine identifiers
+for trace IDs and machine identifiers, and **never for money** (guarded):
+figures already line up through the global tabular figures.
 
 **Character:** One neutral grotesque doing every job, tuned for figures rather
 than for voice. The personality is not in the letterforms — it is in the
@@ -413,13 +419,13 @@ floor is 12px, and a guard test (`src/test/designGuards.test.ts`) keeps it.
 Where a caption and its neighbour are now the same size, hierarchy is carried by
 ink (Subtle against Muted) and by case, which it largely already was.
 
-- **Display** (600, 1.5rem, tracking-tight): the stat-card figure, and nothing
+- **Display** (600, 1.5rem, −0.015em): the stat-card figure, and nothing
   else. One occurrence in the codebase, by design — and now on **one screen**,
   the group-scheme member register, which is the only screen left with more than
   one number to compare. The other nine registers carried a single count in a
   four-column card grid; that count is a Micro line in the page header instead
   (`CountLine`), so a list screen no longer has a Display figure at all.
-- **Headline** (600, 1.25rem, tracking-tight): the page `<h1>` in `PageHeader`.
+- **Headline** (600, 1.25rem, −0.015em): the page `<h1>` in `PageHeader`.
   One occurrence, because one component owns it.
 - **Title** (600, 1rem): the slide-over title, the emphasised panel heading, and
   the heaviest in-panel headings. It went unused on detail pages for a long time
@@ -437,15 +443,24 @@ ink (Subtle against Muted) and by case, which it largely already was.
   gate-panel titles. The only uppercase in the system, and it is structural
   labelling, never a marketing device.
 
-Weights are three: 400, 500 and 600. A single 700 exists, on the 10px glyph
-inside a gate marker. Nothing lighter than 400 appears anywhere.
+**The tiers are utilities** (2026-10-09). `text-display`, `text-headline`,
+`text-title` and `text-eyebrow` are defined in `index.css` `@theme`, each carrying
+its size, leading, tracking and weight together. Body, Label and Micro stay
+`text-sm` / `text-xs`. Before this the tiers existed only in this file, and every
+heading rebuilt its tier by hand slightly differently: the page title took
+`tracking-tight` (−0.025em) where the scale says −0.015em, and the eyebrow had four
+spellings. Guards now refuse `tracking-*`, arbitrary `text-[…]` sizes and
+`text-lg` and above outside the tiers, and an uppercase `text-xs` line that is not
+`text-eyebrow`.
 
-**Two live exceptions, recorded rather than tidied away.** `ui/button.tsx`
-introduces a 0.8125rem for its small size, and `RealmPicker` uses a 1.125rem
-`<h1>`; neither size exists in the scale above, and both are drift rather than
-decision. Separately, 16 uses of 0.625rem sit below the stated floor — density
-justifies 0.75rem, but nothing justifies 10px, and those are the one part of the
-distribution worth raising.
+Weights are three: 400, 500 and 600. A single 700 exists, on the glyph inside a
+gate marker — a real 700 now, where the static web font made it a browser-faked
+bold. Nothing lighter than 400 appears anywhere.
+
+*Resolved drift:* the small button's 0.8125rem is Body (`text-sm`), as this file
+always specified; the filter chip's 0.8125rem is Label (`text-xs`), so the claims
+filter row still fits one line; `RealmPicker`'s 1.125rem `<h1>` is Headline; three
+1.125rem figures on the scheme cover panel and the vesting date are Title.
 
 ### Named Rules
 
@@ -611,9 +626,11 @@ covered: the edges of controls keep their 3:1 Input Rule border (WCAG 1.4.11).
 
 ## Shapes
 
-A single 6px radius carries the system: 151 of the 207 radius applications in the
-codebase are `rounded-md`. It is soft enough not to read as brutalist and tight
-enough to keep a dense table from looking like a set of lozenges.
+A single radius carries the system: 151 of the 207 radius applications in the
+codebase are `rounded-md`, which is **8px** (`--radius: 0.5rem`, Espresso's
+control radius, since console-redesign plan 1; it was 6px before, and this
+section said 6px until 2026-10-09). It is soft enough not to read as brutalist
+and tight enough to keep a dense table from looking like a set of lozenges.
 
 Three exceptions, each meaning something specific:
 
@@ -638,21 +655,24 @@ suppressed.
 **The Pill-for-State Rule.** Full radius is reserved for elements reporting a
 state. A fully-rounded button would be lying about what it is.
 
-**The One-Radius Rule.** 6px unless there is a stated reason. Two radii inside one
+**The One-Radius Rule.** `rounded-md` (8px) unless there is a stated reason. Two radii inside one
 component is a mistake, not a texture.
 
 ## Components
 
 ### Buttons
 
-- **Shape:** 6px radius (`0.375rem`), 36px tall at default, 32px compact, 32px
+- **Shape:** 8px radius (`rounded-md`), 36px tall at default, 32px compact, 32px
   square for icon-only. Horizontal padding 14px / 10px. Icons are always 16px and
   never shrink.
 - **Primary:** Ledger Ink ground, inverse text. Reserved for the one action a
   screen exists to perform.
-- **Outline (the default variant):** Paper ground, hairline border, ink text. Most
-  buttons in the console are this — a page with three equally-weighted primary
-  buttons has no primary action.
+- **Secondary (the default variant):** the filled Control ground, ink text, no
+  border — Espresso's filled button, since console-redesign plan 1. Most buttons in
+  the console are this — a page with three equally-weighted primary buttons has no
+  primary action.
+- **Outline:** Paper ground, Rule-Strong border, ink text, for a control that
+  must read as a control on a filled ground.
 - **Ghost:** no ground until hover, when it takes the Hover token. Icon controls
   and toolbar actions.
 - **Danger:** the danger `-fg` hue as a solid ground with white text (the
@@ -785,7 +805,9 @@ total politely, and two regions reading out one number is worse than one.
 ### Navigation
 
 Sidebar items are Body type in Muted Ink at 6px/8px with a 6px radius and a 16px
-leading icon; active takes the Selected ground, full-strength ink and weight 500.
+leading icon; active takes the Paper ground lifted by the `raise` shadow (the
+Selected ground in dark mode, where Paper sits barely above the sidebar),
+full-strength ink and weight 500.
 Group captions are Eyebrow type in Subtle Ink. A count badge is a fully-rounded
 Selected-ground pill in Micro type, carrying both a `title` and screen-reader
 text naming what was counted — because "3" alone reads as "3 claims", which is
@@ -953,3 +975,21 @@ parallaxes.
 - **Don't** copy the input class string into a new file. It is already duplicated
   past seventy times; the next one should be extracting the component, not adding
   to the count.
+
+### Considered and declined (2026-10-09)
+
+From a review that measured the console against Apple's WWDC design guidance. Each
+was put to the product owner and declined; do not re-offer them unless this file
+changes first.
+
+- **Raising content text from 12px to 14px.** The compressed scale is a confirmed
+  decision (*Typography → Hierarchy*). The review's screenshots were at 150%
+  display scaling, where 12px renders at about 18 physical pixels.
+- **Translucent, blurred sticky bars** (an Apple "material"). The system is "not
+  … glassy", and flat is law.
+- **Spring physics and drag-to-dismiss** on the slide-over and mobile nav.
+  *Motion* is "almost none, deliberately", and the console is desk-first. Taken
+  instead, where they fit the Ledger: instant press feedback, popovers that grow
+  from their trigger, and honouring reduced motion.
+- **A receipt on every mutation.** Receipts are for outcomes the screen does not
+  otherwise reveal (*Receipt*).

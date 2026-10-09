@@ -107,7 +107,7 @@ export function PageHeader({
           </nav>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+          <h1 className="text-headline">{title}</h1>
           {status}
         </div>
         {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}

@@ -234,6 +234,14 @@ Carried over from the console redesign plans, still binding:
 
 ### Task A9: Typography as tokens, and `DESIGN.md` brought up to date (T1–T7)
 
+**Outcome (2026-10-09):**
+- `text-display/headline/title/eyebrow` are in `@theme`. All 14 eyebrows, the headline (PageHeader, RealmPicker), the title (`Panel emphasis`, slide-over, `Field emphasis`) and the display (StatCards) use them.
+- Inter is self-hosted as `@fontsource-variable/inter@5.3.0`, `opsz` build. Verified: zero requests to Google's font servers, and h1 = 20px / −0.015em / 600 / 1.3.
+- Small button 13px → 14px. **Filter chip 13px → 12px**, not 14: at 14 the claims filter row would no longer fit one line at 1280px.
+- Five new guards: tracking only through tiers (the temporary-password display is exempt), no off-scale sizes including `text-lg` and above, uppercase `text-xs` must be `text-eyebrow`, no mono money.
+- **Mono, narrowed:** money left mono (invoice breakdown, commission). The ~90 contextual `font-mono` uses that inherit the size around them were **left alone**; forcing them all to 12px would shrink identifiers inside 14px sentences.
+- DESIGN.md: font, radius (8px), default button (secondary), nav-active, tier utilities, resolved drift, and a "Considered and declined" list (D1–D3, D5).
+
 **Files:** `index.css`, `index.html`, `package.json`, `components/PageHeader.tsx`, `components/Panel.tsx`, `components/ui/button.tsx`, `features/RealmPicker.tsx`, the eyebrow and mono sites, `test/designGuards.test.ts`, `DESIGN.md`
 
 - [ ] **Step 1:** Define the `DESIGN.md` tiers as Tailwind v4 text tokens in `@theme inline`, each with size, line height, tracking and weight:

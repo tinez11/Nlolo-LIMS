@@ -268,7 +268,7 @@ function InvoiceReconciliationLines({ invoice, credits }: { invoice: InvoiceView
     <dl className="mt-1.5 space-y-0.5 rounded-md bg-surface-muted px-2.5 py-1.5 text-xs">
       <div className="flex justify-between gap-2">
         <dt className="text-muted-foreground">Charged</dt>
-        <dd className="font-mono">{formatMoney(invoice.amount)}</dd>
+        <dd>{formatMoney(invoice.amount)}</dd>
       </div>
       {credits.map(({ credit, member }) => (
         <div key={credit.creditId} className="flex justify-between gap-2">
@@ -281,18 +281,18 @@ function InvoiceReconciliationLines({ invoice, credits }: { invoice: InvoiceView
             {' · '}
             {formatDate(credit.exitDate)}
           </dt>
-          <dd className="font-mono">−{formatMoney(credit.amount)}</dd>
+          <dd>−{formatMoney(credit.amount)}</dd>
         </div>
       ))}
       {invoice.amountPaid && compareAmounts(invoice.amountPaid.amount, '0.00') > 0 && (
         <div className="flex justify-between gap-2">
           <dt className="text-muted-foreground">Paid</dt>
-          <dd className="font-mono">−{formatMoney(invoice.amountPaid)}</dd>
+          <dd>−{formatMoney(invoice.amountPaid)}</dd>
         </div>
       )}
       <div className="flex justify-between gap-2 border-t border-border pt-0.5 font-medium">
         <dt>Balance due</dt>
-        <dd className="font-mono">{formatMoney(invoice.balanceDue ?? invoice.amount)}</dd>
+        <dd>{formatMoney(invoice.balanceDue ?? invoice.amount)}</dd>
       </div>
     </dl>
   );

@@ -901,7 +901,7 @@ function SchemeList({
             */}
             {sole && (
               <div className="border-t border-border">
-                <p className="px-4 pt-2 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
+                <p className="px-4 pt-2 text-eyebrow text-subtle-foreground uppercase">
                   Group members
                 </p>
                 {members.status === 'error' && members.error && members.data === null ? (

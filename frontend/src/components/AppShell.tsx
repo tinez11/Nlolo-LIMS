@@ -146,7 +146,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
               LP
             </span>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold tracking-tight">Life Platform</p>
+              <p className="truncate text-sm font-semibold">Life Platform</p>
               <p className="truncate text-xs text-muted-foreground">{config.label} console</p>
             </div>
           </div>
@@ -229,7 +229,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
         >
           {groups.map((group) => (
             <div key={group.label}>
-              <p className="px-2 pb-1.5 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
+              <p className="px-2 pb-1.5 text-eyebrow text-subtle-foreground uppercase">
                 {group.label}
               </p>
               <ul className="space-y-0.5">
@@ -311,7 +311,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
           >
             <Menu />
           </Button>
-          <p className="truncate text-sm font-semibold tracking-tight">{config.label} console</p>
+          <p className="truncate text-sm font-semibold">{config.label} console</p>
         </div>
 
         {/* tabIndex={-1} so the skip link's target can actually take focus --
