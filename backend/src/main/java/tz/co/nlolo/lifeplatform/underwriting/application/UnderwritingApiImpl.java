@@ -95,7 +95,11 @@ public class UnderwritingApiImpl implements UnderwritingApi {
                                 AnnuityChoiceRepository annuityChoiceRepository,
                                 DeferredAnnuityChoiceRepository deferredAnnuityChoiceRepository,
                                 FuneralApplications funeralApplications, UnitLinkedChoices unitLinkedChoices,
-                                ProposalGroupLifeRepository proposalGroupLifeRepository) {
+                                ProposalGroupLifeRepository proposalGroupLifeRepository,
+                                tz.co.nlolo.lifeplatform.underwriting.infrastructure.CaseAccountChargeRepository caseAccountCharges,
+                                tz.co.nlolo.lifeplatform.product.api.AccountChargeApi accountChargeApi) {
+        this.caseAccountCharges = caseAccountCharges;
+        this.accountChargeApi = accountChargeApi;
         this.proposalGroupLifeRepository = proposalGroupLifeRepository;
         this.funeralApplications = funeralApplications;
         this.unitLinkedChoices = unitLinkedChoices;
@@ -1305,6 +1309,46 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         } else {
             underwritingCase.recordSale(category == ProductCategory.CREDIT_LIFE ? "BANCASSURANCE" : "DIRECT", null);
         }
+    }
+
+    private final tz.co.nlolo.lifeplatform.underwriting.infrastructure.CaseAccountChargeRepository caseAccountCharges;
+    private final tz.co.nlolo.lifeplatform.product.api.AccountChargeApi accountChargeApi;
+
+    @Override
+    @Transactional
+    public void chooseAccountCharges(UUID caseId, List<UUID> chargeIds) {
+        UUID tenantId = TenantContext.get();
+        UnderwritingCase underwritingCase = findOrThrow(caseId, tenantId);
+        if (underwritingCase.getSaleLockedAt() != null) {
+            throw new UnderwritingValidationException("The policy is issued: its charges are fixed");
+        }
+        List<UUID> ids = chargeIds == null ? List.of() : chargeIds.stream().distinct().toList();
+        if (!ids.isEmpty()) {
+            if (!productApi.resolveAccumulationPlan(underwritingCase.getProductVersionId()).isAccount()
+                    || productApi.resolveDepositPlan(underwritingCase.getProductVersionId()).isDeposit()) {
+                throw new UnderwritingValidationException("Account charges are chosen only for a savings product that"
+                    + " keeps an account -- not a fixed-term deposit, which is priced by its rate grid");
+            }
+            try {
+                accountChargeApi.requireChoosable(ids);
+            } catch (IllegalArgumentException | tz.co.nlolo.lifeplatform.product.api.AccountChargeNotFoundException e) {
+                throw new UnderwritingValidationException(e.getMessage());
+            }
+        }
+        caseAccountCharges.clear(tenantId, caseId);
+        caseAccountCharges.flush();
+        ids.forEach(id -> caseAccountCharges.save(
+            new tz.co.nlolo.lifeplatform.underwriting.domain.CaseAccountCharge(caseId, id, tenantId)));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UUID> accountCharges(UUID caseId) {
+        // No existence check: issuance names case ids that are not underwriting cases (a migrated policy's reference),
+        // and a case with none chosen reads the same -- empty, the product's own charges.
+        UUID tenantId = TenantContext.get();
+        return caseAccountCharges.forCase(tenantId, caseId).stream()
+            .map(tz.co.nlolo.lifeplatform.underwriting.domain.CaseAccountCharge::getChargeId).toList();
     }
 
     @Override

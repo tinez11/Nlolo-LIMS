@@ -66,7 +66,10 @@ public class AccumulationTestFixtures {
                 "+25571500" + String.format("%04d", n % 10000), null, "test-agent");
             ProductSummaryView product = productApi.createProduct(
                 "SAVE-" + n + "-" + tenant.toString().substring(0, 4), "Savings Test Product",
-                ProductCategory.ENDOWMENT, "TZS", "actuary");
+                ProductCategory.ENDOWMENT,
+                // An account is a savings contract: SAV, or publishing refuses it (2026-10-09).
+                plan.isAccount() ? tz.co.nlolo.lifeplatform.product.api.PortfolioCode.SAV
+                    : tz.co.nlolo.lifeplatform.product.api.PortfolioCode.END, "TZS", "actuary");
             // Both shapes are ENDOWMENTs, and step 2's validator makes an endowment carry a schedule
             // and every individual product a free-look period -- so the SCALE control is a plain
             // sum-assured endowment, not a version with no payout plan, which would be refused.
@@ -121,7 +124,8 @@ public class AccumulationTestFixtures {
             PartyView applicant = partyApi.registerIndividual("Deposit Test Life " + n, LocalDate.of(1985, 1, 1),
                 "+25571600" + String.format("%04d", n % 10000), null, "test-agent");
             ProductSummaryView product = productApi.createProduct(
-                "FTD-" + n + "-" + tenant.toString().substring(0, 4), "Fixed deposit", ProductCategory.ENDOWMENT, "TZS", "actuary");
+                "FTD-" + n + "-" + tenant.toString().substring(0, 4), "Fixed deposit", ProductCategory.ENDOWMENT,
+                tz.co.nlolo.lifeplatform.product.api.PortfolioCode.DEP, "TZS", "actuary");
             UUID versionId = publishDepositVersion(tenant, product.productId(), USER_GRID);
             PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(applicant.partyId(), product.productId(),
                 versionId, amount, "TZS", amount, "TZS", "SINGLE", null,

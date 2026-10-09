@@ -33,6 +33,8 @@ test.describe('a pension (deferred annuity)', () => {
     await page.getByLabel('Product code').fill(code);
     await page.getByLabel('Product name').fill(name);
     await page.getByLabel('Category').selectOption('ANNUITY');
+    // A pension account is a savings contract: publishing refuses it outside PEN or DANN (2026-10-09).
+    await page.getByLabel('IFRS 17 portfolio').selectOption('PEN');
     await page.getByLabel('Default currency').fill('TZS');
     await page.getByRole('button', { name: 'Create product' }).click();
     await expect(page.getByText('DRAFT')).toBeVisible();

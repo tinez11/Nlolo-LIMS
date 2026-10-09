@@ -68,7 +68,9 @@ public class AccumulationApiImpl implements AccumulationApi {
                                WithdrawalRequestRepository withdrawals, TopUpRequestRepository topUps,
                                TransferInRepository transfers, AdjustmentRequestRepository adjustments,
                                ApplicationEventPublisher events, StatementRepository statementRepository,
-                               DocumentApi documentApi, IdempotentRequests keyed, Deposits deposits) {
+                               DocumentApi documentApi, IdempotentRequests keyed, Deposits deposits,
+                               ChosenCharges chosenCharges) {
+        this.chosenCharges = chosenCharges;
         this.keyed = keyed;
         this.deposits = deposits;
         this.statementRepository = statementRepository;
@@ -124,10 +126,14 @@ public class AccumulationApiImpl implements AccumulationApi {
         request.approve(approvedBy);
         // Again at approval: a month-end fee may have landed since the request.
         refuseBelowMinimum(account, request.getAmount());
+        List<LedgerService.Line> lines = new java.util.ArrayList<>();
+        lines.add(LedgerService.Line.of(EntryType.WITHDRAWAL, request.getAmount().negate(), LocalDate.now(),
+            "Partial withdrawal to " + request.getPayeeRef()));
+        // A withdrawal fee comes out of what is LEFT, not out of the payout (the user, 2026-10-09).
+        lines.addAll(chosenCharges.lines(chosenCharges.chosen(request.getPolicyNumber()), Set.of("WITHDRAWAL"),
+            request.getAmount(), room(account, account.getBalance().subtract(request.getAmount())), LocalDate.now()));
         ledger.post(request.getPolicyNumber(), new LedgerService.Source("withdrawal", "withdrawal:" + withdrawalId),
-            List.of(LedgerService.Line.of(EntryType.WITHDRAWAL, request.getAmount().negate(), LocalDate.now(),
-                "Partial withdrawal to " + request.getPayeeRef())),
-            request.getRequestedBy(), approvedBy);
+            lines, request.getRequestedBy(), approvedBy);
         withdrawals.save(request);
         events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutRequested", TenantContext.get(), Map.of(
             "purpose", "WITHDRAWAL_PAYOUT",
@@ -150,10 +156,23 @@ public class AccumulationApiImpl implements AccumulationApi {
         BigDecimal lien = policyApi.getCashValue(account.getPolicyNumber()).loanEncumbranceAmount();
         BigDecimal minimum = productApi.resolveAccumulationPlan(account.getProductVersionId()).minimumBalance();
         BigDecimal available = account.getBalance().subtract(lien);
-        BigDecimal left = available.subtract(amount);
+        // The withdrawal fee comes out of what is left (product V32), so where charges may not cross the minimum the fee
+        // counts against it too -- and the most that can be withdrawn is what leaves room for its own fee.
+        var withdrawalFees = chosenCharges.chosen(account.getPolicyNumber()).stream()
+            .filter(c -> "WITHDRAWAL".equals(c.when())).toList();
+        var fees = withdrawalFees.isEmpty() || chosenCharges.mayGoBelowMinimum()
+            ? List.<tz.co.nlolo.lifeplatform.product.api.AccountChargeView>of() : withdrawalFees;
+        BigDecimal fee = fees.stream().map(c -> c.on(amount)).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal left = available.subtract(amount).subtract(fee);
         if (left.compareTo(minimum) < 0) {
-            BigDecimal most = available.subtract(minimum).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_EVEN);
+            BigDecimal flat = fees.stream().filter(c -> "FLAT".equals(c.amountType())).map(c -> c.on(BigDecimal.ZERO))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal rate = fees.stream().filter(c -> "PERCENT".equals(c.amountType())).map(c -> c.amount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add).divide(HUNDRED, 10, RoundingMode.HALF_EVEN);
+            BigDecimal most = available.subtract(minimum).subtract(flat).divide(BigDecimal.ONE.add(rate), 2, RoundingMode.DOWN)
+                .max(BigDecimal.ZERO);
             throw new AccumulationStateException("A withdrawal of " + amount.setScale(2, RoundingMode.HALF_EVEN)
+                + (fee.signum() > 0 ? " and its fee of " + fee.setScale(2, RoundingMode.HALF_EVEN) : "")
                 + " would leave " + left.setScale(2, RoundingMode.HALF_EVEN) + ", below this product's minimum balance of "
                 + minimum.setScale(2, RoundingMode.HALF_EVEN) + ". The most that can be withdrawn is " + most + ".");
         }
@@ -239,6 +258,16 @@ public class AccumulationApiImpl implements AccumulationApi {
         topUps.save(request);
         Account account = loadOpen(request.getPolicyNumber());
         LocalDate effective = confirmedOn.isBefore(account.getOpenedOn()) ? account.getOpenedOn() : confirmedOn;
+        var chosen = chosenCharges.chosen(request.getPolicyNumber());
+        if (!chosen.isEmpty()) {
+            List<LedgerService.Line> lines = new java.util.ArrayList<>();
+            lines.add(LedgerService.Line.of(EntryType.TOP_UP, amount, effective, "Top-up from " + request.getPayerRef()));
+            lines.addAll(chosenCharges.lines(chosen, account.getLastSeq() == 0 ? Set.of("DEPOSIT", "OPENING") : Set.of("DEPOSIT"),
+                amount, room(account, account.getBalance().add(amount)), effective));
+            ledger.post(request.getPolicyNumber(), new LedgerService.Source("topup", "topup:" + topUpId), lines,
+                request.getRequestedBy(), null);
+            return;
+        }
         int year = PolicyYears.of(account.getOpenedOn(), effective);
         BigDecimal pct = productApi.resolveAccumulationPlan(account.getProductVersionId()).chargesFor(year)
             .contributionAllocationPercent();
@@ -281,6 +310,18 @@ public class AccumulationApiImpl implements AccumulationApi {
             amount.setScale(2, RoundingMode.UNNECESSARY), account.getCurrency(), sourceScheme, documentRef, recordedBy));
         LocalDate today = LocalDate.now();
         LocalDate effective = today.isBefore(account.getOpenedOn()) ? account.getOpenedOn() : today;
+        var chosen = chosenCharges.chosen(policyNumber);
+        if (!chosen.isEmpty()) {
+            // A transfer in is a deposit: the policy's deposit charges, and the opening one if it is the first.
+            List<LedgerService.Line> lines = new java.util.ArrayList<>();
+            lines.add(LedgerService.Line.of(EntryType.TRANSFER_IN, transfer.getAmount(), effective,
+                "Transfer in from " + sourceScheme));
+            lines.addAll(chosenCharges.lines(chosen, account.getLastSeq() == 0 ? Set.of("DEPOSIT", "OPENING") : Set.of("DEPOSIT"),
+                transfer.getAmount(), room(account, account.getBalance().add(transfer.getAmount())), effective));
+            ledger.post(policyNumber, new LedgerService.Source("transfer", "transfer:" + transfer.getTransferId()), lines,
+                recordedBy, null);
+            return toView(transfer);
+        }
         int year = PolicyYears.of(account.getOpenedOn(), effective);
         BigDecimal pct = productApi.resolveAccumulationPlan(account.getProductVersionId()).chargesFor(year)
             .transferAllocationPercent();
@@ -649,6 +690,23 @@ public class AccumulationApiImpl implements AccumulationApi {
         if (account.status() != AccountStatus.OPEN) {
             return BigDecimal.ZERO.setScale(2);
         }
+        var exitCharges = chosenCharges.chosen(policyNumber).stream().filter(c -> "MATURITY".equals(c.when())).toList();
+        if (!exitCharges.isEmpty()) {
+            // The maturity charges the policy was issued on (product V32), taken from the payout as the account closes.
+            BigDecimal interest = valuer.interestBetween(account, interestFrom(account, dueDate), dueDate);
+            BigDecimal value = account.getBalance().add(interest);
+            List<LedgerService.Line> charges = chosenCharges.lines(exitCharges, Set.of("MATURITY"), value, value, dueDate);
+            BigDecimal paid = value.subtract(ChosenCharges.total(charges));
+            List<LedgerService.Line> lines = new java.util.ArrayList<>();
+            lines.add(LedgerService.Line.of(EntryType.INTEREST, interest, dueDate, "Interest to " + dueDate));
+            lines.addAll(charges);
+            lines.add(LedgerService.Line.of(EntryType.MATURITY, paid.negate(), dueDate, "Matured"));
+            ledger.post(account.getPolicyNumber(), source, lines, "system", null);
+            account.close("MATURED", dueDate);
+            deposits.endRunning(account, DepositPeriodStatus.TERMINATED, interest, dueDate);
+            accounts.save(account);
+            return paid;
+        }
         return close(account, source, EntryType.MATURITY, dueDate, "Matured", "MATURED", "system", null);
     }
 
@@ -779,6 +837,49 @@ public class AccumulationApiImpl implements AccumulationApi {
         }
     }
 
+    /**
+     * Month-end on the charges the policy was issued on (product V32): its monthly charges on a month of cover, and its
+     * yearly ones in the month a policy anniversary fell -- each a percentage of the balance with the month's interest, or
+     * flat. An account they empty is exhausted, as with the version's own fee.
+     */
+    private void postChosenMonthEnd(Account account, List<tz.co.nlolo.lifeplatform.product.api.AccountChargeView> chosen,
+                                    BigDecimal interest, LocalDate from, LocalDate monthEnd, boolean onCover) {
+        String policyNumber = account.getPolicyNumber();
+        BigDecimal balance = account.getBalance().add(interest);
+        Set<String> when = new java.util.HashSet<>();
+        if (onCover) {
+            when.add("MONTHLY");
+            if (anniversaryBetween(account.getOpenedOn(), from, monthEnd)) {
+                when.add("YEARLY");
+            }
+        }
+        BigDecimal room = room(account, balance);
+        List<LedgerService.Line> lines = new java.util.ArrayList<>();
+        lines.add(LedgerService.Line.of(EntryType.INTEREST, interest, monthEnd, "Interest " + YearMonth.from(monthEnd)));
+        List<LedgerService.Line> charges = chosenCharges.lines(chosen, when, balance, room, monthEnd);
+        lines.addAll(charges);
+        boolean exhausted = !charges.isEmpty() && ChosenCharges.total(charges).compareTo(balance) == 0;
+        ledger.post(policyNumber,
+            new LedgerService.Source("month-end", "month-end:" + policyNumber + ":" + YearMonth.from(monthEnd)),
+            lines, "system", null);
+        account.monthEndPostedThrough(monthEnd);
+        if (exhausted) {
+            account.close("EXHAUSTED", monthEnd);
+            policyApi.lapseExhaustedAccount(policyNumber, monthEnd);
+        }
+        accounts.save(account);
+    }
+
+    /** Did a policy anniversary -- the opening date one, two, ... years on -- fall in {@code [from, to]}? */
+    static boolean anniversaryBetween(LocalDate openedOn, LocalDate from, LocalDate to) {
+        for (int years = 1; !openedOn.plusYears(years).isAfter(to); years++) {
+            if (!openedOn.plusYears(years).isBefore(from)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static LocalDate endOfMonthAfter(LocalDate monthEnd) {
         LocalDate next = monthEnd.plusDays(1);
         return next.withDayOfMonth(next.lengthOfMonth());
@@ -808,6 +909,11 @@ public class AccumulationApiImpl implements AccumulationApi {
         PolicyStatus status = policyApi.getPolicy(policyNumber).status();
         // A part first month is free: the fee is for a month of cover the account had all of.
         boolean wholeMonth = !account.getOpenedOn().isAfter(monthEnd.withDayOfMonth(1));
+        var chosen = chosenCharges.chosen(policyNumber);
+        if (!chosen.isEmpty()) {
+            postChosenMonthEnd(account, chosen, interest, from, monthEnd, wholeMonth && ON_COVER.contains(status));
+            return;
+        }
         BigDecimal fee = wholeMonth && ON_COVER.contains(status)
             ? productApi.resolveAccumulationPlan(account.getProductVersionId())
                 .chargesFor(PolicyYears.of(account.getOpenedOn(), monthEnd)).monthlyPolicyFee()
@@ -989,6 +1095,16 @@ public class AccumulationApiImpl implements AccumulationApi {
             deposits.credit(account, invoiceId, amount, effective, payerRef);
             return;
         }
+        var chosen = chosenCharges.chosen(policyNumber);
+        if (!chosen.isEmpty()) {
+            // The charges the policy was issued on (product V32): each deposit's, and the opening charge on the first.
+            List<LedgerService.Line> lines = new java.util.ArrayList<>();
+            lines.add(LedgerService.Line.of(EntryType.CONTRIBUTION, amount, effective, "Premium collected"));
+            lines.addAll(chosenCharges.lines(chosen, account.getLastSeq() == 0 ? Set.of("DEPOSIT", "OPENING") : Set.of("DEPOSIT"),
+                amount, room(account, account.getBalance().add(amount)), effective));
+            ledger.post(policyNumber, LedgerService.Source.invoice(invoiceId), lines, "system", null);
+            return;
+        }
         int policyYear = PolicyYears.of(account.getOpenedOn(), effective);
         AccumulationChargeRow charges = productApi.resolveAccumulationPlan(account.getProductVersionId())
             .chargesFor(policyYear);
@@ -1000,5 +1116,19 @@ public class AccumulationApiImpl implements AccumulationApi {
                 "Allocation charge " + charges.contributionAllocationPercent().stripTrailingZeros().toPlainString()
                     + "% (policy year " + policyYear + ")")),
             "system", null);
+    }
+
+    private final ChosenCharges chosenCharges;
+
+    /**
+     * How much chosen charges may take from {@code balanceAfter}: all of it, or only what is above the product's minimum
+     * balance -- the organisation decides which (product V32's account_charge_setting; the user, 2026-10-09).
+     */
+    private BigDecimal room(Account account, BigDecimal balanceAfter) {
+        if (chosenCharges.mayGoBelowMinimum()) {
+            return balanceAfter;
+        }
+        BigDecimal minimum = productApi.resolveAccumulationPlan(account.getProductVersionId()).minimumBalance();
+        return balanceAfter.subtract(minimum == null ? BigDecimal.ZERO : minimum);
     }
 }

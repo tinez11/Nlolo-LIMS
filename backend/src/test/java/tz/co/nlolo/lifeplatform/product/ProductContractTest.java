@@ -84,6 +84,7 @@ class ProductContractTest {
             "db-migrations/product/V29__funeral_group_rate.sql",
             "db-migrations/product/V30__funeral_group_rate_period.sql",
             "db-migrations/product/V31__online_listing.sql",
+            "db-migrations/product/V32__account_charges.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -663,27 +664,51 @@ class ProductContractTest {
     @Test
     void anAccountVersionSurvivesAPublishOverHttpAndIsReadableBack() throws Exception {
         UUID tenantId = UUID.randomUUID();
-        UUID productId = createProduct(tenantId, "ACC-WIRE-01", "Account Over Http");   // ENDOWMENT
+        UUID productId = createProduct(tenantId, "ACC-WIRE-01", "Account Over Http");   // ENDOWMENT, in END
+        String version = """
+            {"ifrsMeasurementModel":"GMM","effectiveDate":"2026-01-01",
+             "payoutTerms":{"freeLookDays":15},"tiraFiling":{"reference":"TIRA/LIFE/2026/0911","approvalDate":"2026-01-15"},
+             "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},
+                            {"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+             "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
+             "payoutSchedule":[{"kind":"MATURITY","amountBasis":"ACCOUNT_VALUE","amountValue":100}],
+             "accumulation":{"guaranteedRatePercent":3,"minimumBalance":50000,
+                             "charges":[{"fromPolicyYear":1,"toPolicyYear":1,"contributionAllocationPercent":5,
+                                         "transferAllocationPercent":0,"monthlyPolicyFee":1000},
+                                        {"fromPolicyYear":2,"contributionAllocationPercent":1,
+                                         "transferAllocationPercent":0,"monthlyPolicyFee":1000}]}}
+            """;
+
+        // In END an account would be booked as insurance, where nothing posts its deposits: refused (2026-10-09).
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON).content(version))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("SAV (savings accounts) portfolio")));
+
+        // Still a draft, so its portfolio can be put right -- and then it publishes.
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/products/" + productId + "/portfolio")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"portfolioCode\":\"SAV\"}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.portfolioCode").value("SAV"));
 
         mockMvc.perform(post("/products/" + productId + "/versions")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                    {"ifrsMeasurementModel":"GMM","effectiveDate":"2026-01-01",
-                     "payoutTerms":{"freeLookDays":15},"tiraFiling":{"reference":"TIRA/LIFE/2026/0911","approvalDate":"2026-01-15"},
-                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},
-                                    {"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
-                     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
-                     "payoutSchedule":[{"kind":"MATURITY","amountBasis":"ACCOUNT_VALUE","amountValue":100}],
-                     "accumulation":{"guaranteedRatePercent":3,"minimumBalance":50000,
-                                     "charges":[{"fromPolicyYear":1,"toPolicyYear":1,"contributionAllocationPercent":5,
-                                                 "transferAllocationPercent":0,"monthlyPolicyFee":1000},
-                                                {"fromPolicyYear":2,"contributionAllocationPercent":1,
-                                                 "transferAllocationPercent":0,"monthlyPolicyFee":1000}]}}
-                    """))
+                .contentType(MediaType.APPLICATION_JSON).content(version))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        // Published: the portfolio is fixed now.
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/products/" + productId + "/portfolio")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"portfolioCode\":\"END\"}"))
+            .andExpect(status().isBadRequest());
 
         TenantContext.set(tenantId);
         UUID versionId = productApi.getActiveSnapshot(productId, LocalDate.of(2026, 6, 1)).productVersionId();
@@ -1121,6 +1146,12 @@ class ProductContractTest {
     void aDeferredAnnuityIsPublishedAndItsVestingTermsReadBackToSpec() throws Exception {
         UUID tenantId = UUID.randomUUID();
         UUID productId = createProductOfCategory(tenantId, "DEF-CONTRACT-01", "ANNUITY");
+        // A pension account belongs in PEN (or DANN), not the immediate-annuity default (2026-10-09).
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/products/" + productId + "/portfolio")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"portfolioCode\":\"PEN\"}"))
+            .andExpect(status().isOk());
         mockMvc.perform(post("/products/" + productId + "/versions")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))

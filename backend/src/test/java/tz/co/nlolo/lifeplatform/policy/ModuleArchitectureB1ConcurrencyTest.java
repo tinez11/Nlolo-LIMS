@@ -87,6 +87,7 @@ class ModuleArchitectureB1ConcurrencyTest {
             "db-migrations/product/V29__funeral_group_rate.sql",
             "db-migrations/product/V30__funeral_group_rate_period.sql",
             "db-migrations/product/V31__online_listing.sql",
+            "db-migrations/product/V32__account_charges.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -105,6 +106,7 @@ class ModuleArchitectureB1ConcurrencyTest {
             "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
             "db-migrations/underwriting/V19__group_funeral_proposal.sql",
             "db-migrations/underwriting/V20__sale_lock_backfill.sql",
+            "db-migrations/underwriting/V21__case_account_charges.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
@@ -126,7 +128,8 @@ class ModuleArchitectureB1ConcurrencyTest {
             "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/policy/V37__sale_classification.sql",
             "db-migrations/policy/V38__group_funeral_scheme.sql",
-            "db-migrations/policy/V40__commencement_never_null.sql");
+            "db-migrations/policy/V40__commencement_never_null.sql",
+            "db-migrations/policy/V41__policy_account_charges.sql");
     }
 
     @Autowired private PartyApi partyApi;

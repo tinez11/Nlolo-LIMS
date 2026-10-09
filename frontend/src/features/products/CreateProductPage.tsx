@@ -112,7 +112,7 @@ export function CreateProductPage() {
               </FormField>
               <FormField
                 label="IFRS 17 portfolio"
-                hint="Contracts with similar risks, managed together. With the year of issue and expected profitability it decides each policy's group."
+                hint="Contracts with similar risks, managed together. With the year of issue and expected profitability it decides each policy's group. A product that keeps a savings account must be SAV (savings), DEP (fixed deposit) or PEN (pension) — it is booked as savings, not insurance."
                 error={errors.portfolioCode?.message}
               >
                 <Select {...register('portfolioCode')}>

@@ -1,5 +1,7 @@
+import { getCaseAccountCharges } from '@/api/accountCharges';
+import { AccountChargePicker } from '@/features/products/AccountChargePicker';
 import { Plus } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
@@ -213,8 +215,21 @@ export function IssuePolicyPage() {
   }, 0);
   const totalOk = Math.abs(total - 100) <= 0.005 || beneficiaryRows.length === 0;
 
+  // A savings product that keeps an account: the charges its policy carries, starting from what its case chose
+  // (2026-10-09). Whatever is ticked here is what the policy is issued on.
+  const underwritingCaseId = watch('underwritingCaseId');
+  const keepsAccount = ['SAV', 'PEN', 'DANN'].includes(
+    (products.data ?? []).find((p) => p.productId === productId)?.portfolioCode ?? '');
+  const [chargeIds, setChargeIds] = useState<string[]>([]);
+  useEffect(() => {
+    if (!keepsAccount || !underwritingCaseId || !/^[0-9a-f-]{36}$/i.test(underwritingCaseId)) return undefined;
+    let live = true;
+    getCaseAccountCharges(underwritingCaseId).then((c) => { if (live) setChargeIds(c.chargeIds); }, () => undefined);
+    return () => { live = false; };
+  }, [keepsAccount, underwritingCaseId]);
+
   async function onSubmit(values: PolicyIssueFormValues) {
-    await issuePolicy(toApiRequest(values));
+    await issuePolicy({ ...toApiRequest(values), ...(keepsAccount ? { accountChargeIds: chargeIds } : {}) });
     const result = usePolicyStore.getState().issuing;
     if (result.status === 'success' && result.data?.policyNumber) {
       navigate(`../${result.data.policyNumber}`, { relative: 'path' });
@@ -542,6 +557,11 @@ export function IssuePolicyPage() {
           between "covered now" and "covered when they pay" without being told that is the
           choice they are making.
         */}
+        {keepsAccount && (
+          <div className="rounded-md border border-border p-3">
+            <AccountChargePicker value={chargeIds} onChange={setChargeIds} legend="Account charges for this policy" />
+          </div>
+        )}
         <FormField label="Why is this being issued by hand?" error={errors.issuanceBasis?.message}>
           <Select {...register('issuanceBasis')}>
             <option value="">Select a basis…</option>

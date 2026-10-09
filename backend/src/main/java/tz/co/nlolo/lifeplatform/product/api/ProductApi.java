@@ -194,6 +194,9 @@ public interface ProductApi {
      */
     ProductSummaryView getProduct(UUID productId);
 
+    /** Correct a DRAFT product's IFRS 17 portfolio; refused once a version is published. */
+    ProductSummaryView changePortfolio(UUID productId, PortfolioCode portfolioCode);
+
     /** How the customer portal offers the product (V31). */
     OnlineListingView onlineListing(UUID productId);
 

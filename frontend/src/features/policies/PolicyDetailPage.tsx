@@ -41,6 +41,7 @@ import { LoansPanel } from './LoansPanel';
 import { FreeLookPanel } from '@/features/payouts/FreeLookPanel';
 import { PayoutsPanel } from '@/features/payouts/PayoutsPanel';
 import { AccountPanel } from '@/features/accounts/AccountPanel';
+import { PolicyChargesPanel } from '@/features/products/PolicyChargesPanel';
 import { StatementSection } from '@/features/accounts/StatementSection';
 import { useAccumulationStore } from '@/store/accumulationStore';
 import { PolicyBonusesPanel } from '@/features/bonuses/PolicyBonusesPanel';
@@ -472,6 +473,11 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                   <Panel title="Account" subtitle="The savings account behind this policy, and every movement on it">
                     <div className="p-4">
                       <AccountPanel policyNumber={policyNumber} />
+                    </div>
+                  </Panel>
+                  <Panel title="Charges" subtitle="What this account is charged, chosen when the policy was issued">
+                    <div className="px-4 py-2">
+                      <PolicyChargesPanel policyNumber={policyNumber} />
                     </div>
                   </Panel>
                   <Panel title="Statement" subtitle="A period of the account, reconciled, and filed as a PDF on request">

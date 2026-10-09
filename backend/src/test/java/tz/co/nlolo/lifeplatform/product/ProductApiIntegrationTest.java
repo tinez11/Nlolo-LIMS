@@ -85,6 +85,7 @@ class ProductApiIntegrationTest {
             "db-migrations/product/V29__funeral_group_rate.sql",
             "db-migrations/product/V30__funeral_group_rate_period.sql",
             "db-migrations/product/V31__online_listing.sql",
+            "db-migrations/product/V32__account_charges.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -1894,7 +1895,7 @@ class ProductApiIntegrationTest {
     @Test
     void aDepositVersionRoundTripsItsGridAndGetsAZeroChargeAccount() {
         ProductSummaryView product = productApi.createProduct("FTD-1", "Fixed deposit",
-            ProductCategory.ENDOWMENT, "TZS", "actuary@nlolo.co.tz");
+            ProductCategory.ENDOWMENT, PortfolioCode.DEP, "TZS", "actuary@nlolo.co.tz");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             payoutRatingTable(), payoutDeathOnly(), null, List.of(), EligibilityBounds.none(), FrequencyLoading.none(),
             ANY_FILING, CashValuePlan.none(), PayoutPlan.authored(new PayoutTerms(15, null, null, null), List.of()),
@@ -2086,7 +2087,7 @@ class ProductApiIntegrationTest {
     }
 
     private UUID publishDeferred(String code, AccumulationPlan account) {
-        ProductSummaryView product = productApi.createProduct(code, "Deferred annuity", ProductCategory.ANNUITY, "TZS",
+        ProductSummaryView product = productApi.createProduct(code, "Deferred annuity", ProductCategory.ANNUITY, PortfolioCode.PEN, "TZS",
             "actuary@nlolo.co.tz");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.GMM, LocalDate.now(), null,
             payoutRatingTable(), payoutDeathOnly(), null, List.of(), DEFERRED_ENTRY_AGES, FrequencyLoading.none(),

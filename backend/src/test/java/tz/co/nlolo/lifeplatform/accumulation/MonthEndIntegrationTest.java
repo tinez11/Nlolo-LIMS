@@ -81,6 +81,7 @@ class MonthEndIntegrationTest {
             "db-migrations/product/V29__funeral_group_rate.sql",
             "db-migrations/product/V30__funeral_group_rate_period.sql",
             "db-migrations/product/V31__online_listing.sql",
+            "db-migrations/product/V32__account_charges.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
@@ -99,6 +100,7 @@ class MonthEndIntegrationTest {
             "db-migrations/underwriting/V18__sale_channel_and_branch.sql",
             "db-migrations/underwriting/V19__group_funeral_proposal.sql",
             "db-migrations/underwriting/V20__sale_lock_backfill.sql",
+            "db-migrations/underwriting/V21__case_account_charges.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
@@ -121,6 +123,7 @@ class MonthEndIntegrationTest {
             "db-migrations/policy/V37__sale_classification.sql",
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
+            "db-migrations/policy/V41__policy_account_charges.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");
@@ -254,5 +257,65 @@ class MonthEndIntegrationTest {
         fixtures.publish(TENANT, "policy.PolicyReinstated", Map.of("policyNumber", issued.policyNumber(),
             "reinstatedAt", java.time.Instant.now().toString()));
         assertThat(asTenant(() -> api.findAccount(issued.policyNumber())).orElseThrow().status()).isEqualTo(AccountStatus.OPEN);
+    }
+
+    // ---- Account charges chosen per policy (2026-10-09, product V32) --------------------------------------------
+
+    @Autowired private tz.co.nlolo.lifeplatform.product.api.AccountChargeApi chargeApi;
+    @Autowired private tz.co.nlolo.lifeplatform.policy.api.PolicyAccountChargeApi policyCharges;
+
+    private UUID charge(String name, String when, String type, String amount) {
+        return asTenant(() -> chargeApi.create(name + " " + UUID.randomUUID().toString().substring(0, 6), null, when, type,
+            new BigDecimal(amount), "TZS", "finance-one").chargeId());
+    }
+
+    /** Commenced on the 1st three months ago, on the charges named, then 100,000 paid on day one. */
+    private String fundedOn(UUID... chargeIds) {
+        LocalDate start = LocalDate.now().withDayOfMonth(1).minusMonths(3);
+        var issued = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, start);
+        asTenant(() -> { policyCharges.assignAccountCharges(issued.policyNumber(), List.of(chargeIds)); return null; });
+        fixtures.collectPremium(TENANT, issued.policyNumber(), UUID.randomUUID(), new BigDecimal("100000.00"), start);
+        return issued.policyNumber();
+    }
+
+    @Test
+    void chosenChargesReplaceTheProductsOwnAndBookAsCharges() {
+        String policy = fundedOn(charge("Deposit fee", "DEPOSIT", "PERCENT", "2"),
+            charge("Opening fee", "OPENING", "FLAT", "500"), charge("Monthly fee", "MONTHLY", "FLAT", "300"));
+        runMonthEnds(policy, LocalDate.now());
+
+        List<LedgerEntryView> entries = entriesOf(policy);
+        // The deposit: 2% of it and the one-off opening fee -- not the product's own 5%.
+        assertThat(entries).filteredOn(e -> e.type() == EntryType.ALLOCATION_CHARGE)
+            .extracting(e -> e.amount().negate().setScale(2))
+            .containsExactlyInAnyOrder(new BigDecimal("2000.00"), new BigDecimal("500.00"));
+        assertThat(entries).filteredOn(e -> e.type() == EntryType.ALLOCATION_CHARGE)
+            .anySatisfy(e -> assertThat(e.reason()).startsWith("Deposit fee").endsWith("(2%)"));
+        // Each month-end: the chosen 300, not the product's 1,000.
+        assertThat(entries).filteredOn(e -> e.type() == EntryType.POLICY_FEE).hasSize(3)
+            .allSatisfy(e -> assertThat(e.amount()).isEqualByComparingTo("-300.00"));
+    }
+
+    @Test
+    void aWithdrawalFeeComesOutOfWhatIsLeftAndCountsAgainstTheMinimum() {
+        String policy = fundedOn(charge("Withdrawal fee", "WITHDRAWAL", "PERCENT", "1"));
+        var withdrawal = asTenant(() -> api.requestWithdrawal(policy, new BigDecimal("10000.00"), "+255700000001", "csr-one"));
+        asTenant(() -> api.approveWithdrawal(withdrawal.withdrawalId(), "finance-two"));
+
+        List<LedgerEntryView> entries = entriesOf(policy);
+        // The customer is paid the 10,000 asked for; the 100 fee comes off the balance left.
+        assertThat(entries).filteredOn(e -> e.type() == EntryType.WITHDRAWAL)
+            .singleElement().satisfies(e -> assertThat(e.amount()).isEqualByComparingTo("-10000.00"));
+        assertThat(entries).filteredOn(e -> e.type() == EntryType.POLICY_FEE)
+            .singleElement().satisfies(e -> assertThat(e.amount()).isEqualByComparingTo("-100.00"));
+
+        // A second account (the first's withdrawal is in flight until paid): 100,000 held, 50,000 the floor -- 49,900
+        // would cross it once its 499 fee is counted, and the most is what leaves room for its own fee.
+        String another = fundedOn(charge("Withdrawal fee", "WITHDRAWAL", "PERCENT", "1"));
+        assertThatThrownBy(() -> asTenant(() -> api.requestWithdrawal(another, new BigDecimal("49900.00"), "+255700000001",
+                "csr-one")))
+            .isInstanceOf(AccumulationStateException.class)
+            .hasMessageContaining("and its fee of 499.00")
+            .hasMessageContaining("The most that can be withdrawn is 49504.95");
     }
 }

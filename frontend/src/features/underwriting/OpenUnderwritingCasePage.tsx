@@ -1,3 +1,4 @@
+import { AccountChargePicker } from '@/features/products/AccountChargePicker';
 import { Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useFieldArray, useForm, Controller } from 'react-hook-form';
@@ -192,8 +193,12 @@ export function OpenUnderwritingCasePage() {
   const retirementAge = watch('retirementAge');
   const vestsOn = annuitantBorn && /^\d+$/.test(retirementAge) ? addYears(annuitantBorn, Number(retirementAge)) : null;
 
+  // A savings product that keeps an account (SAV, PEN, DANN): the account charges its policy will carry (2026-10-09).
+  const keepsAccount = ['SAV', 'PEN', 'DANN'].includes(selectedProduct?.portfolioCode ?? '');
+  const [chargeIds, setChargeIds] = useState<string[]>([]);
+
   async function onSubmit(values: OpenCaseFormValues) {
-    await openCase(toApiRequest(values));
+    await openCase({ ...toApiRequest(values), ...(keepsAccount && chargeIds.length > 0 ? { accountChargeIds: chargeIds } : {}) });
     const result = useUnderwritingStore.getState().opening;
     if (result.status === 'success' && result.data?.caseId) {
       navigate(`../${result.data.caseId}`, { relative: 'path' });
@@ -452,6 +457,12 @@ export function OpenUnderwritingCasePage() {
           {isFuneral && funeralTerms && (
             <FuneralLivesFields terms={funeralTerms} productId={productId} productVersionId={productVersionId}
               mainMember={mainMember} register={register} control={control} errors={errors} setValue={setValue} />
+          )}
+
+          {keepsAccount && (
+            <div className="rounded-md border border-border p-3">
+              <AccountChargePicker value={chargeIds} onChange={setChargeIds} legend="Account charges for this policy" />
+            </div>
           )}
 
           {/* A unit-linked case: the premium, the fund split, and the version's bounds as they are typed. */}

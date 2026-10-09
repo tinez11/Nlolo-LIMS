@@ -112,6 +112,144 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /products/{productId}/portfolio:
+    put:
+      summary: Correct a draft product's IFRS 17 portfolio (ADMIN)
+      description: >-
+        A product that keeps a savings account must be in SAV, DEP or PEN/DANN or its version is refused at publish; this
+        is how a draft created in the defaulted portfolio is fixed. 400 once a version is published.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [portfolioCode]
+              properties:
+                portfolioCode: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductSummary' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /account-charges:
+    get:
+      summary: The account charges staff choose per savings policy
+      security:
+        - staffAuth: []
+      parameters:
+        - name: activeOnly
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: OK, by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AccountCharge' }
+    post:
+      summary: Create an account charge (finance officer or admin)
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, when, amountType, amount, currency]
+              properties:
+                name: { type: string }
+                description: { type: [string, "null"] }
+                when: { type: string, enum: [DEPOSIT, WITHDRAWAL, MONTHLY, YEARLY, OPENING, MATURITY] }
+                amountType: { type: string, enum: [FLAT, PERCENT] }
+                amount: { type: number }
+                currency: { type: string }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountCharge' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /account-charges/{chargeId}/withdrawal:
+    post:
+      summary: No longer offered; policies already on it keep it
+      security:
+        - staffAuth: []
+      parameters:
+        - name: chargeId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountCharge' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /account-charges/{chargeId}/reinstatement:
+    post:
+      summary: Offered again
+      security:
+        - staffAuth: []
+      parameters:
+        - name: chargeId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountCharge' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /account-charges/setting:
+    get:
+      summary: Whether a charge may take an account below its product's minimum balance
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountChargeSetting' }
+    put:
+      summary: Set the organisation's rule (finance officer or admin)
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountChargeSetting' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountChargeSetting' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /products/{productId}/online-listing:
     get:
       summary: How the customer portal offers the product (staff)
@@ -490,6 +628,27 @@ paths:
         '404': { description: "No such version in this tenant" }
 components:
   schemas:
+    AccountCharge:
+      type: object
+      additionalProperties: false
+      required: [chargeId, name, description, when, amountType, amount, currency, active, createdBy, createdAt]
+      properties:
+        chargeId: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: [string, "null"] }
+        when: { type: string, enum: [DEPOSIT, WITHDRAWAL, MONTHLY, YEARLY, OPENING, MATURITY] }
+        amountType: { type: string, enum: [FLAT, PERCENT] }
+        amount: { type: number }
+        currency: { type: string }
+        active: { type: boolean }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+    AccountChargeSetting:
+      type: object
+      additionalProperties: false
+      required: [mayGoBelowMinimum]
+      properties:
+        mayGoBelowMinimum: { type: boolean }
     OnlineListing:
       type: object
       additionalProperties: false

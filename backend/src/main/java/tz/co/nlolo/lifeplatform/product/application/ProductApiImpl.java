@@ -462,6 +462,9 @@ public class ProductApiImpl implements ProductApi {
         BonusPlanValidator.validate(category, bonusPlan, cashValue, effectiveAccumulation, payoutPlan, deposit);
         AnnuityPlanValidator.validate(category, annuity, bounds, cashValue, effectiveAccumulation, deposit, bonusPlan, payoutPlan);
         VestingPlanValidator.validate(category, annuity, effectiveAccumulation, bounds);
+        if (effectiveAccumulation != null && effectiveAccumulation.isAccount()) {
+            refuseUnlessASavingsPortfolio(product, deposit.isDeposit(), annuity.deferred());
+        }
 
         // Version rollover: ux_product_version_active permits at most one
         // is_active_for_new_business = true row per product_id. Retire whatever version
@@ -1503,6 +1506,38 @@ public class ProductApiImpl implements ProductApi {
             .sorted(java.util.Comparator.comparing(ProductDefinition::getProductName))
             .map(ProductApiImpl::toListing)
             .toList();
+    }
+
+    /**
+     * A version that keeps an account is a savings contract, booked under IFRS 9 -- which the policy register does by
+     * portfolio (SAV, DEP, PEN, DANN). In any other portfolio its policies are classified as insurance, where no posting
+     * rule books an account's deposits or interest: on the dev ledger 26 such movements sat unposted (found
+     * 2026-10-09, the user's Mkakati test). The create form defaults an ENDOWMENT to END, so the mistake was easy.
+     */
+    static void refuseUnlessASavingsPortfolio(ProductDefinition product, boolean deposit, boolean deferredAnnuity) {
+        java.util.Set<String> allowed = deposit ? java.util.Set.of("DEP")
+            : deferredAnnuity ? java.util.Set.of("PEN", "DANN")
+            : java.util.Set.of("SAV", "PEN");
+        if (!allowed.contains(product.getPortfolioCode())) {
+            String want = deposit ? "DEP (fixed-term deposits)"
+                : deferredAnnuity ? "PEN (pensions) or DANN (deferred annuities)" : "SAV (savings accounts)";
+            throw new InvalidProductVersionException("A version that keeps an account belongs in the " + want
+                + " portfolio, so its deposits and interest are booked as savings; this product is in "
+                + product.getPortfolioCode() + ". Change the product's portfolio while it is a draft, or create it again.");
+        }
+    }
+
+    @Override
+    @Transactional
+    public ProductSummaryView changePortfolio(UUID productId, PortfolioCode portfolioCode) {
+        ProductDefinition product = productDefinitionRepository.findByTenantIdAndProductId(TenantContext.get(), productId)
+            .orElseThrow(() -> new ProductNotFoundException(productId));
+        if (!"DRAFT".equals(product.getStatus())) {
+            throw new IllegalArgumentException("A published product keeps its portfolio: its policies are already"
+                + " classified by it");
+        }
+        product.changePortfolio(portfolioCode.name());
+        return toSummaryView(productDefinitionRepository.save(product));
     }
 
     private static tz.co.nlolo.lifeplatform.product.api.OnlineListingView toListing(ProductDefinition p) {
