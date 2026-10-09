@@ -32,6 +32,7 @@ import {
   type TopUpValues,
   type WithdrawalValues,
 } from './u2Forms';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * The U2 actions on a unit-linked policy's Units tab (product step 6): premium redirection, a fund switch, a partial
@@ -68,6 +69,7 @@ export function PremiumSplitPanel({ policyNumber, fundCodes }: { policyNumber: s
   const acting = useUnitLinkedStore((s) => s.acting[`split.${policyNumber}`]);
   const current = history?.data?.[0];
   const form = useForm<SplitValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(splitSchema),
     defaultValues: { shares: fundCodes.map((fundCode) => ({ fundCode, percent: '' })) },
   });
@@ -133,6 +135,7 @@ export function SwitchForm({
   const request = useUnitLinkedStore((s) => s.requestSwitch);
   const acting = useUnitLinkedStore((s) => s.acting[`switch.${policyNumber}`]);
   const form = useForm<SwitchValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(switchSchema),
     defaultValues: {
       out: heldFunds.map((fundCode) => ({ fundCode, percent: '' })),
@@ -219,6 +222,7 @@ export function WithdrawalPanel({
   const acting = useUnitLinkedStore((s) => s.acting[`withdrawal.${policyNumber}`]);
   const minimum = options.minimumWithdrawal ?? null;
   const form = useForm<WithdrawalValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(withdrawalSchema(minimum, currency)),
     defaultValues: { grossAmount: '', funds: heldFunds.map((fundCode) => ({ fundCode, amount: '' })), payeeRef: '' },
   });
@@ -352,6 +356,7 @@ export function TopUpForm({
   const [attempt, setAttempt] = useState<MutationAttempt | null>(null);
   const minimum = options.minimumTopUp ?? null;
   const form = useForm<TopUpValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(topUpSchema(minimum, currency)),
     defaultValues: { amount: '', payerRef: '', split: fundCodes.map((fundCode) => ({ fundCode, percent: '' })) },
   });
@@ -416,6 +421,7 @@ export function StatementsPanel({ policyNumber }: { policyNumber: string }) {
   const [downloadError, setDownloadError] = useState<ApiError | null>(null);
   const today = eatNow().date;
   const form = useForm<StatementValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(statementSchema(today)),
     defaultValues: { from: '', to: today },
   });

@@ -21,6 +21,7 @@ import { PublishVersionForm } from './PublishVersionForm';
 import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { PORTFOLIO_CODES, PORTFOLIO_LABEL, portfolioDefaultFor } from '@/lib/ifrs17';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * A genuinely two-phase flow, not a stylistic choice: `GET /products` only
@@ -51,6 +52,7 @@ export function CreateProductPage() {
     setValue,
     formState: { errors, dirtyFields },
   } = useForm<CreateProductFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(createProductFormSchema),
     defaultValues: blankCreateProductForm(),
   });

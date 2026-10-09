@@ -3,17 +3,20 @@ import { getPolicyAccountCharges, type AccountChargeView } from '@/api/accountCh
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { toApiError, type ApiError } from '@/lib/apiError';
 import { CHARGE_WHEN, chargeSize } from './chargeText';
+import { remember, remembered } from '@/lib/remembered';
 
 /** The account charges a savings policy was issued on (2026-10-09), or that it is on its product's own. */
 export function PolicyChargesPanel({ policyNumber }: { policyNumber: string }) {
-  const [charges, setCharges] = useState<AccountChargeView[] | null>(null);
+  const [charges, setCharges] = useState<AccountChargeView[] | null>(() =>
+    remembered<AccountChargeView[]>(`account-charges:${policyNumber}`),
+  );
   const [error, setError] = useState<ApiError | null>(null);
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let live = true;
     getPolicyAccountCharges(policyNumber).then(
-      (c) => { if (live) { setCharges(c); setError(null); } },
+      (c) => { if (live) { setCharges(remember(`account-charges:${policyNumber}`, c)); setError(null); } },
       (e: unknown) => { if (live) setError(toApiError(e)); },
     );
     return () => { live = false; };

@@ -18,6 +18,7 @@ import { startMutation } from '@/lib/idempotency';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useBonusStore } from '@/store/bonusStore';
 import { bonusDeclarationSchema, type BonusDeclarationValues } from './bonusDeclarationForm';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * Bonus declarations for a with-profits product (product step 4).
@@ -125,6 +126,7 @@ function ProposeForm({ productId }: { productId: string }) {
   const propose = useBonusStore((s) => s.proposeDeclaration);
   const acting = useBonusStore((s) => s.acting[`declaration.${productId}`]);
   const form = useForm<BonusDeclarationValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(bonusDeclarationSchema),
     defaultValues: { valuationDate: '', reversionaryRatePercent: '', terminalRatePercent: '' },
   });

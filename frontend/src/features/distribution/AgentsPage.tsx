@@ -238,6 +238,7 @@ export function AgentsPage() {
               <Input
                 name="q"
                 defaultValue={q}
+                data-list-filter
                 placeholder="Search by licence number"
                 aria-label="Search by licence number"
                 inputSize="sm" className="w-56 px-2.5 text-sm"

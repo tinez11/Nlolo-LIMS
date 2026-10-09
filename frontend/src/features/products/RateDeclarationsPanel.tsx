@@ -18,6 +18,7 @@ import { startMutation } from '@/lib/idempotency';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useAccumulationStore } from '@/store/accumulationStore';
 import { rateDeclarationSchema, type RateDeclarationValues } from './rateDeclarationForm';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 
 /**
@@ -124,6 +125,7 @@ function ProposeForm({ productId }: { productId: string }) {
   const propose = useAccumulationStore((s) => s.proposeRate);
   const acting = useAccumulationStore((s) => s.acting[`rate.${productId}`]);
   const form = useForm<RateDeclarationValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(rateDeclarationSchema),
     defaultValues: { ratePercent: '', effectiveFrom: '' },
   });

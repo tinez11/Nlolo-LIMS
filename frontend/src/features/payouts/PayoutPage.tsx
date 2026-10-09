@@ -29,6 +29,7 @@ import {
   PROOF_OF_LIFE_METHODS,
   type PayoutReviewValues,
 } from './payoutReviewForm';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 const BREADCRUMB = [{ label: 'Payouts', to: '/staff/payouts' }];
 
@@ -175,6 +176,7 @@ function ReviewAction({ payout }: { payout: PayoutInstalmentView }) {
   const needsProofOfLife = needsProofOfLifeFor(payout);
 
   const form = useForm<PayoutReviewValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(payoutReviewSchema(needsProofOfLife)),
     defaultValues: blankPayoutReview(),
   });

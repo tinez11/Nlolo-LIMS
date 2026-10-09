@@ -98,7 +98,7 @@ export function DataTable<T>({
                 className={cn(
                   'border-b border-border last:border-0',
                   selected && 'bg-selected',
-                  interactive && !selected && 'hover:bg-hover',
+                  interactive && !selected && 'hover:bg-hover active:bg-selected',
                 )}
               >
                 {columns.map((column, index) => (
@@ -127,6 +127,8 @@ export function DataTable<T>({
                     {interactive && index === 0 ? (
                       <button
                         type="button"
+                        // Found by useListKeys, so j/k can walk the rows.
+                        data-row-activate
                         onClick={() => onRowActivate(row)}
                         className={cn(
                           '-mx-1 flex min-h-11 w-full items-center rounded py-1.5 px-1',

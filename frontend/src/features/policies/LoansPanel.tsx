@@ -28,6 +28,7 @@ import {
 } from './originateLoanForm';
 import { FormField } from '@/components/FormField';
 import { Input } from '@/components/ui/input';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /** Only these two statuses accept a repayment -- `PolicyLoanApiImpl.recordRepayment`
  *  throws `LoanNotEligibleException` (409) for every other one, and the same pair is
@@ -208,6 +209,7 @@ function OriginateLoanForm({
     handleSubmit,
     formState: { errors },
   } = useForm<OriginateLoanFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(originateLoanFormSchema),
     defaultValues: blankOriginateLoanForm(),
   });
@@ -278,6 +280,7 @@ function RepaymentForm({
     handleSubmit,
     formState: { errors },
   } = useForm<LoanRepaymentFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(loanRepaymentFormSchema),
     defaultValues: blankLoanRepaymentForm(),
   });

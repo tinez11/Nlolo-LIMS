@@ -13,6 +13,7 @@ import { startMutation } from '@/lib/idempotency';
 import { formatMoney } from '@/lib/money';
 import { useAccumulationStore } from '@/store/accumulationStore';
 import { instructionSchema, payeeSchema, toInstructionBody, type InstructionValues, type PayeeValues } from './depositForms';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 type DepositSchedule = NonNullable<DepositView['schedule']>;
 
@@ -141,6 +142,7 @@ function MaturityPanel({ deposit }: { deposit: DepositView }) {
   const instruct = useAccumulationStore((s) => s.instruct);
   const acting = useAccumulationStore((s) => s.acting[`instruct.${deposit.policyNumber}`]);
   const form = useForm<InstructionValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(instructionSchema),
     defaultValues: { action: 'PAY_OUT', termMonths: '', payeeRef: '' },
   });
@@ -190,7 +192,7 @@ function MaturityPanel({ deposit }: { deposit: DepositView }) {
 function PayeePanel({ policyNumber }: { policyNumber: string }) {
   const payOut = useAccumulationStore((s) => s.payOutDeposit);
   const acting = useAccumulationStore((s) => s.acting[`depositPayout.${policyNumber}`]);
-  const form = useForm<PayeeValues>({ resolver: zodResolver(payeeSchema), defaultValues: { payeeRef: '' } });
+  const form = useForm<PayeeValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(payeeSchema), defaultValues: { payeeRef: '' } });
 
   return (
     <form

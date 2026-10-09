@@ -3,6 +3,7 @@ import { getPolicyClassifications } from '@/api/finaccounting';
 import type { PolicyClassificationView, PolicyView } from '@/api/types';
 import { Field } from '@/components/Field';
 import { bucketLabel, channelLabel, modelLabel, portfolioLabel } from '@/lib/ifrs17';
+import { remember, remembered } from '@/lib/remembered';
 
 const BASIS_NOTE: Record<string, string> = {
   REGISTER: "The accounting policy register's model for the portfolio",
@@ -16,14 +17,16 @@ const BASIS_NOTE: Record<string, string> = {
  * A vesting pension shows its second classification as a new contract.
  */
 export function Ifrs17Classification({ policy, showAccounting }: { policy: PolicyView; showAccounting: boolean }) {
-  const [rows, setRows] = useState<PolicyClassificationView[] | null>(null);
   const policyNumber = policy.policyNumber;
+  const [rows, setRows] = useState<PolicyClassificationView[] | null>(() =>
+    remembered<PolicyClassificationView[]>(`classifications:${policyNumber}`),
+  );
 
   useEffect(() => {
     if (!showAccounting || !policyNumber) return;
     let live = true;
     getPolicyClassifications(policyNumber)
-      .then((r) => live && setRows(r))
+      .then((r) => live && setRows(remember(`classifications:${policyNumber}`, r)))
       .catch(() => live && setRows([]));
     return () => {
       live = false;

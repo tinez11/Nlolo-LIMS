@@ -10,9 +10,11 @@ import { currentTheme, toggleTheme, type Theme } from '@/lib/theme';
 import { useNavBadges } from '@/navBadges';
 import { navFor } from '@/screens';
 import { CommandPalette } from './CommandPalette';
+import { useListKeys } from './listKeys';
 import { LoadingBlock } from './states';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import { Tip } from './ui/tooltip';
 
 /**
  * The console chrome: sidebar, nav, user block.
@@ -29,6 +31,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
   const location = useLocation();
   const groups = navFor(realm, identity);
   const badges = useNavBadges(realm, identity);
+  useListKeys();
 
   // Below `md` the sidebar is an overlay drawer rather than a column: at 240px
   // fixed it would otherwise eat half a phone screen. Desktop is the designed
@@ -256,25 +259,24 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
                           // both keep the weight, which is the signal that survives either.
                           isActive
                             ? 'bg-surface font-medium text-foreground shadow-raise dark:bg-selected'
-                            : 'text-muted-foreground hover:bg-hover hover:text-foreground',
+                            : 'text-muted-foreground hover:bg-hover hover:text-foreground active:bg-selected active:duration-0',
                         )
                       }
                     >
                       <item.icon className="size-4 shrink-0" aria-hidden />
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
                       {item.badge && badges[item.badge] && (
-                        <span
-                          className="shrink-0"
-                          // The count alone reads as "3 claims", which is not what
-                          // it means. Both the tooltip and the screen-reader text
-                          // say what was counted.
-                          title={badges[item.badge]!.title}
-                        >
-                          <Badge className="px-1.5 py-0 tabular-nums">
-                            {badges[item.badge]!.count}
-                            <span className="sr-only"> — {badges[item.badge]!.title}</span>
-                          </Badge>
-                        </span>
+                        // The count alone reads as "3 claims", which is not what it means. Both
+                        // the tip and the screen-reader text say what was counted; the link it
+                        // sits in already carries the text for a keyboard.
+                        <Tip content={badges[item.badge]!.title}>
+                          <span className="shrink-0">
+                            <Badge className="px-1.5 py-0 tabular-nums">
+                              {badges[item.badge]!.count}
+                              <span className="sr-only"> — {badges[item.badge]!.title}</span>
+                            </Badge>
+                          </span>
+                        </Tip>
                       )}
                     </NavLink>
                   </li>
@@ -381,9 +383,15 @@ function UserBlock({ identity }: { identity: ReturnType<typeof readIdentity> }) 
           <p className="truncate text-xs font-medium">{name}</p>
           {/* Roles as words, not enums (2026-10-09): "UNDERWRITER, FINANCE..." shouted, and at 240px
               the full set still may not fit, so the whole of it is the title. */}
-          <p className="truncate text-xs text-muted-foreground" title={roleLine || undefined}>
-            {roleLine || 'No roles'}
-          </p>
+          {roleLine ? (
+            <Tip content={roleLine}>
+              <p tabIndex={0} className="truncate rounded-sm text-xs text-muted-foreground">
+                {roleLine}
+              </p>
+            </Tip>
+          ) : (
+            <p className="truncate text-xs text-muted-foreground">No roles</p>
+          )}
         </div>
       </div>
 

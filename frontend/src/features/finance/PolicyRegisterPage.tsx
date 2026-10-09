@@ -28,6 +28,7 @@ import {
   type ElectionValues,
   type RejectionValues,
 } from './registerForms';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 const KEY_LABEL: Record<ElectionKey, string> = {
   MEASUREMENT_MODEL: 'Measurement model',
@@ -178,7 +179,7 @@ function ProposedRow({ election, viewerSubject }: { election: PolicyElectionView
 
 function ApproveForm({ electionId, disabled }: { electionId: string; disabled: boolean }) {
   const approve = useLedgerControlsStore((s) => s.approve);
-  const form = useForm<ApprovalValues>({ resolver: zodResolver(approvalSchema), defaultValues: { signOffRef: '' } });
+  const form = useForm<ApprovalValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(approvalSchema), defaultValues: { signOffRef: '' } });
   return (
     <form
       className="flex items-end gap-2"
@@ -197,7 +198,7 @@ function ApproveForm({ electionId, disabled }: { electionId: string; disabled: b
 
 function RejectForm({ electionId, disabled }: { electionId: string; disabled: boolean }) {
   const reject = useLedgerControlsStore((s) => s.reject);
-  const form = useForm<RejectionValues>({ resolver: zodResolver(rejectionSchema), defaultValues: { reason: '' } });
+  const form = useForm<RejectionValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(rejectionSchema), defaultValues: { reason: '' } });
   return (
     <form
       className="flex items-end gap-2"
@@ -219,6 +220,7 @@ function ProposeForm() {
   const acting = useLedgerControlsStore((s) => s.acting['election.propose']);
   const [today] = useState(todayIso);
   const form = useForm<ElectionValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(electionSchema(today)),
     defaultValues: { key: 'OCI_OPTION', scope: '*', value: '', effectiveFrom: '', rationale: '' },
   });

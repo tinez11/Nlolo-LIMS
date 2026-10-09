@@ -33,6 +33,7 @@ import { CommissionPlanPanel } from './CommissionPlanPanel';
 import { CommissionStatementsPanel } from './CommissionStatementsPanel';
 import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * Reached from `OnboardAgentPage`'s own redirect, or by drilling in from a
@@ -204,6 +205,7 @@ function PlacementForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const form = useForm<AgentPlacementValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(agentPlacementSchema),
     defaultValues: { salesChannel: salesChannel as AgentPlacementValues['salesChannel'], homeBranch },
   });

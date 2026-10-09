@@ -33,6 +33,7 @@ import { PartyName } from '@/components/PartyName';
 import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { CheckboxField } from '@/components/ui/checkbox';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * `POST /claims` is one of only six endpoints on the platform that HARD-REQUIRES
@@ -84,6 +85,7 @@ export function RegisterClaimPage() {
     control,
     formState: { errors },
   } = useForm<RegisterClaimFormValues>({
+    ...VALIDATE_ON_TOUCH,
     // The schema is a factory now, because whether a member is required depends on the policy
     // -- and the policy is not known until its number has been typed and fetched, which is
     // after this hook runs. The ref is written in an effect below and read at validation time,

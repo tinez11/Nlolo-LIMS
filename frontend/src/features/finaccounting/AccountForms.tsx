@@ -24,6 +24,7 @@ import {
   updateAccountFormSchema,
   type UpdateAccountFormValues,
 } from './updateAccountForm';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * The three account forms the chart of accounts opens: create, rename, delete.
@@ -52,6 +53,7 @@ export function CreateAccountForm({ onDone }: { onDone: () => void }) {
     handleSubmit,
     formState: { errors },
   } = useForm<CreateAccountFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(createAccountFormSchema),
     defaultValues: blankCreateAccountForm(),
   });
@@ -154,6 +156,7 @@ export function UpdateAccountForm({
     handleSubmit,
     formState: { errors },
   } = useForm<UpdateAccountFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(updateAccountFormSchema),
     defaultValues: blankUpdateAccountForm(account.name ?? '', account.description),
   });

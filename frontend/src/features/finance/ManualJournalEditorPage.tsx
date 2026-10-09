@@ -20,6 +20,7 @@ import {
   totals,
   type ManualJournalValues,
 } from './manualJournalForm';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -59,7 +60,7 @@ function Editor({ id, initial }: { id?: string; initial: ManualJournalValues }) 
     void loadTemplates();
   }, [loadTemplates]);
 
-  const form = useForm<ManualJournalValues>({ resolver: zodResolver(manualJournalSchema), defaultValues: initial });
+  const form = useForm<ManualJournalValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(manualJournalSchema), defaultValues: initial });
   const lines = useFieldArray({ control: form.control, name: 'lines' });
   const watched = useWatch({ control: form.control, name: 'lines' });
   const { debit, credit } = totals(watched ?? []);

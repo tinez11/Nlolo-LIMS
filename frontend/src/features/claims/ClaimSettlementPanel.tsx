@@ -28,6 +28,7 @@ import {
 } from './settlementDecisionForm';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * `POST /claims/{claimId}/settlement-decision` -- `CLAIMS_MANAGER` role only,
@@ -95,6 +96,7 @@ export function ClaimSettlementPanel({
     reset,
     formState: { errors, isDirty },
   } = useForm<SettlementDecisionFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(settlementDecisionSchema(cover, !creditLife)),
     defaultValues: blankApproveDecision(),
   });

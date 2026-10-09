@@ -18,6 +18,7 @@ import { saveBlob } from '@/lib/download';
 import { formatMoney } from '@/lib/money';
 import { DownloadButtons } from './DownloadButtons';
 import { scheduleStatusLiteral } from './documentLabels';
+import { remember, remembered } from '@/lib/remembered';
 
 /**
  * A policy's premium payment schedule (2026-10-07) as a table: every premium due, what was paid against it,
@@ -26,13 +27,16 @@ import { scheduleStatusLiteral } from './documentLabels';
  * and the customer who holds the policy see the same.
  */
 export function PaymentScheduleTable({ policyNumber }: { policyNumber: string }) {
-  const [schedule, setSchedule] = useState<PaymentScheduleView | null>(null);
+  // Seeded from the last answer, so a second visit to Billing shows the schedule while it refetches.
+  const [schedule, setSchedule] = useState<PaymentScheduleView | null>(() =>
+    remembered<PaymentScheduleView>(`payment-schedule:${policyNumber}`),
+  );
   const [error, setError] = useState<ApiError | null>(null);
 
   useEffect(() => {
     let live = true;
     getPaymentSchedule(policyNumber).then(
-      (s) => { if (live) { setSchedule(s); setError(null); } },
+      (s) => { if (live) { setSchedule(remember(`payment-schedule:${policyNumber}`, s)); setError(null); } },
       (e: unknown) => { if (live) setError(toApiError(e)); },
     );
     return () => { live = false; };

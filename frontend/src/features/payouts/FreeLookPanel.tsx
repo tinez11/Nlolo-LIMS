@@ -20,6 +20,7 @@ import { formatMoney } from '@/lib/money';
 import { useBenefitPayoutStore } from '@/store/benefitPayoutStore';
 import { usePolicyStore } from '@/store/policyStore';
 import { blankDeduction, blankFreeLook, freeLookSchema, type FreeLookValues } from './freeLookForm';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * Free-look cancellation: the customer changed their mind, and the sale is undone from inception
@@ -80,6 +81,7 @@ function RequestForm({ policy }: { policy: PolicyView }) {
   const [armed, setArmed] = useState<FreeLookValues | null>(null);
 
   const form = useForm<FreeLookValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(freeLookSchema),
     defaultValues: blankFreeLook(),
   });

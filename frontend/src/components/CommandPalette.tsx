@@ -109,6 +109,12 @@ export function CommandPalette({
                 </Command.Group>
               ))}
             </Command.List>
+            {/* The list shortcuts live nowhere else on screen, so the one place a keyboard user
+                already goes to move around says they exist. */}
+            <p className="border-t border-border px-3 py-2 text-xs text-subtle-foreground">
+              In a list: <kbd className="font-mono">j</kbd> / <kbd className="font-mono">k</kbd> to move,{' '}
+              <kbd className="font-mono">Enter</kbd> to open, <kbd className="font-mono">/</kbd> to filter.
+            </p>
           </Command>
         </Dialog.Content>
       </Dialog.Portal>

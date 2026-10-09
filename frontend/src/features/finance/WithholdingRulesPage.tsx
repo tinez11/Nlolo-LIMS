@@ -20,6 +20,7 @@ import { startMutation } from '@/lib/idempotency';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useAnnuityStore } from '@/store/annuityStore';
 import { endRuleSchema, withholdingRuleSchema, type EndRuleValues, type WithholdingRuleValues } from './withholdingRuleForm';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 const KIND_LABEL: Record<string, string> = {
   ANNUITY: 'Annuity income',
@@ -129,6 +130,7 @@ function RuleRow({ rule, viewerSubject }: { rule: WithholdingRuleView; viewerSub
 function EndRuleForm({ rule, busy }: { rule: WithholdingRuleView; busy: boolean }) {
   const endRule = useAnnuityStore((s) => s.endRule);
   const form = useForm<EndRuleValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(endRuleSchema(rule, todayIso())),
     defaultValues: { effectiveTo: '' },
   });
@@ -156,6 +158,7 @@ function ProposeForm() {
   const propose = useAnnuityStore((s) => s.proposeRule);
   const acting = useAnnuityStore((s) => s.acting['rule.propose']);
   const form = useForm<WithholdingRuleValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(withholdingRuleSchema),
     defaultValues: { annuity: true, ratePercent: '', effectiveFrom: '', effectiveTo: '', legalReference: '' },
   });

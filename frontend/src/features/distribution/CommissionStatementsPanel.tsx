@@ -24,6 +24,7 @@ import {
   type RequestPayoutFormValues,
 } from './requestPayoutForm';
 import { Input } from '@/components/ui/input';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * `GET /agents/{agentId}/commission-statements` -- a bare array, no pager,
@@ -171,6 +172,7 @@ function PayoutForm({
     handleSubmit,
     formState: { errors },
   } = useForm<RequestPayoutFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(requestPayoutFormSchema),
     defaultValues: blankRequestPayoutForm(),
   });

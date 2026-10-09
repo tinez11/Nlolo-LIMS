@@ -22,6 +22,7 @@ import {
 } from './createCommissionPlanForm';
 import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * `GET /agents/{agentId}/commission-plan?productId=...` -- resolves the
@@ -131,6 +132,7 @@ function CreatePlanForm({ agentId, productId }: { agentId: string; productId: st
     watch,
     formState: { errors },
   } = useForm<CreateCommissionPlanFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(createCommissionPlanFormSchema),
     defaultValues: blankCreateCommissionPlanForm(productId),
   });

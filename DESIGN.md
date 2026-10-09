@@ -13,6 +13,7 @@ colors:
   input: "oklch(0.66 0 0)"
   control: "oklch(0.965 0 0)"
   control-hover: "oklch(0.935 0 0)"
+  control-press: "oklch(0.9 0 0)"
   band: "oklch(0.965 0 0)"
   hover: "oklch(0.968 0 0)"
   selected: "oklch(0.955 0 0)"
@@ -683,8 +684,13 @@ component is a mistake, not a texture.
 - **Disabled:** 50% opacity and pointer-events off. A `501` deferred endpoint
   renders its action disabled with a tooltip, never as a live button.
 
-*Target gap:* the chosen "confident and tactile" character asks for a real
-`:active` state on buttons — a perceptible press. The incumbent build has none.
+- **Press** (closed 2026-10-09, was a target gap): every variant takes a pressed
+  tone one step past its hover — primary and danger `opacity-80`, secondary the
+  new **Control Press** token (`0.9` / `16%` white in dark), outline and ghost
+  Selected — and `active:duration-0` lands it on pointer-down rather than after
+  the 150ms colour transition, which a quick click had already outrun. Table
+  rows, nav items, filter chips and section-bar links press the same way. Tone
+  only: no transform, no scale, no lift.
 
 ### Inputs / Fields
 
@@ -904,8 +910,13 @@ the same fact.
 
 ### Loading, Empty and Error States
 
-One shared set, so every screen fails identically. Skeleton rows are Quiet-Paper
-pulses at staggered widths so a table does not jump when data lands. Empty states
+One shared set, so every screen fails identically. Skeleton rows are Control-tone
+pulses (`0.965`; Quiet Paper at `0.985` was all but invisible on Paper) at
+staggered widths so a table does not jump when data lands. `LoadingBlock` is the
+same idea for anything that is not a table — three lines and a small visible
+label, never a centred spinner (2026-10-09). The label stays on screen because
+e2e waits for it to disappear. A spinner remains only inside a button that is
+pending and on a stat whose value is pending. Empty states
 are centre-stacked with a 20px Subtle-Ink icon, a Body-weight-500 title and a
 Micro description. Error panels are the same silhouette with a danger-hue icon
 and copy written per error kind — a `403` is a permission boundary and offers no
@@ -916,10 +927,23 @@ the backend logs.
 
 ### Motion
 
-Almost none, deliberately. `transition-colors` on interactive surfaces, a 200ms
-slide-and-fade on the slide-over, a spinner, and a skeleton pulse. That is the
-complete motion vocabulary. Nothing eases in on scroll, nothing staggers, nothing
-parallaxes.
+Almost none, deliberately. `transition-colors` on interactive surfaces, an
+instant press tone, a 200ms slide-and-fade on the slide-over, a 150ms
+grow-from-the-trigger on popovers and tips (`POPOVER_MOTION` / `TOOLTIP_MOTION`
+in `components/ui/motion.ts`: fade plus 95%→100% scale from Radix's
+transform origin, reversed on close), a spinner, and a skeleton pulse. That is
+the complete motion vocabulary. Nothing eases in on scroll, nothing staggers,
+nothing parallaxes.
+
+**The person's settings win** (2026-10-09). Under `prefers-reduced-motion:
+reduce` every enter and exit keeps its fade but loses its slide and scale — the
+tw-animate-css translate and scale properties are zeroed globally, so the
+slide-over cross-fades — the skeleton stops pulsing, and the mobile drawer
+arrives at once. A pending button's spinner keeps turning, because it reports
+status. Under `prefers-contrast: more` hairlines take a Rule-Strong value,
+the control edge darkens, and Muted and Subtle Ink step one notch stronger,
+in both themes. Reduced transparency needs nothing: there is no translucent
+surface.
 
 ## Do's and Don'ts
 

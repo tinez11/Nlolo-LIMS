@@ -8,6 +8,26 @@ describe('Button', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toHaveClass('bg-control');
   });
 
+  // DESIGN.md asks for "a perceptible press", and it has to land on pointer-down: through the
+  // 150ms colour transition the press tone only arrived after a quick click had already let go.
+  it('answers a press at once, in every variant', () => {
+    const variants = ['primary', 'secondary', 'outline', 'ghost', 'danger'] as const;
+    render(
+      <>
+        {variants.map((variant) => (
+          <Button key={variant} variant={variant}>
+            {variant}
+          </Button>
+        ))}
+      </>,
+    );
+    for (const variant of variants) {
+      const button = screen.getByRole('button', { name: variant });
+      expect(button).toHaveClass('active:duration-0');
+      expect(button.className).toMatch(/\bactive:(bg|opacity)-/);
+    }
+  });
+
   it('is disabled and busy while pending, and keeps its name', () => {
     render(<Button pending>Save</Button>);
     const button = screen.getByRole('button', { name: 'Save' });

@@ -47,6 +47,7 @@ import { blankFuneralFields } from './funeralSchema';
 import { FuneralTermsSection } from './FuneralTermsSection';
 import { blankUnitLinkedFields } from './unitLinkedSchema';
 import { UnitLinkedTermsSection } from './UnitLinkedTermsSection';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 /**
  * An example shaped like the factor it belongs to.
@@ -130,6 +131,7 @@ export function PublishVersionForm({
     setValue,
     formState: { errors },
   } = useForm<PublishVersionFormInput, unknown, PublishVersionFormValues>({
+    ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(schema),
     defaultValues: {
       expectedProfitabilityBucket: 'REMAINING',
