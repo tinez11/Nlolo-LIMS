@@ -24,6 +24,11 @@ public class CommunicationExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "TEMPLATE_NOT_FOUND");
     }
 
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.communication.api.InboxMessageNotFoundException.class)
+    public ProblemDetail handleMessageNotFound(tz.co.nlolo.lifeplatform.communication.api.InboxMessageNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "MESSAGE_NOT_FOUND");
+    }
+
     @ExceptionHandler(TemplatePlaceholderException.class)
     public ProblemDetail handleInventedPlaceholder(TemplatePlaceholderException ex) {
         return problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "TEMPLATE_PLACEHOLDER_UNKNOWN");

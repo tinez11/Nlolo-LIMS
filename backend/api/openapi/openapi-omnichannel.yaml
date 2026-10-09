@@ -417,6 +417,40 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /customer/messages:
+    get:
+      summary: The signed-in customer's messages
+      description: >-
+        What was sent to them by SMS and email, newest first, once per message however many channels carried it --
+        readable here whether or not it reached their phone. Never a delivery outcome or failure reason.
+      security:
+        - customersAuth: [profile]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CustomerMessage' }
+  /customer/messages/{messageId}/read:
+    post:
+      summary: Mark a message read
+      description: 404 for a message that is not the customer's own.
+      security:
+        - customersAuth: [profile]
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerMessage' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
 components:
   securitySchemes:
     staffAuth:
@@ -475,8 +509,9 @@ components:
     CustomerDashboard:
       type: object
       additionalProperties: false
-      required: [displayName, activePolicies, claimsInProgress, nextPremium, accountValue, policies]
+      required: [displayName, activePolicies, claimsInProgress, nextPremium, accountValue, policies, unreadMessages]
       properties:
+        unreadMessages: { type: integer, description: Messages not yet opened in the portal }
         displayName: { type: string }
         activePolicies: { type: integer }
         claimsInProgress: { type: integer }
@@ -695,6 +730,17 @@ components:
         currency: { type: [string, "null"] }
         status: { type: string }
         statusText: { type: string }
+    CustomerMessage:
+      type: object
+      additionalProperties: false
+      required: [messageId, title, policyNumber, body, sentAt, read]
+      properties:
+        messageId: { type: string, format: uuid }
+        title: { type: string }
+        policyNumber: { type: [string, "null"] }
+        body: { type: [string, "null"], description: The text as sent; null on messages from before it was kept }
+        sentAt: { type: string, format: date-time }
+        read: { type: boolean }
     PortalAccess:
       type: object
       additionalProperties: false

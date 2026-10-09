@@ -14,7 +14,7 @@ const policy = (over: Partial<CustomerPolicySummary> = {}): CustomerPolicySummar
 });
 
 const dashboard = (over: Partial<CustomerDashboardView> = {}): CustomerDashboardView => ({
-  displayName: 'Nadine Kileo', activePolicies: 1, claimsInProgress: 0, nextPremium: null, accountValue: null,
+  displayName: 'Nadine Kileo', activePolicies: 1, claimsInProgress: 0, unreadMessages: 0, nextPremium: null, accountValue: null,
   policies: [policy()], ...over,
 });
 
@@ -55,5 +55,12 @@ describe('CustomerHomePage (dashboard)', () => {
     expect(screen.getByText(/in the grace period/)).toBeInTheDocument();
     expect(screen.getByText('Claims in progress')).toBeInTheDocument();
     expect(screen.getByText('TZS 4,850,000.00')).toBeInTheDocument();
+    expect(screen.queryByText('New messages')).not.toBeInTheDocument();
+  });
+
+  it('points to unread messages', async () => {
+    vi.mocked(portalApi.getCustomerDashboard).mockResolvedValue(dashboard({ unreadMessages: 2 }));
+    renderHome();
+    expect(await screen.findByRole('link', { name: /New messages/ })).toHaveAttribute('href', '/customers/messages');
   });
 });
