@@ -33,7 +33,7 @@ describe('CustomerReportClaimPage', () => {
   it('asks a funeral policyholder who died, reviews, then files the claim as theirs', async () => {
     vi.mocked(portalApi.getMe).mockResolvedValue({ partyId: 'party-1', displayName: 'Nadine Kileo', email: null, phoneNumber: null });
     vi.mocked(portalApi.getCustomerDashboard).mockResolvedValue({ displayName: 'Nadine Kileo', activePolicies: 1,
-      claimsInProgress: 0, nextPremium: null, accountValue: null, policies: [summary] });
+      claimsInProgress: 0, unreadMessages: 0, nextPremium: null, accountValue: null, policies: [summary] });
     vi.mocked(portalApi.getCustomerPolicy).mockResolvedValue(funeral);
     vi.mocked(claimsApi.registerClaim).mockResolvedValue({ claimId: 'new-claim' } as never);
     render(
