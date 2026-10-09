@@ -14,6 +14,7 @@ import { toApiError, type ApiError } from '@/lib/apiError';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { FUNERAL_ROLE_LABELS, type FuneralRoleName } from '@/features/products/funeralSchema';
+import { remember, remembered } from '@/lib/remembered';
 import {
   awaitingTakeover,
   blankCoveredLife,
@@ -50,7 +51,9 @@ function ageOf(dateOfBirth: string): number {
  * name-only life to a client at claim, and complete a spouse's takeover after the main member's death.
  */
 export function CoveredLivesPanel({ policyNumber, canChange }: { policyNumber: string; canChange: boolean }) {
-  const [lives, setLives] = useState<CoveredLifeView[] | null>(null);
+  const [lives, setLives] = useState<CoveredLifeView[] | null>(() =>
+    remembered<CoveredLifeView[]>(`covered-lives:${policyNumber}`),
+  );
   const [loadError, setLoadError] = useState<ApiError | null>(null);
   const [reload, setReload] = useState(0);
   const [actionError, setActionError] = useState<ApiError | null>(null);
@@ -62,7 +65,7 @@ export function CoveredLivesPanel({ policyNumber, canChange }: { policyNumber: s
   useEffect(() => {
     let live = true;
     getCoveredLives(policyNumber).then(
-      (result) => { if (live) { setLives(result); setLoadError(null); } },
+      (result) => { if (live) { setLives(remember(`covered-lives:${policyNumber}`, result)); setLoadError(null); } },
       (error: unknown) => { if (live) setLoadError(toApiError(error)); },
     );
     return () => { live = false; };
