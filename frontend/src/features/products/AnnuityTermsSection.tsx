@@ -52,7 +52,7 @@ export function AnnuityTermsSection({
   const kindField = register('annuityKind');
 
   return (
-    <div className="space-y-3 rounded-md border border-border p-3">
+    <div data-outline="Annuity terms" className="space-y-3 rounded-md border border-border p-3">
       <div>
         <p className="text-xs font-medium text-muted-foreground">Annuity terms</p>
         <p className="mt-0.5 text-xs text-subtle-foreground">

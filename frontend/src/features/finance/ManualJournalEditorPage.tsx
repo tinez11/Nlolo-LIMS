@@ -21,6 +21,7 @@ import {
   type ManualJournalValues,
 } from './manualJournalForm';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { UnsavedGuard } from '@/components/UnsavedGuard';
 
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -87,6 +88,10 @@ function Editor({ id, initial }: { id?: string; initial: ManualJournalValues }) 
           if (saved) navigate(id ? `../../${saved.id}` : `../${saved.id}`, { relative: 'path' });
         })}
       >
+        <UnsavedGuard
+          when={form.formState.isDirty && !form.formState.isSubmitting}
+          what="This journal"
+        />
         {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
         {!id && (
           <div className="max-w-xl">

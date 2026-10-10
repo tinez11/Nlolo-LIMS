@@ -25,6 +25,7 @@ import {
   type CreditLifeSchemeIssueFormValues,
 } from './creditLifeSchemeIssueForm';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { UnsavedGuard } from '@/components/UnsavedGuard';
 
 /**
  * Setting up a lender's credit-life scheme.
@@ -76,7 +77,7 @@ export function IssueCreditLifeSchemePage() {
     handleSubmit,
     control,
     setValue,
-    formState: { errors },
+    formState: { errors, isDirty, isSubmitting },
   } = useForm<CreditLifeSchemeIssueFormValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(creditLifeSchemeIssueFormSchema()),
@@ -157,6 +158,7 @@ export function IssueCreditLifeSchemePage() {
 
       {canUnderwrite && (
         <form className="max-w-2xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+          <UnsavedGuard when={isDirty && !isSubmitting} what="This credit-life scheme" />
           <FormField label="The lender" error={errors.policyholderPartyId?.message}>
             <Controller
               control={control}

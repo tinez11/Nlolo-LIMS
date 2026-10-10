@@ -29,6 +29,7 @@ import {
   toLives,
   type FamilyRow,
 } from './groupFuneral';
+import { UnsavedGuard } from '@/components/UnsavedGuard';
 
 /**
  * Propose a group funeral scheme (2026-10-07): an association, one plan of a FUNERAL product sold to
@@ -43,6 +44,7 @@ export function ProposeGroupFuneralPage() {
 
   const openGroupCase = useUnderwritingStore((s) => s.openGroupCase);
   const resetOpenCase = useUnderwritingStore((s) => s.resetOpenCase);
+  const openingStatus = useUnderwritingStore((s) => s.opening.status);
   const opening = useUnderwritingStore((s) => s.opening);
   const products = useProductStore((s) => s.list);
   const loadProducts = useProductStore((s) => s.loadList);
@@ -60,6 +62,8 @@ export function ProposeGroupFuneralPage() {
   const [commencementDate, setCommencementDate] = useState('');
   const [termMonths, setTermMonths] = useState('');
   const [families, setFamilies] = useState<FamilyRow[]>(() => [blankFamily([])]);
+  // Every edit replaces the array, so the first one kept here says whether anything was touched.
+  const [untouchedFamilies] = useState(families);
   const [fileProblems, setFileProblems] = useState<string[]>([]);
   const [showProblems, setShowProblems] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -136,6 +140,16 @@ export function ProposeGroupFuneralPage() {
       {!canUnderwrite && <NoAccess what="Proposing a group funeral scheme" who="underwriters" />}
       {canUnderwrite && (
         <form className="max-w-3xl space-y-4 px-6 pb-8" onSubmit={(e) => { e.preventDefault(); void onSubmit(); }}>
+          {/* Not react-hook-form, so "dirty" is spelt out; and it stands down while the case is
+              being opened or once it has been, so the jump to the new case is not held. */}
+          <UnsavedGuard
+            when={
+              (association !== '' || productId !== '' || families !== untouchedFamilies) &&
+              openingStatus !== 'loading' &&
+              openingStatus !== 'success'
+            }
+            what="This scheme proposal"
+          />
           <FormField label="Association (the policyholder, who pays)">
             <PartyPicker value={association || null} onChange={(id) => setAssociation(id ?? '')}
               placeholder="Search for the association by name" />

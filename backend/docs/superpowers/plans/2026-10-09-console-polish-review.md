@@ -374,6 +374,13 @@ Not decided, so not in scope: sentence-case sidebar group labels instead of uppe
 
 ## Plan C — flows
 
+**Outcome (2026-10-10), branch `console-polish-c`:**
+- **C1:** `createBrowserRouter`, plus `UnsavedGuard` on 12 forms. Each stands down during and after its own successful save. Full e2e clean: 162 passed, plus 3 sleep-interrupted that passed when re-run.
+- **C2:** `FormOutline` in the new-product page's right column, reading the sections the form renders. **The live summary was not built** (see the commit).
+- **C3:** Finance split into 5 groups, with one icon per destination (tested).
+- **C4:** 73 writing screens traced. **No gap**, so no receipt was added; see the appendix.
+- **C5:** `Today` page and landing. The 8 e2e sign-ins now wait for it.
+
 ### Task C1: Don't lose half-built work (I6) — gated on D7
 
 **Files:** `App.tsx`, `screens.tsx`, a new `lib/useUnsavedGuard.ts`, the long forms
@@ -441,3 +448,83 @@ Not to be offered again unless `DESIGN.md` changes:
 6. **Plan C**: C1's router move on its own commit with a full e2e run, then C2–C5.
 
 Full e2e after each plan, not after each task (milestone cadence); affected specs after each task.
+
+## Appendix C4 -- what each writing screen shows when it succeeds (2026-10-10)
+
+Method: 161 write functions in `src/api` (143 POST, 22 PUT, 3 DELETE, less 3 quote calls that only read), traced to the 73 screens that call them directly or through a store action (23 actions). Each screen was classified by pattern -- it navigates, it reloads or refreshes what it shows, it renders a `Receipt`, or it has a `role="status"` line. The pattern can be fooled (an initial load reads as a reload), so a tick below is a reason to believe, not proof. The 7 screens with no pattern were read by hand; every one reveals its outcome. **No receipt was added**: DESIGN.md keeps receipts for outcomes the screen does not otherwise show, and none was found.
+
+| Screen | Writes (first few) | Navigates | Reloads | Receipt | Status line | Checked by hand |
+|---|---|---|---|---|---|---|
+| `accounts/AccountPanel.tsx` | approveWithdrawal, proposeAdjustment, decide, loadMovements, approve |  | yes |  | yes |  |
+| `accounts/DepositSection.tsx` | payOutDeposit |  |  |  | yes |  |
+| `accounts/StatementSection.tsx` | fileStatement |  | yes |  | yes |  |
+| `billing/FieldReceiptsPage.tsx` | reconcileFieldReceipt | yes | yes |  |  |  |
+| `bonuses/BonusDeclarationsPanel.tsx` | approveDeclaration, withdrawDeclaration, approve |  | yes |  |  |  |
+| `claims/AccidentalDeathField.tsx` | recordAccidentalDeath |  | yes |  |  |  |
+| `claims/ClaimAssessmentPanel.tsx` | submitAssessment |  | yes |  |  |  |
+| `claims/ClaimDetailPage.tsx` | issueGroupScheme, approve |  | yes |  |  |  |
+| `claims/ClaimReopenPanel.tsx` | reopenClaim |  |  |  |  | store replaces the claim detail -- its status badge turns Reopened |
+| `claims/ClaimSettlementPanel.tsx` | decideSettlement, approve |  | yes | yes |  |  |
+| `claims/DocumentRequestsPanel.tsx` | requestClaimDocument, withdrawDocumentRequest |  | yes |  |  |  |
+| `claims/RegisterClaimPage.tsx` | registerClaim | yes | yes |  | yes |  |
+| `communications/TemplatesPage.tsx` | reword, save |  | yes |  |  |  |
+| `customer/CustomerClaimPage.tsx` | attachClaimEvidence |  | yes |  |  |  |
+| `customer/CustomerMessagesPage.tsx` | markMessageRead |  | yes |  |  |  |
+| `customer/CustomerPayPage.tsx` | requestPaymentForInvoice |  | yes |  | yes |  |
+| `customer/CustomerProductsPage.tsx` | applyForProduct, decide | yes | yes |  | yes |  |
+| `customer/CustomerReportClaimPage.tsx` | registerClaim, attachClaimEvidence | yes | yes |  |  |  |
+| `distribution/AgentDetailPage.tsx` | suspendAgent, updateAgentPlacement, reactivateAgent |  | yes |  |  |  |
+| `distribution/CommissionPlanPanel.tsx` | createCommissionPlan |  | yes |  |  |  |
+| `distribution/CommissionStatementsPanel.tsx` | requestPayout |  | yes | yes |  |  |
+| `distribution/OnboardAgentPage.tsx` | onboardAgent | yes |  |  |  |  |
+| `finaccounting/AccountForms.tsx` | createAccount, updateAccount, deleteAccount |  | yes |  |  |  |
+| `finaccounting/ChartOfAccountsPage.tsx` | setAccountStatus |  | yes |  |  |  |
+| `finance/EnginePage.tsx` | createExtract, upload |  | yes |  |  |  |
+| `finance/EngineRunPage.tsx` | approve, reject, explain, accept |  |  |  |  | store refreshes the run -- its status changes |
+| `finance/ExpenseAllocationPage.tsx` | decide, approve, reject |  |  |  | yes |  |
+| `finance/ExpenseAllocationSection.tsx` | prepare |  |  |  | yes |  |
+| `finance/ManualJournalDetailPage.tsx` | upload, reject, act, attach, detach | yes |  |  |  |  |
+| `finance/ManualJournalEditorPage.tsx` | save | yes | yes |  |  |  |
+| `finance/PeriodsPage.tsx` | actOnPeriod, requestReopen, act |  | yes |  |  |  |
+| `finance/PolicyRegisterPage.tsx` | approve, reject |  | yes |  |  |  |
+| `finance/WithholdingRulesPage.tsx` | approve |  | yes |  |  |  |
+| `finance/YearEndClosePage.tsx` | decide, approve, reject |  |  |  | yes |  |
+| `finance/YearEndPage.tsx` | prepare |  | yes |  |  |  |
+| `party/EditClientPage.tsx` | amendIndividual, amendCorporate | yes |  |  |  |  |
+| `party/OnboardCustomerPage.tsx` | registerIndividual, registerCorporate |  |  |  |  | a RegisteredResult replaces the form |
+| `party/PartyDetailPage.tsx` | uploadKycEvidence, submitKyc, decide |  | yes |  |  |  |
+| `party/PortalAccessPanel.tsx` | invitePortal, resendPortalInvite, revokePortal, act |  | yes |  | yes |  |
+| `payouts/PayoutPage.tsx` | approve |  |  |  |  | store folds the result into the payout -- its status changes |
+| `policies/CommissionPanel.tsx` | onboardAgent, setCommissionRate, changeSchemeAgentOfRecord |  | yes |  |  |  |
+| `policies/CoveredLivesPanel.tsx` | addCoveredLife, removeCoveredLife, promoteCoveredLife, takeOverFuneralPolicy, act |  | yes |  |  |  |
+| `policies/CreditLifeSchemePage.tsx` | uploadEnrolment, uploadExits, acceptEnrolment, withdrawEnrolment, acceptExits |  | yes |  |  |  |
+| `policies/FreeCoverLimitEditor.tsx` | amendFreeCoverLimit |  |  |  |  | the amended scheme replaces the shown one -- the rail redraws with the restated total |
+| `policies/GroupFuneralFamiliesPanel.tsx` | promoteCoveredLife, addGroupFuneralFamily, addGroupFuneralLife, removeGroupFuneralLife, groupFuneralMemberLeaves |  | yes |  | yes |  |
+| `policies/GroupSchemePage.tsx` | addSchemeMember |  | yes |  |  |  |
+| `policies/InvoicesPanel.tsx` | waiveInvoice, requestPaymentForInvoice |  | yes |  |  |  |
+| `policies/IssueCreditLifeSchemePage.tsx` | issueGroupScheme | yes | yes |  |  |  |
+| `policies/IssueGroupSchemePage.tsx` | openGroupCase | yes | yes |  |  |  |
+| `policies/IssuePolicyPage.tsx` | issuePolicy | yes | yes |  | yes |  |
+| `policies/LoansPanel.tsx` | originateLoan, recordLoanRepayment, issuePolicy |  | yes |  |  |  |
+| `policies/PolicyDetailPage.tsx` | suspendPolicy, resumePolicy, reinstatePolicy |  | yes |  | yes |  |
+| `policies/ProposeGroupFuneralPage.tsx` | readGroupSchedule, openGroupCase | yes | yes |  |  |  |
+| `policies/SubmissionsPanel.tsx` | act |  | yes |  |  |  |
+| `policies/ValueActions.tsx` | makePaidUp, requestSurrender, approveSurrender |  | yes | yes |  |  |
+| `products/AccountChargesPage.tsx` | createAccountCharge, withdrawAccountCharge, reinstateAccountCharge, setChargeSetting, save |  | yes |  |  |  |
+| `products/CreateProductPage.tsx` | createProduct | yes | yes |  |  |  |
+| `products/DraftPortfolioField.tsx` | changeProductPortfolio, save |  | yes |  |  |  |
+| `products/OnlineListingPanel.tsx` | describeOnline, save |  | yes |  |  |  |
+| `products/PublishVersionForm.tsx` | publishVersion |  | yes |  |  |  |
+| `products/RateDeclarationsPanel.tsx` | approveRate, withdrawRate, approve |  | yes |  |  |  |
+| `regreporting/RegulatoryReturnsPage.tsx` | generateReturn |  | yes |  |  |  |
+| `reinsurance/CreateTreatyPage.tsx` | createTreaty | yes |  |  |  |  |
+| `reinsurance/StatementPage.tsx` | reject, act, attach |  |  |  |  | store refreshes the statement -- its status changes |
+| `reinsurance/TreatyDetailPage.tsx` | prepare | yes | yes |  |  |  |
+| `underwriting/DecisionPanel.tsx` | decide |  |  |  | yes |  |
+| `underwriting/DisclosurePanel.tsx` | recordDisclosures, save |  | yes |  |  |  |
+| `underwriting/GroupFuneralProposalPanel.tsx` | replaceGroupSchedule |  |  |  |  | the upload outcome is shown, and the schedule reloads when accepted |
+| `underwriting/OpenUnderwritingCasePage.tsx` | openCase | yes | yes |  |  |  |
+| `underwriting/UnderwritingCaseDetailPage.tsx` | submitAssessment, recordSale, decide, referCase |  | yes |  |  |  |
+| `unitlinked/FundsPage.tsx` | createFund, closeFund, proposePrice, approvePrice, withdrawPrice |  | yes |  |  |  |
+| `unitlinked/PolicyUnitsPanel.tsx` | requestSurrender, approveSurrender, namePayee, loadPolicyU2 |  | yes |  | yes |  |
+| `unitlinked/U2Panels.tsx` | requestWithdrawal, approveWithdrawal, requestTopUp, requestSwitch, fileStatement |  | yes |  | yes |  |

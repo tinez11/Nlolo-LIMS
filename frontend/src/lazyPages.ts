@@ -1,5 +1,9 @@
 import { lazy } from 'react';
 
+export const TodayPage = lazy(() =>
+  import('@/features/home/TodayPage').then((m) => ({ default: m.TodayPage })),
+);
+
 /**
  * Every screen, loaded on first visit rather than in one 1.1 MB bundle at sign-in.
  *

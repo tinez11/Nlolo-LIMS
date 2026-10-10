@@ -26,6 +26,18 @@ import {
   UserPlus,
   Users,
   Wallet,
+  HeartHandshake,
+  Briefcase,
+  Milestone,
+  History,
+  BookOpen,
+  Files,
+  ListChecks,
+  CircleMinus,
+  Calculator,
+  Coins,
+  NotebookPen,
+  Inbox,
 } from 'lucide-react';
 import { AccountChargesPage } from '@/features/products/AccountChargesPage';
 import { CustomerApplicationsPage } from '@/features/customer/CustomerApplicationsPage';
@@ -107,6 +119,7 @@ import {
   ExpenseAllocationPage,
   YearEndPage,
   YearEndClosePage,
+  TodayPage,
 } from '@/lazyPages';
 
 /**
@@ -128,10 +141,15 @@ import {
  */
 
 type NavGroupId =
+  | 'work'
   | 'clients'
   | 'new-business'
   | 'policies-claims'
-  | 'finance'
+  | 'collections'
+  | 'paying-out'
+  | 'ledger'
+  | 'valuation'
+  | 'reinsurance-returns'
   | 'distribution'
   | 'records'
   | 'communications'
@@ -213,16 +231,22 @@ export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
     // exposure and documents all belong to a person -- and this screen is the way
     // into all of them. Filing the customer record under acquisition is what made
     // it a KYC queue rather than a register for as long as it was one.
+    // First, and ungated: what is waiting for this person, before any register (2026-10-09, C5).
+    { id: 'work', label: 'Your work' },
     { id: 'clients', label: 'Clients' },
     { id: 'new-business', label: 'New business' },
     { id: 'policies-claims', label: 'Policies & claims' },
-    {
-      id: 'finance',
-      label: 'Finance',
-      // Mirrors the backend expression on every finance endpoint:
-      // hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))
-      requires: canSeeFinance,
-    },
+    // Finance was ONE flat group of 21 destinations (2026-10-09, review C3). Split along the jobs
+    // the finance team actually does, in the order money moves: what comes in, what goes out, the
+    // books, valuation and the year-end, and what is ceded and filed. Every one carries the gate
+    // the single group did, which mirrors the backend expression on every finance endpoint:
+    // hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))
+    { id: 'collections', label: 'Collections', requires: canSeeFinance },
+    // "Paying out", not "Payouts": the group would otherwise share its name with an item in it.
+    { id: 'paying-out', label: 'Paying out', requires: canSeeFinance },
+    { id: 'ledger', label: 'Ledger', requires: canSeeFinance },
+    { id: 'valuation', label: 'Valuation & close', requires: canSeeFinance },
+    { id: 'reinsurance-returns', label: 'Reinsurance & returns', requires: canSeeFinance },
     { id: 'distribution', label: 'Distribution', requires: canSeeFinance },
     // UNGATED, to match its endpoint. `GET /audit-log` is `hasRole('REALM_STAFF')`
     // -- any staff member may read it -- so putting the journal in a
@@ -261,6 +285,10 @@ export const REALM_HOME: Record<Realm, string | null> = {
  */
 export function homeFor(realm: Realm, identity: ReturnType<typeof readIdentity>): string | null {
   if (realm !== 'staff') return REALM_HOME[realm];
+  // Anyone whose sidebar counts work lands on Today, which shows all of it in one place and opens
+  // each queue filtered (2026-10-09, C5). The per-role queues below are what it used to be, and
+  // stay as the answer for an identity with nothing to count.
+  if (navFor('staff', identity).some((group) => group.items.some((item) => item.badge))) return 'today';
   const roles = staffRoles(identity);
   if (roles.ADMIN) return 'policies';
   if (roles.UNDERWRITER) return 'underwriting';
@@ -271,6 +299,7 @@ export function homeFor(realm: Realm, identity: ReturnType<typeof readIdentity>)
 }
 
 const STAFF_SCREENS: Screen[] = [
+  { path: 'today', element: <TodayPage />, reach: { group: 'work', label: 'Today', icon: Inbox } },
   {
     path: 'policies',
     element: <PoliciesPage />,
@@ -309,7 +338,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'group-funeral-schemes/new',
     element: <ProposeGroupFuneralPage />,
-    reach: { group: 'new-business', label: 'Group funeral scheme', icon: Users },
+    reach: { group: 'new-business', label: 'Group funeral scheme', icon: HeartHandshake },
   },
   {
     path: 'credit-life-schemes/new',
@@ -350,7 +379,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'audit-log',
     element: <AuditLogPage />,
-    reach: { group: 'records', label: 'Event journal', icon: ScrollText },
+    reach: { group: 'records', label: 'Event journal', icon: History },
   },
 
   // Ungated beyond REALM_STAFF, matching both endpoints. Reading what the platform says to
@@ -461,7 +490,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'agents',
     element: <AgentsPage />,
-    reach: { group: 'distribution', label: 'Agents', icon: Users },
+    reach: { group: 'distribution', label: 'Agents', icon: Briefcase },
   },
   { path: 'agents/new', element: <OnboardAgentPage />, reach: 'drill-in' },
   { path: 'agents/:agentId', element: <AgentDetailPage />, reach: 'drill-in' },
@@ -474,7 +503,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'arrears',
     element: <ArrearsPage />,
-    reach: { group: 'finance', label: 'Arrears', icon: TrendingDown, badge: 'arrears-at-lapse' },
+    reach: { group: 'collections', label: 'Arrears', icon: TrendingDown, badge: 'arrears-at-lapse' },
   },
   // Beside Arrears, because it is the module's other work queue and the same audience clears
   // both. It earned its nav item the same way: there was a medium-severity Prometheus alert
@@ -483,7 +512,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'field-receipts',
     element: <FieldReceiptsPage />,
-    reach: { group: 'finance', label: 'Field receipts', icon: HandCoins, badge: 'receipts-overdue' },
+    reach: { group: 'collections', label: 'Field receipts', icon: HandCoins, badge: 'receipts-overdue' },
   },
   // The third work queue, and the only one where the platform is the one who owes. Arrears and
   // field receipts are both about money coming IN and the platform can chase either by itself;
@@ -494,7 +523,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'bank-transfers',
     element: <EftExecutionPage />,
-    reach: { group: 'finance', label: 'Bank transfers', icon: Banknote, badge: 'eft-awaiting' },
+    reach: { group: 'collections', label: 'Bank transfers', icon: Banknote, badge: 'eft-awaiting' },
   },
   // Money owed to LIVING policyholders (product step 2), as distinct from the claims queue, which
   // pays on death. Under finance for the same reason bank transfers are: reviewing and approving a
@@ -502,13 +531,13 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'payouts',
     element: <PayoutsQueuePage />,
-    reach: { group: 'finance', label: 'Payouts', icon: HandCoins },
+    reach: { group: 'paying-out', label: 'Payouts', icon: Coins },
   },
   { path: 'payouts/:instalmentId', element: <PayoutPage />, reach: 'drill-in' },
   {
     path: 'payment-runs',
     element: <PaymentRunsPage />,
-    reach: { group: 'finance', label: 'Payment runs', icon: Send },
+    reach: { group: 'paying-out', label: 'Payment runs', icon: ListChecks },
   },
   { path: 'payment-runs/:paymentRunId', element: <PaymentRunPage />, reach: 'drill-in' },
   // The unit-linked fund register (product step 6): funds, their two-person daily prices, the
@@ -516,59 +545,59 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'funds',
     element: <FundsPage />,
-    reach: { group: 'finance', label: 'Funds', icon: TrendingUp },
+    reach: { group: 'valuation', label: 'Funds', icon: TrendingUp },
   },
   // Tax withheld from payouts (product step 5): finance proposes a rule, a second person approves.
   {
     path: 'withholding-rules',
     element: <WithholdingRulesPage />,
-    reach: { group: 'finance', label: 'Withholding rules', icon: Percent },
+    reach: { group: 'paying-out', label: 'Withholding rules', icon: CircleMinus },
   },
   // A policy read, but finance's question: it is how the money leaving over the next quarter is
   // planned for, and the endpoint is FINANCE_OFFICER/ADMIN only to match.
   {
     path: 'maturities',
     element: <MaturitiesPage />,
-    reach: { group: 'finance', label: 'Maturities', icon: Landmark },
+    reach: { group: 'paying-out', label: 'Maturities', icon: Milestone },
   },
   {
     path: 'gl-postings',
     element: <GlPostingsPage />,
-    reach: { group: 'finance', label: 'GL postings', icon: BookText },
+    reach: { group: 'ledger', label: 'GL postings', icon: BookText },
   },
   { path: 'gl-postings/:journalEntryId', element: <GlPostingDetailPage />, reach: 'drill-in' },
   {
     path: 'chart-of-accounts',
     element: <ChartOfAccountsPage />,
-    reach: { group: 'finance', label: 'Chart of accounts', icon: Wallet },
+    reach: { group: 'ledger', label: 'Chart of accounts', icon: Wallet },
   },
   // IFRS 17 I1: closing and locking months, and the accounting policy register -- both two-person.
   {
     path: 'periods',
     element: <PeriodsPage />,
-    reach: { group: 'finance', label: 'Accounting periods', icon: CalendarCheck },
+    reach: { group: 'ledger', label: 'Accounting periods', icon: CalendarCheck },
   },
   {
     path: 'accounting-policies',
     element: <PolicyRegisterPage />,
-    reach: { group: 'finance', label: 'Accounting policies', icon: ScrollText },
+    reach: { group: 'ledger', label: 'Accounting policies', icon: BookOpen },
   },
   // IFRS 17 I3a: the rules every event posts by (read-only) and the events they could not post.
   {
     path: 'posting-rules',
     element: <PostingRulesPage />,
-    reach: { group: 'finance', label: 'Posting rules', icon: Route },
+    reach: { group: 'ledger', label: 'Posting rules', icon: Route },
   },
   {
     path: 'unposted-events',
     element: <UnpostedEventsPage />,
-    reach: { group: 'finance', label: 'Unposted events', icon: FileWarning },
+    reach: { group: 'ledger', label: 'Unposted events', icon: FileWarning },
   },
   // IFRS 17 I4: manual journals, prepared by one person and posted when a finance approver approves them.
   {
     path: 'manual-journals',
     element: <ManualJournalsPage />,
-    reach: { group: 'finance', label: 'Manual journals', icon: BookText },
+    reach: { group: 'ledger', label: 'Manual journals', icon: NotebookPen },
   },
   { path: 'manual-journals/new', element: <ManualJournalEditorPage />, reach: 'drill-in' },
   { path: 'manual-journals/:id', element: <ManualJournalDetailPage />, reach: 'drill-in' },
@@ -576,13 +605,13 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'journal-templates',
     element: <JournalTemplatesPage />,
-    reach: { group: 'finance', label: 'Journal templates', icon: ScrollText },
+    reach: { group: 'ledger', label: 'Journal templates', icon: Files },
   },
   // IFRS 17 I5a: month-end steps 6 and 7 -- the engine's extract, its results through 9160, the reconciliation.
   {
     path: 'ifrs17-engine',
     element: <EnginePage />,
-    reach: { group: 'finance', label: 'IFRS 17 engine', icon: Percent },
+    reach: { group: 'valuation', label: 'IFRS 17 engine', icon: Calculator },
   },
   { path: 'ifrs17-engine/runs/:runId', element: <EngineRunPage />, reach: 'drill-in' },
   // IFRS 17 I5b: P-19's expense allocation, decided by a second person.
@@ -591,13 +620,13 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'year-end',
     element: <YearEndPage />,
-    reach: { group: 'finance', label: 'Year-end close', icon: CalendarClock },
+    reach: { group: 'valuation', label: 'Year-end close', icon: CalendarClock },
   },
   { path: 'year-end/closes/:closeId', element: <YearEndClosePage />, reach: 'drill-in' },
   {
     path: 'treaties',
     element: <TreatiesPage />,
-    reach: { group: 'finance', label: 'Treaties', icon: Shield },
+    reach: { group: 'reinsurance-returns', label: 'Treaties', icon: Shield },
   },
   { path: 'treaties/new', element: <CreateTreatyPage />, reach: 'drill-in' },
   { path: 'treaties/:treatyId', element: <TreatyDetailPage />, reach: 'drill-in' },
@@ -607,12 +636,12 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'reinsurance-statements',
     element: <ReinsuranceStatementsPage />,
-    reach: { group: 'finance', label: 'Reinsurance statements', icon: Scale },
+    reach: { group: 'reinsurance-returns', label: 'Reinsurance statements', icon: Scale },
   },
   {
     path: 'regulatory-returns',
     element: <RegulatoryReturnsPage />,
-    reach: { group: 'finance', label: 'Regulatory returns', icon: Receipt },
+    reach: { group: 'reinsurance-returns', label: 'Regulatory returns', icon: Receipt },
   },
   { path: 'regulatory-returns/:returnId', element: <RegulatoryReturnDetailPage />, reach: 'drill-in' },
 ];

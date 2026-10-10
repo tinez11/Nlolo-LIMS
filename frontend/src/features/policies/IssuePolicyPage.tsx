@@ -47,6 +47,7 @@ import {
 import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { UnsavedGuard } from '@/components/UnsavedGuard';
 
 /**
  * `POST /policies/manual-issue` -- the staff exception path.
@@ -96,7 +97,7 @@ export function IssuePolicyPage() {
     watch,
     setValue,
     control,
-    formState: { errors },
+    formState: { errors, isDirty, isSubmitting },
   } = useForm<PolicyIssueFormInput, unknown, PolicyIssueFormValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(policyIssueFormSchema),
@@ -247,6 +248,7 @@ export function IssuePolicyPage() {
       />
 
       <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+        <UnsavedGuard when={isDirty && !isSubmitting} what="This policy" />
         {/*
           First, because everything below is a review of what it says.
 

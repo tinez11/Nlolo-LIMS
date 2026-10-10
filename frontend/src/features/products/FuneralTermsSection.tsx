@@ -51,7 +51,7 @@ export function FuneralTermsSection({
   const toIndividuals = soldAs !== 'GROUP';
 
   return (
-    <div className="space-y-3 rounded-md border border-border p-3">
+    <div data-outline="Funeral plans" className="space-y-3 rounded-md border border-border p-3">
       <div>
         <p className="text-xs font-medium text-muted-foreground">Funeral plan terms</p>
         <p className="mt-0.5 text-xs text-subtle-foreground">

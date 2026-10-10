@@ -39,6 +39,7 @@ import { getUnitLinkedTerms } from '@/api/unitlinked';
 import type { UnitLinkedTermsView } from '@/api/types';
 import { UnitLinkedChoiceFields } from './UnitLinkedChoiceFields';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { UnsavedGuard } from '@/components/UnsavedGuard';
 
 /**
  * `POST /underwriting/cases` -- the only entry point onto this domain that
@@ -77,7 +78,7 @@ export function OpenUnderwritingCasePage() {
     setValue,
     getValues,
     control,
-    formState: { errors },
+    formState: { errors, isDirty, isSubmitting },
   } = useForm<OpenCaseFormInput, unknown, OpenCaseFormValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(openCaseFormSchema),
@@ -216,6 +217,7 @@ export function OpenUnderwritingCasePage() {
       />
 
       <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+        <UnsavedGuard when={isDirty && !isSubmitting} what="This underwriting case" />
         {/* "Applicant" is who proposes; "life assured" is whose mortality is assessed.
             Labelled by what they mean rather than by the column name, which is the
             broader problem this console still has elsewhere. */}

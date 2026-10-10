@@ -19,6 +19,7 @@ import {
 import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { UnsavedGuard } from '@/components/UnsavedGuard';
 
 /**
  * `POST /treaties` -- staff FINANCE_OFFICER/ADMIN only. `treatyType` switches
@@ -47,7 +48,7 @@ export function CreateTreatyPage() {
     watch,
     reset,
     control,
-    formState: { errors },
+    formState: { errors, isDirty, isSubmitting },
   } = useForm<CreateTreatyFormValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(createTreatyFormSchema),
@@ -77,6 +78,7 @@ export function CreateTreatyPage() {
       />
 
       <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+        <UnsavedGuard when={isDirty && !isSubmitting} what="This treaty" />
         <FormField label="Reinsurer name" error={errors.reinsurerName?.message}>
           <Input
             placeholder="Africa Re"

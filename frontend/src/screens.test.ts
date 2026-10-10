@@ -80,8 +80,19 @@ describe('screen manifest', () => {
     expect(labels).toContain('New business');
     // Both gated groups, not just the one named Finance -- Distribution carries
     // the same predicate because onboarding an agent is a finance-role action.
-    expect(labels).not.toContain('Finance');
-    expect(labels).not.toContain('Distribution');
+    for (const gated of ['Collections', 'Paying out', 'Ledger', 'Valuation & close', 'Reinsurance & returns', 'Distribution']) {
+      expect(labels).not.toContain(gated);
+    }
+  });
+
+  // An icon that two destinations share cannot help anyone find either: Finance alone used
+  // Percent three times and ScrollText four (2026-10-09). The agent and customer realms are
+  // separate sidebars, so the rule holds per realm.
+  it('gives every destination in a realm its own icon', () => {
+    for (const realm of ['staff', 'agents', 'customers'] as const) {
+      const icons = navFor(realm, superuser).flatMap((g) => g.items.map((i) => i.icon));
+      expect(new Set(icons).size, realm).toBe(icons.length);
+    }
   });
 
   it('nav order follows the business flow, not screen order', () => {
@@ -92,10 +103,18 @@ describe('screen manifest', () => {
     // Clients leads: they are the entity everything else hangs off, and this screen
     // is the way into a person's policies, claims, KYC and documents.
     expect(navFor('staff', superuser).map((g) => g.label)).toEqual([
+      // What is waiting for you comes before any register.
+      'Your work',
       'Clients',
       'New business',
       'Policies & claims',
-      'Finance',
+      // Finance was one flat group of 21 (2026-10-09). Split along the jobs: money coming in,
+      // money going out, the books, valuation and the year-end, and what is ceded and filed.
+      'Collections',
+      'Paying out',
+      'Ledger',
+      'Valuation & close',
+      'Reinsurance & returns',
       'Distribution',
       'Records',
       // After Records and before Configuration: what the platform SAYS to customers is a record
@@ -200,18 +219,14 @@ const as = (...roles: string[]) =>
   ({ roles: ['REALM_STAFF', ...roles] }) as unknown as Parameters<typeof homeFor>[1];
 
 describe('homeFor', () => {
-  it('lands each staff role on its own queue', () => {
-    expect(homeFor('staff', as('UNDERWRITER'))).toBe('underwriting');
-    expect(homeFor('staff', as('UNDERWRITER', 'SENIOR_UNDERWRITER'))).toBe('underwriting');
-    expect(homeFor('staff', as('CLAIMS_ASSESSOR'))).toBe('claims?status=REGISTERED');
-    expect(homeFor('staff', as('CLAIMS_MANAGER'))).toBe('claims?status=SETTLEMENT_REQUESTED');
-    expect(homeFor('staff', as('FINANCE_OFFICER'))).toBe('arrears');
-  });
-
-  it('keeps an admin, and a role with no queue, on policies', () => {
-    // ADMIN holds every role, so no one queue is its job.
-    expect(homeFor('staff', as('ADMIN', 'UNDERWRITER', 'FINANCE_OFFICER'))).toBe('policies');
-    expect(homeFor('staff', as('CUSTOMER_SERVICE_REP'))).toBe('policies');
+  // Today shows every queue the person works, filtered, in one place (2026-10-09, C5), so it is
+  // where they land -- rather than on the first queue their role allows, with the rest of their
+  // work reduced to badges. Every staff identity counts at least the KYC queues, which sit in the
+  // ungated Clients group.
+  it('lands every staff role on Today', () => {
+    for (const roles of [['UNDERWRITER'], ['CLAIMS_ASSESSOR'], ['CLAIMS_MANAGER'], ['FINANCE_OFFICER'], ['ADMIN'], ['CUSTOMER_SERVICE_REP'], []]) {
+      expect(homeFor('staff', as(...roles)), roles.join('+') || 'no roles').toBe('today');
+    }
   });
 
   it('leaves other realms on their fixed home', () => {

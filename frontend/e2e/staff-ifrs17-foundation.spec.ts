@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { untouchedPeriod } from './periods';
 import { dmy, todayIso } from './dates';
 import { expectNavItemsHidden, expectRouteDenied } from './guards';
 
@@ -75,14 +76,13 @@ test.describe('IFRS 17 ledger controls', () => {
   });
 
   test('a period is closed and locked by finance, and reopened only by a second person', async ({ page, browser }) => {
-    const period = `${new Date().getFullYear() - 2}-01`;
-
     const financeContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance.json' });
     const financePage = await financeContext.newPage();
-    await financePage.goto('/staff/periods');
-    await expect(financePage.getByRole('heading', { name: 'Accounting periods' })).toBeVisible();
-    await financePage.getByLabel('Another period (YYYY-MM)').fill(period);
-    await financePage.getByRole('button', { name: 'Show', exact: true }).click();
+    // A month earlier than every month the ledger knows, as the engine and year-end specs take
+    // (2026-10-10). It was "two years ago, January": a month AFTER whatever an interrupted run of
+    // another spec left closing with postings in it, so its lock was refused ("Period 1982-12
+    // must be locked first") through no fault of the screen under test.
+    const period = await untouchedPeriod(financePage, '01');
 
     const row = financePage.getByRole('listitem', { name: `Period ${period}` });
     await expect(row).toBeVisible({ timeout: 15_000 });

@@ -361,3 +361,8 @@
   Reduced transparency needs nothing while the console has no translucent surface: the review
   proposed glass bars, and the proposal was declined (DESIGN.md, Considered and declined).
 */
+
+/* A section FormOutline jumps to lands below the sticky page bar, not behind it. */
+[data-outline] {
+  scroll-margin-top: calc(var(--pagebar-h, 0px) + 1rem);
+}
