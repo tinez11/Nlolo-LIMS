@@ -10,7 +10,7 @@ import { expect, type Page } from '@playwright/test';
  * carry that run's postings too -- and a month with an unlocked earlier month holding postings cannot lock. Each spec
  * locks its month at the end: a closing month with postings would stop every later month from locking.
  */
-export async function untouchedPeriod(page: Page, month: '11' | '12' = '11'): Promise<string> {
+export async function untouchedPeriod(page: Page, month: '01' | '11' | '12' = '11'): Promise<string> {
   await page.goto('/staff/periods');
   const list = page.getByRole('list', { name: 'Accounting periods' });
   await expect(list).toBeVisible({ timeout: 15_000 });
