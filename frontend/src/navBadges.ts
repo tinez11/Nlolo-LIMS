@@ -167,3 +167,60 @@ export function useNavBadges(
 
   return badges;
 }
+
+/**
+ * Where each count leads: the list it was counted from, already filtered to the waiting work, so
+ * the Today page opens the queue rather than the whole register (2026-10-09, review C5). The query
+ * names are the ones each list screen reads back from its URL.
+ */
+export const BADGE_TARGETS: Record<BadgeKey, string> = {
+  'kyc-pending-individuals': 'clients/individuals?kycStatus=PENDING',
+  'kyc-pending-organisations': 'clients/organisations?kycStatus=PENDING',
+  'underwriting-open': 'underwriting?status=OPEN',
+  'claims-unassessed': 'claims?status=REGISTERED',
+  'claims-settlement-pending': 'claims?status=SETTLEMENT_REQUESTED',
+  'arrears-at-lapse': `arrears?minDunningLevel=${LAPSE_RECOMMENDATION_LEVEL}`,
+  'receipts-overdue': 'field-receipts?status=RECONCILIATION_OVERDUE',
+  'eft-awaiting': 'bank-transfers',
+};
+
+export interface WorkWaiting {
+  key: BadgeKey;
+  count: number;
+  title: string;
+  to: string;
+}
+
+/**
+ * The same counts as the sidebar badges, in sidebar order, with a loading state the badges do not
+ * need: the Today page must tell "still counting" from "nothing waiting". A count that failed to
+ * load is left out rather than shown as zero -- zero would be a claim the platform did not make.
+ */
+export function useWorkWaiting(
+  realm: Realm,
+  identity: ReturnType<typeof readIdentity>,
+): { loading: boolean; rows: WorkWaiting[] } {
+  const [state, setState] = useState<{ loading: boolean; rows: WorkWaiting[] }>({ loading: true, rows: [] });
+
+  useEffect(() => {
+    let live = true;
+    const keys = declaredFor(realm, identity);
+    void Promise.all(
+      keys.map(async (key) => {
+        try {
+          const count = await LOADERS[key].load();
+          return { key, count, title: LOADERS[key].title(count), to: BADGE_TARGETS[key] };
+        } catch {
+          return null;
+        }
+      }),
+    ).then((rows) => {
+      if (live) setState({ loading: false, rows: rows.filter((row) => row !== null) });
+    });
+    return () => {
+      live = false;
+    };
+  }, [realm, identity]);
+
+  return state;
+}

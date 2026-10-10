@@ -37,6 +37,7 @@ import {
   Calculator,
   Coins,
   NotebookPen,
+  Inbox,
 } from 'lucide-react';
 import { AccountChargesPage } from '@/features/products/AccountChargesPage';
 import { CustomerApplicationsPage } from '@/features/customer/CustomerApplicationsPage';
@@ -118,6 +119,7 @@ import {
   ExpenseAllocationPage,
   YearEndPage,
   YearEndClosePage,
+  TodayPage,
 } from '@/lazyPages';
 
 /**
@@ -139,6 +141,7 @@ import {
  */
 
 type NavGroupId =
+  | 'work'
   | 'clients'
   | 'new-business'
   | 'policies-claims'
@@ -228,6 +231,8 @@ export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
     // exposure and documents all belong to a person -- and this screen is the way
     // into all of them. Filing the customer record under acquisition is what made
     // it a KYC queue rather than a register for as long as it was one.
+    // First, and ungated: what is waiting for this person, before any register (2026-10-09, C5).
+    { id: 'work', label: 'Your work' },
     { id: 'clients', label: 'Clients' },
     { id: 'new-business', label: 'New business' },
     { id: 'policies-claims', label: 'Policies & claims' },
@@ -280,6 +285,10 @@ export const REALM_HOME: Record<Realm, string | null> = {
  */
 export function homeFor(realm: Realm, identity: ReturnType<typeof readIdentity>): string | null {
   if (realm !== 'staff') return REALM_HOME[realm];
+  // Anyone whose sidebar counts work lands on Today, which shows all of it in one place and opens
+  // each queue filtered (2026-10-09, C5). The per-role queues below are what it used to be, and
+  // stay as the answer for an identity with nothing to count.
+  if (navFor('staff', identity).some((group) => group.items.some((item) => item.badge))) return 'today';
   const roles = staffRoles(identity);
   if (roles.ADMIN) return 'policies';
   if (roles.UNDERWRITER) return 'underwriting';
@@ -290,6 +299,7 @@ export function homeFor(realm: Realm, identity: ReturnType<typeof readIdentity>)
 }
 
 const STAFF_SCREENS: Screen[] = [
+  { path: 'today', element: <TodayPage />, reach: { group: 'work', label: 'Today', icon: Inbox } },
   {
     path: 'policies',
     element: <PoliciesPage />,

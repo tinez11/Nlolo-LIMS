@@ -17,7 +17,7 @@ export async function approverPage(browser: Browser): Promise<{ page: Page; cont
   // the console and skips the sign-in. Wait for what actually renders -- the login form or the finance landing page
   // (the heading auth-finance-approver.setup.ts checks) -- and sign in when it is the form.
   const login = page.locator('#username');
-  const landing = page.getByRole('heading', { name: 'Arrears', exact: true });
+  const landing = page.getByRole('heading', { name: 'Today', exact: true });
   await expect(login.or(landing)).toBeVisible({ timeout: 30_000 });
   if (await login.isVisible()) {
     await login.fill('staff.finance-approver');

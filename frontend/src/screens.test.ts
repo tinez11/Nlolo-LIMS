@@ -103,6 +103,8 @@ describe('screen manifest', () => {
     // Clients leads: they are the entity everything else hangs off, and this screen
     // is the way into a person's policies, claims, KYC and documents.
     expect(navFor('staff', superuser).map((g) => g.label)).toEqual([
+      // What is waiting for you comes before any register.
+      'Your work',
       'Clients',
       'New business',
       'Policies & claims',
@@ -217,18 +219,14 @@ const as = (...roles: string[]) =>
   ({ roles: ['REALM_STAFF', ...roles] }) as unknown as Parameters<typeof homeFor>[1];
 
 describe('homeFor', () => {
-  it('lands each staff role on its own queue', () => {
-    expect(homeFor('staff', as('UNDERWRITER'))).toBe('underwriting');
-    expect(homeFor('staff', as('UNDERWRITER', 'SENIOR_UNDERWRITER'))).toBe('underwriting');
-    expect(homeFor('staff', as('CLAIMS_ASSESSOR'))).toBe('claims?status=REGISTERED');
-    expect(homeFor('staff', as('CLAIMS_MANAGER'))).toBe('claims?status=SETTLEMENT_REQUESTED');
-    expect(homeFor('staff', as('FINANCE_OFFICER'))).toBe('arrears');
-  });
-
-  it('keeps an admin, and a role with no queue, on policies', () => {
-    // ADMIN holds every role, so no one queue is its job.
-    expect(homeFor('staff', as('ADMIN', 'UNDERWRITER', 'FINANCE_OFFICER'))).toBe('policies');
-    expect(homeFor('staff', as('CUSTOMER_SERVICE_REP'))).toBe('policies');
+  // Today shows every queue the person works, filtered, in one place (2026-10-09, C5), so it is
+  // where they land -- rather than on the first queue their role allows, with the rest of their
+  // work reduced to badges. Every staff identity counts at least the KYC queues, which sit in the
+  // ungated Clients group.
+  it('lands every staff role on Today', () => {
+    for (const roles of [['UNDERWRITER'], ['CLAIMS_ASSESSOR'], ['CLAIMS_MANAGER'], ['FINANCE_OFFICER'], ['ADMIN'], ['CUSTOMER_SERVICE_REP'], []]) {
+      expect(homeFor('staff', as(...roles)), roles.join('+') || 'no roles').toBe('today');
+    }
   });
 
   it('leaves other realms on their fixed home', () => {
