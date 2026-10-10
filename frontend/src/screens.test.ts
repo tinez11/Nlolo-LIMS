@@ -80,8 +80,19 @@ describe('screen manifest', () => {
     expect(labels).toContain('New business');
     // Both gated groups, not just the one named Finance -- Distribution carries
     // the same predicate because onboarding an agent is a finance-role action.
-    expect(labels).not.toContain('Finance');
-    expect(labels).not.toContain('Distribution');
+    for (const gated of ['Collections', 'Paying out', 'Ledger', 'Valuation & close', 'Reinsurance & returns', 'Distribution']) {
+      expect(labels).not.toContain(gated);
+    }
+  });
+
+  // An icon that two destinations share cannot help anyone find either: Finance alone used
+  // Percent three times and ScrollText four (2026-10-09). The agent and customer realms are
+  // separate sidebars, so the rule holds per realm.
+  it('gives every destination in a realm its own icon', () => {
+    for (const realm of ['staff', 'agents', 'customers'] as const) {
+      const icons = navFor(realm, superuser).flatMap((g) => g.items.map((i) => i.icon));
+      expect(new Set(icons).size, realm).toBe(icons.length);
+    }
   });
 
   it('nav order follows the business flow, not screen order', () => {
@@ -95,7 +106,13 @@ describe('screen manifest', () => {
       'Clients',
       'New business',
       'Policies & claims',
-      'Finance',
+      // Finance was one flat group of 21 (2026-10-09). Split along the jobs: money coming in,
+      // money going out, the books, valuation and the year-end, and what is ceded and filed.
+      'Collections',
+      'Paying out',
+      'Ledger',
+      'Valuation & close',
+      'Reinsurance & returns',
       'Distribution',
       'Records',
       // After Records and before Configuration: what the platform SAYS to customers is a record

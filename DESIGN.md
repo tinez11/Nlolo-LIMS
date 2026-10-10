@@ -488,8 +488,12 @@ group caption. It is never used for a button, a badge, a status, or emphasis.
 against a scrolling main column. The sidebar holds a wordmark block, the
 role-gated nav groups, and a user block pinned to the bottom by a top rule. Nav
 groups are ordered along the business flow — Clients, New business, Policies &
-claims, Finance, Distribution, Records, Configuration — with configuration last
-because authoring a product is rare set-up rather than daily work.
+claims, then the finance work in the order money moves (Collections, Paying out,
+Ledger, Valuation & close, Reinsurance & returns — one flat "Finance" of 21 items
+until 2026-10-09), Distribution, Records, Communications, Configuration — with
+configuration last because authoring a product is rare set-up rather than daily
+work. Every destination in a realm has its own icon (tested): an icon two items
+share helps nobody find either.
 
 **The shell owns the viewport, and the page never scrolls.** The shell is
 `fixed inset-0`, and `main` is the one vertical scroller. This is a rule, not an
