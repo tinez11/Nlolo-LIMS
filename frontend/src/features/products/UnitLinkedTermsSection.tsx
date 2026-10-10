@@ -42,7 +42,7 @@ export function UnitLinkedTermsSection({
   const mortality = parseMortality(mortalityText);
 
   return (
-    <div className="space-y-3 rounded-md border border-border p-3">
+    <div data-outline="Unit-linked terms" className="space-y-3 rounded-md border border-border p-3">
       <div>
         <p className="text-xs font-medium text-muted-foreground">Unit-linked terms</p>
         <p className="mt-0.5 text-xs text-subtle-foreground">

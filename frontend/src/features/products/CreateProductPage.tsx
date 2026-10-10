@@ -22,6 +22,7 @@ import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { PORTFOLIO_CODES, PORTFOLIO_LABEL, portfolioDefaultFor } from '@/lib/ifrs17';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { FormOutline } from '@/components/FormOutline';
 import { UnsavedGuard } from '@/components/UnsavedGuard';
 
 /**
@@ -78,7 +79,11 @@ export function CreateProductPage() {
         description="Two steps: define the product, then publish a version — a product with no version is invisible everywhere else in this console."
       />
 
-      <div className="max-w-xl space-y-5 px-6 pb-8">
+      {/* Two columns from lg (2026-10-09, review C2): the form kept to a readable width, and the
+          space it left empty -- half the screen at 1280 -- holds a map of the version form once
+          step 2 is open, so its seventh section is a jump rather than a long scroll. */}
+      <div className="grid gap-8 px-6 pb-8 lg:grid-cols-[minmax(0,40rem)_13rem]">
+      <div className="min-w-0 space-y-5">
         <Step number={1} title="Product definition" done={created !== null}>
           {created === null ? (
             <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
@@ -176,6 +181,14 @@ export function CreateProductPage() {
             />
           )}
         </Step>
+      </div>
+      {created?.productId && (
+        <aside className="hidden lg:block">
+          <div className="sticky top-[calc(var(--pagebar-h,0px)+1.25rem)]">
+            <FormOutline containerId="publish-version-form" label="Version form sections" />
+          </div>
+        </aside>
+      )}
       </div>
       </>)}
     </>

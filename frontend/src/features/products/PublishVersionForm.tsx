@@ -247,7 +247,7 @@ export function PublishVersionForm({
   }
 
   return (
-    <form className="space-y-4" onSubmit={(e) => void handleSubmit((v) => setPending(v))(e)}>
+    <form id="publish-version-form" className="space-y-4" onSubmit={(e) => void handleSubmit((v) => setPending(v))(e)}>
       {/* Submitting only stages the confirmation; the publish, and the jump to the product
           after it, come later -- so the guard stands down while that publish runs or once it
           has succeeded, not while handleSubmit does. */}
@@ -255,7 +255,7 @@ export function PublishVersionForm({
         when={isDirty && publishing.status !== 'loading' && publishing.status !== 'success'}
         what="The product version you were building"
       />
-      <div className="grid grid-cols-2 gap-3">
+      <div data-outline="Basics" className="grid grid-cols-2 gap-3">
         {/* IFRS 17 I2: what the actuary signs off. The model is the accounting policy register's; an override
             counts only where the register allows it for the product's portfolio. */}
         <FormField label="Expected profitability">
@@ -316,7 +316,7 @@ export function PublishVersionForm({
           design. The caption names which bounds refuse business and which only flag it,
           because that is the difference between a bound set casually and one thought
           about. */}
-      <div className="rounded-md border border-border p-3">
+      <div data-outline="Eligibility" className="rounded-md border border-border p-3">
         <p className="text-xs font-medium text-muted-foreground">Eligibility (optional)</p>
         <p className="mt-0.5 mb-2.5 text-xs text-subtle-foreground">
           Age and term are refused at issue — an age outside the rate table cannot be
@@ -415,7 +415,7 @@ export function PublishVersionForm({
 
       {/* A FUNERAL version is priced by its premium table alone (plan R1): no rating table, no base rates. */}
       {category !== 'FUNERAL' && category !== 'UNIT_LINKED' && (
-      <div className="rounded-md border border-border p-3">
+      <div data-outline="Rating table" className="rounded-md border border-border p-3">
         {/*
           Which factors are required flips with the base rate panel below, so this line
           cannot state one rule. Unpriced, age is rated by multiplier and AGE is required;
@@ -652,7 +652,7 @@ export function PublishVersionForm({
         describing a dead end.
       */}
       {category !== 'FUNERAL' && category !== 'UNIT_LINKED' && (
-      <div className="rounded-md border border-border p-3">
+      <div data-outline="Base rates" className="rounded-md border border-border p-3">
         <p className="text-xs font-medium text-muted-foreground">Base rates (optional)</p>
         <p className="mt-0.5 mb-2.5 text-xs text-subtle-foreground">
           The annual rate per 1,000 of sum assured, by age band, sex and smoker status, and
@@ -812,7 +812,7 @@ export function PublishVersionForm({
       </div>
       )}
 
-      <div className="rounded-md border border-border p-3">
+      <div data-outline="Benefit schedule" className="rounded-md border border-border p-3">
         {/* Not optional any more, and the label has to say so before the submit does: a
             version that covers nothing is refused, and what is authored here is what a
             claim is later valued at. */}
@@ -936,7 +936,7 @@ export function PublishVersionForm({
         of a declared rate and this version's guarantee. Only on the three savings categories.
       */}
       {(ACCOUNT_CATEGORIES.includes(category) || deferredAnnuity) && (
-        <div className="rounded-md border border-border p-3">
+        <div data-outline={deferredAnnuity ? 'Account before vesting' : 'Policy value'} className="rounded-md border border-border p-3">
           <p className="text-xs font-medium text-muted-foreground">
             {deferredAnnuity ? 'The account it saves in before it vests' : "How the policy's value is defined"}
           </p>
@@ -1126,7 +1126,7 @@ export function PublishVersionForm({
       )}
 
       {WITH_PROFITS_CATEGORIES.includes(category) && valueBasis === 'SCALE' && (
-        <div className="rounded-md border border-border p-3">
+        <div data-outline="With profits" className="rounded-md border border-border p-3">
           <p className="text-xs font-medium text-muted-foreground">With profits (optional)</p>
           <div className="mt-2">
             <CheckboxField label="With-profits version" {...register('withProfits')} />
@@ -1209,7 +1209,7 @@ export function PublishVersionForm({
       )}
 
       {CASH_VALUE_CATEGORIES.includes(category) && valueBasis === 'SCALE' && (
-        <div className="rounded-md border border-border p-3">
+        <div data-outline="Cash value" className="rounded-md border border-border p-3">
           <p className="text-xs font-medium text-muted-foreground">Cash value (optional)</p>
           <p className="mt-0.5 mb-2.5 text-xs text-subtle-foreground">
             The surrender value per 1,000 of sum assured at each policy year, from the table the
@@ -1328,7 +1328,7 @@ export function PublishVersionForm({
         would be refused for.
       */}
       {(FREE_LOOK_CATEGORIES.includes(category) || SCHEDULED_CATEGORIES.includes(category)) && (
-        <div className="rounded-md border border-border p-3">
+        <div data-outline="Payouts and free-look" className="rounded-md border border-border p-3">
           <p className="text-xs font-medium text-muted-foreground">Payouts and free-look</p>
           <p className="mt-0.5 mb-2.5 text-xs text-subtle-foreground">
             {SCHEDULED_CATEGORIES.includes(category)
