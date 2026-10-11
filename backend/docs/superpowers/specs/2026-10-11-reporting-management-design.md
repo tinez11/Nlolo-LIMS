@@ -1,7 +1,10 @@
 # Reporting module, batch 1: Management reports
 
 Date: 2026-10-11
-Status: design approved in conversation, awaiting written-spec review
+Status: implemented (batch 1) on feature/reporting-management, last commit 97d50d6d. 117 backend tests
+across the reporting and neighbouring classes and the reports e2e spec pass; dev read model rebuilt with
+0 failures. Deviations from this spec, all found while building: the clock is a ReportingClock component
+(a second Clock bean breaks Spring Modulith's Moments); audit/api gained @NamedInterface("api").
 
 ## 1. Goal
 
