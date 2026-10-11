@@ -17,7 +17,8 @@ date filters, the category catalogue, export, and rebuild.
 Batch 1 reports:
 
 1. Policies in force
-2. Lapse rate / persistency
+2. Lapse rate (catalogue key `lapse-rate`) and persistency (`persistency`) -- two catalogue
+   entries, because they take different date filters
 3. New business trend
 4. Premium collections summary
 5. Clients (individual, corporate, group)
@@ -32,25 +33,36 @@ detail events do not carry.
 
 ```java
 @org.springframework.modulith.ApplicationModule(
-    allowedDependencies = { "audit::api", "party::api", "refdata::api" })
+    allowedDependencies = { "audit::api", "party::api", "product::api", "distribution::api" })
 package tz.co.nlolo.lifeplatform.reporting;
 ```
 
 - `audit::api` -- `AuditApi.listEvents(prefix, range, pageable)`, the domain-event journal, for
   rebuild.
-- `party::api` -- `PartyApi` detail (date of birth, sex) for the clients report.
-- `refdata::api` -- product display names and currencies.
+- `party::api` -- `PartyApi.getPartyDetail` (type, KYC, date of birth, sex, registration time)
+  for the clients report, and display names for scheme holders and agents.
+- `product::api` -- `ProductApi.getProduct(productId).productName()` for row labels.
+- `distribution::api` -- `DistributionApi.getAgent(agentId).partyId()`, to name an agent.
+
+(Corrected 2026-10-11 while planning: refdata holds no product names, so it is not a
+dependency.) Labels are resolved when a report runs, cached for that one request, so a
+renamed product shows its current name.
 
 ## 3. Module shape
 
 ```
 reporting/
 ├── api/             ReportingApi, report views, ReportCategory, DateFilterKind
-├── domain/          ReportPolicy, ReportPolicyStatusChange, ReportCollection,
-│                    ReportClient, ReportSchemeMember, AppliedEvent; report definitions
-├── application/     event handlers per source module, RebuildJob, the five report queries
-└── infrastructure/  repositories, ReportController, xlsx/csv/pdf writers
+├── domain/          pure logic: PayloadReader, CivilDates, PolicyStatus, AnnualisedPremium,
+│                    StatusTimeline, age bands
+├── application/     event handlers, live listener, RebuildService, the report queries
+└── infrastructure/  ProjectionStore and query SQL (JdbcTemplate), ReportController,
+                     xlsx/csv/pdf writers
 ```
+
+Storage is JdbcTemplate, not JPA: every write is an idempotent `INSERT ... ON CONFLICT`, and
+every report is an aggregate query, neither of which an entity model helps with. A
+module-local test asserts no SQL string in `reporting` names another module's schema.
 
 `api/` is the module's public Java interface, as everywhere on this platform. REST
 controllers live in `infrastructure/`.
@@ -91,24 +103,28 @@ live data, or rebuilding twice, never double-counts.
 
 | Event | Effect |
 |---|---|
-| `policy.PolicyIssued` | Upsert `report_policy` (status `ISSUED`): product, version, holder, agent, sum assured, premium, frequency, issue date, `salesChannel`, `branchCode`, `portfolioCode` |
-| `policy.PolicyActivated` | Set status `ACTIVE`, activation date, `productCategory`, `groupScheme`, `livesCovered`; fill any field `PolicyIssued` did not supply |
-| `policy.PolicyNotTakenUp` | Status `NOT_TAKEN_UP` |
+| `policy.PolicyIssued` | Upsert `report_policy`: product, version, holder, agent, sum assured, premium, frequency, issue date, `salesChannel`, `branchCode`, `portfolioCode` |
+| `policy.PolicyActivated` | Set `activated_on`, `productCategory`, `groupScheme`; fill any field `PolicyIssued` did not supply; status change `ACTIVE`; lives row (`livesCovered`) |
+| `policy.PolicyNotTakenUp` | Set `not_taken_up_on` (never in force, so no status change) |
 | `policy.PolicySuspended` / `policy.PolicyResumed` | Status `SUSPENDED` / back to `ACTIVE` (suspended still counts as in force, section 5) |
 | `policy.PolicyLapsed` | Status `LAPSED` |
 | `policy.PolicyReinstated` | Status `ACTIVE` |
 | `policy.PolicyMadePaidUp` | Status `PAID_UP` (in force) |
 | `policy.PolicyMatured` | Status `MATURED` |
 | `policy.PolicyExpired` | Status `EXPIRED` |
-| `policy.PolicySurrendered` | Status `CLAIM_TERMINATED` when `claimId` present, else `ENDED` (credit-life scheme whose last borrower left) |
-| `policy.SurrenderPaid` | Status `SURRENDERED` (policyholder surrender; no timestamp on payload, uses envelope `occurredAt`) |
+| `policy.PolicySurrendered` | `CLAIM_TERMINATED` when `claimId` is present; otherwise `ENDED` for a group scheme (a credit-life scheme whose last borrower left) and `SURRENDERED` for an individual policy (published when a policyholder surrender is APPROVED -- cover stops then) |
+| `policy.SurrenderPaid` | Not consumed: it reports the money for a surrender already recorded at approval, and changes no status (corrected 2026-10-11 while planning, from `PolicyApiImpl.approveSurrender`) |
 | `policy.PolicyCancelledFreeLook` | Status `CANCELLED_FREE_LOOK` |
 | `policy.AnnuityEnded` | Status `ENDED` |
-| `policy.GroupMemberAdded` / `policy.GroupMemberExited` | Insert / close `report_scheme_member` |
+| `policy.GroupMemberAdded` / `policy.GroupMemberExited` / `policy.CoveredLifeAdded` / `policy.CoveredLifeEnded` | Lives row: `livesCovered` after the change, `schemeTotalCovered` where present, kind `JOINED` / `EXITED` |
 | `billing.PremiumCollected` | Insert `report_collection` |
 | `party.PartyRegistered` | Insert `report_client`, enriched from `PartyApi` |
 | `party.PartyKycStatusChanged` | Update KYC status |
 | `party.PartyDetailsAmended` | Re-read detail from `PartyApi` (the payload carries no changed values) |
+
+`GroupMemberAdded` carries no member id (verified in `PolicyApiImpl`), so members cannot be
+tracked one by one. Every member and covered-life event does carry `livesCovered` -- the
+lives on the policy AFTER the change -- so a scheme's membership is a series of counts.
 
 Every status-changing event also appends a `report_policy_status_change` row. Event names
 and payload fields were verified against the producers in `PolicyApiImpl` and
@@ -128,12 +144,17 @@ query-time filter.
 
 | Table | One row per | Key columns |
 |---|---|---|
-| `report_policy` | policy | tenant_id, policy_number (PK with tenant), holder_party_id, product_id, product_version_id, product_category, portfolio_code, group_scheme, lives_covered, agent_id, sales_channel, branch_code, sum_assured, premium, premium_frequency, currency, issue_date, activated_on, status, status_since, version |
-| `report_policy_status_change` | status change | tenant_id, policy_number, from_status, to_status, effective_on, event_id |
-| `report_collection` | premium collected | tenant_id, event_id (PK), invoice_id, policy_number, amount, currency, collected_on, channel |
-| `report_client` | party | tenant_id, party_id, party_type, kyc_status, registered_on, date_of_birth, sex, version |
-| `report_scheme_member` | scheme member | tenant_id, policy_number, policy_member_id, member_party_id (null for a freeform borrower), joined_on, left_on, exit_reason |
+| `report_policy` | policy | tenant_id, policy_number (PK with tenant), holder_party_id, product_id, product_version_id, product_category, portfolio_code, group_scheme, agent_id, sales_channel, branch_code, sum_assured, premium, premium_frequency, currency, issue_date, activated_on, not_taken_up_on |
+| `report_policy_status_change` | status change | tenant_id, event_id (PK with tenant), policy_number, to_status, cause (event type), effective_on, occurred_at |
+| `report_collection` | premium collected | tenant_id, event_id (PK with tenant), invoice_id, policy_number, amount, currency, collected_on, channel |
+| `report_client` | party | tenant_id, party_id (PK with tenant), party_type, kyc_status, display_name, registered_on, date_of_birth, sex |
+| `report_lives_change` | member/covered-life change | tenant_id, event_id (PK with tenant), policy_number, kind (ACTIVATED, JOINED, EXITED), lives_covered, scheme_total_covered, effective_on, occurred_at |
 | `applied_event` | applied event | tenant_id, event_id |
+
+There is no "current status" column. Status is always derived from the history, so the
+order events arrive in (live, or replayed with equal timestamps) cannot leave a stale
+status behind. The latest change on or before a date wins, ordered by `effective_on`,
+then `occurred_at`, then `event_id`.
 
 Migrations in `backend/db-migrations/reporting/`, with RLS using the
 `NULLIF(current_setting(...), '')` predicate form, grants matching `regreporting`, and
@@ -158,7 +179,12 @@ Common filters on every report: product, product category, agent, sales channel,
 client type. Each returns JSON rows and exports the same rows.
 
 Date filter kinds: **AS_OF** (snapshot on one date), **PERIOD** (from-to, inclusive),
-**COHORT** (activation months, followed forward).
+**COHORT** (activation months, followed forward), **AS_OF_AND_PERIOD** (clients).
+
+Every report returns one shape, `ReportResult`: key, title, a one-line filter summary, and
+one or more sections, each with typed columns (TEXT, COUNT, MONEY, PERCENT, DATE) and rows
+whose values are all strings -- money and counts never travel as JSON numbers, the
+platform rule. The screen and all three export formats render this one shape.
 
 ### 6.1 Policies in force -- AS_OF
 
@@ -204,8 +230,10 @@ policies by amount. Billed-vs-collected is the Finance batch.
    `occurred_at` order, oldest first, calling the section 4 handlers.
 3. Live listeners keep running throughout; idempotency (4.3) absorbs any overlap.
 
-`GET /reports/rebuild/status` returns state (`IDLE`, `RUNNING`, `DONE`, `FAILED`), events
-replayed, events failed, start and end time.
+`GET /reports/rebuild/status` returns state (`IDLE`, `RUNNING`, `DONE`, `DONE_WITH_FAILURES`,
+`FAILED`), events replayed, events failed, start and end time. The console's Reports page
+offers ADMINs a **Rebuild reporting data** button with a status check, because the read model
+starts empty on first deploy.
 
 The journal starts in August 2026 (oldest audit partition). An event the audit listener
 failed to store sits in `audit.failed_event` and cannot be replayed by this job; the
