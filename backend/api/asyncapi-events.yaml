@@ -11,6 +11,11 @@ info:
     module publishes to this channel"; consumers are documented in each channel's
     description rather than modeled as separate subscriber applications, since this
     is a shared-bus catalog, not one service's contract.
+
+
+    Reconciled against the producers on 2026-10-11: every event type the code publishes
+    has a channel here, and a channel marked `x-published: false` is catalogued but has no
+    producer (a deferred feature, or a name the code never adopted).
 defaultContentType: application/json
 channels:
 
@@ -23,11 +28,13 @@ channels:
     publish:
       message: { $ref: '#/components/messages/PartyKycStatusChanged' }
   party.PartyDetailsUpdated:
+    x-published: false  # catalogued but no producer publishes it (verified 2026-10-11)
     description: "Producer: party. Consumers: communication, audit."
     publish:
       message: { $ref: '#/components/messages/PartyDetailsUpdated' }
 
   product.ProductDefinitionPublished:
+    x-published: false  # catalogued but no producer publishes it (verified 2026-10-11)
     description: >-
       Producer: product. Consumers: finaccounting, audit. CORRECTION (M10 final review, I5): this
       previously also listed regreporting as a consumer; that was never true and no such listener
@@ -39,6 +46,7 @@ channels:
     publish:
       message: { $ref: '#/components/messages/ProductDefinitionPublished' }
   product.ProductVersionRetired:
+    x-published: false  # catalogued but no producer publishes it (verified 2026-10-11)
     description: >-
       Producer: product. Consumers: audit. CORRECTION (M10 final review, I5): this previously also
       listed regreporting as a consumer; that was never true and no such listener exists (same
@@ -49,6 +57,7 @@ channels:
       message: { $ref: '#/components/messages/ProductVersionRetired' }
 
   underwriting.UnderwritingCaseOpened:
+    x-published: false  # catalogued but no producer publishes it (verified 2026-10-11)
     description: >-
       Producer: underwriting. Consumers: audit. CORRECTION (M10 final review, I5): this previously
       also listed regreporting as a consumer; that was never true and no such listener exists
@@ -242,10 +251,12 @@ channels:
     publish:
       message: { $ref: '#/components/messages/SurrenderValueCalculated' }
   policy.PolicySurrenderInitiated:
+    x-published: false  # catalogued but no producer publishes it (verified 2026-10-11)
     description: "Producer: policy. Consumer: policyloan (loan-netting choreography start, Deliverable 3 Rev 2 §12)."
     publish:
       message: { $ref: '#/components/messages/PolicySurrenderInitiated' }
   policy.PolicyMaturityInitiated:
+    x-published: false  # catalogued but no producer publishes it (verified 2026-10-11)
     description: "Producer: policy. Consumer: policyloan (same choreography, maturity path)."
     publish:
       message: { $ref: '#/components/messages/PolicyMaturityInitiated' }
@@ -425,6 +436,7 @@ channels:
     publish:
       message: { $ref: '#/components/messages/AccountSurrenderApproved' }
   policy.MaturityPayoutRequested:
+    x-published: false  # catalogued but no producer publishes it (verified 2026-10-11)
     description: "Producer: policy. Consumer: payment (request/confirm pattern)."
     publish:
       message: { $ref: '#/components/messages/MaturityPayoutRequested' }
@@ -450,6 +462,7 @@ channels:
     publish:
       message: { $ref: '#/components/messages/LoanForcedLapseTriggered' }
   policyloan.LoanSettledForPayout:
+    x-published: false  # catalogued but no producer publishes it (verified 2026-10-11)
     description: "Producer: policyloan. Consumer: policy (loan-netting choreography, settlement leg)."
     publish:
       message: { $ref: '#/components/messages/LoanSettledForPayout' }
@@ -479,10 +492,12 @@ channels:
     publish:
       message: { $ref: '#/components/messages/PremiumOverdue' }
   billing.GracePeriodTriggered:
+    x-published: false  # catalogued but no producer publishes it (verified 2026-10-11)
     description: "Producer: billing. Consumers: communication, audit."
     publish:
       message: { $ref: '#/components/messages/GracePeriodTriggered' }
   billing.GracePeriodExpiring:
+    x-published: false  # catalogued but no producer publishes it (verified 2026-10-11)
     description: "Producer: billing. Consumers: communication, audit."
     publish:
       message: { $ref: '#/components/messages/GracePeriodExpiring' }
@@ -564,6 +579,7 @@ channels:
     publish:
       message: { $ref: '#/components/messages/AgentOnboarded' }
   distribution.AgentLicenseExpiring:
+    x-published: false  # catalogued but no producer publishes it (verified 2026-10-11)
     description: "Producer: distribution. Consumers: communication, audit."
     publish:
       message: { $ref: '#/components/messages/AgentLicenseExpiring' }
@@ -672,6 +688,7 @@ channels:
     publish:
       message: { $ref: '#/components/messages/GlPostingRecorded' }
   finaccounting.CsmRolledForward:
+    x-published: false  # catalogued but no producer publishes it (verified 2026-10-11)
     description: >-
       Producer: finaccounting. Consumer: audit. Schema provisional pending C1. CORRECTION (M10 final
       review, I5): this previously also listed regreporting as a consumer; that was never true and no
@@ -685,10 +702,12 @@ channels:
       message: { $ref: '#/components/messages/CsmRolledForward' }
 
   communication.NotificationDispatched:
+    x-published: false  # catalogued but no producer publishes it (verified 2026-10-11)
     description: "Producer: communication. Consumer: audit."
     publish:
       message: { $ref: '#/components/messages/NotificationDispatched' }
   communication.NotificationFailed:
+    x-published: false  # catalogued but no producer publishes it (verified 2026-10-11)
     description: "Producer: communication. Consumer: audit."
     publish:
       message: { $ref: '#/components/messages/NotificationFailed' }
@@ -840,6 +859,106 @@ channels:
     publish:
       message: { $ref: '#/components/messages/UnitLinkedEvent' }
 
+  # ---- Published but previously undocumented (catalogue reconciled against the producers,
+  # 2026-10-11). Producer and consumers below are taken from the code, not from intent: the
+  # producer is the module whose DomainEventEnvelope.of(...) call publishes the type, the
+  # consumers are the modules whose listeners switch on it. audit records every event.
+
+  policy.PolicyExpired:
+    description: "Producer: policy (a non-maturing term policy reaching its maturity date). Consumers: billing, bonus, finaccounting, reinsurance, audit."
+    publish:
+      message: { $ref: '#/components/messages/PolicyExpired' }
+  policy.PolicyResumed:
+    description: "Producer: policy (a suspended policy resumed). Consumers: billing, bonus, audit."
+    publish:
+      message: { $ref: '#/components/messages/PolicyResumed' }
+  policy.PolicyMadePaidUp:
+    description: >-
+      Producer: policy (premiums stop, cover continues at a reduced sum assured). Carries BOTH sum
+      assured figures because the reduction is a proportion and the aggregate has already
+      overwritten the original. Consumers: benefitpayout, billing, bonus, finaccounting, reinsurance, audit.
+    publish:
+      message: { $ref: '#/components/messages/PolicyMadePaidUp' }
+  policy.SurrenderPaid:
+    description: >-
+      Producer: policy (a policyholder-initiated surrender's payout confirmed). Not to be confused
+      with policy.PolicySurrendered, which despite its name fires for a settled claim. No
+      timestamp on the payload: consumers date it by the envelope's occurredAt. Consumers: finaccounting, audit.
+    publish:
+      message: { $ref: '#/components/messages/SurrenderPaid' }
+  policy.AnnuityVested:
+    description: "Producer: policy (a deferred annuity/pension vested into payment). Consumers: billing, finaccounting, audit."
+    publish:
+      message: { $ref: '#/components/messages/AnnuityVested' }
+  policy.AnnuityEnded:
+    description: "Producer: policy (an annuity in payment ended). Consumers: annuity, finaccounting, reinsurance, audit."
+    publish:
+      message: { $ref: '#/components/messages/AnnuityEnded' }
+  policy.PremiumPayingTermRestated:
+    description: "Producer: policy (premium paying term extended). Consumers: billing, audit."
+    publish:
+      message: { $ref: '#/components/messages/PremiumPayingTermRestated' }
+  policy.GroupSchemeIssued:
+    description: >-
+      Producer: policy (a group life, credit life or group funeral scheme issued; published
+      alongside policy.PolicyIssued). Consumers: audit only.
+    publish:
+      message: { $ref: '#/components/messages/GroupSchemeIssued' }
+  policy.GroupSchemeFreeCoverLimitAmended:
+    description: >-
+      Producer: policy (a scheme's free cover limit changed, moving the scheme total with no member
+      joining or leaving). Consumers: regreporting, audit.
+    publish:
+      message: { $ref: '#/components/messages/GroupSchemeFreeCoverLimitAmended' }
+  policy.EnrolmentAccepted:
+    description: "Producer: policy (a credit-life enrolment file accepted). Consumers: billing (invoices the file), distribution, audit."
+    publish:
+      message: { $ref: '#/components/messages/EnrolmentAccepted' }
+  party.PartyDetailsAmended:
+    description: "Producer: party (an individual's or corporate's details amended). Consumers: audit only. Carries no changed values: a consumer re-reads PartyApi."
+    publish:
+      message: { $ref: '#/components/messages/PartyDetailsAmended' }
+  billing.PremiumRefundDue:
+    description: "Producer: billing (a credit-life borrower exited mid-period; part of the file's premium is due back). Consumers: distribution (reverses the commission share), finaccounting, audit."
+    publish:
+      message: { $ref: '#/components/messages/PremiumRefundDue' }
+  benefitpayout.FreeLookRefundPaid:
+    description: "Producer: benefitpayout (a free-look cancellation refund paid out). Consumers: finaccounting, audit."
+    publish:
+      message: { $ref: '#/components/messages/FreeLookRefundPaid' }
+  accumulation.PayoutPaid:
+    description: "Producer: accumulation (a withdrawal or fixed-term deposit maturity paid out). Consumers: finaccounting, audit."
+    publish:
+      message: { $ref: '#/components/messages/AccumulationPayoutPaid' }
+  annuity.VestingReminderDue:
+    description: "Producer: annuity (a deferred annuity's vesting date is approaching). Consumers: communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/VestingReminderDue' }
+  distribution.AgentSuspended:
+    description: "Producer: distribution. Consumers: audit only."
+    publish:
+      message: { $ref: '#/components/messages/AgentStatusChanged' }
+  distribution.AgentReactivated:
+    description: "Producer: distribution. Consumers: audit only."
+    publish:
+      message: { $ref: '#/components/messages/AgentStatusChanged' }
+  policyloan.LoanDisbursementFailed:
+    description: "Producer: policyloan (a loan's disbursement failed at the payment rail). Consumers: audit only."
+    publish:
+      message: { $ref: '#/components/messages/LoanDisbursementFailed' }
+  policyloan.LoanInterestAccrued:
+    description: "Producer: policyloan (the month-end interest accrual on one loan). Consumers: finaccounting, audit."
+    publish:
+      message: { $ref: '#/components/messages/LoanInterestAccrued' }
+  unitlinked.ChargeRefused:
+    description: "Producer: unitlinked (a monthly charge could not be computed; today only NO_RECORDED_SEX). Consumers: audit only."
+    publish:
+      message: { $ref: '#/components/messages/ChargeRefused' }
+  unitlinked.PremiumNotInvested:
+    description: "Producer: unitlinked (a collected premium not invested because the policy is frozen). Consumers: audit only."
+    publish:
+      message: { $ref: '#/components/messages/PremiumNotInvested' }
+
 components:
   messages:
     InvoiceWaived: { messageId: InvoiceWaived, name: InvoiceWaived, payload: { $ref: '#/components/schemas/InvoiceWaivedPayload' } }
@@ -929,6 +1048,27 @@ components:
     DocumentUploaded: { messageId: DocumentUploaded, name: DocumentUploaded, payload: { $ref: '#/components/schemas/DocumentUploadedPayload' } }
 
     UnitLinkedEvent: { messageId: UnitLinkedEvent, name: UnitLinkedEvent, payload: { $ref: '#/components/schemas/UnitLinkedEventPayload' } }
+
+    PolicyExpired: { messageId: PolicyExpired, name: PolicyExpired, payload: { $ref: '#/components/schemas/PolicyExpiredPayload' } }
+    PolicyResumed: { messageId: PolicyResumed, name: PolicyResumed, payload: { $ref: '#/components/schemas/PolicyResumedPayload' } }
+    PolicyMadePaidUp: { messageId: PolicyMadePaidUp, name: PolicyMadePaidUp, payload: { $ref: '#/components/schemas/PolicyMadePaidUpPayload' } }
+    SurrenderPaid: { messageId: SurrenderPaid, name: SurrenderPaid, payload: { $ref: '#/components/schemas/SurrenderPaidPayload' } }
+    AnnuityVested: { messageId: AnnuityVested, name: AnnuityVested, payload: { $ref: '#/components/schemas/AnnuityVestedPayload' } }
+    AnnuityEnded: { messageId: AnnuityEnded, name: AnnuityEnded, payload: { $ref: '#/components/schemas/AnnuityEndedPayload' } }
+    PremiumPayingTermRestated: { messageId: PremiumPayingTermRestated, name: PremiumPayingTermRestated, payload: { $ref: '#/components/schemas/PremiumPayingTermRestatedPayload' } }
+    GroupSchemeIssued: { messageId: GroupSchemeIssued, name: GroupSchemeIssued, payload: { $ref: '#/components/schemas/GroupSchemeIssuedPayload' } }
+    GroupSchemeFreeCoverLimitAmended: { messageId: GroupSchemeFreeCoverLimitAmended, name: GroupSchemeFreeCoverLimitAmended, payload: { $ref: '#/components/schemas/GroupSchemeFreeCoverLimitAmendedPayload' } }
+    EnrolmentAccepted: { messageId: EnrolmentAccepted, name: EnrolmentAccepted, payload: { $ref: '#/components/schemas/EnrolmentAcceptedPayload' } }
+    PartyDetailsAmended: { messageId: PartyDetailsAmended, name: PartyDetailsAmended, payload: { $ref: '#/components/schemas/PartyDetailsAmendedPayload' } }
+    PremiumRefundDue: { messageId: PremiumRefundDue, name: PremiumRefundDue, payload: { $ref: '#/components/schemas/PremiumRefundDuePayload' } }
+    FreeLookRefundPaid: { messageId: FreeLookRefundPaid, name: FreeLookRefundPaid, payload: { $ref: '#/components/schemas/FreeLookRefundPaidPayload' } }
+    AccumulationPayoutPaid: { messageId: AccumulationPayoutPaid, name: AccumulationPayoutPaid, payload: { $ref: '#/components/schemas/AccumulationPayoutPaidPayload' } }
+    VestingReminderDue: { messageId: VestingReminderDue, name: VestingReminderDue, payload: { $ref: '#/components/schemas/VestingReminderDuePayload' } }
+    AgentStatusChanged: { messageId: AgentStatusChanged, name: AgentStatusChanged, payload: { $ref: '#/components/schemas/AgentStatusChangedPayload' } }
+    LoanDisbursementFailed: { messageId: LoanDisbursementFailed, name: LoanDisbursementFailed, payload: { $ref: '#/components/schemas/LoanDisbursementFailedPayload' } }
+    LoanInterestAccrued: { messageId: LoanInterestAccrued, name: LoanInterestAccrued, payload: { $ref: '#/components/schemas/LoanInterestAccruedPayload' } }
+    ChargeRefused: { messageId: ChargeRefused, name: ChargeRefused, payload: { $ref: '#/components/schemas/ChargeRefusedPayload' } }
+    PremiumNotInvested: { messageId: PremiumNotInvested, name: PremiumNotInvested, payload: { $ref: '#/components/schemas/PremiumNotInvestedPayload' } }
   schemas:
     InvoiceWaivedPayload:
       type: object
@@ -1035,7 +1175,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, sumAssured: {type: object}, issueDate: {type: string, format: date}, premium: {type: object}, premiumFrequency: {type: string}, agentOfRecordId: {type: string, format: uuid, nullable: true}, status: {type: string, enum: [PROPOSED, ACTIVE]} }
+          properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, sumAssured: {type: object}, issueDate: {type: string, format: date}, premium: {type: object}, premiumFrequency: {type: string}, agentOfRecordId: {type: string, format: uuid, nullable: true}, status: {type: string, enum: [PROPOSED, ACTIVE]}, premiumPerEnrolment: {type: boolean, description: 'True for a credit-life scheme billed per enrolment file.'}, premiumPayingUntil: {type: string, format: date, nullable: true}, maturityDate: {type: string, format: date, nullable: true}, underwritingCaseId: {type: string, format: uuid, nullable: true}, issuanceBasis: {type: string, nullable: true}, issuanceReason: {type: string, nullable: true}, issuedBy: {type: string}, issuedByName: {type: string, nullable: true}, portfolioCode: {type: string, nullable: true}, cohortYear: {type: integer, nullable: true}, profitabilityBucket: {type: string, nullable: true}, measurementModelOverride: {type: string, nullable: true}, salesChannel: {type: string, nullable: true}, branchCode: {type: string, nullable: true} }
     PolicyActivatedPayload:
       description: >
         The union of what distribution's, reinsurance's and regreporting's handlers actually read,
@@ -1048,7 +1188,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, sumAssured: {type: object}, premium: {type: object}, premiumFrequency: {type: string}, issueDate: {type: string, format: date}, agentOfRecordId: {type: string, format: uuid, nullable: true}, activatedAt: {type: string, format: date}, portfolioCode: {type: string, nullable: true, description: 'IFRS 17 portfolio (2026-10-09). Reinsurance cedes nothing on SAV, DEP, PEN or DANN -- investment contracts.'} }
+          properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, sumAssured: {type: object}, premium: {type: object}, premiumFrequency: {type: string}, issueDate: {type: string, format: date}, agentOfRecordId: {type: string, format: uuid, nullable: true}, activatedAt: {type: string, format: date}, portfolioCode: {type: string, nullable: true, description: 'IFRS 17 portfolio (2026-10-09). Reinsurance cedes nothing on SAV, DEP, PEN or DANN -- investment contracts.'}, productCategory: {type: string}, groupScheme: {type: boolean}, livesCovered: {type: integer} }
     PolicyNotTakenUpPayload:
       description: >
         policyholderPartyId is load-bearing rather than convenient: communication is the consumer
@@ -1745,3 +1885,117 @@ components:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
           properties: { documentRef: {type: string}, ownerContext: {type: string}, documentType: {type: string} }
+
+    # ---- Schemas for the channels reconciled on 2026-10-11 (fields exactly as each producer's
+    # Map.of(...) publishes them).
+    PolicyExpiredPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, maturityDate: {type: string, format: date}, expiredAt: {type: string, format: date-time} }
+    PolicyResumedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, resumedAt: {type: string, format: date-time} }
+    PolicyMadePaidUpPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, paidUpSumAssured: {type: object}, originalSumAssured: {type: object}, madePaidUpAt: {type: string, format: date-time} }
+    SurrenderPaidPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { surrenderRequestId: {type: string, format: uuid}, policyNumber: {type: string}, paidAmount: {type: object} }
+    AnnuityVestedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, vestedOn: {type: string, format: date} }
+    AnnuityEndedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, endedAt: {type: string, format: date-time} }
+    PremiumPayingTermRestatedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, premiumPayingUntil: {type: string, format: date} }
+    GroupSchemeIssuedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, benefitBasis: {type: string}, memberCount: {type: integer}, totalCovered: {type: object} }
+    GroupSchemeFreeCoverLimitAmendedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, joinedOn: {type: string, format: date, description: 'The amendment date (named for symmetry with GroupMemberAdded, whose handler regreporting shares).'}, schemeTotalCovered: {type: object} }
+    EnrolmentAcceptedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties:
+            submissionId: {type: string, format: uuid}
+            policyNumber: {type: string}
+            policyholderPartyId: {type: string, format: uuid, description: 'The lender.'}
+            enrolledCount: {type: integer}
+            acceptedAt: {type: string, format: date-time}
+            premium: {type: object}
+            covers:
+              type: array
+              items:
+                type: object
+                properties: { memberRef: {type: string}, coversFrom: {type: string, format: date}, coversTo: {type: string, format: date}, amount: {type: string} }
+    PartyDetailsAmendedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { partyId: {type: string, format: uuid}, partyType: {type: string, enum: [INDIVIDUAL, CORPORATE, GROUP]}, amendedBy: {type: string} }
+    PremiumRefundDuePayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { creditId: {type: string, format: uuid}, policyNumber: {type: string}, policyMemberId: {type: string, format: uuid}, originalInvoiceId: {type: string, format: uuid}, enrolmentSubmissionId: {type: string, format: uuid}, filePremiumTotal: {type: string}, exitReason: {type: string}, amount: {type: object} }
+    FreeLookRefundPaidPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { cancellationId: {type: string, format: uuid}, policyNumber: {type: string}, amount: {type: object} }
+    AccumulationPayoutPaidPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { payoutRef: {type: string, description: 'withdrawal:<id> or deposit-maturity:<ref>'}, paymentRef: {type: string}, policyNumber: {type: string}, amount: {type: object} }
+    VestingReminderDuePayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, vestingDate: {type: string, format: date}, daysBefore: {type: integer} }
+    AgentStatusChangedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { agentId: {type: string, format: uuid} }
+    LoanDisbursementFailedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { loanId: {type: string, format: uuid}, policyNumber: {type: string}, reason: {type: string}, failedAt: {type: string, format: date-time} }
+    LoanInterestAccruedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { loanId: {type: string, format: uuid}, policyNumber: {type: string}, period: {type: string, description: 'YYYY-MM'}, amount: {type: object} }
+    ChargeRefusedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, chargeDate: {type: string, format: date}, reason: {type: string, enum: [NO_RECORDED_SEX]} }
+    PremiumNotInvestedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, invoiceId: {type: string, format: uuid}, amount: {type: string}, reason: {type: string, enum: [POLICY_FROZEN]} }

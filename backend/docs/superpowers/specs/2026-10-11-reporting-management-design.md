@@ -108,13 +108,14 @@ live data, or rebuilding twice, never double-counts.
 | `billing.PremiumCollected` | Insert `report_collection` |
 | `party.PartyRegistered` | Insert `report_client`, enriched from `PartyApi` |
 | `party.PartyKycStatusChanged` | Update KYC status |
-| `party.PartyDetailsUpdated` | Re-read detail from `PartyApi` |
+| `party.PartyDetailsAmended` | Re-read detail from `PartyApi` (the payload carries no changed values) |
 
 Every status-changing event also appends a `report_policy_status_change` row. Event names
-and payload fields were verified against the producers in `PolicyApiImpl`, not only against
-`asyncapi-events.yaml`, which is missing several published events (`PolicyExpired`,
-`PolicyResumed`, `PolicyMadePaidUp`, `SurrenderPaid`, `AnnuityEnded`) and several
-`PolicyActivated` fields.
+and payload fields were verified against the producers in `PolicyApiImpl` and
+`PartyApiImpl`, and `asyncapi-events.yaml` was reconciled to match them in the same change
+(21 published-but-undocumented events added, `PolicyIssued`/`PolicyActivated` fields
+completed, 14 never-published channels marked `x-published: false`). Note
+`party.PartyDetailsUpdated` is one of those 14: the code publishes `PartyDetailsAmended`.
 
 A status change for a policy with no `report_policy` row (activation event missing) creates
 the row with product `UNKNOWN` (`new UUID(0,0)`) and increments
@@ -281,4 +282,3 @@ are not lost:
   `PremiumCollected`).
 - Collection reversals and refunds (Finance batch).
 - The other five categories' reports.
-- Correcting `asyncapi-events.yaml` for the undocumented events (noted, separate change).
