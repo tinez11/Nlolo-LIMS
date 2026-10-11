@@ -1,6 +1,5 @@
 package tz.co.nlolo.lifeplatform.reporting;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -19,7 +18,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code @Query} annotations, and this module uses JdbcTemplate, so without this test a query
  * joining policy.policy would slip through every existing guard.
  */
-@Disabled("enabled in Task 3 when ProjectionStore exists")
 class ReportingSqlStaysInSchemaTest {
 
     private static final Path SOURCE = Path.of("src/main/java/tz/co/nlolo/lifeplatform/reporting");
@@ -40,9 +38,12 @@ class ReportingSqlStaysInSchemaTest {
                 if (!text.contains("reporting.report_") && !text.contains("reporting.applied_event")) continue;
                 sqlFiles++;
                 for (String line : text.split("\\R")) {
-                    // Only string literals can carry SQL. Event type names ("policy.PolicyLapsed") never match:
-                    // the pattern wants a lower-case table name after the dot.
-                    if (!line.contains("\"")) continue;
+                    // Every code line, not just ones with a quote: SQL in a text block has none. Comments and
+                    // imports are skipped. Event type names ("policy.PolicyLapsed") never match: the pattern
+                    // wants a lower-case table name after the dot.
+                    String trimmed = line.trim();
+                    if (trimmed.startsWith("import ") || trimmed.startsWith("package ") || trimmed.startsWith("*")
+                            || trimmed.startsWith("/*") || trimmed.startsWith("//")) continue;
                     Matcher m = SCHEMA_REF.matcher(line);
                     while (m.find()) {
                         if (OTHER_SCHEMAS.contains(m.group(1))) {
