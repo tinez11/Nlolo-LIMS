@@ -22,7 +22,7 @@
 - Money and counts travel as strings in JSON, never JSON numbers.
 - Read access: `hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('FINANCE_APPROVER') or hasRole('ADMIN'))`. Rebuild: `hasRole('REALM_STAFF') and hasRole('ADMIN')`.
 - Maven runs on the host, in the foreground, never in Docker:
-  `export JAVA_HOME="/c/Users/USER/.vscode/extensions/redhat.java-1.55.0-win32-x64/jre/21.0.11-win32-x86_64"` then `./mvnw -B ...` from `backend/`. Run only the affected test classes (`-Dtest=ClassA,ClassB`), never `| head`; confirm the "Tests run:" count is non-zero.
+  `export JAVA_HOME="/c/Users/USER/.vscode/extensions/redhat.java-1.56.0-win32-x64/jre/21.0.12.1-win32-x86_64"` then `./mvnw -B ...` from `backend/` (the extension updates itself; if the path is gone, `ls /c/Users/USER/.vscode/extensions | grep redhat.java`). With `-q`, read the counts from `target/surefire-reports/*.txt`. Run only the affected test classes (`-Dtest=ClassA,ClassB`), never `| head`; confirm the "Tests run:" count is non-zero.
 - After any signature change run `./mvnw -B clean test-compile` (incremental compile hides test breaks).
 - Stop the dev backend (port 8080) before `clean`.
 - Never run Prettier. Edit files with Write/Edit, not shell heredocs.
