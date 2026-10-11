@@ -1,0 +1,197 @@
+openapi: 3.1.0
+info:
+  title: Reporting API
+  version: "0.1.0-draft"
+  description: >
+    Operational and management reports (spec 2026-10-11-reporting-management-design.md). Every report returns
+    one shape, ReportResult: sections of typed columns and rows whose values are all strings -- money and counts
+    never travel as JSON numbers. Which date parameters a report takes is its dateFilterKind in the catalogue;
+    a date parameter the report does not take is refused with 400, never ignored. Read access is
+    FINANCE_OFFICER, FINANCE_APPROVER or ADMIN; rebuilding is ADMIN only.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /reports/catalogue:
+    get:
+      summary: Every report this tenant can run, in business order
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The catalogue
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ReportDefinition' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /reports/{reportKey}:
+    get:
+      summary: Run a report
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: reportKey, in: path, required: true, schema: { type: string } }
+        - { name: asOf, in: query, required: false, schema: { type: string, format: date } }
+        - { name: compareAsOf, in: query, required: false, schema: { type: string, format: date } }
+        - { name: from, in: query, required: false, schema: { type: string, format: date } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date } }
+        - { name: cohortFrom, in: query, required: false, schema: { type: string, pattern: '^\d{4}-\d{2}$' } }
+        - { name: cohortTo, in: query, required: false, schema: { type: string, pattern: '^\d{4}-\d{2}$' } }
+        - { name: productId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: productCategory, in: query, required: false, schema: { type: string } }
+        - { name: agentId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: salesChannel, in: query, required: false, schema: { type: string } }
+        - { name: branchCode, in: query, required: false, schema: { type: string } }
+        - { name: clientType, in: query, required: false, schema: { $ref: '#/components/schemas/ClientType' } }
+        - { name: groupBy, in: query, required: false, schema: { $ref: '#/components/schemas/GroupBy' } }
+      responses:
+        '200':
+          description: The report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportResult' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /reports/{reportKey}/export:
+    get:
+      summary: The same report as a file
+      description: "Takes every parameter GET /reports/{reportKey} takes, plus format."
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: reportKey, in: path, required: true, schema: { type: string } }
+        - { name: format, in: query, required: true, schema: { type: string, enum: [xlsx, csv, pdf] } }
+        - { name: asOf, in: query, required: false, schema: { type: string, format: date } }
+        - { name: compareAsOf, in: query, required: false, schema: { type: string, format: date } }
+        - { name: from, in: query, required: false, schema: { type: string, format: date } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date } }
+        - { name: cohortFrom, in: query, required: false, schema: { type: string, pattern: '^\d{4}-\d{2}$' } }
+        - { name: cohortTo, in: query, required: false, schema: { type: string, pattern: '^\d{4}-\d{2}$' } }
+        - { name: productId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: productCategory, in: query, required: false, schema: { type: string } }
+        - { name: agentId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: salesChannel, in: query, required: false, schema: { type: string } }
+        - { name: branchCode, in: query, required: false, schema: { type: string } }
+        - { name: clientType, in: query, required: false, schema: { $ref: '#/components/schemas/ClientType' } }
+        - { name: groupBy, in: query, required: false, schema: { $ref: '#/components/schemas/GroupBy' } }
+      responses:
+        '200':
+          description: The file, as an attachment
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+            text/csv:
+              schema: { type: string, format: binary }
+            application/pdf:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /reports/rebuild:
+    post:
+      summary: Rebuild this tenant's reporting data from the audit journal (ADMIN)
+      description: "Runs in the background. A second request while one runs returns the running one."
+      security:
+        - staffAuth: []
+      responses:
+        '202':
+          description: Started, or already running
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RebuildStatus' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /reports/rebuild/status:
+    get:
+      summary: The latest rebuild for this tenant
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RebuildStatus' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+components:
+  responses:
+    Problem:
+      description: An error, as RFC 7807 problem details
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  schemas:
+    GroupBy:
+      type: string
+      enum: [PRODUCT, PRODUCT_CATEGORY, AGENT, CHANNEL, BRANCH]
+    ClientType:
+      type: string
+      enum: [INDIVIDUAL, CORPORATE, GROUP]
+    DateFilterKind:
+      type: string
+      enum: [AS_OF, PERIOD, COHORT, AS_OF_AND_PERIOD]
+    ColumnType:
+      type: string
+      enum: [TEXT, COUNT, MONEY, PERCENT, DATE]
+    ReportDefinition:
+      type: object
+      additionalProperties: false
+      required: [key, title, description, category, dateFilterKind, groupByOptions, comparable]
+      properties:
+        key: { type: string }
+        title: { type: string }
+        description: { type: string }
+        category: { type: string, enum: [MANAGEMENT] }
+        dateFilterKind: { $ref: '#/components/schemas/DateFilterKind' }
+        groupByOptions: { type: array, items: { $ref: '#/components/schemas/GroupBy' } }
+        comparable: { type: boolean, description: "Accepts compareAsOf" }
+    ReportColumn:
+      type: object
+      additionalProperties: false
+      required: [key, label, type]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        type: { $ref: '#/components/schemas/ColumnType' }
+    ReportSection:
+      type: object
+      additionalProperties: false
+      required: [title, columns, rows, totals]
+      properties:
+        title: { type: string }
+        columns: { type: array, items: { $ref: '#/components/schemas/ReportColumn' } }
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: { type: string }
+        totals:
+          type: object
+          description: "Empty when the section has no total row"
+          additionalProperties: { type: string }
+    ReportResult:
+      type: object
+      additionalProperties: false
+      required: [key, title, filterSummary, generatedAt, sections]
+      properties:
+        key: { type: string }
+        title: { type: string }
+        filterSummary: { type: string }
+        generatedAt: { type: string, format: date-time }
+        sections: { type: array, items: { $ref: '#/components/schemas/ReportSection' } }
+    RebuildStatus:
+      type: object
+      additionalProperties: false
+      required: [state, eventsReplayed, eventsFailed]
+      properties:
+        state: { type: string, enum: [IDLE, RUNNING, DONE, DONE_WITH_FAILURES, FAILED] }
+        eventsReplayed: { type: integer, format: int64 }
+        eventsFailed: { type: integer, format: int64 }
+        startedAt: { type: [string, 'null'], format: date-time }
+        finishedAt: { type: [string, 'null'], format: date-time }
