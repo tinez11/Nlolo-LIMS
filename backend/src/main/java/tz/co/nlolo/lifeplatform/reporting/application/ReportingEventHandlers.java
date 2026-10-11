@@ -2,6 +2,9 @@ package tz.co.nlolo.lifeplatform.reporting.application;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
+import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
+import tz.co.nlolo.lifeplatform.party.api.PartyNotFoundException;
 import tz.co.nlolo.lifeplatform.reporting.domain.AnnualisedPremium;
 import tz.co.nlolo.lifeplatform.reporting.domain.CivilDates;
 import tz.co.nlolo.lifeplatform.reporting.domain.PolicyStatus;
@@ -51,14 +54,17 @@ public class ReportingEventHandlers {
         "policy.PolicyResumed", "policy.PolicyLapsed", "policy.PolicyReinstated", "policy.PolicyMadePaidUp",
         "policy.PolicyMatured", "policy.PolicyExpired", "policy.PolicySurrendered", "policy.PolicyCancelledFreeLook",
         "policy.AnnuityEnded", "policy.GroupMemberAdded", "policy.GroupMemberExited", "policy.CoveredLifeAdded",
-        "policy.CoveredLifeEnded", "billing.PremiumCollected");
+        "policy.CoveredLifeEnded", "billing.PremiumCollected",
+        "party.PartyRegistered", "party.PartyKycStatusChanged", "party.PartyDetailsAmended");
 
     private final ProjectionStore store;
     private final MeterRegistry meters;
+    private final PartyApi partyApi;
 
-    public ReportingEventHandlers(ProjectionStore store, MeterRegistry meters) {
+    public ReportingEventHandlers(ProjectionStore store, MeterRegistry meters, PartyApi partyApi) {
         this.store = store;
         this.meters = meters;
+        this.partyApi = partyApi;
     }
 
     public boolean handles(String eventType) {
@@ -119,6 +125,15 @@ public class ReportingEventHandlers {
                     currency(p, "amount"), onInstant(p, "collectedAt", occurredAt),
                     payer == null || payer.isBlank() ? "FIELD_CASH" : "MOBILE_MONEY");
             }
+            case "party.PartyRegistered", "party.PartyDetailsAmended" ->
+                refreshClient(tenantId, uuid(p, "partyId"), text(p, "partyType"), occurredAt);
+            case "party.PartyKycStatusChanged" -> {
+                UUID partyId = uuid(p, "partyId");
+                if (!store.setKycStatus(tenantId, partyId, text(p, "newStatus"))) {
+                    refreshClient(tenantId, partyId, null, occurredAt);
+                    store.setKycStatus(tenantId, partyId, text(p, "newStatus"));
+                }
+            }
             default -> throw new IllegalStateException("HANDLED lists " + eventType + " but no case handles it");
         }
         return true;
@@ -151,6 +166,26 @@ public class ReportingEventHandlers {
         if (lives == null) return;
         store.addLivesChange(tenantId, eventId, text(p, "policyNumber"), kind, lives, amount(p, "schemeTotalCovered"),
             onDate(p, dateKey, occurredAt), occurredAt);
+    }
+
+    /**
+     * Party events carry no details (PartyRegistered: id and type; PartyDetailsAmended: id, type, who), so the
+     * client is read through PartyApi. On a replay that read is today's record, not the record at the time --
+     * acceptable for date of birth and sex, which do not change, and KYC is then restated by the replayed
+     * PartyKycStatusChanged events that follow.
+     */
+    private void refreshClient(UUID tenantId, UUID partyId, String partyTypeFromEvent, Instant occurredAt) {
+        try {
+            PartyDetailView d = partyApi.getPartyDetail(partyId);
+            store.upsertClient(tenantId, new ProjectionStore.ClientFacts(partyId, d.partyType().name(),
+                d.kycStatus().name(), d.displayName(), CivilDates.of(d.createdAt() != null ? d.createdAt() : occurredAt),
+                d.dateOfBirth(), d.sex() == null ? null : d.sex().name()));
+        } catch (PartyNotFoundException e) {
+            if (partyTypeFromEvent != null) {
+                store.upsertClient(tenantId, new ProjectionStore.ClientFacts(partyId, partyTypeFromEvent, null, null,
+                    CivilDates.of(occurredAt), null, null));
+            }
+        }
     }
 
     /** A date-only field (activatedAt, joinedOn), else the Tanzanian day the event happened. */
