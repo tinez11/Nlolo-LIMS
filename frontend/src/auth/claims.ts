@@ -139,6 +139,15 @@ export function canSeeFinance(identity: TokenIdentity): boolean {
 }
 
 /**
+ * Management reports. Mirrors the reporting controller: FINANCE_OFFICER, FINANCE_APPROVER or ADMIN (user's
+ * decision 2026-10-11 -- no reporting role exists, and the approvers read the management figures).
+ */
+export function canSeeReports(identity: TokenIdentity): boolean {
+  const roles = staffRoles(identity);
+  return roles.FINANCE_OFFICER || roles.FINANCE_APPROVER || roles.ADMIN;
+}
+
+/**
  * Approving or rejecting a manual journal (IFRS 17 I4). Mirrors `hasRole('REALM_STAFF') and hasRole('FINANCE_APPROVER')`;
  * the server also refuses the journal's own preparer, whatever their roles.
  */

@@ -38,6 +38,7 @@ import {
   Coins,
   NotebookPen,
   Inbox,
+  ChartColumn,
 } from 'lucide-react';
 import { AccountChargesPage } from '@/features/products/AccountChargesPage';
 import { CustomerApplicationsPage } from '@/features/customer/CustomerApplicationsPage';
@@ -52,7 +53,7 @@ import { CustomerPayPage } from '@/features/customer/CustomerPayPage';
 import { CustomerPoliciesPage } from '@/features/customer/CustomerPoliciesPage';
 import { CustomerPolicyPage } from '@/features/customer/CustomerPolicyPage';
 import type { ReactNode } from 'react';
-import { canSeeFinance, staffRoles, type StaffRoles, type readIdentity } from '@/auth/claims';
+import { canSeeFinance, canSeeReports, staffRoles, type StaffRoles, type readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
 import { RedirectPreservingQuery } from '@/components/RedirectPreservingQuery';
 import {
@@ -88,6 +89,8 @@ import {
   ProductDetailPage,
   ProductsPage,
   RegulatoryReturnDetailPage,
+  ReportsCataloguePage,
+  ReportPage,
   RegulatoryReturnsPage,
   CreateTreatyPage,
   TreatiesPage,
@@ -150,6 +153,7 @@ type NavGroupId =
   | 'ledger'
   | 'valuation'
   | 'reinsurance-returns'
+  | 'reports'
   | 'distribution'
   | 'records'
   | 'communications'
@@ -248,6 +252,9 @@ export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
     { id: 'valuation', label: 'Valuation & close', requires: canSeeFinance },
     { id: 'reinsurance-returns', label: 'Reinsurance & returns', requires: canSeeFinance },
     { id: 'distribution', label: 'Distribution', requires: canSeeFinance },
+    // Its own group, after the finance jobs and before Records: reports read across every area above, and
+    // FINANCE_APPROVER can see it without seeing the finance groups (canSeeReports, not canSeeFinance).
+    { id: 'reports', label: 'Reports', requires: canSeeReports },
     // UNGATED, to match its endpoint. `GET /audit-log` is `hasRole('REALM_STAFF')`
     // -- any staff member may read it -- so putting the journal in a
     // finance-gated group would make the nav stricter than the API and hide a
@@ -644,6 +651,8 @@ const STAFF_SCREENS: Screen[] = [
     reach: { group: 'reinsurance-returns', label: 'Regulatory returns', icon: Receipt },
   },
   { path: 'regulatory-returns/:returnId', element: <RegulatoryReturnDetailPage />, reach: 'drill-in' },
+  { path: 'reports', element: <ReportsCataloguePage />, reach: { group: 'reports', label: 'Reports', icon: ChartColumn } },
+  { path: 'reports/:reportKey', element: <ReportPage />, reach: 'drill-in' },
 ];
 
 /**

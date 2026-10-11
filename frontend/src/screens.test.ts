@@ -80,7 +80,7 @@ describe('screen manifest', () => {
     expect(labels).toContain('New business');
     // Both gated groups, not just the one named Finance -- Distribution carries
     // the same predicate because onboarding an agent is a finance-role action.
-    for (const gated of ['Collections', 'Paying out', 'Ledger', 'Valuation & close', 'Reinsurance & returns', 'Distribution']) {
+    for (const gated of ['Collections', 'Paying out', 'Ledger', 'Valuation & close', 'Reinsurance & returns', 'Distribution', 'Reports']) {
       expect(labels).not.toContain(gated);
     }
   });
@@ -116,6 +116,8 @@ describe('screen manifest', () => {
       'Valuation & close',
       'Reinsurance & returns',
       'Distribution',
+      // Reads across every area above; after the finance jobs, before Records.
+      'Reports',
       'Records',
       // After Records and before Configuration: what the platform SAYS to customers is a record
       // of something that happened, not set-up. Its templates are configuration in a strict
@@ -125,6 +127,13 @@ describe('screen manifest', () => {
       'Communications',
       'Configuration',
     ]);
+  });
+
+  it('shows Reports, and only Reports among the finance groups, to a finance approver', () => {
+    const approver = { roles: ['REALM_STAFF', 'FINANCE_APPROVER'] } as unknown as Parameters<typeof navFor>[1];
+    const labels = navFor('staff', approver).map((g) => g.label);
+    expect(labels).toContain('Reports');
+    expect(labels).not.toContain('Ledger');
   });
 
   it('never makes the nav stricter than the endpoint it fronts', () => {
