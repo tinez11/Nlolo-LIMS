@@ -4,6 +4,7 @@ import {
   getAgent,
   getApplicablePlan,
   getOwnAgent,
+  getOwnTeam,
   listAccruals,
   listAgents,
   listCommissionStatements,
@@ -12,7 +13,7 @@ import {
   requestPayout,
   suspendAgent,
 } from '@/api/distribution';
-import type { AgentSearchParams } from '@/api/distribution';
+import type { AgentSearchParams, AgentTeamMember } from '@/api/distribution';
 import type {
   AgentView,
   CommissionAccrualView,
@@ -57,6 +58,9 @@ interface DistributionState {
   // session, unlike `agents` which is keyed by whichever agentId a staff
   // caller happens to be looking at.
   ownAgent: Resource<AgentView>;
+  // The caller's own agent record(s) and everyone below them, from `GET /agents/me/team`.
+  // Not keyed: like `ownAgent`, there is exactly one of these per session.
+  ownTeam: Resource<AgentTeamMember[]>;
   // Keyed by `${agentId}:${productId}` -- a plan is resolved per (agent,
   // product) pair, never by its own id (no `GET /commission-plans/{id}`).
   plans: Keyed<CommissionPlanView>;
@@ -78,6 +82,7 @@ interface DistributionState {
   loadAgent: (agentId: string) => Promise<void>;
   loadAgentForParty: (partyId: string) => Promise<void>;
   loadOwnAgent: () => Promise<void>;
+  loadOwnTeam: () => Promise<void>;
   suspendAgent: (agentId: string) => Promise<void>;
   resetSuspendAgent: (agentId: string) => void;
   reactivateAgent: (agentId: string) => Promise<void>;
@@ -105,6 +110,7 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
   agents: {},
   agentsByParty: {},
   ownAgent: idle(),
+  ownTeam: idle(),
   plans: {},
   creatingPlan: idle(),
   statements: {},
@@ -155,6 +161,14 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
       getState().ownAgent,
       (next) => set({ ownAgent: next }),
       () => getOwnAgent(),
+    ),
+
+  loadOwnTeam: () =>
+    track(
+      'distribution.ownTeam',
+      getState().ownTeam,
+      (next) => set({ ownTeam: next }),
+      () => getOwnTeam(),
     ),
 
   suspendAgent: (agentId) =>
@@ -281,6 +295,7 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
 export const selectAgent = (agentId: string) => (s: DistributionState) =>
   s.agents[agentId] ?? idle<AgentView>();
 export const selectOwnAgent = (s: DistributionState) => s.ownAgent;
+export const selectOwnTeam = (s: DistributionState) => s.ownTeam;
 
 /**
  * The agent a party IS — the one who will actually be credited.
