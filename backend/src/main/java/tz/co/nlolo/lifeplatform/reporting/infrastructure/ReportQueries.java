@@ -58,6 +58,15 @@ public class ReportQueries {
     public record SchemeRow(String policyNumber, String holder, String productCategory, String status, Integer lives,
                             long joined, long exited, BigDecimal totalCovered, BigDecimal annualised, String currency) {}
 
+    /** One product's book on a date. regularInForce counts the in-force policies that pay a recurring premium --
+     * the only ones an average annual premium can be taken over. */
+    public record ProductRow(String productId, String productCategory, String currency, long written, long inForce,
+                             long lapsed, long regularInForce, BigDecimal sumAssured, BigDecimal annualised) {}
+
+    public record PolicyListRow(String policyNumber, String productId, String holder, String status,
+                                LocalDate activatedOn, BigDecimal sumAssured, BigDecimal premium, String frequency,
+                                String agentId, String branch, String currency) {}
+
     // ---- policies -----------------------------------------------------------------------------------------
 
     public List<InForceRow> inForce(UUID tenantId, LocalDate asOf, GroupBy groupBy, ReportFilter f) {
@@ -73,6 +82,48 @@ public class ReportQueries {
         return jdbc.query(sql.toString(), (rs, i) -> new InForceRow(rs.getString("dim"), rs.getString("currency").trim(),
             rs.getLong("policies"), rs.getBigDecimal("sum_assured"), rs.getBigDecimal("annualised"),
             rs.getBigDecimal("single_premium")), args.toArray());
+    }
+
+    // ---- products -----------------------------------------------------------------------------------------
+
+    /** Every policy activated on or before asOf, by product: written, in force, lapsed, and the in-force book's
+     * cover and annual premium. In force means what inForce() means -- the latest status on or before asOf. */
+    public List<ProductRow> productSummary(UUID tenantId, LocalDate asOf, ReportFilter f) {
+        List<Object> args = new ArrayList<>(List.of(tenantId, asOf, tenantId, asOf));
+        String inForce = "l.to_status IN " + IN_FORCE_STATUSES;
+        StringBuilder sql = new StringBuilder("WITH " + LAST_CHANGE_CTE + " SELECT p.product_id::text AS product_id,"
+            + " MAX(p.product_category) AS product_category, p.currency, COUNT(*) AS written,"
+            + " COUNT(*) FILTER (WHERE " + inForce + ") AS in_force,"
+            + " COUNT(*) FILTER (WHERE l.to_status = 'LAPSED') AS lapsed,"
+            + " COUNT(*) FILTER (WHERE " + inForce + " AND " + ANNUALISED_IN_FORCE + " > 0) AS regular_in_force,"
+            + " COALESCE(SUM(p.sum_assured) FILTER (WHERE " + inForce + "), 0) AS sum_assured,"
+            + " COALESCE(SUM(" + ANNUALISED_IN_FORCE + ") FILTER (WHERE " + inForce + "), 0) AS annualised"
+            + " FROM reporting.report_policy p LEFT JOIN last_change l ON l.policy_number = p.policy_number" + CLIENT_JOIN
+            + " WHERE p.tenant_id = ? AND p.activated_on <= ?");
+        appendFilters(sql, args, f);
+        sql.append(" GROUP BY p.product_id, p.currency ORDER BY p.product_id, p.currency");
+        return jdbc.query(sql.toString(), (rs, i) -> new ProductRow(rs.getString("product_id"),
+            rs.getString("product_category"), rs.getString("currency").trim(), rs.getLong("written"),
+            rs.getLong("in_force"), rs.getLong("lapsed"), rs.getLong("regular_in_force"),
+            rs.getBigDecimal("sum_assured"), rs.getBigDecimal("annualised")), args.toArray());
+    }
+
+    /** The same policies one row each, with the status each held on asOf. Unbounded on purpose: the export
+     * carries every row, and the console decides how many to draw. */
+    public List<PolicyListRow> policyList(UUID tenantId, LocalDate asOf, ReportFilter f) {
+        List<Object> args = new ArrayList<>(List.of(tenantId, asOf, tenantId, asOf));
+        StringBuilder sql = new StringBuilder("WITH " + LAST_CHANGE_CTE + " SELECT p.policy_number,"
+            + " p.product_id::text AS product_id, c.display_name, l.to_status, p.activated_on, p.sum_assured,"
+            + " p.premium, p.premium_frequency, p.agent_id::text AS agent_id, p.branch_code, p.currency"
+            + " FROM reporting.report_policy p LEFT JOIN last_change l ON l.policy_number = p.policy_number" + CLIENT_JOIN
+            + " WHERE p.tenant_id = ? AND p.activated_on <= ?");
+        appendFilters(sql, args, f);
+        sql.append(" ORDER BY p.policy_number");
+        return jdbc.query(sql.toString(), (rs, i) -> new PolicyListRow(rs.getString("policy_number"),
+            rs.getString("product_id"), rs.getString("display_name"), rs.getString("to_status"),
+            rs.getObject("activated_on", LocalDate.class), rs.getBigDecimal("sum_assured"), rs.getBigDecimal("premium"),
+            rs.getString("premium_frequency"), rs.getString("agent_id"), rs.getString("branch_code"),
+            rs.getString("currency").trim()), args.toArray());
     }
 
     public List<NewBusinessRow> activations(UUID tenantId, LocalDate from, LocalDate to, GroupBy groupBy, ReportFilter f) {

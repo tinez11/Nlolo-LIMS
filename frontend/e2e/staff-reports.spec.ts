@@ -36,6 +36,22 @@ test.describe('staff reports', () => {
     await expect(page.getByRole('button', { name: 'Rebuild reporting data' })).toHaveCount(0);
   });
 
+  test('the products report lists each product and the policies behind it', async ({ page }) => {
+    await page.goto('/staff/reports');
+    await page.getByRole('link', { name: 'Products', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Products', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Run report' }).click();
+
+    // Two sections: the per-product summary, then one row per policy.
+    await expect(page.getByRole('heading', { name: /^Products on \d{4}-\d{2}-\d{2}$/ })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: /^Policies on \d{4}-\d{2}-\d{2}$/ })).toBeVisible();
+    const register = page.getByRole('table', { name: /^Policies on / });
+    await expect(register.getByRole('columnheader', { name: 'Client' })).toBeVisible();
+    await expect(register.getByRole('columnheader', { name: 'Status' })).toBeVisible();
+    // The dev book is far longer than the console draws; it says so rather than silently stopping.
+    await expect(page.getByText(/^Showing the first 200 of [\d,]+ rows\./)).toBeVisible();
+  });
+
   test('runs a report from the catalogue and downloads it', async ({ page }) => {
     await page.goto('/staff/reports');
     await expect(page.getByRole('heading', { name: 'Reports', exact: true })).toBeVisible();

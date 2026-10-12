@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { ReportDefinition } from '@/api/reporting';
-import { defaultFilters, formatCell, stateFromSearch, toParams, validateFilters } from './reportParams';
+import { capRows, defaultFilters, formatCell, stateFromSearch, toParams, validateFilters } from './reportParams';
+
+describe('capRows', () => {
+  it('draws every row of a section within the limit', () => {
+    expect(capRows([1, 2, 3], 5)).toEqual({ shown: [1, 2, 3], hidden: 0 });
+    expect(capRows([1, 2, 3], 3)).toEqual({ shown: [1, 2, 3], hidden: 0 });
+  });
+
+  it('draws the first rows of a longer one and counts what it left for the download', () => {
+    expect(capRows([1, 2, 3, 4, 5], 2)).toEqual({ shown: [1, 2], hidden: 3 });
+  });
+});
 
 const definition = (dateFilterKind: ReportDefinition['dateFilterKind'], comparable = false): ReportDefinition => ({
   key: 'k',

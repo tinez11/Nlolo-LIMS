@@ -288,10 +288,78 @@ class ReportQueriesIntegrationTest {
             .isInstanceOf(ReportNotFoundException.class);
     }
 
+    // ---- products ----------------------------------------------------------------------------------------
+
+    @Test
+    void productsSummariseEachProductAndListThePoliciesBehindIt() {
+        UUID other = UUID.randomUUID();
+        UUID holder = UUID.randomUUID();
+        events.client(tenant, holder, "INDIVIDUAL", "VERIFIED", "Asha Mwita", d("2025-12-01"), d("1990-01-01"), "FEMALE");
+        events.sell(tenant, Sale.of("P-A", product, d("2026-01-05")).holder(holder));
+        events.sell(tenant, Sale.of("P-B", product, d("2026-01-06")).premium("QUARTERLY", "30000.00"));
+        events.sell(tenant, Sale.of("P-C", product, d("2026-01-07")));
+        events.lapse(tenant, "P-C", d("2026-03-01"));
+        events.sell(tenant, Sale.of("P-S", product, d("2026-01-08")).premium("SINGLE", "500000.00"));
+        events.sell(tenant, Sale.of("P-D", other, d("2026-01-09")));
+        // Sold after the as-of date: not yet a policy on that day, in either section.
+        events.sell(tenant, Sale.of("P-LATE", product, d("2026-04-01")));
+
+        ReportResult result = run("products", ReportFilter.asOf(d("2026-03-31")));
+
+        Map<String, String> mine = rows(result, 0).stream()
+            .filter(r -> r.get("product").equals(product.toString())).findFirst().orElseThrow();
+        assertThat(mine.get("written")).isEqualTo("4");
+        assertThat(mine.get("inForce")).isEqualTo("3");
+        assertThat(mine.get("lapsed")).isEqualTo("1");
+        // P-A, P-B and P-S are on cover; P-C lapsed.
+        assertThat(mine.get("sumAssured")).isEqualTo("3000000.00");
+        // P-A 120000 + P-B 120000. P-S pays once, so it is no part of an annual premium...
+        assertThat(mine.get("annualisedPremium")).isEqualTo("240000.00");
+        // ...and no part of the average either: 240000 over the two policies that pay regularly.
+        assertThat(mine.get("averagePremium")).isEqualTo("120000.00");
+        assertThat(result.sections().get(0).totals().get("written")).isEqualTo("5");
+        assertThat(result.sections().get(0).totals().get("inForce")).isEqualTo("4");
+
+        List<Map<String, String>> policies = rows(result, 1);
+        assertThat(policies).extracting(r -> r.get("policyNumber"))
+            .containsExactlyInAnyOrder("P-A", "P-B", "P-C", "P-S", "P-D");
+        assertThat(policies).filteredOn(r -> r.get("policyNumber").equals("P-A")).singleElement().satisfies(r -> {
+            assertThat(r.get("product")).isEqualTo(product.toString());
+            assertThat(r.get("client")).isEqualTo("Asha Mwita");
+            assertThat(r.get("status")).isEqualTo("Active");
+            assertThat(r.get("activatedOn")).isEqualTo("2026-01-05");
+            assertThat(r.get("sumAssured")).isEqualTo("1000000.00");
+            assertThat(r.get("premium")).isEqualTo("10000.00");
+            assertThat(r.get("frequency")).isEqualTo("Monthly");
+            assertThat(r.get("agent")).isEqualTo("Direct (no agent)");
+            assertThat(r.get("branch")).isEqualTo("DSM-01");
+        });
+        // Status is as of the report date, not as of today.
+        assertThat(policies).filteredOn(r -> r.get("policyNumber").equals("P-C")).singleElement()
+            .satisfies(r -> assertThat(r.get("status")).isEqualTo("Lapsed"));
+        // A holder the read model has no record of is blank -- the console shows "—" -- never a raw id.
+        assertThat(policies).filteredOn(r -> r.get("policyNumber").equals("P-B")).singleElement()
+            .satisfies(r -> assertThat(r.get("client")).isEmpty());
+    }
+
+    @Test
+    void productsNarrowToTheChosenProduct() {
+        UUID other = UUID.randomUUID();
+        events.sell(tenant, Sale.of("P-A", product, d("2026-01-05")));
+        events.sell(tenant, Sale.of("P-D", other, d("2026-01-09")));
+
+        ReportResult result = run("products", ReportFilter.asOf(d("2026-03-31")).withProductId(product));
+
+        assertThat(rows(result, 0)).singleElement()
+            .satisfies(r -> assertThat(r.get("product")).isEqualTo(product.toString()));
+        assertThat(rows(result, 1)).extracting(r -> r.get("policyNumber")).containsExactly("P-A");
+    }
+
     @Test
     void theCatalogueListsReportsInBusinessOrder() {
         assertThat(reportingApi.catalogue()).extracting(ReportDefinitionView::key)
-            .containsExactly("policies-in-force", "new-business", "lapse-rate", "persistency", "premium-collections", "clients");
+            .containsExactly("policies-in-force", "products", "new-business", "lapse-rate", "persistency",
+                "premium-collections", "clients");
     }
 
     @Test
