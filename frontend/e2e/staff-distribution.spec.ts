@@ -281,13 +281,12 @@ test.describe('staff distribution', () => {
     // same transaction the manual-issue POST commits -- normally visible
     // immediately, but polled defensively rather than assumed synchronous.
     await financePage.goto(`/staff/agents/${agentId}`);
+    // The current month opens by default on the commission view; its lines appear once the
+    // accrual has landed.
     await expect(async () => {
       await financePage.reload();
-      await expect(financePage.getByText('No commission statements yet.')).not.toBeVisible();
+      await expect(financePage.getByRole('cell', { name: 'First year', exact: true })).toBeVisible();
     }).toPass({ timeout: 20_000 });
-
-    await financePage.getByRole('button', { name: 'View accruals' }).first().click();
-    await expect(financePage.getByText(/first year/)).toBeVisible();
 
     // The statement is OPEN (only a monthly pg_cron sweep ever closes one) --
     // a genuine 409 from CommissionStatement.markPayoutRequested, not a
