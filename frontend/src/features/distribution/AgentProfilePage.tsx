@@ -7,19 +7,21 @@ import { formatDate } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectOwnAgent, useDistributionStore } from '@/store/distributionStore';
 import { useProductStore } from '@/store/productStore';
+import { Link } from 'react-router-dom';
 import { CommissionPlanPanel } from './CommissionPlanPanel';
-import { CommissionStatementsPanel } from './CommissionStatementsPanel';
 import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
 
 /**
  * The agent realm's landing page: `GET /agents/me` resolves the caller's own
  * agentId (there is no other way to discover it -- see that endpoint's own
- * javadoc), then reuses the exact same `CommissionPlanPanel`/
- * `CommissionStatementsPanel` the staff console's `AgentDetailPage` uses,
- * with `canManage` hardcoded false: creating a plan and requesting a payout
- * are staff FINANCE_OFFICER/ADMIN actions, never something an agent does to
- * their own record, matching the backend's own `@PreAuthorize` gates exactly.
+ * javadoc), then reuses the exact same `CommissionPlanPanel` the staff
+ * console's `AgentDetailPage` uses, with `canManage` hardcoded false: creating
+ * a plan is a staff FINANCE_OFFICER/ADMIN action, never something an agent does
+ * to their own record, matching the backend's own `@PreAuthorize` gates exactly.
+ *
+ * <p>What the agent has EARNED is no longer duplicated here: it is a screen of its
+ * own ("My commission"), which this page links to (spec 2026-10-12).
  */
 export function AgentProfilePage() {
   const own = useDistributionStore(selectOwnAgent);
@@ -86,8 +88,12 @@ export function AgentProfilePage() {
           <CommissionPlanPanel agentId={agent.agentId ?? ''} products={products.data ?? []} canManage={false} />
         </Panel>
 
-        <Panel title="Commission statements">
-          <CommissionStatementsPanel agentId={agent.agentId ?? ''} canManage={false} />
+        <Panel title="Commission earned">
+          <p className="px-4 pb-4 text-sm">
+            <Link to="/agents/commission" className="underline">
+              View my commission
+            </Link>
+          </p>
         </Panel>
       </DetailLayout>
     </>
