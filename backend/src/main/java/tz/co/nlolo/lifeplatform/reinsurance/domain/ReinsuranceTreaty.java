@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.reinsurance.domain;
 
+import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyStanding;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyStatus;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyType;
 import jakarta.persistence.Column;
@@ -126,6 +127,20 @@ public class ReinsuranceTreaty {
         return status == TreatyStatus.ACTIVE
             && !effectiveFrom.isAfter(date)
             && (effectiveTo == null || !effectiveTo.isBefore(date));
+    }
+
+    /**
+     * Where this treaty stands on {@code date}. IN_FORCE is exactly {@link #isActiveOn} -- the same
+     * test cession selection applies -- so the list can never call a treaty in force that ceding
+     * would refuse. The rest only splits "not in force" into before and after.
+     */
+    public TreatyStanding standingOn(LocalDate date) {
+        if (isActiveOn(date)) {
+            return TreatyStanding.IN_FORCE;
+        }
+        return status == TreatyStatus.ACTIVE && effectiveFrom.isAfter(date)
+            ? TreatyStanding.NOT_STARTED
+            : TreatyStanding.ENDED;
     }
 
     public void expire(String expiredBy) {

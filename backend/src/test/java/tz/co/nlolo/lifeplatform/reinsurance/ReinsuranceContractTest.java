@@ -508,7 +508,29 @@ class ReinsuranceContractTest {
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "TreatyView"))
-            .andExpect(jsonPath("$.treatyId").value(treatyId.toString()));
+            .andExpect(jsonPath("$.treatyId").value(treatyId.toString()))
+            // Effective a month ago, open-ended: in force today.
+            .andExpect(jsonPath("$.standing").value("IN_FORCE"));
+    }
+
+    /** The defect this field fixes: a treaty that starts next week was listed as "Active" today. Its
+     * stored status is still ACTIVE -- which is what makes it eligible once it starts -- but where it
+     * STANDS today, read from its dates, is not yet started. */
+    @Test
+    void aTreatyThatStartsNextWeekReadsAsNotStartedThoughItsStatusIsActive() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"));
+        UUID treatyId = reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest(
+            "Future Re", TreatyType.QUOTA_SHARE, new BigDecimal("0.00"), CURRENCY, new BigDecimal("30.00"),
+            today.plusDays(9), today.plusDays(16)), "finance-officer").treatyId();
+        TenantContext.clear();
+
+        mockMvc.perform(get("/treaties/{treatyId}", treatyId).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.standing").value("NOT_STARTED"));
     }
 
     @Test
