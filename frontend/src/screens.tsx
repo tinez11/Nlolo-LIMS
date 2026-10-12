@@ -68,6 +68,7 @@ import {
   RegisterClaimPage,
   AgentDetailPage,
   AgentProfilePage,
+  MyCommissionPage,
   AgentsPage,
   OnboardAgentPage,
   ChartOfAccountsPage,
@@ -668,6 +669,11 @@ const AGENTS_SCREENS: Screen[] = [
     path: 'me',
     element: <AgentProfilePage />,
     reach: { group: 'my-business', label: 'My profile', icon: Users },
+  },
+  {
+    path: 'commission',
+    element: <MyCommissionPage />,
+    reach: { group: 'my-business', label: 'My commission', icon: Wallet },
   },
   {
     path: 'policies',

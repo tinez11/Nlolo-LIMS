@@ -49,6 +49,9 @@ export const AgentDetailPage = lazy(() =>
 export const AgentProfilePage = lazy(() =>
   import('@/features/distribution/AgentProfilePage').then((m) => ({ default: m.AgentProfilePage })),
 );
+export const MyCommissionPage = lazy(() =>
+  import('@/features/distribution/MyCommissionPage').then((m) => ({ default: m.MyCommissionPage })),
+);
 export const AgentsPage = lazy(() =>
   import('@/features/distribution/AgentsPage').then((m) => ({ default: m.AgentsPage })),
 );
