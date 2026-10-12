@@ -607,7 +607,7 @@ components:
         paidAt: { type: [string, "null"], format: date-time }
     CommissionAccrualView:
       type: object
-      required: [accrualId, agentId, statementId, policyNumber, tierType, amount, period, sourceRef]
+      required: [accrualId, agentId, statementId, policyNumber, tierType, amount, period, sourceRef, accruedOn]
       properties:
         accrualId: { type: string, format: uuid }
         agentId: { type: string, format: uuid }
@@ -626,6 +626,22 @@ components:
           type: [string, "null"]
           format: uuid
           description: Non-null exactly for a clawback row.
+        clientPartyId:
+          type: [string, "null"]
+          format: uuid
+          description: The holder of the policy this line was earned on. Null only when distribution never saw the policy issued.
+        clientName:
+          type: [string, "null"]
+          description: The holder's display name -- for a credit-life or group scheme, the lender or association. Null when it cannot be resolved.
+        productId:
+          type: [string, "null"]
+          format: uuid
+        productName:
+          type: [string, "null"]
+        accruedOn:
+          type: string
+          format: date
+          description: The day this line was booked, in Africa/Dar_es_Salaam.
     RequestPayoutRequest:
       type: object
       required: [payeeRef]

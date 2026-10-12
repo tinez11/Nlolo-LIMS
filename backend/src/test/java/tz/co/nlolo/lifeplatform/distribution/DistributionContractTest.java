@@ -760,7 +760,14 @@ class DistributionContractTest {
             .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "CommissionAccrualView"))
             .andExpect(jsonPath("$[0].tierType").value("FIRST_YEAR"))
             .andExpect(jsonPath("$[0].amount.amount").value("10000.00"))
-            .andExpect(jsonPath("$[0].reversesAccrualId").doesNotExist());
+            .andExpect(jsonPath("$[0].reversesAccrualId").doesNotExist())
+            // Agent commission view: the line names its client, its product and the day it was booked.
+            .andExpect(jsonPath("$[0].clientName").value("Distribution Contract Holder ACCR-200"))
+            .andExpect(jsonPath("$[0].clientPartyId").isString())
+            .andExpect(jsonPath("$[0].productName").value("Distribution Contract Product DIST-CT-ACCR"))
+            .andExpect(jsonPath("$[0].productId").value(productId.toString()))
+            .andExpect(jsonPath("$[0].accruedOn").value(
+                LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")).toString()));
     }
 
     // ============================================================================================

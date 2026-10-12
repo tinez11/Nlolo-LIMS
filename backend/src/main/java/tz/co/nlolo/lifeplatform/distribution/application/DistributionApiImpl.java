@@ -24,15 +24,19 @@ import tz.co.nlolo.lifeplatform.distribution.domain.CommissionCalculator;
 import tz.co.nlolo.lifeplatform.distribution.domain.CommissionPlan;
 import tz.co.nlolo.lifeplatform.distribution.domain.CommissionRule;
 import tz.co.nlolo.lifeplatform.distribution.domain.CommissionStatement;
+import tz.co.nlolo.lifeplatform.distribution.domain.PolicyProjection;
 import tz.co.nlolo.lifeplatform.distribution.infrastructure.AgentProfileRepository;
 import tz.co.nlolo.lifeplatform.distribution.infrastructure.CommissionAccrualRepository;
 import tz.co.nlolo.lifeplatform.distribution.infrastructure.CommissionPlanRepository;
 import tz.co.nlolo.lifeplatform.distribution.infrastructure.CommissionRuleRepository;
 import tz.co.nlolo.lifeplatform.distribution.infrastructure.CommissionStatementRepository;
+import tz.co.nlolo.lifeplatform.distribution.infrastructure.PolicyProjectionRepository;
 import tz.co.nlolo.lifeplatform.party.api.KycStatus;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.party.api.PartyNotFoundException;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
+import tz.co.nlolo.lifeplatform.product.api.ProductNotFoundException;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -45,12 +49,15 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Task 5: {@link DistributionApi}'s full published surface -- agent onboarding, commission-plan
@@ -98,6 +105,8 @@ public class DistributionApiImpl implements DistributionApi {
     private final CommissionRuleRepository commissionRuleRepository;
     private final CommissionStatementRepository commissionStatementRepository;
     private final CommissionAccrualRepository commissionAccrualRepository;
+    /** Agent commission view: the client and product behind each commission line, from this module's own projection. */
+    private final PolicyProjectionRepository policyProjectionRepository;
     private final PartyApi partyApi;
     private final ProductApi productApi;
     private final ApplicationEventPublisher eventPublisher;
@@ -111,6 +120,7 @@ public class DistributionApiImpl implements DistributionApi {
                                 CommissionRuleRepository commissionRuleRepository,
                                 CommissionStatementRepository commissionStatementRepository,
                                 CommissionAccrualRepository commissionAccrualRepository,
+                                PolicyProjectionRepository policyProjectionRepository,
                                 PartyApi partyApi, ProductApi productApi,
                                 ApplicationEventPublisher eventPublisher,
                                 ReferenceDataApi referenceDataApi,
@@ -122,6 +132,7 @@ public class DistributionApiImpl implements DistributionApi {
         this.commissionRuleRepository = commissionRuleRepository;
         this.commissionStatementRepository = commissionStatementRepository;
         this.commissionAccrualRepository = commissionAccrualRepository;
+        this.policyProjectionRepository = policyProjectionRepository;
         this.partyApi = partyApi;
         this.productApi = productApi;
         this.eventPublisher = eventPublisher;
@@ -401,8 +412,9 @@ public class DistributionApiImpl implements DistributionApi {
     @Override
     @Transactional(readOnly = true)
     public List<CommissionAccrualView> listAccrualsForPolicy(String policyNumber) {
-        return commissionAccrualRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(TenantContext.get(), policyNumber)
-            .stream().map(this::toAccrualView).toList();
+        UUID tenantId = TenantContext.get();
+        return toAccrualViews(tenantId,
+            commissionAccrualRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber));
     }
 
     /** Each rule must be rate-XOR-flat, with flatCurrency paired to flatAmount, and whichever of
@@ -621,9 +633,7 @@ public class DistributionApiImpl implements DistributionApi {
         commissionStatementRepository.findByStatementIdAndTenantId(statementId, tenantId)
             .orElseThrow(() -> new CommissionStatementNotFoundException("Commission statement " + statementId + " not found"));
 
-        return commissionAccrualRepository.findByStatementIdAndTenantId(statementId, tenantId).stream()
-            .map(this::toAccrualView)
-            .toList();
+        return toAccrualViews(tenantId, commissionAccrualRepository.findByStatementIdAndTenantId(statementId, tenantId));
     }
 
     @Override
@@ -721,9 +731,48 @@ public class DistributionApiImpl implements DistributionApi {
             statement.getClosedAt(), statement.getPaidAt());
     }
 
-    private CommissionAccrualView toAccrualView(CommissionAccrual accrual) {
-        return new CommissionAccrualView(accrual.getAccrualId(), accrual.getAgentId(), accrual.getStatementId(),
-            accrual.getPolicyNumber(), accrual.getTierType(), accrual.getAmount(), accrual.getCurrency(),
-            accrual.getPeriod(), accrual.getSourceRef(), accrual.getReversesAccrualId());
+    /**
+     * Agent commission view: each line names its client and product. One projection query for the call's policy
+     * numbers, then one party read per distinct holder and one product read per distinct product -- a month of lines
+     * on three policies costs three party reads, not one per line. Names come through party::api and product::api;
+     * distribution never reads policy.
+     */
+    private List<CommissionAccrualView> toAccrualViews(UUID tenantId, List<CommissionAccrual> accruals) {
+        Set<String> policyNumbers = accruals.stream().map(CommissionAccrual::getPolicyNumber).collect(Collectors.toSet());
+        Map<String, PolicyProjection> projections = policyNumbers.isEmpty() ? Map.of()
+            : policyProjectionRepository.findByTenantIdAndPolicyNumberIn(tenantId, policyNumbers).stream()
+                .collect(Collectors.toMap(PolicyProjection::getPolicyNumber, Function.identity()));
+        Map<UUID, Optional<String>> clientNames = new HashMap<>();
+        Map<UUID, Optional<String>> productNames = new HashMap<>();
+        return accruals.stream().map(accrual -> {
+            PolicyProjection projection = projections.get(accrual.getPolicyNumber());
+            UUID clientPartyId = projection == null ? null : projection.getPolicyholderPartyId();
+            UUID productId = projection == null ? null : projection.getProductId();
+            String clientName = clientPartyId == null ? null
+                : clientNames.computeIfAbsent(clientPartyId, this::partyName).orElse(null);
+            String productName = productId == null ? null
+                : productNames.computeIfAbsent(productId, this::productName).orElse(null);
+            return new CommissionAccrualView(accrual.getAccrualId(), accrual.getAgentId(), accrual.getStatementId(),
+                accrual.getPolicyNumber(), accrual.getTierType(), accrual.getAmount(), accrual.getCurrency(),
+                accrual.getPeriod(), accrual.getSourceRef(), accrual.getReversesAccrualId(),
+                clientPartyId, clientName, productId, productName, accrual.getAccruedOn());
+        }).toList();
+    }
+
+    /** Empty, not an exception: a line whose holder cannot be read still shows its amount. */
+    private Optional<String> partyName(UUID partyId) {
+        try {
+            return Optional.ofNullable(partyApi.getParty(partyId).displayName());
+        } catch (PartyNotFoundException e) {
+            return Optional.empty();
+        }
+    }
+
+    private Optional<String> productName(UUID productId) {
+        try {
+            return Optional.ofNullable(productApi.getProduct(productId).productName());
+        } catch (ProductNotFoundException e) {
+            return Optional.empty();
+        }
     }
 }
