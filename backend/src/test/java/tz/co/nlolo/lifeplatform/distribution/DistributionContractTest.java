@@ -192,6 +192,7 @@ class DistributionContractTest {
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
+            "db-migrations/distribution/V7__projection_policyholder.sql",
             // IFRS 17 I3b: a payout reads the commission withholding rate from the accounting policy register.
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",

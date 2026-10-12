@@ -162,7 +162,8 @@ class ClawbackIntegrationTest {
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
-            "db-migrations/distribution/V6__commission_withholding.sql");
+            "db-migrations/distribution/V6__commission_withholding.sql",
+            "db-migrations/distribution/V7__projection_policyholder.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -431,5 +432,36 @@ class ClawbackIntegrationTest {
         assertThat(commissionAccrualRepository
             .findByTenantIdAndPolicyNumberAndTierTypeAndReversesAccrualIdIsNull(tenantId, policyNumber, TierType.FIRST_YEAR))
             .hasSize(1);
+    }
+
+    /** Agent commission view (V7): the projection keeps who holds the policy, from PolicyActivated, and V7 backfills
+     * a row written before the column existed -- re-applied here against a row whose holder has been cleared, which
+     * is exactly the state every pre-V7 row is in. */
+    @Test
+    void theProjectionRecordsThePolicyholderAndV7BackfillsARowThatLacksIt() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "HOLDER");
+        String policyNumber = issuePolicy(tenantId, fixture, new BigDecimal("100000.00"), "HOLDER-01");
+
+        TenantContext.set(tenantId);
+        UUID holder = policyApi.getPolicy(policyNumber).policyholderPartyId();
+        assertThat(policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber).orElseThrow()
+            .getPolicyholderPartyId()).isEqualTo(holder);
+
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement clear = connection.prepareStatement(
+                 "UPDATE distribution.policy_projection SET policyholder_party_id = NULL "
+                     + "WHERE tenant_id = ? AND policy_number = ?")) {
+            clear.setObject(1, tenantId);
+            clear.setString(2, policyNumber);
+            assertThat(clear.executeUpdate()).isEqualTo(1);
+        }
+
+        MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
+            "db-migrations/distribution/V7__projection_policyholder.sql");
+
+        assertThat(policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber).orElseThrow()
+            .getPolicyholderPartyId()).isEqualTo(holder);
     }
 }
