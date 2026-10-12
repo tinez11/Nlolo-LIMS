@@ -313,7 +313,9 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
     private TreatyView toTreatyView(ReinsuranceTreaty t) {
         return new TreatyView(t.getTreatyId(), t.getReinsurerName(), t.getTreatyType(), t.getStatus(),
             t.getRetentionLimitAmount(), t.getRetentionLimitCurrency(), t.getCessionPercent(),
-            t.getEffectiveFrom(), t.getEffectiveTo(), t.getCommissionPercent(), t.getXolAnnualPremium());
+            t.getEffectiveFrom(), t.getEffectiveTo(), t.getCommissionPercent(), t.getXolAnnualPremium(),
+            // Read against today's civil date in Dar es Salaam, the same day cession selection uses.
+            t.standingOn(LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"))));
     }
 
     private CessionView toCessionView(Cession c) {

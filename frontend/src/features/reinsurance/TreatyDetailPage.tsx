@@ -15,6 +15,7 @@ import { Panel } from '@/components/Panel';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { formatPeriod } from './formatPeriod';
+import { treatyCedes, treatyTypeLabel } from './treatyTerms';
 import { idle, isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectBordereauPreview,
@@ -71,9 +72,10 @@ export function TreatyDetailPage() {
         // Replaces a ghost button with a back arrow in its own strip above the bar.
         breadcrumb={BREADCRUMB}
         title={treaty?.reinsurerName ?? 'Treaty'}
-        description={treaty?.treatyType?.replace(/_/g, ' ')}
-        // `status`, not `actions`: a status is what the record IS.
-        status={treaty?.status && <StatusBadge kind="treaty" value={treaty.status} />}
+        description={treaty ? treatyTypeLabel(treaty.treatyType) : undefined}
+        // `status`, not `actions`: a status is what the record IS. Its standing, read from its
+        // dates -- the stored ACTIVE flag never changes, so it said "Active" before a treaty started.
+        status={treaty && <StatusBadge kind="treatyStanding" value={treaty.standing} />}
       />
 
       {treaty && (
@@ -93,14 +95,10 @@ export function TreatyDetailPage() {
           record={
             <Panel title="Terms">
               <dl className="px-4 pb-2">
-                <Field label="Retention limit" value={formatMoney(treaty.retentionLimit)} emphasis />
-                {treaty.cessionPercent && (
-                  <Field
-                    label="Cession"
-                    value={`${treaty.cessionPercent}%`}
-                    note="Only QUOTA_SHARE treaties carry a cession percent"
-                  />
-                )}
+                {/* The term that decides what the treaty takes: a quota share's percentage, or the
+                    retention a surplus or XOL works from. A quota share's stored retention is a
+                    0.00 placeholder and used to be shown here, emphasised, as if it meant something. */}
+                <Field label="Cedes" value={treatyCedes(treaty)} emphasis />
                 <Field label="Effective from" value={formatDate(treaty.effectiveFrom)} />
                 <Field
                   label="Effective to"

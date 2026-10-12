@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.reinsurance.infrastructure;
 
+import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyStanding;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyStatus;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyType;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyView;
@@ -14,7 +15,8 @@ import java.util.UUID;
 public record TreatyResponseDto(UUID treatyId, String reinsurerName, TreatyType treatyType, TreatyStatus status,
                                  MoneyDto retentionLimit, String cessionPercent,
                                  LocalDate effectiveFrom, LocalDate effectiveTo,
-                                 String commissionPercent, MoneyDto xolAnnualPremium) {
+                                 String commissionPercent, MoneyDto xolAnnualPremium,
+                                 TreatyStanding standing) {
 
     public static TreatyResponseDto from(TreatyView view) {
         return new TreatyResponseDto(view.treatyId(), view.reinsurerName(), view.treatyType(), view.status(),
@@ -24,6 +26,7 @@ public record TreatyResponseDto(UUID treatyId, String reinsurerName, TreatyType 
             // IFRS 17 I3c: the commission not contingent on claims (K-02), and an XOL treaty's flat annual premium.
             view.commissionPercent().toPlainString(),
             view.xolAnnualPremium() == null ? null
-                : new MoneyDto(view.xolAnnualPremium().toPlainString(), view.retentionLimitCurrency()));
+                : new MoneyDto(view.xolAnnualPremium().toPlainString(), view.retentionLimitCurrency()),
+            view.standing());
     }
 }

@@ -9,4 +9,6 @@ import java.util.UUID;
 public record TreatyView(UUID treatyId, String reinsurerName, TreatyType treatyType, TreatyStatus status,
                           BigDecimal retentionLimitAmount, String retentionLimitCurrency,
                           BigDecimal cessionPercent, LocalDate effectiveFrom, LocalDate effectiveTo,
-                          BigDecimal commissionPercent, BigDecimal xolAnnualPremium) {}
+                          BigDecimal commissionPercent, BigDecimal xolAnnualPremium,
+                          /** Where it stands today, from its dates -- see {@link TreatyStanding}. */
+                          TreatyStanding standing) {}

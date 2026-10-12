@@ -513,6 +513,13 @@ components:
       type: string
       enum: [ACTIVE, EXPIRED]
       description: Only ACTIVE treaties are eligible for cession selection.
+    TreatyStanding:
+      type: string
+      enum: [NOT_STARTED, IN_FORCE, ENDED]
+      description: >
+        Where the treaty stands today (civil date, Africa/Dar_es_Salaam), worked out from its
+        dates when read and never stored. IN_FORCE is exactly what cession selection accepts.
+        ENDED covers both a treaty past its effective-to and one whose status is EXPIRED.
     CreateTreatyRequest:
       type: object
       required: [reinsurerName, treatyType, retentionLimit, effectiveFrom, commissionPercent]
@@ -541,12 +548,13 @@ components:
           description: "XOL only: the flat yearly premium in the treaty's currency, charged one twelfth a month."
     TreatyView:
       type: object
-      required: [treatyId, reinsurerName, treatyType, status, retentionLimit, effectiveFrom, commissionPercent]
+      required: [treatyId, reinsurerName, treatyType, status, retentionLimit, effectiveFrom, commissionPercent, standing]
       properties:
         treatyId: { type: string, format: uuid }
         reinsurerName: { type: string }
         treatyType: { $ref: '#/components/schemas/TreatyType' }
         status: { $ref: '#/components/schemas/TreatyStatus' }
+        standing: { $ref: '#/components/schemas/TreatyStanding' }
         retentionLimit: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         cessionPercent:
           type: [string, "null"]

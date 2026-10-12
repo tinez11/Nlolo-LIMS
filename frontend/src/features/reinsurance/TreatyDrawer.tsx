@@ -7,9 +7,9 @@ import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetBody, SheetContent, SheetFooter, SheetHeader } from '@/components/ui/sheet';
 import { formatDate } from '@/lib/dates';
-import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectTreatyDetail, useReinsuranceStore } from '@/store/reinsuranceStore';
+import { treatyCedes, treatyTypeLabel } from './treatyTerms';
 
 /**
  * The preview half of drawer-previews-page-acts. Read-only -- there is no
@@ -43,8 +43,8 @@ export function TreatyDrawer({
       <SheetContent aria-label="Treaty preview">
         <SheetHeader
           title={treaty?.reinsurerName ?? 'Treaty'}
-          subtitle={treaty?.treatyType}
-          action={treaty?.status ? <StatusBadge kind="treaty" value={treaty.status} /> : undefined}
+          subtitle={treaty ? treatyTypeLabel(treaty.treatyType) : undefined}
+          action={treaty ? <StatusBadge kind="treatyStanding" value={treaty.standing} /> : undefined}
         />
 
         <SheetBody>
@@ -59,8 +59,7 @@ export function TreatyDrawer({
 
           {treaty && (
             <dl className="space-y-0">
-              <Field label="Retention limit" value={formatMoney(treaty.retentionLimit)} emphasis />
-              {treaty.cessionPercent && <Field label="Cession" value={`${treaty.cessionPercent}%`} />}
+              <Field label="Cedes" value={treatyCedes(treaty)} emphasis />
               <Field label="Effective from" value={formatDate(treaty.effectiveFrom)} />
               <Field label="Effective to" value={treaty.effectiveTo ? formatDate(treaty.effectiveTo) : 'Open-ended'} />
             </dl>
