@@ -1,4 +1,5 @@
 import { get, post, put } from '@/lib/http';
+import type { components as DistributionComponents } from '@/types/api/distribution';
 import type { MutationAttempt } from '@/lib/idempotency';
 import type {
   AgentView,
@@ -94,6 +95,18 @@ export function getAgent(agentId: string): Promise<AgentView> {
  */
 export function getOwnAgent(): Promise<AgentView> {
   return get<AgentView>('/agents/me');
+}
+
+/** One row of `GET /agents/me/team`. Typed here rather than in `api/types.ts`, which this work leaves alone. */
+export type AgentTeamMember = DistributionComponents['schemas']['AgentTeamMember'];
+
+/**
+ * `GET /agents/me/team` -- agents realm only. The caller's own agent record(s) first, then everyone
+ * below them in the hierarchy. Scoped by the server from the token; the console never filters it, and
+ * a row here grants nothing -- each agent's figures are still access-checked when read.
+ */
+export function getOwnTeam(): Promise<AgentTeamMember[]> {
+  return get<AgentTeamMember[]>('/agents/me/team');
 }
 
 /**

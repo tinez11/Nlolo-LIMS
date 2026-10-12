@@ -30,7 +30,7 @@ import {
 } from '@/store/distributionStore';
 import { useProductStore } from '@/store/productStore';
 import { CommissionPlanPanel } from './CommissionPlanPanel';
-import { CommissionStatementsPanel } from './CommissionStatementsPanel';
+import { AgentCommission } from './AgentCommission';
 import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
@@ -41,7 +41,7 @@ import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
  * round-trip through `GET /policies` -- confirmed on the real wire DTO).
  * There is still no `GET /agents` list anywhere, so this page is the entire
  * read surface for a single agent: profile, applicable commission plan (per
- * product), statements, and each statement's accrual line items.
+ * product), and its commission (`AgentCommission`).
  */
 export function AgentDetailPage() {
   const { agentId = '' } = useParams();
@@ -110,9 +110,7 @@ export function AgentDetailPage() {
           <CommissionPlanPanel agentId={agentId} products={products.data ?? []} canManage={canManage} />
         </Panel>
 
-        <Panel title="Commission statements">
-          <CommissionStatementsPanel agentId={agentId} canManage={canManage} />
-        </Panel>
+        <AgentCommission key={agentId} agentId={agentId} realm="staff" canManage={canManage} />
 
         {/* Last, and without `emphasis`. Suspending a licence is not what this page
             is opened to do -- a finance officer came for the commission statements --

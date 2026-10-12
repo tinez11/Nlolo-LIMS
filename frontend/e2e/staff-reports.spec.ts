@@ -16,7 +16,7 @@ test.describe('staff reports -- rebuild', () => {
       await expect(status).toContainText(/RUNNING|DONE/, { timeout: 15_000 });
       await expect(async () => {
         await page.getByRole('button', { name: 'Check status' }).click();
-        await expect(status).toContainText('DONE --', { timeout: 2_000 });
+        await expect(status).toContainText('DONE —', { timeout: 2_000 });
       }).toPass({ timeout: 200_000, intervals: [2_000] });
       await expect(status).toContainText(' 0 failed');
     });

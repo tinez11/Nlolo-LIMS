@@ -1,8 +1,13 @@
-import { expect, type Page, test } from '@playwright/test';
-import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
-import { selectAgentOfRecord } from './policies';
-import { dmy } from './dates';
+import { expect, test } from '@playwright/test';
 import { asAdmin } from './admin';
+import {
+  createDefaultPlan,
+  createRealActiveProduct,
+  issueRealPolicyForAgent,
+  onboardRealAgent,
+} from './commission';
+import { selectAgentOfRecord } from './policies';
+import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
 
 /**
  * Distribution (agents/commissions) e2e coverage against the real backend.
@@ -26,103 +31,6 @@ import { asAdmin } from './admin';
  * the real 409 `CommissionStatement.markPayoutRequested` throws for an OPEN
  * statement, rather than pretending to reach PAID.
  */
-
-const FUTURE_LICENSE_EXPIRY = `${new Date().getFullYear() + 5}-01-01`;
-
-async function onboardRealAgent(page: Page): Promise<string> {
-  await page.goto('/staff/agents/new');
-  await page.getByRole('button', { name: 'Search for a VERIFIED party by name' }).click();
-  await page.getByPlaceholder('Type a name to search').fill('Amina');
-  await page.getByText('Amina Owner').click();
-  await page.getByLabel('License number').fill(`E2E-LIC-${Date.now()}`);
-  await page.getByLabel('License expiry date').fill(dmy(FUTURE_LICENSE_EXPIRY));
-  await page.getByRole('button', { name: 'Onboard agent' }).click();
-  await expect(page).toHaveURL(/\/staff\/agents\/[0-9a-f-]{36}$/, { timeout: 15_000 });
-  return page.url().split('/').pop() as string;
-}
-
-/** A fresh ACTIVE product, so plan authoring never touches the shared seeded
- *  "Demo Term Life" fixture other suites also read. Returns the exact label
- *  text the product picker renders (`${productName} (${productCode})`). */
-async function createRealActiveProduct(page: Page): Promise<{ productId: string; optionLabel: string }> {
-  const code = `E2E-DIST-${Date.now()}`;
-  const name = `E2E Distribution Test ${code}`;
-
-  await page.goto('/staff/products/new');
-  await page.getByLabel('Product code').fill(code);
-  await page.getByLabel('Product name').fill(name);
-  await page.getByLabel('Default currency').fill('TZS');
-  await page.getByRole('button', { name: 'Create product' }).click();
-  await expect(page.getByText('DRAFT')).toBeVisible();
-
-  const ratingSection = page.locator('p', { hasText: 'Rating table — must cover' }).locator('..');
-  await ratingSection.getByRole('button', { name: 'Remove rating factor' }).last().click();
-  await ratingSection.getByLabel('Rating factor 1 band').fill('18-30');
-  // AGE is rated by range now: the band text is a label, these two are what the platform
-  // resolves against. Publishing without them is a real 422.
-  await ratingSection.getByLabel('Rating factor 1 from age').fill('18');
-  await ratingSection.getByLabel('Rating factor 1 to age').fill('30');
-  await ratingSection.getByRole('button', { name: 'Add rating factor' }).click();
-  await ratingSection.locator('select').nth(1).selectOption('SUM_ASSURED_BAND');
-  await ratingSection.getByLabel('Rating factor 2 band').fill('1-99999999');
-  await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
-  // The TIRA filing that authorises this version -- required as of V12.
-  await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
-  await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
-  // Required on an individual product as of product step 2 (PayoutPlanValidator). Without it the
-  // form refuses the publish, the product stays a DRAFT, and every caller below fails far from
-  // here -- on a Product picker that simply does not list it.
-  await page.getByLabel('Free-look days').fill('15');
-  await page.getByRole('button', { name: 'Publish version' }).click();
-  // PROOF it published. This used to wait for the product page's url, which the CREATE step had
-  // already reached -- so a publish the form refused passed straight through, leaving a DRAFT that
-  // no picker lists. The server's own answer to the publish is what is asserted now; armed before
-  // the click, so a fast response cannot be missed.
-  const published = page.waitForResponse(
-    (r) => r.request().method() === 'POST' && /\/products\/[0-9a-f-]{36}\/versions$/.test(r.url()),
-    { timeout: 15_000 },
-  );
-  // Publishing retires the currently-active version, so it is confirmed.
-  await page.getByRole('button', { name: 'Publish and make active' }).click();
-  expect((await published).status(), 'the version must actually publish').toBe(201);
-
-  const productId = page.url().split('/').pop() as string;
-  return { productId, optionLabel: `${name} (${code})` };
-}
-
-/** Fills and submits the default (first, FIRST_YEAR/rate) row of the
- *  create-commission-plan form -- no need to touch `useFieldArray` at all for
- *  a minimal one-rule plan. Assumes the product is already selected and the
- *  "No plan applies yet" 404 state (with the inline create form) is showing. */
-async function createDefaultPlan(page: Page, rate: string): Promise<void> {
-  const form = page.locator('form').filter({ hasText: 'Create a plan for this product' });
-  await form.getByPlaceholder('0.1000 (10%)').fill(rate);
-  await form.getByRole('button', { name: 'Create plan' }).click();
-}
-
-async function issueRealPolicyForAgent(
-  page: Page,
-  productOptionLabel: string,
-  agentId: string,
-): Promise<string> {
-  // Manual issue names a real, unissued case now. The product is still chosen by hand after
-  // the prefill: these tests issue against a product they published themselves, not the
-  // seeded one the case was opened against.
-  const caseId = await caseAwaitingManualIssue(page);
-  await page.goto('/staff/policies/new');
-  await selectUnderwritingCase(page, caseId);
-  await page.getByLabel('Product').selectOption({ label: productOptionLabel });
-  await expect(page.getByText('Resolving product version…')).not.toBeVisible();
-  await page.getByLabel('Sum assured').fill('2000000.00');
-  await page.getByLabel('Premium', { exact: true }).fill('800.00');
-  await selectAgentOfRecord(page, agentId);
-  // Required, and MIGRATION so the policy is in force rather than an offer.
-  await page.getByLabel('Why is this being issued by hand?').selectOption('MIGRATION');
-  await page.getByLabel('Reason for manual issue').fill('E2E distribution fixture');
-  await page.getByRole('button', { name: 'Issue policy' }).click();
-  await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
-  return page.url().split('/').pop() as string;
-}
 
 test.describe('staff distribution', () => {
   test('onboards an agent, and a policy naming it as agent of record drills in to the same page', async ({
@@ -281,13 +189,12 @@ test.describe('staff distribution', () => {
     // same transaction the manual-issue POST commits -- normally visible
     // immediately, but polled defensively rather than assumed synchronous.
     await financePage.goto(`/staff/agents/${agentId}`);
+    // The current month opens by default on the commission view; its lines appear once the
+    // accrual has landed.
     await expect(async () => {
       await financePage.reload();
-      await expect(financePage.getByText('No commission statements yet.')).not.toBeVisible();
+      await expect(financePage.getByRole('cell', { name: 'First year', exact: true })).toBeVisible();
     }).toPass({ timeout: 20_000 });
-
-    await financePage.getByRole('button', { name: 'View accruals' }).first().click();
-    await expect(financePage.getByText(/first year/)).toBeVisible();
 
     // The statement is OPEN (only a monthly pg_cron sweep ever closes one) --
     // a genuine 409 from CommissionStatement.markPayoutRequested, not a

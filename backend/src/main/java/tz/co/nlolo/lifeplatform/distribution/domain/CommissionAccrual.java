@@ -11,6 +11,8 @@ import org.hibernate.annotations.UuidGenerator;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.UUID;
 
 /**
@@ -100,6 +102,17 @@ public class CommissionAccrual {
     public String getPeriod() { return period; }
     public String getSourceRef() { return sourceRef; }
     public UUID getReversesAccrualId() { return reversesAccrualId; }
-    public Instant getCreatedAt() { return createdAt; }
+    /** The civil zone every commission date on this platform is read in. */
+    private static final ZoneId CIVIL_ZONE = ZoneId.of("Africa/Dar_es_Salaam");
+
+    /** The Dar es Salaam day an instant falls on. Static so the boundary can be tested without a persisted row. */
+    public static LocalDate civilDayOf(Instant instant) {
+        return LocalDate.ofInstant(instant, CIVIL_ZONE);
+    }
+
+    /** The day this line was booked, in Dar es Salaam -- not the UTC day {@link #getCreatedAt()} would give. */
+    public LocalDate getAccruedOn() { return civilDayOf(createdAt); }
+
+    public Instant getCreatedAt(){ return createdAt; }
     public String getCreatedBy() { return createdBy; }
 }

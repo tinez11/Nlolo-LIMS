@@ -32,6 +32,11 @@ test.describe('agents my profile', () => {
     // on this page.
     await expect(page.getByRole('button', { name: 'Create plan' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Request payout' })).toHaveCount(0);
+
+    // Commission earned moved to its own screen; the profile links there instead of listing statements.
+    await page.getByRole('link', { name: 'View my commission' }).click();
+    await expect(page).toHaveURL(/\/agents\/commission$/);
+    await expect(page.getByRole('heading', { name: 'My commission' })).toBeVisible();
   });
 
   test('a fresh navigation to /agents lands on the same profile, not a realm picker dead end', async ({ page }) => {

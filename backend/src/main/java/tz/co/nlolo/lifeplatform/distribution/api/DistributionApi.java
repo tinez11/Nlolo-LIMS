@@ -91,6 +91,15 @@ public interface DistributionApi {
     List<UUID> resolveAgentTeam(UUID partyId);
 
     /**
+     * Agent commission view: the same set {@link #resolveAgentTeam} scopes reads to -- the party's own agent
+     * profile(s), then everyone below them within the hierarchy depth cap -- each with its name, so a supervisor
+     * can pick whose commission to read. Own profiles first, then by name, then by licence number. Empty when the
+     * party is not an agent in this tenant. Listing an agent here grants nothing: every read of its figures still
+     * passes the per-agent access check.
+     */
+    List<AgentTeamMemberView> listTeam(UUID partyId);
+
+    /**
      * The agent this party IS, if any — "who is this person, as an agent".
      *
      * <p>Built for {@code policy}, which at issuance reads the policyholder's registering agent

@@ -174,10 +174,13 @@ public class PolicyEventListener {
         // key can be absent/null without Map.of's NPE-on-null-value trap. A null here means the
         // policy was sold direct.
         UUID agentOfRecordId = (UUID) payload.get("agentOfRecordId");
+        // Agent commission view (V7): the holder, so a commission line can name its client without
+        // distribution ever reading policy -- which it may not, policy depending on distribution::api.
+        UUID policyholderPartyId = (UUID) payload.get("policyholderPartyId");
 
         if (policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber).isEmpty()) {
             policyProjectionRepository.save(new PolicyProjection(tenantId, policyNumber, agentOfRecordId,
-                productId, premiumAmount, premiumCurrency, issueDate));
+                productId, premiumAmount, premiumCurrency, issueDate, policyholderPartyId));
         }
 
         // A SINGLE-premium policy accrues nothing here, and this is the second half of a fact

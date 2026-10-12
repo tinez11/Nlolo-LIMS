@@ -4,6 +4,7 @@ import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.distribution.api.AgentView;
+import tz.co.nlolo.lifeplatform.distribution.api.CommissionAccrualView;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.distribution.api.StatementStatus;
 import tz.co.nlolo.lifeplatform.distribution.api.TierType;
@@ -162,7 +163,8 @@ class ClawbackIntegrationTest {
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
-            "db-migrations/distribution/V6__commission_withholding.sql");
+            "db-migrations/distribution/V6__commission_withholding.sql",
+            "db-migrations/distribution/V7__projection_policyholder.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -431,5 +433,69 @@ class ClawbackIntegrationTest {
         assertThat(commissionAccrualRepository
             .findByTenantIdAndPolicyNumberAndTierTypeAndReversesAccrualIdIsNull(tenantId, policyNumber, TierType.FIRST_YEAR))
             .hasSize(1);
+
+        // With no projection row there is no client or product to name -- nulls, not an error. The date still stands.
+        assertThat(distributionApi.listAccrualsForPolicy(policyNumber)).singleElement().satisfies(line -> {
+            assertThat(line.clientPartyId()).isNull();
+            assertThat(line.clientName()).isNull();
+            assertThat(line.productId()).isNull();
+            assertThat(line.productName()).isNull();
+            assertThat(line.accruedOn()).isNotNull();
+        });
+    }
+
+    /** Agent commission view: a clawback line names the same client and product as the line it reverses, carries a
+     * negative amount, and is dated -- read through the API the screen uses, not the repository. */
+    @Test
+    void aClawbackLineCarriesTheClientProductAndDateOfTheLineItReverses() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "ENRICH");
+        String policyNumber = issuePolicy(tenantId, fixture, new BigDecimal("100000.00"), "ENRICH-01");
+        policyApi.lapsePolicy(policyNumber, "test-staff");
+
+        TenantContext.set(tenantId);
+        UUID statementId = originalFirstYearAccrual(tenantId, policyNumber).getStatementId();
+        List<CommissionAccrualView> lines = distributionApi.listAccruals(statementId);
+
+        assertThat(lines).hasSize(2);
+        assertThat(lines).allSatisfy(line -> {
+            assertThat(line.clientName()).isEqualTo("Clawback IT Policyholder ENRICH-01");
+            assertThat(line.productName()).isEqualTo("Clawback IT Product ENRICH");
+            assertThat(line.productId()).isEqualTo(fixture.productId());
+            assertThat(line.accruedOn()).isEqualTo(LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")));
+        });
+        assertThat(lines).filteredOn(line -> line.reversesAccrualId() != null).singleElement()
+            .satisfies(clawback -> assertThat(clawback.amount()).isEqualByComparingTo("-10000.00"));
+    }
+
+    /** Agent commission view (V7): the projection keeps who holds the policy, from PolicyActivated, and V7 backfills
+     * a row written before the column existed -- re-applied here against a row whose holder has been cleared, which
+     * is exactly the state every pre-V7 row is in. */
+    @Test
+    void theProjectionRecordsThePolicyholderAndV7BackfillsARowThatLacksIt() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "HOLDER");
+        String policyNumber = issuePolicy(tenantId, fixture, new BigDecimal("100000.00"), "HOLDER-01");
+
+        TenantContext.set(tenantId);
+        UUID holder = policyApi.getPolicy(policyNumber).policyholderPartyId();
+        assertThat(policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber).orElseThrow()
+            .getPolicyholderPartyId()).isEqualTo(holder);
+
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement clear = connection.prepareStatement(
+                 "UPDATE distribution.policy_projection SET policyholder_party_id = NULL "
+                     + "WHERE tenant_id = ? AND policy_number = ?")) {
+            clear.setObject(1, tenantId);
+            clear.setString(2, policyNumber);
+            assertThat(clear.executeUpdate()).isEqualTo(1);
+        }
+
+        MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
+            "db-migrations/distribution/V7__projection_policyholder.sql");
+
+        assertThat(policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber).orElseThrow()
+            .getPolicyholderPartyId()).isEqualTo(holder);
     }
 }

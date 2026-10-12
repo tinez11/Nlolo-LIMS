@@ -192,6 +192,7 @@ class DistributionContractTest {
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
+            "db-migrations/distribution/V7__projection_policyholder.sql",
             // IFRS 17 I3b: a payout reads the commission withholding rate from the accounting policy register.
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
@@ -627,6 +628,102 @@ class DistributionContractTest {
             .andExpect(jsonPath("$.errorCode").value("AGENT_NOT_FOUND"));
     }
 
+    // ============================================================================================
+    // GET /agents/me/team, and the hierarchy on commission reads
+    // ============================================================================================
+
+    @Test
+    void getOwnTeamListsTheCallerFirstThenItsWholeDownlineAndNobodyElse() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Agent supervisor = onboardAgent(tenantId, "TEAM-SUP", null);
+        Agent direct = onboardAgent(tenantId, "TEAM-DIRECT", supervisor.agentId());
+        Agent indirect = onboardAgent(tenantId, "TEAM-INDIRECT", direct.agentId());
+        Agent outsider = onboardAgent(tenantId, "TEAM-OUTSIDER", null);
+
+        mockMvc.perform(get("/agents/me/team").with(agentOf(tenantId, supervisor.partyId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.length()").value(3))
+            .andExpect(jsonPath("$[0].agentId").value(supervisor.agentId().toString()))
+            .andExpect(jsonPath("$[0].displayName").value("Distribution Contract TEAM-SUP"))
+            .andExpect(jsonPath("$[*].agentId").value(org.hamcrest.Matchers.containsInAnyOrder(
+                supervisor.agentId().toString(), direct.agentId().toString(), indirect.agentId().toString())))
+            .andExpect(jsonPath("$[*].agentId").value(org.hamcrest.Matchers.not(
+                org.hamcrest.Matchers.hasItem(outsider.agentId().toString()))));
+    }
+
+    @Test
+    void getOwnTeamForAnAgentWithNoDownlineListsOnlyItself() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Agent supervisor = onboardAgent(tenantId, "LEAF-SUP", null);
+        Agent leaf = onboardAgent(tenantId, "LEAF", supervisor.agentId());
+
+        // The supervisor is never in a downline agent's team.
+        mockMvc.perform(get("/agents/me/team").with(agentOf(tenantId, leaf.partyId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].agentId").value(leaf.agentId().toString()))
+            .andExpect(jsonPath("$[0].hierarchyParentId").value(supervisor.agentId().toString()));
+    }
+
+    @Test
+    void getOwnTeamReturns404WhenThePartyIsNotAnAgent() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        PartyView notAnAgent = verifiedParty(tenantId, "TEAM-NOT-AGENT");
+
+        mockMvc.perform(get("/agents/me/team").with(agentOf(tenantId, notAnAgent.partyId())))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("AGENT_NOT_FOUND"));
+    }
+
+    @Test
+    void getOwnTeamReturns403ForStaff() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        onboardAgent(tenantId, "TEAM-STAFF", null);   // a real agent exists; staff still has no team
+
+        mockMvc.perform(get("/agents/me/team").with(financeStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void aSupervisorReadsADownlineAgentsStatementsAndLines() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createActiveProduct(tenantId, "DIST-CT-SUPREAD");
+        createPlan(tenantId, productId);
+        Agent supervisor = onboardAgent(tenantId, "SUPREAD-SUP", null);
+        Agent downline = onboardAgent(tenantId, "SUPREAD-SUB", supervisor.agentId());
+        UUID statementId = statementFor(tenantId, productId, downline.agentId(), "SUPREAD");
+
+        mockMvc.perform(get("/agents/{agentId}/commission-statements", downline.agentId())
+                .with(agentOf(tenantId, supervisor.partyId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].statementId").value(statementId.toString()));
+        mockMvc.perform(get("/agents/{agentId}/commission-statements/{statementId}/accruals",
+                    downline.agentId(), statementId)
+                .with(agentOf(tenantId, supervisor.partyId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].clientName").value("Distribution Contract Holder SUPREAD"));
+    }
+
+    @Test
+    void aDownlineAgentCannotReadItsSupervisorsCommission() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createActiveProduct(tenantId, "DIST-CT-UPREAD");
+        createPlan(tenantId, productId);
+        Agent supervisor = onboardAgent(tenantId, "UPREAD-SUP", null);
+        Agent downline = onboardAgent(tenantId, "UPREAD-SUB", supervisor.agentId());
+        UUID supervisorsStatement = statementFor(tenantId, productId, supervisor.agentId(), "UPREAD");
+
+        mockMvc.perform(get("/agents/{agentId}/commission-statements", supervisor.agentId())
+                .with(agentOf(tenantId, downline.partyId())))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/agents/{agentId}/commission-statements/{statementId}/accruals",
+                    supervisor.agentId(), supervisorsStatement)
+                .with(agentOf(tenantId, downline.partyId())))
+            .andExpect(status().isForbidden());
+    }
+
     @Test
     void getOwnAgentProfileReturns403ForStaff() throws Exception {
         // Staff has no "own agent" concept -- unlike GET /agents/{agentId}, which staff reads
@@ -759,7 +856,14 @@ class DistributionContractTest {
             .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "CommissionAccrualView"))
             .andExpect(jsonPath("$[0].tierType").value("FIRST_YEAR"))
             .andExpect(jsonPath("$[0].amount.amount").value("10000.00"))
-            .andExpect(jsonPath("$[0].reversesAccrualId").doesNotExist());
+            .andExpect(jsonPath("$[0].reversesAccrualId").doesNotExist())
+            // Agent commission view: the line names its client, its product and the day it was booked.
+            .andExpect(jsonPath("$[0].clientName").value("Distribution Contract Holder ACCR-200"))
+            .andExpect(jsonPath("$[0].clientPartyId").isString())
+            .andExpect(jsonPath("$[0].productName").value("Distribution Contract Product DIST-CT-ACCR"))
+            .andExpect(jsonPath("$[0].productId").value(productId.toString()))
+            .andExpect(jsonPath("$[0].accruedOn").value(
+                LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")).toString()));
     }
 
     // ============================================================================================

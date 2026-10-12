@@ -96,7 +96,7 @@ function RebuildPanel() {
       </div>
       {status && (
         <p className="text-sm" role="status">
-          {status.state} -- {status.eventsReplayed} events replayed, {status.eventsFailed} failed
+          {status.state} — {status.eventsReplayed} events replayed, {status.eventsFailed} failed
           {status.finishedAt ? `, finished ${status.finishedAt}` : ''}
         </p>
       )}

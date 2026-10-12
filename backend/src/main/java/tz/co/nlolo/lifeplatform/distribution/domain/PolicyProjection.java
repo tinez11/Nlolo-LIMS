@@ -60,13 +60,20 @@ public class PolicyProjection {
     @Column(name = "lapsed_at")
     private Instant lapsedAt;
 
+    /** Who holds the policy (V7) -- for a credit-life or group scheme, the lender or association. Null only on a
+     * row written before V7 that the backfill could not match. */
+    @Column(name = "policyholder_party_id")
+    private UUID policyholderPartyId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
     protected PolicyProjection() {}
 
     public PolicyProjection(UUID tenantId, String policyNumber, UUID agentId, UUID productId,
-                             BigDecimal premiumAmount, String premiumCurrency, LocalDate issueDate) {
+                             BigDecimal premiumAmount, String premiumCurrency, LocalDate issueDate,
+                             UUID policyholderPartyId) {
+        this.policyholderPartyId = policyholderPartyId;
         this.tenantId = tenantId;
         this.policyNumber = policyNumber;
         this.agentId = agentId;
@@ -96,6 +103,7 @@ public class PolicyProjection {
     public String getPremiumCurrency() { return premiumCurrency; }
     public LocalDate getIssueDate() { return issueDate; }
     public UUID getFirstInvoiceId() { return firstInvoiceId; }
-    public Instant getLapsedAt() { return lapsedAt; }
+    public UUID getPolicyholderPartyId() { return policyholderPartyId; }
+    public Instant getLapsedAt(){ return lapsedAt; }
     public Instant getCreatedAt() { return createdAt; }
 }
