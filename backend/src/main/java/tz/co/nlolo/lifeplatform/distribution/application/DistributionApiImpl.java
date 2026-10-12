@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.distribution.application;
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.distribution.api.AgentNotFoundException;
+import tz.co.nlolo.lifeplatform.distribution.api.AgentTeamMemberView;
 import tz.co.nlolo.lifeplatform.distribution.api.AgentView;
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionAccrualView;
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionPlanNotFoundException;
@@ -49,6 +50,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -294,6 +296,27 @@ public class DistributionApiImpl implements DistributionApi {
             team.addAll(CommissionCalculator.resolveDescendantIds(own.getAgentId(), childrenOf));
         }
         return List.copyOf(team);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AgentTeamMemberView> listTeam(UUID partyId) {
+        UUID tenantId = TenantContext.get();
+        List<AgentTeamMemberView> own = new ArrayList<>();
+        List<AgentTeamMemberView> below = new ArrayList<>();
+        for (UUID agentId : resolveAgentTeam(partyId)) {
+            agentProfileRepository.findByAgentIdAndTenantId(agentId, tenantId).ifPresent(profile -> {
+                AgentTeamMemberView member = new AgentTeamMemberView(profile.getAgentId(), profile.getLicenseNumber(),
+                    profile.getLicenseStatus(), profile.getHierarchyParentId(),
+                    partyName(profile.getPartyId()).orElse(null));
+                (partyId.equals(profile.getPartyId()) ? own : below).add(member);
+            });
+        }
+        below.sort(Comparator.comparing(AgentTeamMemberView::displayName,
+                Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))
+            .thenComparing(AgentTeamMemberView::licenseNumber));
+        own.addAll(below);
+        return List.copyOf(own);
     }
 
     /**

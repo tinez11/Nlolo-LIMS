@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.distribution.infrastructure;
 
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.distribution.api.AgentNotFoundException;
+import tz.co.nlolo.lifeplatform.distribution.api.AgentTeamMemberView;
 import tz.co.nlolo.lifeplatform.distribution.api.AgentView;
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionPlanView;
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionStatementNotFoundException;
@@ -177,6 +178,26 @@ public class AgentController {
         UUID agentId = resolveOwnAgentId(jwt);
         AgentView view = distributionApi.getAgent(agentId);
         return ResponseEntity.ok(AgentResponseDto.from(view));
+    }
+
+    /**
+     * Agent commission view: who a supervisor may pick. The agent realm had no way to list its own downline --
+     * {@code GET /agents} is staff-only, and rightly, because it has no per-row scoping. This list is scoped by
+     * construction: it is {@code resolveAgentTeam} of the TOKEN's party, never of anything the caller supplies.
+     * It grants nothing on its own; reading a member's figures still passes {@link #enforceAgentReadAccess}.
+     */
+    @GetMapping("/agents/me/team")
+    @PreAuthorize("hasRole('REALM_AGENTS')")
+    public ResponseEntity<List<AgentTeamMemberDto>> getOwnTeam(@AuthenticationPrincipal Jwt jwt) {
+        String partyIdClaim = jwt.getClaimAsString("party_id");
+        if (partyIdClaim == null) {
+            throw new AccessDeniedException("Agent token carries no party_id claim");
+        }
+        List<AgentTeamMemberView> team = distributionApi.listTeam(UUID.fromString(partyIdClaim));
+        if (team.isEmpty()) {
+            throw new AgentNotFoundException("Token's party is not an agent in this tenant");
+        }
+        return ResponseEntity.ok(team.stream().map(AgentTeamMemberDto::from).toList());
     }
 
     /**

@@ -131,6 +131,28 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /agents/me/team:
+    get:
+      summary: List the caller's own agent record and its downline
+      description: >
+        Agents-realm only. The caller is the token's `party_id`. Rows are the caller's own agent
+        profile(s) first, then every agent below them in the hierarchy (the same depth cap every
+        hierarchy read uses), by name. An agent with no downline gets one row. 404 if the token's
+        party is not an agent in this tenant. Listing grants nothing: reading any row's figures
+        still passes the per-agent access check.
+      security:
+        - agentsAuth: [agent, supervisor]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AgentTeamMember' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /agents/{agentId}:
     get:
       summary: Get agent detail
@@ -517,6 +539,17 @@ components:
           description: The agent's own assigned plan, if any. Null means the product's active plan applies instead.
         salesChannel: { $ref: '#/components/schemas/AgentChannel' }
         homeBranch: { type: [string, "null"], description: "A refdata BRANCH code; null only for an agent onboarded without one." }
+    AgentTeamMember:
+      type: object
+      required: [agentId, licenseNumber, licenseStatus]
+      properties:
+        agentId: { type: string, format: uuid }
+        licenseNumber: { type: string }
+        licenseStatus: { type: string, enum: [ACTIVE, EXPIRED, SUSPENDED] }
+        hierarchyParentId: { type: [string, "null"], format: uuid }
+        displayName:
+          type: [string, "null"]
+          description: The agent's own name, from party. Null when it cannot be resolved.
     CreateCommissionPlanRequest:
       type: object
       required: [productId, rules]
