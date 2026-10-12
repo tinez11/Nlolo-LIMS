@@ -1,19 +1,21 @@
-import { Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Plus, Search } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { TREATY_STATUSES, type TreatyStatus, type TreatyView } from '@/api/types';
+import type { TreatyView } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, type Column } from '@/components/DataTable';
 import { CountLine, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { formatDate } from '@/lib/dates';
-import { formatMoney } from '@/lib/money';
-import { isInitialLoad, isEmpty } from '@/store/createResourceSlice';
+import { humanizeStatus } from '@/lib/status';
+import { isInitialLoad } from '@/store/createResourceSlice';
 import { useReinsuranceStore } from '@/store/reinsuranceStore';
 import { TreatyDrawer } from './TreatyDrawer';
 import { FilterChip } from '@/components/FilterChip';
+import { matchesReinsurer, TREATY_STANDINGS, treatyCedes, treatyTypeLabel, type TreatyStanding } from './treatyTerms';
 
 /**
  * `GET /treaties` is a bare unpaged array (like products' catalog), so this
@@ -21,37 +23,51 @@ import { FilterChip } from '@/components/FilterChip';
  * AppShell.tsx's STAFF_NAV comment), a treaty IS listable -- so this follows
  * Policies/Claims/Products/Underwriting's full drawer-previews-page-acts
  * shape rather than the create-only exception.
+ *
+ * <p>Filtering and search run on the downloaded list, never the network. The chips filter by
+ * STANDING -- in force, not yet started, ended -- read from each treaty's dates by the server. They
+ * used to filter on the stored ACTIVE/EXPIRED flag, which nothing ever changes: "Expired" was always
+ * empty and a treaty starting next week sat under "Active". The search is the only way to find a
+ * reinsurer by name; the "Go to" palette searches screens, not records.
  */
 export function TreatiesPage() {
   const [params, setParams] = useSearchParams();
   const [previewing, setPreviewing] = useState<string | null>(null);
 
-  const statusParam = params.get('status');
-  const status: TreatyStatus | undefined =
-    statusParam && (TREATY_STATUSES as readonly string[]).includes(statusParam)
-      ? (statusParam as TreatyStatus)
+  const standingParam = params.get('standing');
+  const standing: TreatyStanding | undefined =
+    standingParam && (TREATY_STANDINGS as readonly string[]).includes(standingParam)
+      ? (standingParam as TreatyStanding)
       : undefined;
+  const query = params.get('q') ?? '';
 
   const list = useReinsuranceStore((s) => s.list);
   const loadList = useReinsuranceStore((s) => s.loadList);
 
   useEffect(() => {
-    void loadList(status);
-  }, [loadList, status]);
+    void loadList();
+  }, [loadList]);
 
-  function update(next: TreatyStatus | undefined) {
+  function setParam(key: string, value: string | undefined) {
     const merged = new URLSearchParams(params);
-    if (next) merged.set('status', next);
-    else merged.delete('status');
-    setParams(merged);
+    if (value) merged.set(key, value);
+    else merged.delete(key);
+    // Typing a name should not push a history entry per keystroke.
+    setParams(merged, { replace: key === 'q' });
   }
 
-  const total = list.data?.length ?? null;
+  const shown = useMemo(
+    () => (list.data ?? []).filter((t) => (!standing || t.standing === standing) && matchesReinsurer(t, query)),
+    [list.data, standing, query],
+  );
+  const filtering = standing !== undefined || query.trim() !== '';
+
+  const total = list.data ? shown.length : null;
   const count: Stat = {
-    label: status ? `${status.toLowerCase()} treaties` : 'treaties',
+    label: standing ? `${humanizeStatus(standing).toLowerCase()} treaties` : 'treaties',
     value: total,
     pending: isInitialLoad(list),
-    hint: list.status === 'error' && total === null ? 'could not load' : 'in your tenant',
+    hint: list.status === 'error' && total === null ? 'could not load' : filtering ? 'matching this filter' : 'in your tenant',
   };
 
   const columns: Column<TreatyView>[] = [
@@ -64,18 +80,18 @@ export function TreatiesPage() {
       key: 'treatyType',
       header: 'Type',
       secondary: true,
-      render: (t) => <span className="text-muted-foreground">{t.treatyType.replace(/_/g, ' ')}</span>,
+      render: (t) => <span className="text-muted-foreground">{treatyTypeLabel(t.treatyType)}</span>,
     },
     {
-      key: 'status',
+      key: 'standing',
       header: 'Status',
-      render: (t) => <StatusBadge kind="treaty" value={t.status} />,
+      render: (t) => <StatusBadge kind="treatyStanding" value={t.standing} />,
     },
     {
-      key: 'retentionLimit',
-      header: 'Retention limit',
+      key: 'cedes',
+      header: 'Cedes',
       align: 'right',
-      render: (t) => formatMoney(t.retentionLimit),
+      render: (t) => treatyCedes(t),
     },
     {
       key: 'effectiveFrom',
@@ -89,14 +105,23 @@ export function TreatiesPage() {
     if (isInitialLoad(list)) return <TableSkeleton columns={columns.length} />;
 
     if (list.status === 'error' && list.error && list.data === null) {
-      return <ErrorPanel error={list.error} onRetry={() => void loadList(status)} />;
+      return <ErrorPanel error={list.error} onRetry={() => void loadList()} />;
     }
 
-    if (isEmpty(list)) {
+    if ((list.data ?? []).length === 0) {
       return (
         <EmptyState
-          title={status ? `No ${status.toLowerCase()} treaties` : 'No treaties yet'}
+          title="No treaties yet"
           description="A treaty must be authored before any policy can cede risk against it."
+        />
+      );
+    }
+
+    if (shown.length === 0) {
+      return (
+        <EmptyState
+          title="No treaties match"
+          description={query.trim() ? `Nothing for “${query.trim()}”${standing ? ' with this status' : ''}.` : 'None with this status.'}
         />
       );
     }
@@ -111,7 +136,7 @@ export function TreatiesPage() {
         )}
         <DataTable
           columns={columns}
-          rows={list.data ?? []}
+          rows={shown}
           rowKey={(t) => t.treatyId ?? JSON.stringify(t)}
           onRowActivate={(t) => {
             if (t.treatyId) setPreviewing(t.treatyId);
@@ -142,16 +167,32 @@ export function TreatiesPage() {
       <div className="px-6 pb-6">
         <div className="rounded-lg border border-border bg-surface">
           <div className="flex flex-wrap items-center gap-1.5 gap-y-2 border-b border-border px-3 py-2.5">
-            <FilterChip label="All" active={status === undefined} onClick={() => update(undefined)} />
-            {TREATY_STATUSES.map((value) => (
+            <FilterChip label="All" active={standing === undefined} onClick={() => setParam('standing', undefined)} />
+            {TREATY_STANDINGS.map((value) => (
               <FilterChip
                 key={value}
-                label={<StatusBadge kind="treaty" value={value} />}
+                label={<StatusBadge kind="treatyStanding" value={value} />}
                 bare
-                active={status === value}
-                onClick={() => update(value)}
+                active={standing === value}
+                onClick={() => setParam('standing', value)}
               />
             ))}
+
+            <div className="relative ml-auto">
+              <Search
+                className="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-subtle-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                inputSize="sm"
+                className="w-56 pl-7"
+                aria-label="Search reinsurers"
+                data-list-filter
+                placeholder="Search reinsurer"
+                value={query}
+                onChange={(e) => setParam('q', e.target.value || undefined)}
+              />
+            </div>
           </div>
 
           {renderBody()}
@@ -162,4 +203,3 @@ export function TreatiesPage() {
     </>
   );
 }
-

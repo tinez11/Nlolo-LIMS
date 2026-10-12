@@ -347,6 +347,14 @@ export const STATUS_MAPS = {
     EXPIRED: 'neutral',
   },
 
+  // reinsurance/api/TreatyStanding.java -- where a treaty stands today, read from its dates.
+  // What the console shows; `treaty` above is the stored flag, which never changes on its own.
+  treatyStanding: {
+    NOT_STARTED: 'pending',
+    IN_FORCE: 'active',
+    ENDED: 'neutral',
+  },
+
   // party/api/KycStatus.java
   kyc: {
     PENDING: 'pending',

@@ -65,8 +65,9 @@ test.describe('staff reinsurance', () => {
 
     const { reinsurerName } = await createRealQuotaShareTreaty(page, '25.00', '12.50');
     await expect(page.getByRole('heading', { name: reinsurerName })).toBeVisible();
-    await expect(page.getByText('QUOTA SHARE')).toBeVisible();
-    await expect(page.getByText('25.00%')).toBeVisible();
+    await expect(page.getByText('Quota share', { exact: true })).toBeVisible();
+    // A quota share is described by what it takes, not by the 0.00 retention it stores.
+    await expect(page.getByText('25.00% of each policy')).toBeVisible();
     await expect(page.getByText('12.50%')).toBeVisible();
     // IFRS 17 I3c: the monthly bordereaux. A treaty effective today has no closed month yet, and its current month
     // is shown as it would be written now.
@@ -76,8 +77,16 @@ test.describe('staff reinsurance', () => {
 
     await page.goto('/staff/treaties');
     await expect(page.getByText(reinsurerName)).toBeVisible();
-    await page.getByRole('button', { name: 'Active' }).click();
+    // Effective today, so it stands in force -- read from its dates, not the stored flag.
+    await page.getByRole('button', { name: 'In force' }).click();
     await expect(page.getByText(reinsurerName)).toBeVisible();
+    // Found by name: the register is searchable now, and the search narrows to this one treaty.
+    await page.getByLabel('Search reinsurers').fill(reinsurerName);
+    await expect(page.getByRole('row')).toHaveCount(2);
+    await expect(page.getByRole('row').nth(1)).toContainText(reinsurerName);
+    // Nothing matches a name nobody has, and the page says so rather than going blank.
+    await page.getByLabel('Search reinsurers').fill(`${reinsurerName} nobody`);
+    await expect(page.getByText('No treaties match')).toBeVisible();
 
     await financeContext.close();
   });
