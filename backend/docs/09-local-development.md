@@ -10,10 +10,12 @@ the host (see gotcha 2 below for why).
   enough free RAM to run six-plus containers plus the JVM.
 - **Node** (for any frontend tooling this repo's `package.json` scripts assume — not required to
   run the backend alone).
-- **The VS Code Java extension's bundled JRE 21**, at
-  `/c/Users/USER/.vscode/extensions/redhat.java-1.55.0-win32-x64/jre/21.0.11-win32-x86_64`. Export
-  it as `JAVA_HOME` before running Maven; do not rely on a separately-installed JDK unless you
-  know it is also Java 21.
+- **The VS Code Java extension's bundled JRE 21**, under
+  `~/.vscode/extensions/redhat.java-<version>/jre/<jdk>/`. The extension updates itself, so the
+  version in that path moves: check it rather than copying an old one. As of 2026-10-13 it is
+  `/c/Users/USER/.vscode/extensions/redhat.java-1.56.0-win32-x64/jre/21.0.12.1-win32-x86_64`.
+  Export it as `JAVA_HOME` before running Maven; do not rely on a separately-installed JDK unless
+  you know it is also Java 21.
 - **Do NOT install Postgres or Keycloak natively.** They run as containers on host ports `15432`
   and `8081` respectively (Postgres is published on `15432`, not the standard `5432`, specifically
   because a native Postgres install will silently win that port instead of failing to bind —
@@ -22,8 +24,8 @@ the host (see gotcha 2 below for why).
   already have a local Postgres or Keycloak service running on either port, stop it before
   bringing this stack up, or the app will silently talk to the wrong database with a confusing
   `password authentication failed` error.
-- **No local `psql` install is required.** `scripts/migrate.sh local` runs `psql` inside the
-  `postgres` container itself.
+- **No local `psql` or Flyway install is required.** `scripts/migrate.sh local` runs the Flyway CLI
+  as a container, and `scripts/configure-db.sh local` runs `psql` inside the `postgres` container.
 
 ## Startup
 
@@ -32,7 +34,7 @@ cd infra && docker compose up -d postgres keycloak minio redis mock-mobile-money
 cd infra && docker compose up minio-init && cd ..   # one-shot: creates the four buckets
 scripts/migrate.sh local          # nothing applies schema automatically -- see below
 scripts/configure-db.sh local     # partitions + every pg_cron job; safe to re-run, any time
-export JAVA_HOME="/c/Users/USER/.vscode/extensions/redhat.java-1.55.0-win32-x64/jre/21.0.11-win32-x86_64"
+export JAVA_HOME="/c/Users/USER/.vscode/extensions/redhat.java-1.56.0-win32-x64/jre/21.0.12.1-win32-x86_64"
 ./mvnw -B -o spring-boot:run -Dspring-boot.run.profiles=local
 scripts/seed-dev-data.sh          # in a second terminal, once the app is up
 ```
@@ -46,7 +48,8 @@ cd infra && docker compose --profile tools up -d pgadmin && cd ..
 
 ## Reset sequence
 
-`scripts/migrate.sh local` is a first-run-only tool (see gotcha 1). To get back to a clean slate:
+`scripts/migrate.sh local` is safe to re-run (see gotcha 1), so a reset is only needed when you
+actually want an empty database. To get back to a clean slate:
 
 ```bash
 cd infra
@@ -90,12 +93,22 @@ already has (some of) the schema applied — not a bug in the migration files th
 
 ## Four things that will otherwise cost you an afternoon
 
-**1. Migrations do not run automatically.** `pom.xml` contains neither Flyway nor Liquibase, so
+**1. Migrations do not run automatically.** The application does not migrate on startup, so
 `docker compose up` on a fresh volume leaves an entirely empty database behind a running app, and
 every request fails on a missing relation — an error that names nothing about the real cause.
-`scripts/migrate.sh local` is the only path. It is also NOT idempotent: re-running it against an
-already-migrated database fails on plain `CREATE TABLE`. To start clean, drop the volume
-(`docker compose --profile tools down -v`), bring it back up, and re-migrate.
+`scripts/migrate.sh local` is the path.
+
+Since 2026-10-13 it drives the **Flyway CLI** (as a pinned container, so nothing needs installing),
+one schema-history table per module in `public.flyway_history_<module>`. It is therefore **safe to
+re-run**: only migrations not yet applied run, and an already-applied migration whose file has been
+edited since stops the run on a checksum mismatch rather than diverging environments quietly. It
+used to be a plain `psql` loop that could migrate a database exactly once — which is why the CD
+pipeline's "Run Flyway migrations against production" step would have failed on every deploy after
+the first.
+
+A database migrated BEFORE Flyway (this dev one) needs `scripts/migrate.sh local --baseline` once,
+which records each module's current version as applied without running anything. Running it on a
+database Flyway already manages is refused.
 
 **2. Run the application on the HOST, not as the compose `app` service, whenever a browser is
 involved.** `application.yml` defaults the Keycloak issuers to `http://localhost:8081/realms/...`,
@@ -144,8 +157,26 @@ the `party_id` has to match a real party row, so guessing one just moves the `40
 | Keycloak admin | http://localhost:8081 | `admin` / `devadmin` |
 | pgAdmin | http://localhost:5050 | `dev@nlolo-lifeplatform.tz` / `devadmin` (server pre-registered) |
 | Mailpit (outbound mail) | http://localhost:8025 | none |
-| MinIO console | http://localhost:9001 | `minioadmin` / `minioadmin` |
+| MinIO console | http://localhost:9001 | `minioadmin` / `minioadmin` (see the note below) |
 | WireMock (mobile money) | http://localhost:8082 | none |
+
+**MinIO is still the dev object store, and can no longer be pulled (2026-10-13).** MinIO withdrew
+public distribution: its Docker Hub repositories are gone, `dl.min.io` answers 410, and quay.io
+demands credentials. `infra/docker-compose.yml` still asks for `minio/minio:latest`, which works
+only on a machine that already holds the image in its local cache. A new machine will fail to
+start `minio` and `minio-init`, and the error reads like a network problem. The tests no longer
+depend on it — they use SeaweedFS through `ObjectStoreContainer` — and the pilot server runs
+SeaweedFS too (`deploy/server/compose.yml`). Moving the dev stack onto SeaweedFS is the obvious
+follow-up; until then, document uploads in dev need that cached image.
+
+**Keycloak upgrades are one-way.** The dev stack runs Keycloak 26 (`quay.io/keycloak/keycloak`),
+and starting a newer Keycloak migrates its database in place. Going back to an older one afterwards
+leaves every realm answering normally while **no password is accepted** — the newer version
+re-encodes stored credentials. Always `docker exec infra-postgres-1 pg_dump -U postgres -Fc
+keycloak > keycloak-backup.dump` before changing that version, and restore it if you go back.
+Note also that Keycloak 26 renamed `KEYCLOAK_ADMIN`/`KEYCLOAK_ADMIN_PASSWORD` to
+`KC_BOOTSTRAP_ADMIN_USERNAME`/`KC_BOOTSTRAP_ADMIN_PASSWORD`; the old names are ignored in silence,
+leaving a Keycloak with no admin user and nothing in the log.
 
 pgAdmin's registered connection uses the `postgres` superuser deliberately: `app_role` is
 `NOSUPERUSER NOBYPASSRLS`, so browsing as it shows **zero rows** in every tenant-scoped table

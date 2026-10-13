@@ -72,9 +72,9 @@ class CustomerPortalIntegrationTest {
                 "db-migrations/claims/V9__zero_annuity_settlement.sql",
                 "db-migrations/claims/V10__funeral_claims.sql",
                 "db-migrations/claims/V11__claim_document_request.sql")).toArray(String[]::new));
-        // Communication (the dashboard's unread count and the inbox, step 7) moved into DepositTestMigrations.ALL
-        // on 2026-10-13, when the portal invite began texting through it. Listing it again here applied every
-        // migration twice and failed on "relation notification_template already exists".
+        // Communication: the dashboard counts unread messages and the inbox reads them (step 7).
+        MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
+            DepositTestMigrations.COMMUNICATION);
     }
 
     @Autowired private tz.co.nlolo.lifeplatform.communication.api.NotificationApi notificationApi;

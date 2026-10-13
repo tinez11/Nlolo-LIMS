@@ -72,6 +72,9 @@ class PortalAccessIntegrationTest {
     static void applyMigrations() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             DepositTestMigrations.ALL);
+        // The invite texts the one-time password through communication, and records it masked (2026-10-13).
+        MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
+            DepositTestMigrations.COMMUNICATION);
     }
 
     private static final UUID TENANT = UUID.randomUUID();

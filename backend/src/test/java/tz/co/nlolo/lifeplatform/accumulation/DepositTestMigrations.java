@@ -131,8 +131,17 @@ public final class DepositTestMigrations {
         "db-migrations/billing/V9__schedules_due_for_invoicing.sql",
         "db-migrations/billing/V10__premium_receipt.sql",
         "db-migrations/billing/V11__premium_in_advance.sql",
-        // communication: the portal invite texts a one-time password through it (2026-10-13), and the portal inbox
-        // reads its dispatch rows. Without these the schema is simply absent and every send is a 500.
+        "db-migrations/omnichannel/V1__portal_access.sql",
+        "db-migrations/omnichannel/V2__sms_password_delivery.sql",
+    };
+
+    /**
+     * The communication schema, for the tests that send through it (2026-10-13). NOT part of {@link #ALL}: this list
+     * is the root of a chain -- annuity builds on it, funeral on annuity, unit-linked on funeral -- and several of
+     * those tests already list these migrations themselves, so folding them in here applied every one twice and
+     * failed with "relation notification_template already exists".
+     */
+    public static final String[] COMMUNICATION = {
         "db-migrations/communication/V1__create_communication_schema.sql",
         "db-migrations/communication/V2__template_identity.sql",
         "db-migrations/communication/V3__seed_offer_templates.sql",
@@ -148,7 +157,5 @@ public final class DepositTestMigrations {
         "db-migrations/communication/V13__unit_linked_templates.sql",
         "db-migrations/communication/V14__unit_linked_statement_template.sql",
         "db-migrations/communication/V15__dispatch_body_and_inbox.sql",
-        "db-migrations/omnichannel/V1__portal_access.sql",
-        "db-migrations/omnichannel/V2__sms_password_delivery.sql",
     };
 }
