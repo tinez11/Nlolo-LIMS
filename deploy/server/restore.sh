@@ -14,6 +14,8 @@ cd "$(dirname "$0")"
 set -a; . ./.env; . ./versions.env; set +a
 
 DC="docker compose --env-file .env --env-file versions.env -f compose.yml"
+# Git Bash rewrites container paths like /data into Windows paths; see backup.sh.
+export MSYS_NO_PATHCONV=1
 DIR="${1:?Usage: ./restore.sh <backups/STAMP> [--scratch]}"
 [ -f "$DIR/lifeplatform.dump" ] || { echo "$DIR has no lifeplatform.dump" >&2; exit 1; }
 

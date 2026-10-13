@@ -10,6 +10,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 DC="docker compose --env-file .env --env-file versions.env -f compose.yml"
+# Git Bash rewrites container paths like /data into Windows paths; see backup.sh.
+export MSYS_NO_PATHCONV=1
 
 wait_healthy() {
   local service="$1" i=0

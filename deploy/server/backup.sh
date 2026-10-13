@@ -11,6 +11,9 @@ cd "$(dirname "$0")"
 set -a; . ./.env; . ./versions.env; set +a
 
 DC="docker compose --env-file .env --env-file versions.env -f compose.yml"
+# Git Bash (the dress rehearsal runs this on Windows) rewrites arguments that look like absolute paths, turning the
+# container's /data into C:/Program Files/Git/data. Harmless on the server, essential in the rehearsal.
+export MSYS_NO_PATHCONV=1
 STAMP="$(date +%Y%m%d-%H%M%S)-${1:-nightly}"
 DIR="$PWD/backups/$STAMP"
 mkdir -p "$DIR"
