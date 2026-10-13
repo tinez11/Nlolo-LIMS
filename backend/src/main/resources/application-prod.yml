@@ -1,0 +1,37 @@
+# The prod profile (2026-10-13, deployment pilot design §5). Everything here comes from the server's .env through
+# deploy/server/compose.yml; ProductionSettingsGuard refuses to start while a secret still holds its dev default.
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME:app_role}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${MAIL_STARTTLS:true}
+
+server:
+  port: 8080
+  shutdown: graceful
+  # Behind Caddy: honour X-Forwarded-* so anything that builds an absolute URL builds the public one.
+  forward-headers-strategy: framework
+
+communication:
+  email:
+    # Off until a mail provider is configured (the user's D4): email notifications are recorded FAILED with a
+    # reason instead of trying a server that is not there.
+    enabled: ${MAIL_ENABLED:false}
+
+management:
+  health:
+    mail:
+      enabled: ${MAIL_ENABLED:false}
