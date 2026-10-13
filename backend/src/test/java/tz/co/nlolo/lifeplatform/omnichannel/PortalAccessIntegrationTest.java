@@ -89,9 +89,29 @@ class PortalAccessIntegrationTest {
         @Override public void setEnabled(String userId, boolean enabled) { calls.add((enabled ? "enable " : "disable ") + userId); }
     }
 
+    /**
+     * The SMS gateway. Ordered ahead of the real {@code SmsGatewayAdapter} so the invite's text is captured here
+     * rather than suppressed by {@code sms-gateway.live=false}, which would hide what was actually sent.
+     */
+    static class RecordingSms implements tz.co.nlolo.lifeplatform.communication.infrastructure.NotificationSender {
+        final List<String> sent = new ArrayList<>();
+        boolean accept = true;
+        @Override public boolean supports(tz.co.nlolo.lifeplatform.communication.api.NotificationChannel channel) {
+            return channel == tz.co.nlolo.lifeplatform.communication.api.NotificationChannel.SMS;
+        }
+        @Override public SendResult send(String destination, String body) {
+            sent.add(destination + "|" + body);
+            return accept ? SendResult.ok() : SendResult.failed("Recipient is not on the SMS testing allowlist");
+        }
+    }
+
     @TestConfiguration
     static class FakeAccounts {
         @Bean @Primary Recording recordingAccounts() { return new Recording(); }
+
+        @Bean
+        @org.springframework.core.annotation.Order(org.springframework.core.Ordered.HIGHEST_PRECEDENCE)
+        RecordingSms recordingSms() { return new RecordingSms(); }
     }
 
     @Autowired private MockMvc mockMvc;
@@ -99,10 +119,15 @@ class PortalAccessIntegrationTest {
     @Autowired private PolicyApi policyApi;
     @Autowired private PartyApi partyApi;
     @Autowired private Recording keycloak;
+    @Autowired private RecordingSms sms;
     @Autowired private JdbcTemplate jdbc;
 
     @BeforeEach
-    void clearCalls() { keycloak.calls.clear(); }
+    void clearCalls() {
+        keycloak.calls.clear();
+        sms.sent.clear();
+        sms.accept = true;
+    }
 
     private static <T> T asTenant(Supplier<T> work) {
         TenantContext.set(TENANT);
@@ -121,6 +146,15 @@ class PortalAccessIntegrationTest {
             .jwt(b -> b.claim("tenant_id", TENANT.toString()).claim("party_id", partyId.toString())));
     }
 
+    /** Only the portal invites among everything the fixture's policy also texted. */
+    private List<String> invites() {
+        return sms.sent.stream().filter(m -> m.contains("Your portal login")).toList();
+    }
+
+    private static String passwordIn(String invite) {
+        return invite.replaceAll(".*one-time password (\\S{12})\\..*", "$1");
+    }
+
     /** A policyholder with a phone number and no email -- the savings fixture's client. */
     private UUID policyholder() {
         String policyNumber = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, TODAY).policyNumber();
@@ -137,15 +171,23 @@ class PortalAccessIntegrationTest {
             .andExpect(jsonPath("$.status").value("NOT_INVITED"))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
 
-        String invited = mockMvc.perform(staff(post(base), "CUSTOMER_SERVICE_REP"))
+        mockMvc.perform(staff(post(base), "CUSTOMER_SERVICE_REP"))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.access.status").value("INVITED"))
-            .andExpect(jsonPath("$.access.delivery").value("TEMPORARY_PASSWORD"))
+            .andExpect(jsonPath("$.access.delivery").value("SMS_PASSWORD"))
             .andExpect(jsonPath("$.access.invitedBy").value("Rose Service"))
-            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
-            .andReturn().getResponse().getContentAsString();
-        String password = JsonPath.read(invited, "$.temporaryPassword");
+            // The client's own phone carries it, so nobody at the counter ever sees this client's password.
+            .andExpect(jsonPath("$.temporaryPassword").doesNotExist())
+            .andExpect(jsonPath("$.smsSentTo").value(org.hamcrest.Matchers.startsWith("+25571500")))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
+        // Issuing the fixture's policy sends its own messages, so pick out the invite rather than counting.
+        assertThat(invites()).hasSize(1);
+        String password = passwordIn(invites().get(0));
         assertThat(password).hasSize(12).doesNotContainPattern("[0O1lI]");
+        // What was kept is the masked text, not what was sent.
+        assertThat(jdbc.queryForObject("SELECT body FROM communication.notification_dispatch WHERE party_id = ?"
+            + " AND template_key = 'PORTAL_INVITE'", String.class, partyId))
+            .contains("••••••••").doesNotContain(password);
         // The login carries the tenant and party the platform chose -- nobody typed them into Keycloak.
         assertThat(keycloak.calls).hasSize(2);
         assertThat(keycloak.calls.get(0)).startsWith("create +25571500").contains("email=null")
@@ -162,9 +204,11 @@ class PortalAccessIntegrationTest {
         mockMvc.perform(staff(get(base))).andExpect(jsonPath("$.status").value("ACTIVE"))
             .andExpect(jsonPath("$.activatedAt").isNotEmpty());
 
-        String resent = mockMvc.perform(staff(post(base + "/resend"), "CUSTOMER_SERVICE_REP"))
-            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        assertThat((String) JsonPath.read(resent, "$.temporaryPassword")).hasSize(12).isNotEqualTo(password);
+        mockMvc.perform(staff(post(base + "/resend"), "CUSTOMER_SERVICE_REP"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.smsSentTo").isNotEmpty());
+        assertThat(invites()).hasSize(2);
+        assertThat(passwordIn(invites().get(1))).isNotEqualTo(password);   // a fresh one, never the same again
 
         mockMvc.perform(staff(delete(base), "ADMIN")).andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("REVOKED")).andExpect(jsonPath("$.revokedBy").value("Rose Service"));
@@ -189,6 +233,22 @@ class PortalAccessIntegrationTest {
         assertThat(keycloak.calls).containsExactly(
             "create amina.juma@example.tz email=Amina.Juma@Example.tz tenant=" + TENANT + " party=" + partyId,
             "link kc-" + partyId);
+    }
+
+    /** A gateway must not strand a client: the staff member hands the password over instead, and is told why. */
+    @Test
+    void aFailedSmsShowsStaffThePasswordAndSaysWhy() throws Exception {
+        UUID partyId = policyholder();
+        sms.accept = false;
+
+        mockMvc.perform(staff(post("/parties/" + partyId + "/portal-access"), "CUSTOMER_SERVICE_REP"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.access.delivery").value("SMS_PASSWORD"))
+            .andExpect(jsonPath("$.smsSentTo").doesNotExist())
+            .andExpect(jsonPath("$.temporaryPassword").value(org.hamcrest.Matchers.hasLength(12)))
+            .andExpect(jsonPath("$.notice").value(
+                org.hamcrest.Matchers.containsString("not on the SMS testing allowlist")))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
     }
 
     @Test

@@ -31,7 +31,7 @@ describe('PortalAccessPanel', () => {
         invitedBy: 'Rose Service', invitedAt: '2026-10-08T10:00:00Z' }));
     vi.mocked(portalApi.invitePortal).mockResolvedValue({
       access: access({ status: 'INVITED', username: '+255715000001', delivery: 'TEMPORARY_PASSWORD' }),
-      temporaryPassword: 'Kp7mWx3qRt9a',
+      temporaryPassword: 'Kp7mWx3qRt9a', smsSentTo: null, notice: null,
     });
     render(<PortalAccessPanel partyId="p-1" />);
 
@@ -42,6 +42,39 @@ describe('PortalAccessPanel', () => {
     expect(screen.getByText(/shown once/)).toBeInTheDocument();
     expect(await screen.findByText('Invited — not signed in yet')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'New one-time password' })).toBeInTheDocument();
+  });
+
+  it('reports an SMS invite without showing any password', async () => {
+    vi.mocked(portalApi.getPortalAccess)
+      .mockResolvedValueOnce(access({}))
+      .mockResolvedValue(access({ status: 'INVITED', username: '+255715000001', delivery: 'SMS_PASSWORD' }));
+    vi.mocked(portalApi.invitePortal).mockResolvedValue({
+      access: access({ status: 'INVITED', username: '+255715000001', delivery: 'SMS_PASSWORD' }),
+      temporaryPassword: null, smsSentTo: '+255715000001', notice: null,
+    });
+    render(<PortalAccessPanel partyId="p-1" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Invite to portal' }));
+
+    expect(await screen.findByText('One-time password sent by SMS to +255715000001')).toBeInTheDocument();
+    expect(screen.queryByText(/shown once/)).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Send a new one-time password' })).toBeInTheDocument();
+  });
+
+  it('shows the password with the reason when the SMS failed', async () => {
+    vi.mocked(portalApi.getPortalAccess)
+      .mockResolvedValueOnce(access({}))
+      .mockResolvedValue(access({ status: 'INVITED', username: '+255715000001', delivery: 'SMS_PASSWORD' }));
+    vi.mocked(portalApi.invitePortal).mockResolvedValue({
+      access: access({ status: 'INVITED', username: '+255715000001', delivery: 'SMS_PASSWORD' }),
+      temporaryPassword: 'Kp7mWx3qRt9a', smsSentTo: null,
+      notice: 'The SMS was not sent (gateway down). Give the client this password yourself.',
+    });
+    render(<PortalAccessPanel partyId="p-1" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Invite to portal' }));
+
+    expect(await screen.findByText('Kp7mWx3qRt9a')).toBeInTheDocument();
+    expect(screen.getByText('The SMS was not sent (gateway down). Give the client this password yourself.'))
+      .toBeInTheDocument();
   });
 
   it('asks before revoking', async () => {

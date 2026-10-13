@@ -19,7 +19,7 @@ public class PortalAccess {
 
     public enum Status { INVITED, ACTIVE, REVOKED }
 
-    public enum Delivery { EMAIL_LINK, TEMPORARY_PASSWORD }
+    public enum Delivery { EMAIL_LINK, TEMPORARY_PASSWORD, SMS_PASSWORD }
 
     @Id @Column(name = "portal_access_id") private UUID portalAccessId;
     @Column(name = "tenant_id", nullable = false) private UUID tenantId;

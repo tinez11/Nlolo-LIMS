@@ -1,3 +1,9 @@
+# Keeps the image build context small and free of anything secret or machine-local. target/ above all: a Windows-built
+# target/ copied into the Linux build would be reused by Maven and produce a jar nobody can explain.
 target/
-.mvn/wrapper/maven-wrapper.jar
-*.log
+**/*.log
+hs_err_pid*.log
+replay_pid*.log
+.env
+docs/
+observability/

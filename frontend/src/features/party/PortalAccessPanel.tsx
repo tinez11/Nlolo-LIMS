@@ -16,11 +16,18 @@ const STATUS_LABEL: Record<string, string> = {
   REVOKED: 'Revoked',
 };
 
+const DELIVERY_LABEL: Record<string, string> = {
+  EMAIL_LINK: 'Emailed as a set-your-password link',
+  SMS_PASSWORD: 'One-time password sent by SMS',
+  TEMPORARY_PASSWORD: 'One-time password given by staff',
+};
+
 /**
  * A client's customer-portal access on their record (2026-10-08, the customer portal design step 1). Customer
  * service and admins invite the client: the platform creates the login itself, so nobody types the client's id into
- * Keycloak. With an email the client gets a set-your-password link; without one, a one-time password is shown here
- * ONCE -- read it to the client, it is not kept anywhere and cannot be shown again (re-send makes a new one).
+ * Keycloak. With an email the client gets a set-your-password link; otherwise a one-time password is texted to their
+ * phone (2026-10-13) and never shown here at all. Only where there is no email and no phone the SMS could reach is it
+ * shown ONCE -- read it to the client, it is not kept anywhere and cannot be shown again (re-send makes a new one).
  */
 export function PortalAccessPanel({ partyId }: { partyId: string }) {
   const canInvite = canInviteToPortal(readIdentity(useAuth().user?.access_token));
@@ -29,7 +36,9 @@ export function PortalAccessPanel({ partyId }: { partyId: string }) {
   const [reload, setReload] = useState(0);
   const [error, setError] = useState<ApiError | null>(null);
   const [pending, setPending] = useState(false);
-  const [password, setPassword] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<
+    { password: string | null; smsSentTo: string | null; notice: string | null } | null
+  >(null);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
 
   useEffect(() => {
@@ -41,13 +50,23 @@ export function PortalAccessPanel({ partyId }: { partyId: string }) {
     return () => { live = false; };
   }, [partyId, reload]);
 
-  async function act(work: () => Promise<{ temporaryPassword?: string | null } | PortalAccessView>) {
+  async function act(
+    work: () => Promise<
+      { temporaryPassword?: string | null; smsSentTo?: string | null; notice?: string | null } | PortalAccessView
+    >,
+  ) {
     setPending(true);
     setError(null);
-    setPassword(null);
+    setOutcome(null);
     try {
       const result = await work();
-      if ('temporaryPassword' in result) setPassword(result.temporaryPassword ?? null);
+      if ('temporaryPassword' in result) {
+        setOutcome({
+          password: result.temporaryPassword ?? null,
+          smsSentTo: result.smsSentTo ?? null,
+          notice: result.notice ?? null,
+        });
+      }
       setConfirmRevoke(false);
       setReload((n) => n + 1);
     } catch (e) {
@@ -70,7 +89,7 @@ export function PortalAccessPanel({ partyId }: { partyId: string }) {
           <Field label="Invited" value={`${formatInstant(access.invitedAt)}${access.invitedBy ? ` by ${access.invitedBy}` : ''}`} />
         )}
         {access.delivery && (
-          <Field label="First password" value={access.delivery === 'EMAIL_LINK' ? 'Emailed as a set-your-password link' : 'One-time password given by staff'} />
+          <Field label="First password" value={DELIVERY_LABEL[access.delivery] ?? access.delivery} />
         )}
         {access.activatedAt && <Field label="First signed in" value={formatInstant(access.activatedAt)} />}
         {access.revokedAt && (
@@ -78,10 +97,17 @@ export function PortalAccessPanel({ partyId }: { partyId: string }) {
         )}
       </dl>
 
-      {password && (
+      {outcome?.smsSentTo && (
+        <p role="status" className="text-sm">
+          One-time password sent by SMS to {outcome.smsSentTo}
+        </p>
+      )}
+
+      {outcome?.password && (
         <div role="status" className="rounded-md border border-status-warning-fg/40 bg-status-warning-bg p-3 text-sm">
           <p className="font-medium">One-time password — shown once</p>
-          <p className="mt-1 font-mono text-base tracking-wider">{password}</p>
+          <p className="mt-1 font-mono text-base tracking-wider">{outcome.password}</p>
+          {outcome.notice && <p className="mt-1">{outcome.notice}</p>}
           <p className="mt-1 text-xs text-muted-foreground">
             Give it to the client in person or by phone. They sign in as {access.username} and must choose their own
             password straight away. It is not kept anywhere: if it is lost, re-send to make a new one.
@@ -100,7 +126,11 @@ export function PortalAccessPanel({ partyId }: { partyId: string }) {
           )}
           {open && (
             <Button size="sm" variant="ghost" pending={pending} onClick={() => void act(() => resendPortalInvite(partyId))}>
-              {access.delivery === 'EMAIL_LINK' ? 'Re-send the link' : 'New one-time password'}
+              {access.delivery === 'EMAIL_LINK'
+                ? 'Re-send the link'
+                : access.delivery === 'SMS_PASSWORD'
+                  ? 'Send a new one-time password'
+                  : 'New one-time password'}
             </Button>
           )}
           {open && !confirmRevoke && (
