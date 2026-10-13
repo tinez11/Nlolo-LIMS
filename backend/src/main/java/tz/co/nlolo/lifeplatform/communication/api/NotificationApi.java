@@ -38,6 +38,19 @@ public interface NotificationApi {
      */
     void notify(UUID eventId, UUID partyId, String policyNumber, String templateKey, Map<String, String> values);
 
+    /**
+     * Sends one SMS now, outside the templates, recording {@code loggedBody} in place of {@code body} -- for a message
+     * carrying a secret the message log must never hold, such as a portal one-time password (2026-10-13, the
+     * deployment pilot design §6). The ordinary path keeps every body it sends, which is right for a premium reminder
+     * and wrong for a password: the customer's own inbox and any staff member reading the outbox would show it.
+     *
+     * <p>Not deduplicated -- every call sends, because re-sending an invite is a deliberate act. The caller words both
+     * texts and is responsible for them matching apart from the secret.
+     *
+     * @return null when the gateway accepted the message, otherwise why it did not
+     */
+    String sendUnloggedSms(UUID partyId, String phoneNumber, String templateKey, String body, String loggedBody);
+
     /** Every template for the current tenant, ordered so one message's variants sit together. */
     java.util.List<NotificationTemplateView> listTemplates();
 

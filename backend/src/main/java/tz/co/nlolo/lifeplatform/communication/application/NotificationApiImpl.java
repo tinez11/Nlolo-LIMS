@@ -122,6 +122,28 @@ public class NotificationApiImpl implements NotificationApi {
         processedEventRepository.save(new ProcessedEvent(eventId));
     }
 
+    @Override
+    @Transactional
+    public String sendUnloggedSms(UUID partyId, String phoneNumber, String templateKey, String body,
+                                   String loggedBody) {
+        NotificationDispatch dispatch = new NotificationDispatch(TenantContext.get(), partyId, templateKey,
+            NotificationChannel.SMS.name(), null);
+        // An event id of its own, so the portal inbox groups it as one message like any other; the text KEPT is the
+        // masked one -- the gateway below is the only place the real text exists.
+        dispatch.recordBody(UUID.randomUUID(), loggedBody);
+
+        NotificationSender.SendResult result = senderFor(NotificationChannel.SMS)
+            .map(sender -> sender.send(phoneNumber, body))
+            .orElseGet(() -> NotificationSender.SendResult.failed("No sender configured for SMS"));
+        if (result.sent()) {
+            dispatch.markSent();
+        } else {
+            dispatch.markFailed(result.detail());
+        }
+        dispatchRepository.save(dispatch);
+        return result.sent() ? null : result.detail();
+    }
+
     private void sendOne(UUID eventId, UUID tenantId, UUID partyId, String policyNumber, String templateKey,
                           Map<String, String> values, Reachable target) {
         NotificationDispatch dispatch =
