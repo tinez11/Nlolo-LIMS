@@ -24,7 +24,7 @@ server proxies `/api` to the backend to stay same-origin (`vite.config.ts`).
 # 1. Infra + backend, exactly as in docs/09-local-development.md
 cd infra && docker compose up -d postgres keycloak minio redis mock-mobile-money mailpit && cd ..
 scripts/migrate.sh local
-export JAVA_HOME="/c/Users/USER/.vscode/extensions/redhat.java-1.55.0-win32-x64/jre/21.0.11-win32-x86_64"
+export JAVA_HOME="/c/Users/USER/.vscode/extensions/redhat.java-1.56.0-win32-x64/jre/21.0.12.1-win32-x86_64"
 ./mvnw -B -o spring-boot:run -Dspring-boot.run.profiles=local
 scripts/seed-dev-data.sh          # REQUIRED -- writes party_id back into Keycloak, see Gotcha 2
 

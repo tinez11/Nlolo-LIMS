@@ -20,7 +20,14 @@
 --      "loan_transaction_2026_08". pg_partman's naming convention (<table>_pYYYYMMDD) does
 --      not match V1's (<table>_YYYY_MM), so it cannot recognise the existing partitions as
 --      its own and tries to re-create those months. p_start_partition therefore points at
---      the first month/year AFTER the hand-written ones in each module's V1.
+--      the first month/year AFTER the hand-written ones.
+--      UPDATED 2026-10-13: it is no longer each module's V1 that sets that boundary. audit/V3,
+--      finaccounting/V7, payment/V7 and policyloan/V7 each hand-write every month from 2026-10
+--      to 2027-03, so the old '2026-10-01' start overlapped all six of them. It failed on a
+--      FRESH database only: every environment configured before those migrations existed
+--      already has a part_config row, and the guard below skips it -- so dev stayed green while
+--      a first deploy of a new environment died here. Found by the deployment dress rehearsal.
+--      WHEN YOU ADD ANOTHER HAND-WRITTEN PARTITION, move this date past it.
 --   3. Schema. Every call below is qualified `partman.`, but the bootstrap installed the
 --      extension into `public` -- fixed in infra/postgres/init/01-create-app-role.sql.template.
 --
@@ -37,7 +44,7 @@ IF NOT EXISTS (SELECT 1 FROM partman.part_config WHERE parent_table = 'policyloa
         p_control => 'occurred_at',
         p_interval => '1 month',
         p_premake => 4,
-        p_start_partition => '2026-10-01'   -- V1 hand-wrote 2026-08 and 2026-09
+        p_start_partition => '2027-04-01'   -- see note 2: hand-written partitions run to 2027-03
 );
 END IF;
 IF NOT EXISTS (SELECT 1 FROM partman.part_config WHERE parent_table = 'payment.payment_transaction') THEN
@@ -46,7 +53,7 @@ IF NOT EXISTS (SELECT 1 FROM partman.part_config WHERE parent_table = 'payment.p
         p_control => 'created_at',
         p_interval => '1 month',
         p_premake => 4,
-        p_start_partition => '2026-10-01'
+        p_start_partition => '2027-04-01'   -- see note 2: hand-written partitions run to 2027-03
 );
 END IF;
 IF NOT EXISTS (SELECT 1 FROM partman.part_config WHERE parent_table = 'payment.disbursement_instruction') THEN
@@ -55,7 +62,7 @@ IF NOT EXISTS (SELECT 1 FROM partman.part_config WHERE parent_table = 'payment.d
         p_control => 'created_at',
         p_interval => '1 month',
         p_premake => 4,
-        p_start_partition => '2026-10-01'
+        p_start_partition => '2027-04-01'   -- see note 2: hand-written partitions run to 2027-03
 );
 END IF;
 IF NOT EXISTS (SELECT 1 FROM partman.part_config WHERE parent_table = 'finaccounting.gl_posting') THEN
@@ -64,7 +71,7 @@ IF NOT EXISTS (SELECT 1 FROM partman.part_config WHERE parent_table = 'finaccoun
         p_control => 'created_at',
         p_interval => '1 month',
         p_premake => 4,
-        p_start_partition => '2026-10-01'
+        p_start_partition => '2027-04-01'   -- see note 2: hand-written partitions run to 2027-03
 );
 END IF;
 IF NOT EXISTS (SELECT 1 FROM partman.part_config WHERE parent_table = 'audit.audit_log') THEN
@@ -73,7 +80,7 @@ IF NOT EXISTS (SELECT 1 FROM partman.part_config WHERE parent_table = 'audit.aud
         p_control => 'occurred_at',
         p_interval => '1 month',
         p_premake => 4,
-        p_start_partition => '2026-10-01'
+        p_start_partition => '2027-04-01'   -- see note 2: hand-written partitions run to 2027-03
 );
 END IF;
 

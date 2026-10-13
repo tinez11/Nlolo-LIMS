@@ -1,9 +1,11 @@
 package tz.co.nlolo.lifeplatform.omnichannel.application;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.communication.api.NotificationApi;
 import tz.co.nlolo.lifeplatform.omnichannel.api.PortalAccessRefusedException;
 import tz.co.nlolo.lifeplatform.omnichannel.api.PortalAccessView;
 import tz.co.nlolo.lifeplatform.omnichannel.api.PortalInvite;
@@ -24,8 +26,9 @@ import java.util.UUID;
  *
  * <p>The platform creates the login itself and writes the tenant and party onto it, so the party a customer is
  * authorised as is the one staff chose on screen -- never an id somebody typed into Keycloak. With an email the
- * identity provider sends its own set-your-password link; without one, a one-time password is returned to the staff
- * member once and kept nowhere.
+ * identity provider sends its own set-your-password link; otherwise a one-time password goes to the client's phone by
+ * SMS (2026-10-13), and only where there is neither an email nor a reachable phone is it returned to the staff member
+ * once and kept nowhere. The texted password is never stored: see {@code NotificationApi.sendUnloggedSms}.
  */
 @Service
 public class PortalAccessService {
@@ -34,17 +37,28 @@ public class PortalAccessService {
     private static final String PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
     private static final SecureRandom RANDOM = new SecureRandom();
 
+    /** What the message log keeps where the password stood. */
+    static final String MASK = "••••••••";
+
     private final PortalAccessRepository accesses;
     private final CustomerAccounts accounts;
     private final PartyApi partyApi;
     private final PolicyApi policyApi;
+    private final NotificationApi notifications;
+    private final boolean emailEnabled;
+    private final String portalUrl;
 
     public PortalAccessService(PortalAccessRepository accesses, CustomerAccounts accounts, PartyApi partyApi,
-                               PolicyApi policyApi) {
+                               PolicyApi policyApi, NotificationApi notifications,
+                               @Value("${communication.email.enabled:true}") boolean emailEnabled,
+                               @Value("${app.portal.url}") String portalUrl) {
         this.accesses = accesses;
         this.accounts = accounts;
         this.partyApi = partyApi;
         this.policyApi = policyApi;
+        this.notifications = notifications;
+        this.emailEnabled = emailEnabled;
+        this.portalUrl = portalUrl;
     }
 
     @Transactional(readOnly = true)
@@ -71,8 +85,7 @@ public class PortalAccessService {
             throw new PortalAccessRefusedException(party.displayName() + " has no email address or phone number on"
                 + " file: record one first, so the login has a username and a way to reach them");
         }
-        PortalAccess.Delivery delivery = email != null ? PortalAccess.Delivery.EMAIL_LINK
-            : PortalAccess.Delivery.TEMPORARY_PASSWORD;
+        PortalAccess.Delivery delivery = deliveryFor(email, phone, emailEnabled);
 
         PortalAccess access = accesses.findByTenantIdAndPartyId(tenantId, partyId).orElse(null);
         if (access != null && access.getStatus() != PortalAccess.Status.REVOKED) {
@@ -88,7 +101,7 @@ public class PortalAccessService {
             access.reinvited(delivery, invitedBy);
         }
         accesses.save(access);
-        return new PortalInvite(view(access), deliverFirstPassword(access.getKeycloakUserId(), delivery));
+        return firstPassword(access, party);
     }
 
     /** Sends the link again, or issues a new one-time password; a lost first password is the usual reason. */
@@ -98,7 +111,7 @@ public class PortalAccessService {
         if (access.getStatus() == PortalAccess.Status.REVOKED) {
             throw new PortalAccessRefusedException("This client's portal access is revoked: invite them again instead");
         }
-        return new PortalInvite(view(access), deliverFirstPassword(access.getKeycloakUserId(), access.getDelivery()));
+        return firstPassword(access, partyApi.getPartyDetail(partyId));
     }
 
     @Transactional
@@ -123,14 +136,47 @@ public class PortalAccessService {
         });
     }
 
-    private String deliverFirstPassword(String userId, PortalAccess.Delivery delivery) {
-        if (delivery == PortalAccess.Delivery.EMAIL_LINK) {
-            accounts.sendSetPasswordLink(userId);
-            return null;
+    /**
+     * How this client's first password reaches them (the deployment pilot design §6): the identity provider's own
+     * email link where email is switched on and the client has an address, otherwise a one-time password by SMS, and
+     * only where neither is possible does a staff member have to hand it over.
+     */
+    static PortalAccess.Delivery deliveryFor(String email, String phone, boolean emailEnabled) {
+        if (email != null && emailEnabled) {
+            return PortalAccess.Delivery.EMAIL_LINK;
         }
+        return phone != null ? PortalAccess.Delivery.SMS_PASSWORD : PortalAccess.Delivery.TEMPORARY_PASSWORD;
+    }
+
+    private PortalInvite firstPassword(PortalAccess access, PartyDetailView party) {
+        String userId = access.getKeycloakUserId();
+        if (access.getDelivery() == PortalAccess.Delivery.EMAIL_LINK) {
+            accounts.sendSetPasswordLink(userId);
+            return new PortalInvite(view(access), null, null, null);
+        }
+
         String password = temporaryPassword();
         accounts.setTemporaryPassword(userId, password);
-        return password;
+        if (access.getDelivery() == PortalAccess.Delivery.TEMPORARY_PASSWORD) {
+            return new PortalInvite(view(access), password, null, null);
+        }
+
+        String phone = blankToNull(party.phoneNumber());
+        String failure = phone == null ? "no phone number on file"
+            : notifications.sendUnloggedSms(access.getPartyId(), phone, "PORTAL_INVITE",
+                inviteText(access.getUsername(), password), inviteText(access.getUsername(), MASK));
+        if (failure == null) {
+            return new PortalInvite(view(access), null, phone, null);
+        }
+        // Onboarding never dead-ends on a gateway: the staff member hands the password over, as for a client with no
+        // phone at all. The login exists either way, so a silent failure here would strand the client.
+        return new PortalInvite(view(access), password, null,
+            "The SMS was not sent (" + failure + "). Give the client this password yourself.");
+    }
+
+    private String inviteText(String username, String password) {
+        return "Your portal login: username " + username + ", one-time password " + password + ". Sign in at "
+            + portalUrl + " - you will set your own password first.";
     }
 
     private PortalAccess existing(UUID partyId) {

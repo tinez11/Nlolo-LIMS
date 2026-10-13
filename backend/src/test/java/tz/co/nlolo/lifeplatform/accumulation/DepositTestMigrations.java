@@ -132,5 +132,30 @@ public final class DepositTestMigrations {
         "db-migrations/billing/V10__premium_receipt.sql",
         "db-migrations/billing/V11__premium_in_advance.sql",
         "db-migrations/omnichannel/V1__portal_access.sql",
+        "db-migrations/omnichannel/V2__sms_password_delivery.sql",
+    };
+
+    /**
+     * The communication schema, for the tests that send through it (2026-10-13). NOT part of {@link #ALL}: this list
+     * is the root of a chain -- annuity builds on it, funeral on annuity, unit-linked on funeral -- and several of
+     * those tests already list these migrations themselves, so folding them in here applied every one twice and
+     * failed with "relation notification_template already exists".
+     */
+    public static final String[] COMMUNICATION = {
+        "db-migrations/communication/V1__create_communication_schema.sql",
+        "db-migrations/communication/V2__template_identity.sql",
+        "db-migrations/communication/V3__seed_offer_templates.sql",
+        "db-migrations/communication/V4__dispatch_reason_and_policy.sql",
+        "db-migrations/communication/V5__dispatch_claimed_status.sql",
+        "db-migrations/communication/V6__grants_and_rls.sql",
+        "db-migrations/communication/V7__null_safe_rls_and_pending_reminders.sql",
+        "db-migrations/communication/V8__platform_default_templates.sql",
+        "db-migrations/communication/V9__payment_received_template.sql",
+        "db-migrations/communication/V10__account_statement_template.sql",
+        "db-migrations/communication/V11__vesting_reminder_template.sql",
+        "db-migrations/communication/V12__funeral_templates.sql",
+        "db-migrations/communication/V13__unit_linked_templates.sql",
+        "db-migrations/communication/V14__unit_linked_statement_template.sql",
+        "db-migrations/communication/V15__dispatch_body_and_inbox.sql",
     };
 }

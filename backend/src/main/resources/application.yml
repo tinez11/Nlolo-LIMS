@@ -147,6 +147,11 @@ communication:
   read-timeout-ms: ${SMS_READ_TIMEOUT_MS:10000}
   # The From on every outbound email. A real deployment sets it to a domain it controls.
   from-address: ${NOTIFICATION_FROM_ADDRESS:no-reply@nlolo.co.tz}
+  email:
+    # The email channel's on/off switch (2026-10-13, deployment pilot §5). On here so local dev keeps sending to
+    # Mailpit; the prod profile defaults it OFF until a mail provider exists, and EmailSenderAdapter then records a
+    # FAILED dispatch saying so rather than attempting a server that is not there.
+    enabled: ${MAIL_ENABLED:true}
 
 
 server:
@@ -247,3 +252,13 @@ management:
     health:
       probes:
         enabled: true
+  health:
+    mail:
+      # OFF, always (2026-10-13, deployment pilot §5). Spring Boot's mail indicator opens an SMTP connection on every
+      # /actuator/health call and reports DOWN when it cannot -- which made the whole platform read as unhealthy
+      # during a mail outage, on the very path a load balancer or orchestrator uses to drain and restart instances.
+      # The platform does not stop working when mail does: a failed send is already a FAILED notification_dispatch row
+      # and a lifeplatform_communication_email_requests_total{status="FAILED"} count, which is where a mail problem
+      # belongs -- in monitoring, not in a liveness decision. (This is also why ActuatorExposureTest failed whenever
+      # Mailpit was down; see the production-readiness audit of 2026-09-21.)
+      enabled: false

@@ -79,10 +79,14 @@ services:
       "
 
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0
+    # 26, the version the pilot server runs (2026-10-13). Keycloak supports only its latest major, and upgrading
+    # while production holds no users at all is a test-and-switch rather than a live identity-database migration.
+    # KEYCLOAK_ADMIN/_PASSWORD were renamed KC_BOOTSTRAP_ADMIN_* in 26; the old names are ignored in silence, which
+    # leaves a Keycloak with no admin user and no error.
+    image: quay.io/keycloak/keycloak:26.0.7
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-devadmin}
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-devadmin}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: postgres

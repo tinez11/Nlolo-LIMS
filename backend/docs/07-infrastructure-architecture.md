@@ -43,9 +43,9 @@ Both deploy jobs run Flyway migrations, then the pg_partman post-migration scrip
 
 ## 5. Monitoring, Logging & Observability
 
-**Structured logging:** JSON via Logback, with `tenant_id`, `trace_id`, and `request_id` in MDC on every log line. The `trace_id` is the *same* value returned in every RFC 7807 `ProblemDetails.traceId` (Deliverable 4) — a customer-facing error and the corresponding log line are one lookup apart, not a manual correlation exercise for support staff.
+**Structured logging — NOT IMPLEMENTED (checked 2026-10-13).** This section described JSON logging via Logback with `tenant_id`, `trace_id` and `request_id` in MDC, matching every RFC 7807 `ProblemDetails.traceId`. There is no `logback-spring.xml` anywhere in the repository and no `logstash-logback-encoder` dependency: logs are Spring Boot's default plain text. The design remains the right one and is unbuilt. Left here as a plan, not a description.
 
-**Distributed tracing:** OpenTelemetry, exported to Tempo. Worth doing even inside a monolith — a request that crosses `policy` → an event listener in `finaccounting` → a Camunda service task calling `payment` is exactly the kind of flow that's opaque without a trace, module boundaries or not.
+**Distributed tracing — NOT IMPLEMENTED (checked 2026-10-13).** No OpenTelemetry dependency exists in `pom.xml`, and the Tempo service in `infra/docker-compose.observability.yml` receives nothing. Also a plan, not a description.
 
 **Metrics:** Micrometer + Spring Boot Actuator → Prometheus. Beyond generic JVM/HTTP metrics, the alert rules in `observability/alert-rules.yml` are deliberately tied to specific things earlier deliverables flagged as failure-prone, not generic infrastructure noise:
 - `FailedEventBacklogGrowing` — any growth in `audit.failed_event` (Deliverable 5 §4's dead-letter table) pages immediately, since it represents a domain side-effect that never happened.
@@ -86,4 +86,4 @@ Phase 0 specified no frontend at all: the eleven milestones through M11 built a 
 
 **Typed clients are generated per OpenAPI spec, not from an aggregate.** There is no unified spec and no live `/v3/api-docs` (confirmed during M11) — `api/openapi/` holds fourteen separate YAML files — so `openapi-typescript` runs once per spec the portal consumes, producing one client module each. There is no cross-module merge step, because the backend does not have one either.
 
-**Still open:** production hosting, CDN/edge strategy, and production `redirectUris` for the portal. M12 is explicitly dev/build-time only; deployment topology for the frontend is a separate, later decision and is not covered by §4's existing CI/CD pipeline.
+**Settled 2026-10-13 — see `deploy/README.md`.** Production hosting is one Linux VPS running `deploy/server/compose.yml`: Caddy terminates TLS for both hostnames, serves the built console, and proxies `/api` to the backend on the same origin (so no CORS is needed, and none exists). The console is built into its own image with the Keycloak hostname compiled in; `redirectUris` are generated per realm from `APP_DOMAIN` by `deploy/keycloak/build-realms.mjs` and applied on every release by keycloak-config-cli. There is no CDN and no edge tier: the pilot serves one country from one machine, and a CDN in front of an authenticated console would buy nothing. Design: `docs/superpowers/specs/2026-10-13-deployment-pilot-design.md`.

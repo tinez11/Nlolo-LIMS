@@ -118,20 +118,20 @@ jobs:
           PGPASSWORD: ci_password
         run: |
           psql -h localhost -U postgres -c "CREATE ROLE app_role LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD 'ci_app_password';"
-      - name: Run every module's Flyway migration in sequence (mirrors Deliverable 6's manual validation)
+      # Runs the SAME script the server runs, twice. Validating a fresh migration with a loop of its own proved
+      # nothing about the script a deploy actually calls -- which, until 2026-10-13, could migrate a database exactly
+      # once. The second run is the real assertion: it must apply nothing.
+      - name: Migrate a fresh database with scripts/migrate.sh -- twice; the second run must apply nothing
         env:
           PGPASSWORD: ci_password
         run: |
           set -e
-          # Every V*.sql per module in version order, NOT just V1 -- this loop used to
-          # hardcode V1__create_<mod>_schema.sql, so refdata/V2 (runtime reference data) and
-          # policyloan/V2 (partition tenant-control event trigger) were validated by nothing.
-          for mod in party product underwriting policy policyloan billing claims payment audit distribution reinsurance finaccounting regreporting communication document refdata benefitpayout accumulation bonus annuity unitlinked omnichannel reporting; do
-            for f in $(ls db-migrations/$mod/V*.sql 2>/dev/null | sort -V); do
-              echo "Applying $f"
-              psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f "$f"
-            done
-          done
+          ./scripts/migrate.sh ci | tee first.log
+          ./scripts/migrate.sh ci | tee second.log
+          grep -q "^Applied 0 migrations across" second.log || {
+            echo "::error::a second migrate run applied migrations -- migrate.sh is not safe to re-run, so every deploy after the first would fail"
+            exit 1
+          }
       - name: Assert no partition is less protected than its partitioned parent (M3 final review, I2)
         env:
           PGPASSWORD: ci_password
@@ -295,7 +295,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run Flyway migrations against staging
         env:
-          STAGING_DB_URL: ${{ secrets.STAGING_DB_URL }}
+          MIGRATE_JDBC_URL: ${{ secrets.STAGING_MIGRATE_JDBC_URL }}
+          MIGRATE_USER: ${{ secrets.STAGING_MIGRATE_USER }}
+          MIGRATE_PASSWORD: ${{ secrets.STAGING_MIGRATE_PASSWORD }}
         run: ./scripts/migrate.sh staging
       # EVERY post-migration script, in order, through the one installer every environment uses:
       # partitions, the partition-controls check, then every pg_cron job. Idempotent, so it runs
@@ -324,7 +326,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run Flyway migrations against production
         env:
-          PRODUCTION_DB_URL: ${{ secrets.PRODUCTION_DB_URL }}
+          MIGRATE_JDBC_URL: ${{ secrets.PRODUCTION_MIGRATE_JDBC_URL }}
+          MIGRATE_USER: ${{ secrets.PRODUCTION_MIGRATE_USER }}
+          MIGRATE_PASSWORD: ${{ secrets.PRODUCTION_MIGRATE_PASSWORD }}
         run: ./scripts/migrate.sh production
       # See the staging job's note: every post-migration script, through one installer.
       - name: Install partitions and scheduled jobs (pg_partman, pg_cron)

@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.document;
 
+import tz.co.nlolo.lifeplatform.ObjectStoreContainer;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.SpecTypeConformance;
@@ -28,7 +29,6 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
-import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -64,7 +64,7 @@ import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
  * MinioDocumentStorage} to MinIO, so a document fixture seeded without an object actually written
  * would 200 on metadata but fail the byte-content download. This mirrors {@code
  * ClaimEvidenceIntegrationTest}'s/{@code DocumentApiIntegrationTest}'s container/bucket setup (a
- * {@code MinIOContainer} with buckets created by hand in {@code @BeforeAll}, since the
+ * {@code ObjectStoreContainer} with buckets created by hand in {@code @BeforeAll}, since the
  * Testcontainers container never runs {@code infra/docker-compose.yml}'s minio-init job) -- only
  * the two buckets this class's fixtures actually touch ({@code policy-documents} for the generic
  * document, {@code claim-evidence} for the claim's) are created, mirroring {@code
@@ -106,7 +106,7 @@ class DocumentContractTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
 
     @Container
-    static final MinIOContainer MINIO = new MinIOContainer("minio/minio:latest");
+    static final ObjectStoreContainer MINIO = new ObjectStoreContainer();
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {

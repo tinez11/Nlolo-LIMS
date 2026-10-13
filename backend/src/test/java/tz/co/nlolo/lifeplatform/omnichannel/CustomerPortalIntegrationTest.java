@@ -71,23 +71,10 @@ class CustomerPortalIntegrationTest {
                 "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
                 "db-migrations/claims/V9__zero_annuity_settlement.sql",
                 "db-migrations/claims/V10__funeral_claims.sql",
-                "db-migrations/claims/V11__claim_document_request.sql",
-                // Communication: the dashboard counts unread messages and the inbox reads them (step 7).
-                "db-migrations/communication/V1__create_communication_schema.sql",
-                "db-migrations/communication/V2__template_identity.sql",
-                "db-migrations/communication/V3__seed_offer_templates.sql",
-                "db-migrations/communication/V4__dispatch_reason_and_policy.sql",
-                "db-migrations/communication/V5__dispatch_claimed_status.sql",
-                "db-migrations/communication/V6__grants_and_rls.sql",
-                "db-migrations/communication/V7__null_safe_rls_and_pending_reminders.sql",
-                "db-migrations/communication/V8__platform_default_templates.sql",
-                "db-migrations/communication/V9__payment_received_template.sql",
-                "db-migrations/communication/V10__account_statement_template.sql",
-                "db-migrations/communication/V11__vesting_reminder_template.sql",
-                "db-migrations/communication/V12__funeral_templates.sql",
-                "db-migrations/communication/V13__unit_linked_templates.sql",
-                "db-migrations/communication/V14__unit_linked_statement_template.sql",
-                "db-migrations/communication/V15__dispatch_body_and_inbox.sql")).toArray(String[]::new));
+                "db-migrations/claims/V11__claim_document_request.sql")).toArray(String[]::new));
+        // Communication: the dashboard counts unread messages and the inbox reads them (step 7).
+        MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
+            DepositTestMigrations.COMMUNICATION);
     }
 
     @Autowired private tz.co.nlolo.lifeplatform.communication.api.NotificationApi notificationApi;

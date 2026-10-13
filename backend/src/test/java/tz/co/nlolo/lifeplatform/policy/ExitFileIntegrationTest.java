@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.policy;
 
+import tz.co.nlolo.lifeplatform.ObjectStoreContainer;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
@@ -19,7 +20,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -70,7 +70,7 @@ class ExitFileIntegrationTest {
      * which passes here and fails in CI.
      */
     @Container
-    static MinIOContainer MINIO = new MinIOContainer("minio/minio:latest");
+    static ObjectStoreContainer MINIO = new ObjectStoreContainer();
 
     @DynamicPropertySource
     static void datasourceProperties(DynamicPropertyRegistry registry) {

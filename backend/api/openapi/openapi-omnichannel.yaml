@@ -790,7 +790,7 @@ components:
         partyId: { type: string, format: uuid }
         status: { type: string, enum: [NOT_INVITED, INVITED, ACTIVE, REVOKED] }
         username: { type: [string, "null"] }
-        delivery: { type: [string, "null"], enum: [EMAIL_LINK, TEMPORARY_PASSWORD, null] }
+        delivery: { type: [string, "null"], enum: [EMAIL_LINK, TEMPORARY_PASSWORD, SMS_PASSWORD, null] }
         invitedBy: { type: [string, "null"] }
         invitedAt: { type: [string, "null"], format: date-time }
         activatedAt: { type: [string, "null"], format: date-time }
@@ -799,12 +799,20 @@ components:
     PortalInvite:
       type: object
       additionalProperties: false
-      required: [access, temporaryPassword]
+      required: [access, temporaryPassword, smsSentTo, notice]
       properties:
         access: { $ref: '#/components/schemas/PortalAccess' }
         temporaryPassword:
           type: [string, "null"]
-          description: The one-time password for a client with no email; shown once, stored nowhere. Null when emailed.
+          description: >-
+            The one-time password when staff must hand it over -- no email and no phone to text, or the SMS failed.
+            Shown once, stored nowhere. Null when a link was emailed or the password was texted.
+        smsSentTo:
+          type: [string, "null"]
+          description: The number the one-time password was texted to; null when it was not texted.
+        notice:
+          type: [string, "null"]
+          description: Why the password is being shown to staff after all -- the SMS was not sent, with the reason.
     PaymentSchedule:
       type: object
       additionalProperties: false

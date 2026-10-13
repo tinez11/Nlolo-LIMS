@@ -3,7 +3,7 @@
 # monthly partitions coming, the check that every partition inherited its parent's row security,
 # and every pg_cron job the platform depends on.
 #
-# Usage: scripts/configure-db.sh <local|staging|production>
+# Usage: scripts/configure-db.sh <local|server|staging|production>
 #
 # WHY THIS EXISTS. These scripts need superuser and pg_cron, so they sit outside the numbered
 # migrations -- and until now nothing ran all of them. migrate.sh ignores the folder; the CI
@@ -20,12 +20,13 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-ENVIRONMENT="${1:?Usage: scripts/configure-db.sh <local|staging|production>}"
+ENVIRONMENT="${1:?Usage: scripts/configure-db.sh <local|server|staging|production>}"
 case "$ENVIRONMENT" in
   local)      LOCAL_MODE=1; DB_URL="" ;;
+  server)     LOCAL_MODE=2; DB_URL="" ;;
   staging)    LOCAL_MODE=0; DB_URL="${STAGING_DB_URL:?STAGING_DB_URL is not set}" ;;
   production) LOCAL_MODE=0; DB_URL="${PRODUCTION_DB_URL:?PRODUCTION_DB_URL is not set}" ;;
-  *) echo "Unknown environment: $ENVIRONMENT (expected 'local', 'staging' or 'production')" >&2; exit 1 ;;
+  *) echo "Unknown environment: $ENVIRONMENT (expected 'local', 'server', 'staging' or 'production')" >&2; exit 1 ;;
 esac
 
 # ORDER MATTERS, and this list is the order. Partitions first -- a sweep that writes to a ledger
@@ -60,6 +61,10 @@ apply() {
   echo "configure-db ($ENVIRONMENT): $1"
   if [ "$LOCAL_MODE" = "1" ]; then
     docker compose -f infra/docker-compose.yml exec -T postgres \
+      psql -U postgres -d lifeplatform -v ON_ERROR_STOP=1 -q < "$script"
+  elif [ "$LOCAL_MODE" = "2" ]; then
+    # The pilot server: this script sits beside compose.yml in the platform directory, not in a checkout.
+    docker compose --env-file .env --env-file versions.env -f compose.yml exec -T postgres \
       psql -U postgres -d lifeplatform -v ON_ERROR_STOP=1 -q < "$script"
   else
     psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$script"

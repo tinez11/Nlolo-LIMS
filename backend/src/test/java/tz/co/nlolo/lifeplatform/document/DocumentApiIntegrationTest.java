@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.document;
 
+import tz.co.nlolo.lifeplatform.ObjectStoreContainer;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
@@ -16,7 +17,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -34,7 +34,7 @@ class DocumentApiIntegrationTest {
     static PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
 
     @Container
-    static MinIOContainer MINIO = new MinIOContainer("minio/minio:latest");
+    static ObjectStoreContainer MINIO = new ObjectStoreContainer();
 
     private static MinioClient minioClient;
 
