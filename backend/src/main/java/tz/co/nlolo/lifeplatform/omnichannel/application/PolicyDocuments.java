@@ -109,8 +109,12 @@ public class PolicyDocuments {
         PaymentScheduleView v = paymentSchedule(policyNumber);
         PolicyView policy = policyApi.getPolicy(policyNumber);
         String c = v.currency();
+        // On a limited-pay policy (2026-10-13) the premiums fund the whole term, not a month each: six monthly
+        // premiums on a 12-month term keep cover going to the end. Labelled "Cover", the last row's period read as
+        // the day cover stopped.
+        String limitedPay = limitedPayNote(policy.policyTermMonths(), policy.premiumPayingTermMonths(), policy.maturityDate());
         List<Column> columns = List.of(new Column("No.", Kind.TEXT, 0.5f), new Column("Due date", Kind.DATE, 1.1f),
-            new Column("Cover", Kind.TEXT, 1.9f),
+            new Column(limitedPay != null ? "Premium period" : "Cover", Kind.TEXT, 1.9f),
             new Column("Amount due (" + c + ")", Kind.MONEY, 1.3f), new Column("Paid (" + c + ")", Kind.MONEY, 1.3f),
             new Column("Paid on", Kind.DATE, 1.1f), new Column("Receipt ref", Kind.TEXT, 1.6f),
             new Column("Paid by", Kind.TEXT, 1.4f), new Column("Status", Kind.TEXT, 1.0f),
@@ -126,14 +130,29 @@ public class PolicyDocuments {
         if (v.totals().nextDueDate() != null) {
             totals.add(new Field("Next payment", money(v.totals().nextDueAmount(), c) + " due " + DMY.format(v.totals().nextDueDate())));
         }
+        List<String> notes = new ArrayList<>();
+        if (limitedPay != null) notes.add(limitedPay);
+        notes.add("A premium is paid when its balance is nil. Receipt references are the payment rail's own.");
+        notes.add("Waived premiums were cancelled and are not owed.");
         return new CustomerDocument(ISSUER, "Premium payment schedule", header(policy, v.productName(), List.of(
                 new Field("Premium", money(v.premium(), c) + " " + frequency(v.premiumFrequency())),
                 new Field("Cover from", v.coverStart() != null ? DMY.format(v.coverStart()) : "-"),
+                new Field("Cover until", policy.maturityDate() != null ? DMY.format(policy.maturityDate()) : "No fixed end date"),
                 new Field("Status", v.policyStatus()))),
-            columns, rows, totals,
-            List.of("A premium is paid when its balance is nil. Receipt references are the payment rail's own.",
-                "Waived premiums were cancelled and are not owed."),
-            true);
+            columns, rows, totals, notes, true);
+    }
+
+    /**
+     * What a limited-pay policy's schedule must say, that its rows cannot: premiums stop before cover does. Null when
+     * premiums are paid for the whole term, or the policy has no term.
+     */
+    static String limitedPayNote(Integer termMonths, Integer payingTermMonths, LocalDate coverUntil) {
+        if (termMonths == null || payingTermMonths == null || coverUntil == null || payingTermMonths >= termMonths) {
+            return null;
+        }
+        return "Premiums are paid for the first " + (payingTermMonths == 1 ? "month" : payingTermMonths + " months")
+            + " of the " + termMonths + "-month term. Cover continues until " + DMY.format(coverUntil)
+            + " with nothing more to pay.";
     }
 
     // ---- the savings statement ----

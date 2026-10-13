@@ -210,11 +210,16 @@ class PolicyDocumentsIntegrationTest {
         String policyNumber = paidSavingsPlan("MM-DOC-3");
         UUID holder = asTenant(() -> policyApi.getPolicy(policyNumber)).policyholderPartyId();
 
-        mockMvc.perform(get("/policies/" + policyNumber + "/payment-schedule/pdf")
+        byte[] pdf = mockMvc.perform(get("/policies/" + policyNumber + "/payment-schedule/pdf")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
                     .jwt(b -> b.claim("tenant_id", TENANT.toString()).claim("party_id", holder.toString()))))
             .andExpect(status().isOk())
-            .andExpect(header().string("Content-Type", "application/pdf"));
+            .andExpect(header().string("Content-Type", "application/pdf"))
+            .andReturn().getResponse().getContentAsByteArray();
+        try (var doc = Loader.loadPDF(pdf)) {
+            // The header says when cover ends (2026-10-13), not only when it started.
+            assertThat(new PDFTextStripper().getText(doc)).contains("Premium payment schedule", "Cover from", "Cover until");
+        }
         mockMvc.perform(get("/policies/" + policyNumber + "/payment-schedule")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
                     .jwt(b -> b.claim("tenant_id", TENANT.toString()).claim("party_id", UUID.randomUUID().toString()))))
