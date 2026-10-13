@@ -12,6 +12,7 @@ import { REALM_CONFIG, type Realm } from '@/auth/realms';
 import { AppShell } from '@/components/AppShell';
 import { RealmHome } from '@/components/RealmHome';
 import { RealmPicker } from '@/features/RealmPicker';
+import { entryPath, SHOW_REALM_PICKER } from '@/entryPath';
 import { REALM_HOME, SCREENS } from '@/screens';
 
 /**
@@ -31,6 +32,9 @@ const realms = (Object.keys(REALM_CONFIG) as Realm[]).filter(
   (realm) => SCREENS[realm].length > 0,
 );
 
+/* Null in development, where "/" is the picker; in production the customer portal -- see entryPath. */
+const ENTRY = entryPath(SHOW_REALM_PICKER);
+
 /*
   A DATA router (2026-10-09, review C1), not <BrowserRouter>. The route tree is the same JSX as
   before; what changes is that `useBlocker` works, and `UnsavedGuard` needs it -- a sidebar click
@@ -40,7 +44,7 @@ const realms = (Object.keys(REALM_CONFIG) as Realm[]).filter(
 const router = createBrowserRouter(
   createRoutesFromElements(
     <>
-        <Route path="/" element={<RealmPicker />} />
+        <Route path="/" element={ENTRY ? <Navigate to={ENTRY} replace /> : <RealmPicker />} />
 
         {realms.map((realm) => {
           const home = REALM_HOME[realm];
@@ -50,6 +54,9 @@ const router = createBrowserRouter(
               {SCREENS[realm].map((screen) => (
                 <Route key={screen.path} path={screen.path} element={screen.element} />
               ))}
+              {/* A mistyped path inside a realm belongs to that realm's home, not to the site entrance:
+                  a customer who fat-fingers /customers/polices should not land on a staff sign-in. */}
+              <Route path="*" element={<Navigate to={`/${realm}`} replace />} />
             </Route>
           );
         })}
