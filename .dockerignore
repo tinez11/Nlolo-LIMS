@@ -1,5 +1,16 @@
-target/
-.git/
-.worktrees/
-.mvn/wrapper/maven-wrapper.jar
-*.log
+# The web image's build context is the repository root. Everything here is either enormous, machine-local, or secret.
+**/node_modules
+**/target
+**/dist
+.git
+.worktrees
+.claude
+.agents
+frontend/test-results
+frontend/playwright-report
+backend/.env
+frontend/.env*
+deploy/.stage
+deploy/.rehearsal
+deploy/release.env
+**/*.log

@@ -1,0 +1,43 @@
+# The public front door (2026-10-13, deployment pilot §2). Both site addresses are settings: the names may change,
+# so nothing here spells one out.
+{
+	{$CADDY_GLOBAL_OPTIONS}
+	email {$ACME_EMAIL}
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+	}
+
+	# The console calls /api on its own origin and the prefix is stripped here -- exactly what the Vite dev proxy
+	# does, so dev and production differ in no way the code can see. One origin also means no CORS: the backend has
+	# never had a CORS configuration, and this is why it does not need one.
+	handle_path /api/* {
+		reverse_proxy backend:8080
+	}
+
+	handle {
+		root * /srv
+		# A single-page app: every unknown path is a route inside it, not a missing file. index.html itself must not
+		# be cached, or a release leaves browsers loading the previous build's asset names.
+		@html path / /index.html
+		header @html Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+{$AUTH_DOMAIN} {
+	# The admin console is reached through an SSH tunnel (deploy/README.md), never from the internet: it is the one
+	# door where a stolen password owns every realm, and it has no business being on a public address.
+	@admin path /admin /admin/*
+	respond @admin 404
+
+	reverse_proxy keycloak:8080
+}
