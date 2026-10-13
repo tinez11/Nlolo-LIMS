@@ -41,11 +41,13 @@ for db in lifeplatform keycloak; do
   $DC exec -T postgres pg_restore -U postgres -d "$db" --clean --if-exists < "$DIR/$db.dump"
 done
 
-if [ -f "$DIR/objects/objects.tar.gz" ]; then
+if [ -f "$DIR/objects.tar.gz" ]; then
   echo "restoring documents"
   $DC stop objectstore
-  docker run --rm --volumes-from "$($DC ps -aq objectstore)" -v "$PWD/$DIR/objects:/backup:ro" \
-    alpine:3.20 sh -c "rm -rf /data/* && cd /data && tar xzf /backup/objects.tar.gz"
+  # Streamed in, for the same reason backup.sh streams out. The old contents go first, so a restore is the backup's
+  # state and not a merge of two.
+  docker run --rm -i --volumes-from "$($DC ps -aq objectstore)" alpine:3.20 \
+    sh -c "find /data -mindepth 1 -delete && tar xzf - -C /data" < "$DIR/objects.tar.gz"
   $DC up -d objectstore
 fi
 

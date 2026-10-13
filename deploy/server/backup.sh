@@ -13,15 +13,16 @@ set -a; . ./.env; . ./versions.env; set +a
 DC="docker compose --env-file .env --env-file versions.env -f compose.yml"
 STAMP="$(date +%Y%m%d-%H%M%S)-${1:-nightly}"
 DIR="$PWD/backups/$STAMP"
-mkdir -p "$DIR/objects"
+mkdir -p "$DIR"
 
 $DC exec -T postgres pg_dump -U postgres -Fc lifeplatform > "$DIR/lifeplatform.dump"
 $DC exec -T postgres pg_dump -U postgres -Fc keycloak > "$DIR/keycloak.dump"
 
-# The documents, straight off the object store's own data directory: SeaweedFS keeps them as its volume files, and
-# a file-level copy restores without needing the S3 API up.
-docker run --rm --volumes-from "$($DC ps -q objectstore)" -v "$DIR/objects:/backup" \
-  alpine:3.20 sh -c "cd /data && tar czf /backup/objects.tar.gz ."
+# The documents, straight off the object store's own data directory: SeaweedFS keeps them as its volume files, and a
+# file-level copy restores without needing the S3 API up. Streamed to stdout rather than written to a mounted
+# directory, so this does not depend on the host's path syntax.
+docker run --rm --volumes-from "$($DC ps -q objectstore)" alpine:3.20 \
+  tar czf - -C /data . > "$DIR/objects.tar.gz"
 
 echo "${RELEASE:-unknown}" > "$DIR/RELEASE"
 
