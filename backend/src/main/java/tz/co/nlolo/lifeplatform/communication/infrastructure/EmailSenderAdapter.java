@@ -37,12 +37,15 @@ public class EmailSenderAdapter implements NotificationSender {
     private final JavaMailSender mailSender;
     private final MeterRegistry meterRegistry;
     private final String fromAddress;
+    private final boolean enabled;
 
     public EmailSenderAdapter(JavaMailSender mailSender, MeterRegistry meterRegistry,
-                               @Value("${communication.from-address}") String fromAddress) {
+                               @Value("${communication.from-address}") String fromAddress,
+                               @Value("${communication.email.enabled:true}") boolean enabled) {
         this.mailSender = mailSender;
         this.meterRegistry = meterRegistry;
         this.fromAddress = fromAddress;
+        this.enabled = enabled;
     }
 
     @Override
@@ -52,6 +55,12 @@ public class EmailSenderAdapter implements NotificationSender {
 
     @Override
     public SendResult send(String destination, String body) {
+        if (!enabled) {
+            // Mirrors SmsGatewayAdapter's live=false: recorded as a real outcome, so the outbox never claims a
+            // customer was emailed while no mail server is configured (2026-10-13, deployment pilot).
+            meterRegistry.counter(COUNTER, "status", "SUPPRESSED").increment();
+            return SendResult.failed("Email is switched off (communication.email.enabled=false)");
+        }
         try {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(fromAddress);

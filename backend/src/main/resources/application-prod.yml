@@ -30,8 +30,3 @@ communication:
     # Off until a mail provider is configured (the user's D4): email notifications are recorded FAILED with a
     # reason instead of trying a server that is not there.
     enabled: ${MAIL_ENABLED:false}
-
-management:
-  health:
-    mail:
-      enabled: ${MAIL_ENABLED:false}
