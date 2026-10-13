@@ -9,10 +9,14 @@ import { CountLine, type Stat } from '@/components/StatCards';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { formatInstant } from '@/lib/dates';
+import { humanizeStatus } from '@/lib/status';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useCommunicationsStore } from '@/store/communicationsStore';
 import { DispatchStatusBadge } from './DispatchStatusBadge';
 import { humanizeTemplateKey } from './templateKeys';
+
+/** How many of the newest messages the register asks for. */
+const MESSAGE_LIMIT = 200;
 
 /**
  * The outbox: what this platform has actually said to customers.
@@ -34,8 +38,11 @@ export function MessagesPage() {
   const dispatches = useCommunicationsStore((s) => s.dispatches);
   const loadDispatches = useCommunicationsStore((s) => s.loadDispatches);
 
+  // The newest MESSAGE_LIMIT only. Unbounded, this read the whole outbox -- 4,949 rows, 1.67 MB on the dev
+  // tenant -- and drew every one, each resolving its customer's name: about 50 seconds before the page settled.
+  const query = status ? { status, limit: MESSAGE_LIMIT } : { limit: MESSAGE_LIMIT };
   useEffect(() => {
-    void loadDispatches(status ? { status } : {});
+    void loadDispatches(status ? { status, limit: MESSAGE_LIMIT } : { limit: MESSAGE_LIMIT });
   }, [loadDispatches, status]);
 
   function update(next: string | undefined) {
@@ -47,11 +54,20 @@ export function MessagesPage() {
 
   const rows = dispatches.data ?? [];
 
+  // A full page means there are older ones too, so the count says "latest" rather than claiming a total
+  // it no longer knows.
+  const capped = rows.length >= MESSAGE_LIMIT;
+  const kind = status ? `${status.toLowerCase()} messages` : 'messages';
   const count: Stat = {
-    label: status ? `${status.toLowerCase()} messages` : 'messages sent',
+    label: capped ? `latest ${kind}` : status ? kind : 'messages sent',
     value: isInitialLoad(dispatches) ? null : rows.length,
     pending: isInitialLoad(dispatches),
-    hint: dispatches.status === 'error' && dispatches.data === null ? 'could not load' : 'in this tenant',
+    hint:
+      dispatches.status === 'error' && dispatches.data === null
+        ? 'could not load'
+        : capped
+          ? 'newest first; older ones are on each policy'
+          : 'in this tenant',
   };
 
   const columns: Column<NotificationDispatchView>[] = [
@@ -100,7 +116,7 @@ export function MessagesPage() {
     if (isInitialLoad(dispatches)) return <TableSkeleton columns={columns.length} />;
 
     if (dispatches.status === 'error' && dispatches.error && dispatches.data === null) {
-      return <ErrorPanel error={dispatches.error} onRetry={() => void loadDispatches(status ? { status } : {})} />;
+      return <ErrorPanel error={dispatches.error} onRetry={() => void loadDispatches(query)} />;
     }
 
     if (rows.length === 0 && dispatches.status === 'success') {
@@ -139,18 +155,24 @@ export function MessagesPage() {
 
   return (
     <>
+      {/* The count goes in the header and the list in a bordered panel, like every other register. Out here
+          the count sat flush against the menu at a larger size, and the table ran edge to edge. */}
       <PageHeader
         title="Messages sent"
         description="Every message this platform has sent a customer, and every one it could not."
+        count={<CountLine {...count} />}
       />
-      <CountLine {...count} />
-      <div className="flex flex-wrap gap-2 px-4 pb-3">
-        <FilterChip label="All" active={!status} onClick={() => update(undefined)} />
-        {NOTIFICATION_STATUSES.map((s) => (
-          <FilterChip key={s} label={s} active={status === s} onClick={() => update(s)} />
-        ))}
+      <div className="px-6 pb-6">
+        <div className="rounded-lg border border-border bg-surface">
+          <div className="flex flex-wrap items-center gap-1.5 gap-y-2 border-b border-border px-3 py-2.5">
+            <FilterChip label="All" active={!status} onClick={() => update(undefined)} />
+            {NOTIFICATION_STATUSES.map((s) => (
+              <FilterChip key={s} label={humanizeStatus(s)} active={status === s} onClick={() => update(s)} />
+            ))}
+          </div>
+          {renderBody()}
+        </div>
       </div>
-      {renderBody()}
     </>
   );
 }

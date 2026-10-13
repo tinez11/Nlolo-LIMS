@@ -59,8 +59,11 @@ public interface NotificationApi {
      *
      * <p>{@code policyNumber} is the filter the desk reaches for: looking at an offer, the
      * question is "has this customer been told about this policy, and did it arrive".
+     *
+     * <p>{@code limit} keeps the newest rows only; null keeps every row. The whole outbox is thousands
+     * of rows on a working tenant, so the register asks for a limit.
      */
-    java.util.List<NotificationDispatchView> listDispatches(UUID partyId, String policyNumber, String status);
+    java.util.List<NotificationDispatchView> listDispatches(UUID partyId, String policyNumber, String status, Integer limit);
 
     /** The party's messages, newest first, one per event (customer portal step 7). */
     java.util.List<InboxMessageView> inbox(UUID partyId);
