@@ -273,6 +273,47 @@ class CommunicationContractTest {
             .andExpect(jsonPath("$[0].policyNumber").value("POL-OUTBOX01"));
     }
 
+    /** The Messages register reads the whole outbox. It used to load every row -- 4,949 on the dev tenant, 1.67 MB
+     * -- and take about 50 seconds to draw. A limit caps it to the newest rows, in the database. */
+    @Test
+    void theWholeOutboxCanBeCappedToItsNewestRows() throws Exception {
+        TenantContext.set(SEEDED_TENANT);
+        PartyView party = partyApi.registerIndividual("Outbox Newest", LocalDate.of(1990, 1, 1),
+            "+255713000204", null, "test-staff");
+        for (String policy : List.of("POL-NEWEST1", "POL-NEWEST2", "POL-NEWEST3")) {
+            notificationApi.notify(UUID.randomUUID(), party.partyId(), policy, "OFFER_EXPIRED",
+                Map.of("policyNumber", policy));
+        }
+
+        mockMvc.perform(get("/notifications/dispatches").param("limit", "2").with(staff()))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.length()").value(2))
+            // Newest first: the last one sent heads the list.
+            .andExpect(jsonPath("$[0].policyNumber").value("POL-NEWEST3"));
+    }
+
+    /** The status filter applies before the cap, so a limited FAILED list is FAILED rows, not the newest rows
+     * of any status with the failures among them filtered out afterwards. */
+    @Test
+    void aCappedOutboxIsFilteredByStatusBeforeItIsCut() throws Exception {
+        TenantContext.set(SEEDED_TENANT);
+        PartyView unreachable = partyApi.registerIndividual("No Contact Capped", LocalDate.of(1990, 1, 1),
+            null, null, "test-staff");
+        notificationApi.notify(UUID.randomUUID(), unreachable.partyId(), "POL-CAPFAIL1", "OFFER_EXPIRED",
+            Map.of("policyNumber", "POL-CAPFAIL1"));
+        PartyView reachable = partyApi.registerIndividual("Reachable After", LocalDate.of(1990, 1, 1),
+            "+255713000205", null, "test-staff");
+        notificationApi.notify(UUID.randomUUID(), reachable.partyId(), "POL-CAPSENT1", "OFFER_EXPIRED",
+            Map.of("policyNumber", "POL-CAPSENT1"));
+
+        mockMvc.perform(get("/notifications/dispatches").param("status", "FAILED").param("limit", "1").with(staff()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].status").value("FAILED"))
+            .andExpect(jsonPath("$[0].policyNumber").value("POL-CAPFAIL1"));
+    }
+
     @Test
     void aFailedDispatchCarriesTheReasonItFailed() throws Exception {
         // The whole justification for the failure_reason column: FAILED alone cannot tell an

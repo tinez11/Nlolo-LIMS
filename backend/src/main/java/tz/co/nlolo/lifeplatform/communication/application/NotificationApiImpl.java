@@ -18,6 +18,8 @@ import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -257,24 +259,34 @@ public class NotificationApiImpl implements NotificationApi {
 
     @Override
     @Transactional(readOnly = true)
-    public List<NotificationDispatchView> listDispatches(UUID partyId, String policyNumber, String status) {
+    public List<NotificationDispatchView> listDispatches(UUID partyId, String policyNumber, String status, Integer limit) {
         UUID tenantId = TenantContext.get();
-        // Narrowest indexed read first, then filter in memory. Every branch is already scoped to
-        // one policy or one party, so the in-memory pass is over a handful of rows -- not the
-        // whole outbox.
+        boolean byStatus = status != null && !status.isBlank();
+        int cap = limit == null ? Integer.MAX_VALUE : Math.max(1, Math.min(limit, MAX_DISPATCH_LIMIT));
         List<NotificationDispatch> rows;
         if (policyNumber != null && !policyNumber.isBlank()) {
+            // Scoped to one policy or one party: a handful of rows, so the status filter runs in memory.
             rows = dispatchRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtDesc(tenantId, policyNumber);
         } else if (partyId != null) {
             rows = dispatchRepository.findByTenantIdAndPartyIdOrderByCreatedAtDesc(tenantId, partyId);
         } else {
-            rows = dispatchRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
+            // The WHOLE outbox -- not a handful. This branch used to read every row and filter in memory, under a
+            // comment saying every branch was already scoped; on the dev tenant that was 4,949 rows and the
+            // Messages register took about 50 seconds to draw. Status and cap are applied in the database.
+            Pageable page = limit == null ? Pageable.unpaged() : PageRequest.of(0, cap);
+            rows = byStatus
+                ? dispatchRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(tenantId, status, page)
+                : dispatchRepository.findByTenantIdOrderByCreatedAtDesc(tenantId, page);
         }
         return rows.stream()
-            .filter(row -> status == null || status.isBlank() || status.equals(row.getStatus()))
+            .filter(row -> !byStatus || status.equals(row.getStatus()))
+            .limit(cap)
             .map(NotificationApiImpl::toView)
             .toList();
     }
+
+    /** The most a caller may ask for at once. */
+    static final int MAX_DISPATCH_LIMIT = 500;
 
     @Override
     @Transactional(readOnly = true)

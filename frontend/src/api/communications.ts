@@ -14,6 +14,8 @@ export interface DispatchSearchParams {
   /** The filter the desk reaches for: "has this customer been told about THIS policy". */
   policyNumber?: string;
   status?: string;
+  /** Newest rows only (at most 500). The whole outbox is thousands of rows; the register always sends one. */
+  limit?: number;
 }
 
 /** `GET /notifications/templates` — staff, tenant-scoped. */
@@ -41,6 +43,7 @@ export function listDispatches(params: DispatchSearchParams = {}): Promise<Notif
       ...(params.partyId ? { partyId: params.partyId } : {}),
       ...(params.policyNumber ? { policyNumber: params.policyNumber } : {}),
       ...(params.status ? { status: params.status } : {}),
+      ...(params.limit ? { limit: String(params.limit) } : {}),
     },
   });
 }

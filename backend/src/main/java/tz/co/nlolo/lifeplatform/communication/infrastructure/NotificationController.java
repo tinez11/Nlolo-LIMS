@@ -58,8 +58,9 @@ public class NotificationController {
     public List<NotificationDispatchView> listDispatches(
             @RequestParam(required = false) UUID partyId,
             @RequestParam(required = false) String policyNumber,
-            @RequestParam(required = false) String status) {
-        return notificationApi.listDispatches(partyId, policyNumber, status);
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Integer limit) {
+        return notificationApi.listDispatches(partyId, policyNumber, status, limit);
     }
 
     /**

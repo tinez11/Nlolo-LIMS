@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.communication.infrastructure;
 
 import tz.co.nlolo.lifeplatform.communication.domain.NotificationDispatch;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -42,6 +43,12 @@ public interface NotificationDispatchRepository extends JpaRepository<Notificati
     int claimForSending(@Param("dispatchId") UUID dispatchId);
 
     List<NotificationDispatch> findByTenantIdOrderByCreatedAtDesc(UUID tenantId);
+
+    /** The whole outbox newest first, as far as {@code page} reaches -- what the Messages register reads. */
+    List<NotificationDispatch> findByTenantIdOrderByCreatedAtDesc(UUID tenantId, Pageable page);
+
+    /** The same, one status only, filtered here so a cap keeps that status's newest rows. */
+    List<NotificationDispatch> findByTenantIdAndStatusOrderByCreatedAtDesc(UUID tenantId, String status, Pageable page);
 
     List<NotificationDispatch> findByTenantIdAndPartyIdOrderByCreatedAtDesc(UUID tenantId, UUID partyId);
 

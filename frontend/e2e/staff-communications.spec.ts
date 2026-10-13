@@ -52,8 +52,10 @@ test.describe('staff communications', () => {
     // unique only while the outbox happens to be empty — which it was when this was written, and
     // is not now that the adapter correctly suppresses sends and records each one. The chip is a
     // button; the badges are spans.
-    await page.getByRole('button', { name: 'FAILED' }).click();
+    await page.getByRole('button', { name: 'Failed', exact: true }).click();
     await expect(page).toHaveURL(/status=FAILED/);
+    // The register asks for the newest rows only; a full page says "latest" instead of claiming a total.
+    await expect(page.getByText(/latest|messages sent|failed messages/i).first()).toBeVisible();
   });
 
   /**

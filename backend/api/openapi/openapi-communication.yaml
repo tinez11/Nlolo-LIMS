@@ -99,6 +99,12 @@ paths:
         - name: status
           in: query
           schema: { type: string, enum: [PENDING, CLAIMED, SENT, FAILED] }
+        - name: limit
+          in: query
+          description: >
+            Keep only the newest rows, at most 500. Omitted, every row comes back -- the whole outbox
+            is thousands of rows on a working tenant, so the Messages register always sends one.
+          schema: { type: integer, minimum: 1, maximum: 500 }
       responses:
         '200':
           description: OK

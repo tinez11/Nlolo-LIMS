@@ -12,3 +12,8 @@ global.ResizeObserver = class ResizeObserver {
   unobserve() {}
   disconnect() {}
 };
+
+// jsdom has no scrollIntoView, which every browser does. listKeys calls it as j/k move through a
+// list, so listKeys.test.tsx threw seven uncaught errors on every run -- and an uncaught error makes
+// vitest exit 1 with every test passing, which is a red run nobody could tell from a real one.
+Element.prototype.scrollIntoView = function scrollIntoView() {};
