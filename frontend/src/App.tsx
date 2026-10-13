@@ -12,7 +12,7 @@ import { REALM_CONFIG, type Realm } from '@/auth/realms';
 import { AppShell } from '@/components/AppShell';
 import { RealmHome } from '@/components/RealmHome';
 import { RealmPicker } from '@/features/RealmPicker';
-import { entryPath, SHOW_REALM_PICKER } from '@/entryPath';
+import { entryPath, hasRealmFallback, SHOW_REALM_PICKER } from '@/entryPath';
 import { REALM_HOME, SCREENS } from '@/screens';
 
 /**
@@ -54,9 +54,10 @@ const router = createBrowserRouter(
               {SCREENS[realm].map((screen) => (
                 <Route key={screen.path} path={screen.path} element={screen.element} />
               ))}
-              {/* A mistyped path inside a realm belongs to that realm's home, not to the site entrance:
-                  a customer who fat-fingers /customers/polices should not land on a staff sign-in. */}
-              <Route path="*" element={<Navigate to={`/${realm}`} replace />} />
+              {/* A mistyped path inside a realm belongs to that realm's home, not to the site entrance: a customer
+                  who fat-fingers /customers/polices should not land on a sign-in that is not theirs. Only where the
+                  realm HAS a home -- see hasRealmFallback for the redirect loop this guard prevents. */}
+              {hasRealmFallback(home) && <Route path="*" element={<Navigate to={`/${realm}`} replace />} />}
             </Route>
           );
         })}

@@ -11,3 +11,14 @@ export const SHOW_REALM_PICKER = import.meta.env.VITE_REALM_PICKER !== 'false';
 export function entryPath(showPicker: boolean): string | null {
   return showPicker ? null : '/customers';
 }
+
+/**
+ * Whether a realm may have a catch-all route sending unknown paths to its own home.
+ *
+ * Only when it HAS a home. A realm whose `REALM_HOME` is null (regulators) has no index route, so a splat would
+ * match the realm's own root -- `/regulators` matches `*` with an empty remainder -- and redirect it to itself, for
+ * ever. Without the catch-all such a path falls through to the site entrance instead, which is what it did before.
+ */
+export function hasRealmFallback(home: string | null): boolean {
+  return home !== null;
+}
