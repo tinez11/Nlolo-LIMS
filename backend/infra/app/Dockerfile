@@ -1,10 +1,17 @@
 # The platform image (2026-10-13 deployment pilot). One deployable: the Spring Modulith monolith, as Phase 0 chose.
 FROM eclipse-temurin:21-jdk-alpine AS build
 WORKDIR /workspace
-COPY . .
+# The wrapper and the POM first, on their own layer: dependencies are then downloaded once and reused by every later
+# build whose pom.xml has not changed. Copying the whole tree first instead re-downloaded all of Maven Central on
+# every source edit, which made a release several minutes slower for no reason.
+#
 # mvnw carries CRLF on a Windows checkout (see the autocrlf quirk in docs/09-local-development.md); /bin/sh cannot run
 # it that way and fails with an unreadable "not found". Normalised here rather than relied upon in the checkout.
-RUN sed -i 's/\r$//' mvnw && chmod +x mvnw && ./mvnw -B -DskipTests package
+COPY mvnw pom.xml ./
+COPY .mvn .mvn
+RUN sed -i 's/\r$//' mvnw && chmod +x mvnw && ./mvnw -B -q dependency:go-offline
+COPY . .
+RUN sed -i 's/\r$//' mvnw && ./mvnw -B -o -DskipTests package
 
 FROM eclipse-temurin:21-jre-alpine
 RUN apk add --no-cache tzdata && addgroup -S app && adduser -S app -G app
