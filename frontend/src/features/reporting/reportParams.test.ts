@@ -51,6 +51,13 @@ describe('report filters', () => {
     expect(state).toMatchObject({ from: '2026-01-01', to: '2026-10-11', groupBy: 'AGENT' });
   });
 
+  it('narrows any report to one product, and sends nothing when none is chosen', () => {
+    const chosen = stateFromSearch(definition('AS_OF'), new URLSearchParams('asOf=2026-10-11&productId=p-1'), TODAY);
+    expect(chosen.productId).toBe('p-1');
+    expect(toParams(definition('AS_OF'), chosen)).toEqual({ asOf: '2026-10-11', productId: 'p-1' });
+    expect(toParams(definition('AS_OF'), defaultFilters(definition('AS_OF'), TODAY))).not.toHaveProperty('productId');
+  });
+
   it('refuses a missing date or a reversed range', () => {
     expect(validateFilters(definition('AS_OF'), { ...defaultFilters(definition('AS_OF'), TODAY), asOf: '' })).toMatch(/As of/);
     expect(

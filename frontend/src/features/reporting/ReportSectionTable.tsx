@@ -17,10 +17,12 @@ export function ReportSectionTable({ section }: { section: ReportSection }) {
   if (Object.keys(section.totals).length > 0) {
     lines.push({ index: lines.length, total: true, cells: section.totals });
   }
-  const columns: Column<Line>[] = section.columns.map((c) => ({
+  const columns: Column<Line>[] = section.columns.map((c, i) => ({
     key: c.key,
     header: c.label,
     align: c.type === 'TEXT' || c.type === 'DATE' ? 'left' : 'right',
+    // A date, or the identifying first column (a policy number), broke at its hyphen into two lines.
+    nowrap: c.type === 'DATE' || i === 0,
     render: (line) => <span className={cn(line.total && 'font-semibold')}>{formatCell(c.type, line.cells[c.key])}</span>,
   }));
   return (

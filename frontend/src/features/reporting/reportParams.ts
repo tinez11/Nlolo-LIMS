@@ -11,6 +11,8 @@ export interface ReportFilterState {
   cohortTo: string;
   groupBy: string;
   clientType: string;
+  /** Narrows any report to one product; every report's query applies it. */
+  productId: string;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -31,10 +33,11 @@ export function defaultFilters(definition: ReportDefinition, today: Date): Repor
     cohortTo: kind === 'COHORT' ? isoMonth(cohort) : '',
     groupBy: '',
     clientType: '',
+    productId: '',
   };
 }
 
-const FIELDS: (keyof ReportFilterState)[] = ['asOf', 'compareAsOf', 'from', 'to', 'cohortFrom', 'cohortTo', 'groupBy', 'clientType'];
+const FIELDS: (keyof ReportFilterState)[] = ['asOf', 'compareAsOf', 'from', 'to', 'cohortFrom', 'cohortTo', 'groupBy', 'clientType', 'productId'];
 
 export function stateFromSearch(definition: ReportDefinition, search: URLSearchParams, today: Date): ReportFilterState {
   const state = defaultFilters(definition, today);
@@ -65,6 +68,7 @@ export function toParams(definition: ReportDefinition, state: ReportFilterState)
   }
   if (definition.groupByOptions.length > 0) put('groupBy');
   put('clientType');
+  put('productId');
   return params;
 }
 

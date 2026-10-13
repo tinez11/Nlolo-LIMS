@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { useProductStore } from '@/store/productStore';
 import type { ReportDefinition } from '@/api/reporting';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +30,16 @@ export function ReportFilterBar({
 }) {
   const [state, setState] = useState(initial);
   const [error, setError] = useState<string | null>(null);
+  // Every report's query takes a product, but nothing on screen used to offer one, so no report could be
+  // narrowed to a product -- the products report's per-policy register least of all.
+  const loadProducts = useProductStore((s) => s.loadList);
+  const productList = useProductStore((s) => s.list);
+  const products = [...(productList.data ?? [])].sort((a, b) =>
+    (a.productName ?? '').localeCompare(b.productName ?? ''),
+  );
+  useEffect(() => {
+    void loadProducts();
+  }, [loadProducts]);
   const kind = definition.dateFilterKind;
   const set = (field: keyof ReportFilterState) => (e: { target: { value: string } }) =>
     setState((s) => ({ ...s, [field]: e.target.value }));
@@ -69,6 +80,20 @@ export function ReportFilterBar({
             </select>
           </label>
         )}
+        {/* The label names the select without wrapping it. A wrapping label takes its accessible name from
+            everything inside it, options included -- so with hundreds of product names this select answered to
+            "To" and stole the period filter's label. */}
+        <div className="flex flex-col gap-1 text-xs">
+          <label htmlFor="report-productId">Product</label>
+          <select id="report-productId" value={state.productId} onChange={set('productId')} className={SELECT}>
+            <option value="">All products</option>
+            {products.map((p) => (
+              <option key={p.productId} value={p.productId}>
+                {p.productName}
+              </option>
+            ))}
+          </select>
+        </div>
         <label className="flex flex-col gap-1 text-xs" htmlFor="report-clientType">
           Client type
           <select id="report-clientType" value={state.clientType} onChange={set('clientType')} className={SELECT}>

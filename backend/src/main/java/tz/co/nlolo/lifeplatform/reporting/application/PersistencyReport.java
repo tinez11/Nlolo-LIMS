@@ -111,7 +111,7 @@ public class PersistencyReport implements Report {
         byDimension.forEach((dimension, tally) -> rows.add(row(labels.dimension(groupBy, dimension), tally, months)));
         rows.sort(Comparator.comparing((Map<String, String> r) -> r.get("dimension")));
         String title = "Activated " + f.cohortFrom() + " to " + f.cohortTo()
-            + (months.isEmpty() ? " -- no persistency month reached yet" : "");
+            + (months.isEmpty() ? " — no persistency month reached yet" : "");
         return List.of(new ReportSection(title, columns, rows, rows.isEmpty() ? Map.of() : row("Total", all, months)));
     }
 

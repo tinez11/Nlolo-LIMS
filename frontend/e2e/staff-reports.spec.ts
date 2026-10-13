@@ -38,18 +38,35 @@ test.describe('staff reports', () => {
 
   test('the products report lists each product and the policies behind it', async ({ page }) => {
     await page.goto('/staff/reports');
-    await page.getByRole('link', { name: 'Products', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Products', exact: true })).toBeVisible();
+    // From the catalogue in the page, not the menu: the menu also has a "Products" (the configuration screen),
+    // which is exactly why the report is not called that.
+    await page.getByRole('main').getByRole('link', { name: 'Policies by product', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Policies by product', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Run report' }).click();
 
     // Two sections: the per-product summary, then one row per policy.
-    await expect(page.getByRole('heading', { name: /^Products on \d{4}-\d{2}-\d{2}$/ })).toBeVisible({ timeout: 15_000 });
+    // 30s, not 15s: the run is ~3s alone, but it follows the rebuild, and on a test-polluted book (500+
+    // products, each named through product::api) it went past 15s once while the replay settled.
+    await expect(page.getByRole('heading', { name: /^Products on \d{4}-\d{2}-\d{2}$/ })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('heading', { name: /^Policies on \d{4}-\d{2}-\d{2}$/ })).toBeVisible();
     const register = page.getByRole('table', { name: /^Policies on / });
     await expect(register.getByRole('columnheader', { name: 'Client' })).toBeVisible();
     await expect(register.getByRole('columnheader', { name: 'Status' })).toBeVisible();
-    // The dev book is far longer than the console draws; it says so rather than silently stopping.
-    await expect(page.getByText(/^Showing the first 200 of [\d,]+ rows\./)).toBeVisible();
+    // The dev book is far longer than the console draws; it says so rather than silently stopping. Scoped to the
+    // register's own section: on a test-polluted book the product summary runs past the limit too.
+    const registerSection = page.locator('section').filter({ has: page.getByRole('heading', { name: /^Policies on / }) });
+    await expect(registerSection.getByText(/^Showing the first 200 of [\d,]+ rows\./)).toBeVisible();
+    await expect(register.getByRole('row')).toHaveCount(201);
+
+    // Narrowed to one product, both sections are that product's alone -- a filter no report could apply from
+    // the console before, though every report's query took it.
+    await page.getByLabel('Product', { exact: true }).selectOption({ label: 'Demo Term Life' });
+    await page.getByRole('button', { name: 'Run report' }).click();
+    await expect(page).toHaveURL(/productId=[0-9a-f-]{36}/);
+    const summary = page.getByRole('table', { name: /^Products on / });
+    await expect(summary.getByRole('row')).toHaveCount(3); // header, the one product, the total
+    await expect(summary.getByRole('row').nth(1)).toContainText('Demo Term Life');
+    await expect(register.getByRole('row').nth(1)).toContainText('Demo Term Life');
   });
 
   test('runs a report from the catalogue and downloads it', async ({ page }) => {
