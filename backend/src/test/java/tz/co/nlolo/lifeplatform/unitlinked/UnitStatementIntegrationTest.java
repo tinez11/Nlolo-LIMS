@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.unitlinked;
 
+import tz.co.nlolo.lifeplatform.ObjectStoreContainer;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import org.junit.jupiter.api.BeforeAll;
@@ -10,7 +11,6 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -46,7 +46,7 @@ class UnitStatementIntegrationTest {
 
     /** Its own object store: a statement is a real PDF filed through DocumentApi. */
     @Container
-    static MinIOContainer MINIO = new MinIOContainer("minio/minio:latest");
+    static ObjectStoreContainer MINIO = new ObjectStoreContainer();
 
     @DynamicPropertySource
     static void datasourceProperties(DynamicPropertyRegistry registry) {

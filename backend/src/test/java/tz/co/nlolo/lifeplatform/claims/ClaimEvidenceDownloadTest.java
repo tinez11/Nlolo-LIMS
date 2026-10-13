@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.claims;
 
+import tz.co.nlolo.lifeplatform.ObjectStoreContainer;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
@@ -26,7 +27,6 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -46,7 +46,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Task 3's three non-negotiable behaviours for GET /claims/{claimId}/evidence/{documentRef}.
  * Container setup, migration list, and fixture idioms copied verbatim from
- * {@code ClaimEvidenceIntegrationTest} (a Postgres superuser connection plus a MinIOContainer with
+ * {@code ClaimEvidenceIntegrationTest} (a Postgres superuser connection plus a ObjectStoreContainer with
  * buckets created manually in {@code @BeforeAll}, since the container never runs
  * infra/docker-compose.yml's minio-init job); HTTP-level role/ownership assertions copied from
  * {@code ClaimsContractTest}'s {@code jwt()}-request-post-processor idiom.
@@ -70,7 +70,7 @@ class ClaimEvidenceDownloadTest {
     static PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
 
     @Container
-    static MinIOContainer MINIO = new MinIOContainer("minio/minio:latest");
+    static ObjectStoreContainer MINIO = new ObjectStoreContainer();
 
     private static MinioClient minioClient;
 

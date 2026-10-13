@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.claims;
 
+import tz.co.nlolo.lifeplatform.ObjectStoreContainer;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.SpecTypeConformance;
@@ -30,7 +31,6 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -94,7 +94,7 @@ class ClaimsContractTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
 
     @Container
-    static final MinIOContainer MINIO = new MinIOContainer("minio/minio:latest");
+    static final ObjectStoreContainer MINIO = new ObjectStoreContainer();
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {

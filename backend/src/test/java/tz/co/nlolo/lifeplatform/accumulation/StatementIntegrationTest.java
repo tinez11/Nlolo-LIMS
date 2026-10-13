@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.accumulation;
 
+import tz.co.nlolo.lifeplatform.ObjectStoreContainer;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -9,7 +10,6 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
-import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -48,7 +48,7 @@ class StatementIntegrationTest {
 
     /** Its OWN object store: a statement is a real PDF filed through DocumentApi. */
     @Container
-    static MinIOContainer MINIO = new MinIOContainer("minio/minio:latest");
+    static ObjectStoreContainer MINIO = new ObjectStoreContainer();
 
     @DynamicPropertySource
     static void datasourceProperties(DynamicPropertyRegistry registry) {

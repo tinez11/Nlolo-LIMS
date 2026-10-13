@@ -1,0 +1,11 @@
+{
+  "identities": [
+    {
+      "name": "platform",
+      "credentials": [
+        { "accessKey": "platform-docs", "secretKey": "compatibility-check-secret" }
+      ],
+      "actions": ["Read", "Write", "List", "Tagging", "Admin"]
+    }
+  ]
+}
