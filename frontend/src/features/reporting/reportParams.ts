@@ -11,6 +11,8 @@ export interface ReportFilterState {
   cohortTo: string;
   groupBy: string;
   clientType: string;
+  /** Narrows any report to one product; every report's query applies it. */
+  productId: string;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -31,10 +33,11 @@ export function defaultFilters(definition: ReportDefinition, today: Date): Repor
     cohortTo: kind === 'COHORT' ? isoMonth(cohort) : '',
     groupBy: '',
     clientType: '',
+    productId: '',
   };
 }
 
-const FIELDS: (keyof ReportFilterState)[] = ['asOf', 'compareAsOf', 'from', 'to', 'cohortFrom', 'cohortTo', 'groupBy', 'clientType'];
+const FIELDS: (keyof ReportFilterState)[] = ['asOf', 'compareAsOf', 'from', 'to', 'cohortFrom', 'cohortTo', 'groupBy', 'clientType', 'productId'];
 
 export function stateFromSearch(definition: ReportDefinition, search: URLSearchParams, today: Date): ReportFilterState {
   const state = defaultFilters(definition, today);
@@ -65,6 +68,7 @@ export function toParams(definition: ReportDefinition, state: ReportFilterState)
   }
   if (definition.groupByOptions.length > 0) put('groupBy');
   put('clientType');
+  put('productId');
   return params;
 }
 
@@ -94,4 +98,16 @@ export function formatCell(type: ReportColumn['type'], value: string | undefined
   if (type === 'MONEY') return GROUPED_2DP.format(value);
   if (type === 'COUNT') return GROUPED_0DP.format(value);
   return `${value}%`;
+}
+
+/**
+ * How many rows of one section the console draws. A summary is a handful of rows; a policy register is one row
+ * per policy -- 1,657 on the dev book -- and drawing every one stalls the page for no reader's benefit. The
+ * download still carries every row: the server never caps.
+ */
+export const SECTION_ROW_LIMIT = 200;
+
+/** The rows to draw, and how many were left for the download. */
+export function capRows<T>(rows: readonly T[], limit: number = SECTION_ROW_LIMIT): { shown: T[]; hidden: number } {
+  return rows.length <= limit ? { shown: [...rows], hidden: 0 } : { shown: rows.slice(0, limit), hidden: rows.length - limit };
 }

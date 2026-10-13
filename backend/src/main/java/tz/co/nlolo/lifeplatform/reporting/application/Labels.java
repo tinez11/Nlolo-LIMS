@@ -55,6 +55,14 @@ public class Labels {
         });
     }
 
+    /** A code as a reader writes it: {@code PAID_UP} reads "Paid up", {@code MONTHLY} "Monthly". Blank for none --
+     * the console shows its own dash, and an export cell stays empty rather than saying "null". */
+    public static String words(String code) {
+        if (code == null || code.isBlank()) return "";
+        String spaced = code.trim().replace('_', ' ').toLowerCase(java.util.Locale.ROOT);
+        return Character.toUpperCase(spaced.charAt(0)) + spaced.substring(1);
+    }
+
     public String dimension(GroupBy groupBy, String raw) {
         return switch (groupBy) {
             case PRODUCT -> product(UUID.fromString(raw));

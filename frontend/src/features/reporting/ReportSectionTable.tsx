@@ -1,7 +1,7 @@
 import type { ReportSection } from '@/api/reporting';
 import { DataTable, type Column } from '@/components/DataTable';
 import { cn } from '@/lib/cn';
-import { formatCell } from './reportParams';
+import { capRows, formatCell } from './reportParams';
 
 interface Line {
   index: number;
@@ -12,14 +12,17 @@ interface Line {
 /** One report section. Figures right-aligned so they compare down a column; the total row, when the section
  * has one, last and in bold. */
 export function ReportSectionTable({ section }: { section: ReportSection }) {
-  const lines: Line[] = section.rows.map((cells, index) => ({ index, total: false, cells }));
+  const { shown, hidden } = capRows(section.rows);
+  const lines: Line[] = shown.map((cells, index) => ({ index, total: false, cells }));
   if (Object.keys(section.totals).length > 0) {
     lines.push({ index: lines.length, total: true, cells: section.totals });
   }
-  const columns: Column<Line>[] = section.columns.map((c) => ({
+  const columns: Column<Line>[] = section.columns.map((c, i) => ({
     key: c.key,
     header: c.label,
     align: c.type === 'TEXT' || c.type === 'DATE' ? 'left' : 'right',
+    // A date, or the identifying first column (a policy number), broke at its hyphen into two lines.
+    nowrap: c.type === 'DATE' || i === 0,
     render: (line) => <span className={cn(line.total && 'font-semibold')}>{formatCell(c.type, line.cells[c.key])}</span>,
   }));
   return (
@@ -32,6 +35,12 @@ export function ReportSectionTable({ section }: { section: ReportSection }) {
           <DataTable columns={columns} rows={lines} rowKey={(l) => String(l.index)} caption={section.title} />
         )}
       </div>
+      {hidden > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Showing the first {shown.length.toLocaleString('en-US')} of {section.rows.length.toLocaleString('en-US')} rows.
+          Download the report for all of them.
+        </p>
+      )}
     </section>
   );
 }
