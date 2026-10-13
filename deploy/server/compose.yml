@@ -42,7 +42,9 @@ services:
       - objectdata:/data
       - ./objectstore/s3.json:/etc/seaweedfs/s3.json:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8333/ 2>&1 | true; nc -z localhost 8333"]
+      # By its own hostname, NOT localhost: SeaweedFS binds the S3 port to the container's network address and not to
+      # loopback, so a localhost probe is refused however healthy the server is.
+      test: ["CMD-SHELL", "nc -z $$(hostname) 8333"]
       interval: 10s
       timeout: 5s
       retries: 20
