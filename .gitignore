@@ -42,3 +42,8 @@ frontend/**/playwright-report/
 # actually remove it. Synthetic equivalents live in
 # backend/docs/superpowers/specs/credit-life-*-sample.csv and are committed instead.
 sample data/
+
+# Deployment: local release settings and staged server files
+deploy/release.env
+deploy/.stage/
+deploy/.rehearsal/
