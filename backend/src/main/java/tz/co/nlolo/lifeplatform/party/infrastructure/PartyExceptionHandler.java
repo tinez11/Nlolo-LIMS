@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.party.infrastructure;
 
+import tz.co.nlolo.lifeplatform.party.api.DuplicateClientReferenceException;
 import tz.co.nlolo.lifeplatform.party.api.DuplicateIdentityDocumentException;
 import tz.co.nlolo.lifeplatform.party.api.DuplicateRegistrationNumberException;
 import tz.co.nlolo.lifeplatform.party.api.PartyNotFoundException;
@@ -62,6 +63,12 @@ public class PartyExceptionHandler {
     @ExceptionHandler(DuplicateIdentityDocumentException.class)
     public ProblemDetail handleDuplicateIdentity(DuplicateIdentityDocumentException ex) {
         return problem(HttpStatus.CONFLICT, ex.getMessage(), "DUPLICATE_IDENTITY_DOCUMENT");
+    }
+
+    /** 409, like the other two duplicates: the request is well formed and the value is taken. */
+    @ExceptionHandler(DuplicateClientReferenceException.class)
+    public ProblemDetail handleDuplicateClientReference(DuplicateClientReferenceException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "DUPLICATE_CLIENT_REFERENCE");
     }
 
     @ExceptionHandler(DuplicateRegistrationNumberException.class)

@@ -10,6 +10,8 @@ import tz.co.nlolo.lifeplatform.party.api.DuplicateRegistrationNumberException;
 import tz.co.nlolo.lifeplatform.party.api.IdType;
 import tz.co.nlolo.lifeplatform.party.api.IdentityDocument;
 import tz.co.nlolo.lifeplatform.party.api.IndividualRegistration;
+import tz.co.nlolo.lifeplatform.party.api.DuplicateClientReferenceException;
+import tz.co.nlolo.lifeplatform.party.api.DuplicateIdentityDocumentException;
 import tz.co.nlolo.lifeplatform.party.api.KycDecisionView;
 import tz.co.nlolo.lifeplatform.party.api.KycStatus;
 import tz.co.nlolo.lifeplatform.party.api.Sex;
@@ -44,6 +46,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
 @SpringBootTest(classes = Application.class)
@@ -337,6 +340,49 @@ class PartyApiIntegrationTest {
             registrationWithNationalId("Walked In", "19900101-66666-00001-11"), "staff-1");
 
         assertThat(partyApi.getPartyDetail(registered.partyId()).registeredByPartyId()).isNull();
+    }
+
+    /**
+     * THE MESSAGE MUST NAME THE FIELD THAT ACTUALLY COLLIDED (2026-10-14).
+     *
+     * <p>Reported from the dev stack: registering a client was refused with "A party with this
+     * PASSPORT is already registered for this tenant", and correcting the passport changed
+     * nothing, because the passport was never the problem — the CLIENT REFERENCE was taken. The
+     * catch block assumed any integrity violation on a party carrying an identity document was a
+     * duplicate document. The log showed four attempts in a row, all of them
+     * {@code ux_party_client_reference}, all of them blamed on the passport.
+     *
+     * <p>Both clients below carry a DIFFERENT, unused passport. The only thing they share is the
+     * reference, so a failure naming the document is the bug reappearing.
+     */
+    @Test
+    void aTakenClientReferenceIsReportedAsOne_notAsADuplicateIdentityDocument() {
+        partyApi.registerIndividual(
+            withClientReference(registrationWithNationalId("Ref Holder", "19900101-33333-00001-11"), "CLT-DUP-1"),
+            "test-agent");
+
+        IndividualRegistration second = withClientReference(
+            registrationWithNationalId("Ref Taker", "19900101-44444-00001-11"), "CLT-DUP-1");
+
+        assertThatThrownBy(() -> partyApi.registerIndividual(second, "test-agent"))
+            .isInstanceOf(DuplicateClientReferenceException.class)
+            .hasMessageContaining("CLT-DUP-1");
+    }
+
+    /** The document collision still reports as itself -- the fix must not trade one wrong name for another. */
+    @Test
+    void aTakenIdentityDocumentIsStillReportedAsOne() {
+        partyApi.registerIndividual(registrationWithNationalId("Doc Holder", "19900101-55555-00001-11"), "test-agent");
+
+        assertThatThrownBy(() -> partyApi.registerIndividual(
+                registrationWithNationalId("Doc Taker", "19900101-55555-00001-11"), "test-agent"))
+            .isInstanceOf(DuplicateIdentityDocumentException.class);
+    }
+
+    private static IndividualRegistration withClientReference(IndividualRegistration base, String clientReference) {
+        return new IndividualRegistration(base.fullName(), base.dateOfBirth(), base.phoneNumber(), base.email(),
+            base.sex(), base.smokerStatus(), base.identityDocument(), base.occupation(), base.occupationClass(),
+            base.employerName(), base.nationality(), base.address(), clientReference);
     }
 
     private static IndividualRegistration registrationWithNationalId(String fullName, String idNumber) {
