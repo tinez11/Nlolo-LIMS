@@ -29,7 +29,10 @@ final class ReportFilterParams {
             blankToNull(q.get("salesChannel")),
             blankToNull(q.get("branchCode")),
             blankToNull(q.get("clientType")),
-            value(q, "groupBy", GroupBy::valueOf, "one of PRODUCT, PRODUCT_CATEGORY, AGENT, CHANNEL, BRANCH"));
+            value(q, "groupBy", GroupBy::valueOf, "one of PRODUCT, PRODUCT_CATEGORY, AGENT, CHANNEL, BRANCH"),
+            value(q, "monthFrom", YearMonth::parse, "a month, YYYY-MM"),
+            value(q, "monthTo", YearMonth::parse, "a month, YYYY-MM"),
+            blankToNull(q.get("accountCode")));
     }
 
     private static <T> T value(Map<String, String> q, String name, Function<String, T> parser, String shape) {

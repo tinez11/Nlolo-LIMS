@@ -16,6 +16,9 @@ final class FilterSummary {
         if (f.compareAsOf() != null) parts.add("compared with " + f.compareAsOf());
         if (f.from() != null) parts.add((f.asOf() != null ? "Period " : "From ") + f.from() + " to " + f.to());
         if (f.cohortFrom() != null) parts.add("Activated " + f.cohortFrom() + " to " + f.cohortTo());
+        if (f.monthFrom() != null && f.monthTo() != null) parts.add("Periods " + f.monthFrom() + " to " + f.monthTo());
+        else if (f.monthFrom() != null) parts.add("Period " + f.monthFrom());
+        if (f.accountCode() != null) parts.add("Account: " + f.accountCode());
         if (!d.groupByOptions().isEmpty()) parts.add("Grouped by " + f.groupByOr(d.groupByOptions().get(0)).label());
         if (f.productId() != null) parts.add("Product: " + labels.product(f.productId()));
         if (f.productCategory() != null) parts.add("Category: " + f.productCategory());
