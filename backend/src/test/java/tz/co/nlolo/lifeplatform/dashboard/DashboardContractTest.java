@@ -17,10 +17,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
+import tz.co.nlolo.lifeplatform.dashboard.api.AgentDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.ClaimsDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.Money;
 import tz.co.nlolo.lifeplatform.dashboard.api.UnderwritingDashboardView;
+import tz.co.nlolo.lifeplatform.dashboard.application.AgentDashboard;
 import tz.co.nlolo.lifeplatform.dashboard.application.ClaimsDashboard;
 import tz.co.nlolo.lifeplatform.dashboard.application.FinanceDashboard;
 import tz.co.nlolo.lifeplatform.dashboard.application.UnderwritingDashboard;
@@ -71,6 +73,7 @@ class DashboardContractTest {
     @MockBean private UnderwritingDashboard underwriting;
     @MockBean private ClaimsDashboard claims;
     @MockBean private FinanceDashboard finance;
+    @MockBean private AgentDashboard agent;
 
     private static RequestPostProcessor staff(String... roles) {
         SimpleGrantedAuthority[] authorities = new SimpleGrantedAuthority[roles.length + 1];
@@ -148,5 +151,39 @@ class DashboardContractTest {
     @Test
     void anUnderwriterIsRefusedTheFinanceDashboard() throws Exception {
         mockMvc.perform(get("/dashboards/finance").with(staff("UNDERWRITER"))).andExpect(status().isForbidden());
+    }
+
+    private static RequestPostProcessor agentToken(String partyId) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+            .jwt(b -> {
+                b.subject("agent-subject").claim("tenant_id", UUID.randomUUID().toString());
+                if (partyId != null) {
+                    b.claim("party_id", partyId);
+                }
+            });
+    }
+
+    @Test
+    void anAgentReadsTheirOwnDashboard() throws Exception {
+        UUID party = UUID.randomUUID();
+        when(agent.build(org.mockito.ArgumentMatchers.eq("agent-subject"), org.mockito.ArgumentMatchers.eq(party),
+            org.mockito.ArgumentMatchers.any())).thenReturn(new AgentDashboardView(309L, 23L, 1L, 412L, "2026-09",
+                new Money("1284500.00", "TZS"), null,
+                List.of(new AgentDashboardView.ClientAwaitingKyc(UUID.randomUUID(), "Amina Hassan", "PENDING"))));
+
+        mockMvc.perform(get("/dashboards/agent").with(agentToken(party.toString())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.clients").value(309))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void anAgentTokenWithNoPartyIdIsRefused() throws Exception {
+        mockMvc.perform(get("/dashboards/agent").with(agentToken(null))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void staffAreRefusedTheAgentDashboard() throws Exception {
+        mockMvc.perform(get("/dashboards/agent").with(staff("ADMIN"))).andExpect(status().isForbidden());
     }
 }

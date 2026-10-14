@@ -51,6 +51,18 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/FinanceDashboardView' }
         '403': { $ref: '#/components/responses/Problem' }
+  /dashboards/agent:
+    get:
+      summary: The agent's dashboard (agents realm, scoped to the token)
+      security:
+        - agentsAuth: [agent]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentDashboardView' }
+        '403': { $ref: '#/components/responses/Problem' }
 components:
   responses:
     Problem:
@@ -150,3 +162,26 @@ components:
         premiumsThisYear: { type: array, items: { $ref: '#/components/schemas/MonthPoint' } }
         premiumsLastYear: { type: array, items: { $ref: '#/components/schemas/MonthPoint' } }
         currentMonth: { $ref: '#/components/schemas/Month' }
+    AgentDashboardView:
+      type: object
+      additionalProperties: false
+      required: [clients, clientsAwaitingKyc, clientsKycRejected, policiesInBook, commissionPeriod, commissionEarned,
+                 commissionStatus, awaitingKyc]
+      properties:
+        clients: { $ref: '#/components/schemas/Count' }
+        clientsAwaitingKyc: { $ref: '#/components/schemas/Count' }
+        clientsKycRejected: { $ref: '#/components/schemas/Count' }
+        policiesInBook: { $ref: '#/components/schemas/Count' }
+        commissionPeriod: { $ref: '#/components/schemas/Month' }
+        commissionEarned: { $ref: '#/components/schemas/Money' }
+        commissionStatus: { type: [string, 'null'] }
+        awaitingKyc:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [partyId, displayName, kycStatus]
+            properties:
+              partyId: { type: string, format: uuid }
+              displayName: { type: string }
+              kycStatus: { type: string, enum: [PENDING, VERIFIED, REJECTED] }
