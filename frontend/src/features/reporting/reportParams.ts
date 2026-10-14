@@ -109,6 +109,9 @@ export function validateFilters(definition: ReportDefinition, state: ReportFilte
     if (!state.monthFrom || !state.monthTo) return 'Choose the first and last period.';
     if (state.monthFrom > state.monthTo) return 'The first period must not be after the last.';
   }
+  // A report ABOUT one account cannot run without one. Asked for here, beside the field, rather than
+  // submitted and answered with the server's refusal where the report should be.
+  if (definition.requiresAccount && !state.accountCode) return 'Choose an account.';
   return null;
 }
 

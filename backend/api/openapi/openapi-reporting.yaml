@@ -148,7 +148,7 @@ components:
     ReportDefinition:
       type: object
       additionalProperties: false
-      required: [key, title, description, category, dateFilterKind, groupByOptions, comparable]
+      required: [key, title, description, category, dateFilterKind, groupByOptions, comparable, requiresAccount]
       properties:
         key: { type: string }
         title: { type: string }
@@ -157,6 +157,7 @@ components:
         dateFilterKind: { $ref: '#/components/schemas/DateFilterKind' }
         groupByOptions: { type: array, items: { $ref: '#/components/schemas/GroupBy' } }
         comparable: { type: boolean, description: "Accepts compareAsOf" }
+        requiresAccount: { type: boolean, description: "The report is about ONE chart account and cannot run without accountCode. Ask for it beside the other filters rather than submitting and showing the refusal." }
     ReportColumn:
       type: object
       additionalProperties: false

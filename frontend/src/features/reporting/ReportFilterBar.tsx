@@ -93,7 +93,9 @@ export function ReportFilterBar({
           <div className="flex flex-col gap-1 text-xs">
             <label htmlFor="report-accountCode">Account</label>
             <select id="report-accountCode" value={state.accountCode} onChange={set('accountCode')} className={SELECT}>
-              <option value="">Every account</option>
+              {/* "Every account" is a real choice on a report that can show them all, and a lie on one that
+                  cannot -- the general ledger is about a single account. */}
+              <option value="">{definition.requiresAccount ? 'Choose an account…' : 'Every account'}</option>
               {accounts.map((a) => (
                 <option key={a.accountCode} value={a.accountCode}>
                   {a.accountCode} — {a.name}

@@ -21,6 +21,7 @@ const definition = (dateFilterKind: ReportDefinition['dateFilterKind'], comparab
   dateFilterKind,
   groupByOptions: ['PRODUCT', 'AGENT'],
   comparable,
+  requiresAccount: false,
 });
 
 const TODAY = new Date(2026, 9, 11); // 11 October 2026, local time
@@ -68,6 +69,21 @@ describe('accounting report filters', () => {
   it('refuses a single-period report with no period', () => {
     const base = defaultFilters(ledger('MONTH'), TODAY);
     expect(validateFilters(ledger('MONTH'), { ...base, monthFrom: '' })).toMatch(/Choose a period/);
+  });
+
+  /**
+   * A report ABOUT one account asks for it here. Before this the console submitted without one and rendered
+   * the server's refusal where the report should be -- a whole-region failure with a "Try again" that would
+   * fail identically, over a field nobody had filled in yet.
+   */
+  it('asks for the account on a report that is about one, and not on reports that are not', () => {
+    const generalLedger = { ...ledger('MONTH_RANGE'), key: 'general-ledger', requiresAccount: true };
+    const base = defaultFilters(generalLedger, TODAY);
+
+    expect(validateFilters(generalLedger, base)).toMatch(/Choose an account/);
+    expect(validateFilters(generalLedger, { ...base, accountCode: '1110' })).toBeNull();
+    // The income statement spans the same periods and shows every account: it must not demand one.
+    expect(validateFilters(ledger('MONTH_RANGE'), defaultFilters(ledger('MONTH_RANGE'), TODAY))).toBeNull();
   });
 
   it('restores a month filter from the URL so a reload runs the same report', () => {
