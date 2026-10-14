@@ -25,6 +25,60 @@ const definition = (dateFilterKind: ReportDefinition['dateFilterKind'], comparab
 
 const TODAY = new Date(2026, 9, 11); // 11 October 2026, local time
 
+describe('accounting report filters', () => {
+  const ledger = (kind: ReportDefinition['dateFilterKind'], comparable = false): ReportDefinition => ({
+    ...definition(kind, comparable),
+    key: 'trial-balance',
+    category: 'ACCOUNTING',
+    groupByOptions: [],
+  });
+
+  it('opens a single-period report on the current month and a span on the year to date', () => {
+    expect(defaultFilters(ledger('MONTH'), TODAY)).toMatchObject({ monthFrom: '2026-10', monthTo: '', asOf: '' });
+    expect(defaultFilters(ledger('MONTH_RANGE'), TODAY)).toMatchObject({ monthFrom: '2026-01', monthTo: '2026-10' });
+  });
+
+  it('sends the month and never a day: the ledger has no posting date to match one', () => {
+    const state = { ...defaultFilters(ledger('MONTH'), TODAY), asOf: '2026-10-11' };
+    const params = toParams(ledger('MONTH'), state);
+    expect(params.monthFrom).toBe('2026-10');
+    expect(params.asOf).toBeUndefined();
+    expect(params.monthTo).toBeUndefined();
+  });
+
+  it('sends both ends and the account for a ledger range', () => {
+    const state = { ...defaultFilters(ledger('MONTH_RANGE'), TODAY), monthFrom: '2026-04', monthTo: '2026-09', accountCode: '1100' };
+    const params = toParams(ledger('MONTH_RANGE'), state);
+    expect(params).toMatchObject({ monthFrom: '2026-04', monthTo: '2026-09', accountCode: '1100' });
+  });
+
+  it('sends a comparison month only where the report is comparable', () => {
+    const state = { ...defaultFilters(ledger('MONTH'), TODAY), compareAsOf: '2026-06-30' };
+    expect(toParams(ledger('MONTH', true), state).compareAsOf).toBe('2026-06-30');
+    expect(toParams(ledger('MONTH', false), state).compareAsOf).toBeUndefined();
+  });
+
+  it('refuses a range running backwards before sending it', () => {
+    const base = defaultFilters(ledger('MONTH_RANGE'), TODAY);
+    expect(validateFilters(ledger('MONTH_RANGE'), { ...base, monthFrom: '2026-09', monthTo: '2026-04' }))
+      .toMatch(/must not be after/);
+    expect(validateFilters(ledger('MONTH_RANGE'), { ...base, monthFrom: '2026-04', monthTo: '2026-09' })).toBeNull();
+  });
+
+  it('refuses a single-period report with no period', () => {
+    const base = defaultFilters(ledger('MONTH'), TODAY);
+    expect(validateFilters(ledger('MONTH'), { ...base, monthFrom: '' })).toMatch(/Choose a period/);
+  });
+
+  it('restores a month filter from the URL so a reload runs the same report', () => {
+    const search = new URLSearchParams({ monthFrom: '2026-03', accountCode: '1100' });
+    expect(stateFromSearch(ledger('MONTH'), search, TODAY)).toMatchObject({
+      monthFrom: '2026-03',
+      accountCode: '1100',
+    });
+  });
+});
+
 describe('report filters', () => {
   it('defaults each date kind to a sensible window ending today', () => {
     expect(defaultFilters(definition('AS_OF'), TODAY).asOf).toBe('2026-10-11');

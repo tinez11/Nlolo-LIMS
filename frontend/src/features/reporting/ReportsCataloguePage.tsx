@@ -9,10 +9,13 @@ import { Button } from '@/components/ui/button';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useReportingStore } from '@/store/reportingStore';
 
-const CATEGORY_LABELS: Record<ReportDefinition['category'], string> = { MANAGEMENT: 'Management' };
+const CATEGORY_LABELS: Record<ReportDefinition['category'], string> = {
+  MANAGEMENT: 'Management',
+  ACCOUNTING: 'Accounting',
+};
 
-/** Every report this tenant can run, grouped by the department that reads it. Only Management exists today;
- * Accounting is the next batch. */
+/** Every report this tenant can run, grouped by the department that reads it. Management reports read a
+ * projection of domain events; accounting reports read the general ledger itself. */
 export function ReportsCataloguePage() {
   const auth = useAuth();
   const isAdmin = readIdentity(auth.user?.access_token).roles.includes('ADMIN');
@@ -52,7 +55,7 @@ export function ReportsCataloguePage() {
 
   return (
     <>
-      <PageHeader title="Reports" description="Management reports, on screen or as Excel, CSV or PDF." />
+      <PageHeader title="Reports" description="Management and accounting reports, on screen or as Excel, CSV or PDF." />
       <div className="space-y-4 px-6 pb-6">
         {body()}
         {isAdmin && <RebuildPanel />}

@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useProductStore } from '@/store/productStore';
+import { listChartOfAccounts } from '@/api/finaccounting';
+import type { ChartOfAccountView } from '@/api/types';
 import type { ReportDefinition } from '@/api/reporting';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,6 +43,19 @@ export function ReportFilterBar({
     void loadProducts();
   }, [loadProducts]);
   const kind = definition.dateFilterKind;
+  // An accounting report reads the ledger, so it offers the chart rather than a free-text code that could
+  // name an account the chart does not have.
+  const ledgerReport = kind === 'MONTH' || kind === 'MONTH_RANGE';
+  const [accounts, setAccounts] = useState<ChartOfAccountView[]>([]);
+  useEffect(() => {
+    if (!ledgerReport) return;
+    // Only accounts that take postings: a summary account carries none of its own, so a general ledger of
+    // one would come back empty and read as a bug. A failed load leaves "Every account", and the server's
+    // own 400 still names what is missing -- a reference list must not block the whole filter bar.
+    listChartOfAccounts()
+      .then((all) => setAccounts(all.filter((a) => a.postingAllowed)))
+      .catch(() => setAccounts([]));
+  }, [ledgerReport]);
   const set = (field: keyof ReportFilterState) => (e: { target: { value: string } }) =>
     setState((s) => ({ ...s, [field]: e.target.value }));
 
@@ -67,6 +82,26 @@ export function ReportFilterBar({
         {(kind === 'PERIOD' || kind === 'AS_OF_AND_PERIOD') && field('to', 'To', 'date')}
         {kind === 'COHORT' && field('cohortFrom', 'First activation month', 'month')}
         {kind === 'COHORT' && field('cohortTo', 'Last activation month', 'month')}
+        {/* type="month" so the control itself refuses a day: the ledger has no posting date to match one. */}
+        {kind === 'MONTH' && field('monthFrom', 'Period', 'month')}
+        {kind === 'MONTH' && definition.comparable && field('compareAsOf', 'Compare with', 'date')}
+        {kind === 'MONTH_RANGE' && field('monthFrom', 'First period', 'month')}
+        {kind === 'MONTH_RANGE' && field('monthTo', 'Last period', 'month')}
+        {/* Non-wrapping label, for the reason the product select records below: a wrapping label would take
+            its accessible name from every option inside it. */}
+        {ledgerReport && (
+          <div className="flex flex-col gap-1 text-xs">
+            <label htmlFor="report-accountCode">Account</label>
+            <select id="report-accountCode" value={state.accountCode} onChange={set('accountCode')} className={SELECT}>
+              <option value="">Every account</option>
+              {accounts.map((a) => (
+                <option key={a.accountCode} value={a.accountCode}>
+                  {a.accountCode} — {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         {definition.groupByOptions.length > 0 && (
           <label className="flex flex-col gap-1 text-xs" htmlFor="report-groupBy">
             Group by
