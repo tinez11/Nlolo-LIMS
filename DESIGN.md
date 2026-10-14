@@ -209,9 +209,9 @@ working day inside this surface, so it is built to be read rather than admired,
 and to be read for eight hours without fatigue.
 
 The doctrine that gives the world its edge is inherited straight from the
-product: **render only what the platform can prove.** There are no analytics
-endpoints on this platform, so there are no trend arrows, no sparklines and no
-percentage deltas. The stat row shows counts. A status the build has never seen
+product: **render only what the platform can prove.** A trend arrow, a delta or a
+chart appears only where a report the platform runs computed every point on it;
+anything else is a count. A status the build has never seen
 is ringed and flagged rather than quietly dressed as a neutral. An absent value
 is an em dash, never a grey pill reading "Unknown". This refusal is not a
 limitation the design works around — it is the design's argument, and it is what
@@ -804,8 +804,16 @@ on this platform means state.
   `<button>`s with `aria-pressed` and take a Rule-Strong border when selected. Only
   for screens with more than one count, which today means one screen.
 
-**Counts only, and no trend arrows** — there is no analytics endpoint on this
-platform, so a card reading "↗ 12% wk/wk" would have nothing behind it. A null
+**A trend only where a report stands behind it** (revised 2026-10-14). Until the
+reporting module existed this read "counts only, and no trend arrows", because no
+endpoint computed anything over time. Now some figures are computed — premium
+collections by month, new business, the balance sheet, the income statement — and
+a delta between two of those report values is as provable as either value. The
+rule that survives the revision: **every point on a chart and every side of a
+delta is a value a report returned.** A card reading "↗ 12% wk/wk" with no report
+behind it is still worse than no card, and a figure summed in the browser is still
+refused. A delta reports a direction, not a verdict: up is not "good", so it is
+drawn in ink, never in the success or danger hue (The Stamp Rule). A null
 value with `pending` shows a spinner; a null value without it shows an em dash
 labelled "Not available", because a spinner that spins forever next to an error
 panel is worse than an honest dash. Both components carry those three states, and
@@ -979,8 +987,12 @@ surface.
   which is computed from an identifier.
 - **Don't** add a seventh status bucket, or use a status hue for anything that is
   not a status.
-- **Don't** add a trend arrow, sparkline, percentage delta or any aggregate this
-  platform has no endpoint for. Counts only.
+- **Don't** add a trend arrow, sparkline, percentage delta or chart unless every
+  value on it came back from a report the platform ran. Never sum, average or
+  difference in the browser, and never colour a delta green or red — a direction
+  is not a verdict.
+- **Don't** colour a chart series. Series are ink and greys; the six status hues
+  stay reserved for state, so a chart cannot make the Stamp Rule lie.
 - **Don't** put a mutating action inside the slide-over. If it changes money,
   cover or a case, it belongs on a page.
 - **Don't** put a mutating action in the 320px record rail either, and don't lead

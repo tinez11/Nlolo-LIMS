@@ -68,8 +68,9 @@ Two consequences that bind the design:
 
 The mechanism a neighbouring product could not truthfully copy is the discipline
 already enforced in the code: **this console renders only what the platform can
-prove.** No analytics endpoints exist, so no trend arrows exist. No client-side
-premium arithmetic. No fabricated rows. That refusal is the position.
+prove.** A trend, a delta or a chart appears only where a report the platform runs
+stands behind it — never estimated, never drawn from a client-side sum. No
+client-side premium arithmetic. No fabricated rows. That refusal is the position.
 
 ## Operating Context
 
@@ -81,8 +82,7 @@ premium arithmetic. No fabricated rows. That refusal is the position.
   never total volume — individuals awaiting KYC, companies and groups awaiting
   KYC, open underwriting cases, claims waiting on this viewer, arrears at the
   lapse threshold, and field receipts past their SLA — because those are the only
-  counts the API can express honestly (one status filter at a time, no analytics
-  endpoint). KYC is counted twice because the client register is two nav items:
+  counts the API can express honestly (one status filter at a time). KYC is counted twice because the client register is two nav items:
   one combined count sitting beside one of them would not describe that list.
 - **A badge counts the queue YOU work, not the screen you are looking at.** The
   Claims item counts unassessed claims for an assessor and claims awaiting a
@@ -171,9 +171,17 @@ Backend validates `^-?\d+(\.\d{1,2})?$`. `Intl.NumberFormat` for display, the
 same regex on inputs, and **no client-side arithmetic** — the backend computes
 every total. Working currency is TZS.
 
-**Numbers are counts, not analytics.** Stat cards show `totalElements` from the
-four paged searches and nothing else. No trend arrows: there is no trend data,
-and a card reading "↗ 12% wk/wk" with nothing behind it is worse than no card.
+**A figure is a count, or a report's own number.** Revised 2026-10-14, when the
+reporting module made some figures provable that were not before. Two sources
+only: a paged search's `totalElements` (work waiting, by one status), and a value
+the reporting module computed (`GET /reports/{key}` — premium collections, new
+business, the balance sheet, the income statement and the rest). A trend, a
+"vs last month" or a chart is allowed **only** when every point on it is one of
+those report values; a card reading "↗ 12% wk/wk" with nothing behind it is still
+worse than no card. Dashboards read their figures from **one server-side endpoint
+per role** that composes the module APIs (the shape `CustomerDashboardView`
+already has), never from a browser fanning out to a dozen searches and summing
+them — so a dashboard cannot claim more than the backend enforces.
 
 **Status vocabulary is fixed at six semantic buckets** — neutral, pending,
 active, success, warning, danger — mapping ~25 backend enums through one shared
@@ -234,7 +242,9 @@ this console. It may be distinctive; it may not be one insurer's.
   mockup reviewed in `PLAN.md` §13 hardcoded a 120-row chart of accounts, a
   payments feed and 21 report definitions; all were rejected. Future work must
   not reintroduce them.
-- **Absent and must not be fabricated:** analytics or trend data, customer
+- **Absent and must not be fabricated:** any trend or delta not computed by a
+  report the platform runs, SLA deadlines (no SLA concept exists on underwriting
+  or claims), customer
   testimonials, pricing, benchmarks, uptime or performance claims, deployment
   claims, TIRA return catalogue/format (still an open item), IFRS17 cohort rules,
   and any brand asset.
