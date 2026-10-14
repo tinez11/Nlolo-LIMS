@@ -196,6 +196,43 @@ describe('PartyDetailPage', () => {
   });
 
   /**
+   * A DECIDED CASE PUTS ITS CONTROLS AWAY (2026-10-14).
+   *
+   * The confirmation always closed on success; what stayed was the Verify/Reject pair, so a
+   * verified client still led with a live Reject button and an acting panel that read as
+   * unfinished work. It cannot simply be removed — a KYC decision is reversible and overturning
+   * a wrong rejection is real — so it moves behind one deliberate click.
+   */
+  it('puts the decision controls away once the client is verified', async () => {
+    withEvidence([evidenceOnRecord()]);
+    usePartyStore.setState({
+      detail: { [PARTY_ID]: { ...RESOURCE, data: party({ kycStatus: 'VERIFIED' }) } },
+    } as never);
+    vi.mocked(getParty).mockResolvedValue(party({ kycStatus: 'VERIFIED' }));
+    renderAt(`/staff/parties/${PARTY_ID}?tab=kyc`);
+
+    expect(screen.getByText('Identity verified. This client may hold a policy.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Verify' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument();
+
+    // Reversible, so the act is reachable — behind an explicit click, not left armed.
+    await userEvent.click(screen.getByRole('button', { name: 'Change this decision' }));
+
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
+    // Re-verifying is refused, which is what "already verified" means.
+    expect(screen.getByRole('button', { name: 'Verify' })).toBeDisabled();
+  });
+
+  /** A client nobody has decided on still leads with the act — that is the panel's whole job. */
+  it('still leads with the decision while the client is pending', () => {
+    withEvidence([evidenceOnRecord()]);
+    renderAt(`/staff/parties/${PARTY_ID}?tab=kyc`);
+
+    expect(screen.getByRole('button', { name: 'Verify' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Change this decision' })).not.toBeInTheDocument();
+  });
+
+  /**
    * The decision trail, which the platform had written since its first KYC decision and could
    * not read until 2026-10-14. The point of the panel is the OVERTURNED row: the party record
    * keeps only the decision in force, so this list is the only place a client's rejection

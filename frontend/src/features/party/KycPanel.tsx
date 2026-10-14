@@ -163,6 +163,7 @@ export function KycDecisionPanel({
         )}
 
         <DecisionControls
+          partyId={partyId}
           chosen={chosen}
           currentStatus={currentStatus}
           pending={pending}
@@ -385,8 +386,20 @@ function DecisionHistory({
   );
 }
 
-/** Verify / Reject, and the second click in front of each. */
+/**
+ * Verify / Reject, the second click in front of each — and nothing at all once the case is
+ * decided.
+ *
+ * <b>Why a decided case puts its controls away (2026-10-14, the user's call).</b> The
+ * confirmation always closed on success; what stayed was the Verify/Reject pair, so a verified
+ * client still led with a live Reject button and an acting panel that read as unfinished work.
+ * A KYC decision is not irreversible — {@code Party.applyKycDecision} assigns with no guard on
+ * the previous status — so the act cannot simply be removed either: overturning a wrong
+ * rejection is a real thing a reviewer does. It moves behind one deliberate click instead,
+ * which is the difference between offering an act and leaving it armed.
+ */
 function DecisionControls({
+  partyId,
   chosen,
   currentStatus,
   pending,
@@ -395,6 +408,7 @@ function DecisionControls({
   onConfirm,
   busy,
 }: {
+  partyId: string;
   chosen: FiledEvidence | null;
   currentStatus: KycStatus | undefined;
   pending: KycStatus | null;
@@ -404,6 +418,17 @@ function DecisionControls({
   busy: boolean;
 }) {
   const name = chosen?.fileName?.trim() || chosen?.documentRef;
+  const decided = currentStatus === 'VERIFIED' || currentStatus === 'REJECTED';
+
+  /*
+   * Tagged with the party AND the status it was opened against, so it needs no resetting: a
+   * re-decision changes `currentStatus`, the tag stops matching, and the controls put
+   * themselves away again. Clearing it in an effect would be the setState-in-effect this
+   * project lints as an error, and would leave one render in which the previous client's
+   * reopened panel sits under this client's name.
+   */
+  const [changing, setChanging] = useState<{ partyId: string; from: KycStatus } | null>(null);
+  const reopened = changing?.partyId === partyId && changing.from === currentStatus;
 
   if (pending && chosen) {
     return (
@@ -440,6 +465,33 @@ function DecisionControls({
     );
   }
 
+  // Decided, and nobody has asked to change it: state the outcome and put the act away.
+  if (decided && !reopened) {
+    return (
+      <div className="space-y-1.5">
+        <p className="text-sm">
+          {currentStatus === 'VERIFIED'
+            ? 'Identity verified. This client may hold a policy.'
+            : 'Identity rejected. This client cannot be taken on as a policyholder.'}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Who decided it and the document it was decided on are in the history below.
+        </p>
+        {/* Outline, not danger or primary: re-deciding is a real act and a rare one, and a
+            decided case is not a page asking to be acted on. The Acting-Panel Rule's own
+            reasoning — promoting a rare destructive action above the record somebody came to
+            read is a different mistake, not a fix. */}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => currentStatus && setChanging({ partyId, from: currentStatus })}
+        >
+          Change this decision
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5">
@@ -461,6 +513,11 @@ function DecisionControls({
           <X />
           Reject
         </Button>
+        {reopened && (
+          <Button size="sm" variant="ghost" onClick={() => setChanging(null)}>
+            Keep it as it is
+          </Button>
+        )}
       </div>
       {/* Why the controls are dead, said once and in the open. A disabled pair with no
           explanation is the state a reviewer reads as "this console is broken". */}
