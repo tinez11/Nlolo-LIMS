@@ -83,6 +83,31 @@
   --n-radius: 0.75rem;
   --n-radius-panel: 2.5rem;
   --n-radius-shell: 1.25rem;
+  --n-radius-card: 1.5rem;
+
+  /*
+    The shell's own dimensions, as tokens rather than literals, because the
+    photo-led composition has to do arithmetic with them: the sign-in card is
+    held clear of the wordmark printed across the top of the photograph, and
+    where that wordmark lands is a function of the shell's width and height. A
+    literal in two places would let the two drift apart silently, and the
+    failure would be a logotype with a card sitting on it.
+  */
+  --n-shell-max: 76rem;
+  --n-shell-pad: 24px;
+  --n-shell-w: min(var(--n-shell-max), 100vw - 2 * var(--n-shell-pad));
+  --n-shell-h: min(92dvh, 44rem);
+
+  /*
+    How far down the shell the printed wordmark ends.
+
+    The mark occupies the top 24.4% of the source image (measured, 1536x1024),
+    and `cover` draws that image at whichever scale makes it overflow: by WIDTH
+    while the shell is wider than 3:2, by HEIGHT once it is narrower. `max()`
+    picks the governing one, so this holds in both regimes rather than only the
+    desktop one.
+  */
+  --n-mark-bottom: calc(0.244 * max(var(--n-shell-w) * 0.6667, var(--n-shell-h)));
 
   --n-sans: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --n-display: 'Archivo Black', 'Arial Black', var(--n-sans);
@@ -153,7 +178,7 @@
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: var(--n-shell-pad);
   background-color: var(--n-green-deeper);
   color: var(--n-ink);
   font-family: var(--n-sans);
@@ -245,8 +270,8 @@ ul {
 
 .lp-shell {
   width: 100%;
-  max-width: 76rem;
-  min-height: min(92dvh, 44rem);
+  max-width: var(--n-shell-max);
+  min-height: var(--n-shell-h);
   display: grid;
   /*
     24rem, not 17rem. Measured at 1440: the narrower column could not hold the
@@ -261,38 +286,19 @@ ul {
 }
 
 /*
-  Where the photograph shows, the brand side stops being a 24rem sidebar and
-  takes the larger share of the shell: on this surface the picture leads and the
-  form follows. Fractions rather than a fixed width, so the split holds at every
-  shell width.
+  THE PHOTO-LED COMPOSITION.
 
-  1.4, not 1.5. The form panel is the floor here, and this file's own rule is
-  that below about 500px its fields stop being comfortable once the panel's 32px
-  of padding comes off. Measured at 1440 against the 76rem shell: 1.5fr leaves
-  the form panel 486px, under that floor; 1.4fr leaves it 507px, over it. The
-  difference on the brand side is ~20px of panel, which crops about 15 more
-  source pixels per side -- indistinguishable in the picture, decisive in the
-  form.
-*/
-.lp-shell--photo {
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-}
+  On the realms that carry the photograph there is no split: the picture is the
+  whole page, and the sign-in form floats over it as a card. This replaces the
+  two-panel treatment that preceded it, and the reason is measured rather than
+  stylistic. In a 709x704 half-shell, `cover` threw away 16% of the image width
+  from each side -- which is precisely where the two outer women stand -- and
+  showed 67% of the frame. Across the full 1216x704 shell it shows 87%, all four
+  people are whole, and the printed wordmark reads about three times larger.
 
-/*
-  Filled, edge to edge. The brand panel IS the photograph on these realms -- no
-  padding, no inset card, no green showing around it -- so the panel's own
-  padding is removed and the frame takes the whole cell.
-
-  THE TRADE, stated plainly because it reverses the requirement this panel was
-  first built to: a 3:2 landscape cannot fill a panel roughly 709x704 and also be
-  shown whole. Filling scales it to the panel's HEIGHT, which makes it about 1056
-  wide, and ~347px of width is cropped away -- the outer edges, which is where
-  the two outer figures stand. Whole and filled are mutually exclusive here; this
-  is the filled one, and it is why the figure below no longer bleeds off the
-  left edge.
-
-  `justify-content` is deliberately not set: the frame is `flex: 1` and occupies
-  the column on its own, so there is nothing left to distribute.
+  What this costs, recorded so nobody rediscovers it as a bug: the single large
+  top-left radius that the rest of this design is built around does not survive a
+  floating card. The `regulators` realm, which has no photograph, keeps it.
 */
 .lp-shell--photo .lp-brand {
   padding: 0;
@@ -306,35 +312,27 @@ ul {
 */
 .lp-brand__frame {
   display: block;
-  flex: 1;
-  /*
-    `min-height: 0` because this is a flex child: without it the item's automatic
-    minimum size is its content's, an <img> that wants to be 1024px tall refuses
-    to shrink, and the panel grows to fit the picture instead of the picture
-    fitting the panel -- which is the whole mechanism being asked for here.
-  */
-  min-height: 0;
   width: 100%;
   overflow: hidden;
 }
 
 /*
-  Biased above centre. The wordmark runs across the top of the frame (source Y
-  3.4%-24.4%) and the faces sit just under it, so holding the upper third keeps
-  both. Horizontally centred, because the wordmark is centred and a tall panel
-  takes its crop from the sides evenly.
+  Top-anchored, at every size, and this is load-bearing rather than taste.
 
-  This value is safe only while the panel is TALLER than 2:3 of its width, which
-  is every desktop case -- `cover` then scales by height and crops nothing
-  vertically. Where the panel is short and wide it does crop vertically, and 32%
-  slices the letters; the stacked media query below resets it for exactly that.
+  The wordmark is printed across the top of the source frame (Y 3.4%-24.4%,
+  measured), so wherever `cover` crops vertically, the top is the part that must
+  survive -- and the SVG lockup is suppressed on these realms precisely because
+  this mark is the one the page shows. An earlier centre-ish bias of `50% 32%`
+  opened its window INSIDE the letters wherever the frame went short and wide,
+  which read as a broken logotype rather than a crop. `0%` cannot do that at any
+  aspect, which is why there is now one value here and no override below.
 */
 .lp-brand__photo {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: 50% 32%;
+  object-position: 50% 0%;
 }
 
 /*
@@ -360,6 +358,142 @@ ul {
   display: flex;
   padding: 48px 32px;
   overflow-y: auto;
+}
+
+/*
+  ------------------------------------------- The photo-led composition, desktop
+
+  Written as the exact complement of the stacked query -- `not all and
+  (max-width: 60rem)`, rather than a `min-width` a hair above it, so there is no
+  sub-pixel width where neither block applies -- because this composition exists
+  ONLY above the split. Below it the page stacks into a photograph band over a
+  form panel, which is a different arrangement rather than a narrower version of
+  this one, and expressing it here means the stacked rules never have to undo a
+  layout they did not want.
+*/
+@media not all and (max-width: 60rem) {
+  /*
+    One cell, with the photograph taken out of flow behind it. The form card is
+    then the only item in the grid, which is what lets it be placed against the
+    bottom-right corner without a second column to sit in.
+  */
+  .lp-shell--photo {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lp-shell--photo .lp-brand {
+    position: absolute;
+    inset: 0;
+  }
+
+  .lp-shell--photo .lp-brand__frame {
+    position: absolute;
+    inset: 0;
+    width: auto;
+  }
+
+  /*
+    The card. Bottom-right, and the corner is not arbitrary: anchored to the
+    bottom it clears the wordmark printed across the top of the photograph,
+    which anchoring it to the top or centring it does not.
+
+    29rem is derived, not chosen: 32px of padding either side of `.lp-col`'s
+    25rem puts the card at exactly 464px, so the fields inside are the same
+    width as on every other page of this theme rather than a cramped variant.
+  */
+  .lp-shell--photo .lp-panel {
+    position: relative;
+    z-index: 1;
+    justify-self: end;
+    align-self: end;
+    width: 29rem;
+    margin: 0 24px 24px 0;
+    padding: 28px 32px 24px;
+    border-radius: var(--n-radius-card);
+    /*
+      Translucent, so the photograph is continuous behind the one opaque thing
+      on the page. The shadow is what separates it: a blurred surface over a
+      busy picture needs a boundary that is not a line.
+    */
+    background-color: color-mix(in oklch, var(--n-paper) 94%, transparent);
+    backdrop-filter: blur(28px) saturate(150%);
+    -webkit-backdrop-filter: blur(28px) saturate(150%);
+    box-shadow: 0 28px 70px -24px oklch(0.18 0.05 150 / 0.6);
+
+    /*
+      THE RULE THAT KEEPS THE LOGOTYPE WHOLE.
+
+      The card grows with its contents -- a rejected password adds an alert, a
+      realm with password reset adds a row -- and left alone it grows UPWARD
+      from the bottom edge until it reaches the wordmark and sits on it. So it
+      is capped at the space between the bottom of the mark and the bottom of
+      the shell, less its own 24px margin and a 24px gap, and `overflow-y: auto`
+      on the base rule scrolls the form inside instead. A card that scrolls is a
+      smaller problem than a logotype with a form on top of it.
+
+      48px, not more, and the figure is measured rather than tasteful: a
+      1366x768 window gives the viewport about 720px, which leaves the card 440px
+      once the mark and this reserve come off. The form at rest is 415px. Raising
+      the reserve to 72px drops that to 392px and makes the card scroll at REST
+      on an ordinary laptop, which is a worse page than a 24px gap under the
+      logotype on the rarer screen where the form is crowded.
+    */
+    max-height: calc(var(--n-shell-h) - var(--n-mark-bottom) - 48px);
+  }
+
+  /*
+    `.lp-col` centres itself with `margin: auto` in the full-height panel. In a
+    card sized to its contents there is nothing to centre, and `auto` margins on
+    a flex child inside a scroll container put the overflowing top out of reach.
+  */
+  .lp-shell--photo .lp-col {
+    margin: 0;
+    width: 100%;
+  }
+
+  /*
+    The 32px above the title belongs under the SVG lockup, which is suppressed
+    on these realms. With no mark above it, it is just the card's padding twice.
+  */
+  .lp-shell--photo .lp-title {
+    margin-top: 0;
+    font-size: 1.5rem;
+  }
+
+  .lp-shell--photo .lp-form {
+    margin-top: 20px;
+    gap: 16px;
+  }
+
+  .lp-shell--photo .lp-note {
+    margin-top: 18px;
+    padding-top: 14px;
+  }
+}
+
+/*
+  Translucency is a preference, not a given. Where the viewer has asked for less
+  of it the card becomes opaque and the blur is dropped -- the photograph is
+  still the page, it simply stops showing through the one surface carrying text.
+  Where they have asked for more contrast it also takes a defined border, since
+  a shadow alone is not a boundary at high contrast.
+*/
+@media (prefers-reduced-transparency: reduce) {
+  .lp-shell--photo .lp-panel {
+    background-color: var(--n-paper);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .lp-shell--photo .lp-panel {
+    background-color: var(--n-paper);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid var(--n-ink);
+  }
 }
 
 /* ---------------------------------------------------------- 4. Brand panel */
@@ -1127,25 +1261,6 @@ ul {
       vertically, and the rule below decides which part survives.
     */
     max-height: 45dvh;
-  }
-
-  /*
-    Top-aligned, and this is a bug fix rather than a preference.
-
-    Wherever that 45dvh cap bites, the band is short and wide, `cover` crops
-    VERTICALLY, and the desktop's 32% bias then shows source Y 22%-53% -- a
-    window that starts INSIDE the wordmark and slices it through the middle of
-    the letters. Measured at 844x390 and again at 900x700, so it is not a
-    sideways phone but any window under 60rem that is not tall. And because the
-    SVG lockup is suppressed wherever the photograph shows, that screen carried
-    no intact mark at all.
-
-    `0%` holds the top of the frame, which is where the mark is. Harmless at the
-    portrait sizes where the cap never bites: there the band is already the
-    image's own 3:2, `cover` crops nothing, and Y has nothing to choose between.
-  */
-  .lp-shell--photo .lp-brand__photo {
-    object-position: 50% 0%;
   }
 
   .lp-panel {

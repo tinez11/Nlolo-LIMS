@@ -18,7 +18,16 @@ pinned in `infra/docker-compose.yml`.
 > called off. The two surfaces look different **on purpose** — do not reconcile
 > them by softening this page or repainting the console.
 
-## The composition
+## Two compositions, decided by whether the realm carries the photograph
+
+**Photo-led** — `staff`, `agents`, `customers`. The photograph is the whole
+page, and the sign-in form floats over it as a translucent card anchored to the
+bottom-right corner. The card is bottom-anchored for a reason that is not
+taste: the Nlolo wordmark is printed across the top of the photograph, and only
+the bottom corner clears it.
+
+**Split leaf** — `regulators`, which has no photograph. The original
+composition, and the one the rest of this design is built around:
 
 - A deep-green **brand panel** on the left: a figure card bleeding off the panel
   edge under a lime disc, and a heavy uppercase display statement at the bottom.
@@ -28,6 +37,10 @@ pinned in `infra/docker-compose.yml`.
   rounded box.
 - Inside it, the reference's stack: centred mark, a large welcome, the realm
   named beneath it, label-above-field inputs, and a full-width pill action.
+
+That single large corner does **not** survive a floating card, so the photo-led
+realms do not have it. The divergence is deliberate; `regulators` is where the
+gesture still lives.
 
 **The palette is Nlolo's, not the reference's.** Every green is derived from the
 Nlolo mark rather than lifted from the reference's own brand pair — copying a
@@ -58,22 +71,39 @@ column is suppressed — **one mark per screen**.
 `regulators` keeps the designed no-photo composition: a flat brand-green card
 under the lime disc, with the display statement below it.
 
-**It fills the panel and crops; it is not shown whole.** A 3:2 landscape cannot
-fill a panel roughly 709×704 and also be shown entire, and this reverses the
-requirement the panel was first built to. `object-position: 50% 32%` holds the
-upper third, where the wordmark and the faces are, and the crop takes evenly
-from the sides.
+**It fills the shell and crops; it is not shown whole.** Across the full
+1216×704 shell that costs the bottom 13% of the frame and shows **87% of the
+image**, with all four people whole. The two-panel treatment that preceded it
+showed 67% and cut both outer women in half, which is why the composition
+changed.
 
-Two measured constraints govern that, and neither should be re-derived:
+Three measured constraints govern it, and none should be re-derived:
 
-- **`1.4fr`, not `1.5fr`.** At 1440 against the 76rem shell, `1.5fr` leaves the
-  form panel 486px — under the ~500px floor this design declares for comfortable
-  fields. `1.4fr` leaves it 507px, and costs about 15 source pixels per side.
-- **`object-position: 50% 0%` below 60rem.** Stacked, the band is short and wide,
-  so `cover` crops *vertically* and the desktop's 32% bias slices the wordmark
-  through the middle of the letters — at 844×390 *and* at 900×700, i.e. any
-  window under 60rem that is not tall. Top-aligning holds the mark. Harmless at
-  portrait sizes, where the 45dvh cap never bites and `cover` crops nothing.
+- **`object-position: 50% 0%`, everywhere.** The wordmark occupies the top 24.4%
+  of the source, so wherever `cover` crops vertically the top is what must
+  survive. An earlier `50% 32%` bias opened its window *inside* the letters on
+  any window under 60rem that was not tall — measured at 844×390 and 900×700.
+  `0%` cannot do that at any aspect, which is why there is one value and no
+  override.
+- **The card is capped so it can never reach the mark.** It grows upward as its
+  contents grow — a rejected password adds an alert — so its `max-height` is the
+  space between the bottom of the mark and the bottom of the shell, less 48px.
+  `--n-mark-bottom` derives where the mark ends from the shell's own width and
+  height, handling both `cover` scaling regimes. Past the cap the card scrolls
+  inside; it never climbs onto the logotype.
+- **48px of reserve, not 72px.** A 1366×768 window gives roughly 720px of
+  viewport, which leaves the card 440px once the mark and the reserve come off.
+  The form at rest is 415px. A 72px reserve drops that to 392px and makes the
+  card scroll *at rest* on an ordinary laptop.
+
+Below roughly 700px of viewport height the card does scroll at rest; the mark
+stays whole. Below 60rem wide the page stacks instead — a photograph band over a
+form panel — which is a different arrangement, not a narrower one, and is why
+the photo-led rules live in a `not all and (max-width: 60rem)` block.
+
+The card is translucent with a `backdrop-filter`, and goes solid under
+`prefers-reduced-transparency: reduce`; under `prefers-contrast: more` it also
+takes a border, since a shadow alone is not a boundary at high contrast.
 
 The **mark itself is authored SVG**, not a bitmap: the same geometry serves the
 lockup and the 16px favicon, and it takes its colour from a token.
