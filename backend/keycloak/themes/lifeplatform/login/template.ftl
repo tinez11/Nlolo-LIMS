@@ -49,6 +49,23 @@
 <#if realmLabel == ''>
     <#assign realmLabel = (realm.name)!''>
 </#if>
+
+<#--
+  The brand photograph shows on the three realms a person signs into: staff,
+  agents and customers. Regulators keeps the flat two-colour composition and the
+  display statement, which is the panel's designed no-photo state -- so the
+  decision is "which realms get the photograph", not "what happens when the file
+  is missing".
+
+  Keyed on the machine name, never the display name: an administrator can rename
+  the latter, and a brand surface that changes because somebody edited a label is
+  a surprise nobody asked for.
+
+  The photograph carries the Nlolo wordmark itself, so where it shows, the SVG
+  lockup in the form column does NOT -- one mark per screen. `lp-shell--photo`
+  carries that through to the stylesheet.
+-->
+<#assign photoRealm = ["staff", "agents", "customers"]?seq_contains((realm.name)!'')>
 <!DOCTYPE html>
 <html class="lp-html"<#if realm.internationalizationEnabled> lang="${locale.currentLanguageTag}"<#else> lang="en"</#if>>
 <head>
@@ -110,12 +127,28 @@
 </head>
 
 <body class="lp-body<#if bodyClass?has_content> ${bodyClass}</#if>">
-<div class="lp-shell">
+<div class="lp-shell<#if photoRealm> lp-shell--photo</#if>">
 
     <aside class="lp-brand">
-        <#-- The figure bleeds off the panel's left edge. It carries the brand
-             photograph when resources/img/brand.jpg exists, and is a flat field
-             of brand green under the lime disc when it does not. -->
+        <#if photoRealm>
+        <#--
+          A real <img>, not a CSS background. The photograph carries the wordmark,
+          so it is content and has to reach a screen reader; a background image
+          reaches nothing. It also makes "shown whole" the element's own behaviour
+          -- width 100%, height auto, its 3:2 answered by the panel -- rather than
+          something `background-size` has to be argued into.
+
+          `alt` is the mark it carries. Not a description of the people in it:
+          this is the brand lockup for this page, and the SVG one is suppressed
+          exactly so this can be it.
+        -->
+        <span class="lp-brand__frame">
+            <img class="lp-brand__photo" src="${url.resourcesPath}/img/brand.jpg"
+                 width="1536" height="1024" alt="Nlolo"/>
+        </span>
+        <#else>
+        <#-- No photograph on this realm: the designed two-colour composition, a
+             flat field of brand green under the lime disc. -->
         <div class="lp-brand__figure">
             <span class="lp-brand__disc" aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
@@ -132,6 +165,7 @@
                 through settlement, general ledger through statutory return.
             </p>
         </div>
+        </#if>
     </aside>
 
     <main class="lp-panel">
@@ -160,13 +194,22 @@
         <div class="lp-col">
             <#-- The mark, authored as geometry rather than shipped as a bitmap,
                  so it stays crisp from 16px favicon to this 2.5rem lockup and
-                 takes its colour from a token. -->
+                 takes its colour from a token.
+
+                 Suppressed where the brand photograph shows, because that
+                 photograph carries the Nlolo wordmark across its own top. Two
+                 lockups on one screen reads as a mistake, and of the two this
+                 one is the one that can be spared: the photograph cannot be
+                 shown "fully" with its mark cropped off, which is the whole
+                 point of putting it there. -->
+            <#if !photoRealm>
             <p class="lp-mark">
                 <svg viewBox="4 1 40 40" width="44" height="44" role="img" aria-label="Nlolo">
                     <path d="M10 35V12l22 23V20" fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
                     <path fill="currentColor" fill-rule="evenodd" d="M32 19c.5-8 4-13.5 9.5-16 1 6.5-2 13.5-9.5 16Zm1.5-1.8c1-4.7 3.3-8.8 6.3-12-3.4 2.6-5.6 6.8-6.3 12Z"/>
                 </svg>
             </p>
+            </#if>
 
             <#if displayRequiredFields>
                 <p class="lp-required"><span aria-hidden="true">*</span> ${msg("requiredFields")}</p>

@@ -261,6 +261,115 @@ ul {
 }
 
 /*
+  The photograph is 1536x1024 -- 3:2 landscape -- and the brief for it is that it
+  is shown WHOLE, never cropped. 24rem cannot do that: at 384px wide the image is
+  384x256 in a panel about 700px tall, which is a letterboxed strip over 440px of
+  dead green.
+
+  Fractions rather than a fixed width, and the photograph takes the LARGER share:
+  on this surface the picture leads and the form follows. At the shell's 76rem the
+  split is about 700px to 518px, which puts the image at 642x428 -- comfortably
+  bigger than the column it sits beside, and still whole.
+
+  1.35, not more. The form column is the floor here: below about 500px its fields
+  stop being comfortable once the panel's own 32px of padding comes off, and a
+  sign-in page that looks generous while being awkward to type in has traded the
+  wrong thing.
+
+  This is also why the figure below stops bleeding off the left edge. The bleed
+  was a gesture borrowed from the pinned reference and it works by cropping; an
+  image that must not be cropped cannot also hang off the side.
+*/
+.lp-shell--photo {
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+}
+
+/*
+  Shown whole, and the two declarations are doing different jobs: `width: 100%`
+  with `height: auto` lets the intrinsic 3:2 decide the height, and `object-fit:
+  contain` is the backstop for any future rule that gives this element a height
+  of its own -- it letterboxes into the brand green rather than cropping the
+  wordmark away. The `width`/`height` attributes in the markup reserve the box
+  before the bytes land, so the form below does not jump when it does.
+*/
+/*
+  The photograph sat on the deep green as a hard-edged rectangle -- a bright
+  near-white sky meeting a dark panel on a straight line, which reads as pasted
+  on rather than composed. The edges are therefore feathered into the panel.
+
+  Nothing is cropped: every pixel is still drawn, the outermost few per cent
+  simply ramp to transparent so the green takes over and there is no boundary to
+  see. The ramps are deliberately uneven, measured against the image itself:
+
+    top 3.5%   -- the wordmark's letters start at about 7% of the height, so the
+                  fade has to finish before it reaches them. It can afford to be
+                  short because the sky it crosses is almost flat, and a short
+                  fade over flat tone is invisible.
+    sides 8%   -- the two outer figures reach the frame edge; this softens their
+                  silhouettes the way a vignette does. 5% was tried first and was
+                  not enough: the sky is bright right up to the ramp, so a narrow
+                  one still left two visible vertical edges.
+    bottom 8%  -- no detail that matters lives in the last few per cent.
+
+  Split across two elements on purpose: one gradient each. Masking both axes on a
+  single element needs `mask-composite`, whose keywords differ between the
+  standard (`intersect`) and WebKit (`source-in`), and this is not worth a
+  prefixed pair that one engine silently gets wrong.
+
+  The cap lives here now, on the element that owns the width.
+
+  A landscape image shown whole gets TALLER as its column gets wider, which is
+  the one way "never crop it" can still ruin a page: stacked on a phone held
+  sideways (844x390), full width would be 796x531 and the image alone would be
+  taller than the viewport, pushing the password field off the bottom. So cap the
+  WIDTH by the height available -- 1.5 is the 3:2 -- which shrinks the image
+  instead of cropping it. `max()` floors the result so a very short viewport
+  cannot compute a negative width.
+*/
+.lp-brand__frame {
+  display: block;
+  width: 100%;
+  max-width: max(12rem, (100dvh - 20rem) * 1.5);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 3.5%, #000 92%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 3.5%, #000 92%, transparent 100%);
+}
+
+.lp-brand__photo {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 8%, #000 92%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0%, #000 8%, #000 92%, transparent 100%);
+}
+
+/*
+  The photograph's sky is near-white and would otherwise be the brightest thing
+  on a dark page, next to a form that is deliberately not. Dimmed, not greyed:
+  the greens in the mark are the brand and stay themselves.
+*/
+@media (prefers-color-scheme: dark) {
+  .lp-brand__photo {
+    filter: brightness(0.88);
+  }
+}
+
+/*
+  Centred, not top-aligned. The panel is about 700px tall and a 3:2 image shown
+  whole in a 30rem column is 283px of it; with the display statement gone there
+  is nothing else to hold the rest. Pinned to the top that left ~420px of dead
+  green under it and read like a page that had failed to finish loading.
+  Centring turns the same empty space into margin above and below, which reads
+  as a deliberate composition instead of a gap.
+
+  `space-between` is what it is overriding: on a single child that pins it to
+  the top, which is the behaviour described above.
+*/
+.lp-shell--photo .lp-brand {
+  justify-content: center;
+}
+
+/*
   The signature: the form panel's top-left corner is the only large radius on
   the shell, so the brand green reads through that one corner. Left square at
   the bottom on purpose -- the asymmetry is what makes it a gesture rather than
