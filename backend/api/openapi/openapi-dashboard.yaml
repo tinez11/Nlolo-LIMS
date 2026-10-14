@@ -22,6 +22,19 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/UnderwritingDashboardView' }
         '403': { $ref: '#/components/responses/Problem' }
+  /dashboards/claims:
+    get:
+      summary: The claims dashboard (CLAIMS_ASSESSOR or CLAIMS_MANAGER)
+      description: The queue is the settlement decisions for a manager and the unassessed claims for an assessor.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimsDashboardView' }
+        '403': { $ref: '#/components/responses/Problem' }
 components:
   responses:
     Problem:
@@ -60,3 +73,31 @@ components:
               productId: { type: [string, 'null'], format: uuid }
               sumAssured: { $ref: '#/components/schemas/Money' }
               status: { type: string, enum: [OPEN, IN_REVIEW, DECIDED] }
+    ClaimStatus:
+      type: string
+      enum: [REGISTERED, UNDER_ASSESSMENT, APPROVED, REJECTED, SETTLEMENT_REQUESTED, SETTLED, REOPENED]
+    ClaimsDashboardView:
+      type: object
+      additionalProperties: false
+      required: [registered, underAssessment, settlementRequested, approved, reopened, settled, queueStatus, queue]
+      properties:
+        registered: { $ref: '#/components/schemas/Count' }
+        underAssessment: { $ref: '#/components/schemas/Count' }
+        settlementRequested: { $ref: '#/components/schemas/Count' }
+        approved: { $ref: '#/components/schemas/Count' }
+        reopened: { $ref: '#/components/schemas/Count' }
+        settled: { $ref: '#/components/schemas/Count' }
+        queueStatus: { $ref: '#/components/schemas/ClaimStatus' }
+        queue:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [claimId, policyNumber, claimantPartyId, claimType, status]
+            properties:
+              claimId: { type: string, format: uuid }
+              policyNumber: { type: string }
+              claimantPartyId: { type: string, format: uuid }
+              claimType: { type: string, enum: [MATURITY, DEATH, DISABILITY, CRITICAL_ILLNESS] }
+              dateOfEvent: { type: [string, 'null'], format: date }
+              status: { $ref: '#/components/schemas/ClaimStatus' }

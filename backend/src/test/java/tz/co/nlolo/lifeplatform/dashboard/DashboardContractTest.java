@@ -17,11 +17,14 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
+import tz.co.nlolo.lifeplatform.dashboard.api.ClaimsDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.Money;
 import tz.co.nlolo.lifeplatform.dashboard.api.UnderwritingDashboardView;
+import tz.co.nlolo.lifeplatform.dashboard.application.ClaimsDashboard;
 import tz.co.nlolo.lifeplatform.dashboard.application.UnderwritingDashboard;
 import tz.co.nlolo.lifeplatform.reporting.ReportingTestMigrations;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -64,6 +67,7 @@ class DashboardContractTest {
 
     @Autowired private MockMvc mockMvc;
     @MockBean private UnderwritingDashboard underwriting;
+    @MockBean private ClaimsDashboard claims;
 
     private static RequestPostProcessor staff(String... roles) {
         SimpleGrantedAuthority[] authorities = new SimpleGrantedAuthority[roles.length + 1];
@@ -94,5 +98,31 @@ class DashboardContractTest {
     void aClaimsAssessorIsRefusedTheUnderwritingDashboard() throws Exception {
         mockMvc.perform(get("/dashboards/underwriting").with(staff("CLAIMS_ASSESSOR")))
             .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void aClaimsManagerReadsTheClaimsDashboardWithTheSettlementQueue() throws Exception {
+        when(claims.build(true)).thenReturn(new ClaimsDashboardView(17L, 9L, 6L, 4L, 2L, 128L, "SETTLEMENT_REQUESTED",
+            List.of(new ClaimsDashboardView.QueuedClaim(UUID.randomUUID(), "POL-00A4B7A1", UUID.randomUUID(), "DEATH",
+                LocalDate.of(2026, 9, 29), "SETTLEMENT_REQUESTED"))));
+
+        mockMvc.perform(get("/dashboards/claims").with(staff("CLAIMS_MANAGER")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.queueStatus").value("SETTLEMENT_REQUESTED"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void anAssessorGetsTheAssessorsQueue() throws Exception {
+        when(claims.build(false)).thenReturn(new ClaimsDashboardView(17L, 9L, 6L, 4L, 2L, 128L, "REGISTERED", List.of()));
+
+        mockMvc.perform(get("/dashboards/claims").with(staff("CLAIMS_ASSESSOR")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.queueStatus").value("REGISTERED"));
+    }
+
+    @Test
+    void anUnderwriterIsRefusedTheClaimsDashboard() throws Exception {
+        mockMvc.perform(get("/dashboards/claims").with(staff("UNDERWRITER"))).andExpect(status().isForbidden());
     }
 }
