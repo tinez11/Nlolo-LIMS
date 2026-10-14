@@ -8,10 +8,10 @@
   ## Three slots in the reference that this platform cannot honestly fill
 
   The reference offers "Sign up", "Trouble logging in?" and Google / Facebook /
-  Apple sign-in. On this platform all four realms set `registrationAllowed`
-  false and `resetPasswordAllowed` false, and no realm has an identity provider
-  configured. Rendering any of them would put a dead control on the one page a
-  person cannot get past.
+  Apple sign-in. No realm on this platform allows self-registration or has an
+  identity provider configured, and password reset is off wherever it has not
+  been deliberately switched on. Rendering any of them unconditionally would put
+  a dead control on the one page a person cannot get past.
 
   So each is written as the conditional it should have been, keyed on what the
   realm actually has switched on -- the reset link and the provider list appear
@@ -30,9 +30,9 @@
 -->
 <#assign accessNote = "">
 <#if !realm.registrationAllowed && !realm.resetPasswordAllowed>
-    <#assign accessNote = "Accounts and password resets are handled by your administrator.">
+    <#assign accessNote = msg("lpAccessNoteNoSelfService")>
 <#elseif !realm.registrationAllowed>
-    <#assign accessNote = "Accounts are issued by your administrator.">
+    <#assign accessNote = msg("lpAccessNoteNoRegistration")>
 </#if>
 
 <#assign realmLabel = (realm.displayName!'')?trim>
@@ -112,7 +112,7 @@
                         <#-- Caps Lock is a state, and reporting a state is what
                              colour is for. Unhidden by js/login.js only while
                              the key is actually latched. -->
-                        <span id="lp-caps" class="lp-caps" role="status" hidden>Caps Lock is on</span>
+                        <span id="lp-caps" class="lp-caps" role="status" hidden>${msg("lpCapsLockOn")}</span>
                     </div>
 
                     <div class="lp-inputgroup">
@@ -122,12 +122,17 @@
                                <#if credentialsRejected>aria-invalid="true" aria-describedby="kc-alert"</#if>/>
 
                         <#-- Hidden until js/login.js wires it. A control that
-                             cannot act must not render as though it can. -->
+                             cannot act must not render as though it can.
+
+                             A stable name plus `aria-pressed`: the name says
+                             what the control does and the state says whether it
+                             is on. `data-label-show`/`data-label-hide` are gone
+                             deliberately -- swapping the name as well said the
+                             same thing twice, and the two readings contradicted
+                             each other at every other press. -->
                         <button type="button" class="lp-reveal" data-password-toggle
                                 aria-controls="password" aria-pressed="false"
                                 aria-label="${msg('showPassword')}"
-                                data-label-show="${msg('showPassword')}"
-                                data-label-hide="${msg('hidePassword')}"
                                 hidden>
                             <svg class="lp-reveal__show" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                             <svg class="lp-reveal__hide" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="m2 2 20 20"/></svg>

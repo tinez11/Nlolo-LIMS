@@ -134,17 +134,23 @@
         <#--
           A real <img>, not a CSS background. The photograph carries the wordmark,
           so it is content and has to reach a screen reader; a background image
-          reaches nothing. It also makes "shown whole" the element's own behaviour
-          -- width 100%, height auto, its 3:2 answered by the panel -- rather than
-          something `background-size` has to be argued into.
+          reaches nothing. The `width`/`height` attributes also reserve the box
+          before the bytes land, which a background image cannot do.
 
           `alt` is the mark it carries. Not a description of the people in it:
           this is the brand lockup for this page, and the SVG one is suppressed
           exactly so this can be it.
+
+          `fetchpriority="high"` because on these three realms this image IS the
+          largest contentful paint, and the browser's own heuristic deprioritises
+          it: it is below the stylesheet and the two web fonts in the document,
+          so it queues behind them on a cold cache. Nothing else on this page
+          competes for the bandwidth.
         -->
         <span class="lp-brand__frame">
             <img class="lp-brand__photo" src="${url.resourcesPath}/img/brand.jpg"
-                 width="1536" height="1024" alt="Nlolo"/>
+                 width="1536" height="1024" alt="Nlolo"
+                 fetchpriority="high" decoding="async"/>
         </span>
         <#else>
         <#-- No photograph on this realm: the designed two-colour composition, a
@@ -159,11 +165,8 @@
             <#-- The platform's own position, which is the one thing a competitor
                  could not truthfully copy: no analytics endpoints exist, so
                  nothing on this platform is rendered that it cannot prove. -->
-            <p class="lp-brand__display">Every figure, provable</p>
-            <p class="lp-brand__body">
-                Core administration for life assurance in Tanzania &mdash; underwriting
-                through settlement, general ledger through statutory return.
-            </p>
+            <p class="lp-brand__display">${msg("lpBrandStatement")}</p>
+            <p class="lp-brand__body">${msg("lpBrandBody")}</p>
         </div>
         </#if>
     </aside>
@@ -221,14 +224,20 @@
                 <#-- Which of the four realms this is. Genuinely operational
                      rather than decorative: the same credentials do not exist
                      in two of them, and somebody sent the agents URL needs to
-                     see that before typing. -->
-                <p class="lp-sub">Signing in to <b>${pageRealm}</b></p>
+                     see that before typing.
+
+                     Through kcSanitize because the message carries the <b> that
+                     emphasises the realm name: the sentence stays one string for
+                     a translator to move the emphasis within, and the sanitiser
+                     is what keeps that tag and nothing an administrator could
+                     have typed into a display name. -->
+                <p class="lp-sub">${kcSanitize(msg("lpSigningInTo", pageRealm))?no_esc}</p>
             </#if>
 
             <#if auth?has_content && auth.showUsername() && !auth.showResetCredentials()>
                 <#nested "show-username">
                 <div id="kc-username" class="lp-attempted">
-                    <span class="lp-attempted__cap">Signing in as</span>
+                    <span class="lp-attempted__cap">${msg("lpSigningInAs")}</span>
                     <span id="kc-attempted-username" class="lp-attempted__val">${auth.attemptedUsername}</span>
                     <a id="reset-login" class="lp-link lp-attempted__reset" href="${url.loginRestartFlowUrl}">${msg("restartLoginTooltip")}</a>
                 </div>

@@ -47,17 +47,48 @@ instead: *"Accounts and password resets are handled by your administrator."*
 That sentence is assembled from the same flags, so it stops being printed the
 moment it stops being true.
 
-## Adding the brand photograph
+## The brand photograph
 
-Drop a file at `login/resources/img/brand.jpg`, then uncomment the
-`.lp-brand__figure` background-image rule in `login/resources/css/login.css` —
-it is commented out so an absent asset costs no 404 on every page load.
-`background-position` is set low, so a photograph carrying a wordmark across its
-top crops to the subject rather than repeating the mark already in the form
-column. With no file, the figure is a flat brand-green card under the lime disc.
+`login/resources/img/brand.jpg` (1536×1024) leads the brand panel on the three
+realms a person signs into — `staff`, `agents`, `customers`. It is a real
+`<img>`, not a CSS background: it carries the Nlolo wordmark, so it is content
+and has to reach a screen reader. Where it shows, the SVG lockup in the form
+column is suppressed — **one mark per screen**.
+
+`regulators` keeps the designed no-photo composition: a flat brand-green card
+under the lime disc, with the display statement below it.
+
+**It fills the panel and crops; it is not shown whole.** A 3:2 landscape cannot
+fill a panel roughly 709×704 and also be shown entire, and this reverses the
+requirement the panel was first built to. `object-position: 50% 32%` holds the
+upper third, where the wordmark and the faces are, and the crop takes evenly
+from the sides.
+
+Two measured constraints govern that, and neither should be re-derived:
+
+- **`1.4fr`, not `1.5fr`.** At 1440 against the 76rem shell, `1.5fr` leaves the
+  form panel 486px — under the ~500px floor this design declares for comfortable
+  fields. `1.4fr` leaves it 507px, and costs about 15 source pixels per side.
+- **`object-position: 50% 0%` below 60rem.** Stacked, the band is short and wide,
+  so `cover` crops *vertically* and the desktop's 32% bias slices the wordmark
+  through the middle of the letters — at 844×390 *and* at 900×700, i.e. any
+  window under 60rem that is not tall. Top-aligning holds the mark. Harmless at
+  portrait sizes, where the 45dvh cap never bites and `cover` crops nothing.
 
 The **mark itself is authored SVG**, not a bitmap: the same geometry serves the
 lockup and the 16px favicon, and it takes its colour from a token.
+
+### Verifying a change without running Keycloak
+
+Do not stand up Keycloak for a CSS change. Reproduce `template.ftl`'s DOM in a
+harness HTML, `<link>` the **real** `login.css` and `brand.jpg` by absolute
+`file:///` URL so there is zero drift from the shipped files, and drive it with
+Playwright from `frontend/`. Measuring the image's box and `object-position` and
+computing the `cover` window against the wordmark's known source bounds (X
+21–69%, Y 3.4–24.4%) answers the crop question far more reliably than looking at
+screenshots. Caveat: `.lp-col` has a 320ms entrance animation, and an early
+capture photographs it at `opacity: 0` — a blank form panel in a screenshot is
+the harness, not a bug.
 
 ## Files
 
