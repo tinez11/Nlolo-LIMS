@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { exportReport, type ExportFormat } from '@/api/reporting';
 import { PageHeader } from '@/components/PageHeader';
+import { InlineError } from '@/components/InlineError';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { saveBlob } from '@/lib/download';
@@ -94,6 +95,13 @@ export function ReportPage() {
         )}
         {isInitialLoad(result) || (result.status === 'loading' && !current) ? (
           <TableSkeleton columns={5} />
+        ) : result.status === 'error' && result.error?.kind === 'validation' ? (
+          /*
+            A parameter the server refused is a question about the form above, not a failed read. It renders
+            beside that form, in the server's own words, and offers no "Try again" -- retrying an unchanged
+            submission fails identically, and a button that cannot work is worse than no button.
+          */
+          <InlineError lead="The report could not run" error={result.error} />
         ) : result.status === 'error' && result.error ? (
           <ErrorPanel error={result.error} onRetry={() => params && void runReport(reportKey, params)} />
         ) : (

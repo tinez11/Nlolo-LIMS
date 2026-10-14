@@ -25,6 +25,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -109,6 +110,66 @@ class ReportingContractTest {
         mockMvc.perform(get("/reports/no-such-report").param("asOf", "2026-01-31").with(staff(tenant, "FINANCE_OFFICER")))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("REPORT_NOT_FOUND"));
+    }
+
+    // ---- Accounting reports (batch 2a) --------------------------------------------------------
+
+    @Test
+    void theCatalogueCarriesTheAccountingReportsAfterTheManagementOnes() throws Exception {
+        mockMvc.perform(get("/reports/catalogue").with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$[?(@.key=='trial-balance')].category").value(hasItem("ACCOUNTING")))
+            .andExpect(jsonPath("$[?(@.key=='trial-balance')].dateFilterKind").value(hasItem("MONTH")))
+            .andExpect(jsonPath("$[?(@.key=='balance-sheet')].dateFilterKind").value(hasItem("MONTH")))
+            .andExpect(jsonPath("$[?(@.key=='balance-sheet')].comparable").value(hasItem(true)))
+            .andExpect(jsonPath("$[?(@.key=='income-statement')].dateFilterKind").value(hasItem("MONTH_RANGE")))
+            .andExpect(jsonPath("$[?(@.key=='general-ledger')].dateFilterKind").value(hasItem("MONTH_RANGE")));
+    }
+
+    /** An empty ledger is a real answer -- a balanced one -- not an error. */
+    @Test
+    void aTrialBalanceRunsOnAMonthAndStatesWhetherTheLedgerBalances() throws Exception {
+        mockMvc.perform(get("/reports/trial-balance").param("monthFrom", "2026-09")
+                .with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.sections[1].title").value("Ledger check"))
+            .andExpect(jsonPath("$.sections[1].rows[0].status").value(containsString("balances")));
+    }
+
+    @Test
+    void aLedgerReportRefusesADayAndNamesTheFieldItWants() throws Exception {
+        mockMvc.perform(get("/reports/trial-balance").param("asOf", "2026-09-30")
+                .with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("REPORT_PARAMETER_INVALID"))
+            .andExpect(jsonPath("$.detail").value(containsString("monthFrom")));
+    }
+
+    @Test
+    void aGeneralLedgerWithoutAnAccountIsRefusedByName() throws Exception {
+        mockMvc.perform(get("/reports/general-ledger").param("monthFrom", "2026-08").param("monthTo", "2026-09")
+                .with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail").value(containsString("accountCode")));
+    }
+
+    @Test
+    void anAccountCodeThatIsNotAChartCodeIsRefused() throws Exception {
+        mockMvc.perform(get("/reports/general-ledger").param("monthFrom", "2026-08").param("monthTo", "2026-09")
+                .param("accountCode", "11OO").with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail").value(containsString("accountCode")));
+    }
+
+    @Test
+    void anIncomeStatementRunsAcrossASpanOfPeriods() throws Exception {
+        mockMvc.perform(get("/reports/income-statement").param("monthFrom", "2026-01").param("monthTo", "2026-09")
+                .with(staff(tenant, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.sections[5].title").value("Result"));
     }
 
     @Test

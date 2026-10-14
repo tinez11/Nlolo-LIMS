@@ -10,6 +10,7 @@ import tz.co.nlolo.lifeplatform.party.api.DuplicateRegistrationNumberException;
 import tz.co.nlolo.lifeplatform.party.api.IdType;
 import tz.co.nlolo.lifeplatform.party.api.IdentityDocument;
 import tz.co.nlolo.lifeplatform.party.api.IndividualRegistration;
+import tz.co.nlolo.lifeplatform.party.api.KycDecisionView;
 import tz.co.nlolo.lifeplatform.party.api.KycStatus;
 import tz.co.nlolo.lifeplatform.party.api.Sex;
 import tz.co.nlolo.lifeplatform.party.api.SmokerStatus;
@@ -66,6 +67,7 @@ class PartyApiIntegrationTest {
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/party/V6__client_reference.sql",
+            "db-migrations/party/V7__kyc_decided_by_name.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");
@@ -413,6 +415,65 @@ class PartyApiIntegrationTest {
         List<?> auditRows = auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
             tenantId, "party.PartyKycStatusChanged", before.minusSeconds(5), Instant.now().plusSeconds(5));
         assertThat(auditRows).hasSize(1);
+    }
+
+    /**
+     * THE DECISION TRAIL, which the platform wrote down and could not read until 2026-10-14.
+     *
+     * <p>Three things only this level proves, and the third is the point: the rows come back
+     * newest first, the decider's NAME is kept beside their subject (V7), and a decision that was
+     * later overturned is still there. {@code Party.applyKycDecision} assigns the new status with
+     * no guard on the old one, so the party row remembers only the last one — if this history were
+     * derived from the party rather than stored per decision, a client rejected on Monday and
+     * verified on Friday would read as though Monday never happened.
+     */
+    @Test
+    void kycDecisionsAreKeptInFullAndReadBackNewestFirst() {
+        var registered = partyApi.registerIndividual("Neema Kileo", LocalDate.of(1988, 9, 4),
+            "+255712345009", "neema@example.tz", "test-agent");
+
+        assertThat(partyApi.listKycDecisions(registered.partyId()))
+            .as("a client nobody has decided on has an empty history, not a fabricated one")
+            .isEmpty();
+
+        partyApi.submitKycEvidence(registered.partyId(), KycStatus.REJECTED, "doc-blurred-scan",
+            "subject-asha", "Asha Admin");
+        partyApi.submitKycEvidence(registered.partyId(), KycStatus.VERIFIED, "doc-clear-scan",
+            "subject-juma", "Juma Senior");
+
+        List<KycDecisionView> history = partyApi.listKycDecisions(registered.partyId());
+
+        assertThat(history).hasSize(2);
+        assertThat(history.get(0).status()).isEqualTo(KycStatus.VERIFIED);
+        assertThat(history.get(0).evidenceDocumentRef()).isEqualTo("doc-clear-scan");
+        assertThat(history.get(0).decidedBy()).isEqualTo("subject-juma");
+        assertThat(history.get(0).decidedByName()).isEqualTo("Juma Senior");
+        assertThat(history.get(0).decidedAt()).isNotNull();
+
+        assertThat(history.get(1).status())
+            .as("the overturned decision survives; the party row no longer remembers it")
+            .isEqualTo(KycStatus.REJECTED);
+        assertThat(history.get(1).evidenceDocumentRef()).isEqualTo("doc-blurred-scan");
+
+        assertThat(partyApi.getParty(registered.partyId()).kycStatus()).isEqualTo(KycStatus.VERIFIED);
+    }
+
+    /**
+     * The four-argument overload every fixture uses records no name, and that is the honest
+     * reading of a decision taken without a token: null means "not recorded", never "nobody".
+     * Every row written before V7 looks like this.
+     */
+    @Test
+    void aDecisionTakenWithoutATokenIsNamelessRatherThanGuessedAt() {
+        var registered = partyApi.registerIndividual("Baraka Moshi", LocalDate.of(1979, 2, 11),
+            "+255712345010", null, "test-agent");
+
+        partyApi.submitKycEvidence(registered.partyId(), KycStatus.VERIFIED, "doc-ref-x", "kyc-officer");
+
+        List<KycDecisionView> history = partyApi.listKycDecisions(registered.partyId());
+        assertThat(history).hasSize(1);
+        assertThat(history.get(0).decidedBy()).isEqualTo("kyc-officer");
+        assertThat(history.get(0).decidedByName()).isNull();
     }
 
     @Test

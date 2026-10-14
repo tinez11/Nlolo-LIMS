@@ -13,6 +13,12 @@ export interface ReportFilterState {
   clientType: string;
   /** Narrows any report to one product; every report's query applies it. */
   productId: string;
+  /** The accounting period a MONTH report runs for, or the first of a MONTH_RANGE. YYYY-MM. */
+  monthFrom: string;
+  /** The last period of a MONTH_RANGE. YYYY-MM. */
+  monthTo: string;
+  /** One chart account, four digits. Required by general-ledger. */
+  accountCode: string;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -34,10 +40,15 @@ export function defaultFilters(definition: ReportDefinition, today: Date): Repor
     groupBy: '',
     clientType: '',
     productId: '',
+    // A ledger report opens on the current month; a span opens on the year to date, which is the
+    // window a finance officer asks for most.
+    monthFrom: kind === 'MONTH' ? isoMonth(today) : kind === 'MONTH_RANGE' ? `${today.getFullYear()}-01` : '',
+    monthTo: kind === 'MONTH_RANGE' ? isoMonth(today) : '',
+    accountCode: '',
   };
 }
 
-const FIELDS: (keyof ReportFilterState)[] = ['asOf', 'compareAsOf', 'from', 'to', 'cohortFrom', 'cohortTo', 'groupBy', 'clientType', 'productId'];
+const FIELDS: (keyof ReportFilterState)[] = ['asOf', 'compareAsOf', 'from', 'to', 'cohortFrom', 'cohortTo', 'groupBy', 'clientType', 'productId', 'monthFrom', 'monthTo', 'accountCode'];
 
 export function stateFromSearch(definition: ReportDefinition, search: URLSearchParams, today: Date): ReportFilterState {
   const state = defaultFilters(definition, today);
@@ -66,6 +77,14 @@ export function toParams(definition: ReportDefinition, state: ReportFilterState)
     put('cohortFrom');
     put('cohortTo');
   }
+  // The ledger is organised by YYYY-MM and carries no posting date, so an accounting report takes months.
+  if (kind === 'MONTH') put('monthFrom');
+  if (kind === 'MONTH' && definition.comparable) put('compareAsOf');
+  if (kind === 'MONTH_RANGE') {
+    put('monthFrom');
+    put('monthTo');
+  }
+  if (kind === 'MONTH' || kind === 'MONTH_RANGE') put('accountCode');
   if (definition.groupByOptions.length > 0) put('groupBy');
   put('clientType');
   put('productId');
@@ -83,6 +102,16 @@ export function validateFilters(definition: ReportDefinition, state: ReportFilte
     if (!state.cohortFrom || !state.cohortTo) return 'Choose the first and last activation month.';
     if (state.cohortFrom > state.cohortTo) return 'The first month must not be after the last.';
   }
+  // YYYY-MM is zero-padded and fixed-width, so a string comparison is a chronological one -- the same
+  // property the ledger's own SQL bounds rely on.
+  if (kind === 'MONTH' && !state.monthFrom) return 'Choose a period.';
+  if (kind === 'MONTH_RANGE') {
+    if (!state.monthFrom || !state.monthTo) return 'Choose the first and last period.';
+    if (state.monthFrom > state.monthTo) return 'The first period must not be after the last.';
+  }
+  // A report ABOUT one account cannot run without one. Asked for here, beside the field, rather than
+  // submitted and answered with the server's refusal where the report should be.
+  if (definition.requiresAccount && !state.accountCode) return 'Choose an account.';
   return null;
 }
 

@@ -21,9 +21,79 @@ const definition = (dateFilterKind: ReportDefinition['dateFilterKind'], comparab
   dateFilterKind,
   groupByOptions: ['PRODUCT', 'AGENT'],
   comparable,
+  requiresAccount: false,
 });
 
 const TODAY = new Date(2026, 9, 11); // 11 October 2026, local time
+
+describe('accounting report filters', () => {
+  const ledger = (kind: ReportDefinition['dateFilterKind'], comparable = false): ReportDefinition => ({
+    ...definition(kind, comparable),
+    key: 'trial-balance',
+    category: 'ACCOUNTING',
+    groupByOptions: [],
+  });
+
+  it('opens a single-period report on the current month and a span on the year to date', () => {
+    expect(defaultFilters(ledger('MONTH'), TODAY)).toMatchObject({ monthFrom: '2026-10', monthTo: '', asOf: '' });
+    expect(defaultFilters(ledger('MONTH_RANGE'), TODAY)).toMatchObject({ monthFrom: '2026-01', monthTo: '2026-10' });
+  });
+
+  it('sends the month and never a day: the ledger has no posting date to match one', () => {
+    const state = { ...defaultFilters(ledger('MONTH'), TODAY), asOf: '2026-10-11' };
+    const params = toParams(ledger('MONTH'), state);
+    expect(params.monthFrom).toBe('2026-10');
+    expect(params.asOf).toBeUndefined();
+    expect(params.monthTo).toBeUndefined();
+  });
+
+  it('sends both ends and the account for a ledger range', () => {
+    const state = { ...defaultFilters(ledger('MONTH_RANGE'), TODAY), monthFrom: '2026-04', monthTo: '2026-09', accountCode: '1100' };
+    const params = toParams(ledger('MONTH_RANGE'), state);
+    expect(params).toMatchObject({ monthFrom: '2026-04', monthTo: '2026-09', accountCode: '1100' });
+  });
+
+  it('sends a comparison month only where the report is comparable', () => {
+    const state = { ...defaultFilters(ledger('MONTH'), TODAY), compareAsOf: '2026-06-30' };
+    expect(toParams(ledger('MONTH', true), state).compareAsOf).toBe('2026-06-30');
+    expect(toParams(ledger('MONTH', false), state).compareAsOf).toBeUndefined();
+  });
+
+  it('refuses a range running backwards before sending it', () => {
+    const base = defaultFilters(ledger('MONTH_RANGE'), TODAY);
+    expect(validateFilters(ledger('MONTH_RANGE'), { ...base, monthFrom: '2026-09', monthTo: '2026-04' }))
+      .toMatch(/must not be after/);
+    expect(validateFilters(ledger('MONTH_RANGE'), { ...base, monthFrom: '2026-04', monthTo: '2026-09' })).toBeNull();
+  });
+
+  it('refuses a single-period report with no period', () => {
+    const base = defaultFilters(ledger('MONTH'), TODAY);
+    expect(validateFilters(ledger('MONTH'), { ...base, monthFrom: '' })).toMatch(/Choose a period/);
+  });
+
+  /**
+   * A report ABOUT one account asks for it here. Before this the console submitted without one and rendered
+   * the server's refusal where the report should be -- a whole-region failure with a "Try again" that would
+   * fail identically, over a field nobody had filled in yet.
+   */
+  it('asks for the account on a report that is about one, and not on reports that are not', () => {
+    const generalLedger = { ...ledger('MONTH_RANGE'), key: 'general-ledger', requiresAccount: true };
+    const base = defaultFilters(generalLedger, TODAY);
+
+    expect(validateFilters(generalLedger, base)).toMatch(/Choose an account/);
+    expect(validateFilters(generalLedger, { ...base, accountCode: '1110' })).toBeNull();
+    // The income statement spans the same periods and shows every account: it must not demand one.
+    expect(validateFilters(ledger('MONTH_RANGE'), defaultFilters(ledger('MONTH_RANGE'), TODAY))).toBeNull();
+  });
+
+  it('restores a month filter from the URL so a reload runs the same report', () => {
+    const search = new URLSearchParams({ monthFrom: '2026-03', accountCode: '1100' });
+    expect(stateFromSearch(ledger('MONTH'), search, TODAY)).toMatchObject({
+      monthFrom: '2026-03',
+      accountCode: '1100',
+    });
+  });
+});
 
 describe('report filters', () => {
   it('defaults each date kind to a sensible window ending today', () => {

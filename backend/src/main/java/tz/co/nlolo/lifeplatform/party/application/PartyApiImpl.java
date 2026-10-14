@@ -7,6 +7,7 @@ import tz.co.nlolo.lifeplatform.party.api.DuplicateRegistrationNumberException;
 import tz.co.nlolo.lifeplatform.party.api.IdentityDocument;
 import tz.co.nlolo.lifeplatform.party.api.IndividualRegistration;
 import tz.co.nlolo.lifeplatform.party.api.GroupMembershipView;
+import tz.co.nlolo.lifeplatform.party.api.KycDecisionView;
 import tz.co.nlolo.lifeplatform.party.api.KycStatus;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
@@ -28,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.Optional;
@@ -251,16 +253,44 @@ public class PartyApiImpl implements PartyApi {
     @Override
     @Transactional
     public void submitKycEvidence(UUID partyId, KycStatus status, String evidenceDocumentRef, String verifiedBy) {
+        submitKycEvidence(partyId, status, evidenceDocumentRef, verifiedBy, null);
+    }
+
+    /**
+     * Both arms carry {@code @Transactional} rather than the four-argument one delegating into a
+     * bare method: the delegation above is a self-invocation that never passes through the proxy,
+     * so an annotation on this method alone would leave the fixture path writing outside a
+     * transaction. Same hazard, same fix as {@code registerIndividual}'s own overload chain.
+     */
+    @Override
+    @Transactional
+    public void submitKycEvidence(UUID partyId, KycStatus status, String evidenceDocumentRef, String verifiedBy,
+                                  String verifiedByName) {
         Party party = findPartyOrThrow(partyId);
         KycStatus previousStatus = party.getKycStatus();
 
-        kycRecordRepository.save(new KycRecord(party.getTenantId(), partyId, evidenceDocumentRef, status, verifiedBy));
+        kycRecordRepository.save(new KycRecord(party.getTenantId(), partyId, evidenceDocumentRef, status, verifiedBy,
+            verifiedByName));
         party.applyKycDecision(status, verifiedBy);
         partyRepository.save(party);
 
         eventPublisher.publishEvent(DomainEventEnvelope.of("party.PartyKycStatusChanged", party.getTenantId(),
             Map.of("partyId", partyId, "previousStatus", previousStatus.name(), "newStatus", status.name(),
                    "evidenceDocumentRef", evidenceDocumentRef)));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<KycDecisionView> listKycDecisions(UUID partyId) {
+        // Resolve the party first, so an id belonging to another tenant is a 404 from
+        // findPartyOrThrow rather than an empty history that reads as "never decided".
+        Party party = findPartyOrThrow(partyId);
+        return kycRecordRepository
+            .findByTenantIdAndPartyIdOrderByCreatedAtDesc(party.getTenantId(), partyId)
+            .stream()
+            .map(r -> new KycDecisionView(r.getStatus(), r.getEvidenceDocumentRef(), r.getVerifiedBy(),
+                r.getVerifiedByName(), r.getDecidedAt()))
+            .toList();
     }
 
     @Override

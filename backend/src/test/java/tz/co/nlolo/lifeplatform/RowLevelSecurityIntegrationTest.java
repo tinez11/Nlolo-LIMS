@@ -81,6 +81,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/party/V6__client_reference.sql",
+            "db-migrations/party/V7__kyc_decided_by_name.sql",
             // M2 additions (final-review finding 4): prove RLS actually isolates tenants
             // on product/underwriting tables too, not merely that the CREATE POLICY SQL
             // reads correctly.

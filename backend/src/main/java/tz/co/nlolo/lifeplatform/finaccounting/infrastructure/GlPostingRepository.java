@@ -54,6 +54,42 @@ public interface GlPostingRepository extends JpaRepository<GlPosting, GlPostingI
         """)
     List<Object[]> sumByAccountAndDirection(@Param("tenantId") UUID tenantId,
                                             @Param("period") String period);
+
+    /**
+     * Inception through and including {@code period} -- the cumulative position a balance sheet states, as
+     * against {@link #sumByAccountAndDirection}'s single period of MOVEMENT.
+     *
+     * <p>A string comparison, and that is chronological rather than merely convenient: {@code period} is
+     * {@code YYYY-MM}, zero-padded and fixed-width, so lexicographic order IS calendar order. No date parsing,
+     * and the existing index on period still serves the predicate.
+     */
+    @Query("""
+        select p.accountCode, p.direction, sum(p.amount)
+          from GlPosting p
+         where p.tenantId = :tenantId
+           and p.period <= :period
+         group by p.accountCode, p.direction
+        """)
+    List<Object[]> sumByAccountAndDirectionThrough(@Param("tenantId") UUID tenantId,
+                                                   @Param("period") String period);
+
+    /**
+     * The movement across a span of periods, both ends inclusive -- what an income statement reports for a
+     * quarter or a year to date. See {@link #sumByAccountAndDirectionThrough} on why string bounds are
+     * chronological ones.
+     */
+    @Query("""
+        select p.accountCode, p.direction, sum(p.amount)
+          from GlPosting p
+         where p.tenantId = :tenantId
+           and p.period >= :fromPeriod
+           and p.period <= :toPeriod
+         group by p.accountCode, p.direction
+        """)
+    List<Object[]> sumByAccountAndDirectionBetween(@Param("tenantId") UUID tenantId,
+                                                   @Param("fromPeriod") String fromPeriod,
+                                                   @Param("toPeriod") String toPeriod);
+
     /**
      * Accounts under {@code prefix} whose postings in {@code period} do not net to zero: [accountCode, net DR-CR].
      * Clearing accounts (9xxx) must return to zero before a period locks (IFRS 17 posting guide, class 9).

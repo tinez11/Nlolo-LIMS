@@ -8,6 +8,7 @@ import tz.co.nlolo.lifeplatform.party.api.Address;
 import tz.co.nlolo.lifeplatform.party.api.GroupMembershipView;
 import tz.co.nlolo.lifeplatform.party.api.IdentityDocument;
 import tz.co.nlolo.lifeplatform.party.api.IndividualRegistration;
+import tz.co.nlolo.lifeplatform.party.api.KycDecisionView;
 import tz.co.nlolo.lifeplatform.party.api.KycStatus;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
@@ -404,8 +405,33 @@ public class PartyController {
     @PreAuthorize("hasRole('REALM_STAFF')")
     public ResponseEntity<Void> submitKyc(@PathVariable UUID partyId, @Valid @RequestBody KycUpdateRequest request,
                                             @AuthenticationPrincipal Jwt jwt) {
-        partyApi.submitKycEvidence(partyId, request.status(), request.evidenceDocumentRef(), jwt.getSubject());
+        // The decider's NAME as well as their subject (V7). The subject is what any rule compares;
+        // the name is what the decision history can show a person instead of a uuid.
+        partyApi.submitKycEvidence(partyId, request.status(), request.evidenceDocumentRef(), jwt.getSubject(),
+            tz.co.nlolo.lifeplatform.TokenNames.displayName(jwt));
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Every KYC decision taken on this client, newest first.
+     *
+     * <p>The trail behind the status badge: what was decided, against which document, by whom and
+     * when — including decisions later overturned, which nothing else remembers, because
+     * {@code Party.applyKycDecision} assigns the new status with no guard on the old one and the
+     * party row keeps only the last.
+     *
+     * <p>Every one of these rows has existed since the platform's first KYC decision and none was
+     * readable: the entity had no getters, the repository no query and the API no endpoint.
+     *
+     * <p>STAFF ONLY, matching {@code POST .../kyc} rather than {@code GET .../documents}. The
+     * decision is staff's, and the row names the staff member who took it — a list of internal
+     * deciders is not an agent's to read, even for a client they registered. An agent already
+     * learns the outcome from the client's own {@code kycStatus}.
+     */
+    @GetMapping("/parties/{partyId}/kyc-decisions")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<List<KycDecisionView>> listKycDecisions(@PathVariable UUID partyId) {
+        return ResponseEntity.ok(partyApi.listKycDecisions(partyId));
     }
 
     /**

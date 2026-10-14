@@ -62,6 +62,27 @@ export function downloadReceipt(policyNumber: string, receiptId: string): Promis
     { responseType: 'blob', headers: { Accept: ACCEPT.pdf } });
 }
 
+/**
+ * `GET /documents/{documentRef}` -- a file somebody UPLOADED, fetched back as its own bytes.
+ *
+ * The odd one out in this module, and deliberately here rather than in a module of its own:
+ * everything above is a document this platform GENERATES on request, while this is one it was
+ * given and stored. They share a word and nothing else.
+ *
+ * **Staff only** (`DocumentController` is `hasRole('REALM_STAFF')` whole-class), because
+ * authorizing a stored document means asking its owning aggregate "is this yours?" and the
+ * document module cannot ask -- every owning module depends on it, so the reverse edge is a
+ * cycle. An agent calling this gets a 403 even for a file they uploaded themselves, so no
+ * agents-realm screen may offer it. Where a non-staff reader genuinely needs a file, the
+ * owning module serves it instead: `downloadClaimEvidence` is the one such path today.
+ *
+ * Returns the real stored Content-Type -- one of the four on the upload allowlist
+ * (image/jpeg, image/png, application/pdf, application/octet-stream).
+ */
+export function downloadStoredDocument(documentRef: string): Promise<Blob> {
+  return get<Blob>(`/documents/${enc(documentRef)}`, { responseType: 'blob' });
+}
+
 /** The file name a download is saved under. */
 export function documentFileName(kind: 'payment-schedule' | 'savings-statement', policyNumber: string,
                                  format: DocumentFormat, period?: { from: string; to: string }): string {

@@ -86,6 +86,31 @@ public interface FinaccountingApi {
      */
     TrialBalanceView trialBalance(String period);
 
+    /**
+     * Every posting from inception through and including {@code period} -- the cumulative position a balance
+     * sheet states.
+     *
+     * <p>{@link #trialBalance} answers what ONE period moved; this answers the balance those movements left
+     * behind. Both are needed and neither substitutes for the other: an income statement reports movement, a
+     * balance sheet reports position, and reading either from the wrong one produces a plausible statement
+     * that is entirely wrong.
+     *
+     * @param period {@code YYYY-MM}, required. Echoed back as {@code "through YYYY-MM"}, because a balance
+     *     with no period beside it cannot be reconciled against anything.
+     */
+    TrialBalanceView trialBalanceThrough(String period);
+
+    /**
+     * The movement across a span of periods, both ends inclusive -- what an income statement reports for a
+     * quarter or a year to date.
+     *
+     * @param fromPeriod the first period, {@code YYYY-MM}
+     * @param toPeriod the last period, {@code YYYY-MM}
+     * @throws FinaccountingValidationException when {@code fromPeriod} is after {@code toPeriod} -- a caller's
+     *     mistake, refused in words rather than silently returning an empty ledger
+     */
+    TrialBalanceView trialBalanceBetween(String fromPeriod, String toPeriod);
+
     /** Not paged, deliberately: a chart of accounts is bounded reference data (36 rows per tenant
      * as {@code ChartOfAccountBlueprint} seeds it, a few hundred at most for a real
      * Finance-authored chart), so there is no unbounded-growth exposure here of the kind

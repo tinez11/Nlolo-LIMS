@@ -91,6 +91,7 @@ class OfferReminderSweepTest {
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/party/V6__client_reference.sql",
+            "db-migrations/party/V7__kyc_decided_by_name.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",

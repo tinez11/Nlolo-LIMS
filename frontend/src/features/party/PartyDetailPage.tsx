@@ -1,16 +1,11 @@
-import { Check, FileCheck, X } from 'lucide-react';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useDropzone } from 'react-dropzone';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
-import { InlineError } from '@/components/InlineError';
-import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';
 import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/cn';
 import { formatDate, formatInstant } from '@/lib/dates';
 import { partyTypeLabel } from '@/lib/partyType';
 import type { ApiError } from '@/lib/apiError';
@@ -19,7 +14,6 @@ import type {
   BeneficiaryOfView,
   ClaimView,
   IdentityDocumentView,
-  KycStatus,
   Page,
   PartyDetailView,
   PartyDocumentView,
@@ -40,23 +34,13 @@ import {
   selectClientSchemeMembers,
   useClientRecordStore,
 } from '@/store/clientRecord';
-import {
-  selectParty,
-  selectPartyDocuments,
-  selectSubmittingKyc,
-  selectUploadingKycEvidence,
-  usePartyStore,
-} from '@/store/partyStore';
+import { selectParty, selectPartyDocuments, usePartyStore } from '@/store/partyStore';
 import { Panel } from '@/components/Panel';
 import { RecordTabs, type TabDef } from '@/components/RecordTabs';
 import { DetailLayout } from '@/components/DetailLayout';
 import { PortalAccessPanel } from './PortalAccessPanel';
-
-const ACCEPTED_EVIDENCE_TYPES = {
-  'image/jpeg': ['.jpg', '.jpeg'],
-  'image/png': ['.png'],
-  'application/pdf': ['.pdf'],
-};
+import { KycDecisionPanel, KycFilingPanel } from './KycPanel';
+import { downloadStoredDocument } from '@/api/documents';
 
 /**
  * One client's whole record: who they are, what they hold, and what is outstanding.
@@ -487,10 +471,15 @@ function clientTabs({
   // acts on KYC and only on KYC. As the first tab it is what a reviewer lands on, which is
   // what the old ordering was reaching for when it moved the panel to the top of a scroll.
   //
-  // Absent entirely in the agents realm rather than present and refused -- an agent who can
-  // see the control reasonably concludes the record is theirs to change, and finds out
-  // otherwise at the point of saving. With it gone, Policies becomes their first tab, which
-  // is the register they came for anyway.
+  // THE DECISION is staff and stays staff -- an agent who can see the control reasonably
+  // concludes the record is theirs to change, and finds out otherwise at the point of saving.
+  //
+  // FILING THE EVIDENCE is not the decision, and the agents realm now has its own tab for it
+  // (2026-10-14). `POST /parties/{id}/kyc-evidence` has accepted an agents token since it was
+  // written -- "the agent who took the documents supplies them and a staff member decides
+  // whether they are good", in PartyController's own words -- and no console screen had ever
+  // called it as one. The tab is narrower than the staff one in both directions: it files and
+  // lists, it does not open or decide.
   if (isStaff) {
     tabs.push({
       value: 'kyc',
@@ -499,9 +488,16 @@ function clientTabs({
         <Panel
           emphasis
           title="KYC verification"
-          subtitle="Upload evidence, then record a decision against it."
+          subtitle="Read the evidence on record, then decide against the document you read."
         >
-          {party && <KycPanel partyId={partyId} currentStatus={party.kycStatus} />}
+          {party && (
+            <KycDecisionPanel
+              partyId={partyId}
+              currentStatus={party.kycStatus}
+              documents={documents}
+              onRetryDocuments={onRetryDocuments}
+            />
+          )}
         </Panel>
       ),
     });
@@ -623,6 +619,29 @@ function clientTabs({
     ),
   });
 
+  // The agent's half of the KYC split (2026-10-14). Late rather than first: an agent opens a
+  // client record to see the book, which is why the staff KYC tab's absence left them landing
+  // on Policies. Filing papers is an errand they came to do deliberately, not the thing they
+  // need to see on arrival.
+  if (!isStaff) {
+    tabs.push({
+      value: 'kyc',
+      label: 'KYC',
+      content: (
+        <Panel
+          title="Identity evidence"
+          subtitle="Send this client’s ID documents to the office. Verification is theirs to decide."
+        >
+          <KycFilingPanel
+            partyId={partyId}
+            documents={documents}
+            onRetryDocuments={onRetryDocuments}
+          />
+        </Panel>
+      ),
+    });
+  }
+
   tabs.push({
     value: 'documents',
     label: 'Documents',
@@ -631,7 +650,12 @@ function clientTabs({
         title="Documents"
         subtitle="Filed against this client. Claim evidence lives on the claim."
       >
-        <DocumentList resource={documents} onRetry={onRetryDocuments} />
+        {/*
+          Opening a file is staff-only, and the flag is the endpoint's rule rather than this
+          screen's: `GET /documents/{ref}` is `hasRole('REALM_STAFF')` whole-class, so an agent
+          offered a View button would get a 403 on a document they uploaded themselves.
+        */}
+        <DocumentList resource={documents} onRetry={onRetryDocuments} canOpen={isStaff} />
       </Panel>
     ),
   });
@@ -1150,12 +1174,26 @@ function BeneficiaryOfList({
   );
 }
 
+/**
+ * What is held on this client, and — for staff — a way to read it.
+ *
+ * The list was inert text until 2026-10-14: a file name, a type and a date, with no way to open
+ * any of it. `GET /documents/{ref}` had existed and been staff-only since the document module was
+ * built, and the console had never called it from anywhere, so no stored document on the platform
+ * could be opened outside a claim. A list of evidence nobody can read is a list of file names.
+ *
+ * A new tab here, not the inline viewer the KYC decision uses: this panel is an inventory, and
+ * the reader is looking something up rather than deciding against it. That is `EvidencePanel`'s
+ * reasoning and it holds wherever the document is not the subject of an act on the same screen.
+ */
 function DocumentList({
   resource,
   onRetry,
+  canOpen,
 }: {
   resource: Resource<PartyDocumentView[]>;
   onRetry: () => void;
+  canOpen: boolean;
 }) {
   return (
     <PanelState resource={resource} onRetry={onRetry} empty="No documents filed.">
@@ -1164,17 +1202,37 @@ function DocumentList({
         if (rows.length === 0) return null;
         return (
           <ul className="border-t border-border px-4 py-2">
-            {rows.slice(0, PANEL_ROW_CAP).map((d) => (
-              <li key={d.documentRef} className="py-1 text-xs">
-                <p className="truncate" title={d.fileName ?? d.documentRef}>
-                  {d.fileName ?? <span className="font-mono">{d.documentRef}</span>}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {(d.documentType ?? '').replace(/_/g, ' ').toLowerCase()} ·{' '}
-                  {formatInstant(d.uploadedAt)}
-                </p>
+            {rows.slice(0, PANEL_ROW_CAP).map((d) => {
+              // Bound once, because every field of the generated view is optional and the
+              // click handler below is a closure TypeScript cannot narrow through.
+              const ref = d.documentRef;
+              return (
+              <li key={ref} className="flex items-center gap-2 py-1 text-xs">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate" title={d.fileName ?? ref}>
+                    {d.fileName ?? <span className="font-mono">{ref}</span>}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {(d.documentType ?? '').replace(/_/g, ' ').toLowerCase()} ·{' '}
+                    {formatInstant(d.uploadedAt)}
+                  </p>
+                </div>
+                {canOpen && ref && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="shrink-0"
+                    // Named for the row it belongs to. Six buttons all announced "View" leave a
+                    // screen-reader user counting rows to work out which file they are on.
+                    aria-label={`View ${d.fileName ?? ref}`}
+                    onClick={() => void openStoredDocument(ref)}
+                  >
+                    View
+                  </Button>
+                )}
               </li>
-            ))}
+              );
+            })}
             {rows.length > PANEL_ROW_CAP && (
               <li className="pt-1 text-xs text-muted-foreground">
                 {rows.length - PANEL_ROW_CAP} more not shown
@@ -1185,6 +1243,19 @@ function DocumentList({
       }}
     </PanelState>
   );
+}
+
+/**
+ * Fetch the file as an authenticated blob, then hand it to a new tab.
+ *
+ * Not an `<a href>`: this SPA holds its tokens in memory, so a plain anchor is an anonymous
+ * request — see `lib/download.ts`, which makes the same point about saving. The object URL is
+ * revoked by the browser when that tab closes rather than here, because revoking it in this
+ * frame would race the new tab's own load.
+ */
+async function openStoredDocument(documentRef: string): Promise<void> {
+  const blob = await downloadStoredDocument(documentRef);
+  window.open(URL.createObjectURL(blob), '_blank', 'noopener');
 }
 
 function AgentRecordList({
@@ -1213,143 +1284,6 @@ function AgentRecordList({
         );
       }}
     </PanelState>
-  );
-}
-
-function KycPanel({
-  partyId,
-  currentStatus,
-}: {
-  partyId: string;
-  currentStatus: KycStatus | undefined;
-}) {
-  const uploadKycEvidence = usePartyStore((s) => s.uploadKycEvidence);
-  const resetUploadKycEvidence = usePartyStore((s) => s.resetUploadKycEvidence);
-  const uploading = usePartyStore(selectUploadingKycEvidence(partyId));
-
-  const submitKyc = usePartyStore((s) => s.submitKyc);
-  const resetSubmitKyc = usePartyStore((s) => s.resetSubmitKyc);
-  const deciding = usePartyStore(selectSubmittingKyc(partyId));
-
-  useEffect(() => {
-    resetUploadKycEvidence(partyId);
-    resetSubmitKyc(partyId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partyId]);
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    accept: ACCEPTED_EVIDENCE_TYPES,
-    multiple: false,
-    onDrop: (accepted) => {
-      if (accepted[0]) void uploadKycEvidence(partyId, accepted[0]);
-    },
-  });
-
-  const documentRef = uploading.status === 'success' ? uploading.data?.documentRef : undefined;
-
-  // Which decision is awaiting its second click. There is no form here, so the
-  // first click arms rather than submits.
-  const [pending, setPending] = useState<KycStatus | null>(null);
-
-  async function decide(status: KycStatus) {
-    if (!documentRef) return;
-    await submitKyc(partyId, status, documentRef);
-    if (usePartyStore.getState().submittingKyc[partyId]?.status === 'success') {
-      setPending(null);
-    }
-  }
-
-  return (
-    <div className="space-y-3 px-4 pt-3 pb-4">
-      <div
-        {...getRootProps()}
-        className={cn(
-          'flex cursor-pointer flex-col items-center gap-1.5 rounded-md border border-dashed border-border px-4 py-6 text-center transition-colors',
-          isDragActive ? 'border-accent bg-hover' : 'hover:bg-hover',
-          uploading.status === 'loading' && 'pointer-events-none opacity-60',
-        )}
-      >
-        <input {...getInputProps()} disabled={uploading.status === 'loading'} />
-        <FileCheck className="size-5 text-muted-foreground" />
-        <p className="text-xs text-muted-foreground">
-          {uploading.status === 'loading'
-            ? 'Uploading…'
-            : isDragActive
-              ? 'Drop the file'
-              : 'Drag an ID scan or proof of address here, or click to browse'}
-        </p>
-        <p className="text-xs text-subtle-foreground">JPEG, PNG, or PDF</p>
-      </div>
-
-      {uploading.status === 'error' && uploading.error && (
-        <InlineError error={uploading.error} />
-      )}
-
-      {documentRef && (
-        <div className="space-y-2 rounded-md border border-border p-2.5">
-          <p className="text-xs text-muted-foreground">
-            Evidence uploaded: <span className="font-mono">{documentRef}</span>
-          </p>
-          {pending ? (
-            <ConfirmAct
-              heading={pending === 'VERIFIED' ? 'Verify this identity?' : 'Reject this identity?'}
-              tone={pending === 'VERIFIED' ? 'primary' : 'danger'}
-              consequence={
-                pending === 'VERIFIED' ? (
-                  <>
-                    Mark this client KYC-verified against the evidence{' '}
-                    <span className="font-mono">{documentRef}</span>. They become eligible to
-                    hold a policy.
-                  </>
-                ) : (
-                  <>
-                    Refuse this client&rsquo;s identity evidence. They cannot be taken on as a
-                    policyholder while their KYC reads rejected.
-                  </>
-                )
-              }
-              /*
-                Deliberately NOT phrased as irreversible, because it is not:
-                Party.updateKycStatus assigns the new status with no guard on the
-                old one, so a rejected identity can be verified later and the
-                reverse. The critique listed this among the irreversible six; it
-                was checked rather than taken, and a confirmation that overstates
-                is how every confirmation on the screen stops being read.
-              */
-              reversal="A KYC decision can be changed later by re-deciding against fresh evidence — but it is recorded, and it gates whether this client can hold a policy in the meantime."
-              confirmLabel={pending === 'VERIFIED' ? 'Verify identity' : 'Reject identity'}
-              busy={deciding.status === 'loading'}
-              onConfirm={() => void decide(pending)}
-              onCancel={() => setPending(null)}
-            />
-          ) : (
-            <div className="flex items-center gap-1.5">
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={currentStatus === 'VERIFIED'}
-                onClick={() => setPending('VERIFIED')}
-              >
-                <Check />
-                Verify
-              </Button>
-              <Button
-                size="sm"
-                variant="danger"
-                disabled={currentStatus === 'REJECTED'}
-                onClick={() => setPending('REJECTED')}
-              >
-                <X />
-                Reject
-              </Button>
-            </div>
-          )}
-          {deciding.status === 'error' && deciding.error && (
-            <InlineError error={deciding.error} />
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 

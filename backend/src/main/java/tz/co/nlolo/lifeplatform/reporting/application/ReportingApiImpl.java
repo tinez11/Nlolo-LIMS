@@ -22,9 +22,10 @@ import java.util.Map;
 @Service
 public class ReportingApiImpl implements ReportingApi {
 
-    /** Catalogue order: the order a manager reads the business in. */
+    /** Catalogue order: the order a manager reads the business in, then the order a ledger is read in. */
     static final List<String> ORDER = List.of("policies-in-force", "products", "new-business", "lapse-rate",
-        "persistency", "premium-collections", "clients");
+        "persistency", "premium-collections", "clients",
+        "trial-balance", "general-ledger", "balance-sheet", "income-statement");
 
     private final Map<String, Report> reports = new LinkedHashMap<>();
     private final LabelsFactory labelsFactory;

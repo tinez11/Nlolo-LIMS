@@ -1,7 +1,9 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PartyDetailView } from '@/api/types';
+import { getParty, listKycDecisions, listPartyDocuments } from '@/api/party';
+import type { PartyDetailView, PartyDocumentView } from '@/api/types';
 import { usePartyStore } from '@/store/partyStore';
 import { useClientRecordStore } from '@/store/clientRecord';
 import { renderScreen } from '@/test/renderScreen';
@@ -12,6 +14,12 @@ vi.mock('@/api/policies');
 vi.mock('@/api/claims');
 vi.mock('@/api/underwriting');
 vi.mock('@/api/distribution');
+
+// A factory rather than the automock the others take: the viewer calls `.then()` on what this
+// returns, and an automocked function hands back undefined.
+vi.mock('@/api/documents', () => ({
+  downloadStoredDocument: vi.fn(() => Promise.resolve(new Blob(['scan'], { type: 'image/png' }))),
+}));
 
 /**
  * Written BEFORE the party record is restructured into tabs, which is the order plan 4
@@ -64,12 +72,52 @@ function emptyRegisters() {
   } as never);
 }
 
+/**
+ * Put a document on record, in the store AND behind the read the page fires on mount.
+ *
+ * Both halves are needed, and the second is the one that bites: every other test here asserts
+ * synchronously, so they never see what happens when the page's own `loadPartyDocuments` lands.
+ * Under the automock that read resolves to `undefined`, which the store writes over the fixture —
+ * so a test that awaits anything watches its own rows disappear between two assertions.
+ */
+function withEvidence(documents: PartyDocumentView[]) {
+  usePartyStore.setState({
+    documents: { [PARTY_ID]: { ...RESOURCE, data: documents } },
+  } as never);
+  vi.mocked(listPartyDocuments).mockResolvedValue(documents);
+}
+
+/** One KYC document already on record — filed by somebody else, in some earlier session. */
+function evidenceOnRecord(over: Partial<PartyDocumentView> = {}): PartyDocumentView {
+  return {
+    documentRef: 'doc-ref-1',
+    documentType: 'KYC_EVIDENCE',
+    contentType: 'image/png',
+    fileName: 'amina-nida.png',
+    uploadedAt: '2026-10-13T08:00:00Z',
+    ...over,
+  } as PartyDocumentView;
+}
+
 beforeEach(() => {
   usePartyStore.setState({
     detail: { [PARTY_ID]: { ...RESOURCE, data: party() } },
     documents: { [PARTY_ID]: { ...RESOURCE, data: [] } },
   } as never);
   emptyRegisters();
+  /*
+   * The page fetches on mount, and under the automock every one of those reads resolves to
+   * `undefined` — which the store writes straight over the fixture set above. A synchronous
+   * test never notices; the moment a test awaits anything, the record it is asserting on is
+   * replaced by an empty one mid-way through, and the symptom is a whole tab going blank
+   * between two assertions rather than anything that reads as a stale mock.
+   */
+  vi.mocked(getParty).mockResolvedValue(party());
+  vi.mocked(listPartyDocuments).mockResolvedValue([]);
+  vi.mocked(listKycDecisions).mockResolvedValue([]);
+  // jsdom implements neither, and the viewer and the Documents tab both make object URLs.
+  URL.createObjectURL = vi.fn(() => 'blob:stub');
+  URL.revokeObjectURL = vi.fn();
 });
 
 describe('PartyDetailPage', () => {
@@ -119,6 +167,110 @@ describe('PartyDetailPage', () => {
    * rather than rendered as a column of em dashes -- which would read as data the platform lost
    * instead of data it never asked for. The page's own comment says exactly this.
    */
+  /**
+   * THE DEFECT THIS SUITE EXISTS TO HOLD CLOSED (2026-10-14).
+   *
+   * Verify and Reject used to be gated on `uploading.status === 'success'` — the upload made in
+   * THIS browser session — so a reviewer opening a client whose evidence was already on record
+   * got a dropzone and nothing else. There was no way to decide on a document somebody else had
+   * filed, which is the only flow the server-side split was ever built for.
+   *
+   * The store below holds a document and no upload. That is the whole fixture.
+   */
+  it('lets staff decide on evidence filed in an earlier session', async () => {
+    withEvidence([evidenceOnRecord()]);
+    renderAt(`/staff/parties/${PARTY_ID}?tab=kyc`);
+
+    // On record and visible, with nothing uploaded here.
+    const row = screen.getByRole('button', { name: /amina-nida\.png/ });
+    expect(row).toHaveAttribute('aria-pressed', 'false');
+
+    // A decision is recorded against a document, so there is no decision until one is open.
+    expect(screen.getByRole('button', { name: 'Verify' })).toBeDisabled();
+
+    await userEvent.click(row);
+
+    expect(row).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Verify' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled();
+  });
+
+  /**
+   * The decision trail, which the platform had written since its first KYC decision and could
+   * not read until 2026-10-14. The point of the panel is the OVERTURNED row: the party record
+   * keeps only the decision in force, so this list is the only place a client's rejection
+   * survives their later verification.
+   */
+  it('shows every KYC decision, including one later overturned', async () => {
+    withEvidence([evidenceOnRecord()]);
+    vi.mocked(listKycDecisions).mockResolvedValue([
+      {
+        status: 'VERIFIED',
+        evidenceDocumentRef: 'doc-ref-1',
+        decidedBy: 'subject-juma',
+        decidedByName: 'Juma Senior',
+        decidedAt: '2026-10-13T09:00:00Z',
+      },
+      {
+        status: 'REJECTED',
+        evidenceDocumentRef: 'doc-ref-gone',
+        decidedBy: 'subject-asha',
+        decidedByName: null,
+        decidedAt: '2026-10-01T09:00:00Z',
+      },
+    ]);
+    renderAt(`/staff/parties/${PARTY_ID}?tab=kyc`);
+
+    expect(await screen.findByText('Juma Senior')).toBeInTheDocument();
+    // The party reads VERIFIED; only this panel remembers the rejection.
+    const overturned = screen.getByText('Rejected').closest('li');
+    expect(overturned).not.toBeNull();
+    // A decision taken before the name was captured says so rather than printing a subject.
+    // Scoped to the row, because the record rail says the same of an unnamed registrar.
+    expect(within(overturned as HTMLElement).getByText('Name not recorded')).toBeInTheDocument();
+    expect(screen.queryByText('subject-asha')).not.toBeInTheDocument();
+
+    // The evidence still on file is a way back into the viewer; the ref that is not stays text.
+    expect(
+      screen.getByRole('button', { name: /Open the evidence this verified decision/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('doc-ref-gone')).toBeInTheDocument();
+  });
+
+  /**
+   * The agent's half of the same split: send the papers, do not decide on them. Both absences
+   * are the server's rules — `POST /parties/{id}/kyc` and `GET /documents/{ref}` are each
+   * staff-only — so a control offered here would be a 403 discovered after the click.
+   */
+  it('lets an agent file evidence but never decide or open it', () => {
+    withEvidence([evidenceOnRecord()]);
+    renderAt(`/agents/clients/${PARTY_ID}?tab=kyc`, 'agents');
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Identity evidence' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Send evidence')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Verify' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument();
+    // The filed document is listed, and is not a control.
+    expect(screen.getByText('amina-nida.png')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /amina-nida\.png/ })).not.toBeInTheDocument();
+  });
+
+  /**
+   * The Documents tab was inert text until 2026-10-14 — a file name, a type and a date, with no
+   * way to open any of it, on a console that had never called `GET /documents/{ref}` from
+   * anywhere. Staff can open one now; an agent still cannot, because the endpoint refuses them.
+   */
+  it('opens a filed document for staff and not for an agent', () => {
+    withEvidence([evidenceOnRecord()]);
+
+    const staff = renderAt(`/staff/parties/${PARTY_ID}?tab=documents`);
+    expect(screen.getByRole('button', { name: 'View amina-nida.png' })).toBeInTheDocument();
+    staff.unmount();
+
+    renderAt(`/agents/clients/${PARTY_ID}?tab=documents`, 'agents');
+    expect(screen.queryByRole('button', { name: 'View amina-nida.png' })).not.toBeInTheDocument();
+  });
+
   it('withholds the underwriting-facts panel from a corporate', () => {
     usePartyStore.setState({
       detail: {
