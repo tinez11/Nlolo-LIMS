@@ -187,6 +187,63 @@
   text-rendering: optimizeLegibility;
 }
 
+/*
+  The page behind the shell, on the realms that have a photograph.
+
+  `--n-green-deeper` is the right ground beside a green brand panel, but beside
+  a full-colour photograph it reads as a black frame rather than as a dark
+  green. So the margin carries the same picture: blown up, blurred past any
+  detail, and taken right down in brightness, which leaves an ambient wash of
+  the photograph's own light that the shell sits inside instead of on top of.
+
+  `fixed` rather than `absolute`: the body is a centring grid, and an absolutely
+  positioned child of a grid container is still laid out against its padding
+  box, which would leave the 24px margin uncovered -- exactly the strip being
+  got rid of. `z-index: -1` puts it behind every in-flow thing while staying in
+  front of the body's own background colour, which remains as the fallback if
+  the image never arrives.
+*/
+.lp-body--photo::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image: url('../img/brand.jpg');
+  background-size: cover;
+  background-position: 50% 30%;
+  filter: blur(64px) brightness(0.42) saturate(1.05);
+  transform: scale(1.2);
+}
+
+/*
+  With a photograph on both sides of its edge, the shell needs a shadow to stay
+  a surface rather than a crop of the backdrop -- the one place where the two
+  are nearest in tone is the top-left, where the picture's bright sky meets a
+  blurred copy of the same sky. Deep and wide, because the shell is a large
+  surface and a large surface reads as thick.
+*/
+.lp-body--photo .lp-shell {
+  box-shadow: 0 40px 100px -40px oklch(0.14 0.04 150 / 0.75);
+}
+
+@media (prefers-color-scheme: dark) {
+  .lp-body--photo::before {
+    filter: blur(64px) brightness(0.34) saturate(1);
+  }
+}
+
+/*
+  Decoration, and the first thing to go when the viewer has asked for less of
+  it: a blurred photograph behind a page is exactly the kind of ambient motion-
+  less noise `prefers-reduced-transparency` is about. The green ground underneath
+  is a complete design on its own, which is why this can simply be removed.
+*/
+@media (prefers-reduced-transparency: reduce) {
+  .lp-body--photo::before {
+    display: none;
+  }
+}
+
 p,
 h1,
 h2,

@@ -179,10 +179,18 @@
         </#if>
 
     <#elseif section = "socialProviders">
-        <#-- Renders nothing today: no realm has an identity provider. Written
-             anyway because the day one is added, a theme with no
-             socialProviders section silently drops the only way in. -->
-        <#if realm.password && social.providers??>
+        <#--
+          `?has_content`, NOT `??`. Keycloak supplies `social.providers` as an
+          EMPTY sequence on a realm with no identity provider, not as a missing
+          value, so the existence test base ships is true on every realm here --
+          and it rendered "Or sign in with" above an empty list on all four. A
+          heading with nothing under it reads as a broken page, and on a short
+          window the dead row was enough to push the form into a scroll.
+
+          Parenthesised so the default applies if `social` itself is ever
+          absent, which is what makes this safe on the pages where it is.
+        -->
+        <#if realm.password && ((social.providers)![])?has_content>
             <div id="kc-social-providers" class="lp-social">
                 <p class="lp-social__label">${msg("identity-provider-login-label")}</p>
                 <ul class="lp-social__list">
