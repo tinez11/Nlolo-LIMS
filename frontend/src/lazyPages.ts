@@ -1,7 +1,7 @@
 import { lazy } from 'react';
 
-export const TodayPage = lazy(() =>
-  import('@/features/home/TodayPage').then((m) => ({ default: m.TodayPage })),
+export const DashboardPage = lazy(() =>
+  import('@/features/dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })),
 );
 
 /**
