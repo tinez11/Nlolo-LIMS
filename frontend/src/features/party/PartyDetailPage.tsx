@@ -488,7 +488,14 @@ function clientTabs({
         <Panel
           emphasis
           title="KYC verification"
-          subtitle="Read the evidence on record, then decide against the document you read."
+          // The subtitle instructs only while there is something to do. A decided case that
+          // still says "then decide" reads as work outstanding, which is the same thing the
+          // decision controls were doing by staying on screen.
+          subtitle={
+            party?.kycStatus === 'VERIFIED' || party?.kycStatus === 'REJECTED'
+              ? 'The decision on record, and the evidence it was taken on.'
+              : 'Read the evidence on record, then decide against the document you read.'
+          }
         >
           {party && (
             <KycDecisionPanel
