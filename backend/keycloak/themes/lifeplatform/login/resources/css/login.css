@@ -85,29 +85,28 @@
   --n-radius-shell: 1.25rem;
   --n-radius-card: 1.5rem;
 
-  /*
-    The shell's own dimensions, as tokens rather than literals, because the
-    photo-led composition has to do arithmetic with them: the sign-in card is
-    held clear of the wordmark printed across the top of the photograph, and
-    where that wordmark lands is a function of the shell's width and height. A
-    literal in two places would let the two drift apart silently, and the
-    failure would be a logotype with a card sitting on it.
-  */
+  /* The shell's own dimensions, as tokens rather than literals. */
   --n-shell-max: 76rem;
   --n-shell-pad: 24px;
-  --n-shell-w: min(var(--n-shell-max), 100vw - 2 * var(--n-shell-pad));
-  --n-shell-h: min(92dvh, 44rem);
+  /*
+    The third term is the one that is easy to miss: the shell is centred inside
+    the body's own padding, so `92dvh` of shell plus 48px of margin asks for
+    more than the viewport whenever 48px is over 8% of it -- anything under
+    600px tall. This is a floor, not a ceiling: contents taller than it still
+    grow the shell and the page still scrolls, which is the behaviour wanted on
+    a short window. What it stops is the shell demanding that scroll on its own.
+  */
+  --n-shell-h: min(100dvh - 2 * var(--n-shell-pad), 92dvh, 44rem);
 
   /*
-    How far down the shell the printed wordmark ends.
-
-    The mark occupies the top 24.4% of the source image (measured, 1536x1024),
-    and `cover` draws that image at whichever scale makes it overflow: by WIDTH
-    while the shell is wider than 3:2, by HEIGHT once it is narrower. `max()`
-    picks the governing one, so this holds in both regimes rather than only the
-    desktop one.
+    How much of the brand panel's height the photograph itself occupies. The
+    rest is the gloss -- the same picture, blurred, carrying the panel beneath
+    it. 75% is what makes the picture big: in a half-shell 608px wide it draws
+    the frame at 608x528, which shows about 77% of the image at desktop sizes
+    and more as the viewport shortens, against 58% for a photograph shown whole
+    in the same column.
   */
-  --n-mark-bottom: calc(0.244 * max(var(--n-shell-w) * 0.6667, var(--n-shell-h)));
+  --n-photo-share: 75%;
 
   --n-sans: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --n-display: 'Archivo Black', 'Arial Black', var(--n-sans);
@@ -286,23 +285,77 @@ ul {
 }
 
 /*
-  THE PHOTO-LED COMPOSITION.
+  THE PHOTOGRAPH AND ITS GLOSS.
 
-  On the realms that carry the photograph there is no split: the picture is the
-  whole page, and the sign-in form floats over it as a card. This replaces the
-  two-panel treatment that preceded it, and the reason is measured rather than
-  stylistic. In a 709x704 half-shell, `cover` threw away 16% of the image width
-  from each side -- which is precisely where the two outer women stand -- and
-  showed 67% of the frame. Across the full 1216x704 shell it shows 87%, all four
-  people are whole, and the printed wordmark reads about three times larger.
+  Half the shell for the brand, half for the form. Inside the brand half the
+  photograph takes the top 75% at full bleed, and the remaining quarter is the
+  SAME picture blurred into a glossy ground that the sharp frame settles onto --
+  so the panel is filled by the image rather than by a colour that happens to sit
+  beside it, and the bottom edge of the frame has something of its own to
+  dissolve into.
 
-  What this costs, recorded so nobody rediscovers it as a bug: the single large
-  top-left radius that the rest of this design is built around does not survive a
-  floating card. The `regulators` realm, which has no photograph, keeps it.
+  Why a half-and-half split rather than the proportions this file has tried:
+
+    24rem sidebar   the picture was a letterboxed strip over dead green.
+    1.4fr / 1fr     `cover` scaled by height and threw away 16% of the image
+                    width from each side -- exactly where the two outer women
+                    stand. 67% of the frame shown, two of four people whole.
+    full bleed      87% shown, but the form had to float over the picture as a
+                    capped card, and on a short window -- a 1273x573 viewport,
+                    which is an ordinary half-height browser window -- the cap
+                    left the card 281px for 415px of form. It scrolled at rest
+                    and cut the sign-in button in half.
+
+  Half and half is what makes the picture large AND leaves the form a full-height
+  panel that cannot be squeezed. It also brings back the one large top-left
+  radius this design is built around, which a floating card could not carry.
 */
+.lp-shell--photo {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
 .lp-shell--photo .lp-brand {
+  position: relative;
   padding: 0;
   gap: 0;
+  overflow: hidden;
+}
+
+/*
+  The gloss: the photograph again, blown up past the panel edges and blurred
+  past recognition, so what fills the quarter beneath the frame is the picture's
+  own colour and light rather than an invented one. Scaled up because a blur
+  samples beyond its box and would otherwise show a pale rim where it runs out.
+
+  Drawn as a background on a pseudo-element, not a second <img>: it carries no
+  information -- the real photograph above it is the content, and already has
+  the alt text -- so it must not reach a screen reader. The file is in cache by
+  the time this paints; it is the same URL as the <img>.
+*/
+.lp-shell--photo .lp-brand::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('../img/brand.jpg');
+  background-size: cover;
+  background-position: 50% 80%;
+  filter: blur(48px) brightness(0.82) saturate(1.1);
+  transform: scale(1.25);
+}
+
+/*
+  The sheen that makes it read as glossy rather than merely blurred: one soft
+  diagonal highlight, and a deepening toward the bottom corner so the panel has
+  somewhere to end. Both are light, not colour -- the greens in the photograph
+  are the brand and are not tinted here.
+*/
+.lp-shell--photo .lp-brand::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(152deg, oklch(1 0 0 / 22%) 0%, oklch(1 0 0 / 4%) 34%, transparent 62%),
+    linear-gradient(to bottom, transparent 55%, oklch(0.18 0.05 150 / 38%) 100%);
 }
 
 /*
@@ -311,9 +364,21 @@ ul {
   nothing below jumps when they do.
 */
 .lp-brand__frame {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
+  height: var(--n-photo-share);
   overflow: hidden;
+  /*
+    The frame dissolves into its own blur over the last tenth rather than ending
+    on a line. A hard edge between a sharp photograph and a blurred copy of the
+    same photograph is the one join that would announce the trick; ten per cent
+    is enough to hide it and shallow enough that nothing in the picture is lost
+    to it -- the bottom of the frame is table and laptop lid.
+  */
+  -webkit-mask-image: linear-gradient(to bottom, #000 90%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 90%, transparent 100%);
 }
 
 /*
@@ -358,142 +423,6 @@ ul {
   display: flex;
   padding: 48px 32px;
   overflow-y: auto;
-}
-
-/*
-  ------------------------------------------- The photo-led composition, desktop
-
-  Written as the exact complement of the stacked query -- `not all and
-  (max-width: 60rem)`, rather than a `min-width` a hair above it, so there is no
-  sub-pixel width where neither block applies -- because this composition exists
-  ONLY above the split. Below it the page stacks into a photograph band over a
-  form panel, which is a different arrangement rather than a narrower version of
-  this one, and expressing it here means the stacked rules never have to undo a
-  layout they did not want.
-*/
-@media not all and (max-width: 60rem) {
-  /*
-    One cell, with the photograph taken out of flow behind it. The form card is
-    then the only item in the grid, which is what lets it be placed against the
-    bottom-right corner without a second column to sit in.
-  */
-  .lp-shell--photo {
-    position: relative;
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .lp-shell--photo .lp-brand {
-    position: absolute;
-    inset: 0;
-  }
-
-  .lp-shell--photo .lp-brand__frame {
-    position: absolute;
-    inset: 0;
-    width: auto;
-  }
-
-  /*
-    The card. Bottom-right, and the corner is not arbitrary: anchored to the
-    bottom it clears the wordmark printed across the top of the photograph,
-    which anchoring it to the top or centring it does not.
-
-    29rem is derived, not chosen: 32px of padding either side of `.lp-col`'s
-    25rem puts the card at exactly 464px, so the fields inside are the same
-    width as on every other page of this theme rather than a cramped variant.
-  */
-  .lp-shell--photo .lp-panel {
-    position: relative;
-    z-index: 1;
-    justify-self: end;
-    align-self: end;
-    width: 29rem;
-    margin: 0 24px 24px 0;
-    padding: 28px 32px 24px;
-    border-radius: var(--n-radius-card);
-    /*
-      Translucent, so the photograph is continuous behind the one opaque thing
-      on the page. The shadow is what separates it: a blurred surface over a
-      busy picture needs a boundary that is not a line.
-    */
-    background-color: color-mix(in oklch, var(--n-paper) 94%, transparent);
-    backdrop-filter: blur(28px) saturate(150%);
-    -webkit-backdrop-filter: blur(28px) saturate(150%);
-    box-shadow: 0 28px 70px -24px oklch(0.18 0.05 150 / 0.6);
-
-    /*
-      THE RULE THAT KEEPS THE LOGOTYPE WHOLE.
-
-      The card grows with its contents -- a rejected password adds an alert, a
-      realm with password reset adds a row -- and left alone it grows UPWARD
-      from the bottom edge until it reaches the wordmark and sits on it. So it
-      is capped at the space between the bottom of the mark and the bottom of
-      the shell, less its own 24px margin and a 24px gap, and `overflow-y: auto`
-      on the base rule scrolls the form inside instead. A card that scrolls is a
-      smaller problem than a logotype with a form on top of it.
-
-      48px, not more, and the figure is measured rather than tasteful: a
-      1366x768 window gives the viewport about 720px, which leaves the card 440px
-      once the mark and this reserve come off. The form at rest is 415px. Raising
-      the reserve to 72px drops that to 392px and makes the card scroll at REST
-      on an ordinary laptop, which is a worse page than a 24px gap under the
-      logotype on the rarer screen where the form is crowded.
-    */
-    max-height: calc(var(--n-shell-h) - var(--n-mark-bottom) - 48px);
-  }
-
-  /*
-    `.lp-col` centres itself with `margin: auto` in the full-height panel. In a
-    card sized to its contents there is nothing to centre, and `auto` margins on
-    a flex child inside a scroll container put the overflowing top out of reach.
-  */
-  .lp-shell--photo .lp-col {
-    margin: 0;
-    width: 100%;
-  }
-
-  /*
-    The 32px above the title belongs under the SVG lockup, which is suppressed
-    on these realms. With no mark above it, it is just the card's padding twice.
-  */
-  .lp-shell--photo .lp-title {
-    margin-top: 0;
-    font-size: 1.5rem;
-  }
-
-  .lp-shell--photo .lp-form {
-    margin-top: 20px;
-    gap: 16px;
-  }
-
-  .lp-shell--photo .lp-note {
-    margin-top: 18px;
-    padding-top: 14px;
-  }
-}
-
-/*
-  Translucency is a preference, not a given. Where the viewer has asked for less
-  of it the card becomes opaque and the blur is dropped -- the photograph is
-  still the page, it simply stops showing through the one surface carrying text.
-  Where they have asked for more contrast it also takes a defined border, since
-  a shadow alone is not a boundary at high contrast.
-*/
-@media (prefers-reduced-transparency: reduce) {
-  .lp-shell--photo .lp-panel {
-    background-color: var(--n-paper);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-}
-
-@media (prefers-contrast: more) {
-  .lp-shell--photo .lp-panel {
-    background-color: var(--n-paper);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    border: 1px solid var(--n-ink);
-  }
 }
 
 /* ---------------------------------------------------------- 4. Brand panel */
@@ -1248,6 +1177,13 @@ ul {
   */
   .lp-shell--photo .lp-brand__frame {
     flex: none;
+    /*
+      `auto`, because the desktop panel gives the frame 75% of a full-height
+      column and there is no such height to take a percentage of here: the band
+      is a content-sized grid row, and a percentage height of nothing is nothing.
+      The aspect ratio supplies the height instead.
+    */
+    height: auto;
     aspect-ratio: 3 / 2;
     /*
       A 3:2 band across a wide-but-short viewport is tall: on a phone held
