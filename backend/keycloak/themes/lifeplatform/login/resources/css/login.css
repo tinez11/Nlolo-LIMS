@@ -83,6 +83,30 @@
   --n-radius: 0.75rem;
   --n-radius-panel: 2.5rem;
   --n-radius-shell: 1.25rem;
+  --n-radius-card: 1.5rem;
+
+  /* The shell's own dimensions, as tokens rather than literals. */
+  --n-shell-max: 76rem;
+  --n-shell-pad: 24px;
+  /*
+    The third term is the one that is easy to miss: the shell is centred inside
+    the body's own padding, so `92dvh` of shell plus 48px of margin asks for
+    more than the viewport whenever 48px is over 8% of it -- anything under
+    600px tall. This is a floor, not a ceiling: contents taller than it still
+    grow the shell and the page still scrolls, which is the behaviour wanted on
+    a short window. What it stops is the shell demanding that scroll on its own.
+  */
+  --n-shell-h: min(100dvh - 2 * var(--n-shell-pad), 92dvh, 44rem);
+
+  /*
+    How much of the brand panel's height the photograph itself occupies. The
+    rest is the gloss -- the same picture, blurred, carrying the panel beneath
+    it. 75% is what makes the picture big: in a half-shell 608px wide it draws
+    the frame at 608x528, which shows about 77% of the image at desktop sizes
+    and more as the viewport shortens, against 58% for a photograph shown whole
+    in the same column.
+  */
+  --n-photo-share: 75%;
 
   --n-sans: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --n-display: 'Archivo Black', 'Arial Black', var(--n-sans);
@@ -153,7 +177,7 @@
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: var(--n-shell-pad);
   background-color: var(--n-green-deeper);
   color: var(--n-ink);
   font-family: var(--n-sans);
@@ -161,6 +185,63 @@
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/*
+  The page behind the shell, on the realms that have a photograph.
+
+  `--n-green-deeper` is the right ground beside a green brand panel, but beside
+  a full-colour photograph it reads as a black frame rather than as a dark
+  green. So the margin carries the same picture: blown up, blurred past any
+  detail, and taken right down in brightness, which leaves an ambient wash of
+  the photograph's own light that the shell sits inside instead of on top of.
+
+  `fixed` rather than `absolute`: the body is a centring grid, and an absolutely
+  positioned child of a grid container is still laid out against its padding
+  box, which would leave the 24px margin uncovered -- exactly the strip being
+  got rid of. `z-index: -1` puts it behind every in-flow thing while staying in
+  front of the body's own background colour, which remains as the fallback if
+  the image never arrives.
+*/
+.lp-body--photo::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image: url('../img/brand.jpg');
+  background-size: cover;
+  background-position: 50% 30%;
+  filter: blur(64px) brightness(0.42) saturate(1.05);
+  transform: scale(1.2);
+}
+
+/*
+  With a photograph on both sides of its edge, the shell needs a shadow to stay
+  a surface rather than a crop of the backdrop -- the one place where the two
+  are nearest in tone is the top-left, where the picture's bright sky meets a
+  blurred copy of the same sky. Deep and wide, because the shell is a large
+  surface and a large surface reads as thick.
+*/
+.lp-body--photo .lp-shell {
+  box-shadow: 0 40px 100px -40px oklch(0.14 0.04 150 / 0.75);
+}
+
+@media (prefers-color-scheme: dark) {
+  .lp-body--photo::before {
+    filter: blur(64px) brightness(0.34) saturate(1);
+  }
+}
+
+/*
+  Decoration, and the first thing to go when the viewer has asked for less of
+  it: a blurred photograph behind a page is exactly the kind of ambient motion-
+  less noise `prefers-reduced-transparency` is about. The green ground underneath
+  is a complete design on its own, which is why this can simply be removed.
+*/
+@media (prefers-reduced-transparency: reduce) {
+  .lp-body--photo::before {
+    display: none;
+  }
 }
 
 p,
@@ -245,8 +326,8 @@ ul {
 
 .lp-shell {
   width: 100%;
-  max-width: 76rem;
-  min-height: min(92dvh, 44rem);
+  max-width: var(--n-shell-max);
+  min-height: var(--n-shell-h);
   display: grid;
   /*
     24rem, not 17rem. Measured at 1440: the narrower column could not hold the
@@ -261,42 +342,133 @@ ul {
 }
 
 /*
-  Where the photograph shows, the brand side stops being a 24rem sidebar and
-  takes the larger share of the shell: on this surface the picture leads and the
-  form follows. Fractions rather than a fixed width, so the split holds at every
-  shell width.
+  THE PHOTOGRAPH AND ITS GLOSS.
 
-  1.4, not 1.5. The form panel is the floor here, and this file's own rule is
-  that below about 500px its fields stop being comfortable once the panel's 32px
-  of padding comes off. Measured at 1440 against the 76rem shell: 1.5fr leaves
-  the form panel 486px, under that floor; 1.4fr leaves it 507px, over it. The
-  difference on the brand side is ~20px of panel, which crops about 15 more
-  source pixels per side -- indistinguishable in the picture, decisive in the
-  form.
+  Half the shell for the brand, half for the form. Inside the brand half the
+  photograph takes the top 75% at full bleed, and the remaining quarter is the
+  SAME picture blurred into a glossy ground that the sharp frame settles onto --
+  so the panel is filled by the image rather than by a colour that happens to sit
+  beside it, and the bottom edge of the frame has something of its own to
+  dissolve into.
+
+  Why a half-and-half split rather than the proportions this file has tried:
+
+    24rem sidebar   the picture was a letterboxed strip over dead green.
+    1.4fr / 1fr     `cover` scaled by height and threw away 16% of the image
+                    width from each side -- exactly where the two outer women
+                    stand. 67% of the frame shown, two of four people whole.
+    full bleed      87% shown, but the form had to float over the picture as a
+                    capped card, and on a short window -- a 1273x573 viewport,
+                    which is an ordinary half-height browser window -- the cap
+                    left the card 281px for 415px of form. It scrolled at rest
+                    and cut the sign-in button in half.
+
+  Half and half is what makes the picture large AND leaves the form a full-height
+  panel that cannot be squeezed. It also brings back the one large top-left
+  radius this design is built around, which a floating card could not carry.
 */
 .lp-shell--photo {
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.lp-shell--photo .lp-brand {
+  position: relative;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
 }
 
 /*
-  Filled, edge to edge. The brand panel IS the photograph on these realms -- no
-  padding, no inset card, no green showing around it -- so the panel's own
-  padding is removed and the frame takes the whole cell.
+  THE GLOSS, as a reflection rather than a blur.
 
-  THE TRADE, stated plainly because it reverses the requirement this panel was
-  first built to: a 3:2 landscape cannot fill a panel roughly 709x704 and also be
-  shown whole. Filling scales it to the panel's HEIGHT, which makes it about 1056
-  wide, and ~347px of width is cropped away -- the outer edges, which is where
-  the two outer figures stand. Whole and filled are mutually exclusive here; this
-  is the filled one, and it is why the figure below no longer bleeds off the
-  left edge.
+  The first version filled this quarter with the photograph scaled up and
+  blurred, which put a smear of an unrelated part of the picture under the
+  frame: an orange shoulder beneath a laptop, a dark band beneath a face.
+  Nothing lined up, because nothing was meant to.
 
-  `justify-content` is deliberately not set: the frame is `flex: 1` and occupies
-  the column on its own, so there is nothing left to distribute.
+  A reflection lines up by construction. This box is the SAME WIDTH and the
+  SAME HEIGHT as the frame and takes the same `cover` geometry, so it resolves
+  to the identical crop at the identical scale; flipped about its own centre,
+  the edge that meets the frame is the frame's own bottom edge, mirrored. The
+  box then runs on past the panel and is clipped by `overflow: hidden`, so only
+  the quarter nearest the seam is ever seen -- which is the only part of a
+  reflection that should be.
+
+  The blur is 14px, not 48: a reflection is a softened image, not an absent
+  one. Darkened and slightly desaturated because a reflection is light that has
+  bounced, and what it fades into underneath is the brand's own deep green.
+
+  Drawn as a background on a pseudo-element rather than a second <img>: it
+  carries no information -- the photograph above it is the content and already
+  has the alt text -- so it must not reach a screen reader. Same URL, so it is
+  served from cache and costs no second request.
 */
+.lp-shell--photo .lp-brand::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--n-photo-share);
+  height: var(--n-photo-share);
+  background-image: url('../img/brand.jpg');
+  background-size: cover;
+  background-position: 50% 0%;
+  transform: scaleY(-1);
+  /*
+    Blurred harder and taken further down than a literal mirror would be. At
+    14px and 52% the shapes stayed legible -- a readable upside-down laptop
+    under the real one, which draws the eye to the trick instead of to the
+    photograph. At 22px and 38% it is a suggestion of the picture and stays
+    where it belongs, underneath.
+  */
+  filter: blur(22px) brightness(0.38) saturate(0.8);
+  /*
+    The mask is written in the element's OWN coordinates, which the flip then
+    turns upside down: `to bottom` here reads as "fading upward" on screen. Its
+    opaque end at 100% is the seam, and it is gone by 72% -- around a third of
+    the way down the visible band -- after which the brand's deep green takes
+    over and the panel has somewhere to end.
+  */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 72%, #000 100%);
+  mask-image: linear-gradient(to bottom, transparent 72%, #000 100%);
+}
+
+/*
+  The sheen: one soft diagonal highlight across the frame's upper corner, which
+  is what makes a surface read as glossy rather than merely dark. Light, not
+  colour -- the greens in the photograph are the brand and are not tinted.
+*/
+.lp-shell--photo .lp-brand::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background-image:
+    linear-gradient(152deg, oklch(1 0 0 / 14%) 0%, oklch(1 0 0 / 3%) 28%, transparent 54%);
+}
+
+/*
+  The brand panel bleeds RIGHT, under the form panel, by exactly the radius of
+  its corner. That corner is this design's one signature -- "the brand reads
+  through it" -- and beside a green panel the shell's own deep green WAS the
+  brand. Beside a photograph it was a dark wedge with nothing to do with the
+  picture. Now what reads through the corner is the photograph itself, carried
+  on unbroken behind it.
+
+  Both panels are positioned so the form panel wins: `.lp-brand` has to be a
+  containing block for the reflection, and a positioned element paints above a
+  static sibling whatever the source order -- so without this the brand's bleed
+  would be drawn ON TOP of the form.
+*/
+.lp-shell--photo .lp-brand,
+.lp-shell--photo .lp-panel {
+  position: relative;
+  z-index: 1;
+}
+
 .lp-shell--photo .lp-brand {
-  padding: 0;
-  gap: 0;
+  margin-right: calc(-1 * var(--n-radius-panel));
 }
 
 /*
@@ -305,36 +477,38 @@ ul {
   nothing below jumps when they do.
 */
 .lp-brand__frame {
+  position: relative;
+  z-index: 1;
   display: block;
-  flex: 1;
-  /*
-    `min-height: 0` because this is a flex child: without it the item's automatic
-    minimum size is its content's, an <img> that wants to be 1024px tall refuses
-    to shrink, and the panel grows to fit the picture instead of the picture
-    fitting the panel -- which is the whole mechanism being asked for here.
-  */
-  min-height: 0;
   width: 100%;
+  height: var(--n-photo-share);
   overflow: hidden;
+  /*
+    No fade at the bottom edge, deliberately. An earlier version dissolved the
+    last tenth of the frame to hide the join with a blurred ground, but what sits
+    below it now is a reflection, and a reflection meets the thing it reflects at
+    a hard edge -- that edge is what makes the eye read it as one. Fading it put
+    a dark line of shell green between the picture and its own mirror.
+  */
 }
 
 /*
-  Biased above centre. The wordmark runs across the top of the frame (source Y
-  3.4%-24.4%) and the faces sit just under it, so holding the upper third keeps
-  both. Horizontally centred, because the wordmark is centred and a tall panel
-  takes its crop from the sides evenly.
+  Top-anchored, at every size, and this is load-bearing rather than taste.
 
-  This value is safe only while the panel is TALLER than 2:3 of its width, which
-  is every desktop case -- `cover` then scales by height and crops nothing
-  vertically. Where the panel is short and wide it does crop vertically, and 32%
-  slices the letters; the stacked media query below resets it for exactly that.
+  The wordmark is printed across the top of the source frame (Y 3.4%-24.4%,
+  measured), so wherever `cover` crops vertically, the top is the part that must
+  survive -- and the SVG lockup is suppressed on these realms precisely because
+  this mark is the one the page shows. An earlier centre-ish bias of `50% 32%`
+  opened its window INSIDE the letters wherever the frame went short and wide,
+  which read as a broken logotype rather than a crop. `0%` cannot do that at any
+  aspect, which is why there is now one value here and no override below.
 */
 .lp-brand__photo {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: 50% 32%;
+  object-position: 50% 0%;
 }
 
 /*
@@ -1112,8 +1286,45 @@ ul {
     shape. So the filled desktop panel and the whole-image phone band come from
     one rule each rather than two different treatments.
   */
+  /*
+    No sideways bleed when the panels are stacked: the form panel is below the
+    band rather than beside it, and it rounds BOTH top corners. What reads
+    through them here is the shell's gloss, which is the same photograph either
+    way.
+  */
+  .lp-shell--photo .lp-brand {
+    margin-right: 0;
+  }
+
+  /*
+    No reflection when stacked: the frame takes the whole band here, so there is
+    no quarter beneath it to reflect into, and the rule's `top: 75%` would put
+    the mirror image over the bottom of the photograph itself.
+  */
+  .lp-shell--photo .lp-brand::before {
+    display: none;
+  }
+
+  /*
+    Instead the form panel rides UP over the band by the radius of its own
+    corners, so those corners reveal the photograph rather than the shell's
+    green -- the same job the sideways bleed does on the desktop layout, in the
+    direction the panels are stacked. It covers the band's last 40px, which is
+    table and laptop lid.
+  */
+  .lp-shell--photo .lp-panel {
+    margin-top: calc(-1 * var(--n-radius-panel));
+  }
+
   .lp-shell--photo .lp-brand__frame {
     flex: none;
+    /*
+      `auto`, because the desktop panel gives the frame 75% of a full-height
+      column and there is no such height to take a percentage of here: the band
+      is a content-sized grid row, and a percentage height of nothing is nothing.
+      The aspect ratio supplies the height instead.
+    */
+    height: auto;
     aspect-ratio: 3 / 2;
     /*
       A 3:2 band across a wide-but-short viewport is tall: on a phone held
@@ -1127,25 +1338,6 @@ ul {
       vertically, and the rule below decides which part survives.
     */
     max-height: 45dvh;
-  }
-
-  /*
-    Top-aligned, and this is a bug fix rather than a preference.
-
-    Wherever that 45dvh cap bites, the band is short and wide, `cover` crops
-    VERTICALLY, and the desktop's 32% bias then shows source Y 22%-53% -- a
-    window that starts INSIDE the wordmark and slices it through the middle of
-    the letters. Measured at 844x390 and again at 900x700, so it is not a
-    sideways phone but any window under 60rem that is not tall. And because the
-    SVG lockup is suppressed wherever the photograph shows, that screen carried
-    no intact mark at all.
-
-    `0%` holds the top of the frame, which is where the mark is. Harmless at the
-    portrait sizes where the cap never bites: there the band is already the
-    image's own 3:2, `cover` crops nothing, and Y has nothing to choose between.
-  */
-  .lp-shell--photo .lp-brand__photo {
-    object-position: 50% 0%;
   }
 
   .lp-panel {

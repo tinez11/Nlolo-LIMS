@@ -18,7 +18,17 @@ pinned in `infra/docker-compose.yml`.
 > called off. The two surfaces look different **on purpose** — do not reconcile
 > them by softening this page or repainting the console.
 
-## The composition
+## Two compositions, decided by whether the realm carries the photograph
+
+**Photograph and gloss** — `staff`, `agents`, `customers`. Half the shell for
+the brand, half for the form. In the brand half the photograph takes the top
+**75%** at full bleed, and the remaining quarter is the same picture blurred
+into a glossy ground that the sharp frame dissolves into over its last tenth.
+The panel is filled by the image rather than by a colour that happens to sit
+beside it.
+
+**Split leaf** — `regulators`, which has no photograph. The original
+composition, and the one the rest of this design is built around:
 
 - A deep-green **brand panel** on the left: a figure card bleeding off the panel
   edge under a lime disc, and a heavy uppercase display statement at the bottom.
@@ -28,6 +38,9 @@ pinned in `infra/docker-compose.yml`.
   rounded box.
 - Inside it, the reference's stack: centred mark, a large welcome, the realm
   named beneath it, label-above-field inputs, and a full-width pill action.
+
+Both compositions keep that corner — it is the reason the form stayed a panel
+rather than becoming a card.
 
 **The palette is Nlolo's, not the reference's.** Every green is derived from the
 Nlolo mark rather than lifted from the reference's own brand pair — copying a
@@ -58,22 +71,73 @@ column is suppressed — **one mark per screen**.
 `regulators` keeps the designed no-photo composition: a flat brand-green card
 under the lime disc, with the display statement below it.
 
-**It fills the panel and crops; it is not shown whole.** A 3:2 landscape cannot
-fill a panel roughly 709×704 and also be shown entire, and this reverses the
-requirement the panel was first built to. `object-position: 50% 32%` holds the
-upper third, where the wordmark and the faces are, and the crop takes evenly
-from the sides.
+**It fills its frame and crops; it is not shown whole.** How much of the image
+survives depends on the window, and all of these are measured, not estimated:
 
-Two measured constraints govern that, and neither should be re-derived:
+| Window | Image shown | Whole figures |
+| --- | --- | --- |
+| 1440×900, 1920×1080 | 77% | 2 of 4 |
+| 1366×720 | 82% | 2 of 4 |
+| 1280×672 | 87% | 2 of 4 |
+| 1273×573 | 98% | 4 of 4 |
+| 390×844 (stacked) | 100% | 4 of 4 |
 
-- **`1.4fr`, not `1.5fr`.** At 1440 against the 76rem shell, `1.5fr` leaves the
-  form panel 486px — under the ~500px floor this design declares for comfortable
-  fields. `1.4fr` leaves it 507px, and costs about 15 source pixels per side.
-- **`object-position: 50% 0%` below 60rem.** Stacked, the band is short and wide,
-  so `cover` crops *vertically* and the desktop's 32% bias slices the wordmark
-  through the middle of the letters — at 844×390 *and* at 900×700, i.e. any
-  window under 60rem that is not tall. Top-aligning holds the mark. Harmless at
-  portrait sizes, where the 45dvh cap never bites and `cover` crops nothing.
+The wordmark is whole in every one of them. The pattern is `cover`'s two
+scaling regimes: on a tall window the frame is squarer than the picture, so it
+crops the sides — the outer two people — and on a short one it crops nothing but
+a sliver of sky. `--n-photo-share` is the single dial. Lowering it to 65% would
+show 88% at 1440 instead of 77%, at the cost of a bigger gloss band and smaller
+faces.
+
+Two rules hold the design together:
+
+- **`object-position: 50% 0%`, everywhere.** The wordmark occupies the top 24.4%
+  of the source, so wherever `cover` crops vertically the top is what must
+  survive. An earlier `50% 32%` bias opened its window *inside* the letters on
+  any window under 60rem that was not tall — measured at 844×390 and 900×700.
+  `0%` cannot do that at any aspect, which is why there is one value and no
+  override.
+- **The gloss is a reflection, not a blur.** `.lp-shell--photo .lp-brand::before`
+  is the same width and height as the frame and takes the same `cover`
+  geometry, so it resolves to the identical crop at the identical scale;
+  flipped about its own centre, the edge meeting the frame is the frame's own
+  bottom edge, mirrored, and the rest is clipped away. An earlier version
+  blurred the picture at 48px across the whole shell instead, which put a smear
+  of an unrelated part of it under the frame — an orange shoulder beneath a
+  laptop. Nothing lined up because nothing was meant to.
+
+  The frame has **no** bottom fade: a reflection meets the thing it reflects at
+  a hard edge, and that edge is what makes the eye read it as one. It is a
+  background rather than a second `<img>` because it carries no information and
+  must not reach a screen reader; the file is in cache, so it costs no second
+  request.
+
+- **Both corners read the photograph, not the shell.** The form panel's one
+  large radius is this design's signature and is supposed to reveal the brand.
+  Beside a green panel the shell's own green *was* the brand; beside a
+  photograph it was a dark wedge. So the brand panel bleeds right, under the
+  form panel, by exactly that radius. Stacked, where the panels sit one above
+  the other, the form panel rides **up** over the band by the same amount, for
+  the same reason.
+
+Below 60rem wide the page stacks — a photograph band over a form panel — and the
+frame takes the image's own 3:2 instead of 75% of a column height it no longer
+has. There is no reflection there: the frame fills the band, so there is nothing
+beneath it to reflect into.
+
+### What this composition replaced, and why
+
+Both predecessors are worth knowing about, because each failed in a way the
+current one is shaped to avoid:
+
+- **A 1.4fr / 1fr split.** `cover` scaled by height and threw away 16% of the
+  image width from each side. 67% shown, two of four people whole.
+- **A full-bleed photograph with the form floating over it as a capped card.**
+  87% shown and all four people whole, but the card had to be held clear of the
+  wordmark, and on a 1273×573 viewport — an ordinary half-height browser window —
+  that left it 281px for 415px of form. It scrolled at rest and cut the sign-in
+  button in half. **A full-height form panel cannot do this**, which is the
+  reason the split came back.
 
 The **mark itself is authored SVG**, not a bitmap: the same geometry serves the
 lockup and the 16px favicon, and it takes its colour from a token.

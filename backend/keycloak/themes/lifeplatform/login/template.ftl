@@ -126,7 +126,11 @@
     </#if>
 </head>
 
-<body class="lp-body<#if bodyClass?has_content> ${bodyClass}</#if>">
+<#-- `lp-body--photo` lets the page BEHIND the shell carry the photograph too, so
+     the margin around it is the picture's own light rather than a near-black
+     green that reads as a black frame beside it. Keyed on the same flag as the
+     panel, so the two can never disagree about which realms have a photograph. -->
+<body class="lp-body<#if photoRealm> lp-body--photo</#if><#if bodyClass?has_content> ${bodyClass}</#if>">
 <div class="lp-shell<#if photoRealm> lp-shell--photo</#if>">
 
     <aside class="lp-brand">
