@@ -18,9 +18,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.dashboard.api.ClaimsDashboardView;
+import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.Money;
 import tz.co.nlolo.lifeplatform.dashboard.api.UnderwritingDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.application.ClaimsDashboard;
+import tz.co.nlolo.lifeplatform.dashboard.application.FinanceDashboard;
 import tz.co.nlolo.lifeplatform.dashboard.application.UnderwritingDashboard;
 import tz.co.nlolo.lifeplatform.reporting.ReportingTestMigrations;
 
@@ -68,6 +70,7 @@ class DashboardContractTest {
     @Autowired private MockMvc mockMvc;
     @MockBean private UnderwritingDashboard underwriting;
     @MockBean private ClaimsDashboard claims;
+    @MockBean private FinanceDashboard finance;
 
     private static RequestPostProcessor staff(String... roles) {
         SimpleGrantedAuthority[] authorities = new SimpleGrantedAuthority[roles.length + 1];
@@ -124,5 +127,26 @@ class DashboardContractTest {
     @Test
     void anUnderwriterIsRefusedTheClaimsDashboard() throws Exception {
         mockMvc.perform(get("/dashboards/claims").with(staff("UNDERWRITER"))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void aFinanceOfficerReadsTheFinanceDashboard() throws Exception {
+        when(finance.build(org.mockito.ArgumentMatchers.any())).thenReturn(new FinanceDashboardView(
+            "2026-09", new Money("50204310.00", "TZS"), "2.2", "2026-10", new Money("742580120.00", "TZS"),
+            new Money("512340210.00", "TZS"), "2026-01", "2026-10", new Money("-1200.00", "TZS"),
+            4L, 7L, 3L, null,
+            List.of(new FinanceDashboardView.MonthPoint("2026-09", new Money("50204310.00", "TZS"))), List.of(),
+            "2026-10"));
+
+        mockMvc.perform(get("/dashboards/finance").with(staff("FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.premiumsCollected.amount").value("50204310.00"))
+            .andExpect(jsonPath("$.arrearsAtLapse").isEmpty())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void anUnderwriterIsRefusedTheFinanceDashboard() throws Exception {
+        mockMvc.perform(get("/dashboards/finance").with(staff("UNDERWRITER"))).andExpect(status().isForbidden());
     }
 }

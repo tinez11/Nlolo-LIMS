@@ -78,6 +78,7 @@ public class IncomeStatementReport implements Report {
         Map<String, String> row = new LinkedHashMap<>();
         row.put("outcome", result.signum() >= 0 ? "Profit for the period" : "Loss for the period");
         row.put("amount", Figures.money(result.abs()));
+        // The finance dashboard reads this section's title, "outcome" and "amount" (dashboard.application.ReportFigures).
         sections.add(new ReportSection("Result",
             List.of(col("outcome", "Outcome", TEXT), col("amount", "Amount", MONEY)), List.of(row), Map.of()));
 
