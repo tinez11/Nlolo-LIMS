@@ -100,10 +100,12 @@ test.describe('staff reports', () => {
     await page.getByLabel('Last period').fill('2026-12');
     await page.getByRole('button', { name: 'Run report' }).click();
 
-    await expect(page.getByRole('heading', { name: 'Result' })).toBeVisible({ timeout: 30_000 });
+    // exact: two of the chart's own class names end in "result" -- "Net result from reinsurance contracts
+    // held" and "Finance and investment result" -- so an inexact name matches three headings.
+    await expect(page.getByRole('heading', { name: 'Result', exact: true })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(/Profit for the period|Loss for the period/)).toBeVisible();
     // A balance-sheet class never appears on a profit and loss.
-    await expect(page.getByRole('heading', { name: 'Assets' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Assets', exact: true })).toHaveCount(0);
   });
 
   test('a general ledger refuses to run until an account is chosen', async ({ page }) => {
