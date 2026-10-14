@@ -1,0 +1,62 @@
+openapi: 3.1.0
+info:
+  title: Dashboard API
+  version: "0.1.0-draft"
+  description: >
+    Role dashboards (2026-10-14). One read per working role, each composed server-side from the modules that own the
+    figures. A count is a search's total for one status; a money figure is a report's own number; a delta compares two
+    complete months. Any figure that could not be read is null -- never zero. Money is a decimal string, months are
+    "YYYY-MM", percentages are decimal strings.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /dashboards/underwriting:
+    get:
+      summary: The underwriter's dashboard (UNDERWRITER)
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnderwritingDashboardView' }
+        '403': { $ref: '#/components/responses/Problem' }
+components:
+  responses:
+    Problem:
+      description: An error, as RFC 7807 problem details
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  schemas:
+    # anyOf, not oneOf: with oneOf the validator refused a real amount for matching "2 out of 2" branches. anyOf says
+    # what is meant anyway -- null, or the common Money -- and keeps that schema the one definition of money.
+    Money:
+      anyOf:
+        - type: 'null'
+        - { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+    Count:
+      type: [integer, 'null']
+      minimum: 0
+    UnderwritingDashboardView:
+      type: object
+      additionalProperties: false
+      required: [openCases, casesInReview, casesAwaitingIssue, queue]
+      properties:
+        openCases: { $ref: '#/components/schemas/Count' }
+        casesInReview: { $ref: '#/components/schemas/Count' }
+        casesAwaitingIssue: { $ref: '#/components/schemas/Count' }
+        queue:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [caseId, applicantPartyId, status]
+            properties:
+              caseId: { type: string, format: uuid }
+              applicantPartyId: { type: string, format: uuid }
+              lifeAssuredPartyId: { type: [string, 'null'], format: uuid }
+              productId: { type: [string, 'null'], format: uuid }
+              sumAssured: { $ref: '#/components/schemas/Money' }
+              status: { type: string, enum: [OPEN, IN_REVIEW, DECIDED] }
