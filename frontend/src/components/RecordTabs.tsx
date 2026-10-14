@@ -1,5 +1,5 @@
 import * as TabsPrimitive from '@radix-ui/react-tabs';
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 export interface TabDef {
@@ -37,8 +37,49 @@ export function RecordTabs({
   const requested = params.get(param);
   const active = tabs.some((tab) => tab.value === requested) ? (requested as string) : first;
 
+  const root = useRef<HTMLDivElement>(null);
+  const arrived = useRef(false);
+
+  /*
+    Open a tab from halfway down a record and you used to stay exactly where you
+    were. The panel you were reading is unmounted (see the note above), so the new
+    one mounts at the TOP of a container you are scrolled past -- and the sticky
+    strip goes with it, because a sticky element can only stick inside its own box
+    and that box is the tabs, not the page. On a `DetailLayout` record the tabs sit
+    beside a record rail that is often much taller, so a short panel ends well above
+    the fold: Reinsurance on a policy left the reader at the bottom of the rail,
+    seeing neither the section they asked for nor the tabs they asked with.
+
+    AFTER the new panel has committed, not in `onValueChange`. Scrolling first means
+    scrolling against the outgoing panel's height, and the browser then clamps the
+    position when the shorter one lands -- which reproduces the bug it is meant to
+    fix. A layout effect runs after commit and before paint, so the correction is
+    never visible as a jump.
+
+    Not on arrival. A deep link and a first paint are someone ARRIVING, and moving a
+    page nobody moved is its own bug.
+
+    Instant, not smooth. `FormOutline` scrolls smoothly because it jumps WITHIN a
+    form you are reading and the continuity is the point; here the content is
+    replaced outright, so there is no spatial thread to preserve and an animation
+    only delays the thing you asked for.
+  */
+  useLayoutEffect(() => {
+    if (!arrived.current) {
+      arrived.current = true;
+      return;
+    }
+    // jsdom implements no scrolling, hence the optional call -- same as `DatePicker`.
+    root.current?.scrollIntoView?.({ block: 'start' });
+  }, [active]);
+
   return (
     <TabsPrimitive.Root
+      ref={root}
+      // Lands the strip below the sticky page bar instead of beneath it, using the same
+      // expression the strip's own `sticky top-[...]` uses, so the two cannot drift apart.
+      // A record with tabs never also has a section bar, so the page bar is the whole offset.
+      className="scroll-mt-[var(--pagebar-h,0px)]"
       value={active}
       onValueChange={(value) => {
         setParams(
