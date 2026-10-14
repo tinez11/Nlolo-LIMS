@@ -62,6 +62,7 @@ class PartyContractTest {
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/party/V6__client_reference.sql",
+            "db-migrations/party/V7__kyc_decided_by_name.sql",
             // GET /parties/{id}/documents reads document.document_record through DocumentApi, so
             // this class now needs the document schema too -- without it the endpoint 500s on a
             // missing relation, which is exactly how it first failed.
@@ -580,6 +581,51 @@ class PartyContractTest {
                     """))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    /**
+     * The decision history over real HTTP, against the spec.
+     *
+     * <p>Two things only this level proves. That the name the deciding token carries actually
+     * reaches the stored row — the controller reads it from the JWT, so a unit test calling
+     * {@code PartyApi} directly would pass while the HTTP path recorded nothing. And that an
+     * agents token is refused: the rows name internal staff, so this list is not an agent's to
+     * read even for a client they registered, which is a narrower rule than the documents
+     * endpoint beside it and therefore the one most likely to be widened by accident.
+     */
+    @Test
+    void kycDecisionsMatchOpenApiContractAndAreStaffOnly() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String partyId = registerAs(tenantId, "agent-kyc-history", "Kyc History Fixture", "+255712345826");
+
+        mockMvc.perform(post("/parties/" + partyId + "/kyc")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.subject("subject-asha")
+                        .claim("name", "Asha Admin")
+                        .claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"status":"VERIFIED","evidenceDocumentRef":"doc-ref-history"}
+                    """))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(get("/parties/" + partyId + "/kyc-decisions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.subject("staff-reader").claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].status").value("VERIFIED"))
+            .andExpect(jsonPath("$[0].evidenceDocumentRef").value("doc-ref-history"))
+            .andExpect(jsonPath("$[0].decidedBy").value("subject-asha"))
+            // The `name` claim, captured at the moment of the decision (V7).
+            .andExpect(jsonPath("$[0].decidedByName").value("Asha Admin"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        mockMvc.perform(get("/parties/" + partyId + "/kyc-decisions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject("agent-kyc-history")
+                        .claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isForbidden());
     }
 
     @Test

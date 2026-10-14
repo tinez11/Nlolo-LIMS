@@ -1,6 +1,7 @@
 import { get, post, put } from '@/lib/http';
 import type {
   AmendCorporateRequest,
+  KycDecisionView,
   KycEvidenceUploadResponse,
   KycStatus,
   Page,
@@ -131,15 +132,35 @@ export async function searchParties(params: PartySearchParams = {}): Promise<Pag
 }
 
 /**
- * `POST /parties/{partyId}/kyc-evidence` -- staff only. Uploads a file (ID scan,
- * proof of address) and returns its documentRef -- pass that to `submitKyc`
- * below to record a decision against it. Rejected with a real 400 for a
- * content type outside the platform's closed 4-value allowlist.
+ * `POST /parties/{partyId}/kyc-evidence` -- **staff OR agents**. Uploads a file (ID scan,
+ * proof of address) and returns its documentRef -- pass that to `submitKyc` below to record a
+ * decision against it. Rejected with a real 400 for a content type outside the platform's
+ * closed 4-value allowlist.
+ *
+ * Uploading is not verifying, and the two halves have different callers on purpose: an agent
+ * may file evidence for a client THEY registered (the server checks `createdBy` and 403s
+ * otherwise), while `submitKyc` below stays staff-only. This comment read "staff only" until
+ * 2026-10-14, which is what the console did rather than what the endpoint allows -- the agent
+ * half had no screen at all.
  */
 export function uploadKycEvidence(partyId: string, file: File): Promise<KycEvidenceUploadResponse> {
   const form = new FormData();
   form.append('file', file);
   return post<KycEvidenceUploadResponse>(`/parties/${encodeURIComponent(partyId)}/kyc-evidence`, form);
+}
+
+/**
+ * `GET /parties/{partyId}/kyc-decisions` -- staff only, newest first.
+ *
+ * The trail behind the status badge: what was decided, against which document, by whom and when,
+ * including decisions later overturned. The party record keeps only the decision in force, so
+ * this is the only place a client's rejection survives their later verification.
+ *
+ * Staff-only even though the documents endpoint beside it admits the registering agent: these
+ * rows name internal staff. An agent already learns the outcome from the client's `kycStatus`.
+ */
+export function listKycDecisions(partyId: string): Promise<KycDecisionView[]> {
+  return get<KycDecisionView[]>(`/parties/${encodeURIComponent(partyId)}/kyc-decisions`);
 }
 
 /** `POST /parties/{partyId}/kyc` -- staff only. Returns 200 with no body, so the

@@ -5,6 +5,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -148,6 +149,33 @@ public interface PartyApi {
     PartyDetailView getPartyDetail(UUID partyId);
 
     void submitKycEvidence(UUID partyId, KycStatus status, String evidenceDocumentRef, String verifiedBy);
+
+    /**
+     * As above, also naming the decider -- {@code verifiedByName} is their display name from the
+     * deciding token (V7), so the decision history can say who took it rather than print a
+     * subject. The HTTP decision is the caller; fixtures keep the overload above and record no
+     * name.
+     *
+     * <p>An overload, not a widened signature, for the reason {@link #registerIndividual} gives:
+     * sixteen fixture callers care only that a party ends up verified and have no opinion about
+     * who decided it. The IMPLEMENTATION carries {@code @Transactional} on both arms rather than
+     * this interface carrying a {@code default} that delegates -- a default method delegating to
+     * its own overload is a self-invocation that never reaches the proxy, which is how
+     * {@code party.PartyRegistered} once stopped reaching the audit log.
+     */
+    void submitKycEvidence(UUID partyId, KycStatus status, String evidenceDocumentRef, String verifiedBy,
+                           String verifiedByName);
+
+    /**
+     * Every KYC decision taken on this party, newest first.
+     *
+     * <p>The party row holds only the decision in force. This is the trail behind it: what was
+     * decided, against which document, by whom, and when -- including decisions later overturned,
+     * which nothing else on the platform remembers. Empty for a client nobody has decided on yet,
+     * which is an honest answer rather than an absence.
+     */
+    List<KycDecisionView> listKycDecisions(UUID partyId);
+
     void addGroupMember(UUID groupPartyId, UUID memberPartyId);
     Page<GroupMembershipView> listGroupMembers(UUID groupPartyId, Pageable pageable);
 

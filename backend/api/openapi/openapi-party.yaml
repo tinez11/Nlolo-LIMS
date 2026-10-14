@@ -300,6 +300,39 @@ paths:
                 evidenceDocumentRef: { type: string, description: "DocumentRef from the document module" }
       responses:
         '200': { description: KYC status updated }
+  /parties/{partyId}/kyc-decisions:
+    get:
+      summary: Every KYC decision taken on this client, newest first (staff only)
+      description: >
+        The trail behind the status badge: what was decided, against which document, by whom and
+        when — including decisions later overturned. A KYC status may be reversed (the platform
+        assigns a new one with no guard on the old), and the party row keeps only the decision in
+        force, so this is the only record that a client was once rejected.
+
+
+        **Staff only**, matching POST .../kyc rather than GET .../documents: the decision is
+        staff's and each row names the staff member who took it. An agent learns the outcome from
+        the client's own kycStatus.
+
+
+        Empty for a client nobody has decided on yet.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: partyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/KycDecisionView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { description: "No such party in this tenant" }
   /parties/{partyId}/groups/{groupId}/members:
     get:
       summary: List group members (paginated — never loaded as part of the group aggregate, Deliverable 3 Rev 2 Pa1)
@@ -576,6 +609,21 @@ components:
       required: [documentRef]
       properties:
         documentRef: { type: string }
+    KycDecisionView:
+      description: >-
+        One KYC decision, as taken. decidedBy is the deciding login's Keycloak subject — the
+        identity any rule compares; decidedByName is how to show that person, captured from their
+        token at the time (V7) and null for decisions taken before it, which means "not recorded"
+        and never "nobody". evidenceDocumentRef is always present (the platform refuses a decision
+        without one) and is fetchable through GET /documents/{documentRef}.
+      type: object
+      required: [status, evidenceDocumentRef, decidedAt]
+      properties:
+        status: { type: string, enum: [PENDING, VERIFIED, REJECTED] }
+        evidenceDocumentRef: { type: string }
+        decidedBy: { type: [string, "null"] }
+        decidedByName: { type: [string, "null"] }
+        decidedAt: { type: string, format: date-time }
     GroupMembershipView:
       type: object
       properties:

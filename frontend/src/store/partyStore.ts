@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   getParty,
+  listKycDecisions,
   listPartyDocuments,
   registerCorporate,
   registerIndividual,
@@ -11,6 +12,7 @@ import {
   type PartySearchParams,
 } from '@/api/party';
 import type {
+  KycDecisionView,
   KycEvidenceUploadResponse,
   KycStatus,
   Page,
@@ -62,6 +64,10 @@ interface PartyState {
   // in parallel, so a slow or failing documents read must not blank the identity
   // panel next to it.
   documents: Keyed<PartyDocumentView[]>;
+  // Its own slot for the same reason `documents` has one: the KYC tab shows the evidence and
+  // the decision trail side by side, and a failing history read must not blank the panel a
+  // reviewer is deciding in.
+  kycDecisions: Keyed<KycDecisionView[]>;
   // Keyed by partyId, separately from `detail` and from each other -- same
   // shape as policyStore's suspending/resuming/reinstating: two distinct
   // mutations against the same entity.
@@ -78,6 +84,7 @@ interface PartyState {
   loadList: (area: PartyListKey, params: PartySearchParams) => Promise<void>;
   loadParty: (partyId: string) => Promise<void>;
   loadPartyDocuments: (partyId: string) => Promise<void>;
+  loadKycDecisions: (partyId: string) => Promise<void>;
   uploadKycEvidence: (partyId: string, file: File) => Promise<void>;
   resetUploadKycEvidence: (partyId: string) => void;
   submitKyc: (partyId: string, status: KycStatus, evidenceDocumentRef: string) => Promise<void>;
@@ -92,6 +99,7 @@ export const usePartyStore = create<PartyState>((set, getState) => ({
   list: {},
   detail: {},
   documents: {},
+  kycDecisions: {},
   uploadingKycEvidence: {},
   submittingKyc: {},
   registeringIndividual: idle(),
@@ -125,6 +133,14 @@ export const usePartyStore = create<PartyState>((set, getState) => ({
       () => listPartyDocuments(partyId),
     ),
 
+  loadKycDecisions: (partyId) =>
+    track(
+      `party.kycDecisions.${partyId}`,
+      getState().kycDecisions[partyId] ?? idle<KycDecisionView[]>(),
+      (next) => set((s) => ({ kycDecisions: { ...s.kycDecisions, [partyId]: next } })),
+      () => listKycDecisions(partyId),
+    ),
+
   uploadKycEvidence: (partyId, file) =>
     track(
       `party.uploadKycEvidence.${partyId}`,
@@ -149,8 +165,10 @@ export const usePartyStore = create<PartyState>((set, getState) => ({
       // annotation is required to stop TypeScript widening the literal to boolean.
       async (): Promise<true> => {
         await submitKyc(partyId, status, evidenceDocumentRef);
-        // The POST returns no body -- refetch to see the real new kycStatus.
-        await getState().loadParty(partyId);
+        // The POST returns no body -- refetch to see the real new kycStatus, and the history
+        // the decision just became a row in. Both, because the badge and the trail are two
+        // views of the same act and a stale trail reads as a decision that did not record.
+        await Promise.all([getState().loadParty(partyId), getState().loadKycDecisions(partyId)]);
         return true;
       },
     ),
@@ -190,6 +208,8 @@ export const selectParty = (partyId: string) => (s: PartyState) =>
   s.detail[partyId] ?? idle<PartyDetailView>();
 export const selectPartyDocuments = (partyId: string) => (s: PartyState) =>
   s.documents[partyId] ?? idle<PartyDocumentView[]>();
+export const selectKycDecisions = (partyId: string) => (s: PartyState) =>
+  s.kycDecisions[partyId] ?? idle<KycDecisionView[]>();
 export const selectUploadingKycEvidence = (partyId: string) => (s: PartyState) =>
   s.uploadingKycEvidence[partyId] ?? idle<KycEvidenceUploadResponse>();
 export const selectSubmittingKyc = (partyId: string) => (s: PartyState) =>
