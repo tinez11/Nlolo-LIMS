@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.reporting.infrastructure;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import tz.co.nlolo.lifeplatform.reporting.api.GroupBy;
+import tz.co.nlolo.lifeplatform.reporting.api.MonthlyAmount;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportFilter;
 import tz.co.nlolo.lifeplatform.reporting.domain.PolicyStatus;
 
@@ -206,6 +207,20 @@ public class ReportQueries {
         return jdbc.query(sql.toString(), (rs, i) -> new CollectionRow(rs.getString("month"), rs.getString("dim"),
             rs.getString("channel"), rs.getString("currency").trim(), rs.getLong("receipts"), rs.getBigDecimal("amount")),
             args.toArray());
+    }
+
+    /**
+     * {@link #collections}' rows grouped by month and currency only. No client or product joins: there is no filter to
+     * apply, and the total must equal that report's own total for the same dates (asserted in
+     * {@code ReportQueriesIntegrationTest.monthlyCollectionsAgreeWithTheCollectionsReportsOwnTotal}).
+     */
+    public List<MonthlyAmount> monthlyCollections(UUID tenantId, LocalDate from, LocalDate to) {
+        return jdbc.query("SELECT to_char(r.collected_on, 'YYYY-MM') AS month, r.currency, SUM(r.amount) AS amount"
+                + " FROM reporting.report_collection r WHERE r.tenant_id = ? AND r.collected_on BETWEEN ? AND ?"
+                + " GROUP BY month, r.currency ORDER BY month, r.currency",
+            (rs, i) -> new MonthlyAmount(YearMonth.parse(rs.getString("month")), rs.getString("currency").trim(),
+                rs.getBigDecimal("amount")),
+            tenantId, from, to);
     }
 
     public List<TopPolicyRow> topPolicies(UUID tenantId, LocalDate from, LocalDate to, ReportFilter f, int limit) {

@@ -17,6 +17,7 @@ import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.reporting.ReportingTestEvents.Sale;
 import tz.co.nlolo.lifeplatform.reporting.api.GroupBy;
+import tz.co.nlolo.lifeplatform.reporting.api.MonthlyAmount;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportColumn;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportDefinitionView;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportFilter;
@@ -26,6 +27,7 @@ import tz.co.nlolo.lifeplatform.reporting.api.ReportResult;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportSection;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportingApi;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
@@ -237,6 +239,29 @@ class ReportQueriesIntegrationTest {
         assertThat(rows(result, 1)).extracting(r -> r.get("policyNumber")).containsExactly("K-1", "K-2");
     }
 
+    /**
+     * One number per month, for a dashboard's figure and chart. The invariant the dashboard rests on is the second
+     * assertion: the monthly points add up to the premium-collections report's own total for the same period, so a
+     * chart drawn from these can never disagree with the report a finance officer opens from it.
+     */
+    @Test
+    void monthlyCollectionsAgreeWithTheCollectionsReportsOwnTotal() {
+        events.sell(tenant, Sale.of("M-1", product, d("2026-01-02")));
+        events.collect(tenant, "M-1", "10000.00", d("2026-01-05"), true);
+        events.collect(tenant, "M-1", "4000.00", d("2026-01-26"), false);
+        events.collect(tenant, "M-1", "10000.00", d("2026-02-05"), true);
+
+        ReportResult report = run("premium-collections", ReportFilter.period(d("2026-01-01"), d("2026-02-28")));
+        String currency = rows(report, 0).get(0).get("currency");
+
+        List<MonthlyAmount> months = reportingApi.monthlyPremiumCollections(YearMonth.of(2026, 1), YearMonth.of(2026, 2));
+
+        assertThat(months).extracting(m -> m.month() + " " + m.currency() + " " + m.amount().toPlainString())
+            .containsExactly("2026-01 " + currency + " 14000.00", "2026-02 " + currency + " 10000.00");
+        assertThat(months.stream().map(MonthlyAmount::amount).reduce(BigDecimal.ZERO, BigDecimal::add).toPlainString())
+            .isEqualTo(report.sections().get(0).totals().get("amount"));
+    }
+
     // ---- clients -----------------------------------------------------------------------------------------
 
     @Test
@@ -358,8 +383,12 @@ class ReportQueriesIntegrationTest {
     @Test
     void theCatalogueListsReportsInBusinessOrder() {
         assertThat(reportingApi.catalogue()).extracting(ReportDefinitionView::key)
+            // Management first, then accounting -- ReportingApiImpl.ORDER, which the Accounting batch (2026-10-14)
+            // extended with its four statements. This assertion was left at the seven management reports by that
+            // batch and had been failing on main ever since; nothing else asserts the catalogue is complete.
             .containsExactly("policies-in-force", "products", "new-business", "lapse-rate", "persistency",
-                "premium-collections", "clients");
+                "premium-collections", "clients",
+                "trial-balance", "general-ledger", "balance-sheet", "income-statement");
     }
 
     @Test

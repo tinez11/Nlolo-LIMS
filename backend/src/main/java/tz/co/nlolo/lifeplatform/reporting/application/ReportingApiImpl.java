@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.reporting.application;
 
 import org.springframework.stereotype.Service;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.reporting.api.MonthlyAmount;
 import tz.co.nlolo.lifeplatform.reporting.api.RebuildStatusView;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportDefinitionView;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportFilter;
@@ -10,8 +11,11 @@ import tz.co.nlolo.lifeplatform.reporting.api.ReportResult;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportSection;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportingApi;
 
+import tz.co.nlolo.lifeplatform.reporting.infrastructure.ReportQueries;
+
 import java.time.Clock;
 import java.time.Instant;
+import java.time.YearMonth;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,9 +35,10 @@ public class ReportingApiImpl implements ReportingApi {
     private final LabelsFactory labelsFactory;
     private final RebuildService rebuildService;
     private final Clock clock;
+    private final ReportQueries queries;
 
     public ReportingApiImpl(List<Report> beans, LabelsFactory labelsFactory, RebuildService rebuildService,
-                            ReportingClock clock) {
+                            ReportingClock clock, ReportQueries queries) {
         beans.stream().sorted(Comparator.comparingInt(r -> {
             int i = ORDER.indexOf(r.definition().key());
             return i < 0 ? Integer.MAX_VALUE : i;
@@ -41,6 +46,12 @@ public class ReportingApiImpl implements ReportingApi {
         this.labelsFactory = labelsFactory;
         this.rebuildService = rebuildService;
         this.clock = clock.clock();
+        this.queries = queries;
+    }
+
+    @Override
+    public List<MonthlyAmount> monthlyPremiumCollections(YearMonth from, YearMonth to) {
+        return queries.monthlyCollections(TenantContext.get(), from.atDay(1), to.atEndOfMonth());
     }
 
     @Override
