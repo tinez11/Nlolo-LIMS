@@ -69,6 +69,59 @@ test.describe('staff reports', () => {
     await expect(register.getByRole('row').nth(1)).toContainText('Demo Term Life');
   });
 
+  /**
+   * Accounting reports (batch 2a). These read the general ledger live rather than the rebuilt projection, so
+   * unlike every test above they do not depend on the rebuild having run. Assertions are on structure and on
+   * the ledger's own check -- not on figures, which move with every other spec's postings.
+   */
+  test('a finance officer runs a trial balance and sees whether the ledger balances', async ({ page }) => {
+    await page.goto('/staff/reports');
+    await expect(page.getByRole('heading', { name: 'Accounting' })).toBeVisible({ timeout: 15_000 });
+
+    await page.getByRole('main').getByRole('link', { name: 'Trial balance', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Trial balance', exact: true })).toBeVisible();
+
+    // A month, not a date: the control is type="month" because the ledger has no posting date.
+    await page.getByLabel('Period', { exact: true }).fill('2026-10');
+    await page.getByRole('button', { name: 'Run report' }).click();
+
+    await expect(page.getByRole('heading', { name: /^Balances through \d{4}-\d{2}$/ })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: 'Ledger check' })).toBeVisible();
+    // The ledger's own answer, either way -- the report states it rather than leaving two columns to be compared.
+    await expect(page.getByText(/the ledger balances|do NOT balance credits/)).toBeVisible();
+  });
+
+  test('an income statement runs across a span of periods and names the result', async ({ page }) => {
+    await page.goto('/staff/reports');
+    await page.getByRole('main').getByRole('link', { name: 'Income statement', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Income statement', exact: true })).toBeVisible();
+
+    await page.getByLabel('First period').fill('2026-01');
+    await page.getByLabel('Last period').fill('2026-12');
+    await page.getByRole('button', { name: 'Run report' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Result' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/Profit for the period|Loss for the period/)).toBeVisible();
+    // A balance-sheet class never appears on a profit and loss.
+    await expect(page.getByRole('heading', { name: 'Assets' })).toHaveCount(0);
+  });
+
+  test('a general ledger refuses to run until an account is chosen', async ({ page }) => {
+    await page.goto('/staff/reports');
+    await page.getByRole('main').getByRole('link', { name: 'General ledger', exact: true }).click();
+    await page.getByRole('button', { name: 'Run report' }).click();
+
+    // The server's refusal, in its own words: the console does not pre-empt it with a different sentence.
+    await expect(page.getByRole('alert')).toContainText('accountCode', { timeout: 15_000 });
+
+    // The chart is offered rather than typed, and only accounts that take postings are in it.
+    await page.getByLabel('Account', { exact: true }).selectOption({ index: 1 });
+    await page.getByRole('button', { name: 'Run report' }).click();
+    await expect(page.getByRole('heading', { name: /^Account \d{4}, \d{4}-\d{2} to \d{4}-\d{2}$/ }))
+      .toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('cell', { name: 'Opening balance' })).toBeVisible();
+  });
+
   test('runs a report from the catalogue and downloads it', async ({ page }) => {
     await page.goto('/staff/reports');
     await expect(page.getByRole('heading', { name: 'Reports', exact: true })).toBeVisible();
