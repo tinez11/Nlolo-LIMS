@@ -72,12 +72,14 @@
 
       show.hidden = !wasRevealed;
       hide.hidden = wasRevealed;
-      button.setAttribute('aria-pressed', wasRevealed ? 'false' : 'true');
 
-      var label = button.getAttribute(wasRevealed ? 'data-label-show' : 'data-label-hide');
-      if (label) {
-        button.setAttribute('aria-label', label);
-      }
+      // The ONE carrier of state. The accessible name stays "Show password" and
+      // `aria-pressed` says whether it is on, which is the pattern a toggle
+      // button is for. Swapping the name to "Hide password" as well encoded the
+      // same fact twice and in opposite senses -- a screen reader then said
+      // "Hide password, pressed", which reads as the password being hidden at
+      // the exact moment it is visible.
+      button.setAttribute('aria-pressed', wasRevealed ? 'false' : 'true');
     });
   }
 
