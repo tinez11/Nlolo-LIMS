@@ -3,6 +3,7 @@ import { useAuth } from 'react-oidc-context';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { ManualJournalView } from '@/api/types';
 import { canApproveJournals, readIdentity } from '@/auth/claims';
+import { ConfirmAct } from '@/components/ConfirmAct';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
@@ -202,7 +203,56 @@ function Actions({ journal: j, isPreparer, mayDecide }: { journal: ManualJournal
   const reverse = useManualJournalsStore((s) => s.reverse);
   const acting = useManualJournalsStore((s) => s.acting[`journal.${j.id}`]);
   const [reason, setReason] = useState('');
+  const [confirming, setConfirming] = useState(false);
   const busy = acting?.status === 'loading';
+
+  /*
+    Approving IS posting -- `act(id, 'approval')` writes the journal entry to the
+    general ledger -- and it was one unguarded click, while the Reject path
+    beside it already demanded a typed reason. Everything else in this console
+    that moves money asks twice (ConfirmAct is on 20 surfaces), so the ledger was
+    the one act with the largest blast radius and the smallest guard.
+
+    Maker-checker catches the WRONG person, not the right person's slip: the
+    server only refuses the preparer, and this approver has already passed that
+    check by the time the button renders.
+
+    The consequence restates the server's own figures (`totalDebit`,
+    `totalCredit`, `currency`, `period`, the line count) -- nothing is recomputed
+    here, because a confirmation that quotes a number the browser worked out is
+    confirming the browser rather than the ledger.
+  */
+  if (j.status === 'SUBMITTED' && mayDecide && confirming) {
+    return (
+      <section className="space-y-3 rounded-lg border border-border bg-surface p-4" aria-label="Actions">
+        {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
+        <ConfirmAct
+          heading="Post this journal to the ledger?"
+          consequence={
+            <>
+              Post {j.lines.length} line{j.lines.length === 1 ? '' : 's'} — Dr{' '}
+              <strong>{j.currency} {money(j.totalDebit)}</strong> · Cr{' '}
+              <strong>{j.currency} {money(j.totalCredit)}</strong> — to period{' '}
+              <strong>{j.period}</strong>.
+              {autoReversalLabel(j) ? ` ${autoReversalLabel(j)}.` : ''}
+            </>
+          }
+          /*
+            True, and checked against this page's own Reverse action: an APPROVED
+            journal with no `reversesJournalId` can be reversed, but that creates
+            a fresh DRAFT which must itself be submitted and approved by somebody
+            else. So there is a way back, it is not an undo, and both entries
+            stay on the record -- which is what the approver needs to know.
+          */
+          reversal="Nothing unposts it. A mistake is corrected by a reversing journal, prepared from this page and approved by someone else, and both stay on the record."
+          confirmLabel="Post to the ledger"
+          busy={busy}
+          onConfirm={() => void act(j.id, 'approval')}
+          onCancel={() => setConfirming(false)}
+        />
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-3 rounded-lg border border-border bg-surface p-4" aria-label="Actions">
@@ -225,7 +275,7 @@ function Actions({ journal: j, isPreparer, mayDecide }: { journal: ManualJournal
         )}
         {j.status === 'SUBMITTED' && mayDecide && (
           <>
-            <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => void act(j.id, 'approval')}>
+            <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => setConfirming(true)}>
               Approve and post
             </Button>
             <form className="flex items-end gap-2" aria-label="Reject journal"
