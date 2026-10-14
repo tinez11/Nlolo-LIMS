@@ -46,6 +46,9 @@ paths:
         - { name: branchCode, in: query, required: false, schema: { type: string } }
         - { name: clientType, in: query, required: false, schema: { $ref: '#/components/schemas/ClientType' } }
         - { name: groupBy, in: query, required: false, schema: { $ref: '#/components/schemas/GroupBy' } }
+        - { name: monthFrom, in: query, required: false, schema: { type: string, pattern: '^\d{4}-\d{2}$' } }
+        - { name: monthTo, in: query, required: false, schema: { type: string, pattern: '^\d{4}-\d{2}$' } }
+        - { name: accountCode, in: query, required: false, schema: { type: string, pattern: '^[1-9]\d{3}$' } }
       responses:
         '200':
           description: The report
@@ -78,6 +81,9 @@ paths:
         - { name: branchCode, in: query, required: false, schema: { type: string } }
         - { name: clientType, in: query, required: false, schema: { $ref: '#/components/schemas/ClientType' } }
         - { name: groupBy, in: query, required: false, schema: { $ref: '#/components/schemas/GroupBy' } }
+        - { name: monthFrom, in: query, required: false, schema: { type: string, pattern: '^\d{4}-\d{2}$' } }
+        - { name: monthTo, in: query, required: false, schema: { type: string, pattern: '^\d{4}-\d{2}$' } }
+        - { name: accountCode, in: query, required: false, schema: { type: string, pattern: '^[1-9]\d{3}$' } }
       responses:
         '200':
           description: The file, as an attachment
@@ -135,7 +141,7 @@ components:
       enum: [INDIVIDUAL, CORPORATE, GROUP]
     DateFilterKind:
       type: string
-      enum: [AS_OF, PERIOD, COHORT, AS_OF_AND_PERIOD]
+      enum: [AS_OF, PERIOD, COHORT, AS_OF_AND_PERIOD, MONTH, MONTH_RANGE]
     ColumnType:
       type: string
       enum: [TEXT, COUNT, MONEY, PERCENT, DATE]
@@ -147,7 +153,7 @@ components:
         key: { type: string }
         title: { type: string }
         description: { type: string }
-        category: { type: string, enum: [MANAGEMENT] }
+        category: { type: string, enum: [MANAGEMENT, ACCOUNTING] }
         dateFilterKind: { $ref: '#/components/schemas/DateFilterKind' }
         groupByOptions: { type: array, items: { $ref: '#/components/schemas/GroupBy' } }
         comparable: { type: boolean, description: "Accepts compareAsOf" }
