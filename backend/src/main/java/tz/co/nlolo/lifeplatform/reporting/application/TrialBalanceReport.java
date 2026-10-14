@@ -59,7 +59,10 @@ public class TrialBalanceReport implements Report {
             col("accountType", "Type", TEXT), col("currency", "Currency", TEXT),
             col("debit", "Debit", MONEY), col("credit", "Credit", MONEY), col("balance", "Balance", MONEY));
 
-        List<Map<String, String>> rows = ledger.accounts().stream().filter(LedgerAccounts::posted).map(a -> {
+        // The accounts that were posted TO. A summary account carries no postings of its own, so it would be a
+        // row of two zeroes beside a balance it inherited -- and the roll-up belongs to the statements, not here.
+        List<Map<String, String>> rows = ledger.accounts().stream()
+            .filter(a -> a.postingAllowed() && LedgerAccounts.posted(a)).map(a -> {
             Map<String, String> row = new LinkedHashMap<>();
             row.put("accountCode", a.accountCode());
             row.put("name", a.name());

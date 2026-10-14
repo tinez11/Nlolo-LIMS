@@ -67,10 +67,10 @@ public class BalanceSheetReport implements Report {
         Map<String, BigDecimal> classTotals = new LinkedHashMap<>();
 
         for (String classRoot : LedgerAccounts.BALANCE_SHEET_CLASSES) {
-            List<AccountBalanceView> accounts = LedgerAccounts.inClass(ledger.accounts(), classRoot)
-                .stream().filter(LedgerAccounts::posted).toList();
-            BigDecimal total = accounts.stream().map(AccountBalanceView::balance)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            // The accounts that take postings, and the class root's rolled total. Listing the summary accounts
+            // beside their own leaves and adding the column up reports every posting once per ancestor.
+            List<AccountBalanceView> accounts = LedgerAccounts.postedLeavesIn(ledger.accounts(), classRoot);
+            BigDecimal total = LedgerAccounts.classTotal(ledger.accounts(), classRoot);
             classTotals.put(classRoot, total);
             sections.add(section(LedgerAccounts.CLASS_NAMES.get(classRoot), accounts, total, comparison));
         }

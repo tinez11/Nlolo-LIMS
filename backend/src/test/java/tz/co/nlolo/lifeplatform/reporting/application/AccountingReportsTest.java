@@ -48,6 +48,17 @@ class AccountingReportsTest {
             new BigDecimal(balance));
     }
 
+    /**
+     * A summary account: no postings of its own, a rolled balance from its descendants, and the ledger refuses
+     * direct postings to it. The real chart is three deep -- 1000 Assets, 1100 Cash and bank, 1140 the wallet
+     * that actually takes the posting -- so every class contains two of these above every leaf.
+     */
+    private static AccountBalanceView summary(String code, String name, AccountType type, PostingDirection normal,
+                                              String rolled) {
+        return new AccountBalanceView(code, name, type, normal, null, (short) 1, false, AccountStatus.ACTIVE, "TZS",
+            BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal(rolled), BigDecimal.ZERO, new BigDecimal(rolled));
+    }
+
     private static TrialBalanceView ledger(String label, List<AccountBalanceView> accounts,
                                            String totalDebit, String totalCredit) {
         BigDecimal dr = new BigDecimal(totalDebit);
@@ -213,6 +224,71 @@ class AccountingReportsTest {
 
         assertTrue(sections.get(3).rows().get(0).get("check").contains("do NOT balance"));
         assertEquals("200.00", sections.get(3).rows().get(0).get("difference"));
+    }
+
+    /**
+     * THE TRAP THE LEDGER'S OWN JAVADOC WARNS ABOUT, on this side of the boundary. {@code balance} is the
+     * ROLLED figure, so a class holding 1000 (root), 1100 (heading) and 1140 (the leaf that was posted to)
+     * carries the same 500 three times over. Listing the summary accounts and adding their balances reports
+     * 1,500 in assets against one posting of 500 -- a sound ledger rendered as a wild overstatement.
+     *
+     * <p>Only accounts that take postings are rows, and the class total is the ROOT's rolled balance: the
+     * ledger's own aggregation, which is what the hierarchy exists to provide.
+     */
+    @Test
+    void balanceSheetDoesNotCountASummaryAccountBesideTheLeafBeneathIt() {
+        Mockito.when(finaccounting.trialBalanceThrough("2026-09")).thenReturn(ledger("through 2026-09", List.of(
+            summary("1000", "Assets", AccountType.ASSET, PostingDirection.DR, "500.00"),
+            summary("1100", "Cash and bank", AccountType.ASSET, PostingDirection.DR, "500.00"),
+            account("1140", "Mobile money wallets", AccountType.ASSET, PostingDirection.DR, "500.00", "0.00", "500.00"),
+            summary("2000", "Liabilities", AccountType.LIABILITY, PostingDirection.CR, "300.00"),
+            account("2100", "Payables", AccountType.LIABILITY, PostingDirection.CR, "0.00", "300.00", "300.00"),
+            summary("3000", "Equity", AccountType.EQUITY, PostingDirection.CR, "200.00"),
+            account("3100", "Retained earnings", AccountType.EQUITY, PostingDirection.CR, "0.00", "200.00", "200.00")),
+            "500.00", "500.00"));
+
+        List<ReportSection> sections = new BalanceSheetReport(finaccounting)
+            .run(tenantId, ReportFilter.month(YearMonth.of(2026, 9)), labels);
+
+        assertEquals("500.00", sections.get(0).totals().get("balance"), "500, not 1500");
+        assertEquals(1, sections.get(0).rows().size(), "the leaf alone, not the two summaries above it");
+        assertEquals("1140", sections.get(0).rows().get(0).get("accountCode"));
+        assertTrue(sections.get(3).rows().get(0).get("check").contains("the sheet balances"));
+    }
+
+    @Test
+    void incomeStatementDoesNotCountASummaryAccountBesideTheLeafBeneathIt() {
+        Mockito.when(finaccounting.trialBalanceBetween("2026-01", "2026-09")).thenReturn(
+            ledger("2026-01..2026-09", List.of(
+                summary("4000", "Insurance revenue", AccountType.INCOME, PostingDirection.CR, "900.00"),
+                summary("4100", "Premium revenue", AccountType.INCOME, PostingDirection.CR, "900.00"),
+                account("4110", "Earned premium", AccountType.INCOME, PostingDirection.CR, "0.00", "900.00", "900.00"),
+                summary("5000", "Service expenses", AccountType.EXPENSE, PostingDirection.DR, "500.00"),
+                account("5100", "Claims incurred", AccountType.EXPENSE, PostingDirection.DR, "500.00", "0.00", "500.00")),
+                "500.00", "900.00"));
+
+        List<ReportSection> sections = new IncomeStatementReport(finaccounting).run(tenantId,
+            ReportFilter.months(YearMonth.of(2026, 1), YearMonth.of(2026, 9)), labels);
+
+        assertEquals("900.00", sections.get(0).totals().get("amount"), "900, not 1800");
+        assertEquals(1, sections.get(0).rows().size());
+        Map<String, String> result = sections.get(sections.size() - 1).rows().get(0);
+        assertEquals("400.00", result.get("amount"), "900 income less 500 expenses, each counted once");
+    }
+
+    /** A trial balance lists the accounts that were posted TO; a summary account carries none of its own. */
+    @Test
+    void trialBalanceListsPostingAccountsNotSummaries() {
+        Mockito.when(finaccounting.trialBalanceThrough("2026-09")).thenReturn(ledger("through 2026-09", List.of(
+            summary("1000", "Assets", AccountType.ASSET, PostingDirection.DR, "500.00"),
+            account("1140", "Mobile money wallets", AccountType.ASSET, PostingDirection.DR, "500.00", "0.00", "500.00")),
+            "500.00", "500.00"));
+
+        List<ReportSection> sections = new TrialBalanceReport(finaccounting)
+            .run(tenantId, ReportFilter.month(YearMonth.of(2026, 9)), labels);
+
+        assertEquals(1, sections.get(0).rows().size());
+        assertEquals("1140", sections.get(0).rows().get(0).get("accountCode"));
     }
 
     /** The comparison column reads the month the compare date falls in, and shows the movement between them. */

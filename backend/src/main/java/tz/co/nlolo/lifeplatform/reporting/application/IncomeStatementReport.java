@@ -62,10 +62,10 @@ public class IncomeStatementReport implements Report {
         BigDecimal expense = BigDecimal.ZERO;
 
         for (String classRoot : LedgerAccounts.INCOME_STATEMENT_CLASSES) {
-            List<AccountBalanceView> accounts = LedgerAccounts.inClass(ledger.accounts(), classRoot)
-                .stream().filter(LedgerAccounts::posted).toList();
-            BigDecimal total = accounts.stream().map(AccountBalanceView::balance)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            // Leaves as rows, the class root's rolled balance as the total: a summary account's balance already
+            // contains everything beneath it, so counting both reports each posting once per ancestor.
+            List<AccountBalanceView> accounts = LedgerAccounts.postedLeavesIn(ledger.accounts(), classRoot);
+            BigDecimal total = LedgerAccounts.classTotal(ledger.accounts(), classRoot);
             if (LedgerAccounts.isIncomeClass(classRoot)) {
                 income = income.add(total);
             } else {

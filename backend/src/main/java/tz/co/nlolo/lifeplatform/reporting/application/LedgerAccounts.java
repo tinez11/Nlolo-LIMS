@@ -48,6 +48,41 @@ final class LedgerAccounts {
     }
 
     /**
+     * The accounts in this class that were actually posted to.
+     *
+     * <p>{@code postingAllowed} is the load-bearing half. A class is a hierarchy -- 1000 Assets, 1100 Cash and
+     * bank, 1140 the wallet that takes the posting -- and a summary account's {@code balance} already contains
+     * everything beneath it. Listing summaries beside their own leaves, and adding the column up, reports one
+     * posting of 500 as 1,500 in assets: a sound ledger rendered as a wild overstatement. So a statement lists
+     * the accounts that take postings, and leaves the aggregating to {@link #classTotal}.
+     */
+    static List<AccountBalanceView> postedLeavesIn(List<AccountBalanceView> accounts, String classRoot) {
+        return inClass(accounts, classRoot).stream()
+            .filter(AccountBalanceView::postingAllowed)
+            .filter(LedgerAccounts::posted)
+            .toList();
+    }
+
+    /**
+     * What a whole class comes to: the class root's ROLLED balance, which is the ledger's own aggregation and
+     * the reason the chart is a hierarchy at all. It nets raw debits and credits in the root's normal
+     * direction, so a contra account beneath it is handled correctly -- which summing the leaves' own signed
+     * balances would not guarantee.
+     *
+     * <p>Falls back to the leaves only when the chart has no root for the class, which a seeded chart always
+     * does; the fallback exists so a hand-authored chart degrades to a defensible number rather than zero.
+     */
+    static BigDecimal classTotal(List<AccountBalanceView> accounts, String classRoot) {
+        return accounts.stream()
+            .filter(a -> a.accountCode().equals(classRoot))
+            .map(AccountBalanceView::balance)
+            .findFirst()
+            .orElseGet(() -> postedLeavesIn(accounts, classRoot).stream()
+                .map(AccountBalanceView::balance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
+    }
+
+    /**
      * Whether anything reached this account. An account the ledger never touched is not a zero worth printing:
      * a 246-account chart would bury the dozen that moved under two hundred that did not.
      */
