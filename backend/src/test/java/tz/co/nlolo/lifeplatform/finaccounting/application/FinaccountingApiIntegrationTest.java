@@ -5,6 +5,7 @@ import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.finaccounting.api.ChartOfAccountView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi;
+import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingValidationException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountBalanceView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.GlPostingView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.TrialBalanceView;
@@ -626,6 +627,104 @@ class FinaccountingApiIntegrationTest {
         assertThat(september.totalDebit()).isEqualByComparingTo("0");
         assertThat(september.balanced()).as("nothing posted is still in balance").isTrue();
         assertThat(accountIn(september, "1140").ownDebit()).isEqualByComparingTo("0");
+    }
+
+    // ---- Cumulative and range balances (accounting reports, batch 2a) -------------------------
+
+    /** One balanced entry of {@code amount} in {@code period}: DR 1140 CASH, CR 2122 PREMIUM_RECEIVABLE. */
+    private static JournalEntry entryIn(UUID tenantId, String period, String amount) {
+        JournalEntry entry = new JournalEntry(tenantId, "test.TrialBalanceRange",
+            UUID.randomUUID().toString(), period, "POL-RANGE", "system:test");
+        entry.addLeg("1140", PostingDirection.DR, new BigDecimal(amount), "TZS");
+        entry.addLeg("2122", PostingDirection.CR, new BigDecimal(amount), "TZS");
+        return entry;
+    }
+
+    private UUID tenantWithThreeMonthsPosted() {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+        finaccountingApiImpl.postEntry(entryIn(tenantId, "2026-07", "100.00"));
+        finaccountingApiImpl.postEntry(entryIn(tenantId, "2026-08", "30.00"));
+        finaccountingApiImpl.postEntry(entryIn(tenantId, "2026-09", "7.00"));
+        TenantContext.set(tenantId);
+        return tenantId;
+    }
+
+    /**
+     * A balance sheet states a position, not a month's movement. {@code trialBalance} could answer one period
+     * or all time and nothing in between, so "where did the books stand at the end of August" was unanswerable.
+     */
+    @Test
+    void aCumulativeBalanceCountsEveryPeriodUpToAndIncludingTheOneAsked() {
+        tenantWithThreeMonthsPosted();
+
+        TrialBalanceView throughAugust = finaccountingApi.trialBalanceThrough("2026-08");
+
+        assertThat(throughAugust.period()).isEqualTo("through 2026-08");
+        assertThat(accountIn(throughAugust, "1140").ownDebit())
+            .as("July's 100 plus August's 30, and not September's 7")
+            .isEqualByComparingTo("130.00");
+        assertThat(throughAugust.balanced()).isTrue();
+    }
+
+    /** An income statement reports a span, both ends inclusive. */
+    @Test
+    void aRangeBalanceExcludesThePeriodsOutsideBothEnds() {
+        tenantWithThreeMonthsPosted();
+
+        TrialBalanceView range = finaccountingApi.trialBalanceBetween("2026-08", "2026-09");
+
+        assertThat(range.period()).isEqualTo("2026-08..2026-09");
+        assertThat(accountIn(range, "1140").ownDebit())
+            .as("August's 30 plus September's 7, and not July's 100")
+            .isEqualByComparingTo("37.00");
+    }
+
+    /** A range running backwards is a caller's mistake, refused in words rather than returning an empty ledger. */
+    @Test
+    void aRangeEndingBeforeItStartsIsRefused() {
+        tenantWithThreeMonthsPosted();
+
+        assertThatThrownBy(() -> finaccountingApi.trialBalanceBetween("2026-09", "2026-08"))
+            .isInstanceOf(FinaccountingValidationException.class)
+            .hasMessageContaining("2026-09")
+            .hasMessageContaining("2026-08");
+    }
+
+    /**
+     * The same trap {@code trialBalanceTotalsSumOwnPostingsSoRollUpDoesNotDoubleCount} pins, on the new
+     * entry points: the totals must sum OWN figures. 1140 rolls up into 1100 and 1000, so a total built from
+     * rolled balances would report three times the posting and a sound ledger would read as wildly out.
+     */
+    @Test
+    void cumulativeAndRangeTotalsSumOwnPostingsSoRollUpDoesNotDoubleCount() {
+        tenantWithThreeMonthsPosted();
+
+        TrialBalanceView cumulative = finaccountingApi.trialBalanceThrough("2026-09");
+        assertThat(cumulative.totalDebit()).isEqualByComparingTo("137.00");
+        assertThat(cumulative.totalCredit()).isEqualByComparingTo("137.00");
+        assertThat(cumulative.balanced()).isTrue();
+
+        TrialBalanceView range = finaccountingApi.trialBalanceBetween("2026-01", "2026-12");
+        assertThat(range.totalDebit()).isEqualByComparingTo("137.00");
+        assertThat(range.totalCredit()).isEqualByComparingTo("137.00");
+        assertThat(range.balanced()).isTrue();
+    }
+
+    /** Rolling up still works on the new entry points: a parent reports its descendants' movement. */
+    @Test
+    void aCumulativeBalanceStillRollsUpTheHierarchy() {
+        tenantWithThreeMonthsPosted();
+
+        TrialBalanceView throughSeptember = finaccountingApi.trialBalanceThrough("2026-09");
+
+        assertThat(accountIn(throughSeptember, "1140").ownDebit()).isEqualByComparingTo("137.00");
+        assertThat(accountIn(throughSeptember, "1000").debit())
+            .as("the class root reports what its descendants hold")
+            .isEqualByComparingTo("137.00");
+        assertThat(accountIn(throughSeptember, "1000").ownDebit())
+            .as("and nothing of its own")
+            .isEqualByComparingTo("0");
     }
 
     // ---- The account filter that lets a balance be opened up ---------------------------------

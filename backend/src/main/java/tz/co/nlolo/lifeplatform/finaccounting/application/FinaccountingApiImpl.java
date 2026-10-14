@@ -256,6 +256,36 @@ public class FinaccountingApiImpl implements FinaccountingApi {
     @Override
     public TrialBalanceView trialBalance(String period) {
         UUID tenantId = TenantContext.get();
+        return assemble(tenantId, period, glPostingRepository.sumByAccountAndDirection(tenantId, period));
+    }
+
+    @Override
+    public TrialBalanceView trialBalanceThrough(String period) {
+        UUID tenantId = TenantContext.get();
+        return assemble(tenantId, "through " + period,
+            glPostingRepository.sumByAccountAndDirectionThrough(tenantId, period));
+    }
+
+    @Override
+    public TrialBalanceView trialBalanceBetween(String fromPeriod, String toPeriod) {
+        if (fromPeriod.compareTo(toPeriod) > 0) {
+            throw new FinaccountingValidationException(
+                "The first period must not be after the last; got " + fromPeriod + " to " + toPeriod);
+        }
+        UUID tenantId = TenantContext.get();
+        return assemble(tenantId, fromPeriod + ".." + toPeriod,
+            glPostingRepository.sumByAccountAndDirectionBetween(tenantId, fromPeriod, toPeriod));
+    }
+
+    /**
+     * The chart, its rows rolled up through the hierarchy, and the totals -- shared by every balance this
+     * module states, so the roll-up and the own-figure totalling exist once.
+     *
+     * <p>{@code label} is echoed as {@link TrialBalanceView#period()}. It is what the balance COVERS, which is
+     * not always one period: "through 2026-09" and "2026-04..2026-09" are both valid. A balance with no period
+     * beside it is a number nobody can reconcile against anything.
+     */
+    private TrialBalanceView assemble(UUID tenantId, String label, List<Object[]> sums) {
         List<ChartOfAccount> accounts = chartOfAccountRepository.findByTenantIdOrderByAccountCodeAsc(tenantId);
 
         // ONE aggregation for the whole chart, then rolled up in memory. The chart is bounded
@@ -263,7 +293,7 @@ public class FinaccountingApiImpl implements FinaccountingApi {
         // and doing the roll-up here rather than in a recursive SQL CTE keeps the hierarchy rule
         // in one readable place that is testable without a database.
         Map<String, BigDecimal[]> own = new HashMap<>();
-        for (Object[] row : glPostingRepository.sumByAccountAndDirection(tenantId, period)) {
+        for (Object[] row : sums) {
             String accountCode = (String) row[0];
             PostingDirection direction = (PostingDirection) row[1];
             BigDecimal amount = (BigDecimal) row[2];
@@ -311,7 +341,7 @@ public class FinaccountingApiImpl implements FinaccountingApi {
             totalCredit = totalCredit.add(ownTotals[1]);
         }
 
-        return new TrialBalanceView(period, views, totalDebit, totalCredit,
+        return new TrialBalanceView(label, views, totalDebit, totalCredit,
             totalDebit.compareTo(totalCredit) == 0);
     }
 
