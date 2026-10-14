@@ -3,6 +3,7 @@ import { useAuth } from 'react-oidc-context';
 import { Link, useParams } from 'react-router-dom';
 import type { YearEndCloseView } from '@/api/types';
 import { canApproveJournals, readIdentity } from '@/auth/claims';
+import { ConfirmAct } from '@/components/ConfirmAct';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
@@ -68,7 +69,7 @@ function Close({ close: c }: { close: YearEndCloseView }) {
           </p>
         )}
         <YearEndFigures close={c} />
-        {canDecideClose(c, identity.subject, approver) && c.closeId && <Decision id={c.closeId} />}
+        {canDecideClose(c, identity.subject, approver) && c.closeId && <Decision close={c} id={c.closeId} />}
         {c.status === 'PREPARED' && identity.subject === c.preparedBy && (
           <p className="text-sm text-muted-foreground">A finance approver other than you will approve or reject it.</p>
         )}
@@ -77,16 +78,56 @@ function Close({ close: c }: { close: YearEndCloseView }) {
   );
 }
 
-function Decision({ id }: { id: string }) {
+function Decision({ close: c, id }: { close: YearEndCloseView; id: string }) {
   const approve = useYearEndStore((s) => s.approve);
   const reject = useYearEndStore((s) => s.reject);
   const acting = useYearEndStore((s) => s.acting[`decide.${id}`]);
   const [reason, setReason] = useState('');
+  const [confirming, setConfirming] = useState(false);
   const busy = acting?.status === 'loading';
+
+  /*
+    Approving a close posts the closing journal and locks the year: the largest
+    single posting this console makes, and it was one unguarded click while the
+    Reject path beside it required a typed reason. See the matching note in
+    ManualJournalDetailPage -- same act, same omission.
+
+    Every figure quoted below is the server's (`lines`, `profit`, `dividends`,
+    `year`); `resultLabel` only chooses the word for the sign.
+  */
+  if (confirming) {
+    return (
+      <section className="space-y-3 rounded-lg border border-border bg-surface p-4" aria-label="Decision">
+        {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
+        <ConfirmAct
+          heading={`Post the close of ${c.year}?`}
+          consequence={
+            <>
+              Post the closing journal&rsquo;s {c.lines.length} line{c.lines.length === 1 ? '' : 's'},
+              carrying <strong>{resultLabel(c.profit).toLowerCase()}</strong> and dividends{' '}
+              <strong>{money(c.dividends)}</strong>, and lock <strong>{c.year}</strong>.
+            </>
+          }
+          /*
+            `replacesId` on this same view is the proof: a close that turns out
+            wrong is answered by preparing another one that replaces it -- which
+            is also what the stale-close warning above tells the preparer to do.
+            So there is a route back, it is not an undo, and both closes remain.
+          */
+          reversal="Nothing unposts it. A close that turns out wrong is answered by preparing another one that replaces it, and both stay on the record."
+          confirmLabel="Post the close"
+          busy={busy}
+          onConfirm={() => void approve(id)}
+          onCancel={() => setConfirming(false)}
+        />
+      </section>
+    );
+  }
+
   return (
     <section className="space-y-3 rounded-lg border border-border bg-surface p-4" aria-label="Decision">
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
-      <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => void approve(id)}>
+      <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => setConfirming(true)}>
         Approve and post
       </Button>
       <form className="flex items-end gap-2" aria-label="Reject close"
