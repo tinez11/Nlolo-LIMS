@@ -97,17 +97,33 @@ Two rules hold the design together:
   any window under 60rem that was not tall — measured at 844×390 and 900×700.
   `0%` cannot do that at any aspect, which is why there is one value and no
   override.
-- **The gloss is the same file, not a colour.** `.lp-shell--photo .lp-brand`
-  draws `brand.jpg` again on a pseudo-element, scaled 1.25× and blurred 48px, so
-  the quarter under the frame is the picture's own light. It is a background
-  rather than a second `<img>` because it carries no information and must not
-  reach a screen reader; the file is already in cache, so it costs no second
-  request. The frame masks out over its last 10% so the join between sharp and
-  blurred is not a line.
+- **The gloss is a reflection, not a blur.** `.lp-shell--photo .lp-brand::before`
+  is the same width and height as the frame and takes the same `cover`
+  geometry, so it resolves to the identical crop at the identical scale;
+  flipped about its own centre, the edge meeting the frame is the frame's own
+  bottom edge, mirrored, and the rest is clipped away. An earlier version
+  blurred the picture at 48px across the whole shell instead, which put a smear
+  of an unrelated part of it under the frame — an orange shoulder beneath a
+  laptop. Nothing lined up because nothing was meant to.
+
+  The frame has **no** bottom fade: a reflection meets the thing it reflects at
+  a hard edge, and that edge is what makes the eye read it as one. It is a
+  background rather than a second `<img>` because it carries no information and
+  must not reach a screen reader; the file is in cache, so it costs no second
+  request.
+
+- **Both corners read the photograph, not the shell.** The form panel's one
+  large radius is this design's signature and is supposed to reveal the brand.
+  Beside a green panel the shell's own green *was* the brand; beside a
+  photograph it was a dark wedge. So the brand panel bleeds right, under the
+  form panel, by exactly that radius. Stacked, where the panels sit one above
+  the other, the form panel rides **up** over the band by the same amount, for
+  the same reason.
 
 Below 60rem wide the page stacks — a photograph band over a form panel — and the
 frame takes the image's own 3:2 instead of 75% of a column height it no longer
-has.
+has. There is no reflection there: the frame fills the band, so there is nothing
+beneath it to reflect into.
 
 ### What this composition replaced, and why
 

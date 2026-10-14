@@ -368,13 +368,6 @@ ul {
   radius this design is built around, which a floating card could not carry.
 */
 .lp-shell--photo {
-  /*
-    Load-bearing: the gloss below is `position: absolute; inset: 0`, and without
-    a positioned ancestor it resolves against the initial containing block --
-    the viewport -- where `scale(1.25)` on a page-sized layer overflows the
-    document and the whole page gains a scrollbar.
-  */
-  position: relative;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
@@ -386,56 +379,87 @@ ul {
 }
 
 /*
-  The gloss: the photograph again, blown up past the panel edges and blurred
-  past recognition, so what fills the quarter beneath the frame is the picture's
-  own colour and light rather than an invented one. Scaled up because a blur
-  samples beyond its box and would otherwise show a pale rim where it runs out.
+  THE GLOSS, as a reflection rather than a blur.
 
-  Drawn as a background on a pseudo-element, not a second <img>: it carries no
-  information -- the real photograph above it is the content, and already has
-  the alt text -- so it must not reach a screen reader. The file is in cache by
-  the time this paints; it is the same URL as the <img>.
+  The first version filled this quarter with the photograph scaled up and
+  blurred, which put a smear of an unrelated part of the picture under the
+  frame: an orange shoulder beneath a laptop, a dark band beneath a face.
+  Nothing lined up, because nothing was meant to.
+
+  A reflection lines up by construction. This box is the SAME WIDTH and the
+  SAME HEIGHT as the frame and takes the same `cover` geometry, so it resolves
+  to the identical crop at the identical scale; flipped about its own centre,
+  the edge that meets the frame is the frame's own bottom edge, mirrored. The
+  box then runs on past the panel and is clipped by `overflow: hidden`, so only
+  the quarter nearest the seam is ever seen -- which is the only part of a
+  reflection that should be.
+
+  The blur is 14px, not 48: a reflection is a softened image, not an absent
+  one. Darkened and slightly desaturated because a reflection is light that has
+  bounced, and what it fades into underneath is the brand's own deep green.
+
+  Drawn as a background on a pseudo-element rather than a second <img>: it
+  carries no information -- the photograph above it is the content and already
+  has the alt text -- so it must not reach a screen reader. Same URL, so it is
+  served from cache and costs no second request.
 */
-.lp-shell--photo::before {
+.lp-shell--photo .lp-brand::before {
   content: '';
   position: absolute;
-  inset: 0;
-  z-index: 0;
+  left: 0;
+  right: 0;
+  top: var(--n-photo-share);
+  height: var(--n-photo-share);
   background-image: url('../img/brand.jpg');
   background-size: cover;
-  background-position: 50% 80%;
-  filter: blur(48px) brightness(0.82) saturate(1.1);
-  transform: scale(1.25);
+  background-position: 50% 0%;
+  transform: scaleY(-1);
+  /*
+    Blurred harder and taken further down than a literal mirror would be. At
+    14px and 52% the shapes stayed legible -- a readable upside-down laptop
+    under the real one, which draws the eye to the trick instead of to the
+    photograph. At 22px and 38% it is a suggestion of the picture and stays
+    where it belongs, underneath.
+  */
+  filter: blur(22px) brightness(0.38) saturate(0.8);
+  /*
+    The mask is written in the element's OWN coordinates, which the flip then
+    turns upside down: `to bottom` here reads as "fading upward" on screen. Its
+    opaque end at 100% is the seam, and it is gone by 72% -- around a third of
+    the way down the visible band -- after which the brand's deep green takes
+    over and the panel has somewhere to end.
+  */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 72%, #000 100%);
+  mask-image: linear-gradient(to bottom, transparent 72%, #000 100%);
 }
 
 /*
-  The sheen that makes it read as glossy rather than merely blurred: one soft
-  diagonal highlight, and a deepening toward the bottom corner so the panel has
-  somewhere to end. Both are light, not colour -- the greens in the photograph
-  are the brand and are not tinted here.
+  The sheen: one soft diagonal highlight across the frame's upper corner, which
+  is what makes a surface read as glossy rather than merely dark. Light, not
+  colour -- the greens in the photograph are the brand and are not tinted.
 */
-.lp-shell--photo::after {
+.lp-shell--photo .lp-brand::after {
   content: '';
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: 2;
+  pointer-events: none;
   background-image:
-    linear-gradient(152deg, oklch(1 0 0 / 22%) 0%, oklch(1 0 0 / 4%) 34%, transparent 62%),
-    linear-gradient(to bottom, transparent 55%, oklch(0.18 0.05 150 / 38%) 100%);
+    linear-gradient(152deg, oklch(1 0 0 / 14%) 0%, oklch(1 0 0 / 3%) 28%, transparent 54%);
 }
 
 /*
-  Both panels are lifted above the gloss. They are positioned rather than
-  in-flow for one reason only: a positioned pseudo-element paints above static
-  siblings regardless of source order, so without this the gloss would cover the
-  form panel entirely.
-
-  The brand panel then bleeds RIGHT, under the form panel, by exactly the radius
-  of its corner. That corner is this design's one signature -- "the brand reads
-  through it" -- and beside a green panel the shell's own deep green was the
+  The brand panel bleeds RIGHT, under the form panel, by exactly the radius of
+  its corner. That corner is this design's one signature -- "the brand reads
+  through it" -- and beside a green panel the shell's own deep green WAS the
   brand. Beside a photograph it was a dark wedge with nothing to do with the
   picture. Now what reads through the corner is the photograph itself, carried
   on unbroken behind it.
+
+  Both panels are positioned so the form panel wins: `.lp-brand` has to be a
+  containing block for the reflection, and a positioned element paints above a
+  static sibling whatever the source order -- so without this the brand's bleed
+  would be drawn ON TOP of the form.
 */
 .lp-shell--photo .lp-brand,
 .lp-shell--photo .lp-panel {
@@ -460,14 +484,12 @@ ul {
   height: var(--n-photo-share);
   overflow: hidden;
   /*
-    The frame dissolves into its own blur over the last tenth rather than ending
-    on a line. A hard edge between a sharp photograph and a blurred copy of the
-    same photograph is the one join that would announce the trick; ten per cent
-    is enough to hide it and shallow enough that nothing in the picture is lost
-    to it -- the bottom of the frame is table and laptop lid.
+    No fade at the bottom edge, deliberately. An earlier version dissolved the
+    last tenth of the frame to hide the join with a blurred ground, but what sits
+    below it now is a reflection, and a reflection meets the thing it reflects at
+    a hard edge -- that edge is what makes the eye read it as one. Fading it put
+    a dark line of shell green between the picture and its own mirror.
   */
-  -webkit-mask-image: linear-gradient(to bottom, #000 90%, transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 90%, transparent 100%);
 }
 
 /*
@@ -1272,6 +1294,26 @@ ul {
   */
   .lp-shell--photo .lp-brand {
     margin-right: 0;
+  }
+
+  /*
+    No reflection when stacked: the frame takes the whole band here, so there is
+    no quarter beneath it to reflect into, and the rule's `top: 75%` would put
+    the mirror image over the bottom of the photograph itself.
+  */
+  .lp-shell--photo .lp-brand::before {
+    display: none;
+  }
+
+  /*
+    Instead the form panel rides UP over the band by the radius of its own
+    corners, so those corners reveal the photograph rather than the shell's
+    green -- the same job the sideways bleed does on the desktop layout, in the
+    direction the panels are stacked. It covers the band's last 40px, which is
+    table and laptop lid.
+  */
+  .lp-shell--photo .lp-panel {
+    margin-top: calc(-1 * var(--n-radius-panel));
   }
 
   .lp-shell--photo .lp-brand__frame {
