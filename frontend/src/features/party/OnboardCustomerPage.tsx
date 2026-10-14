@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { Link } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
 
 import { Field } from '@/components/Field';
@@ -229,9 +230,29 @@ function RegisteredResult({
           note="Registration and verification are separate steps — a new party always starts PENDING."
         />
       </dl>
-      <Button size="sm" variant="outline" className="mt-3" onClick={onRegisterAnother}>
-        Register another
-      </Button>
+      {/*
+        THE HAND-OFF, added 2026-10-14 because it was missing and the gap read as a missing
+        feature. An agent registering a client is holding that client's ID scan at this exact
+        moment, and the only control here was "Register another" -- so the place to send the
+        documents (the client record's KYC tab) had to be found by going back to My clients,
+        searching for the person just registered, opening them, and reading along a tab strip.
+        The note above says verification is a separate step; this is that step.
+
+        Route-relative `../parties/{id}`, the idiom ClientsPage's row activation records: every
+        screen is a flat child of the realm route, so `..` is the realm regardless of how many
+        segments this screen's own path has. Works unchanged in both realms -- the agent lands
+        on the filing panel, a staff member on the decision panel, which can also upload.
+      */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {party.partyId && (
+          <Button size="sm" variant="primary" asChild>
+            <Link to={`../parties/${party.partyId}?tab=kyc`}>Send identity documents</Link>
+          </Button>
+        )}
+        <Button size="sm" variant="outline" onClick={onRegisterAnother}>
+          Register another
+        </Button>
+      </div>
     </div>
   );
 }

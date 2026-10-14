@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.party.application;
 
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.party.api.DuplicateClientReferenceException;
 import tz.co.nlolo.lifeplatform.party.api.DuplicateIdentityDocumentException;
 import tz.co.nlolo.lifeplatform.party.api.DuplicateRegistrationNumberException;
 import tz.co.nlolo.lifeplatform.party.api.IdentityDocument;
@@ -114,12 +115,13 @@ public class PartyApiImpl implements PartyApi {
             // here.
             Party toSave = Party.newIndividual(tenantId, registration, registeredBy, registeredByAgentPartyId)
                 .namedRegistrar(registeredByName);
-            party = document.recorded() ? partyRepository.saveAndFlush(toSave) : partyRepository.save(toSave);
+            // saveAndFlush whenever ANY unique constraint could bite, which is the client
+            // reference as well as the identity document -- a plain save() queues the INSERT
+            // until the transaction commits, long after this catch block has returned.
+            party = document.recorded() || registration.clientReference() != null
+                ? partyRepository.saveAndFlush(toSave) : partyRepository.save(toSave);
         } catch (DataIntegrityViolationException ex) {
-            if (document.recorded()) {
-                throw new DuplicateIdentityDocumentException(document.type());
-            }
-            throw ex;
+            throw translateIndividualViolation(ex, document, registration.clientReference());
         }
 
         publishRegistered(party);
@@ -341,10 +343,7 @@ public class PartyApiImpl implements PartyApi {
         try {
             partyRepository.saveAndFlush(party);
         } catch (DataIntegrityViolationException ex) {
-            if (document.recorded()) {
-                throw new DuplicateIdentityDocumentException(document.type());
-            }
-            throw ex;
+            throw translateIndividualViolation(ex, document, amended.clientReference());
         }
 
         publishAmended(party, amendedBy);
@@ -376,6 +375,34 @@ public class PartyApiImpl implements PartyApi {
         eventPublisher.publishEvent(DomainEventEnvelope.of("party.PartyDetailsAmended", party.getTenantId(),
             Map.of("partyId", party.getPartyId(), "partyType", party.getPartyType().name(),
                    "amendedBy", amendedBy)));
+    }
+
+    /**
+     * Say which constraint an individual's insert or update actually broke.
+     *
+     * <p><b>The bug this closes (2026-10-14).</b> Both call sites used to assume that any
+     * integrity violation on a party carrying a recorded identity document WAS a duplicate
+     * identity document. A client reference already belonging to another client violates
+     * {@code ux_party_client_reference}, and was reported as "A party with this PASSPORT is
+     * already registered for this tenant" — so correcting the passport changed nothing and the
+     * message named a field that was never at fault. Seen for real in the dev log, four
+     * attempts in a row, each one blaming the passport for a client-reference collision.
+     *
+     * <p>This is the bug class {@code registerCorporate} and {@code createProduct} already fixed
+     * for themselves, with the same reasoning: anything unrecognised is rethrown, because a 500
+     * carrying Postgres's own message sends you to the constraint that actually failed, while a
+     * confident wrong 409 sends you hunting for a row that does not exist.
+     */
+    private static RuntimeException translateIndividualViolation(DataIntegrityViolationException e,
+                                                                 IdentityDocument document,
+                                                                 String clientReference) {
+        if (document.recorded() && violatesConstraint(e, "ux_party_individual_identity")) {
+            return new DuplicateIdentityDocumentException(document.type());
+        }
+        if (clientReference != null && violatesConstraint(e, "ux_party_client_reference")) {
+            return new DuplicateClientReferenceException(clientReference);
+        }
+        return e;
     }
 
     /**
