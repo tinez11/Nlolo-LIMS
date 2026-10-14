@@ -38,7 +38,8 @@ class FinanceDashboardTest {
     private final ManualJournalApi journals = mock(ManualJournalApi.class);
     private final BillingApi billing = mock(BillingApi.class);
     private final PaymentApi payments = mock(PaymentApi.class);
-    private final FinanceDashboard dashboard = new FinanceDashboard(reporting, journals, billing, payments);
+    private final RecentActivity activity = mock(RecentActivity.class);
+    private final FinanceDashboard dashboard = new FinanceDashboard(reporting, journals, billing, payments, activity);
 
     private static MonthlyAmount m(int year, int month, String amount) {
         return new MonthlyAmount(YearMonth.of(year, month), "TZS", new BigDecimal(amount));
@@ -85,6 +86,7 @@ class FinanceDashboardTest {
             .containsExactly("2026-08", "2026-09", "2026-10");
         assertThat(view.premiumsLastYear()).extracting(FinanceDashboardView.MonthPoint::month).containsExactly("2025-10");
         assertThat(view.currentMonth()).isEqualTo("2026-10");
+        assertThat(view.recentActivity()).isEmpty();
     }
 
     /** No delta against nothing: an absent or zero previous month is not a 100% rise. */

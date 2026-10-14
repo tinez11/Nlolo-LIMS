@@ -23,7 +23,8 @@ import static org.mockito.Mockito.when;
 class ClaimsDashboardTest {
 
     private final ClaimsApi claims = mock(ClaimsApi.class);
-    private final ClaimsDashboard dashboard = new ClaimsDashboard(claims);
+    private final RecentActivity activity = mock(RecentActivity.class);
+    private final ClaimsDashboard dashboard = new ClaimsDashboard(claims, activity);
 
     private void count(ClaimStatus status, long n) {
         when(claims.searchClaims(eq(status), isNull(), isNull(), isNull(), argThat(p -> p != null && p.getPageSize() == 1)))
@@ -68,6 +69,7 @@ class ClaimsDashboardTest {
         assertThat(view.approved()).isEqualTo(4L);
         assertThat(view.reopened()).isEqualTo(2L);
         assertThat(view.settled()).isEqualTo(128L);
+        assertThat(view.recentActivity()).isEmpty();
         assertThat(view.queueStatus()).isEqualTo("SETTLEMENT_REQUESTED");
         assertThat(view.queue()).singleElement().satisfies(q -> {
             assertThat(q.policyNumber()).isEqualTo("POL-00A4B7A1");

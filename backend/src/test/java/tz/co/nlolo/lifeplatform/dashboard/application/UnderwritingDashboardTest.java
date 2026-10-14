@@ -29,7 +29,8 @@ import static org.mockito.Mockito.when;
 class UnderwritingDashboardTest {
 
     private final UnderwritingApi underwriting = mock(UnderwritingApi.class);
-    private final UnderwritingDashboard dashboard = new UnderwritingDashboard(underwriting);
+    private final RecentActivity activity = mock(RecentActivity.class);
+    private final UnderwritingDashboard dashboard = new UnderwritingDashboard(underwriting, activity);
 
     private static Page<UnderwritingCaseView> total(long n) {
         return new PageImpl<>(List.of(), PageRequest.of(0, 1), n);
@@ -59,6 +60,7 @@ class UnderwritingDashboardTest {
         assertThat(view.openCases()).isEqualTo(238L);
         assertThat(view.casesInReview()).isEqualTo(41L);
         assertThat(view.casesAwaitingIssue()).isEqualTo(12L);
+        assertThat(view.recentActivity()).isEmpty();
         assertThat(view.queue()).singleElement().satisfies(c -> {
             assertThat(c.caseId()).isEqualTo(caseId);
             assertThat(c.applicantPartyId()).isEqualTo(applicant);
@@ -90,5 +92,18 @@ class UnderwritingDashboardTest {
         assertThat(view.openCases()).isNull();
         assertThat(view.queue()).isEmpty();
         assertThat(view.casesInReview()).isEqualTo(41L);
+    }
+
+    /** The feed is the underwriting module's own, and a broken audit read costs the feed and nothing else. */
+    @Test
+    void readsUnderwritingsOwnActivityAndSurvivesItsFailure() {
+        when(underwriting.listCases(any(), isNull(), isNull(), any())).thenReturn(total(0));
+        when(underwriting.listCasesAwaitingIssue(isNull(), any())).thenReturn(total(0));
+        when(activity.latest("underwriting.")).thenThrow(new IllegalStateException("audit is down"));
+
+        UnderwritingDashboardView view = dashboard.build();
+
+        assertThat(view.recentActivity()).isEmpty();
+        assertThat(view.openCases()).isZero();
     }
 }

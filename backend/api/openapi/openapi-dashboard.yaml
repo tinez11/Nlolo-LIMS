@@ -83,7 +83,7 @@ components:
     UnderwritingDashboardView:
       type: object
       additionalProperties: false
-      required: [openCases, casesInReview, casesAwaitingIssue, queue]
+      required: [openCases, casesInReview, casesAwaitingIssue, queue, recentActivity]
       properties:
         openCases: { $ref: '#/components/schemas/Count' }
         casesInReview: { $ref: '#/components/schemas/Count' }
@@ -101,13 +101,15 @@ components:
               productId: { type: [string, 'null'], format: uuid }
               sumAssured: { $ref: '#/components/schemas/Money' }
               status: { type: string, enum: [OPEN, IN_REVIEW, DECIDED] }
+        recentActivity: { type: array, items: { $ref: '#/components/schemas/ActivityItem' } }
     ClaimStatus:
       type: string
       enum: [REGISTERED, UNDER_ASSESSMENT, APPROVED, REJECTED, SETTLEMENT_REQUESTED, SETTLED, REOPENED]
     ClaimsDashboardView:
       type: object
       additionalProperties: false
-      required: [registered, underAssessment, settlementRequested, approved, reopened, settled, queueStatus, queue]
+      required: [registered, underAssessment, settlementRequested, approved, reopened, settled, queueStatus, queue,
+                 recentActivity]
       properties:
         registered: { $ref: '#/components/schemas/Count' }
         underAssessment: { $ref: '#/components/schemas/Count' }
@@ -129,6 +131,19 @@ components:
               claimType: { type: string, enum: [MATURITY, DEATH, DISABILITY, CRITICAL_ILLNESS] }
               dateOfEvent: { type: [string, 'null'], format: date }
               status: { $ref: '#/components/schemas/ClaimStatus' }
+        recentActivity: { type: array, items: { $ref: '#/components/schemas/ActivityItem' } }
+    ActivityItem:
+      type: object
+      additionalProperties: false
+      description: One audit-log event -- what happened and when, never who.
+      required: [eventType, occurredAt, refs, amount]
+      properties:
+        eventType: { type: string }
+        occurredAt: { type: string, format: date-time }
+        refs:
+          type: object
+          additionalProperties: { type: string }
+        amount: { $ref: '#/components/schemas/Money' }
     Month:
       type: string
       pattern: '^\d{4}-\d{2}$'
@@ -144,7 +159,7 @@ components:
       additionalProperties: false
       required: [premiumsMonth, premiumsCollected, premiumsChangePercent, balanceSheetMonth, totalAssets,
                  totalLiabilities, resultFrom, resultTo, netResult, journalsAwaitingApproval, receiptsOverdue,
-                 transfersAwaiting, arrearsAtLapse, premiumsThisYear, premiumsLastYear, currentMonth]
+                 transfersAwaiting, arrearsAtLapse, premiumsThisYear, premiumsLastYear, currentMonth, recentActivity]
       properties:
         premiumsMonth: { $ref: '#/components/schemas/Month' }
         premiumsCollected: { $ref: '#/components/schemas/Money' }
@@ -162,6 +177,7 @@ components:
         premiumsThisYear: { type: array, items: { $ref: '#/components/schemas/MonthPoint' } }
         premiumsLastYear: { type: array, items: { $ref: '#/components/schemas/MonthPoint' } }
         currentMonth: { $ref: '#/components/schemas/Month' }
+        recentActivity: { type: array, items: { $ref: '#/components/schemas/ActivityItem' } }
     AgentDashboardView:
       type: object
       additionalProperties: false

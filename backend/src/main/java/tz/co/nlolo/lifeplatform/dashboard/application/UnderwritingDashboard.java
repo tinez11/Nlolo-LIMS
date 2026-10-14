@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.dashboard.application;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import tz.co.nlolo.lifeplatform.dashboard.api.ActivityItem;
 import tz.co.nlolo.lifeplatform.dashboard.api.Money;
 import tz.co.nlolo.lifeplatform.dashboard.api.UnderwritingDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.UnderwritingDashboardView.QueuedCase;
@@ -18,9 +19,11 @@ public class UnderwritingDashboard {
     private static final PageRequest TOTAL_ONLY = PageRequest.of(0, 1);
 
     private final UnderwritingApi underwriting;
+    private final RecentActivity activity;
 
-    public UnderwritingDashboard(UnderwritingApi underwriting) {
+    public UnderwritingDashboard(UnderwritingApi underwriting, RecentActivity activity) {
         this.underwriting = underwriting;
+        this.activity = activity;
     }
 
     public UnderwritingDashboardView build() {
@@ -39,6 +42,9 @@ public class UnderwritingDashboard {
                 Money.of(c.sumAssuredAmount(), c.sumAssuredCurrency()), c.status().name()))
             .getContent());
 
-        return new UnderwritingDashboardView(open, inReview, awaitingIssue, queue == null ? List.of() : queue);
+        List<ActivityItem> recent = Safely.read("recent activity", () -> activity.latest("underwriting."));
+
+        return new UnderwritingDashboardView(open, inReview, awaitingIssue, queue == null ? List.of() : queue,
+            recent == null ? List.of() : recent);
     }
 }

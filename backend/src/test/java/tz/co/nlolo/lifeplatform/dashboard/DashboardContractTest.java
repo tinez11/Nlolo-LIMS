@@ -17,6 +17,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
+import tz.co.nlolo.lifeplatform.dashboard.api.ActivityItem;
 import tz.co.nlolo.lifeplatform.dashboard.api.AgentDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.ClaimsDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView;
@@ -89,7 +90,10 @@ class DashboardContractTest {
     void anUnderwriterReadsTheUnderwritingDashboard() throws Exception {
         when(underwriting.build()).thenReturn(new UnderwritingDashboardView(238L, 41L, null, List.of(
             new UnderwritingDashboardView.QueuedCase(UUID.randomUUID(), UUID.randomUUID(), null, UUID.randomUUID(),
-                new Money("25000000.00", "TZS"), "OPEN"))));
+                new Money("25000000.00", "TZS"), "OPEN")),
+            List.of(new ActivityItem("underwriting.UnderwritingDecisionMade",
+                java.time.Instant.parse("2026-10-14T08:00:00Z"),
+                java.util.Map.of("caseId", UUID.randomUUID().toString(), "outcome", "ACCEPTED"), null))));
 
         mockMvc.perform(get("/dashboards/underwriting").with(staff("UNDERWRITER")))
             .andExpect(status().isOk())
@@ -110,7 +114,7 @@ class DashboardContractTest {
     void aClaimsManagerReadsTheClaimsDashboardWithTheSettlementQueue() throws Exception {
         when(claims.build(true)).thenReturn(new ClaimsDashboardView(17L, 9L, 6L, 4L, 2L, 128L, "SETTLEMENT_REQUESTED",
             List.of(new ClaimsDashboardView.QueuedClaim(UUID.randomUUID(), "POL-00A4B7A1", UUID.randomUUID(), "DEATH",
-                LocalDate.of(2026, 9, 29), "SETTLEMENT_REQUESTED"))));
+                LocalDate.of(2026, 9, 29), "SETTLEMENT_REQUESTED")), List.of()));
 
         mockMvc.perform(get("/dashboards/claims").with(staff("CLAIMS_MANAGER")))
             .andExpect(status().isOk())
@@ -120,7 +124,7 @@ class DashboardContractTest {
 
     @Test
     void anAssessorGetsTheAssessorsQueue() throws Exception {
-        when(claims.build(false)).thenReturn(new ClaimsDashboardView(17L, 9L, 6L, 4L, 2L, 128L, "REGISTERED", List.of()));
+        when(claims.build(false)).thenReturn(new ClaimsDashboardView(17L, 9L, 6L, 4L, 2L, 128L, "REGISTERED", List.of(), List.of()));
 
         mockMvc.perform(get("/dashboards/claims").with(staff("CLAIMS_ASSESSOR")))
             .andExpect(status().isOk())
@@ -139,7 +143,7 @@ class DashboardContractTest {
             new Money("512340210.00", "TZS"), "2026-01", "2026-10", new Money("-1200.00", "TZS"),
             4L, 7L, 3L, null,
             List.of(new FinanceDashboardView.MonthPoint("2026-09", new Money("50204310.00", "TZS"))), List.of(),
-            "2026-10"));
+            "2026-10", List.of()));
 
         mockMvc.perform(get("/dashboards/finance").with(staff("FINANCE_OFFICER")))
             .andExpect(status().isOk())

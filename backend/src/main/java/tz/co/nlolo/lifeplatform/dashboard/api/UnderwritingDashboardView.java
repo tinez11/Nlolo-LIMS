@@ -7,9 +7,10 @@ import java.util.UUID;
  * The underwriter's dashboard. Every count is a search's total for one status; null means it could not be read.
  *
  * @param queue the open cases that have waited longest, oldest first -- empty when the count could not be read
+ * @param recentActivity this module's latest events, newest first -- what happened, never who; empty when unreadable
  */
 public record UnderwritingDashboardView(Long openCases, Long casesInReview, Long casesAwaitingIssue,
-                                        List<QueuedCase> queue) {
+                                        List<QueuedCase> queue, List<ActivityItem> recentActivity) {
 
     /** A case as the queue panel shows it. Names are resolved by the console from the ids, as the queue page does. */
     public record QueuedCase(UUID caseId, UUID applicantPartyId, UUID lifeAssuredPartyId, UUID productId,

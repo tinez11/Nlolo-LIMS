@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.dashboard.application;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
+import tz.co.nlolo.lifeplatform.dashboard.api.ActivityItem;
 import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView.MonthPoint;
 import tz.co.nlolo.lifeplatform.dashboard.api.Money;
@@ -39,12 +40,15 @@ public class FinanceDashboard {
     private final ManualJournalApi journals;
     private final BillingApi billing;
     private final PaymentApi payments;
+    private final RecentActivity activity;
 
-    public FinanceDashboard(ReportingApi reporting, ManualJournalApi journals, BillingApi billing, PaymentApi payments) {
+    public FinanceDashboard(ReportingApi reporting, ManualJournalApi journals, BillingApi billing, PaymentApi payments,
+                            RecentActivity activity) {
         this.reporting = reporting;
         this.journals = journals;
         this.billing = billing;
         this.payments = payments;
+        this.activity = activity;
     }
 
     /** @param today the civil date in Africa/Dar_es_Salaam, supplied by the caller */
@@ -66,6 +70,9 @@ public class FinanceDashboard {
         ReportResult income = Safely.read("the income statement",
             () -> reporting.run("income-statement", ReportFilter.months(YearMonth.of(current.getYear(), 1), current)));
 
+        List<ActivityItem> recent = Safely.read("recent activity",
+            () -> activity.latest("billing.", "payment.", "finaccounting."));
+
         return new FinanceDashboardView(
             lastComplete.toString(), Money.of(collected, WORKING_CURRENCY), changePercent(collected, previous),
             current.toString(),
@@ -79,7 +86,8 @@ public class FinanceDashboard {
             Safely.read("bank transfers awaiting", () -> (long) payments.listAwaitingEftExecution().size()),
             Safely.read("arrears at the lapse level",
                 () -> billing.searchArrears(LAPSE_RECOMMENDATION_LEVEL, false, TOTAL_ONLY).getTotalElements()),
-            points(monthly, current.getYear()), points(monthly, current.getYear() - 1), current.toString());
+            points(monthly, current.getYear()), points(monthly, current.getYear() - 1), current.toString(),
+            recent == null ? List.of() : recent);
     }
 
     /** A change between two report values -- the only arithmetic here, and it is a difference of two report numbers. */

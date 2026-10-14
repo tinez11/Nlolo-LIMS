@@ -14,13 +14,15 @@ import java.util.List;
  * @param premiumsThisYear one point per month of the current year that has collections, oldest first
  * @param premiumsLastYear the same for the previous calendar year
  * @param currentMonth the month in progress, so the console draws it as "to date" rather than as a complete month
+ * @param recentActivity this module's latest events, newest first -- what happened, never who; empty when unreadable
  */
 public record FinanceDashboardView(
     String premiumsMonth, Money premiumsCollected, String premiumsChangePercent,
     String balanceSheetMonth, Money totalAssets, Money totalLiabilities,
     String resultFrom, String resultTo, Money netResult,
     Long journalsAwaitingApproval, Long receiptsOverdue, Long transfersAwaiting, Long arrearsAtLapse,
-    List<MonthPoint> premiumsThisYear, List<MonthPoint> premiumsLastYear, String currentMonth) {
+    List<MonthPoint> premiumsThisYear, List<MonthPoint> premiumsLastYear, String currentMonth,
+    List<ActivityItem> recentActivity) {
 
     public record MonthPoint(String month, Money amount) {}
 }
