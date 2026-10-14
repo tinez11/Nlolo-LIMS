@@ -93,6 +93,10 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/underwriting/V21__case_account_charges.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
+            // This class validates a branch against the live set, so it needs the network as it stands:
+            // V10 adds Moshi and Tanga, V11 retires Mwanza, Dodoma and Zanzibar out of it.
+            "db-migrations/refdata/V10__add_moshi_and_tanga_branches.sql",
+            "db-migrations/refdata/V11__retire_mwanza_dodoma_zanzibar_branches.sql",
             "db-migrations/refdata/V9__journal_reason_codes.sql");
     }
 
@@ -139,11 +143,11 @@ class UnderwritingApiIntegrationTest {
         assertNull(opened.branchCode());
         assertNull(opened.saleLockedAt());
 
-        UnderwritingCaseView named = underwritingApi.recordSale(caseId, "DIGITAL", "ZNZ", "uw-1");
+        UnderwritingCaseView named = underwritingApi.recordSale(caseId, "DIGITAL", "TGA", "uw-1");
         assertEquals("DIGITAL", named.salesChannel());
-        assertEquals("ZNZ", named.branchCode());
+        assertEquals("TGA", named.branchCode());
 
-        assertThrows(UnderwritingValidationException.class, () -> underwritingApi.recordSale(caseId, "SMOKE_SIGNALS", "ZNZ", "uw-1"));
+        assertThrows(UnderwritingValidationException.class, () -> underwritingApi.recordSale(caseId, "SMOKE_SIGNALS", "TGA", "uw-1"));
         UnderwritingValidationException badBranch = assertThrows(UnderwritingValidationException.class,
             () -> underwritingApi.recordSale(caseId, "DIRECT", "XYZ", "uw-1"));
         assertEquals("Unknown branch XYZ", badBranch.getMessage());
@@ -153,7 +157,7 @@ class UnderwritingApiIntegrationTest {
         SaleFixedException fixed = assertThrows(SaleFixedException.class,
             () -> underwritingApi.recordSale(caseId, "AGENT", "DSM", "uw-1"));
         assertEquals("The sale is fixed once the policy is issued", fixed.getMessage());
-        assertEquals("ZNZ", underwritingApi.getCase(caseId).branchCode());
+        assertEquals("TGA", underwritingApi.getCase(caseId).branchCode());
     }
 
     // ---- What the proposal states about the contract (V6) --------------------------------

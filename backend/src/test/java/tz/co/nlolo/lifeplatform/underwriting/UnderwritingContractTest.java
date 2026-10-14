@@ -100,6 +100,10 @@ class UnderwritingContractTest {
             "db-migrations/underwriting/V21__case_account_charges.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
+            // This class validates a branch against the live set, so it needs the network as it stands:
+            // V10 adds Moshi and Tanga, V11 retires Mwanza, Dodoma and Zanzibar out of it.
+            "db-migrations/refdata/V10__add_moshi_and_tanga_branches.sql",
+            "db-migrations/refdata/V11__retire_mwanza_dodoma_zanzibar_branches.sql",
             "db-migrations/refdata/V9__journal_reason_codes.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
@@ -444,22 +448,22 @@ class UnderwritingContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"applicantPartyId":"%s","productId":"%s","productVersionId":"%s","sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
-                     "salesChannel":"DIGITAL","branchCode":"DOD"}
+                     "salesChannel":"DIGITAL","branchCode":"TGA"}
                     """.formatted(applicantId, product.productId(), product.productVersionId())))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.salesChannel").value("DIGITAL"))
-            .andExpect(jsonPath("$.branchCode").value("DOD"));
+            .andExpect(jsonPath("$.branchCode").value("TGA"));
 
         mockMvc.perform(put("/underwriting/cases/" + caseId + "/sale")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"salesChannel":"BROKER","branchCode":"MWZ"}"""))
+                    {"salesChannel":"BROKER","branchCode":"MOS"}"""))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.salesChannel").value("BROKER"))
-            .andExpect(jsonPath("$.branchCode").value("MWZ"));
+            .andExpect(jsonPath("$.branchCode").value("MOS"));
 
         mockMvc.perform(put("/underwriting/cases/" + caseId + "/sale")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))

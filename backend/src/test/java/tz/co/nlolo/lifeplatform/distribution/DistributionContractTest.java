@@ -120,6 +120,10 @@ class DistributionContractTest {
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/refdata/V4__seed_distribution_parameters.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
+            // This class validates a branch against the live set, so it needs the network as it stands:
+            // V10 adds Moshi and Tanga, V11 retires Mwanza, Dodoma and Zanzibar out of it.
+            "db-migrations/refdata/V10__add_moshi_and_tanga_branches.sql",
+            "db-migrations/refdata/V11__retire_mwanza_dodoma_zanzibar_branches.sql",
             "db-migrations/refdata/V9__journal_reason_codes.sql",
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
@@ -381,11 +385,11 @@ class DistributionContractTest {
         mockMvc.perform(put("/agents/{agentId}/placement", agentId).with(financeStaffOf(tenantId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"salesChannel":"BANCASSURANCE","homeBranch":"MWZ"}"""))
+                    {"salesChannel":"BANCASSURANCE","homeBranch":"MOS"}"""))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.salesChannel").value("BANCASSURANCE"))
-            .andExpect(jsonPath("$.homeBranch").value("MWZ"));
+            .andExpect(jsonPath("$.homeBranch").value("MOS"));
 
         mockMvc.perform(put("/agents/{agentId}/placement", agentId).with(financeStaffOf(tenantId))
                 .contentType(MediaType.APPLICATION_JSON)
