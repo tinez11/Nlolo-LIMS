@@ -142,6 +142,36 @@ export function toApiError(cause: unknown): ApiError {
 }
 
 /**
+ * Refusals the person reading them can act on: a business rule said no, and the sentence beside it
+ * is the whole answer. The platform's own words are the remedy, so a trace id underneath is noise
+ * at best -- and at worst it reads as a system fault on a screen where nothing is broken.
+ */
+const EXPLAINED_KINDS: ReadonlySet<ApiErrorKind> = new Set([
+  'validation',
+  'unprocessable',
+  'conflict',
+  'forbidden',
+  'notFound',
+  'notImplemented',
+]);
+
+/**
+ * Whether to print the trace id beside this error.
+ *
+ * It stays exactly as legible as before wherever it IS shown (PLAN.md's settled decision: labelled,
+ * full strength, `select-all`) -- what changed is WHEN. A 422 saying "you assessed this claim, so
+ * you cannot also decide it" needs no reference number; a 500 is the case the id exists for, and so
+ * is any failure carrying no detail, where the id is the only thing a person can quote.
+ */
+export function showsTraceId(
+  error: Pick<ApiError, 'detail' | 'traceId'> & Partial<Pick<ApiError, 'kind'>>,
+): boolean {
+  if (!error.traceId) return false;
+  if (!error.detail) return true;
+  return !(error.kind !== undefined && EXPLAINED_KINDS.has(error.kind));
+}
+
+/**
  * Field name -> message, for binding a 400 onto form inputs (react-hook-form's
  * setError). First message wins when a field reports several.
  */

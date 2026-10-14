@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ApiError } from '@/lib/apiError';
+import { showsTraceId, type ApiError } from '@/lib/apiError';
 import { cn } from '@/lib/cn';
 
 /**
@@ -19,7 +19,7 @@ export function InlineError({
   children,
   className,
 }: {
-  error: Pick<ApiError, 'title' | 'detail' | 'traceId'>;
+  error: Pick<ApiError, 'title' | 'detail' | 'traceId'> & Partial<Pick<ApiError, 'kind'>>;
   /**
    * What the person was trying to do, before the server's own words -- "Could not mark it
    * matched". A ProblemDetail says what is wrong with the request, not which of the several
@@ -43,7 +43,7 @@ export function InlineError({
         {error.detail ?? error.title}
       </p>
       {children}
-      {error.traceId && (
+      {showsTraceId(error) && (
         <p className="mt-1 text-xs">
           Reference <span className="font-mono select-all">{error.traceId}</span>
         </p>

@@ -1,6 +1,6 @@
 import { AlertTriangle, Ban, Inbox, Loader2, ShieldOff, WifiOff } from 'lucide-react';
 import type { ReactNode } from 'react';
-import type { ApiError } from '@/lib/apiError';
+import { showsTraceId, type ApiError } from '@/lib/apiError';
 import { cn } from '@/lib/cn';
 import { Button } from './ui/button';
 
@@ -153,8 +153,9 @@ export function ErrorPanel({
         </Button>
       )}
 
-      {error.traceId && (
-        // The only thread back to the backend logs. Selectable, not decorative.
+      {showsTraceId(error) && (
+        // The only thread back to the backend logs, on the failures that need one. Selectable,
+        // not decorative -- and absent where the message above is already the whole answer.
         <p className="mt-3 font-mono text-xs text-subtle-foreground select-all">
           trace {error.traceId}
         </p>

@@ -20,6 +20,32 @@ describe('InlineError', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Reference abc123');
   });
 
+  it('keeps the reference off a refusal the message already explains', () => {
+    // A business rule said no and said why. The id underneath read as a system fault on a
+    // screen where nothing is broken -- and is the first thing an audience asks about.
+    render(
+      <InlineError
+        error={{
+          kind: 'unprocessable',
+          title: 'Unprocessable',
+          detail: 'Separation of duties: you assessed this claim, so you cannot also decide it.',
+          traceId: 'abc123',
+        }}
+      />,
+    );
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Reference');
+    expect(screen.queryByText('abc123')).not.toBeInTheDocument();
+  });
+
+  it('keeps the reference on a failure nobody can explain from the screen', () => {
+    render(
+      <InlineError
+        error={{ kind: 'server', title: 'Server error', detail: 'Something failed.', traceId: 'abc123' }}
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Reference abc123');
+  });
+
   it('names the act before the server words, when the caller gives one', () => {
     render(
       <InlineError

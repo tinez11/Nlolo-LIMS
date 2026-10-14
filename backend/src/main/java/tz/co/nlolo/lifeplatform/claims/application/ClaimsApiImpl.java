@@ -595,15 +595,17 @@ public class ClaimsApiImpl implements ClaimsApi {
         if (approved && claim.getClaimType() != ClaimType.MATURITY
                 && claimAssessmentRepository.countByClaimIdAndTenantId(claimId, tenantId) == 0) {
             throw new InvalidClaimStateException(
-                "Claim " + claimId + " requires at least one assessment before approval");
+                "This claim needs an assessment before it can be approved");
         }
 
         // CLAIMS_ASSESSOR vs CLAIMS_MANAGER are deliberately separate roles; the role gate lives
         // at the controller (@PreAuthorize). This additionally blocks the same *person* from
         // assessing and then deciding, which a role check alone cannot catch.
+        // Second person, and no subject id: decidedBy IS the caller, so naming them back at
+        // themselves by UUID told the one person who already knew, in the one form they cannot read.
         if (claimAssessmentRepository.existsByClaimIdAndTenantIdAndAssessor(claimId, tenantId, decidedBy)) {
-            throw new ClaimValidationException(
-                "Separation of duties: " + decidedBy + " assessed this claim and cannot also decide it");
+            throw new ClaimValidationException("Separation of duties: you assessed this claim, so you cannot"
+                + " also decide it. Another claims manager must take the decision.");
         }
 
         if (approved) {
