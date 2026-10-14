@@ -8,6 +8,37 @@
 
 **Tech Stack:** Java 21, Spring Boot 3.3.5, Spring Modulith, JUnit 5 + Mockito, Testcontainers Postgres 16, OpenAPI 3.1 (`openapi-typescript` for the client types); React + TypeScript, Zustand, Tailwind v4, Vitest + React Testing Library, Playwright.
 
+## The three phases
+
+| Phase | Plan | Delivers | Needs |
+|---|---|---|---|
+| **1** (this plan) | `2026-10-14-role-dashboards-phase-1.md` | Four dashboards from figures provable today: counts, report figures, one premiums chart, recent activity. Replaces Today; agents land on it. | Nothing new in other modules except one monthly query in `reporting`. |
+| **2** | `2026-10-15-role-dashboards-phase-2.md` | The cards phase 1 draws dashed: decisions by outcome, turnaround, referrals, settled amounts, document requests, receivables aging, an agent's applications. | New filters and aggregates in `underwriting`, `claims`, `billing`; a `settled_at` column on claims; a doctrine amendment (a module may compute an aggregate about its own rows). |
+| **3** | `2026-10-15-role-dashboards-phase-3.md` | A shared `BarChart`, and charts of decisions, benefits paid and receivables aging. Frontend only. | Phase 2 merged — three of its four charts draw phase 2's series. |
+
+Each phase is its own branch, merged `--no-ff` to `main` before the next starts. Phase 2's aggregates already return monthly series so phase 3 adds no endpoints.
+
+## How this plan runs
+
+**Order.** Strictly in task order. The dependencies are real:
+
+1. **Task 0** commits the doctrine before any code relies on it.
+2. **Task 1** (reporting) must land before **Task 4**, which reads `monthlyPremiumCollections`.
+3. **Tasks 2 → 3 → 4 → 5 → 5a** build the backend module. Each later task edits `DashboardController`, `openapi-dashboard.yaml` and `DashboardContractTest`, which Task 2 creates, so they cannot run in parallel. **5a** changes three composer constructors, so it runs after 2–4 exist.
+4. **Task 6** generates the TypeScript types from `openapi-dashboard.yaml`, so every backend task must be done first.
+5. **Task 7** is the only task that changes existing routing and deletes code (Today). **Tasks 8–11** replace the stubs it creates; **11a** adds the feed to three of them.
+6. **Task 12** changes the e2e sign-ins. It must come last: before Task 7, the landing heading is still "Today".
+
+**Checkpoints** — stop and look, rather than carry on:
+
+- **After Task 5a:** run all eight backend dashboard classes plus `ModularityTests` together. The module is complete; a boundary violation shows here or not at all.
+- **After Task 7:** run `screens.test.ts` and the design guards. Routing is the change most likely to break something unrelated.
+- **After Task 12:** the full frontend suite once, the backend dashboard classes once, the real stack, and a look at every dashboard at desktop and ~400px.
+
+**Not run per task:** the full backend suite (about 80 minutes) and the full e2e suite. Each runs once, at the merge gate.
+
+**Dev stack.** Backend tasks need `target/` free — stop the dev backend before any `./mvnw clean`. It is restarted once, in Task 12, when the endpoints are complete.
+
 ## Global Constraints
 
 - A figure is a **count** (`totalElements` of a search filtered by one status) or a **report's own number**. A delta or chart is allowed only where every value on it is a report value. Nothing is summed, averaged or differenced in the browser. (PRODUCT.md, "A figure is a count, or a report's own number", revised 2026-10-14.)
@@ -68,7 +99,9 @@ Every figure below has been traced to a real internal call and a real screen. "U
 | Agent | Policies in my book | `PolicyApi.searchPolicies(null, null, null, <team>, null, page 1)` | `/agents/policies` |
 | Agent | Commission, last closed period | `DistributionApi.listStatements(<agentId>, "YYYY-MM")` | `/agents/commission` |
 
-Phase 2 (drawn dashed, never fetched): accepted vs declined, turnaround, cases referred to a senior, receivables total and aging, benefit amounts paid, open document requests across claims, applications in underwriting for an agent.
+Phase 2 (drawn dashed, never fetched): accepted vs declined, turnaround, cases referred to a senior, receivables total and aging, benefit amounts paid, open document requests across claims. Planned in full in `2026-10-15-role-dashboards-phase-2.md`.
+
+**Correction (2026-10-15):** an earlier draft of this plan also deferred "applications in underwriting for an agent", saying agents cannot search underwriting cases. That was wrong — `GET /underwriting/cases` admits an agents token and `UnderwritingController.listCases` already scopes it to `partyApi.partyIdsRegisteredBy(subject)`. It needs no backend work. It stays out of this phase only to keep Task 5 as reviewed; phase 2 Task 6 adds it, and it is NOT listed in the agent's "Not here yet", because that list is for things the platform has no concept of.
 
 Not on the platform (listed in each rail's "Not here yet"): SLA deadlines on cases and claims, a risk-level field, assigning a claim to an assessor, a cash-flow statement, quotes, leads and follow-ups.
 
@@ -3858,7 +3891,7 @@ export function AgentDashboardPanel() {
             { label: 'My policies', description: 'Your book and your downline’s', to: '/agents/policies' },
             { label: 'My commission', description: 'Statements and payouts', to: '/agents/commission' },
           ]}
-          absent={['Quotes', 'Leads and follow-up reminders', 'Applications in underwriting — phase 2']}
+          absent={['Quotes', 'Leads and follow-up reminders']}
         />
       </div>
     </div>
