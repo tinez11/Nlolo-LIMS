@@ -1,6 +1,8 @@
 package tz.co.nlolo.lifeplatform.claims.api;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -23,4 +25,8 @@ public record ClaimView(UUID claimId, String policyNumber,
                           * claim, and on a list row (a search does not load it). */
                          UUID coveredLifeId,
                          /** Whether the death was accidental; null where coveredLifeId is. */
-                         Boolean accidental) {}
+                         Boolean accidental,
+                         /** When the claim settled (V12, 2026-10-15). NULL while unsettled, and NULL for
+                          * every claim settled before V12 -- the column did not exist, so there is
+                          * nothing honest to say about those. */
+                         Instant settledAt) {}

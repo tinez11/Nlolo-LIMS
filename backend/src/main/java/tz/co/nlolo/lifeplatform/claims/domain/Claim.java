@@ -134,6 +134,13 @@ public class Claim {
     @Column(name = "updated_by")
     private String updatedBy;
 
+    /**
+     * When this claim settled (V12, 2026-10-15). NOT {@code updatedAt}, which a later correction moves long
+     * after the money left. NULL while unsettled, and NULL for every claim settled before V12.
+     */
+    @Column(name = "settled_at")
+    private Instant settledAt;
+
     protected Claim() {}
 
     /**
@@ -275,6 +282,7 @@ public class Claim {
             throw new InvalidClaimStateException("Claim " + claimId + " has money to pay, so it settles through the payment rail");
         }
         this.status = ClaimStatus.SETTLED;
+        this.settledAt = Instant.now();
     }
 
     /** payment.DisbursementCompleted. SETTLEMENT_REQUESTED -> SETTLED. Terminal unless reopened. */
@@ -287,6 +295,7 @@ public class Claim {
                 "Claim " + claimId + " is " + status + ", cannot mark settled");
         }
         this.status = ClaimStatus.SETTLED;
+        this.settledAt = Instant.now();
     }
 
     /** payment.DisbursementFailed. SETTLEMENT_REQUESTED -> APPROVED, preserving the reason so the
@@ -355,5 +364,6 @@ public class Claim {
     public Instant getCreatedAt() { return createdAt; }
     public String getCreatedBy() { return createdBy; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public Instant getSettledAt() { return settledAt; }
     public String getUpdatedBy() { return updatedBy; }
 }

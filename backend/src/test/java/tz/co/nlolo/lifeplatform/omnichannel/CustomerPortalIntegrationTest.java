@@ -71,7 +71,8 @@ class CustomerPortalIntegrationTest {
                 "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
                 "db-migrations/claims/V9__zero_annuity_settlement.sql",
                 "db-migrations/claims/V10__funeral_claims.sql",
-                "db-migrations/claims/V11__claim_document_request.sql")).toArray(String[]::new));
+                "db-migrations/claims/V11__claim_document_request.sql",
+                "db-migrations/claims/V12__claim_settled_at.sql")).toArray(String[]::new));
         // Communication: the dashboard counts unread messages and the inbox reads them (step 7).
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             DepositTestMigrations.COMMUNICATION);

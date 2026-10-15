@@ -416,7 +416,8 @@ public class ClaimsApiImpl implements ClaimsApi {
     private static ClaimView withFuneral(ClaimView view, UUID coveredLifeId, boolean accidental) {
         return new ClaimView(view.claimId(), view.policyNumber(), view.policyMemberId(), view.claimantPartyId(),
             view.claimType(), view.status(), view.dateOfEvent(), view.details(), view.approvedAmount(),
-            view.approvedCurrency(), view.requiresContestabilityReview(), coveredLifeId, accidental);
+            view.approvedCurrency(), view.requiresContestabilityReview(), coveredLifeId, accidental,
+            view.settledAt());
     }
 
     /** Mirrors {@code PolicyApiImpl.searchPolicies}'s exact four-way branch on which optional
@@ -1014,7 +1015,8 @@ public class ClaimsApiImpl implements ClaimsApi {
         return new ClaimView(claim.getClaimId(), claim.getPolicyNumber(), claim.getPolicyMemberId(),
             claim.getClaimantPartyId(),
             claim.getClaimType(), claim.getStatus(), claim.getDateOfEvent(), claim.getDetails(),
-            claim.getApprovedAmount(), claim.getApprovedCurrency(), requiresContestabilityReview, null, null);
+            claim.getApprovedAmount(), claim.getApprovedCurrency(), requiresContestabilityReview, null, null,
+            claim.getSettledAt());
     }
 
     private ClaimAssessmentView toAssessmentView(ClaimAssessment assessment) {

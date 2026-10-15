@@ -36,7 +36,9 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -155,7 +157,8 @@ class ClaimsApiIntegrationTest {
             "db-migrations/claims/V6__exclusion_decline.sql",
             "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
             "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
-            "db-migrations/claims/V11__claim_document_request.sql");
+            "db-migrations/claims/V11__claim_document_request.sql",
+            "db-migrations/claims/V12__claim_settled_at.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -747,5 +750,42 @@ class ClaimsApiIntegrationTest {
             .isInstanceOf(InvalidClaimStateException.class)
             .hasMessageContaining(first.toString());
         assertThat(claimsApi.getClaim(legacyDuplicate.getClaimId()).status()).isEqualTo(ClaimStatus.UNDER_ASSESSMENT);
+    }
+
+    // ---- When the claim settled (V12, 2026-10-15) --------------------------------------------
+
+    /**
+     * When the money left, recorded at the moment it did. Nothing stored this before V12, so "settled this
+     * month" could not be asked; updatedAt is not an answer, since a later correction moves it.
+     */
+    @Test
+    void recordsWhenAClaimSettled() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-SETTLED-AT");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-settled-at");
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-9", null);
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
+            "payee-ref-9", "settle-idem-settled-at", "manager-9");
+        assertThat(claimsApi.getClaim(claimId).settledAt()).isNull();
+
+        Instant before = Instant.now();
+        settleDirectly(claimId, tenantId);
+
+        ClaimView settled = claimsApi.getClaim(claimId);
+        assertThat(settled.status()).isEqualTo(ClaimStatus.SETTLED);
+        assertThat(settled.settledAt()).isNotNull();
+        assertThat(settled.settledAt()).isBetween(before.minus(1, ChronoUnit.MINUTES),
+            Instant.now().plus(1, ChronoUnit.MINUTES));
+    }
+
+    @Test
+    void anUnsettledClaimHasNoSettlementDate() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-UNSETTLED");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-unsettled");
+
+        assertThat(claimsApi.getClaim(claimId).settledAt()).isNull();
     }
 }

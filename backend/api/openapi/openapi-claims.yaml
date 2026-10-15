@@ -719,6 +719,13 @@ components:
         accidental:
           description: Whether the death was accidental; null where coveredLifeId is.
           type: [boolean, "null"]
+        settledAt:
+          description: >-
+            When the claim settled. Null while unsettled, and null for every claim settled before
+            2026-10-15, when the column was added — those rows were never recorded and are not
+            backfilled.
+          type: [string, "null"]
+          format: date-time
     ClaimSearchResponse:
       type: object
       properties:

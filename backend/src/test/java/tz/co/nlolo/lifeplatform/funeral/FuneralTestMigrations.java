@@ -36,6 +36,7 @@ public final class FuneralTestMigrations {
         "db-migrations/policy/V35__covered_life.sql",
         "db-migrations/policy/V39__covered_life_member.sql",
         "db-migrations/claims/V10__funeral_claims.sql",
+        "db-migrations/claims/V12__claim_settled_at.sql",
     };
 
     public static final String[] ALL = Stream.concat(Stream.of(AnnuityTestMigrations.ALL), Stream.of(FUNERAL))

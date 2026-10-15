@@ -163,6 +163,7 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
             "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
             "db-migrations/claims/V11__claim_document_request.sql",
+            "db-migrations/claims/V12__claim_settled_at.sql",
             // The settlement rail. A credit-life payout takes the EFT rail, which calls no
             // gateway at all -- so proving the whole chain here needs the payment schema and
             // nothing else: no WireMock, no aggregator, no stub. That is the rail being what
