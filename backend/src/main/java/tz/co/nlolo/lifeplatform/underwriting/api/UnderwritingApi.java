@@ -5,6 +5,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -226,6 +227,12 @@ public interface UnderwritingApi {
      * callers ask only "the open cases" and have no opinion about the rest.
      */
     Page<UnderwritingCaseView> listCases(CaseFilter filter, Pageable pageable);
+
+    /**
+     * Decisions per month and outcome with their average turnaround, {@code from} through {@code to} inclusive,
+     * oldest first. A month in which nothing was decided is absent rather than zero.
+     */
+    List<DecisionMonth> decisionsByMonth(YearMonth from, YearMonth to);
 
     /**
      * Decided cases no policy has been issued from yet -- what manual issuance may pick (2026-10-08). Declined

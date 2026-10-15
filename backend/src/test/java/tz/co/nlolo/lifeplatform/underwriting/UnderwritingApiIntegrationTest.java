@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -21,6 +22,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
@@ -113,6 +115,8 @@ class UnderwritingApiIntegrationTest {
     private PartyApi partyApi;
     @Autowired
     private ProductApi productApi;
+    @Autowired
+    private JdbcTemplate jdbc;
 
     private UUID openTestCase(BigDecimal sumAssured) {
         var applicant = partyApi.registerIndividual("Test Applicant", LocalDate.of(1990, 1, 1), "+255712345678", null, "test");
@@ -1002,6 +1006,55 @@ class UnderwritingApiIntegrationTest {
         assertEquals(List.of(referred), underwritingApi
             .listCases(CaseFilter.none().withReferral(ReferralStatus.REFERRED_TO_SENIOR), PAGE)
             .getContent().stream().map(UnderwritingCaseView::caseId).toList());
+    }
+
+    /**
+     * Open a case and pin when it was opened. The entity sets {@code createdAt} from the clock, and a turnaround
+     * test needs both ends at known points, so the instants are written straight to the row.
+     */
+    private UUID openCaseCreatedAt(Instant createdAt) {
+        UUID caseId = assessedCase();
+        jdbc.update("UPDATE underwriting.underwriting_case SET created_at = ? WHERE case_id = ?",
+            java.sql.Timestamp.from(createdAt), caseId);
+        return caseId;
+    }
+
+    /** Decide a case, then pin when it was decided. */
+    private void decideAt(UUID caseId, DecisionOutcome outcome, Instant decidedAt) {
+        boolean overrides = outcome != DecisionOutcome.ACCEPT;
+        underwritingApi.decide(caseId, new UnderwritingApi.DecisionInput(outcome, null, "For the dashboard"),
+            overrides ? "senior1" : "decider1", overrides);
+        jdbc.update("UPDATE underwriting.underwriting_case SET decision_decided_at = ? WHERE case_id = ?",
+            java.sql.Timestamp.from(decidedAt), caseId);
+    }
+
+    /**
+     * How many decisions of each kind, and how long each took. The average is the module's own arithmetic about its
+     * own rows -- a dashboard that computed it would be adding up a page of cases and calling it the truth.
+     *
+     * <p>Per month and per outcome, because a card reads the last complete month and a chart reads them all.
+     */
+    @Test
+    void averagesTurnaroundPerMonthAndOutcome() {
+        UUID fast = openCaseCreatedAt(Instant.parse("2026-03-01T08:00:00Z"));
+        decideAt(fast, DecisionOutcome.ACCEPT, Instant.parse("2026-03-03T08:00:00Z"));
+        UUID slow = openCaseCreatedAt(Instant.parse("2026-03-01T08:00:00Z"));
+        decideAt(slow, DecisionOutcome.ACCEPT, Instant.parse("2026-03-09T08:00:00Z"));
+        UUID other = openCaseCreatedAt(Instant.parse("2026-03-02T08:00:00Z"));
+        decideAt(other, DecisionOutcome.DECLINED, Instant.parse("2026-03-04T08:00:00Z"));
+        openCaseCreatedAt(Instant.parse("2026-03-02T08:00:00Z")); // never decided: in no month
+
+        List<DecisionMonth> months = underwritingApi.decisionsByMonth(YearMonth.of(2026, 3), YearMonth.of(2026, 3));
+
+        assertEquals(List.of("2026-03 ACCEPT 2 5.0", "2026-03 DECLINED 1 2.0"), months.stream()
+            .map(m -> m.month() + " " + m.outcome() + " " + m.cases() + " " + m.averageDays())
+            .sorted().toList());
+    }
+
+    /** A month nobody decided anything in is ABSENT, not a zero: zero decisions and no data look different. */
+    @Test
+    void leavesOutAMonthWithNoDecisions() {
+        assertTrue(underwritingApi.decisionsByMonth(YearMonth.of(2020, 1), YearMonth.of(2020, 2)).isEmpty());
     }
 
     /** The old four-argument call is unchanged for its ~30 callers: the same rows, through the new filter. */
