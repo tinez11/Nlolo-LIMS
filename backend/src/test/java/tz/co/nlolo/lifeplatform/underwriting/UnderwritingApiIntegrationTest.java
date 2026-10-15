@@ -10,6 +10,8 @@ import tz.co.nlolo.lifeplatform.underwriting.api.*;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -17,7 +19,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -942,5 +946,70 @@ class UnderwritingApiIntegrationTest {
         TenantContext.clear();
         TenantContext.set(UUID.randomUUID());
         assertThrows(UnderwritingCaseNotFoundException.class, () -> underwritingApi.getCase(caseId));
+    }
+
+    // ---- The dashboard dimensions (2026-10-15) ----------------------------------------------
+
+    private static final Pageable PAGE = PageRequest.of(0, 20);
+
+    private UUID decidedCase(DecisionOutcome outcome) {
+        UUID caseId = assessedCase();
+        // DECLINED departs from the engine's recommendation on a clean case, so it takes a senior.
+        boolean overrides = outcome != DecisionOutcome.ACCEPT;
+        underwritingApi.decide(caseId, new UnderwritingApi.DecisionInput(outcome, null, "For the dashboard"),
+            overrides ? "senior1" : "decider1", overrides);
+        return caseId;
+    }
+
+    /**
+     * The three dimensions a dashboard counts on and the search could not express: what was decided, whether it went
+     * to a senior, and when. Each is one null-safe clause; together they are "accepted this month", "declined this
+     * month" and "waiting on a senior".
+     */
+    @Test
+    void filtersCasesByOutcomeReferralAndWhenTheyWereDecided() {
+        UUID accepted = decidedCase(DecisionOutcome.ACCEPT);
+        UUID declined = decidedCase(DecisionOutcome.DECLINED);
+        UUID open = openTestCase(new BigDecimal("1000000"));
+
+        assertEquals(List.of(accepted), underwritingApi
+            .listCases(CaseFilter.none().withOutcome(DecisionOutcome.ACCEPT), PAGE)
+            .getContent().stream().map(UnderwritingCaseView::caseId).toList());
+        assertEquals(1, underwritingApi
+            .listCases(CaseFilter.none().withOutcome(DecisionOutcome.DECLINED), PAGE).getTotalElements());
+
+        // Decided inside the window; the undecided case is never in a decided-date range, whatever the bounds.
+        Instant now = Instant.now();
+        assertEquals(2, underwritingApi.listCases(
+            CaseFilter.none().withDecided(now.minus(1, ChronoUnit.DAYS), now.plus(1, ChronoUnit.DAYS)), PAGE)
+            .getTotalElements());
+        assertEquals(0, underwritingApi.listCases(
+            CaseFilter.none().withDecided(now.plus(1, ChronoUnit.DAYS), now.plus(2, ChronoUnit.DAYS)), PAGE)
+            .getTotalElements());
+        assertTrue(underwritingApi.listCases(CaseFilter.none(), PAGE).getContent().stream()
+            .map(UnderwritingCaseView::caseId).anyMatch(open::equals));
+        assertEquals(declined, underwritingApi
+            .listCases(CaseFilter.none().withOutcome(DecisionOutcome.DECLINED), PAGE)
+            .getContent().get(0).caseId());
+    }
+
+    @Test
+    void filtersCasesWaitingOnASeniorUnderwriter() {
+        UUID referred = openTestCase(new BigDecimal("1000000"));
+        underwritingApi.referToSeniorUnderwriter(referred);
+        openTestCase(new BigDecimal("1000000"));
+
+        assertEquals(List.of(referred), underwritingApi
+            .listCases(CaseFilter.none().withReferral(ReferralStatus.REFERRED_TO_SENIOR), PAGE)
+            .getContent().stream().map(UnderwritingCaseView::caseId).toList());
+    }
+
+    /** The old four-argument call is unchanged for its ~30 callers: the same rows, through the new filter. */
+    @Test
+    void theFourArgumentListStillWorks() {
+        UUID open = openTestCase(new BigDecimal("1000000"));
+
+        assertTrue(underwritingApi.listCases(UnderwritingCaseStatus.OPEN, null, null, PAGE)
+            .getContent().stream().map(UnderwritingCaseView::caseId).anyMatch(open::equals));
     }
 }

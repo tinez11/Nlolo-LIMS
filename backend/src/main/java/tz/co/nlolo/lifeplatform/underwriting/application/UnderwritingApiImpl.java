@@ -1193,16 +1193,30 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     @Override
     public Page<UnderwritingCaseView> listCases(UnderwritingCaseStatus status, UUID applicantPartyId,
                                                  Set<UUID> applicantPartyIds, Pageable pageable) {
+        return listCases(CaseFilter.status(status).withApplicant(applicantPartyId).withApplicants(applicantPartyIds),
+            pageable);
+    }
+
+    @Override
+    public Page<UnderwritingCaseView> listCases(CaseFilter filter, Pageable pageable) {
         UUID tenantId = TenantContext.get();
         Page<UnderwritingCase> page;
         // The two pre-existing derived-query paths stay untouched for the common staff case (no
-        // applicant filter, no agent scope) -- only a caller that actually needs one of the new
-        // dimensions routes through `search`. Same reasoning as ClaimsApiImpl.searchClaims.
-        if (applicantPartyId != null || applicantPartyIds != null) {
-            page = underwritingCaseRepository.search(tenantId, status != null ? status.name() : null,
-                applicantPartyId, applicantPartyIds, pageable);
-        } else if (status != null) {
-            page = underwritingCaseRepository.findByTenantIdAndStatus(tenantId, status.name(), pageable);
+        // applicant filter, no agent scope, and none of the dimensions added 2026-10-15) -- only a
+        // caller that actually needs one routes through `search`. Same reasoning as
+        // ClaimsApiImpl.searchClaims.
+        boolean narrowed = filter.applicantPartyId() != null || filter.applicantPartyIds() != null
+            || filter.outcome() != null || filter.referral() != null
+            || filter.decidedFrom() != null || filter.decidedTo() != null;
+        if (narrowed) {
+            page = underwritingCaseRepository.search(tenantId,
+                filter.status() == null ? null : filter.status().name(),
+                filter.outcome() == null ? null : filter.outcome().name(),
+                filter.referral() == null ? null : filter.referral().name(),
+                filter.decidedFrom(), filter.decidedTo(),
+                filter.applicantPartyId(), filter.applicantPartyIds(), pageable);
+        } else if (filter.status() != null) {
+            page = underwritingCaseRepository.findByTenantIdAndStatus(tenantId, filter.status().name(), pageable);
         } else {
             page = underwritingCaseRepository.findByTenantId(tenantId, pageable);
         }

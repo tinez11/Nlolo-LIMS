@@ -219,6 +219,15 @@ public interface UnderwritingApi {
                                           Set<UUID> applicantPartyIds, Pageable pageable);
 
     /**
+     * The same list, by every dimension a caller can ask on (2026-10-15): status, decision outcome, referral status,
+     * when it was decided, and the applicant scope.
+     *
+     * <p>An overload rather than a widened signature, for the reason {@code registerIndividual} records: about thirty
+     * callers ask only "the open cases" and have no opinion about the rest.
+     */
+    Page<UnderwritingCaseView> listCases(CaseFilter filter, Pageable pageable);
+
+    /**
      * Decided cases no policy has been issued from yet -- what manual issuance may pick (2026-10-08). Declined
      * cases included (an underwriting override issues against one); members' evidence cases excluded.
      *

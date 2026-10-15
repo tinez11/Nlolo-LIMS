@@ -62,6 +62,24 @@ paths:
         - name: status
           in: query
           schema: { type: string, enum: [OPEN, IN_REVIEW, DECIDED] }
+        - name: outcome
+          in: query
+          description: What was decided. Added 2026-10-15 for the underwriting dashboard.
+          schema: { type: string, enum: [ACCEPT, LOADED, DECLINED, POSTPONED] }
+        - name: referral
+          in: query
+          description: Whether the case went to a senior underwriter. Tracked independently of the decision.
+          schema: { type: string, enum: [NONE, REFERRED_TO_SENIOR, REFERRAL_RESOLVED] }
+        - name: decidedFrom
+          in: query
+          description: >-
+            Civil day in Africa/Dar_es_Salaam, inclusive. Excludes undecided cases: a case with no
+            decision date is in no range, whatever the bounds.
+          schema: { type: string, format: date }
+        - name: decidedTo
+          in: query
+          description: Civil day in Africa/Dar_es_Salaam, inclusive.
+          schema: { type: string, format: date }
         - name: applicantPartyId
           in: query
           description: Narrows to one applicant, for a client's underwriting panel.

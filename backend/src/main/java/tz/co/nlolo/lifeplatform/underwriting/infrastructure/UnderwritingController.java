@@ -12,7 +12,11 @@ import tz.co.nlolo.lifeplatform.underwriting.api.ProposalDetails;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseStatus;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
+import tz.co.nlolo.lifeplatform.underwriting.api.CaseFilter;
+import tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome;
+import tz.co.nlolo.lifeplatform.underwriting.api.ReferralStatus;
 import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -27,6 +31,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -34,6 +41,9 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/underwriting")
 public class UnderwritingController {
+
+    /** Decision dates are civil days here, never UTC: a case decided at 01:00 EAT was decided that day, not the day before. */
+    private static final ZoneId CIVIL = ZoneId.of("Africa/Dar_es_Salaam");
 
     private final UnderwritingApi underwritingApi;
     /** Resolves an agents-realm caller's own registered clients, to scope the case list by. */
@@ -66,6 +76,10 @@ public class UnderwritingController {
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<UnderwritingCaseSearchResponse> listCases(
             @RequestParam(required = false) UnderwritingCaseStatus status,
+            @RequestParam(required = false) DecisionOutcome outcome,
+            @RequestParam(required = false) ReferralStatus referral,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate decidedFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate decidedTo,
             @RequestParam(required = false) UUID applicantPartyId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int pageSize,
@@ -75,8 +89,15 @@ public class UnderwritingController {
         // MUST stay null for staff: null means "no scope", an empty set means "scope to nothing".
         Set<UUID> applicantPartyIds = isAgent ? partyApi.partyIdsRegisteredBy(jwt.getSubject()) : null;
 
+        // Civil days in Africa/Dar_es_Salaam, half-open: decidedFrom 00:00 inclusive to decidedTo+1 00:00 exclusive,
+        // so "decided in October" is every instant of the 1st through the 31st and nothing of 1 November.
+        Instant from = decidedFrom == null ? null : decidedFrom.atStartOfDay(CIVIL).toInstant();
+        Instant to = decidedTo == null ? null : decidedTo.plusDays(1).atStartOfDay(CIVIL).toInstant();
+        CaseFilter filter = CaseFilter.status(status).withOutcome(outcome).withReferral(referral)
+            .withDecided(from, to).withApplicant(applicantPartyId).withApplicants(applicantPartyIds);
+
         Pageable pageable = PageRequest.of(page, Math.min(pageSize, 100), Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<UnderwritingCaseView> result = underwritingApi.listCases(status, applicantPartyId, applicantPartyIds, pageable);
+        Page<UnderwritingCaseView> result = underwritingApi.listCases(filter, pageable);
         return ResponseEntity.ok(UnderwritingCaseSearchResponse.from(result));
     }
 
