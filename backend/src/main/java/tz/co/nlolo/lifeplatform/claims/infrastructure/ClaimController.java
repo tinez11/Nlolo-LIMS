@@ -1,11 +1,15 @@
 package tz.co.nlolo.lifeplatform.claims.infrastructure;
 
 import tz.co.nlolo.lifeplatform.claims.api.ClaimAssessmentView;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimFilter;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimStatus;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimsApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import jakarta.validation.Valid;
+import java.time.LocalDate;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -44,6 +48,9 @@ import java.util.UUID;
  */
 @RestController
 public class ClaimController {
+
+    /** Registration dates are civil days here, never UTC. */
+    private static final java.time.ZoneId CIVIL = java.time.ZoneId.of("Africa/Dar_es_Salaam");
 
     private final ClaimsApi claimsApi;
     private final PolicyApi policyApi;
@@ -124,8 +131,11 @@ public class ClaimController {
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<ClaimSearchResponseDto> listClaims(
             @RequestParam(required = false) ClaimStatus status,
+            @RequestParam(required = false) ClaimType claimType,
             @RequestParam(required = false) UUID claimantPartyId,
             @RequestParam(required = false) String q,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate registeredFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate registeredTo,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int pageSize,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
@@ -136,7 +146,13 @@ public class ClaimController {
         // distribution dependency, since a claim carries no agentOfRecordId of its own.
         Set<String> policyNumbers = isAgent(authentication)
             ? policyApi.policyNumbersForAgentTeam(ownAgentPartyIdOrThrow(jwt)) : null;
-        Page<ClaimView> result = claimsApi.searchClaims(status, effectiveClaimantPartyId, policyNumbers, q,
+        // Civil days in Africa/Dar_es_Salaam, half-open: registeredFrom 00:00 inclusive to registeredTo+1 00:00
+        // exclusive, so "registered in October" is every instant of the 1st through the 31st and none of 1 November.
+        ClaimFilter filter = ClaimFilter.status(status).withClaimType(claimType)
+            .withClaimant(effectiveClaimantPartyId).withPolicyNumbers(policyNumbers).withQuery(q)
+            .withRegistered(registeredFrom == null ? null : registeredFrom.atStartOfDay(CIVIL).toInstant(),
+                registeredTo == null ? null : registeredTo.plusDays(1).atStartOfDay(CIVIL).toInstant());
+        Page<ClaimView> result = claimsApi.searchClaims(filter,
             PageRequest.of(page, Math.min(pageSize, 100), Sort.by(Sort.Direction.DESC, "createdAt")));
         return ResponseEntity.ok(ClaimSearchResponseDto.from(result));
     }

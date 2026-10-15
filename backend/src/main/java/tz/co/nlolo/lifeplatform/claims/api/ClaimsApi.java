@@ -5,6 +5,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -66,6 +67,25 @@ public interface ClaimsApi {
      * distribution dependency here).
      */
     Page<ClaimView> searchClaims(ClaimStatus status, UUID claimantPartyId, Set<String> policyNumbers, String q, Pageable pageable);
+
+    /**
+     * The same search, by every dimension a caller can ask on (2026-10-15): the five above plus the claim type,
+     * when the claim was registered and when it settled.
+     *
+     * <p>An overload rather than a widened signature, for the reason {@code CaseFilter} records in underwriting:
+     * most callers ask only "the claims in this status" and have no opinion about the rest.
+     */
+    Page<ClaimView> searchClaims(ClaimFilter filter, Pageable pageable);
+
+    /**
+     * Settled claims per month and currency with what they approved, {@code from} through {@code to} inclusive,
+     * oldest first. A month in which nothing settled is absent rather than zero, and currencies are never added
+     * together.
+     */
+    List<SettlementMonth> settlementsByMonth(YearMonth from, YearMonth to);
+
+    /** How many document requests are still outstanding across every claim in the tenant. */
+    long countOpenDocumentRequests();
 
     /**
      * @param assessedBy the assessor's identity-provider subject -- what separation of duties

@@ -2,6 +2,8 @@
 
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimFilter;
+import tz.co.nlolo.lifeplatform.claims.api.SettlementMonth;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimAssessmentView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimCoverView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimEvidenceView;
@@ -19,8 +21,10 @@ import tz.co.nlolo.lifeplatform.claims.api.ClaimsApi;
 import tz.co.nlolo.lifeplatform.claims.api.InvalidClaimStateException;
 import tz.co.nlolo.lifeplatform.claims.domain.Claim;
 import tz.co.nlolo.lifeplatform.claims.domain.ClaimAssessment;
+import tz.co.nlolo.lifeplatform.claims.domain.ClaimDocumentRequest;
 import tz.co.nlolo.lifeplatform.claims.domain.SettlementDecision;
 import tz.co.nlolo.lifeplatform.claims.domain.ClaimEvidence;
+import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimDocumentRequestRepository;
 import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimAssessmentRepository;
 import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimEvidenceRepository;
 import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimRepository;
@@ -46,6 +50,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Collection;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +71,7 @@ public class ClaimsApiImpl implements ClaimsApi {
 
     private static final Logger log = LoggerFactory.getLogger(ClaimsApiImpl.class);
 
+    private final ClaimDocumentRequestRepository claimDocumentRequestRepository;
     private final ClaimRepository claimRepository;
     private final ClaimAssessmentRepository claimAssessmentRepository;
     private final SettlementDecisionRepository settlementDecisionRepository;
@@ -92,7 +98,9 @@ public class ClaimsApiImpl implements ClaimsApi {
                           ApplicationEventPublisher eventPublisher, PlatformTransactionManager transactionManager,
                           AnnuityApi annuityApi, FuneralClaims funeralClaims,
                           tz.co.nlolo.lifeplatform.unitlinked.api.UnitLinkedApi unitLinkedApi,
-                          ClaimInvestmentComponent investmentComponent) {
+                          ClaimInvestmentComponent investmentComponent,
+                          ClaimDocumentRequestRepository claimDocumentRequestRepository) {
+        this.claimDocumentRequestRepository = claimDocumentRequestRepository;
         this.investmentComponent = investmentComponent;
         this.unitLinkedApi = unitLinkedApi;
         this.annuityApi = annuityApi;
@@ -429,14 +437,29 @@ public class ClaimsApiImpl implements ClaimsApi {
      * {@code status} by any prior test). */
     @Override
     public Page<ClaimView> searchClaims(ClaimStatus status, UUID claimantPartyId, Set<String> policyNumbers, String q, Pageable pageable) {
+        return searchClaims(ClaimFilter.status(status).withClaimant(claimantPartyId)
+            .withPolicyNumbers(policyNumbers).withQuery(q), pageable);
+    }
+
+    @Override
+    public Page<ClaimView> searchClaims(ClaimFilter filter, Pageable pageable) {
         UUID tenantId = TenantContext.get();
+        ClaimStatus status = filter.status();
+        UUID claimantPartyId = filter.claimantPartyId();
+        Collection<String> policyNumbers = filter.policyNumbers();
+        String q = filter.q();
         Page<Claim> page;
         boolean hasQ = q != null && !q.isBlank();
+        boolean narrowed = filter.claimType() != null
+            || filter.registeredFrom() != null || filter.registeredTo() != null
+            || filter.settledFrom() != null || filter.settledTo() != null;
         // Same "leave the pre-existing derived-query paths alone for the common case" reasoning as
-        // PolicyApiImpl.searchPolicies -- an agents-realm caller's non-null policyNumbers, or a
-        // present q, routes through the new wider query.
-        if (policyNumbers != null || hasQ) {
-            page = claimRepository.search(tenantId, claimantPartyId, status, policyNumbers, hasQ ? q.trim() : null, pageable);
+        // PolicyApiImpl.searchPolicies -- an agents-realm caller's non-null policyNumbers, a
+        // present q, or any of the dimensions added 2026-10-15, routes through the wider query.
+        if (policyNumbers != null || hasQ || narrowed) {
+            page = claimRepository.search(tenantId, claimantPartyId, status, filter.claimType(), policyNumbers,
+                hasQ ? q.trim() : null, filter.registeredFrom(), filter.registeredTo(),
+                filter.settledFrom(), filter.settledTo(), pageable);
         } else if (claimantPartyId != null && status != null) {
             page = claimRepository.findByTenantIdAndClaimantPartyIdAndStatus(tenantId, claimantPartyId, status, pageable);
         } else if (claimantPartyId != null) {
@@ -447,6 +470,25 @@ public class ClaimsApiImpl implements ClaimsApi {
             page = claimRepository.findByTenantId(tenantId, pageable);
         }
         return page.map(claim -> toView(claim, deriveContestabilityReview(claim)));
+    }
+
+    /** Settlement months are civil months in Africa/Dar_es_Salaam, never UTC. */
+    private static final java.time.ZoneId CIVIL = java.time.ZoneId.of("Africa/Dar_es_Salaam");
+
+    @Override
+    public List<SettlementMonth> settlementsByMonth(java.time.YearMonth from, java.time.YearMonth to) {
+        Instant start = from.atDay(1).atStartOfDay(CIVIL).toInstant();
+        Instant end = to.plusMonths(1).atDay(1).atStartOfDay(CIVIL).toInstant();
+        return claimRepository.settlementsByMonth(TenantContext.get(), start, end).stream()
+            .map(row -> new SettlementMonth(java.time.YearMonth.parse((String) row[0]), (String) row[1],
+                ((Number) row[2]).longValue(), (BigDecimal) row[3]))
+            .toList();
+    }
+
+    @Override
+    public long countOpenDocumentRequests() {
+        return claimDocumentRequestRepository.countByTenantIdAndStatus(TenantContext.get(),
+            ClaimDocumentRequest.Status.OPEN.name());
     }
 
     @Override
