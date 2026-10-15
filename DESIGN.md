@@ -820,6 +820,30 @@ panel is worse than an honest dash. Both components carry those three states, an
 neither is a live region: the pager below the table already announces the same
 total politely, and two regions reading out one number is worse than one.
 
+### Dashboard (2026-10-14)
+
+Where a working role lands: underwriting, claims, finance, and the agent. Replaces "Today", whose work-waiting counts
+became each dashboard's work panel. One tab per dashboard a person holds; an inactive tab is not mounted.
+
+- **`KpiCard`** — a figure, its label, a hint, and optionally a delta. A **link** to exactly the list or report it was
+  read from, already filtered, or **not a link** when that destination cannot reproduce its filter (the journals list
+  reads no status from its URL, so "journals awaiting approval" is not clickable). A failed figure is "Not available"
+  with an em dash, never 0, and never a link.
+- **A figure never wraps.** It is `whitespace-nowrap`; the card is a size container and the figure steps from the
+  Display tier to the Headline tier when the card is narrow — both tiers already on the page, so no third size. The row
+  is `auto-fill` with a 16rem floor, so a narrow screen gets fewer cards across rather than a squeezed number. Money is
+  never abbreviated ("1.28M"): a finance reader reconciles to the cent.
+- **The work panel** leads the work column with `emphasis` — the one act the dashboard exists for. Then the rest.
+- **The right column** holds alerts, quick actions and "Not here yet". It is not a record rail: quick actions are links
+  into the screens that own each act, every one with its own confirmation, not acts in their own right.
+- **"Not here yet"** names what is deliberately missing because the platform has no concept behind it (SLA deadlines,
+  quotes, leads). An honest list beats an empty widget.
+- **The chart** is ink (this year) and Rule Strong grey (last year). The month in progress is an ink outline, never a
+  solid bar beside complete months.
+- **The activity feed** ends the three staff dashboards. It says what happened and when, never who: the audit log
+  records no actor, and the subtitle says so rather than letting the feed pass for an audit trail of people. An event
+  type the console has no words for is humanised from its own name instead of being dropped.
+
 ### Navigation
 
 Sidebar items are Body type in Muted Ink at 6px/8px with a 6px radius and a 16px

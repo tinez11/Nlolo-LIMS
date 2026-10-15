@@ -22,8 +22,8 @@ setup(`authenticate as ${FINANCE_USER}`, async ({ page }) => {
   await page.locator('#kc-login').click();
 
   await page.waitForURL(/localhost:5173\/staff/, { timeout: 30_000 });
-  // Every staff role lands on Today since 2026-10-09 (review C5).
-  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
+  // Every staff role lands on the Dashboard (2026-10-14); it replaced Today, which replaced the module landings (review C5).
+  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
 
   await page.context().storageState({ path: 'e2e/.auth/staff-finance.json' });
 });
