@@ -172,10 +172,14 @@ same regex on inputs, and **no client-side arithmetic** — the backend computes
 every total. Working currency is TZS.
 
 **A figure is a count, or a report's own number.** Revised 2026-10-14, when the
-reporting module made some figures provable that were not before. Two sources
-only: a paged search's `totalElements` (work waiting, by one status), and a value
+reporting module made some figures provable that were not before. Three sources
+only: a paged search's `totalElements` (work waiting, by one status), a value
 the reporting module computed (`GET /reports/{key}` — premium collections, new
-business, the balance sheet, the income statement and the rest). A trend, a
+business, the balance sheet, the income statement and the rest), and an
+aggregate a module computed about its OWN rows — underwriting's turnaround,
+claims' settled totals, billing's receivables aging (2026-10-15). What does not
+move: the browser never sums, averages or differences anything, and a figure
+appears only where a person can open the list or report that proves it. A trend, a
 "vs last month" or a chart is allowed **only** when every point on it is one of
 those report values; a card reading "↗ 12% wk/wk" with nothing behind it is still
 worse than no card. Dashboards read their figures from **one server-side endpoint
