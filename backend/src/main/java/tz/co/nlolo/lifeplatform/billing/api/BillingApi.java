@@ -5,6 +5,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,6 +24,14 @@ public interface BillingApi {
      * @param resolved null for both, false for the live queue, true for settled history
      */
     Page<ArrearsCaseView> searchArrears(Integer minDunningLevel, Boolean resolved, Pageable pageable);
+
+    /**
+     * What is owed as at {@code asOf}, aged into five bands, one entry per currency (2026-10-15). Currencies are
+     * never added together, and every band is present even when empty -- "nothing is this overdue" is an answer.
+     *
+     * @param asOf the civil day the age is measured from, in {@code Africa/Dar_es_Salaam}
+     */
+    List<ReceivablesAging> receivablesAging(LocalDate asOf);
 
     /**
      * The reconciliation queue: this tenant's field-captured premium receipts, oldest first.

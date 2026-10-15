@@ -127,6 +127,28 @@ public class BillingApiImpl implements BillingApi {
         return cases.map(c -> toView(c, invoicesById.get(c.getInvoiceId())));
     }
 
+    @Override
+    public List<ReceivablesAging> receivablesAging(java.time.LocalDate asOf) {
+        // The query returns only the bands that have rows; the view promises all five, in order,
+        // because an empty band means "nothing is this overdue" rather than "no data".
+        Map<String, Map<String, Object[]>> byCurrency = new java.util.LinkedHashMap<>();
+        for (Object[] row : arrearsCaseRepository.receivablesAging(TenantContext.get(), asOf)) {
+            byCurrency.computeIfAbsent((String) row[0], c -> new java.util.HashMap<>())
+                .put((String) row[1], row);
+        }
+        return byCurrency.entrySet().stream()
+            .map(entry -> new ReceivablesAging(entry.getKey(), ReceivablesAging.BUCKETS.stream()
+                .map(name -> {
+                    Object[] row = entry.getValue().get(name);
+                    return row == null
+                        ? new ReceivablesAging.Bucket(name, 0L, BigDecimal.ZERO.setScale(2))
+                        : new ReceivablesAging.Bucket(name, ((Number) row[2]).longValue(),
+                            ((BigDecimal) row[3]).setScale(2));
+                })
+                .toList()))
+            .toList();
+    }
+
     /**
      * A queue row. The invoice may be absent only if it were deleted, which nothing on this
      * platform does -- a waived or paid invoice keeps its row -- so the money fields are null
