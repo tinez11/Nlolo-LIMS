@@ -128,7 +128,7 @@ components:
       type: object
       additionalProperties: false
       required: [registered, underAssessment, settlementRequested, approved, reopened, settled,
-                 openDocumentRequests, settlements, queueStatus, queue, recentActivity]
+                 openDocumentRequests, settlements, settlementSeries, queueStatus, queue, recentActivity]
       properties:
         registered: { $ref: '#/components/schemas/Count' }
         underAssessment: { $ref: '#/components/schemas/Count' }
@@ -145,6 +145,13 @@ components:
           description: >-
             The LAST COMPLETE month only, one entry per currency. Currencies are NEVER added together: a total
             of TZS and USD is a number in no currency.
+          type: array
+          items: { $ref: '#/components/schemas/SettlementMonth' }
+        settlementSeries:
+          description: >-
+            Twelve complete months for the benefits-paid chart, oldest first, ending with the last complete
+            month, one entry per month and currency. The cards above read the last month of these; this is
+            the same data over a wider window, not a second figure.
           type: array
           items: { $ref: '#/components/schemas/SettlementMonth' }
         queueStatus: { $ref: '#/components/schemas/ClaimStatus' }

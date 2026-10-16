@@ -118,12 +118,30 @@ class ClaimsDashboardTest {
             .containsExactly("2026-09 TZS 9 41000000.00 TZS", "2026-09 USD 1 1000.00 USD");
     }
 
-    /** The last complete month, both sides. */
+    /**
+     * TWELVE complete months, ending with the last complete one (phase 3): one read serving the cards, which show
+     * the last complete month, and the chart, which shows all twelve. The current month is in neither.
+     */
     @Test
-    void asksSettlementsForTheLastCompleteMonth() {
+    void asksSettlementsForTwelveCompleteMonths() {
         dashboard.build(true, TODAY);
 
-        verify(claims).settlementsByMonth(java.time.YearMonth.of(2026, 9), java.time.YearMonth.of(2026, 9));
+        verify(claims).settlementsByMonth(java.time.YearMonth.of(2025, 10), java.time.YearMonth.of(2026, 9));
+    }
+
+    /** The cards still read the LAST COMPLETE month alone, out of the twelve the composer now fetches. */
+    @Test
+    void theCardsReadOnlyTheLastCompleteMonthOfTheTwelve() {
+        when(claims.settlementsByMonth(any(), any())).thenReturn(List.of(
+            new tz.co.nlolo.lifeplatform.claims.api.SettlementMonth(
+                java.time.YearMonth.of(2026, 8), "TZS", 3, new java.math.BigDecimal("12000000.00")),
+            new tz.co.nlolo.lifeplatform.claims.api.SettlementMonth(
+                java.time.YearMonth.of(2026, 9), "TZS", 9, new java.math.BigDecimal("41000000.00"))));
+
+        ClaimsDashboardView view = dashboard.build(true, TODAY);
+
+        assertThat(view.settlements()).extracting(s -> s.month()).containsExactly("2026-09");
+        assertThat(view.settlementSeries()).extracting(s -> s.month()).containsExactly("2026-08", "2026-09");
     }
 
     /** One aggregate down costs one card. */

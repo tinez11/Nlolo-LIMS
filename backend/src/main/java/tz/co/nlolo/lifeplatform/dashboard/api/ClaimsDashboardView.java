@@ -13,7 +13,9 @@ import java.util.UUID;
  */
 public record ClaimsDashboardView(Long registered, Long underAssessment, Long settlementRequested, Long approved,
                                   Long reopened, Long settled, Long openDocumentRequests,
-                                  List<SettlementMonth> settlements, String queueStatus, List<QueuedClaim> queue,
+                                  List<SettlementMonth> settlements,
+                                  List<SettlementMonth> settlementSeries,
+                                  String queueStatus, List<QueuedClaim> queue,
                                   List<ActivityItem> recentActivity) {
 
     public record QueuedClaim(UUID claimId, String policyNumber, UUID claimantPartyId, String claimType,

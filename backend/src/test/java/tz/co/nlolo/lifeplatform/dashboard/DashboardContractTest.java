@@ -118,6 +118,8 @@ class DashboardContractTest {
         when(claims.build(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any())).thenReturn(
             new ClaimsDashboardView(17L, 9L, 6L, 4L, 2L, 128L, 11L,
             List.of(new ClaimsDashboardView.SettlementMonth("2026-09", "TZS", 9, new Money("41000000.00", "TZS"))),
+            List.of(new ClaimsDashboardView.SettlementMonth("2026-08", "TZS", 3, new Money("12000000.00", "TZS")),
+                new ClaimsDashboardView.SettlementMonth("2026-09", "TZS", 9, new Money("41000000.00", "TZS"))),
             "SETTLEMENT_REQUESTED",
             List.of(new ClaimsDashboardView.QueuedClaim(UUID.randomUUID(), "POL-00A4B7A1", UUID.randomUUID(), "DEATH",
                 LocalDate.of(2026, 9, 29), "SETTLEMENT_REQUESTED")), List.of()));
@@ -131,7 +133,7 @@ class DashboardContractTest {
     @Test
     void anAssessorGetsTheAssessorsQueue() throws Exception {
         when(claims.build(org.mockito.ArgumentMatchers.eq(false), org.mockito.ArgumentMatchers.any())).thenReturn(
-            new ClaimsDashboardView(17L, 9L, 6L, 4L, 2L, 128L, 11L, List.of(), "REGISTERED", List.of(), List.of()));
+            new ClaimsDashboardView(17L, 9L, 6L, 4L, 2L, 128L, 11L, List.of(), List.of(), "REGISTERED", List.of(), List.of()));
 
         mockMvc.perform(get("/dashboards/claims").with(staff("CLAIMS_ASSESSOR")))
             .andExpect(status().isOk())

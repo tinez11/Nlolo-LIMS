@@ -11,6 +11,7 @@ import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectClaims, useDashboardStore } from '@/store/dashboardStore';
 import { ActivityFeed } from './ActivityFeed';
+import { BenefitsPaidChart } from './BenefitsPaidChart';
 import { DashboardRail } from './DashboardRail';
 
 const MONTH_NAME = [
@@ -169,6 +170,23 @@ export function ClaimsDashboardPanel() {
                 </li>
               ))}
             </ul>
+          </Panel>
+          <Panel
+            title="Benefits paid"
+            subtitle="Approved amounts of claims settled each month, in TZS."
+            actions={
+              <Link
+                to="/staff/claims?status=SETTLED"
+                className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+              >
+                Open settled claims
+              </Link>
+            }
+          >
+            <BenefitsPaidChart
+              settlements={view.settlementSeries}
+              months={[...new Set(view.settlementSeries.map((s) => s.month))]}
+            />
           </Panel>
           <ActivityFeed items={view.recentActivity} />
         </div>
