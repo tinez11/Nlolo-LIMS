@@ -164,6 +164,25 @@ class SavingsQuoteIntegrationTest {
         assertThat(quote.ratePercent()).isEqualByComparingTo("6.5");
     }
 
+    /**
+     * The two ids arrive from a URL and have to go together.
+     *
+     * <p>Found by quoting with a product id that was never checked: the deposit priced anyway, because the deposit
+     * grid hangs off the VERSION. On an account it would have been worse than untidy -- the rate comes from the
+     * PRODUCT's declarations and the floor from the version, so a mismatched pair quotes one product's rate over
+     * another's guarantee.
+     */
+    @Test
+    void refusesAVersionThatBelongsToAnotherProduct() {
+        var one = fixtures.issueDeposit(TENANT, new BigDecimal("5000000.00"), 12, TODAY);
+        var other = fixtures.issueDeposit(TENANT, new BigDecimal("5000000.00"), 12, TODAY);
+
+        assertThatThrownBy(() -> asTenant(() -> api.quoteProductSavings(other.productId(), one.productVersionId(),
+            new BigDecimal("5000000.00"), 12, TODAY)))
+            .isInstanceOf(AccumulationStateException.class)
+            .hasMessageContaining("belongs to product");
+    }
+
     /** A premium-rated product has no account to describe, and saying so beats inventing a rate for it. */
     @Test
     void refusesAProductThatKeepsNoAccount() {

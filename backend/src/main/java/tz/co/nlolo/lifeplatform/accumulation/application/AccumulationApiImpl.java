@@ -1011,6 +1011,15 @@ public class AccumulationApiImpl implements AccumulationApi {
     public SavingsQuoteView quoteProductSavings(UUID productId, UUID productVersionId, BigDecimal amount,
                                                 Integer termMonths, LocalDate asOf) {
         LocalDate on = asOf != null ? asOf : LocalDate.now();
+        // The version must belong to the product named. It matters on the ACCOUNT branch, where the rate is read
+        // from the PRODUCT's declarations while the guarantee comes from the VERSION: a mismatched pair would quote
+        // one product's declared rate over another's floor. Caught here rather than trusted, because the two ids
+        // arrive from a URL and nothing else checks that they go together.
+        UUID ownerProductId = productApi.getSnapshotByVersionId(productVersionId).productId();
+        if (!ownerProductId.equals(productId)) {
+            throw new AccumulationStateException("Product version " + productVersionId + " belongs to product "
+                + ownerProductId + ", not " + productId);
+        }
         tz.co.nlolo.lifeplatform.product.api.DepositPlan deposit = productApi.resolveDepositPlan(productVersionId);
 
         if (deposit.isDeposit()) {
