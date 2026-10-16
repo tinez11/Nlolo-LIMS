@@ -1,0 +1,72 @@
+import { useEffect, useState } from 'react';
+import { quoteProductSavings } from '@/api/accumulation';
+import type { SavingsQuoteView } from '@/api/types';
+
+/** What a savings quotation needs before it can be asked for at all. */
+export interface SavingsQuotationInputs {
+  productId: string;
+  productVersionId: string;
+  /** The deposit, or an account's opening balance. The form's "sum assured" field, which is what it means here. */
+  amount: string;
+  currency: string;
+  /** A deposit's term. Blank is allowed: the server then names the terms it offers instead of pricing one. */
+  termMonths: string;
+  /** The proposed commencement, or blank for today. */
+  asOf: string;
+}
+
+export type SavingsQuotation =
+  | { state: 'incomplete'; missing: string[] }
+  | { state: 'loading' }
+  | { state: 'quoted'; quote: SavingsQuoteView }
+  | { state: 'refused'; error: unknown };
+
+/**
+ * What a savings product would pay, read from the server as the form changes (2026-10-16).
+ *
+ * <p><b>Why a second hook.</b> {@code useQuotation} asks for a premium against a base rate table, which is the only
+ * thing the premium-quote endpoint can price. A savings account and a fixed-term deposit have no sum assured and no
+ * premium rate, so that endpoint answered every one of them with a red 422 -- "carries no base rate table" -- on
+ * products that are working exactly as designed. This asks the question those products actually answer.
+ *
+ * <p><b>It creates nothing:</b> no account, no deposit period, no interest, no ledger entry.
+ *
+ * <p><b>A refusal inside a 200.</b> A term the grid does not offer, or an amount below the smallest band, comes back
+ * as a priced-nothing quote carrying {@code refusal} and {@code offeredTermMonths} -- not as an error -- because the
+ * useful answer to "9 months" is "this deposit runs 3, 6 or 12". Only a product that keeps no account at all throws.
+ */
+export function useSavingsQuotation(inputs: SavingsQuotationInputs): SavingsQuotation {
+  const { productId, productVersionId, amount, currency, termMonths, asOf } = inputs;
+
+  const missing: string[] = [];
+  if (!productId || !productVersionId) missing.push('a product');
+  if (!amount || Number(amount) <= 0) missing.push('an amount');
+
+  const ready = missing.length === 0;
+  const key = ready ? [productId, productVersionId, amount, currency, termMonths, asOf].join('|') : '';
+
+  const [loaded, setLoaded] = useState<{ key: string; quote?: SavingsQuoteView; error?: unknown } | null>(null);
+
+  useEffect(() => {
+    if (!key) return undefined;
+    let live = true;
+    quoteProductSavings(productId, productVersionId, {
+      amount: Number(amount),
+      ...(currency ? { currency } : {}),
+      ...(termMonths ? { termMonths: Number(termMonths) } : {}),
+      ...(asOf ? { asOf } : {}),
+    }).then(
+      (quote) => live && setLoaded({ key, quote }),
+      (error: unknown) => live && setLoaded({ key, error }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [key, productId, productVersionId, amount, currency, termMonths, asOf]);
+
+  if (!ready) return { state: 'incomplete', missing };
+  // Derived, not reset in the effect: an answer for other inputs is no answer for these.
+  if (!loaded || loaded.key !== key) return { state: 'loading' };
+  if (loaded.error !== undefined) return { state: 'refused', error: loaded.error };
+  return { state: 'quoted', quote: loaded.quote as SavingsQuoteView };
+}

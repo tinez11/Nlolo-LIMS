@@ -1,10 +1,13 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { quotePremium } from '@/api/products';
+import { quoteProductSavings } from '@/api/accumulation';
+import type { SavingsQuoteView } from '@/api/types';
 import { QuotationPreview } from './QuotationPreview';
 import type { QuotationInputs } from './useQuotation';
 
 vi.mock('@/api/products');
+vi.mock('@/api/accumulation');
 
 const COMPLETE: QuotationInputs = {
   productId: 'prod-1',
@@ -40,12 +43,35 @@ const QUOTE = {
   instalmentsOverTerm: 60,
 };
 
-const render0 = (inputs: QuotationInputs = COMPLETE) =>
-  render(<QuotationPreview inputs={inputs} premiumPayingTermMonths="" commencementDate="2026-10-16" />);
+const render0 = (inputs: QuotationInputs = COMPLETE, portfolioCode = 'END') =>
+  render(
+    <QuotationPreview
+      inputs={inputs}
+      premiumPayingTermMonths=""
+      commencementDate="2026-10-16"
+      portfolioCode={portfolioCode}
+      productVersionId="ver-1"
+    />,
+  );
+
+const DEPOSIT_QUOTE: SavingsQuoteView = {
+  kind: 'DEPOSIT',
+  amount: { amount: '5000000.00', currencyCode: 'TZS' },
+  ratePercent: '6.5',
+  offeredTermMonths: [3, 6, 12],
+  termMonths: 12,
+  interest: { amount: '325000.00', currencyCode: 'TZS' },
+  maturityValue: { amount: '5325000.00', currencyCode: 'TZS' },
+  maturityDate: '2027-10-16',
+  minimumBalance: null,
+  smallestDeposit: { amount: '500000.00', currencyCode: 'TZS' },
+  refusal: null,
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(quotePremium).mockResolvedValue(QUOTE);
+  vi.mocked(quoteProductSavings).mockResolvedValue(DEPOSIT_QUOTE);
 });
 
 describe('QuotationPreview', () => {
@@ -120,5 +146,89 @@ describe('QuotationPreview', () => {
     render0();
 
     expect(await screen.findByText('Not determinable')).toBeInTheDocument();
+  });
+});
+
+/**
+ * The panel asks the question the PRODUCT answers (2026-10-16).
+ *
+ * <p>It used to ask every product for a premium off a base rate table, which 5 of 693 dev versions carry. A deposit,
+ * a savings account, a funeral plan, an annuity and a unit-linked policy are each priced on a different basis, and
+ * all of them answered that one question with a red 422 while working exactly as designed.
+ */
+describe('QuotationPreview, per pricing basis', () => {
+  it('prices a fixed-term deposit on its own grid, not as a premium', async () => {
+    render0(COMPLETE, 'DEP');
+
+    expect(await screen.findByText('Value at maturity')).toBeInTheDocument();
+    expect(screen.getByText('TZS 5,325,000.00')).toBeInTheDocument();
+    // The rate is for the WHOLE term, not a year -- saying which is the difference between a correct figure and
+    // one the customer disputes.
+    expect(screen.getByText('for the term')).toBeInTheDocument();
+    expect(screen.getByText('2027-10-16')).toBeInTheDocument();
+    // It never asks the premium engine, which is what used to produce the refusal.
+    expect(quotePremium).not.toHaveBeenCalled();
+  });
+
+  /** A term the grid does not sell is an answer, not an error: it names what IS offered. */
+  it('names the terms a deposit does offer when the chosen one is not sold', async () => {
+    vi.mocked(quoteProductSavings).mockResolvedValue({
+      ...DEPOSIT_QUOTE,
+      ratePercent: null,
+      interest: null,
+      maturityValue: null,
+      termMonths: 9,
+      refusal: 'This deposit is not offered over 9 months.',
+    });
+    render0({ ...COMPLETE, policyTermMonths: '9' }, 'DEP');
+
+    expect(await screen.findByText('This deposit is not offered over 9 months.')).toBeInTheDocument();
+    expect(screen.getByText(/offered: 3 months, 6 months, 1 year/)).toBeInTheDocument();
+  });
+
+  it('quotes a savings account as a rate, since it has no maturity to quote', async () => {
+    vi.mocked(quoteProductSavings).mockResolvedValue({
+      kind: 'ACCOUNT',
+      amount: { amount: '200000.00', currencyCode: 'TZS' },
+      ratePercent: '4',
+      offeredTermMonths: [],
+      termMonths: null,
+      interest: null,
+      maturityValue: null,
+      maturityDate: null,
+      minimumBalance: { amount: '50000.00', currencyCode: 'TZS' },
+      smallestDeposit: null,
+      refusal: null,
+    });
+    render0(COMPLETE, 'SAV');
+
+    expect(await screen.findByText('Opening balance')).toBeInTheDocument();
+    expect(screen.getByText('4%')).toBeInTheDocument();
+    expect(screen.getByText('a year')).toBeInTheDocument();
+    expect(screen.getByText('Minimum balance')).toBeInTheDocument();
+    expect(screen.queryByText('Value at maturity')).not.toBeInTheDocument();
+  });
+
+  /** Priced by its own fields on this same form: two prices for one thing on one screen is a defect, not a feature. */
+  it('points at the fields that price a funeral plan rather than quoting it twice', () => {
+    render0(COMPLETE, 'FUN');
+
+    expect(screen.getByText(/family fields above price this plan/)).toBeInTheDocument();
+    expect(quotePremium).not.toHaveBeenCalled();
+    expect(quoteProductSavings).not.toHaveBeenCalled();
+  });
+
+  it('says a credit-life premium belongs to the scheme, not to this life', () => {
+    render0(COMPLETE, 'CRL');
+
+    expect(screen.getByText(/priced per scheme, not per life/)).toBeInTheDocument();
+    expect(quotePremium).not.toHaveBeenCalled();
+  });
+
+  /** An unknown portfolio keeps the old behaviour rather than going blank. */
+  it('falls back to a premium quote for a portfolio it does not know', async () => {
+    render0(COMPLETE, 'SOMETHING_NEW');
+
+    expect(await screen.findByText('TZS 76,000.00')).toBeInTheDocument();
   });
 });

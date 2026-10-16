@@ -656,6 +656,10 @@ export function OpenUnderwritingCasePage() {
           }}
           premiumPayingTermMonths={watch('premiumPayingTermMonths')}
           commencementDate={watch('proposedCommencementDate')}
+          // How this product is priced, which decides what the panel can even ask for: a premium off a rate table,
+          // a deposit's maturity, an account's rate, or a figure its own fields above already work out.
+          portfolioCode={selectedProduct?.portfolioCode}
+          productVersionId={productVersionId}
         />
 
         {opening.status === 'error' && opening.error && (

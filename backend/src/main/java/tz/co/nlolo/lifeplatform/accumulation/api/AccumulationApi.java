@@ -35,6 +35,21 @@ public interface AccumulationApi {
     /** Newest effective date first. */
     List<RateDeclarationView> listRates(java.util.UUID productId);
 
+    /**
+     * What a savings product would pay, before any policy exists -- see {@link SavingsQuoteView}.
+     *
+     * <p>Read-only and side-effect free: it opens no account, starts no deposit period and posts nothing. Answers
+     * for a version whose accumulation plan keeps an account (a savings account, a fixed-term deposit); any other
+     * version raises {@link AccumulationStateException}, since there is no account for it to describe.
+     *
+     * @param amount the deposit or opening balance to price; a deposit's band is read from it
+     * @param termMonths a deposit's term. Null asks what terms are offered without pricing one. Ignored by an
+     *     account, which runs until it is closed.
+     * @param asOf the proposed commencement -- the day the rate is read on and the term counted from
+     */
+    SavingsQuoteView quoteProductSavings(java.util.UUID productId, java.util.UUID productVersionId,
+                                         java.math.BigDecimal amount, Integer termMonths, java.time.LocalDate asOf);
+
     // ---- Money in and out (task 6) ------------------------------------------------------------
 
     /**

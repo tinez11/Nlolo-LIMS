@@ -572,6 +572,8 @@ export type TopUpView = AccumulationComponents['schemas']['TopUp'];
 export type TransferInView = AccumulationComponents['schemas']['TransferIn'];
 export type AdjustmentView = AccumulationComponents['schemas']['Adjustment'];
 export type ClosingQuoteView = AccumulationComponents['schemas']['ClosingQuote'];
+export type SavingsQuoteView = AccumulationComponents['schemas']['SavingsQuote'];
+export type SavingsQuoteRequest = AccumulationComponents['schemas']['SavingsQuoteRequest'];
 export type StatementView = AccumulationComponents['schemas']['Statement'];
 export type StatementRecordView = AccumulationComponents['schemas']['StatementRecord'];
 // A fixed-term deposit (2026-10-02): its terms, the client's maturity choice, and the money

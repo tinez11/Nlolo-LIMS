@@ -101,6 +101,45 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /products/{productId}/versions/{versionId}/savings-quote:
+    post:
+      summary: Price a savings product before any policy exists
+      description: >
+        What a deposit would be worth at maturity, or what rate an account earns. A fixed-term deposit answers with
+        the rate for the band the amount falls in -- a rate FOR THE TERM, not a yearly one -- the term's interest and
+        the maturity value; an interest-bearing account answers with today's effective annual rate, which is
+        max(latest approved declaration, the version's guarantee). Read-only: no account, no deposit period, no
+        interest and no ledger entry are created by asking.
+
+
+        A term or an amount the grid does not price is NOT an error: it comes back 200 with `refusal` saying why and
+        `offeredTermMonths` saying what is on sale, because the useful answer to "9 months" is "this one runs 3, 6
+        or 12". 422 only for a version that keeps no account at all -- a premium-rated product is priced from its
+        own rate table through POST /products/{productId}/premium-quote instead.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SavingsQuoteRequest' }
+      responses:
+        '200':
+          description: The quote, priced or refused with its reason
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SavingsQuote' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: This version keeps no account, so it has no savings rate to quote
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /policies/{policyNumber}/account:
     get:
       summary: A policy's savings account and its whole ledger
@@ -686,6 +725,64 @@ components:
         lastSeq: { type: integer, minimum: 0 }
         generatedBy: { type: string }
         generatedAt: { type: string, format: date-time }
+    SavingsQuoteRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: number
+          description: The deposit, or an account's opening balance. The deposit's rate band is read from it.
+        currency: { type: [string, "null"], description: "The product's own currency. Defaults to TZS." }
+        termMonths:
+          type: [integer, "null"]
+          description: A deposit's term. Null asks which terms are offered without pricing one; ignored by an account.
+        asOf:
+          type: [string, "null"]
+          format: date
+          description: The proposed commencement -- the day the rate is read on and the term counted from. Defaults to today in Dar es Salaam.
+    SavingsQuote:
+      type: object
+      required: [kind, offeredTermMonths]
+      properties:
+        kind:
+          type: string
+          enum: [DEPOSIT, ACCOUNT]
+          description: Which of the two this version is. They answer different questions, so they fill different rows.
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        ratePercent:
+          type: [string, "null"]
+          description: >
+            For a DEPOSIT, the rate for the whole term from the amount's band -- not a yearly rate. For an ACCOUNT,
+            the effective annual rate today. Null when nothing priced, which `refusal` then explains.
+        offeredTermMonths:
+          type: array
+          items: { type: integer }
+          description: Every term the deposit grid offers. Empty for an account, which has no term.
+        termMonths: { type: [integer, "null"] }
+        interest:
+          oneOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+            - type: "null"
+          description: The term's interest, once.
+        maturityValue:
+          oneOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+            - type: "null"
+          description: The deposit plus its interest.
+        maturityDate: { type: [string, "null"], format: date }
+        minimumBalance:
+          oneOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+            - type: "null"
+          description: An ACCOUNT's floor -- the least a partial withdrawal may leave behind.
+        smallestDeposit:
+          oneOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+            - type: "null"
+          description: A DEPOSIT's lowest band start -- the least this product takes.
+        refusal:
+          type: [string, "null"]
+          description: Why nothing priced, in words a staff member can act on. Null when the quote priced.
     ClosingQuote:
       type: object
       required: [policyNumber, asOf, balance, interestToDate, value]

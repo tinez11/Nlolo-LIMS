@@ -997,6 +997,60 @@ public class AccumulationApiImpl implements AccumulationApi {
         return rates.findByProductIdOrderByEffectiveFromDescProposedAtDesc(productId).stream().map(this::toView).toList();
     }
 
+    /**
+     * A savings product, priced before any policy exists. See {@link SavingsQuoteView} for why.
+     *
+     * <p>Reads the version's OWN grid and the product's OWN declarations through the same functions the running
+     * policy uses -- {@code DepositPlan.rateFor}, {@code DepositInterest.full}, {@code RateSchedule} -- so the quote
+     * cannot drift from what the deposit will actually earn. A term or an amount the grid does not price is not an
+     * error: it comes back as a {@code refusal} beside the terms that ARE offered, because the useful answer to
+     * "9 months" is "this deposit runs 3, 6 or 12".
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public SavingsQuoteView quoteProductSavings(UUID productId, UUID productVersionId, BigDecimal amount,
+                                                Integer termMonths, LocalDate asOf) {
+        LocalDate on = asOf != null ? asOf : LocalDate.now();
+        tz.co.nlolo.lifeplatform.product.api.DepositPlan deposit = productApi.resolveDepositPlan(productVersionId);
+
+        if (deposit.isDeposit()) {
+            List<Integer> terms = deposit.terms();
+            BigDecimal smallest = deposit.bandStarts().isEmpty() ? null : deposit.bandStarts().get(0);
+            if (termMonths == null || !terms.contains(termMonths)) {
+                return new SavingsQuoteView(SavingsQuoteView.Kind.DEPOSIT, amount, null, terms, termMonths,
+                    null, null, null, null, smallest,
+                    termMonths == null ? "Choose a term to price the deposit."
+                        : "This deposit is not offered over " + termMonths + " months.");
+            }
+            Optional<BigDecimal> rate = amount == null ? Optional.empty() : deposit.rateFor(amount, termMonths);
+            if (rate.isEmpty()) {
+                return new SavingsQuoteView(SavingsQuoteView.Kind.DEPOSIT, amount, null, terms, termMonths,
+                    null, null, on.plusMonths(termMonths), null, smallest,
+                    amount == null ? "Enter the deposit to price it."
+                        : "A deposit of " + amount.stripTrailingZeros().toPlainString() + " is below the smallest this"
+                            + " product takes (" + (smallest == null ? "?" : smallest.stripTrailingZeros().toPlainString()) + ").");
+            }
+            // The rate is FOR THE TERM, not a year (spec D2), so the term's interest is the whole of it -- the same
+            // DepositInterest the period earns by day, asked for the full term.
+            BigDecimal interest = DepositInterest.full(amount, rate.get());
+            return new SavingsQuoteView(SavingsQuoteView.Kind.DEPOSIT, amount, rate.get(), terms, termMonths,
+                interest, amount.add(interest).setScale(2, RoundingMode.HALF_EVEN), on.plusMonths(termMonths),
+                null, smallest, null);
+        }
+
+        tz.co.nlolo.lifeplatform.product.api.AccumulationPlan plan = productApi.resolveAccumulationPlan(productVersionId);
+        if (!plan.isAccount()) {
+            throw new AccumulationStateException("This product does not keep an account, so it has no savings rate to"
+                + " quote. A premium-rated product is priced from its rate table instead.");
+        }
+        // The same max(declared, guaranteed) the valuer credits interest on, read on the commencement date.
+        BigDecimal rate = new RateSchedule(
+            rates.findByProductIdAndStatusOrderByEffectiveFrom(productId, RateDeclarationStatus.APPROVED.name()),
+            plan.guaranteedRatePercent()).apply(on);
+        return new SavingsQuoteView(SavingsQuoteView.Kind.ACCOUNT, amount, rate, List.of(), null, null, null, null,
+            plan.minimumBalance(), null, null);
+    }
+
     /** A rate may not rewrite interest a customer has already been credited. */
     private void refuseIfReachingBack(UUID productId, LocalDate effectiveFrom) {
         LocalDate postedThrough = accounts.latestMonthEndForProduct(productId);

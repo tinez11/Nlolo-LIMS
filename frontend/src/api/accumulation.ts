@@ -10,6 +10,8 @@ import type {
   AdjustmentView,
   ClosingQuoteView,
   RateDeclarationView,
+  SavingsQuoteRequest,
+  SavingsQuoteView,
   StatementRecordView,
   StatementView,
   TopUpView,
@@ -152,6 +154,23 @@ export interface StatementPeriodBody {
 /** Files the PDF -- or returns the existing filing when nothing has been posted since. */
 export function generateStatement(policyNumber: string, body: StatementPeriodBody, attempt: MutationAttempt): Promise<StatementRecordView> {
   return post<StatementRecordView>(`${account(policyNumber)}/statements`, body, { headers: attempt.headers() });
+}
+
+/**
+ * What a savings product would pay, before any policy exists -- a deposit's maturity, or an account's rate.
+ *
+ * <p>A term or an amount the grid does not price answers 200 with `refusal` rather than throwing: not pricing is an
+ * answer the quotation panel shows, the same way "this deposit runs 3, 6 or 12 months" is.
+ */
+export function quoteProductSavings(
+  productId: string,
+  versionId: string,
+  body: SavingsQuoteRequest,
+): Promise<SavingsQuoteView> {
+  return post<SavingsQuoteView>(
+    `/products/${encodeURIComponent(productId)}/versions/${encodeURIComponent(versionId)}/savings-quote`,
+    body,
+  );
 }
 
 const rates = (productId: string) => `/products/${encodeURIComponent(productId)}/rate-declarations`;

@@ -44,6 +44,24 @@ public class AccumulationController {
             jwt.getSubject(), idempotencyKey));
     }
 
+    /**
+     * Price a savings product before any policy exists: a deposit's maturity, or an account's rate.
+     *
+     * <p>Read-only, so an agent or any staff member may quote -- the same reach as the funeral quote, and for the
+     * same reason: a quotation is what you show a customer before they decide. NOT the FINANCE gate the rate
+     * declarations carry, because that gate protects SETTING a price, while this reads one the customer is about to
+     * be offered. 422 for a version that keeps no account, which has no savings rate to describe.
+     */
+    @PostMapping("/products/{productId}/versions/{versionId}/savings-quote")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public SavingsQuoteResponse quoteSavings(@PathVariable UUID productId, @PathVariable UUID versionId,
+                                             @Valid @RequestBody SavingsQuoteResponse.Body body) {
+        String currency = body.currency() == null || body.currency().isBlank() ? "TZS" : body.currency();
+        return SavingsQuoteResponse.from(api.quoteProductSavings(productId, versionId, body.amount(),
+            body.termMonths(), body.asOf() != null ? body.asOf()
+                : java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"))), currency);
+    }
+
     @PostMapping("/rate-declarations/{declarationId}/approve")
     @PreAuthorize(FINANCE)
     public RateDeclarationResponse approveRate(@PathVariable UUID declarationId, @AuthenticationPrincipal Jwt jwt) {

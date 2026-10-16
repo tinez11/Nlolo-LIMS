@@ -2,8 +2,10 @@ import { Panel } from '@/components/Panel';
 import { ErrorPanel } from '@/components/states';
 import { toApiError } from '@/lib/apiError';
 import { formatMonths } from '@/lib/dates';
+import { formatMoney } from '@/lib/money';
 import { PREMIUM_FREQUENCY_LABELS } from '@/api/types';
 import { DEFAULT_OCCUPATION_CLASS, useQuotation, type QuotationInputs } from './useQuotation';
+import { useSavingsQuotation } from './useSavingsQuotation';
 
 /**
  * A money figure the SERVER sent as a JSON number.
@@ -39,6 +41,111 @@ function Row({ label, value, suffix }: { label: string; value: string; suffix?: 
 }
 
 /**
+ * How a product is priced -- which decides what this panel can even ask for.
+ *
+ * <p>The premium-quote endpoint prices a sum assured off a base rate table, and that is ALL it can price. Nine of
+ * the platform's fourteen portfolios are not priced that way at all, so every one of them used to answer the panel
+ * with a red 422 ("carries no base rate table, so it cannot be priced") on a product working exactly as designed.
+ * A quotation panel that only ever works for term and endowment is not a quotation panel.
+ */
+type PricingBasis = 'PREMIUM' | 'SAVINGS' | 'OWN_SECTION' | 'PER_SCHEME';
+
+const BASIS_BY_PORTFOLIO: Record<string, PricingBasis> = {
+  // Priced from a sum assured and the version's base rate table.
+  TERM: 'PREMIUM',
+  WL: 'PREMIUM',
+  END: 'PREMIUM',
+  MB: 'PREMIUM',
+  PAR: 'PREMIUM',
+  // Priced from money paid in and a rate: a deposit's grid, or an account's declared rate.
+  SAV: 'SAVINGS',
+  DEP: 'SAVINGS',
+  // Priced by its own fields on THIS form, which ask for what its own quoter needs -- a family's lives, an annuity
+  // form, a fund split. Repeating their figures here would be two prices for one thing on one screen.
+  FUN: 'OWN_SECTION',
+  IANN: 'OWN_SECTION',
+  DANN: 'OWN_SECTION',
+  PEN: 'OWN_SECTION',
+  ULIP: 'OWN_SECTION',
+  // Priced per scheme, not per life: the rate belongs to the scheme contract.
+  CRL: 'PER_SCHEME',
+  GRPL: 'PER_SCHEME',
+};
+
+/** What prices this one, named so a staff member can go and look at it. */
+const OWN_SECTION_BY_PORTFOLIO: Record<string, string> = {
+  FUN: 'The family fields above price this plan: a line per life from the plan’s own premium grid, the family’s yearly total and the instalment.',
+  IANN: 'The Annuity fields above price this purchase: the form chosen, the annuitant’s age and the version’s annuity rate decide the income.',
+  DANN: 'A deferred annuity accumulates contributions now and buys the income at vesting, so there is no premium to rate today — the retirement age above sets when that happens.',
+  PEN: 'A pension accumulates contributions now and buys the income at retirement, so there is no premium to rate today — the retirement age above sets when that happens.',
+  ULIP: 'The unit-linked fields above hold this version’s premium limits and fund split. A unit-linked premium is chosen rather than rated: it buys units at the next price.',
+};
+
+export function QuotationPreview({
+  inputs,
+  premiumPayingTermMonths,
+  commencementDate,
+  portfolioCode,
+  productVersionId,
+}: {
+  inputs: QuotationInputs;
+  premiumPayingTermMonths: string;
+  commencementDate: string;
+  /** The product's IFRS 17 portfolio, which is also the sharpest statement of how it is priced. */
+  portfolioCode?: string | null | undefined;
+  productVersionId: string;
+}) {
+  // An unknown or absent portfolio keeps the original behaviour: ask for a premium and show whatever comes back.
+  const basis: PricingBasis = (portfolioCode && BASIS_BY_PORTFOLIO[portfolioCode]) || 'PREMIUM';
+
+  return (
+    <Panel
+      title="Quotation"
+      // "Charged" is wrong for a savings product: that money is paid IN, and calling it a charge is the kind of
+      // small lie a customer notices. Every basis ends on the same promise -- looking creates nothing.
+      subtitle={
+        basis === 'SAVINGS'
+          ? 'What this money would earn on the product above. Nothing is created by looking at it.'
+          : 'What this life would be charged on the product above. Nothing is created by looking at it.'
+      }
+    >
+      {basis === 'PREMIUM' && (
+        <PremiumQuotation
+          inputs={inputs}
+          premiumPayingTermMonths={premiumPayingTermMonths}
+          commencementDate={commencementDate}
+        />
+      )}
+
+      {basis === 'SAVINGS' && (
+        <SavingsQuotation
+          productId={inputs.productId}
+          productVersionId={productVersionId}
+          amount={inputs.sumAssuredAmount}
+          currency={inputs.sumAssuredCurrency || 'TZS'}
+          termMonths={inputs.policyTermMonths}
+          commencementDate={commencementDate}
+        />
+      )}
+
+      {basis === 'OWN_SECTION' && (
+        <p className="px-4 pb-4 text-xs text-muted-foreground">
+          {(portfolioCode && OWN_SECTION_BY_PORTFOLIO[portfolioCode]) ??
+            'This product is priced by its own fields above on this form.'}
+        </p>
+      )}
+
+      {basis === 'PER_SCHEME' && (
+        <p className="px-4 pb-4 text-xs text-muted-foreground">
+          This cover is priced per scheme, not per life: the premium is the scheme contract&apos;s rate applied to the
+          lives or the balances it covers, so there is no individual premium to quote here.
+        </p>
+      )}
+    </Panel>
+  );
+}
+
+/**
  * The quotation for the case being opened, shown UNDER the form and before any case exists (2026-10-16).
  *
  * <p><b>Why here.</b> An underwriter used to decide without ever seeing a price: the case page showed the proposal,
@@ -52,7 +159,7 @@ function Row({ label, value, suffix }: { label: string; value: string; suffix?: 
  * three different things and the platform has been read as conflating them. A five-year policy stays a five-year
  * policy whether it is paid monthly or yearly.
  */
-export function QuotationPreview({
+function PremiumQuotation({
   inputs,
   premiumPayingTermMonths,
   commencementDate,
@@ -64,10 +171,7 @@ export function QuotationPreview({
   const quotation = useQuotation(inputs);
 
   return (
-    <Panel
-      title="Quotation"
-      subtitle="What this life would be charged on the product above. Nothing is created by looking at it."
-    >
+    <>
       {quotation.state === 'incomplete' && (
         <p className="px-4 pb-4 text-xs text-muted-foreground">
           A quotation needs {quotation.missing.join(', ')}. Fill those in above and it appears here.
@@ -191,6 +295,109 @@ export function QuotationPreview({
           </div>
         </div>
       )}
-    </Panel>
+    </>
+  );
+}
+
+/**
+ * A savings product quoted on its OWN basis: a deposit's maturity, or an account's rate (2026-10-16).
+ *
+ * <p>These products have no sum assured and no premium rate, so the form's amount field is the money paid IN. A
+ * deposit answers with the rate for its band -- for the term, not for a year -- its interest and what it will be
+ * worth on the day it matures. An account answers with the rate it earns, because there is no maturity to quote:
+ * it runs until it is closed.
+ */
+function SavingsQuotation({
+  productId,
+  productVersionId,
+  amount,
+  currency,
+  termMonths,
+  commencementDate,
+}: {
+  productId: string;
+  productVersionId: string;
+  amount: string;
+  currency: string;
+  termMonths: string;
+  commencementDate: string;
+}) {
+  const quotation = useSavingsQuotation({
+    productId,
+    productVersionId,
+    amount,
+    currency,
+    termMonths,
+    asOf: commencementDate,
+  });
+
+  if (quotation.state === 'incomplete') {
+    return (
+      <p className="px-4 pb-4 text-xs text-muted-foreground">
+        A quotation needs {quotation.missing.join(', ')}. Fill those in above and it appears here.
+      </p>
+    );
+  }
+  if (quotation.state === 'loading') {
+    return <p className="px-4 pb-4 text-xs text-muted-foreground">Pricing…</p>;
+  }
+  if (quotation.state === 'refused') {
+    return (
+      <div className="px-4 pb-4">
+        <ErrorPanel error={toApiError(quotation.error)} />
+      </div>
+    );
+  }
+
+  const q = quotation.quote;
+  const deposit = q.kind === 'DEPOSIT';
+
+  return (
+    <div className="divide-y divide-border">
+      <Row label={deposit ? 'Deposit' : 'Opening balance'} value={formatMoney(q.amount)} />
+      <Row
+        label={deposit ? 'Interest rate' : 'Interest rate'}
+        value={q.ratePercent ? `${q.ratePercent}%` : '—'}
+        // A deposit's rate is for the WHOLE term, not a year: 6% over 6 months is 6%, not 3%. Saying which is the
+        // difference between a correct figure and one a customer will dispute.
+        suffix={q.ratePercent ? (deposit ? 'for the term' : 'a year') : undefined}
+      />
+      {deposit && (
+        <>
+          <Row label="Interest" value={q.interest ? formatMoney(q.interest) : 'Not determinable'} />
+          <Row
+            label="Value at maturity"
+            value={q.maturityValue ? formatMoney(q.maturityValue) : 'Not determinable'}
+          />
+          <Row
+            label="Term"
+            value={termMonths ? formatMonths(Number(termMonths)) : 'Not chosen'}
+            suffix={
+              q.offeredTermMonths.length > 0
+                ? `offered: ${q.offeredTermMonths.map((m) => formatMonths(m)).join(', ')}`
+                : undefined
+            }
+          />
+          {q.maturityDate && <Row label="Matures on" value={q.maturityDate} />}
+          {q.smallestDeposit && <Row label="Smallest deposit taken" value={formatMoney(q.smallestDeposit)} />}
+        </>
+      )}
+      {!deposit && (
+        <>
+          {q.minimumBalance && <Row label="Minimum balance" value={formatMoney(q.minimumBalance)} />}
+          <div className="px-4 py-2">
+            <p className="text-xs text-muted-foreground">
+              An account has no premium and no maturity value: it is funded by deposits, earns interest on its
+              balance at the declared rate, and runs until it is closed.
+            </p>
+          </div>
+        </>
+      )}
+      {q.refusal && (
+        <div className="px-4 py-2">
+          <p className="text-xs text-muted-foreground">{q.refusal}</p>
+        </div>
+      )}
+    </div>
   );
 }
