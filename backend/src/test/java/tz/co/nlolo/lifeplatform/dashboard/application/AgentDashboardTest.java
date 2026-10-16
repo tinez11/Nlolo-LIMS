@@ -11,6 +11,9 @@ import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyType;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.CaseFilter;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -38,7 +41,8 @@ class AgentDashboardTest {
     private final PartyApi parties = mock(PartyApi.class);
     private final PolicyApi policies = mock(PolicyApi.class);
     private final DistributionApi distribution = mock(DistributionApi.class);
-    private final AgentDashboard dashboard = new AgentDashboard(parties, policies, distribution);
+    private final UnderwritingApi underwriting = mock(UnderwritingApi.class);
+    private final AgentDashboard dashboard = new AgentDashboard(parties, policies, distribution, underwriting);
 
     private static <T> PageImpl<T> total(long n) {
         return new PageImpl<>(List.of(), PageRequest.of(0, 1), n);
@@ -93,5 +97,33 @@ class AgentDashboardTest {
         assertThat(view.policiesInBook()).isZero();
         assertThat(view.commissionEarned()).isNull();
         assertThat(view.commissionStatus()).isNull();
+    }
+
+    /**
+     * Never a gap. GET /underwriting/cases admits an agents token and the controller already scopes it to
+     * partyIdsRegisteredBy; phase 1 dashed this card on a wrong reading of the endpoint.
+     */
+    @Test
+    void countsTheAgentsOwnApplicationsAwaitingUnderwriting() {
+        Set<UUID> mine = Set.of(UUID.randomUUID());
+        when(parties.partyIdsRegisteredBy(SUBJECT)).thenReturn(mine);
+        when(underwriting.listCases(argThat((CaseFilter f) -> f != null
+            && f.status() == UnderwritingCaseStatus.OPEN && mine.equals(f.applicantPartyIds())), any()))
+            .thenReturn(total(5));
+
+        assertThat(dashboard.build(SUBJECT, PARTY, TODAY).applicationsInUnderwriting()).isEqualTo(5L);
+    }
+
+    /**
+     * An agent who has registered NOBODY sees zero, not everything. The empty set is the scope, and a null would
+     * mean "no filter" -- every case in the tenant, on somebody else's clients.
+     */
+    @Test
+    void anAgentWhoHasRegisteredNobodyIsScopedToNothing() {
+        when(parties.partyIdsRegisteredBy(SUBJECT)).thenReturn(Set.of());
+        when(underwriting.listCases(argThat((CaseFilter f) -> f != null
+            && f.applicantPartyIds() != null && f.applicantPartyIds().isEmpty()), any())).thenReturn(total(0));
+
+        assertThat(dashboard.build(SUBJECT, PARTY, TODAY).applicationsInUnderwriting()).isZero();
     }
 }

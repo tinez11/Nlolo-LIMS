@@ -14,10 +14,12 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ClaimsDashboardTest {
@@ -25,6 +27,9 @@ class ClaimsDashboardTest {
     private final ClaimsApi claims = mock(ClaimsApi.class);
     private final RecentActivity activity = mock(RecentActivity.class);
     private final ClaimsDashboard dashboard = new ClaimsDashboard(claims, activity);
+
+    /** A fixed civil day, so "the last complete month" is a known month. */
+    private static final java.time.LocalDate TODAY = java.time.LocalDate.of(2026, 10, 14);
 
     private void count(ClaimStatus status, long n) {
         when(claims.searchClaims(eq(status), isNull(), isNull(), isNull(), argThat(p -> p != null && p.getPageSize() == 1)))
@@ -61,7 +66,7 @@ class ClaimsDashboardTest {
             argThat(p -> p != null && p.getPageSize() == ClaimsDashboard.QUEUE_SIZE)))
             .thenReturn(new PageImpl<>(List.of(queued)));
 
-        ClaimsDashboardView view = dashboard.build(true);
+        ClaimsDashboardView view = dashboard.build(true, TODAY);
 
         assertThat(view.registered()).isEqualTo(17L);
         assertThat(view.underAssessment()).isEqualTo(9L);
@@ -87,9 +92,51 @@ class ClaimsDashboardTest {
             argThat(p -> p != null && p.getPageSize() == ClaimsDashboard.QUEUE_SIZE)))
             .thenReturn(new PageImpl<>(List.of(queued)));
 
-        ClaimsDashboardView view = dashboard.build(false);
+        ClaimsDashboardView view = dashboard.build(false, TODAY);
 
         assertThat(view.queueStatus()).isEqualTo("REGISTERED");
         assertThat(view.queue()).singleElement().satisfies(q -> assertThat(q.status()).isEqualTo("REGISTERED"));
+    }
+
+    /** The two cards phase 1 drew dashed: what was paid last month, and what is waiting on a document. */
+    @Test
+    void readsSettledTotalsAndOpenDocumentRequests() {
+        when(claims.countOpenDocumentRequests()).thenReturn(11L);
+        when(claims.settlementsByMonth(any(), any())).thenReturn(List.of(
+            new tz.co.nlolo.lifeplatform.claims.api.SettlementMonth(
+                java.time.YearMonth.of(2026, 9), "TZS", 9, new java.math.BigDecimal("41000000.00")),
+            new tz.co.nlolo.lifeplatform.claims.api.SettlementMonth(
+                java.time.YearMonth.of(2026, 9), "USD", 1, new java.math.BigDecimal("1000.00"))));
+
+        ClaimsDashboardView view = dashboard.build(true, TODAY);
+
+        assertThat(view.openDocumentRequests()).isEqualTo(11L);
+        // Per currency, each carrying its OWN currency on the money -- never added together.
+        assertThat(view.settlements())
+            .extracting(s -> s.month() + " " + s.currency() + " " + s.claims() + " " + s.totalApproved().amount()
+                + " " + s.totalApproved().currencyCode())
+            .containsExactly("2026-09 TZS 9 41000000.00 TZS", "2026-09 USD 1 1000.00 USD");
+    }
+
+    /** The last complete month, both sides. */
+    @Test
+    void asksSettlementsForTheLastCompleteMonth() {
+        dashboard.build(true, TODAY);
+
+        verify(claims).settlementsByMonth(java.time.YearMonth.of(2026, 9), java.time.YearMonth.of(2026, 9));
+    }
+
+    /** One aggregate down costs one card. */
+    @Test
+    void aFailedSettlementsReadLeavesTheCountsStanding() {
+        count(ClaimStatus.REGISTERED, 17);
+        when(claims.settlementsByMonth(any(), any())).thenThrow(new IllegalStateException("claims is down"));
+        when(claims.countOpenDocumentRequests()).thenThrow(new IllegalStateException("claims is down"));
+
+        ClaimsDashboardView view = dashboard.build(true, TODAY);
+
+        assertThat(view.settlements()).isEmpty();
+        assertThat(view.openDocumentRequests()).isNull();
+        assertThat(view.registered()).isEqualTo(17L);
     }
 }

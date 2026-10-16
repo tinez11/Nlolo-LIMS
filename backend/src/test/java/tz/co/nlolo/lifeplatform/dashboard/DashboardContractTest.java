@@ -88,7 +88,9 @@ class DashboardContractTest {
 
     @Test
     void anUnderwriterReadsTheUnderwritingDashboard() throws Exception {
-        when(underwriting.build()).thenReturn(new UnderwritingDashboardView(238L, 41L, null, List.of(
+        when(underwriting.build(org.mockito.ArgumentMatchers.any())).thenReturn(new UnderwritingDashboardView(238L, 41L, null, 3L,
+            List.of(new UnderwritingDashboardView.DecisionMonth("2026-09", "ACCEPT", 42, "3.4")),
+            List.of(
             new UnderwritingDashboardView.QueuedCase(UUID.randomUUID(), UUID.randomUUID(), null, UUID.randomUUID(),
                 new Money("25000000.00", "TZS"), "OPEN")),
             List.of(new ActivityItem("underwriting.UnderwritingDecisionMade",
@@ -112,7 +114,10 @@ class DashboardContractTest {
 
     @Test
     void aClaimsManagerReadsTheClaimsDashboardWithTheSettlementQueue() throws Exception {
-        when(claims.build(true)).thenReturn(new ClaimsDashboardView(17L, 9L, 6L, 4L, 2L, 128L, "SETTLEMENT_REQUESTED",
+        when(claims.build(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any())).thenReturn(
+            new ClaimsDashboardView(17L, 9L, 6L, 4L, 2L, 128L, 11L,
+            List.of(new ClaimsDashboardView.SettlementMonth("2026-09", "TZS", 9, new Money("41000000.00", "TZS"))),
+            "SETTLEMENT_REQUESTED",
             List.of(new ClaimsDashboardView.QueuedClaim(UUID.randomUUID(), "POL-00A4B7A1", UUID.randomUUID(), "DEATH",
                 LocalDate.of(2026, 9, 29), "SETTLEMENT_REQUESTED")), List.of()));
 
@@ -124,7 +129,8 @@ class DashboardContractTest {
 
     @Test
     void anAssessorGetsTheAssessorsQueue() throws Exception {
-        when(claims.build(false)).thenReturn(new ClaimsDashboardView(17L, 9L, 6L, 4L, 2L, 128L, "REGISTERED", List.of(), List.of()));
+        when(claims.build(org.mockito.ArgumentMatchers.eq(false), org.mockito.ArgumentMatchers.any())).thenReturn(
+            new ClaimsDashboardView(17L, 9L, 6L, 4L, 2L, 128L, 11L, List.of(), "REGISTERED", List.of(), List.of()));
 
         mockMvc.perform(get("/dashboards/claims").with(staff("CLAIMS_ASSESSOR")))
             .andExpect(status().isOk())
@@ -143,7 +149,14 @@ class DashboardContractTest {
             new Money("512340210.00", "TZS"), "2026-01", "2026-10", new Money("-1200.00", "TZS"),
             4L, 7L, 3L, null,
             List.of(new FinanceDashboardView.MonthPoint("2026-09", new Money("50204310.00", "TZS"))), List.of(),
-            "2026-10", List.of()));
+            "2026-10",
+            List.of(new FinanceDashboardView.ReceivablesAging("TZS", List.of(
+                new FinanceDashboardView.ReceivablesAging.Bucket("NOT_DUE", 1, new Money("100000.00", "TZS")),
+                new FinanceDashboardView.ReceivablesAging.Bucket("D1_30", 0, new Money("0.00", "TZS")),
+                new FinanceDashboardView.ReceivablesAging.Bucket("D31_60", 0, new Money("0.00", "TZS")),
+                new FinanceDashboardView.ReceivablesAging.Bucket("D61_90", 0, new Money("0.00", "TZS")),
+                new FinanceDashboardView.ReceivablesAging.Bucket("OVER_90", 2, new Money("400000.00", "TZS"))))),
+            List.of()));
 
         mockMvc.perform(get("/dashboards/finance").with(staff("FINANCE_OFFICER")))
             .andExpect(status().isOk())
@@ -171,7 +184,7 @@ class DashboardContractTest {
     void anAgentReadsTheirOwnDashboard() throws Exception {
         UUID party = UUID.randomUUID();
         when(agent.build(org.mockito.ArgumentMatchers.eq("agent-subject"), org.mockito.ArgumentMatchers.eq(party),
-            org.mockito.ArgumentMatchers.any())).thenReturn(new AgentDashboardView(309L, 23L, 1L, 412L, "2026-09",
+            org.mockito.ArgumentMatchers.any())).thenReturn(new AgentDashboardView(309L, 23L, 1L, 412L, 5L, "2026-09",
                 new Money("1284500.00", "TZS"), null,
                 List.of(new AgentDashboardView.ClientAwaitingKyc(UUID.randomUUID(), "Amina Hassan", "PENDING"))));
 

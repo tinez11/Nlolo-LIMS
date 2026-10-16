@@ -49,7 +49,7 @@ public class DashboardController {
     @GetMapping("/dashboards/underwriting")
     @PreAuthorize("hasRole('UNDERWRITER')")
     public ResponseEntity<UnderwritingDashboardView> underwriting() {
-        return ResponseEntity.ok(underwriting.build());
+        return ResponseEntity.ok(underwriting.build(LocalDate.now(CIVIL)));
     }
 
     /**
@@ -61,7 +61,7 @@ public class DashboardController {
     public ResponseEntity<ClaimsDashboardView> claims(Authentication authentication) {
         boolean manager = authentication.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority).anyMatch("ROLE_CLAIMS_MANAGER"::equals);
-        return ResponseEntity.ok(claims.build(manager));
+        return ResponseEntity.ok(claims.build(manager, LocalDate.now(CIVIL)));
     }
 
     /** The same expression as every finance endpoint (39 of them) and the reports. */

@@ -12,6 +12,7 @@ import java.util.UUID;
  * @param awaitingKyc the newest clients whose KYC is still pending, so the agent can send their documents
  */
 public record AgentDashboardView(Long clients, Long clientsAwaitingKyc, Long clientsKycRejected, Long policiesInBook,
+                                 Long applicationsInUnderwriting,
                                  String commissionPeriod, Money commissionEarned, String commissionStatus,
                                  List<ClientAwaitingKyc> awaitingKyc) {
 

@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
 import tz.co.nlolo.lifeplatform.dashboard.api.ActivityItem;
 import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView;
+import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView.ReceivablesAging;
 import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView.MonthPoint;
 import tz.co.nlolo.lifeplatform.dashboard.api.Money;
 import tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalApi;
@@ -87,7 +88,24 @@ public class FinanceDashboard {
             Safely.read("arrears at the lapse level",
                 () -> billing.searchArrears(LAPSE_RECOMMENDATION_LEVEL, false, TOTAL_ONLY).getTotalElements()),
             points(monthly, current.getYear()), points(monthly, current.getYear() - 1), current.toString(),
+            receivables(today),
             recent == null ? List.of() : recent);
+    }
+
+    /**
+     * What is owed, aged, as at today -- one entry per currency, every band present.
+     *
+     * <p>Translated into the dashboard's own shape rather than forwarding billing's: the amount becomes {@link Money}
+     * like every other figure on this view, and an empty band keeps its zero rather than disappearing.
+     */
+    private List<ReceivablesAging> receivables(LocalDate today) {
+        List<ReceivablesAging> aged = Safely.read("receivables aging", () ->
+            billing.receivablesAging(today).stream()
+                .map(a -> new ReceivablesAging(a.currency(), a.buckets().stream()
+                    .map(b -> new ReceivablesAging.Bucket(b.name(), b.cases(), Money.of(b.outstanding(), a.currency())))
+                    .toList()))
+                .toList());
+        return aged == null ? List.of() : aged;
     }
 
     /** A change between two report values -- the only arithmetic here, and it is a difference of two report numbers. */

@@ -124,4 +124,41 @@ class FinanceDashboardTest {
             argThat((ReportFilter f) -> YearMonth.of(2026, 1).equals(f.monthFrom())
                 && YearMonth.of(2026, 10).equals(f.monthTo())));
     }
+
+    /** The finance dashboard's last dashed card: what is owed, aged, per currency. */
+    @Test
+    void readsReceivablesAgedPerCurrency() {
+        when(billing.receivablesAging(TODAY)).thenReturn(List.of(
+            new tz.co.nlolo.lifeplatform.billing.api.ReceivablesAging("TZS", List.of(
+                new tz.co.nlolo.lifeplatform.billing.api.ReceivablesAging.Bucket(
+                    "NOT_DUE", 1, new java.math.BigDecimal("100000.00")),
+                new tz.co.nlolo.lifeplatform.billing.api.ReceivablesAging.Bucket(
+                    "OVER_90", 2, new java.math.BigDecimal("400000.00"))))));
+
+        FinanceDashboardView view = dashboard.build(TODAY);
+
+        assertThat(view.receivables()).singleElement().satisfies(tzs -> {
+            assertThat(tzs.currency()).isEqualTo("TZS");
+            // An empty band keeps its zero rather than disappearing: "nothing is this overdue" is the answer.
+            assertThat(tzs.buckets())
+                .extracting(b -> b.name() + " " + b.cases() + " " + b.outstanding().amount())
+                .containsExactly("NOT_DUE 1 100000.00", "OVER_90 2 400000.00");
+            assertThat(tzs.buckets()).allSatisfy(b ->
+                assertThat(b.outstanding().currencyCode()).isEqualTo("TZS"));
+        });
+    }
+
+    /** Billing being down costs the receivables card and nothing else. */
+    @Test
+    void aFailedReceivablesReadLeavesTheRestStanding() {
+        when(billing.receivablesAging(TODAY)).thenThrow(new IllegalStateException("billing is down"));
+
+        FinanceDashboardView view = dashboard.build(TODAY);
+
+        assertThat(view.receivables()).isEmpty();
+        // The rest of the page was still built: the journals count read fine and the month is set. Asserted on
+        // figures that do NOT come from the reporting mock, which this test deliberately leaves unstubbed.
+        assertThat(view.journalsAwaitingApproval()).isZero();
+        assertThat(view.currentMonth()).isEqualTo("2026-10");
+    }
 }

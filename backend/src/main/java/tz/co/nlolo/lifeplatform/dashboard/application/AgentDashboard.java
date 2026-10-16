@@ -11,6 +11,9 @@ import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.party.api.KycStatus;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.CaseFilter;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseStatus;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -27,8 +30,11 @@ public class AgentDashboard {
     private final PartyApi parties;
     private final PolicyApi policies;
     private final DistributionApi distribution;
+    private final UnderwritingApi underwriting;
 
-    public AgentDashboard(PartyApi parties, PolicyApi policies, DistributionApi distribution) {
+    public AgentDashboard(PartyApi parties, PolicyApi policies, DistributionApi distribution,
+                          UnderwritingApi underwriting) {
+        this.underwriting = underwriting;
         this.parties = parties;
         this.policies = policies;
         this.distribution = distribution;
@@ -57,13 +63,24 @@ public class AgentDashboard {
         Long book = Safely.read("policies in my book", () -> policies.searchPolicies(null, null, null,
             Set.copyOf(distribution.resolveAgentTeam(partyId)), null, TOTAL_ONLY).getTotalElements());
 
+        // The agent's own applications still with underwriting. NOT a gap, though phase 1 drew it dashed on a wrong
+        // reading: GET /underwriting/cases admits an agents token, and a case carries no agent of its own, so the
+        // scope is the clients this agent REGISTERED -- resolved exactly as the console's own case list resolves it.
+        // An agent who has registered nobody gets an EMPTY set, which means zero rows; a null would mean every case
+        // in the tenant.
+        Long applications = Safely.read("my applications in underwriting", () -> underwriting.listCases(
+                CaseFilter.status(UnderwritingCaseStatus.OPEN)
+                    .withApplicants(parties.partyIdsRegisteredBy(subject)),
+                TOTAL_ONLY)
+            .getTotalElements());
+
         String period = YearMonth.from(today).minusMonths(1).toString();
         CommissionStatementView statement = Safely.read("commission statement", () -> distribution
             .agentIdForParty(partyId)
             .flatMap(agentId -> distribution.listStatements(agentId, period).stream().findFirst())
             .orElse(null));
 
-        return new AgentDashboardView(clients, awaitingKyc, rejected, book, period,
+        return new AgentDashboardView(clients, awaitingKyc, rejected, book, applications, period,
             statement == null ? null : Money.of(statement.totalAmount(), statement.totalCurrency()),
             statement == null || statement.status() == null ? null : statement.status().name(),
             queue == null ? List.of() : queue);

@@ -83,11 +83,23 @@ components:
     UnderwritingDashboardView:
       type: object
       additionalProperties: false
-      required: [openCases, casesInReview, casesAwaitingIssue, queue, recentActivity]
+      required: [openCases, casesInReview, casesAwaitingIssue, casesReferred, decisions, queue, recentActivity]
       properties:
         openCases: { $ref: '#/components/schemas/Count' }
         casesInReview: { $ref: '#/components/schemas/Count' }
         casesAwaitingIssue: { $ref: '#/components/schemas/Count' }
+        casesReferred:
+          description: >-
+            Cases waiting on a senior underwriter. Referral is tracked independently of the decision, so a
+            referred case is still OPEN and is counted here as well as under its status.
+          $ref: '#/components/schemas/Count'
+        decisions:
+          description: >-
+            The LAST COMPLETE month only, one entry per outcome. The current month is always partial and a
+            turnaround averaged over part of it would not compare with a full one. Empty when the aggregate
+            could not be read, and empty when nothing was decided.
+          type: array
+          items: { $ref: '#/components/schemas/DecisionMonth' }
         queue:
           type: array
           items:
@@ -108,8 +120,8 @@ components:
     ClaimsDashboardView:
       type: object
       additionalProperties: false
-      required: [registered, underAssessment, settlementRequested, approved, reopened, settled, queueStatus, queue,
-                 recentActivity]
+      required: [registered, underAssessment, settlementRequested, approved, reopened, settled,
+                 openDocumentRequests, settlements, queueStatus, queue, recentActivity]
       properties:
         registered: { $ref: '#/components/schemas/Count' }
         underAssessment: { $ref: '#/components/schemas/Count' }
@@ -117,6 +129,17 @@ components:
         approved: { $ref: '#/components/schemas/Count' }
         reopened: { $ref: '#/components/schemas/Count' }
         settled: { $ref: '#/components/schemas/Count' }
+        openDocumentRequests:
+          description: >-
+            Document requests still outstanding across every claim in the tenant. OPEN only: a received request
+            has its evidence and a withdrawn one was taken back, and neither is work anybody waits on.
+          $ref: '#/components/schemas/Count'
+        settlements:
+          description: >-
+            The LAST COMPLETE month only, one entry per currency. Currencies are NEVER added together: a total
+            of TZS and USD is a number in no currency.
+          type: array
+          items: { $ref: '#/components/schemas/SettlementMonth' }
         queueStatus: { $ref: '#/components/schemas/ClaimStatus' }
         queue:
           type: array
@@ -154,12 +177,60 @@ components:
       properties:
         month: { $ref: '#/components/schemas/Month' }
         amount: { $ref: '#/components/schemas/Money' }
+    DecisionMonth:
+      description: One month's underwriting decisions of one outcome, and how long they took.
+      type: object
+      additionalProperties: false
+      required: [month, outcome, cases, averageDays]
+      properties:
+        month: { $ref: '#/components/schemas/Month' }
+        outcome: { type: string, enum: [ACCEPT, LOADED, DECLINED, POSTPONED] }
+        cases: { type: integer, format: int64, minimum: 0 }
+        averageDays:
+          description: >-
+            Mean CALENDAR days from a case being opened to being decided, one decimal place, as a decimal
+            string. Not working days: the platform has no holiday calendar, and a turnaround nobody could
+            reproduce is worse than none.
+          type: [string, 'null']
+          pattern: '^\d+(\.\d)?$'
+    SettlementMonth:
+      description: One month's settled claims in ONE currency. Currencies are never added together.
+      type: object
+      additionalProperties: false
+      required: [month, currency, claims, totalApproved]
+      properties:
+        month: { $ref: '#/components/schemas/Month' }
+        currency: { type: string, minLength: 3, maxLength: 3 }
+        claims: { type: integer, format: int64, minimum: 0 }
+        totalApproved: { $ref: '#/components/schemas/Money' }
+    ReceivablesAging:
+      description: >-
+        What is owed in ONE currency, aged into bands. Every band is present even when empty: unlike an absent
+        month in a series, an empty band means nothing is this overdue, which is the answer a reader came for.
+      type: object
+      additionalProperties: false
+      required: [currency, buckets]
+      properties:
+        currency: { type: string, minLength: 3, maxLength: 3 }
+        buckets:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, cases, outstanding]
+            properties:
+              name: { type: string, enum: [NOT_DUE, D1_30, D31_60, D61_90, OVER_90] }
+              cases: { type: integer, format: int64, minimum: 0 }
+              outstanding:
+                description: The invoice amount less what has been paid; a part-paid invoice owes the remainder.
+                $ref: '#/components/schemas/Money'
     FinanceDashboardView:
       type: object
       additionalProperties: false
       required: [premiumsMonth, premiumsCollected, premiumsChangePercent, balanceSheetMonth, totalAssets,
                  totalLiabilities, resultFrom, resultTo, netResult, journalsAwaitingApproval, receiptsOverdue,
-                 transfersAwaiting, arrearsAtLapse, premiumsThisYear, premiumsLastYear, currentMonth, recentActivity]
+                 transfersAwaiting, arrearsAtLapse, premiumsThisYear, premiumsLastYear, currentMonth,
+                 receivables, recentActivity]
       properties:
         premiumsMonth: { $ref: '#/components/schemas/Month' }
         premiumsCollected: { $ref: '#/components/schemas/Money' }
@@ -177,17 +248,29 @@ components:
         premiumsThisYear: { type: array, items: { $ref: '#/components/schemas/MonthPoint' } }
         premiumsLastYear: { type: array, items: { $ref: '#/components/schemas/MonthPoint' } }
         currentMonth: { $ref: '#/components/schemas/Month' }
+        receivables:
+          description: >-
+            What is owed as at today, aged, one entry per currency and never added across. Empty when billing
+            could not be read.
+          type: array
+          items: { $ref: '#/components/schemas/ReceivablesAging' }
         recentActivity: { type: array, items: { $ref: '#/components/schemas/ActivityItem' } }
     AgentDashboardView:
       type: object
       additionalProperties: false
-      required: [clients, clientsAwaitingKyc, clientsKycRejected, policiesInBook, commissionPeriod, commissionEarned,
-                 commissionStatus, awaitingKyc]
+      required: [clients, clientsAwaitingKyc, clientsKycRejected, policiesInBook, applicationsInUnderwriting,
+                 commissionPeriod, commissionEarned, commissionStatus, awaitingKyc]
       properties:
         clients: { $ref: '#/components/schemas/Count' }
         clientsAwaitingKyc: { $ref: '#/components/schemas/Count' }
         clientsKycRejected: { $ref: '#/components/schemas/Count' }
         policiesInBook: { $ref: '#/components/schemas/Count' }
+        applicationsInUnderwriting:
+          description: >-
+            Open underwriting cases on clients this agent REGISTERED. A case carries no agent of its own, so the
+            scope is resolved through party exactly as the console own case list resolves it. An agent who has
+            registered nobody is scoped to an empty set and sees zero, never the whole tenant.
+          $ref: '#/components/schemas/Count'
         commissionPeriod: { $ref: '#/components/schemas/Month' }
         commissionEarned: { $ref: '#/components/schemas/Money' }
         commissionStatus: { type: [string, 'null'] }

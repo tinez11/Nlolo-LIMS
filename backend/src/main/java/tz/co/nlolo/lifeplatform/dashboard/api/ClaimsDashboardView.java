@@ -12,9 +12,18 @@ import java.util.UUID;
  * @param recentActivity this module's latest events, newest first -- what happened, never who; empty when unreadable
  */
 public record ClaimsDashboardView(Long registered, Long underAssessment, Long settlementRequested, Long approved,
-                                  Long reopened, Long settled, String queueStatus, List<QueuedClaim> queue,
+                                  Long reopened, Long settled, Long openDocumentRequests,
+                                  List<SettlementMonth> settlements, String queueStatus, List<QueuedClaim> queue,
                                   List<ActivityItem> recentActivity) {
 
     public record QueuedClaim(UUID claimId, String policyNumber, UUID claimantPartyId, String claimType,
                               LocalDate dateOfEvent, String status) {}
+
+    /**
+     * One month's settled claims in one currency (phase 2, 2026-10-15).
+     *
+     * <p>Per currency, never added across: a total of TZS and USD is a number in no currency. The dashboard's own
+     * shape rather than {@code claims.api.SettlementMonth}, so the wire contract stays in this module's vocabulary.
+     */
+    public record SettlementMonth(String month, String currency, long claims, Money totalApproved) {}
 }

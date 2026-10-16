@@ -22,7 +22,20 @@ public record FinanceDashboardView(
     String resultFrom, String resultTo, Money netResult,
     Long journalsAwaitingApproval, Long receiptsOverdue, Long transfersAwaiting, Long arrearsAtLapse,
     List<MonthPoint> premiumsThisYear, List<MonthPoint> premiumsLastYear, String currentMonth,
+    List<ReceivablesAging> receivables,
     List<ActivityItem> recentActivity) {
 
     public record MonthPoint(String month, Money amount) {}
+
+    /**
+     * What is owed in one currency, aged into bands (phase 2, 2026-10-15).
+     *
+     * <p>One entry per currency, never added across. Every band is present even when empty: unlike an absent month
+     * in a series, an empty band means "nothing is this overdue", which is the answer a reader came for.
+     */
+    public record ReceivablesAging(String currency, List<Bucket> buckets) {
+
+        /** @param outstanding the invoice amount less what has been paid -- a part-paid invoice owes the remainder */
+        public record Bucket(String name, long cases, Money outstanding) {}
+    }
 }
