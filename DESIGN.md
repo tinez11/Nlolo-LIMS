@@ -837,12 +837,31 @@ became each dashboard's work panel. One tab per dashboard a person holds; an ina
 - **The right column** holds alerts, quick actions and "Not here yet". It is not a record rail: quick actions are links
   into the screens that own each act, every one with its own confirmation, not acts in their own right.
 - **"Not here yet"** names what is deliberately missing because the platform has no concept behind it (SLA deadlines,
-  quotes, leads). An honest list beats an empty widget.
-- **The chart** is ink (this year) and Rule Strong grey (last year). The month in progress is an ink outline, never a
-  solid bar beside complete months.
+  quotes, leads, a risk-level field, a cash-flow statement). An honest list beats an empty widget. It is a list that
+  must SHRINK: phase 2 (2026-10-15) delivered turnaround, decisions by outcome, referrals, settled amounts, open
+  document requests and receivables aging, and each left this list the day it arrived.
 - **The activity feed** ends the three staff dashboards. It says what happened and when, never who: the audit log
   records no actor, and the subtitle says so rather than letting the feed pass for an audit trail of people. An event
   type the console has no words for is humanised from its own name instead of being dropped.
+
+**Charts** (2026-10-16). One `BarChart` serves every monthly chart — premiums collected, decisions by outcome,
+benefits paid — and one `BucketBars` the categorical one, receivables aging. Five named buckets forced through a
+monthly API would be a lie about what the data is, which is why there are two components and not one. Every rule
+below is already a rule elsewhere in this file:
+
+- **Every point is a value a report or a module aggregate returned.** Nothing is summed or averaged in the browser,
+  not even counts: accepted-plus-loaded is grouped on the server precisely because "the browser never adds" is only
+  a rule while it has no exceptions. A month with no value is a **gap** — never a zero, and never a line drawn
+  through it.
+- **Series are ink and Rule Strong grey.** A hue here would make colour mean something other than state (the Stamp
+  Rule), and the one place it is most tempting — a red "over 90 days" — is exactly where it is refused.
+- **The month in progress is an ink outline**, never a solid bar beside complete months: a half-month drawn solid
+  reads as a collapse that has not happened.
+- **Money is never added across currencies.** A chart draws the working currency and *names* the others underneath.
+  A reader who believes a bar is the whole month when it is not is worse served than one told plainly.
+- **Every chart is a described image** naming its series, its period and its latest real value, and sits beside the
+  card or list holding the same number. **A chart is never the only way to read a figure** — the receivables bars
+  keep their list, because a bar cannot be read to the shilling.
 
 ### Navigation
 
