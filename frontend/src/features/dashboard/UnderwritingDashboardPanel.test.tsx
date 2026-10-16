@@ -25,6 +25,11 @@ const VIEW = {
       status: 'OPEN' as const,
     },
   ],
+  casesReferred: 3,
+  decisions: [
+    { month: '2026-09', outcome: 'ACCEPT' as const, cases: 42, averageDays: '3.4' },
+    { month: '2026-09', outcome: 'DECLINED' as const, cases: 7, averageDays: '2.1' },
+  ],
   recentActivity: [],
 };
 
@@ -64,6 +69,28 @@ describe('UnderwritingDashboardPanel', () => {
     expect(screen.getByRole('link', { name: 'Review case-1' })).toHaveAttribute(
       'href',
       '/staff/underwriting/case-1',
+    );
+  });
+
+  /** Phase 2: the card that read "Not available" now reads a number, and links to the list that proves it. */
+  it("shows last month decisions and links each to its own filtered list", async () => {
+    renderScreen(<UnderwritingDashboardPanel />);
+
+    expect(await screen.findByRole("link", { name: /^42 Accepted, September/ })).toHaveAttribute(
+      "href",
+      "/staff/underwriting?outcome=ACCEPT&decidedFrom=2026-09-01&decidedTo=2026-09-30",
+    );
+    expect(screen.getByRole("link", { name: /^7 Declined, September/ })).toBeInTheDocument();
+    // The turnaround rides on the card as its hint, so a reader sees the count and the time together.
+    expect(screen.getByText(/3.4 days on average/)).toBeInTheDocument();
+  });
+
+  it("counts the cases waiting on a senior", async () => {
+    renderScreen(<UnderwritingDashboardPanel />);
+
+    expect(await screen.findByRole("link", { name: /^3 Waiting on a senior/ })).toHaveAttribute(
+      "href",
+      "/staff/underwriting?referral=REFERRED_TO_SENIOR",
     );
   });
 });

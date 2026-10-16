@@ -28,6 +28,10 @@ const VIEW = {
       status: 'SETTLEMENT_REQUESTED' as const,
     },
   ],
+  openDocumentRequests: 11,
+  settlements: [
+    { month: '2026-09', currency: 'TZS', claims: 9, totalApproved: { amount: '41000000.00', currencyCode: 'TZS' } },
+  ],
   recentActivity: [],
 };
 
@@ -65,4 +69,14 @@ describe('ClaimsDashboardPanel', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open claim-1' })).toHaveAttribute('href', '/staff/claims/claim-1');
   });
+  /** Phase 2: benefits paid last month, and the desk-wide wait on documents. */
+  it("shows last month benefits paid and the open document requests", async () => {
+    renderScreen(<ClaimsDashboardPanel />);
+
+    expect(await screen.findByText(/TZS 41,000,000.00/)).toBeInTheDocument();
+    expect(screen.getByText(/Benefits paid, September/)).toBeInTheDocument();
+    expect(screen.getByText(/9 claims settled/)).toBeInTheDocument();
+    expect(screen.getByText(/Waiting on a document/)).toBeInTheDocument();
+  });
+
 });

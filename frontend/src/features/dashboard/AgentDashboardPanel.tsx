@@ -61,6 +61,11 @@ export function AgentDashboardPanel() {
       to: '/agents/policies',
     },
     {
+      label: 'Applications in underwriting',
+      value: countValue(v.applicationsInUnderwriting),
+      hint: 'your clients, not yet decided',
+    },
+    {
       label: `Commission, ${period}`,
       value: v.commissionEarned ? formatMoney(v.commissionEarned) : null,
       hint: 'last closed statement',

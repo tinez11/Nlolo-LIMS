@@ -12,6 +12,7 @@ const VIEW = {
   clientsAwaitingKyc: 23,
   clientsKycRejected: 1,
   policiesInBook: 412,
+  applicationsInUnderwriting: 5,
   commissionPeriod: '2026-09',
   commissionEarned: { amount: '1284500.00', currencyCode: 'TZS' },
   commissionStatus: 'CLOSED',
@@ -54,4 +55,12 @@ describe('AgentDashboardPanel', () => {
 
     expect(await screen.findByText(/1,284,500\.00/)).toBeInTheDocument();
   });
+  /** Phase 2: never a gap -- the agent own applications still with underwriting. */
+  it("counts the agent own applications in underwriting", async () => {
+    renderScreen(<AgentDashboardPanel />);
+
+    expect(await screen.findByText(/Applications in underwriting/)).toBeInTheDocument();
+    expect(screen.getByText("5")).toBeInTheDocument();
+  });
+
 });

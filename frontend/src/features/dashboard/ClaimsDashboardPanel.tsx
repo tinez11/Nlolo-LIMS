@@ -7,10 +7,19 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { countValue } from '@/lib/counts';
 import { formatDate } from '@/lib/dates';
+import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectClaims, useDashboardStore } from '@/store/dashboardStore';
 import { ActivityFeed } from './ActivityFeed';
 import { DashboardRail } from './DashboardRail';
+
+const MONTH_NAME = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/** "2026-09" -> "September". The month is the server's; this only names it. */
+const monthName = (yyyymm: string) => MONTH_NAME[Number(yyyymm.slice(5, 7)) - 1] ?? yyyymm;
 
 const CLAIM_TYPE: Record<string, string> = {
   DEATH: 'Death',
@@ -56,7 +65,18 @@ export function ClaimsDashboardPanel() {
       hint: 'payout not made',
       to: to('APPROVED'),
     },
-    { label: 'Settled, all time', value: countValue(view.settled), hint: 'no date filter yet', to: to('SETTLED') },
+    { label: 'Settled, all time', value: countValue(view.settled), hint: 'all time', to: to('SETTLED') },
+    {
+      label: 'Waiting on a document',
+      value: countValue(view.openDocumentRequests),
+      hint: 'requests nobody has answered',
+    },
+    // Last month's benefits, one card per currency. The month is the VIEW's, never the browser's clock.
+    ...view.settlements.map((s) => ({
+      label: `Benefits paid, ${monthName(s.month)}`,
+      value: s.totalApproved ? formatMoney(s.totalApproved) : null,
+      hint: `${countValue(s.claims)} ${s.claims === 1 ? 'claim' : 'claims'} settled`,
+    })),
   ];
   const next = view.queue[0];
   const stages: [string, number | null, string][] = [
@@ -181,7 +201,7 @@ export function ClaimsDashboardPanel() {
             { label: 'Unassessed claims', description: 'Registered, no assessor yet', to: '/staff/claims?status=REGISTERED' },
             { label: 'Approved, not yet paid', description: 'Payouts still to make', to: '/staff/claims?status=APPROVED' },
           ]}
-          absent={['SLA deadlines on claims', 'Assigning a claim to an assessor', 'Benefit amounts paid — phase 2']}
+          absent={['SLA deadlines on claims', 'Assigning a claim to an assessor']}
         />
       </div>
     </div>

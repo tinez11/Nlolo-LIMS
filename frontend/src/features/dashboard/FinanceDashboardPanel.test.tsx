@@ -26,6 +26,15 @@ const VIEW = {
   premiumsThisYear: [],
   premiumsLastYear: [],
   currentMonth: '2026-10',
+  receivables: [
+    {
+      currency: 'TZS',
+      buckets: [
+        { name: 'NOT_DUE' as const, cases: 1, outstanding: TZS('100000.00') },
+        { name: 'OVER_90' as const, cases: 2, outstanding: TZS('400000.00') },
+      ],
+    },
+  ],
   recentActivity: [],
 };
 
@@ -77,4 +86,15 @@ describe('FinanceDashboardPanel', () => {
     expect(lastDayOf('2028-02')).toBe('2028-02-29');
     expect(lastDayOf('2026-09')).toBe('2026-09-30');
   });
+  /** Phase 2: the receivables card, aged, with every band drawn. */
+  it("ages the receivables", async () => {
+    renderScreen(<FinanceDashboardPanel />);
+
+    expect(await screen.findByText("Receivables")).toBeInTheDocument();
+    expect(screen.getByText("Over 90 days")).toBeInTheDocument();
+    expect(screen.getByText("TZS 400,000.00")).toBeInTheDocument();
+    // A band the server omitted is still drawn, at zero.
+    expect(screen.getByText("31-60 days".replace("-", "–"))).toBeInTheDocument();
+  });
+
 });

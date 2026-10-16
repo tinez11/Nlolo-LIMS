@@ -10,6 +10,7 @@ import { selectFinance, useDashboardStore } from '@/store/dashboardStore';
 import { ActivityFeed } from './ActivityFeed';
 import { DashboardRail } from './DashboardRail';
 import { PremiumsChart } from './PremiumsChart';
+import { ReceivablesAging } from './ReceivablesAging';
 import { lastDayOf, reportLink } from './reportLinks';
 
 const MONTH_NAME = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -126,6 +127,20 @@ export function FinanceDashboardPanel() {
           >
             <PremiumsChart thisYear={v.premiumsThisYear} lastYear={v.premiumsLastYear} currentMonth={v.currentMonth} />
           </Panel>
+          <Panel
+            title="Receivables"
+            subtitle="What is owed, by how overdue it is. Each band is a count and an amount, never a colour."
+            actions={
+              <Link
+                to="/staff/arrears"
+                className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+              >
+                Open the arrears queue
+              </Link>
+            }
+          >
+            <ReceivablesAging aging={v.receivables} />
+          </Panel>
           <ActivityFeed items={v.recentActivity} />
         </div>
         <DashboardRail
@@ -162,7 +177,7 @@ export function FinanceDashboardPanel() {
             { label: 'Prepare a journal', description: 'Approval follows segregation of duties', to: '/staff/manual-journals/new' },
             { label: 'Run a statement', description: 'Trial balance, P&L, balance sheet', to: '/staff/reports' },
           ]}
-          absent={['A cash-flow statement', 'Receivables total and aging — phase 2']}
+          absent={['A cash-flow statement']}
         />
       </div>
     </div>
