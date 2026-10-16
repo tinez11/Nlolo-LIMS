@@ -1274,12 +1274,30 @@ public class ProductApiImpl implements ProductApi {
      * <p>Only OCCUPATION_CLASS now. The sum-assured factor resolves by range instead, because the
      * amount determines the band; an occupation class is a code the same organisation chose on both
      * sides of the match, so a caller's typo should fail loudly rather than price at 1.0.
+     *
+     * <p><b>A version that rates no occupation at all is not an error (2026-10-16).</b> Strictness
+     * guards a TYPO -- a band the version rates under another spelling -- and there is no typo to
+     * catch where the version carries no occupation factors whatever: occupation simply does not
+     * rate that product. Refusing there made the quote disagree with the only path that issues a
+     * contract: {@code UnderwritingDecisionEventListener} never reads occupation, so issuance
+     * priced happily every policy this method refused to quote. On the day this was found, ONE of
+     * 693 versions rated occupation, so the quote was unusable on 692 products while every one of
+     * them could be sold. A quotation that cannot price what the platform will issue is the
+     * defect, not the product.
+     *
+     * <p>Where the version DOES rate occupation, an unknown band still fails loudly -- that is the
+     * typo this was built for, and it keeps working.
      */
     private BigDecimal strictMultiplier(UUID versionId, FactorType factorType, String band, List<AppliedFactor> applied) {
+        List<RatingFactor> rated = ratingFactorRepository.findByProductVersionIdAndFactorType(versionId, factorType.name());
+        if (rated.isEmpty()) {
+            // Not rated by this factor. Nothing is recorded in the breakdown, because no factor applied.
+            return BigDecimal.ONE;
+        }
         if (band == null || band.isBlank()) {
             throw new PremiumNotQuotableException(factorType + " is required to price this product");
         }
-        BigDecimal multiplier = ratingFactorRepository.findByProductVersionIdAndFactorType(versionId, factorType.name()).stream()
+        BigDecimal multiplier = rated.stream()
             .filter(f -> f.getBand().equals(band))
             .map(RatingFactor::getMultiplier)
             .findFirst()

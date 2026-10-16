@@ -1221,6 +1221,54 @@ class ProductApiIntegrationTest {
             dateOfBirth, Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_1", frequency, LocalDate.now());
     }
 
+    /** A priced version that rates NO occupation at all -- which is what almost every real version is. */
+    private UUID productNotRatedByOccupation(String code, BigDecimal ratePerMille) {
+        ProductSummaryView product = productApi.createProduct(code, code, ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(1), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            null,
+            List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, ratePerMille),
+                    new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, ratePerMille)),
+            new EligibilityBounds(18, 25, null, null, null, null),
+            ANY_FILING, "actuary@nlolo.co.tz");
+        return product.productId();
+    }
+
+    /**
+     * A version that rates no occupation prices anyway, WHATEVER class the caller names.
+     *
+     * <p>Strictness guards a typo, and there is no typo to catch where the version rates no occupation at all. It
+     * used to refuse, which made the quote disagree with the only path that issues a contract: issuance never reads
+     * occupation, so it priced happily every policy the quote would not price. One of 693 versions on the dev
+     * database rated occupation when this was found, so the quote was unusable on 692 sellable products.
+     */
+    @Test
+    void quotePremiumPricesAVersionThatRatesNoOccupationWhateverClassIsNamed() {
+        UUID productId = productNotRatedByOccupation("TERM-NO-OCC", new BigDecimal("10.0000"));
+
+        ProductApi.PremiumQuoteView quote = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, "class 1", PremiumFrequency.ANNUALLY, LocalDate.now()));
+
+        // 10,000,000 / 1000 x 10.0 = 100,000 a year, unchanged by an occupation nobody rates.
+        assertThat(quote.instalmentAmount()).isEqualByComparingTo("100000.00");
+        // Nothing is recorded in the breakdown, because no factor applied.
+        assertThat(quote.appliedFactors()).noneMatch(f -> f.factorType() == FactorType.OCCUPATION_CLASS);
+    }
+
+    /** Where the version DOES rate occupation, an unknown band still fails loudly -- the typo this guards. */
+    @Test
+    void quotePremiumStillRefusesAnUnknownClassOnAVersionThatRatesOccupation() {
+        UUID productId = pricedProduct("TERM-OCC-TYPO", new BigDecimal("10.0000"));
+
+        assertThatThrownBy(() -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, "class 1", PremiumFrequency.ANNUALLY, LocalDate.now())))
+            .isInstanceOf(PremiumNotQuotableException.class)
+            .hasMessageContaining("class 1");
+    }
+
     /**
      * The quote resolved the sum-assured factor by matching a caller-asserted band STRING -- V9's
      * defect, still live on the illustration path after it was removed from issuance. A product
