@@ -357,6 +357,10 @@ export type BenefitCalculationMethod = NonNullable<
 >;
 export type IfrsMeasurementModel = NonNullable<ProductVersionSpec['ifrsMeasurementModel']>;
 export type VersionRatingView = ProductComponents['schemas']['VersionRatingView'];
+
+/** A premium quotation and the whole derivation behind it. The ONE authority on a premium (2026-10-16). */
+export type PremiumQuoteView = ProductComponents['schemas']['PremiumQuoteView'];
+export type PremiumQuoteRequest = ProductComponents['schemas']['PremiumQuoteRequest'];
 export type BaseRate = ProductComponents['schemas']['BaseRate'];
 export const IFRS_MEASUREMENT_MODELS: readonly IfrsMeasurementModel[] = ['GMM', 'PAA'];
 

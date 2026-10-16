@@ -35,6 +35,7 @@ import { addYears, formatDate } from '@/lib/dates';
 import { getFuneralTerms } from '@/api/funeral';
 import type { FuneralTermsView } from '@/api/types';
 import { FuneralLivesFields } from './FuneralLivesFields';
+import { QuotationPreview } from './QuotationPreview';
 import { getUnitLinkedTerms } from '@/api/unitlinked';
 import type { UnitLinkedTermsView } from '@/api/types';
 import { UnitLinkedChoiceFields } from './UnitLinkedChoiceFields';
@@ -585,6 +586,24 @@ export function OpenUnderwritingCasePage() {
             </p>
           </div>
         </fieldset>
+
+        {/* Under the form and before the case exists, so the price is seen while the application is still being
+            written rather than after it has been filed (2026-10-16). It creates nothing. */}
+        <QuotationPreview
+          inputs={{
+            productId,
+            sumAssuredAmount: watch('sumAssuredAmount'),
+            sumAssuredCurrency: watch('sumAssuredCurrency'),
+            frequency: watch('premiumFrequency'),
+            policyTermMonths: watch('requestedTermMonths'),
+            dateOfBirth: applicant.data?.dateOfBirth,
+            sex: applicant.data?.sex,
+            smokerStatus: applicant.data?.smokerStatus,
+            occupationClass: applicant.data?.occupationClass,
+          }}
+          premiumPayingTermMonths={watch('premiumPayingTermMonths')}
+          commencementDate={watch('proposedCommencementDate')}
+        />
 
         {opening.status === 'error' && opening.error && (
           <InlineError error={opening.error} />

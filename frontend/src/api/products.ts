@@ -21,6 +21,8 @@ import type {
   ProductSnapshot,
   ProductSummary,
   ProductVersionSpec,
+  PremiumQuoteRequest,
+  PremiumQuoteView,
   ProductVersionSummaryView,
   VersionRatingView,
 } from './types';
@@ -110,6 +112,21 @@ export function getVersionRating(productId: string, versionId: string): Promise<
   return get<VersionRatingView>(
     `/products/${encodeURIComponent(productId)}/versions/${encodeURIComponent(versionId)}/rating`,
   );
+}
+
+/**
+ * What this life would be charged on this version, with the whole derivation (2026-10-16).
+ *
+ * <p>A READ that happens to be a POST, because the inputs are a body rather than a path: it creates nothing,
+ * records nothing and may be called as often as a form changes. It is the one authority on a premium -- the
+ * console must never derive one of its own.
+ *
+ * <p>It is refused (422) where the version cannot price this life: no base-rate cell for the age, sex and smoker
+ * status, or no multiplier for the occupation class named. A caller showing a quotation must handle that as "not
+ * quotable" rather than as a broken screen -- an unpriced product is a real and ordinary state.
+ */
+export function quotePremium(productId: string, request: PremiumQuoteRequest): Promise<PremiumQuoteView> {
+  return post<PremiumQuoteView>(`/products/${encodeURIComponent(productId)}/premium-quote`, request);
 }
 
 /** `POST /products` -- staff-only. No Idempotency-Key on this endpoint either
