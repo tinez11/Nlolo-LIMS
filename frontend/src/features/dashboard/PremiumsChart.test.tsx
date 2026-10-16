@@ -17,12 +17,16 @@ describe('PremiumsChart', () => {
 
     // `getByTitle` only matches `svg > title`; a bar's tooltip is a `<title>` inside its own `<rect>`,
     // which is where SVG puts it, so the tooltips are found by their text instead.
-    expect(screen.getByText('Oct 2026 to date: TZS 22,600,000.00').closest('rect')).toHaveAttribute(
+    //
+    // Each tooltip is prefixed with its SERIES since 2026-10-16, when the drawing moved into the shared
+    // BarChart: two bars stand in one month, and "Sep 2026" alone did not say which year's it was.
+    expect(screen.getByText('2026, Oct 2026 to date: TZS 22,600,000.00').closest('rect')).toHaveAttribute(
       'data-partial',
       'true',
     );
-    expect(screen.getByText('Sep 2026: TZS 50,204,310.00').closest('rect')).not.toHaveAttribute('data-partial');
-    expect(screen.getByText('Sep 2025: TZS 45,000,000.00')).toBeInTheDocument();
+    expect(screen.getByText('2026, Sep 2026: TZS 50,204,310.00').closest('rect')).not.toHaveAttribute('data-partial');
+    // Last year's September, drawn under this year's September so the two compare.
+    expect(screen.getByText('2025, Sep 2026: TZS 45,000,000.00')).toBeInTheDocument();
   });
 
   /** The described image says the same as the bars, for a reader who cannot see them. */

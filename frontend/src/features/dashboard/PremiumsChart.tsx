@@ -1,3 +1,4 @@
+import { BarChart, type Series } from '@/components/charts/BarChart';
 import { formatMoney, type Money } from '@/lib/money';
 
 export interface MonthPoint {
@@ -8,16 +9,16 @@ export interface MonthPoint {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /**
- * Premiums collected by month, this year against last (2026-10-14).
+ * Premiums collected by month, this year against last (2026-10-14; re-pointed at the shared BarChart 2026-10-16).
  *
- * Every bar is a value the reporting module returned (`monthlyPremiumCollections`); this draws, it does not add.
- * Achromatic by rule: this year in ink, last year in the strong rule grey -- a series is not a state, so it takes no
- * status hue. The month in progress is an ink OUTLINE: a half-month drawn solid beside complete months would read as
- * a collapse that has not happened.
+ * Every bar is a value the reporting module returned (`monthlyPremiumCollections`); this adapts, it does not add.
  *
- * Heights are proportions of the largest value for display only. Parsing the decimal strings to numbers here is
- * drawing, not arithmetic on money: no total, average or difference is produced and nothing parsed is ever shown --
- * the labels and titles show the strings as the server sent them.
+ * <p>Parsing the decimal strings to numbers here is DRAWING, not arithmetic on money: no total, average or
+ * difference is produced, and nothing parsed is ever shown -- the tooltips and the described image carry
+ * `formatMoney`'s string, built from the amount exactly as the server sent it.
+ *
+ * <p>The twelve months of the current year are always on the axis, so a thin year still reads as a year rather than
+ * as a handful of bars. Last year's bars sit under this year's own months, which is what makes them comparable.
  */
 export function PremiumsChart({
   thisYear,
@@ -32,87 +33,31 @@ export function PremiumsChart({
     return <p className="px-4 pb-4 text-xs text-muted-foreground">No premiums collected in either year yet.</p>;
   }
 
-  const byMonth = (points: MonthPoint[]) => new Map(points.map((pt) => [Number(pt.month.slice(5, 7)), pt]));
-  const cur = byMonth(thisYear);
-  const last = byMonth(lastYear);
-  const max = Math.max(1, ...[...thisYear, ...lastYear].map((pt) => Number(pt.amount?.amount ?? 0)));
   const year = Number(currentMonth.slice(0, 4));
+  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
 
-  const W = 640,
-    H = 220,
-    L = 8,
-    R = 8,
-    T = 10,
-    B = 26;
-  const slot = (W - L - R) / 12;
-  const bw = Math.min(14, (slot - 6) / 2);
-  const h = (pt: MonthPoint | undefined) => (pt?.amount ? (Number(pt.amount.amount) / max) * (H - T - B) : 0);
+  /** Last year's points are re-keyed onto this year's months, so the two series share one axis. */
+  const toPoints = (points: MonthPoint[], shiftToCurrentYear: boolean) =>
+    points
+      .filter((p): p is MonthPoint & { amount: Money } => p.amount !== null)
+      .map((p) => ({
+        month: shiftToCurrentYear ? `${year}-${p.month.slice(5, 7)}` : p.month,
+        value: Number(p.amount.amount),
+        display: formatMoney(p.amount),
+      }));
 
-  const label = (pt: MonthPoint | undefined) => (pt?.amount ? formatMoney(pt.amount) : 'nothing collected');
-  const latest = thisYear.filter((pt) => pt.month !== currentMonth).at(-1);
+  const series: Series[] = [
+    { label: String(year), tone: 'ink', partialMonth: currentMonth, points: toPoints(thisYear, false) },
+    { label: String(year - 1), tone: 'muted', points: toPoints(lastYear, true) },
+  ];
+
+  const latest = thisYear.filter((p) => p.month !== currentMonth && p.amount !== null).at(-1);
   const description =
     `Premiums collected by month, ${year} against ${year - 1}.` +
-    (latest ? ` ${MONTHS[Number(latest.month.slice(5, 7)) - 1]} ${year}: ${label(latest)}.` : '') +
-    (cur.get(Number(currentMonth.slice(5, 7))) ? ` ${MONTHS[Number(currentMonth.slice(5, 7)) - 1]} is to date.` : '');
+    (latest?.amount ? ` ${MONTHS[Number(latest.month.slice(5, 7)) - 1]} ${year}: ${formatMoney(latest.amount)}.` : '') +
+    (thisYear.some((p) => p.month === currentMonth && p.amount !== null)
+      ? ` ${MONTHS[Number(currentMonth.slice(5, 7)) - 1]} is to date.`
+      : '');
 
-  return (
-    <div className="px-4 pb-2">
-      <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full" role="img" aria-label={description}>
-        <line x1={L} x2={W - R} y1={H - B} y2={H - B} className="stroke-border" />
-        {MONTHS.map((name, i) => {
-          const m = i + 1;
-          const cx = L + slot * i + slot / 2;
-          const prev = last.get(m);
-          const now = cur.get(m);
-          const partial = `${year}-${String(m).padStart(2, '0')}` === currentMonth;
-          return (
-            <g key={name}>
-              {prev && (
-                <rect
-                  x={cx - bw - 1}
-                  y={H - B - h(prev)}
-                  width={bw}
-                  height={h(prev)}
-                  rx={2}
-                  className="fill-border-strong"
-                >
-                  <title>{`${name} ${year - 1}: ${label(prev)}`}</title>
-                </rect>
-              )}
-              {now && (
-                <rect
-                  x={cx + 1}
-                  y={H - B - h(now)}
-                  width={bw}
-                  height={h(now)}
-                  rx={2}
-                  className={partial ? 'fill-none stroke-foreground stroke-[1.5]' : 'fill-foreground'}
-                  {...(partial ? { 'data-partial': 'true' } : {})}
-                >
-                  <title>{`${name} ${year}${partial ? ' to date' : ''}: ${label(now)}`}</title>
-                </rect>
-              )}
-              <text x={cx} y={H - 8} textAnchor="middle" className="fill-muted-foreground text-xs">
-                {name}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-      <div className="flex flex-wrap gap-4 pt-1 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5">
-          <i className="inline-block size-2.5 rounded-sm bg-foreground" />
-          {year}
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <i className="inline-block size-2.5 rounded-sm bg-border-strong" />
-          {year - 1}
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <i className="inline-block size-2.5 rounded-sm border-[1.5px] border-foreground" />
-          this month, to date
-        </span>
-      </div>
-    </div>
-  );
+  return <BarChart series={series} months={months} description={description} />;
 }
