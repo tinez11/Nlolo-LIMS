@@ -135,15 +135,64 @@ class UnderwritingDashboardTest {
             .containsExactly("2026-09 ACCEPT 42 3.4", "2026-09 DECLINED 7 2.1");
     }
 
-    /** The LAST COMPLETE month, both sides: never the part-month that would not compare with a full one. */
+    /**
+     * TWELVE complete months, ending with the last complete one: one read serving the cards (which show the last
+     * month) and the chart (which shows all twelve). The current month is in neither.
+     */
     @Test
-    void asksOnlyForTheLastCompleteMonth() {
+    void asksForTwelveCompleteMonthsEndingWithTheLastOne() {
         when(underwriting.listCases(any(CaseFilter.class), any())).thenReturn(total(0));
         when(underwriting.decisionsByMonth(any(), any())).thenReturn(List.of());
 
         dashboard.build(TODAY);
 
-        verify(underwriting).decisionsByMonth(YearMonth.of(2026, 9), YearMonth.of(2026, 9));
+        verify(underwriting).decisionsByMonth(YearMonth.of(2025, 10), YearMonth.of(2026, 9));
+    }
+
+    /**
+     * ACCEPT plus LOADED is one number, added HERE. Both are acceptances -- a loading is an acceptance that costs
+     * more -- and the browser may not add them, not even counts. POSTPONED is in neither series.
+     */
+    @Test
+    void groupsAcceptancesAgainstDeclinesPerMonthAndLeavesPostponementsOut() {
+        when(underwriting.listCases(any(CaseFilter.class), any())).thenReturn(total(0));
+        when(underwriting.decisionsByMonth(any(), any())).thenReturn(List.of(
+            decided(2026, 8, DecisionOutcome.ACCEPT, 40), decided(2026, 8, DecisionOutcome.DECLINED, 6),
+            decided(2026, 9, DecisionOutcome.ACCEPT, 42), decided(2026, 9, DecisionOutcome.LOADED, 5),
+            decided(2026, 9, DecisionOutcome.POSTPONED, 3)));
+
+        UnderwritingDashboardView view = dashboard.build(TODAY);
+
+        assertThat(view.decisionSeries())
+            .extracting(p -> p.month() + " accepted=" + p.accepted() + " declined=" + p.declined())
+            .containsExactly("2026-08 accepted=40 declined=6", "2026-09 accepted=47 declined=0");
+    }
+
+    /** A month nobody decided anything in is ABSENT, so the chart draws a gap rather than a zero. */
+    @Test
+    void leavesAMonthWithNoDecisionsOutOfTheSeries() {
+        when(underwriting.listCases(any(CaseFilter.class), any())).thenReturn(total(0));
+        when(underwriting.decisionsByMonth(any(), any()))
+            .thenReturn(List.of(decided(2026, 9, DecisionOutcome.ACCEPT, 42)));
+
+        assertThat(dashboard.build(TODAY).decisionSeries()).extracting(p -> p.month()).containsExactly("2026-09");
+    }
+
+    /** The cards still read the LAST COMPLETE month alone, out of the twelve the composer now fetches. */
+    @Test
+    void theCardsReadOnlyTheLastCompleteMonthOfTheTwelve() {
+        when(underwriting.listCases(any(CaseFilter.class), any())).thenReturn(total(0));
+        when(underwriting.decisionsByMonth(any(), any())).thenReturn(List.of(
+            decided(2026, 8, DecisionOutcome.ACCEPT, 40), decided(2026, 9, DecisionOutcome.ACCEPT, 42)));
+
+        assertThat(dashboard.build(TODAY).decisions())
+            .extracting(d -> d.month() + " " + d.cases()).containsExactly("2026-09 42");
+    }
+
+    private static tz.co.nlolo.lifeplatform.underwriting.api.DecisionMonth decided(
+            int year, int month, DecisionOutcome outcome, long cases) {
+        return new tz.co.nlolo.lifeplatform.underwriting.api.DecisionMonth(
+            YearMonth.of(year, month), outcome, cases, new BigDecimal("3.0"));
     }
 
     /** One aggregate being down costs ONE card, not the page. */

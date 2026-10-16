@@ -11,6 +11,7 @@ import java.util.UUID;
  */
 public record UnderwritingDashboardView(Long openCases, Long casesInReview, Long casesAwaitingIssue,
                                         Long casesReferred, List<DecisionMonth> decisions,
+                                        List<DecisionSeriesPoint> decisionSeries,
                                         List<QueuedCase> queue, List<ActivityItem> recentActivity) {
 
     /** A case as the queue panel shows it. Names are resolved by the console from the ids, as the queue page does. */
@@ -28,4 +29,16 @@ public record UnderwritingDashboardView(Long openCases, Long casesInReview, Long
      * @param averageDays mean calendar days from opening to decision, one decimal place, as a decimal string
      */
     public record DecisionMonth(String month, String outcome, long cases, String averageDays) {}
+
+    /**
+     * One month of the decisions chart: what was taken on, against what was refused (phase 3, 2026-10-16).
+     *
+     * <p><b>Grouped HERE, on the server.</b> {@code accepted} is ACCEPT plus LOADED -- both are acceptances, one
+     * simply costs more -- and the browser may not add them, not even counts: "the browser never adds" is only a
+     * rule while it has no exceptions.
+     *
+     * <p>POSTPONED is in neither number. It is not a decision that closed a case, and a third bar a month would
+     * cost the chart its readability for a figure the card beside it already shows.
+     */
+    public record DecisionSeriesPoint(String month, long accepted, long declined) {}
 }

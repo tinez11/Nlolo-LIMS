@@ -83,7 +83,8 @@ components:
     UnderwritingDashboardView:
       type: object
       additionalProperties: false
-      required: [openCases, casesInReview, casesAwaitingIssue, casesReferred, decisions, queue, recentActivity]
+      required: [openCases, casesInReview, casesAwaitingIssue, casesReferred, decisions, decisionSeries, queue,
+                 recentActivity]
       properties:
         openCases: { $ref: '#/components/schemas/Count' }
         casesInReview: { $ref: '#/components/schemas/Count' }
@@ -100,6 +101,12 @@ components:
             could not be read, and empty when nothing was decided.
           type: array
           items: { $ref: '#/components/schemas/DecisionMonth' }
+        decisionSeries:
+          description: >-
+            Twelve complete months for the decisions chart, oldest first, ending with the last complete
+            month. A month nobody decided anything in is ABSENT rather than zero, so the chart draws a gap.
+          type: array
+          items: { $ref: '#/components/schemas/DecisionSeriesPoint' }
         queue:
           type: array
           items:
@@ -177,6 +184,18 @@ components:
       properties:
         month: { $ref: '#/components/schemas/Month' }
         amount: { $ref: '#/components/schemas/Money' }
+    DecisionSeriesPoint:
+      description: >-
+        One month of the decisions chart: what was taken on against what was refused. accepted is ACCEPT plus
+        LOADED, grouped on the SERVER because the browser may not add, not even counts. POSTPONED is in
+        neither number -- it closed no case.
+      type: object
+      additionalProperties: false
+      required: [month, accepted, declined]
+      properties:
+        month: { $ref: '#/components/schemas/Month' }
+        accepted: { type: integer, format: int64, minimum: 0 }
+        declined: { type: integer, format: int64, minimum: 0 }
     DecisionMonth:
       description: One month's underwriting decisions of one outcome, and how long they took.
       type: object

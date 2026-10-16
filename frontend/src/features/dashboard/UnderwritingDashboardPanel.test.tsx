@@ -30,6 +30,10 @@ const VIEW = {
     { month: '2026-09', outcome: 'ACCEPT' as const, cases: 42, averageDays: '3.4' },
     { month: '2026-09', outcome: 'DECLINED' as const, cases: 7, averageDays: '2.1' },
   ],
+  decisionSeries: [
+    { month: '2026-08', accepted: 40, declined: 6 },
+    { month: '2026-09', accepted: 47, declined: 0 },
+  ],
   recentActivity: [],
 };
 

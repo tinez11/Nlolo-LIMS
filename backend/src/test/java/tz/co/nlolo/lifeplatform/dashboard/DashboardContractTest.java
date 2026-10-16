@@ -90,6 +90,7 @@ class DashboardContractTest {
     void anUnderwriterReadsTheUnderwritingDashboard() throws Exception {
         when(underwriting.build(org.mockito.ArgumentMatchers.any())).thenReturn(new UnderwritingDashboardView(238L, 41L, null, 3L,
             List.of(new UnderwritingDashboardView.DecisionMonth("2026-09", "ACCEPT", 42, "3.4")),
+            List.of(new UnderwritingDashboardView.DecisionSeriesPoint("2026-09", 47, 7)),
             List.of(
             new UnderwritingDashboardView.QueuedCase(UUID.randomUUID(), UUID.randomUUID(), null, UUID.randomUUID(),
                 new Money("25000000.00", "TZS"), "OPEN")),

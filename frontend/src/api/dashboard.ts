@@ -16,6 +16,7 @@ export type ActivityItem = components['schemas']['ActivityItem'];
 // Phase 2's aggregates. Each is the dashboard's own shape, not the owning module's -- see the view records.
 export type DecisionMonth = components['schemas']['DecisionMonth'];
 export type SettlementMonth = components['schemas']['SettlementMonth'];
+export type DecisionSeriesPoint = components['schemas']['DecisionSeriesPoint'];
 export type ReceivablesAging = components['schemas']['ReceivablesAging'];
 
 export function getUnderwritingDashboard(): Promise<UnderwritingDashboard> {

@@ -12,6 +12,7 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectUnderwriting, useDashboardStore } from '@/store/dashboardStore';
 import { ActivityFeed } from './ActivityFeed';
 import { DashboardRail } from './DashboardRail';
+import { DecisionsChart } from './DecisionsChart';
 
 const MONTH_NAME = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -150,6 +151,20 @@ export function UnderwritingDashboardPanel() {
                 </table>
               </div>
             )}
+          </Panel>
+          <Panel
+            title="Decisions"
+            subtitle="By month, accepted against declined. Postponements are not shown."
+            actions={
+              <Link
+                to="/staff/underwriting?status=DECIDED"
+                className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+              >
+                Open the queue
+              </Link>
+            }
+          >
+            <DecisionsChart series={view.decisionSeries} months={view.decisionSeries.map((p) => p.month)} />
           </Panel>
           <ActivityFeed items={view.recentActivity} />
         </div>
