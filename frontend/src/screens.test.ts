@@ -228,13 +228,25 @@ const as = (...roles: string[]) =>
   ({ roles: ['REALM_STAFF', ...roles] }) as unknown as Parameters<typeof homeFor>[1];
 
 describe('homeFor', () => {
-  // Today shows every queue the person works, filtered, in one place (2026-10-09, C5), so it is
-  // where they land -- rather than on the first queue their role allows, with the rest of their
-  // work reduced to badges. Every staff identity counts at least the KYC queues, which sit in the
-  // ungated Clients group.
-  it('lands every staff role on Today', () => {
-    for (const roles of [['UNDERWRITER'], ['CLAIMS_ASSESSOR'], ['CLAIMS_MANAGER'], ['FINANCE_OFFICER'], ['ADMIN'], ['CUSTOMER_SERVICE_REP'], []]) {
-      expect(homeFor('staff', as(...roles)), roles.join('+') || 'no roles').toBe('today');
+  // The dashboard shows the person's own figures and every queue they work, so it is where a role
+  // with one lands -- rather than on the first queue their role allows, with the rest of their work
+  // reduced to badges. It replaced Today on 2026-10-14; the rule changed from "counts a badge" to
+  // "has a dashboard", which is the same set of roles minus the two with no figures of their own.
+  it('lands every working staff role on their dashboard', () => {
+    for (const roles of [['UNDERWRITER'], ['CLAIMS_ASSESSOR'], ['CLAIMS_MANAGER'], ['FINANCE_OFFICER'], ['ADMIN']]) {
+      expect(homeFor('staff', as(...roles)), roles.join('+')).toBe('dashboard');
+    }
+  });
+
+  /**
+   * A CUSTOMER_SERVICE_REP holds none of the dashboard roles, and a staff member may hold no role at
+   * all. They land on the KYC queue -- ungated, and the one queue they can genuinely work -- rather
+   * than on an empty dashboard or on Policies, which is everyone's register and nobody's task.
+   */
+  it('lands a role with no dashboard on the one queue it can work', () => {
+    for (const roles of [['CUSTOMER_SERVICE_REP'], []]) {
+      expect(homeFor('staff', as(...roles)), roles.join('+') || 'no roles')
+        .toBe('clients/individuals?kycStatus=PENDING');
     }
   });
 

@@ -72,6 +72,8 @@ public class BalanceSheetReport implements Report {
             List<AccountBalanceView> accounts = LedgerAccounts.postedLeavesIn(ledger.accounts(), classRoot);
             BigDecimal total = LedgerAccounts.classTotal(ledger.accounts(), classRoot);
             classTotals.put(classRoot, total);
+            // The finance dashboard reads the "Assets" and "Liabilities" section totals by these titles
+            // (dashboard.application.ReportFigures). Renaming a class section breaks those two cards, knowingly.
             sections.add(section(LedgerAccounts.CLASS_NAMES.get(classRoot), accounts, total, comparison));
         }
 

@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.billing.infrastructure;
 import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceStatus;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
+import tz.co.nlolo.lifeplatform.billing.api.ReceivablesAging;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
 import jakarta.validation.Valid;
@@ -17,6 +18,9 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
+import org.springframework.format.annotation.DateTimeFormat;
 import java.util.List;
 import java.util.UUID;
 
@@ -64,6 +68,22 @@ public class BillingController {
                     Sort.by(Sort.Order.desc("dunningLevel"),
                             Sort.Order.asc("openedAt"),
                             Sort.Order.asc("arrearsCaseId"))))));
+    }
+
+    /**
+     * What is owed and how old it is (2026-10-15) -- the finance dashboard's receivables card, and the one
+     * question the queue above could not answer without the reader adding up a page of it.
+     *
+     * <p>Finance-gated exactly like that queue: this is money owed across the whole tenant.
+     *
+     * @param asOf the civil day the age is measured from; today in Africa/Dar_es_Salaam when omitted
+     */
+    @GetMapping("/arrears/aging")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    public ResponseEntity<List<ReceivablesAging>> receivablesAging(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
+        return ResponseEntity.ok(billingApi.receivablesAging(
+            asOf == null ? LocalDate.now(ZoneId.of("Africa/Dar_es_Salaam")) : asOf));
     }
 
     /**

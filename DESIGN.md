@@ -209,9 +209,9 @@ working day inside this surface, so it is built to be read rather than admired,
 and to be read for eight hours without fatigue.
 
 The doctrine that gives the world its edge is inherited straight from the
-product: **render only what the platform can prove.** There are no analytics
-endpoints on this platform, so there are no trend arrows, no sparklines and no
-percentage deltas. The stat row shows counts. A status the build has never seen
+product: **render only what the platform can prove.** A trend arrow, a delta or a
+chart appears only where a report the platform runs computed every point on it;
+anything else is a count. A status the build has never seen
 is ringed and flagged rather than quietly dressed as a neutral. An absent value
 is an em dash, never a grey pill reading "Unknown". This refusal is not a
 limitation the design works around — it is the design's argument, and it is what
@@ -804,13 +804,64 @@ on this platform means state.
   `<button>`s with `aria-pressed` and take a Rule-Strong border when selected. Only
   for screens with more than one count, which today means one screen.
 
-**Counts only, and no trend arrows** — there is no analytics endpoint on this
-platform, so a card reading "↗ 12% wk/wk" would have nothing behind it. A null
+**A trend only where a report stands behind it** (revised 2026-10-14). Until the
+reporting module existed this read "counts only, and no trend arrows", because no
+endpoint computed anything over time. Now some figures are computed — premium
+collections by month, new business, the balance sheet, the income statement — and
+a delta between two of those report values is as provable as either value. The
+rule that survives the revision: **every point on a chart and every side of a
+delta is a value a report returned.** A card reading "↗ 12% wk/wk" with no report
+behind it is still worse than no card, and a figure summed in the browser is still
+refused. A delta reports a direction, not a verdict: up is not "good", so it is
+drawn in ink, never in the success or danger hue (The Stamp Rule). A null
 value with `pending` shows a spinner; a null value without it shows an em dash
 labelled "Not available", because a spinner that spins forever next to an error
 panel is worse than an honest dash. Both components carry those three states, and
 neither is a live region: the pager below the table already announces the same
 total politely, and two regions reading out one number is worse than one.
+
+### Dashboard (2026-10-14)
+
+Where a working role lands: underwriting, claims, finance, and the agent. Replaces "Today", whose work-waiting counts
+became each dashboard's work panel. One tab per dashboard a person holds; an inactive tab is not mounted.
+
+- **`KpiCard`** — a figure, its label, a hint, and optionally a delta. A **link** to exactly the list or report it was
+  read from, already filtered, or **not a link** when that destination cannot reproduce its filter (the journals list
+  reads no status from its URL, so "journals awaiting approval" is not clickable). A failed figure is "Not available"
+  with an em dash, never 0, and never a link.
+- **A figure never wraps.** It is `whitespace-nowrap`; the card is a size container and the figure steps from the
+  Display tier to the Headline tier when the card is narrow — both tiers already on the page, so no third size. The row
+  is `auto-fill` with a 16rem floor, so a narrow screen gets fewer cards across rather than a squeezed number. Money is
+  never abbreviated ("1.28M"): a finance reader reconciles to the cent.
+- **The work panel** leads the work column with `emphasis` — the one act the dashboard exists for. Then the rest.
+- **The right column** holds alerts, quick actions and "Not here yet". It is not a record rail: quick actions are links
+  into the screens that own each act, every one with its own confirmation, not acts in their own right.
+- **"Not here yet"** names what is deliberately missing because the platform has no concept behind it (SLA deadlines,
+  quotes, leads, a risk-level field, a cash-flow statement). An honest list beats an empty widget. It is a list that
+  must SHRINK: phase 2 (2026-10-15) delivered turnaround, decisions by outcome, referrals, settled amounts, open
+  document requests and receivables aging, and each left this list the day it arrived.
+- **The activity feed** ends the three staff dashboards. It says what happened and when, never who: the audit log
+  records no actor, and the subtitle says so rather than letting the feed pass for an audit trail of people. An event
+  type the console has no words for is humanised from its own name instead of being dropped.
+
+**Charts** (2026-10-16). One `BarChart` serves every monthly chart — premiums collected, decisions by outcome,
+benefits paid — and one `BucketBars` the categorical one, receivables aging. Five named buckets forced through a
+monthly API would be a lie about what the data is, which is why there are two components and not one. Every rule
+below is already a rule elsewhere in this file:
+
+- **Every point is a value a report or a module aggregate returned.** Nothing is summed or averaged in the browser,
+  not even counts: accepted-plus-loaded is grouped on the server precisely because "the browser never adds" is only
+  a rule while it has no exceptions. A month with no value is a **gap** — never a zero, and never a line drawn
+  through it.
+- **Series are ink and Rule Strong grey.** A hue here would make colour mean something other than state (the Stamp
+  Rule), and the one place it is most tempting — a red "over 90 days" — is exactly where it is refused.
+- **The month in progress is an ink outline**, never a solid bar beside complete months: a half-month drawn solid
+  reads as a collapse that has not happened.
+- **Money is never added across currencies.** A chart draws the working currency and *names* the others underneath.
+  A reader who believes a bar is the whole month when it is not is worse served than one told plainly.
+- **Every chart is a described image** naming its series, its period and its latest real value, and sits beside the
+  card or list holding the same number. **A chart is never the only way to read a figure** — the receivables bars
+  keep their list, because a bar cannot be read to the shilling.
 
 ### Navigation
 
@@ -979,8 +1030,12 @@ surface.
   which is computed from an identifier.
 - **Don't** add a seventh status bucket, or use a status hue for anything that is
   not a status.
-- **Don't** add a trend arrow, sparkline, percentage delta or any aggregate this
-  platform has no endpoint for. Counts only.
+- **Don't** add a trend arrow, sparkline, percentage delta or chart unless every
+  value on it came back from a report the platform ran. Never sum, average or
+  difference in the browser, and never colour a delta green or red — a direction
+  is not a verdict.
+- **Don't** colour a chart series. Series are ink and greys; the six status hues
+  stay reserved for state, so a chart cannot make the Stamp Rule lie.
 - **Don't** put a mutating action inside the slide-over. If it changes money,
   cover or a case, it belongs on a page.
 - **Don't** put a mutating action in the 320px record rail either, and don't lead

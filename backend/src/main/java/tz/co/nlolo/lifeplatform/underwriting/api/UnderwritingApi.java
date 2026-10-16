@@ -5,6 +5,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -217,6 +218,21 @@ public interface UnderwritingApi {
      */
     Page<UnderwritingCaseView> listCases(UnderwritingCaseStatus status, UUID applicantPartyId,
                                           Set<UUID> applicantPartyIds, Pageable pageable);
+
+    /**
+     * The same list, by every dimension a caller can ask on (2026-10-15): status, decision outcome, referral status,
+     * when it was decided, and the applicant scope.
+     *
+     * <p>An overload rather than a widened signature, for the reason {@code registerIndividual} records: about thirty
+     * callers ask only "the open cases" and have no opinion about the rest.
+     */
+    Page<UnderwritingCaseView> listCases(CaseFilter filter, Pageable pageable);
+
+    /**
+     * Decisions per month and outcome with their average turnaround, {@code from} through {@code to} inclusive,
+     * oldest first. A month in which nothing was decided is absent rather than zero.
+     */
+    List<DecisionMonth> decisionsByMonth(YearMonth from, YearMonth to);
 
     /**
      * Decided cases no policy has been issued from yet -- what manual issuance may pick (2026-10-08). Declined

@@ -19,10 +19,11 @@ test.describe('agents commission team picker', () => {
   }) => {
     // Settle the SSO round trip on the realm's own landing route first. Going straight to a deep
     // link as the FIRST navigation sends the OIDC redirect_uri to `/agents`, so the browser comes
-    // back from Keycloak on "My profile" and the picker is nowhere -- which is how this spec failed
-    // on its first run, with the call log still mid-redirect.
+    // back from Keycloak on the landing page and the picker is nowhere -- which is how this spec
+    // failed on its first run, with the call log still mid-redirect. That landing is the Dashboard
+    // since 2026-10-14.
     await page.goto('/agents');
-    await expect(page.getByRole('heading', { name: 'My profile' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
 
     await page.goto('/agents/commission');
     const picker = page.getByLabel('Agent');

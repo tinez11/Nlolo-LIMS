@@ -12,4 +12,13 @@ public interface ClaimDocumentRequestRepository extends JpaRepository<ClaimDocum
     List<ClaimDocumentRequest> findByTenantIdAndClaimIdOrderByRequestedAtAsc(UUID tenantId, UUID claimId);
 
     Optional<ClaimDocumentRequest> findByTenantIdAndRequestId(UUID tenantId, UUID requestId);
+
+    /**
+     * Requests still outstanding across every claim in the tenant (2026-10-15) -- the question the
+     * per-claim reads could not answer, and the claims dashboard's "waiting on a document" count.
+     *
+     * <p>OPEN only: a RECEIVED request has its evidence and a WITHDRAWN one was taken back, and
+     * neither is work anybody is waiting on.
+     */
+    long countByTenantIdAndStatus(UUID tenantId, String status);
 }

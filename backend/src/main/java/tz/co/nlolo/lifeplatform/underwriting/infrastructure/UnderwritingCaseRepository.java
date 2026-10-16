@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -31,13 +33,31 @@ public interface UnderwritingCaseRepository extends JpaRepository<UnderwritingCa
      * return zero rows -- an agent who has registered no one sees no cases, which is not the same
      * as seeing everything. Passing null for a caller that should have been scoped is the failure
      * mode this distinction exists to prevent.
+     *
+     * <p>Three more dimensions since 2026-10-15, for the dashboards: what was decided, whether the
+     * case went to a senior, and when it was decided. Each is one more null-safe clause, and a
+     * decided-date bound also excludes the undecided -- a null {@code decisionDecidedAt} is in no
+     * range, whatever the bounds.
      */
     @Query("SELECT c FROM UnderwritingCase c WHERE c.tenantId = :tenantId "
         + "AND (:status IS NULL OR c.status = :status) "
+        + "AND (:outcome IS NULL OR c.decisionOutcome = :outcome) "
+        + "AND (:referral IS NULL OR c.referralStatus = :referral) "
+        // The two instants are CAST so Postgres can type a null bind: unlike the String and UUID
+        // parameters above, a null Instant reaches the driver untyped and the statement fails to
+        // prepare with "could not determine data type of parameter".
+        + "AND (CAST(:decidedFrom AS Instant) IS NULL "
+        + "     OR (c.decisionDecidedAt IS NOT NULL AND c.decisionDecidedAt >= :decidedFrom)) "
+        + "AND (CAST(:decidedTo AS Instant) IS NULL "
+        + "     OR (c.decisionDecidedAt IS NOT NULL AND c.decisionDecidedAt < :decidedTo)) "
         + "AND (:applicantPartyId IS NULL OR c.applicantPartyId = :applicantPartyId) "
         + "AND (:applicantPartyIds IS NULL OR c.applicantPartyId IN :applicantPartyIds)")
     Page<UnderwritingCase> search(@Param("tenantId") UUID tenantId,
                                    @Param("status") String status,
+                                   @Param("outcome") String outcome,
+                                   @Param("referral") String referral,
+                                   @Param("decidedFrom") Instant decidedFrom,
+                                   @Param("decidedTo") Instant decidedTo,
                                    @Param("applicantPartyId") UUID applicantPartyId,
                                    @Param("applicantPartyIds") Set<UUID> applicantPartyIds,
                                    Pageable pageable);
@@ -57,4 +77,26 @@ public interface UnderwritingCaseRepository extends JpaRepository<UnderwritingCa
     @Query(AWAITING_ISSUE + " AND LOWER(c.proposalNumber) LIKE :pattern")
     Page<UnderwritingCase> awaitingIssueMatching(@Param("tenantId") UUID tenantId, @Param("pattern") String pattern,
                                                  Pageable pageable);
+
+    /**
+     * Decisions per month and outcome, with the mean days from opening to decision (2026-10-15). Native because the
+     * interval arithmetic and {@code to_char} are Postgres's; JPQL has neither.
+     *
+     * <p>Months are civil months in Africa/Dar_es_Salaam: a case decided at 23:30 on 31 October UTC was decided on
+     * 1 November here, and counting it in October would put it in a month the business had already closed.
+     */
+    @Query(value = """
+        SELECT to_char(c.decision_decided_at AT TIME ZONE 'Africa/Dar_es_Salaam', 'YYYY-MM') AS month,
+               c.decision_outcome AS outcome,
+               COUNT(*) AS cases,
+               ROUND(AVG(EXTRACT(EPOCH FROM (c.decision_decided_at - c.created_at)) / 86400.0)::numeric, 1) AS avg_days
+          FROM underwriting.underwriting_case c
+         WHERE c.tenant_id = :tenantId
+           AND c.decision_decided_at IS NOT NULL
+           AND c.decision_decided_at >= :from AND c.decision_decided_at < :to
+         GROUP BY month, c.decision_outcome
+         ORDER BY month, c.decision_outcome
+        """, nativeQuery = true)
+    List<Object[]> decisionsByMonth(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
+                                     @Param("to") Instant to);
 }

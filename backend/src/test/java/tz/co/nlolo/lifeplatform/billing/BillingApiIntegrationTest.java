@@ -10,6 +10,7 @@ import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
 import tz.co.nlolo.lifeplatform.billing.api.FieldReceiptNotFoundException;
 import tz.co.nlolo.lifeplatform.billing.api.FieldReceiptView;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
+import tz.co.nlolo.lifeplatform.billing.api.ReceivablesAging;
 import tz.co.nlolo.lifeplatform.billing.application.ArrearsNotificationSweep;
 import tz.co.nlolo.lifeplatform.billing.application.BillingApiImpl;
 import tz.co.nlolo.lifeplatform.billing.domain.BillingSchedule;
@@ -1076,5 +1077,97 @@ class BillingApiIntegrationTest {
             .orElseThrow(() -> new AssertionError("expected a field_receipt row for " + result.receiptId()));
         assertThat(reloaded.getStatus()).isEqualTo("RECONCILED");
         assertThat(reloaded.getReconciledAt()).isNotNull();
+    }
+
+    // ---- Receivables aging (2026-10-15) ------------------------------------------------------
+
+    /**
+     * An unresolved arrears case over an invoice with a chosen due date, amount and part payment.
+     *
+     * <p>Seeded through JDBC for the same reason the lapse test above seeds its case that way: what is under test is
+     * the bucketing arithmetic, not the escalation that would take real days to reach.
+     */
+    private UUID openArrears(UUID tenantId, String policyNumber, String amount, String currency,
+                              LocalDate dueDate, String amountPaid) {
+        UUID invoiceId = UUID.randomUUID();
+        UUID arrearsCaseId = UUID.randomUUID();
+        try (Connection connection = dataSource.getConnection()) {
+            try (PreparedStatement insert = connection.prepareStatement(
+                    "INSERT INTO billing.premium_invoice (invoice_id, tenant_id, billing_schedule_id, policy_number, "
+                        + "due_date, amount, currency, status, amount_paid) VALUES (?, ?, ?, ?, ?, ?, ?, 'OVERDUE', ?)")) {
+                insert.setObject(1, invoiceId);
+                insert.setObject(2, tenantId);
+                insert.setObject(3, UUID.randomUUID());
+                insert.setString(4, policyNumber);
+                insert.setObject(5, dueDate);
+                insert.setBigDecimal(6, new BigDecimal(amount));
+                insert.setString(7, currency);
+                insert.setBigDecimal(8, new BigDecimal(amountPaid));
+                assertThat(insert.executeUpdate()).isEqualTo(1);
+            }
+            try (PreparedStatement insert = connection.prepareStatement(
+                    "INSERT INTO billing.arrears_case (arrears_case_id, tenant_id, invoice_id, policy_number, "
+                        + "dunning_level, last_notified_dunning_level) VALUES (?, ?, ?, ?, 1, 1)")) {
+                insert.setObject(1, arrearsCaseId);
+                insert.setObject(2, tenantId);
+                insert.setObject(3, invoiceId);
+                insert.setString(4, policyNumber);
+                assertThat(insert.executeUpdate()).isEqualTo(1);
+            }
+        } catch (Exception e) {
+            throw new AssertionError("could not seed an arrears case", e);
+        }
+        return arrearsCaseId;
+    }
+
+    private void resolveArrears(UUID arrearsCaseId) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement update = connection.prepareStatement(
+                 "UPDATE billing.arrears_case SET resolved_at = now() WHERE arrears_case_id = ?")) {
+            update.setObject(1, arrearsCaseId);
+            assertThat(update.executeUpdate()).isEqualTo(1);
+        } catch (Exception e) {
+            throw new AssertionError("could not resolve an arrears case", e);
+        }
+    }
+
+    /**
+     * What is owed, and how old it is. Every bucket is present even when empty -- unlike a monthly series, where an
+     * absent month means "no data", an empty bucket here means "nothing is this overdue", which is the answer.
+     *
+     * <p>Outstanding is amount MINUS what has been paid: a part-paid invoice owes the remainder, and showing its full
+     * value would overstate the book.
+     */
+    @Test
+    void agesReceivablesIntoBucketsPerCurrency() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        LocalDate asOf = LocalDate.of(2026, 10, 15);
+        openArrears(tenantId, "POL-AGING-A", "100000.00", "TZS", asOf.plusDays(5), "0.00");      // not due
+        openArrears(tenantId, "POL-AGING-B", "200000.00", "TZS", asOf.minusDays(10), "0.00");    // 1-30
+        openArrears(tenantId, "POL-AGING-C", "300000.00", "TZS", asOf.minusDays(45), "50000.00"); // 31-60, part paid
+        openArrears(tenantId, "POL-AGING-D", "400000.00", "TZS", asOf.minusDays(200), "0.00");   // over 90
+
+        List<ReceivablesAging> aging = billingApi.receivablesAging(asOf);
+
+        assertThat(aging).singleElement().satisfies(tzs -> {
+            assertThat(tzs.currency()).isEqualTo("TZS");
+            assertThat(tzs.buckets())
+                .extracting(b -> b.name() + " " + b.cases() + " " + b.outstanding().toPlainString())
+                .containsExactly("NOT_DUE 1 100000.00", "D1_30 1 200000.00", "D31_60 1 250000.00",
+                    "D61_90 0 0.00", "OVER_90 1 400000.00");
+        });
+    }
+
+    /** A resolved case is not a receivable: it has been paid or waived and owes nothing. */
+    @Test
+    void leavesOutResolvedArrears() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        LocalDate asOf = LocalDate.of(2026, 10, 15);
+        UUID resolved = openArrears(tenantId, "POL-AGING-E", "500000.00", "TZS", asOf.minusDays(10), "0.00");
+        resolveArrears(resolved);
+
+        assertThat(billingApi.receivablesAging(asOf)).isEmpty();
     }
 }

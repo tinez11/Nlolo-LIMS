@@ -9,7 +9,10 @@ import tz.co.nlolo.lifeplatform.claims.api.ClaimStatus;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimValidationException;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimView;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimFilter;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimJourneyApi;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimsApi;
+import tz.co.nlolo.lifeplatform.claims.api.SettlementMonth;
 import tz.co.nlolo.lifeplatform.claims.api.DeathClaimDetails;
 import tz.co.nlolo.lifeplatform.claims.api.DisabilityClaimDetails;
 import tz.co.nlolo.lifeplatform.claims.api.InvalidClaimStateException;
@@ -36,8 +39,13 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -155,7 +163,8 @@ class ClaimsApiIntegrationTest {
             "db-migrations/claims/V6__exclusion_decline.sql",
             "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
             "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
-            "db-migrations/claims/V11__claim_document_request.sql");
+            "db-migrations/claims/V11__claim_document_request.sql",
+            "db-migrations/claims/V12__claim_settled_at.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -169,6 +178,8 @@ class ClaimsApiIntegrationTest {
     @Autowired private ProductApi productApi;
     @Autowired private PolicyApi policyApi;
     @Autowired private ClaimRepository claimRepository;
+    @Autowired private ClaimJourneyApi claimJourneyApi;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     @AfterEach
     void clearTenant() {
@@ -747,5 +758,129 @@ class ClaimsApiIntegrationTest {
             .isInstanceOf(InvalidClaimStateException.class)
             .hasMessageContaining(first.toString());
         assertThat(claimsApi.getClaim(legacyDuplicate.getClaimId()).status()).isEqualTo(ClaimStatus.UNDER_ASSESSMENT);
+    }
+
+    // ---- When the claim settled (V12, 2026-10-15) --------------------------------------------
+
+    /**
+     * When the money left, recorded at the moment it did. Nothing stored this before V12, so "settled this
+     * month" could not be asked; updatedAt is not an answer, since a later correction moves it.
+     */
+    @Test
+    void recordsWhenAClaimSettled() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-SETTLED-AT");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-settled-at");
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-9", null);
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
+            "payee-ref-9", "settle-idem-settled-at", "manager-9");
+        assertThat(claimsApi.getClaim(claimId).settledAt()).isNull();
+
+        Instant before = Instant.now();
+        settleDirectly(claimId, tenantId);
+
+        ClaimView settled = claimsApi.getClaim(claimId);
+        assertThat(settled.status()).isEqualTo(ClaimStatus.SETTLED);
+        assertThat(settled.settledAt()).isNotNull();
+        assertThat(settled.settledAt()).isBetween(before.minus(1, ChronoUnit.MINUTES),
+            Instant.now().plus(1, ChronoUnit.MINUTES));
+    }
+
+    @Test
+    void anUnsettledClaimHasNoSettlementDate() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-UNSETTLED");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-unsettled");
+
+        assertThat(claimsApi.getClaim(claimId).settledAt()).isNull();
+    }
+
+    // ---- The dashboard dimensions (2026-10-15) ----------------------------------------------
+
+    private static final Pageable PAGE = PageRequest.of(0, 20);
+
+    /**
+     * Settle a claim on its own policy, then pin when it settled and what it approved.
+     *
+     * <p>It settles through the real API at an amount the cover allows, and only then writes the figures the test
+     * wants. Two reasons the final values cannot go through the API: the aggregate stamps {@code settledAt} from the
+     * clock, and a per-month total needs it at a known point; and a USD amount on this TZS policy would be refused
+     * long before it reached a row. What is under test here is the grouping -- per month, per currency -- not the
+     * approval rules, which have their own tests above.
+     */
+    private UUID settleClaimAt(UUID tenantId, Fixture fixture, String key,
+                                String amount, String currency, Instant settledAt) {
+        // Its own policy: a life is paid for once, so two death claims cannot share one.
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, key);
+        BigDecimal withinCover = new BigDecimal("1000000.00");
+        claimsApi.submitAssessment(claimId, "Findings", withinCover, "TZS", false, "assessor-s", null);
+        claimsApi.decideSettlement(claimId, true, withinCover, "TZS", null,
+            "payee-" + key, "settle-" + key, "manager-s");
+        settleDirectly(claimId, tenantId);
+        jdbc.update("UPDATE claims.claim SET settled_at = ?, approved_amount = ?, approved_currency = ? "
+                + "WHERE claim_id = ?",
+            java.sql.Timestamp.from(settledAt), new BigDecimal(amount), currency, claimId);
+        return claimId;
+    }
+
+    /** A dashboard counts "death claims this month"; the search could express neither half. */
+    @Test
+    void filtersClaimsByTypeAndWhenTheyWereRegistered() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-TYPEFILTER");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID death = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-typefilter-1");
+        Instant now = Instant.now();
+
+        assertThat(claimsApi.searchClaims(ClaimFilter.none().withClaimType(ClaimType.DEATH), PAGE).getContent())
+            .extracting(ClaimView::claimId).containsExactly(death);
+        assertThat(claimsApi.searchClaims(ClaimFilter.none().withClaimType(ClaimType.DISABILITY), PAGE)
+            .getTotalElements()).isZero();
+        assertThat(claimsApi.searchClaims(
+            ClaimFilter.none().withRegistered(now.minus(1, ChronoUnit.DAYS), now.plus(1, ChronoUnit.DAYS)), PAGE)
+            .getTotalElements()).isEqualTo(1);
+        assertThat(claimsApi.searchClaims(
+            ClaimFilter.none().withRegistered(now.plus(1, ChronoUnit.DAYS), now.plus(2, ChronoUnit.DAYS)), PAGE)
+            .getTotalElements()).isZero();
+    }
+
+    /**
+     * What was actually paid, per month and PER CURRENCY. A single total across currencies would be a number in no
+     * currency at all; the dashboard shows the TZS row and says nothing about the rest.
+     */
+    @Test
+    void totalsSettledClaimsByMonthAndCurrency() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-SETTLETOTALS");
+        settleClaimAt(tenantId, fixture, "st1", "4000000.00", "TZS", Instant.parse("2026-03-04T08:00:00Z"));
+        settleClaimAt(tenantId, fixture, "st2", "6000000.00", "TZS", Instant.parse("2026-03-20T08:00:00Z"));
+        settleClaimAt(tenantId, fixture, "st3", "1000.00", "USD", Instant.parse("2026-03-21T08:00:00Z"));
+        settleClaimAt(tenantId, fixture, "st4", "2000000.00", "TZS", Instant.parse("2026-04-02T08:00:00Z"));
+
+        List<SettlementMonth> months = claimsApi.settlementsByMonth(YearMonth.of(2026, 3), YearMonth.of(2026, 4));
+
+        assertThat(months).extracting(m -> m.month() + " " + m.currency() + " " + m.claims() + " "
+                + m.totalApproved().stripTrailingZeros().toPlainString())
+            .containsExactly("2026-03 TZS 2 10000000", "2026-03 USD 1 1000", "2026-04 TZS 1 2000000");
+    }
+
+    /** The question no screen could ask: how many claims are waiting on a document, across the whole desk. */
+    @Test
+    void countsOpenDocumentRequestsAcrossClaims() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-DOCREQS");
+        // One policy each: a life is paid for once, so two death claims cannot share a policy.
+        UUID a = registerDeathClaim(tenantId, fixture, issuePolicyWithNullUnderwritingCase(tenantId, fixture),
+            "reg-idem-docreq-a");
+        UUID b = registerDeathClaim(tenantId, fixture, issuePolicyWithNullUnderwritingCase(tenantId, fixture),
+            "reg-idem-docreq-b");
+        claimJourneyApi.requestDocument(a, "Death certificate", null, "claims-staff", "Claims Staff");
+        var onB = claimJourneyApi.requestDocument(b, "Police report", null, "claims-staff", "Claims Staff");
+        claimJourneyApi.withdraw(b, onB.requestId());
+
+        assertThat(claimsApi.countOpenDocumentRequests()).isEqualTo(1);
     }
 }

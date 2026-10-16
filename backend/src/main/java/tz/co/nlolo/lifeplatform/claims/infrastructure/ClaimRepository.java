@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -48,18 +49,59 @@ public interface ClaimRepository extends JpaRepository<Claim, UUID> {
      * own (they reference a policy, not an agent, directly) -- {@code policyNumbers} is resolved
      * by the caller via {@code PolicyApi.policyNumbersForAgentTeam}, joining through policy rather
      * than claims taking a dependency on {@code distribution} itself.
+     *
+     * <p>Four more dimensions since 2026-10-15, for the dashboards: the claim type, when it was
+     * registered, and when it settled. The Instant bounds are CAST so Postgres can type a null
+     * bind -- unlike the enum and UUID parameters beside them, a null Instant reaches the driver
+     * untyped and the statement fails to prepare. A settled-date bound also excludes the
+     * unsettled: a null settledAt is in no range, whatever the bounds.
      */
     @Query("SELECT c FROM Claim c WHERE c.tenantId = :tenantId "
         + "AND (:claimantPartyId IS NULL OR c.claimantPartyId = :claimantPartyId) "
         + "AND (:status IS NULL OR c.status = :status) "
+        + "AND (:claimType IS NULL OR c.claimType = :claimType) "
         + "AND (:policyNumbers IS NULL OR c.policyNumber IN :policyNumbers) "
-        + "AND (:q IS NULL OR LOWER(c.policyNumber) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%')))")
+        + "AND (:q IS NULL OR LOWER(c.policyNumber) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%'))) "
+        + "AND (CAST(:registeredFrom AS Instant) IS NULL OR c.createdAt >= :registeredFrom) "
+        + "AND (CAST(:registeredTo AS Instant) IS NULL OR c.createdAt < :registeredTo) "
+        + "AND (CAST(:settledFrom AS Instant) IS NULL "
+        + "     OR (c.settledAt IS NOT NULL AND c.settledAt >= :settledFrom)) "
+        + "AND (CAST(:settledTo AS Instant) IS NULL "
+        + "     OR (c.settledAt IS NOT NULL AND c.settledAt < :settledTo))")
     Page<Claim> search(@Param("tenantId") UUID tenantId,
                         @Param("claimantPartyId") UUID claimantPartyId,
                         @Param("status") ClaimStatus status,
+                        @Param("claimType") ClaimType claimType,
                         @Param("policyNumbers") Collection<String> policyNumbers,
                         @Param("q") String q,
+                        @Param("registeredFrom") Instant registeredFrom,
+                        @Param("registeredTo") Instant registeredTo,
+                        @Param("settledFrom") Instant settledFrom,
+                        @Param("settledTo") Instant settledTo,
                         Pageable pageable);
+
+    /**
+     * Settled claims per month and currency, with what they approved (2026-10-15). Native because
+     * {@code to_char} with a time zone is Postgres's; JPQL has no equivalent.
+     *
+     * <p>Months are civil months in Africa/Dar_es_Salaam. A row with no currency -- an annuity
+     * settled at zero -- is excluded: a currency-less amount cannot join a currency's total.
+     */
+    @Query(value = """
+        SELECT to_char(c.settled_at AT TIME ZONE 'Africa/Dar_es_Salaam', 'YYYY-MM') AS month,
+               c.approved_currency AS currency,
+               COUNT(*) AS claims,
+               SUM(c.approved_amount) AS total_approved
+          FROM claims.claim c
+         WHERE c.tenant_id = :tenantId
+           AND c.settled_at IS NOT NULL
+           AND c.approved_currency IS NOT NULL
+           AND c.settled_at >= :from AND c.settled_at < :to
+         GROUP BY month, c.approved_currency
+         ORDER BY month, c.approved_currency
+        """, nativeQuery = true)
+    List<Object[]> settlementsByMonth(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
+                                       @Param("to") Instant to);
 
     /** Backs claims/V3's partial unique index on (tenant_id, registration_idempotency_key) --
      * ClaimsApiImpl.registerClaim re-queries this on a caught unique-constraint violation to

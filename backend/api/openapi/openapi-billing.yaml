@@ -168,6 +168,43 @@ paths:
                   page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /arrears/aging:
+    get:
+      summary: What is owed, aged into five bands, per currency
+      description: >
+        Added 2026-10-15 for the finance dashboard's receivables card — the question the
+        collections queue could not answer without a reader adding up a page of it.
+
+
+        One entry per currency, NEVER added across: a total of TZS and USD is a number in no
+        currency. Every band is present even when empty, because "nothing is this overdue" is
+        an answer, unlike an absent month in a monthly series which means "no data".
+
+
+        Outstanding is the invoice amount MINUS what has been paid, so a part-paid invoice owes
+        only the remainder. Resolved cases are excluded: paid or waived, they owe nothing.
+
+
+        Finance-gated exactly like the collections queue above.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: asOf
+          in: query
+          description: >
+            The civil day in Africa/Dar_es_Salaam that the age is measured from. Defaults to
+            today. An invoice due on or after this day is NOT_DUE.
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ReceivablesAging' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /policies/{policyNumber}/invoices:
     get:
       summary: List outstanding invoices for a policy
@@ -396,6 +433,31 @@ components:
           type: [string, "null"]
           format: date-time
           description: Null until a matching PaymentConfirmed arrives.
+    ReceivablesAging:
+      description: >
+        What is owed in ONE currency, aged into five bands (2026-10-15). All five bands are
+        always present and in this order, youngest first; an empty band means nothing is that
+        overdue.
+      type: object
+      required: [currency, buckets]
+      properties:
+        currency: { type: string, minLength: 3, maxLength: 3, example: TZS }
+        buckets:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items:
+            type: object
+            required: [name, cases, outstanding]
+            properties:
+              name: { type: string, enum: [NOT_DUE, D1_30, D31_60, D61_90, OVER_90] }
+              cases: { type: integer, format: int64, description: Unresolved arrears cases in this band. }
+              outstanding:
+                type: string
+                description: >
+                  Amount still owed in this band, as a decimal string — the invoice amount less
+                  what has been paid. "0.00" for an empty band.
+                example: "250000.00"
     ArrearsCaseView:
       description: >
         One row of the collections queue: a policy in arrears, how far it has escalated, and

@@ -61,11 +61,26 @@ paths:
           in: query
           required: false
           schema: { type: string, enum: [REGISTERED, UNDER_ASSESSMENT, APPROVED, REJECTED, SETTLEMENT_REQUESTED, SETTLED, REOPENED] }
+        - name: claimType
+          in: query
+          required: false
+          description: Added 2026-10-15 for the claims dashboard.
+          schema: { type: string, enum: [MATURITY, DEATH, DISABILITY, CRITICAL_ILLNESS] }
         - name: claimantPartyId
           in: query
           required: false
           schema: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
           description: "Ignored, and overridden with the caller's own party_id claim, for customers-realm tokens"
+        - name: registeredFrom
+          in: query
+          required: false
+          description: Civil day in Africa/Dar_es_Salaam, inclusive. When the claim was registered, not when the event happened.
+          schema: { type: string, format: date }
+        - name: registeredTo
+          in: query
+          required: false
+          description: Civil day in Africa/Dar_es_Salaam, inclusive.
+          schema: { type: string, format: date }
         - name: q
           in: query
           required: false
@@ -719,6 +734,13 @@ components:
         accidental:
           description: Whether the death was accidental; null where coveredLifeId is.
           type: [boolean, "null"]
+        settledAt:
+          description: >-
+            When the claim settled. Null while unsettled, and null for every claim settled before
+            2026-10-15, when the column was added — those rows were never recorded and are not
+            backfilled.
+          type: [string, "null"]
+          format: date-time
     ClaimSearchResponse:
       type: object
       properties:

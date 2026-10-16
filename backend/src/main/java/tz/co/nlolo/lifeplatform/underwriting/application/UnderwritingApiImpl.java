@@ -1193,20 +1193,48 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     @Override
     public Page<UnderwritingCaseView> listCases(UnderwritingCaseStatus status, UUID applicantPartyId,
                                                  Set<UUID> applicantPartyIds, Pageable pageable) {
+        return listCases(CaseFilter.status(status).withApplicant(applicantPartyId).withApplicants(applicantPartyIds),
+            pageable);
+    }
+
+    @Override
+    public Page<UnderwritingCaseView> listCases(CaseFilter filter, Pageable pageable) {
         UUID tenantId = TenantContext.get();
         Page<UnderwritingCase> page;
         // The two pre-existing derived-query paths stay untouched for the common staff case (no
-        // applicant filter, no agent scope) -- only a caller that actually needs one of the new
-        // dimensions routes through `search`. Same reasoning as ClaimsApiImpl.searchClaims.
-        if (applicantPartyId != null || applicantPartyIds != null) {
-            page = underwritingCaseRepository.search(tenantId, status != null ? status.name() : null,
-                applicantPartyId, applicantPartyIds, pageable);
-        } else if (status != null) {
-            page = underwritingCaseRepository.findByTenantIdAndStatus(tenantId, status.name(), pageable);
+        // applicant filter, no agent scope, and none of the dimensions added 2026-10-15) -- only a
+        // caller that actually needs one routes through `search`. Same reasoning as
+        // ClaimsApiImpl.searchClaims.
+        boolean narrowed = filter.applicantPartyId() != null || filter.applicantPartyIds() != null
+            || filter.outcome() != null || filter.referral() != null
+            || filter.decidedFrom() != null || filter.decidedTo() != null;
+        if (narrowed) {
+            page = underwritingCaseRepository.search(tenantId,
+                filter.status() == null ? null : filter.status().name(),
+                filter.outcome() == null ? null : filter.outcome().name(),
+                filter.referral() == null ? null : filter.referral().name(),
+                filter.decidedFrom(), filter.decidedTo(),
+                filter.applicantPartyId(), filter.applicantPartyIds(), pageable);
+        } else if (filter.status() != null) {
+            page = underwritingCaseRepository.findByTenantIdAndStatus(tenantId, filter.status().name(), pageable);
         } else {
             page = underwritingCaseRepository.findByTenantId(tenantId, pageable);
         }
         return page.map(this::toView);
+    }
+
+    /** Decision months are civil months in Africa/Dar_es_Salaam, never UTC. */
+    private static final java.time.ZoneId CIVIL = java.time.ZoneId.of("Africa/Dar_es_Salaam");
+
+    @Override
+    public List<DecisionMonth> decisionsByMonth(java.time.YearMonth from, java.time.YearMonth to) {
+        java.time.Instant start = from.atDay(1).atStartOfDay(CIVIL).toInstant();
+        java.time.Instant end = to.plusMonths(1).atDay(1).atStartOfDay(CIVIL).toInstant();
+        return underwritingCaseRepository.decisionsByMonth(TenantContext.get(), start, end).stream()
+            .map(row -> new DecisionMonth(java.time.YearMonth.parse((String) row[0]),
+                DecisionOutcome.valueOf((String) row[1]), ((Number) row[2]).longValue(),
+                (java.math.BigDecimal) row[3]))
+            .toList();
     }
 
     @Override

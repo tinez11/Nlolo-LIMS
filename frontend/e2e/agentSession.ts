@@ -31,7 +31,8 @@ export async function signInAsAgent(page: Page): Promise<void> {
   await page.locator('#password').fill(AGENT_PASSWORD);
   await page.locator('#kc-login').click();
   await page.waitForURL(/localhost:5173\/agents/, { timeout: 30_000 });
-  await expect(page.getByRole('heading', { name: 'My profile' })).toBeVisible();
+  // Agents land on the Dashboard since 2026-10-14, not "My profile".
+  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
   await page.context().storageState({ path: AGENT_STATE });
 }
 

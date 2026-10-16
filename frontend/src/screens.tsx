@@ -10,6 +10,7 @@ import {
   HandCoins,
   Hourglass,
   House,
+  LayoutDashboard,
   Landmark,
   MessageSquare,
   Scale,
@@ -37,7 +38,6 @@ import {
   Calculator,
   Coins,
   NotebookPen,
-  Inbox,
   ChartColumn,
 } from 'lucide-react';
 import { AccountChargesPage } from '@/features/products/AccountChargesPage';
@@ -56,6 +56,7 @@ import type { ReactNode } from 'react';
 import { canSeeFinance, canSeeReports, staffRoles, type StaffRoles, type readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
 import { RedirectPreservingQuery } from '@/components/RedirectPreservingQuery';
+import { dashboardsFor } from '@/features/dashboard/dashboards';
 import {
   AuditLogPage,
   MessagesPage,
@@ -123,7 +124,7 @@ import {
   ExpenseAllocationPage,
   YearEndPage,
   YearEndClosePage,
-  TodayPage,
+  DashboardPage,
 } from '@/lazyPages';
 
 /**
@@ -278,7 +279,7 @@ export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
 /** Where a realm's index route redirects to. */
 export const REALM_HOME: Record<Realm, string | null> = {
   staff: 'policies',
-  agents: 'me',
+  agents: 'dashboard',
   customers: 'home',
   regulators: null,
 };
@@ -293,21 +294,26 @@ export const REALM_HOME: Record<Realm, string | null> = {
  */
 export function homeFor(realm: Realm, identity: ReturnType<typeof readIdentity>): string | null {
   if (realm !== 'staff') return REALM_HOME[realm];
-  // Anyone whose sidebar counts work lands on Today, which shows all of it in one place and opens
-  // each queue filtered (2026-10-09, C5). The per-role queues below are what it used to be, and
-  // stay as the answer for an identity with nothing to count.
-  if (navFor('staff', identity).some((group) => group.items.some((item) => item.badge))) return 'today';
+  // Anyone with a dashboard lands on it (2026-10-14, replacing Today, which showed the same counts
+  // as a flat list). The per-role queues below stay as the answer for an identity with no dashboard.
+  if (dashboardsFor('staff', identity).length > 0) return 'dashboard';
   const roles = staffRoles(identity);
   if (roles.ADMIN) return 'policies';
   if (roles.UNDERWRITER) return 'underwriting';
   if (roles.CLAIMS_MANAGER) return 'claims?status=SETTLEMENT_REQUESTED';
   if (roles.CLAIMS_ASSESSOR) return 'claims?status=REGISTERED';
   if (roles.FINANCE_OFFICER) return 'arrears';
-  return REALM_HOME.staff;
+  // No dashboard and no queue of their own -- a CUSTOMER_SERVICE_REP, or a staff member with no
+  // role at all. KYC verification is ungated, so it is the one queue they can genuinely work, and
+  // it is what Today used to show them. Policies would be a register of everyone's work and
+  // nobody's task.
+  return 'clients/individuals?kycStatus=PENDING';
 }
 
 const STAFF_SCREENS: Screen[] = [
-  { path: 'today', element: <TodayPage />, reach: { group: 'work', label: 'Today', icon: Inbox } },
+  { path: 'dashboard', element: <DashboardPage realm="staff" />, reach: { group: 'work', label: 'Dashboard', icon: LayoutDashboard } },
+  // Retired 2026-10-14 for the dashboard. Kept as a redirect, with its query, for bookmarks and the old landing URL.
+  { path: 'today', element: <RedirectPreservingQuery to="../dashboard" />, reach: 'drill-in' },
   {
     path: 'policies',
     element: <PoliciesPage />,
@@ -665,6 +671,8 @@ const STAFF_SCREENS: Screen[] = [
  * hiding the staff-only create actions.
  */
 const AGENTS_SCREENS: Screen[] = [
+  // An agent lands here too (2026-10-14): their clients, their book and their commission in one place.
+  { path: 'dashboard', element: <DashboardPage realm="agents" />, reach: { group: 'my-business', label: 'Dashboard', icon: LayoutDashboard } },
   {
     path: 'me',
     element: <AgentProfilePage />,

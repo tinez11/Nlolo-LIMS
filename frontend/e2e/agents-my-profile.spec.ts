@@ -39,9 +39,13 @@ test.describe('agents my profile', () => {
     await expect(page.getByRole('heading', { name: 'My commission' })).toBeVisible();
   });
 
-  test('a fresh navigation to /agents lands on the same profile, not a realm picker dead end', async ({ page }) => {
+  test('a fresh navigation to /agents lands on the dashboard, not a realm picker dead end', async ({ page }) => {
+    // The agent landing moved from "My profile" to the Dashboard on 2026-10-14; the profile is still one click away.
     await page.goto('/agents');
-    await expect(page).toHaveURL(/\/agents\/me$/);
+    await expect(page).toHaveURL(/\/agents\/dashboard$/);
+    await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+
+    await page.goto('/agents/me');
     await expect(page.getByRole('heading', { name: 'My profile' })).toBeVisible();
   });
 });
