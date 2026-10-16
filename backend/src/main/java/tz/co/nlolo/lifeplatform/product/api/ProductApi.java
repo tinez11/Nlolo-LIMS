@@ -141,7 +141,27 @@ public interface ProductApi {
                              */
                             BigDecimal frequencyLoadingPercent, BigDecimal annualAfterFrequencyLoading,
                             PremiumFrequency frequency, int instalmentsPerYear,
-                            BigDecimal instalmentAmount) {}
+                            BigDecimal instalmentAmount,
+                            /**
+                             * What the whole term costs, and over how many instalments (2026-10-16).
+                             *
+                             * <p>Computed HERE, because a customer asking "so what do I pay over the five
+                             * years?" must not be answered by a browser multiplying a figure -- and because
+                             * only this method knows how many instalments a term actually contains at the
+                             * chosen frequency: a 60-month term is 60 monthly, 20 quarterly or 5 annual
+                             * charges.
+                             *
+                             * <p><b>Both null where the total is not determinable</b>, and that is a real
+                             * answer rather than a gap: with no term there is nothing to total, and on a
+                             * SINGLE premium the instalment IS the whole cost. A caller must print the
+                             * absence, never a zero and never its own multiplication.
+                             *
+                             * <p>It assumes the premium does not change, which is what this version's rate
+                             * table says today. A reviewable rate, a future loading or a mid-term alteration
+                             * would each make it a projection rather than a total, and none of them exists on
+                             * this platform yet -- when one does, this field is where that has to be faced.
+                             */
+                            BigDecimal totalOverTerm, Integer instalmentsOverTerm) {}
 
     /** Takes the category's default portfolio ({@link PortfolioCode#defaultFor}). */
     ProductSummaryView createProduct(String productCode, String productName, ProductCategory category, String defaultCurrency, String createdBy);

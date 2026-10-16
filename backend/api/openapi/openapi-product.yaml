@@ -1270,6 +1270,19 @@ components:
         frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         instalmentsPerYear: { type: integer }
         instalmentAmount: { type: number }
+        totalOverTerm:
+          description: >-
+            What the whole term costs at this frequency, computed here so that a customer asking
+            "what do I pay over the five years?" is not answered by a browser multiplying a figure.
+            NULL where it is not determinable, which is a real answer and not a gap: with no term
+            there is nothing to total, on a SINGLE premium the instalment already IS the whole
+            cost, and a term the frequency does not divide exactly (five months paid quarterly)
+            has no whole number of charges to total. A caller prints the absence, never a zero.
+            It assumes the premium does not change, which is what this version's rate table says.
+          type: [number, 'null']
+        instalmentsOverTerm:
+          description: How many charges that total is made of; null exactly when totalOverTerm is.
+          type: [integer, 'null']
     AnnuityTerms:
       description: An annuity version's forms and payment frequencies (product step 5), without rate rows.
       type: object

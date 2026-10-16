@@ -669,13 +669,31 @@ public class ProductApiImpl implements ProductApi {
             ? loadedAnnual.setScale(2, java.math.RoundingMode.HALF_UP)
             : loadedAnnual.divide(BigDecimal.valueOf(instalments), 2, java.math.RoundingMode.HALF_UP);
 
+        // What the whole term costs. Null where it cannot be said: with no term there is nothing to
+        // total, and a SINGLE premium's instalment already IS the whole cost, so repeating it as a
+        // "total" would invite a reader to add the two together.
+        Integer instalmentsOverTerm = null;
+        BigDecimal totalOverTerm = null;
+        if (input.policyTermMonths() != null && input.frequency() != PremiumFrequency.SINGLE) {
+            int monthsPerInstalment = 12 / instalments;
+            // Only a term the frequency divides exactly: a 5-month term paid quarterly has no whole
+            // number of charges, and rounding one up or down would misstate a contract by a whole
+            // instalment. Refusing to say is the honest answer.
+            if (monthsPerInstalment > 0 && input.policyTermMonths() % monthsPerInstalment == 0) {
+                instalmentsOverTerm = input.policyTermMonths() / monthsPerInstalment;
+                totalOverTerm = instalment.multiply(BigDecimal.valueOf(instalmentsOverTerm))
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+            }
+        }
+
         return new PremiumQuoteView(versionId, input.sumAssuredCurrency(),
             ageAtEntry, cell.getAgeFrom(), cell.getAgeTo(), cell.getRatePerMille(),
             annualBase.setScale(2, java.math.RoundingMode.HALF_UP), List.copyOf(applied),
             annual.setScale(2, java.math.RoundingMode.HALF_UP),
             loading.percentFor(input.frequency()),
             loadedAnnual.setScale(2, java.math.RoundingMode.HALF_UP),
-            input.frequency(), instalments, instalment);
+            input.frequency(), instalments, instalment,
+            totalOverTerm, instalmentsOverTerm);
     }
 
     @Override

@@ -36,6 +36,8 @@ const QUOTE = {
   frequency: 'MONTHLY' as const,
   instalmentsPerYear: 12,
   instalmentAmount: 76000,
+  totalOverTerm: 4560000,
+  instalmentsOverTerm: 60,
 };
 
 const render0 = (inputs: QuotationInputs = COMPLETE) =>
@@ -60,6 +62,14 @@ describe('QuotationPreview', () => {
     expect(screen.getByText('Premium-paying term')).toBeInTheDocument();
     expect(screen.getByText('Payment frequency')).toBeInTheDocument();
     expect(screen.getByText('5 years')).toBeInTheDocument();
+    // The explanatory notes were removed (2026-10-16): each said what its own label already said, and "4 a year"
+    // beside the annual figure read as a stray number. The frequency stays, on the premium, because the figure
+    // means nothing without it.
+    expect(screen.queryByText('how long cover runs')).not.toBeInTheDocument();
+    // Narrow on purpose: "Rate per mille, a year" is a real label in the derivation and must survive.
+    expect(screen.queryByText('4 a year')).not.toBeInTheDocument();
+    expect(screen.queryByText('12 a year')).not.toBeInTheDocument();
+    expect(screen.getByText('monthly')).toBeInTheDocument();
   });
 
   it('shows how the premium was derived', async () => {
@@ -95,10 +105,20 @@ describe('QuotationPreview', () => {
     expect(await screen.findByText(/occupation class STANDARD/)).toBeInTheDocument();
   });
 
-  /** The premium is a quotation until issue, and the panel says so rather than implying a contract. */
-  it('does not present the quotation as a contractual premium', async () => {
+  /** The question a customer actually asks, answered by the SERVER rather than a browser multiplying. */
+  it("shows what the whole term costs", async () => {
     render0();
 
-    expect(await screen.findByText(/not a contractual premium/)).toBeInTheDocument();
+    expect(await screen.findByText(/Total over 5 years/)).toBeInTheDocument();
+    expect(screen.getByText('TZS 4,560,000.00')).toBeInTheDocument();
+    expect(screen.getByText('60 payments')).toBeInTheDocument();
+  });
+
+  /** Absent, not guessed: a null total is printed as such rather than as a zero or a browser product. */
+  it("says the total is not determinable when the server cannot say", async () => {
+    vi.mocked(quotePremium).mockResolvedValue({ ...QUOTE, totalOverTerm: null, instalmentsOverTerm: null });
+    render0();
+
+    expect(await screen.findByText('Not determinable')).toBeInTheDocument();
   });
 });

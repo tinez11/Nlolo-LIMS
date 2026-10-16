@@ -31,7 +31,7 @@ import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { AnnuityPurchaseFields } from '@/features/annuities/AnnuityPurchaseFields';
 import { useAnnuityTerms } from '@/features/annuities/useAnnuityTerms';
-import { addYears, formatDate } from '@/lib/dates';
+import { addYears, formatDate, formatMonths } from '@/lib/dates';
 import { getFuneralTerms } from '@/api/funeral';
 import type { FuneralTermsView } from '@/api/types';
 import { FuneralLivesFields } from './FuneralLivesFields';
@@ -159,6 +159,17 @@ export function OpenUnderwritingCasePage() {
 
   // A funeral plan (family funeral cover): the life assured -- else the applicant -- is the main member.
   const isFuneral = selectedProduct?.category === 'FUNERAL';
+
+  /**
+   * A single premium is refused over twelve months of cover, so it is not offered there either.
+   *
+   * <p>The rule is the SERVER's -- rate_per_mille is an annual rate, so one charge can only span a year until a
+   * single-premium basis exists -- and quotePremium enforces it whatever this form shows. Mirrored here only as an
+   * affordance: a staff member should not be able to pick an option that is certain to be refused, which is how
+   * this was found. The term, not the product, decides it.
+   */
+  const requestedTermMonths = watch('requestedTermMonths');
+  const singleRefusedByTerm = Number(requestedTermMonths) > 12;
   const [funeralTerms, setFuneralTerms] = useState<FuneralTermsView | null>(null);
   useEffect(() => {
     if (!isFuneral || !productId || !productVersionId) return undefined;
@@ -512,12 +523,20 @@ export function OpenUnderwritingCasePage() {
                 {/* Blank first and selected by default: a frequency the applicant did not
                     state is not monthly, and it is what the issued policy is billed on. */}
                 <option value="">Not stated</option>
-                {PREMIUM_FREQUENCIES.filter((f) => !(isFuneral && f === 'SINGLE')).map((f) => (
+                {PREMIUM_FREQUENCIES.filter(
+                  (f) => !(isFuneral && f === 'SINGLE') && !(f === 'SINGLE' && singleRefusedByTerm),
+                ).map((f) => (
                   <option key={f} value={f}>
                     {PREMIUM_FREQUENCY_LABELS[f]}
                   </option>
                 ))}
               </Select>
+              {singleRefusedByTerm && (
+                <p className="pt-1 text-xs text-muted-foreground">
+                  A single premium is not offered over {formatMonths(Number(requestedTermMonths))}: the rate table
+                  is annual, so one charge can only cover up to twelve months until a single-premium basis exists.
+                </p>
+              )}
             </FormField>
           </div>
           )}

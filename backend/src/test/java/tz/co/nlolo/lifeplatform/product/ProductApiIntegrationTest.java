@@ -1257,6 +1257,62 @@ class ProductApiIntegrationTest {
         assertThat(quote.appliedFactors()).noneMatch(f -> f.factorType() == FactorType.OCCUPATION_CLASS);
     }
 
+    /**
+     * What the whole term costs, so a customer asking "what do I pay over the five years?" gets an answer from
+     * the server rather than a browser multiplying a figure.
+     *
+     * <p>The instalment COUNT is the point: a 60-month term is 60 monthly charges, 20 quarterly or 5 annual ones.
+     */
+    @Test
+    void quotePremiumTotalsTheWholeTermAtTheChosenFrequency() {
+        UUID productId = productNotRatedByOccupation("TERM-TOTAL", new BigDecimal("12.0000"));
+
+        // 10,000,000 / 1000 x 12.0 = 120,000 a year; 10,000 a month over 60 months.
+        ProductApi.PremiumQuoteView monthly = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, null, PremiumFrequency.MONTHLY, LocalDate.now(), 60));
+        assertThat(monthly.instalmentAmount()).isEqualByComparingTo("10000.00");
+        assertThat(monthly.instalmentsOverTerm()).isEqualTo(60);
+        assertThat(monthly.totalOverTerm()).isEqualByComparingTo("600000.00");
+
+        // The same five years paid quarterly: 20 charges, not 60, and the same total.
+        ProductApi.PremiumQuoteView quarterly = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, null, PremiumFrequency.QUARTERLY, LocalDate.now(), 60));
+        assertThat(quarterly.instalmentsOverTerm()).isEqualTo(20);
+        assertThat(quarterly.totalOverTerm()).isEqualByComparingTo("600000.00");
+    }
+
+    /**
+     * Absent rather than guessed, in all three cases it cannot be said.
+     *
+     * <p>A null here is a real answer: a caller prints the absence. A zero would read as "nothing to pay".
+     */
+    @Test
+    void quotePremiumLeavesTheTermTotalOutWhenItCannotBeSaid() {
+        UUID productId = productNotRatedByOccupation("TERM-TOTAL-ABSENT", new BigDecimal("12.0000"));
+
+        // No term: nothing to total.
+        assertThat(productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, null, PremiumFrequency.MONTHLY, LocalDate.now()))
+            .totalOverTerm()).isNull();
+
+        // A term the frequency does not divide: 5 months paid quarterly is no whole number of charges.
+        assertThat(productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, null, PremiumFrequency.QUARTERLY, LocalDate.now(), 5))
+            .totalOverTerm()).isNull();
+
+        // A SINGLE premium: the instalment already IS the whole cost, and repeating it as a total
+        // would invite a reader to add the two together.
+        ProductApi.PremiumQuoteView single = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, null, PremiumFrequency.SINGLE, LocalDate.now(), 12));
+        assertThat(single.totalOverTerm()).isNull();
+        assertThat(single.instalmentAmount()).isEqualByComparingTo("120000.00");
+    }
+
     /** Where the version DOES rate occupation, an unknown band still fails loudly -- the typo this guards. */
     @Test
     void quotePremiumStillRefusesAnUnknownClassOnAVersionThatRatesOccupation() {

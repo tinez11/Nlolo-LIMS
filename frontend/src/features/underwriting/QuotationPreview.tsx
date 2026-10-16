@@ -19,12 +19,21 @@ function money(amount: number | undefined, currency: string | undefined): string
   }).format(amount)}`;
 }
 
-function Row({ label, value, note }: { label: string; value: string; note?: string | undefined }) {
+/**
+ * One fact: its name on the left, its figure at the RIGHT EDGE.
+ *
+ * <p>The figure ends the row rather than sitting in the middle of it, so every number on the panel lines up in one
+ * column and can be read down. A {@code suffix} rides inside that same cell -- the premium's frequency, which
+ * belongs to the figure rather than being a column of its own.
+ */
+function Row({ label, value, suffix }: { label: string; value: string; suffix?: string | undefined }) {
   return (
     <div className="flex items-baseline gap-4 px-4 py-2">
       <span className="min-w-0 flex-1 text-sm">{label}</span>
-      <span className="shrink-0 text-right text-sm whitespace-nowrap">{value}</span>
-      {note && <span className="w-40 shrink-0 text-right text-xs text-muted-foreground">{note}</span>}
+      <span className="shrink-0 text-right text-sm whitespace-nowrap">
+        {value}
+        {suffix && <span className="pl-1.5 text-xs text-muted-foreground">{suffix}</span>}
+      </span>
     </div>
   );
 }
@@ -85,26 +94,41 @@ export function QuotationPreview({
             label="Sum assured"
             value={money(Number(inputs.sumAssuredAmount), inputs.sumAssuredCurrency || 'TZS')}
           />
+          {/* The ONE note kept: the frequency belongs to the premium figure, because the number means nothing
+              without it. Every other row had a note explaining what its label already said. */}
           <Row
             label="Premium"
             value={money(quotation.quote.instalmentAmount, quotation.quote.currency)}
-            note={inputs.frequency ? PREMIUM_FREQUENCY_LABELS[inputs.frequency] : undefined}
+            suffix={inputs.frequency ? PREMIUM_FREQUENCY_LABELS[inputs.frequency].toLowerCase() : undefined}
           />
           {/* The server's own annual figure -- never an instalment multiplied here. */}
           <Row
             label="Annual equivalent"
             value={money(quotation.quote.annualAfterFrequencyLoading, quotation.quote.currency)}
-            note={
-              quotation.quote.instalmentsPerYear
-                ? `${quotation.quote.instalmentsPerYear} a year`
-                : 'charged once'
+          />
+          {/* The question a customer actually asks. Also the server's figure, and ABSENT rather than guessed where
+              it cannot be said -- no term, a single premium, or a term the frequency does not divide. */}
+          <Row
+            label={
+              quotation.quote.instalmentsOverTerm
+                ? `Total over ${formatMonths(Number(inputs.policyTermMonths))}`
+                : 'Total over the term'
+            }
+            value={
+              quotation.quote.totalOverTerm === null || quotation.quote.totalOverTerm === undefined
+                ? 'Not determinable'
+                : money(quotation.quote.totalOverTerm, quotation.quote.currency)
+            }
+            suffix={
+              quotation.quote.instalmentsOverTerm
+                ? `${quotation.quote.instalmentsOverTerm} payments`
+                : undefined
             }
           />
 
           <Row
             label="Coverage term"
             value={inputs.policyTermMonths ? formatMonths(Number(inputs.policyTermMonths)) : 'None stated'}
-            note="how long cover runs"
           />
           <Row
             label="Premium-paying term"
@@ -115,12 +139,10 @@ export function QuotationPreview({
                   ? 'The whole term'
                   : 'None stated'
             }
-            note="how long premiums are paid"
           />
           <Row
             label="Payment frequency"
             value={inputs.frequency ? PREMIUM_FREQUENCY_LABELS[inputs.frequency] : '—'}
-            note="how often, not how long"
           />
           {commencementDate && <Row label="Proposed commencement" value={commencementDate} />}
 
@@ -166,10 +188,6 @@ export function QuotationPreview({
                 Priced as occupation class {DEFAULT_OCCUPATION_CLASS}: the applicant&apos;s record names none.
               </p>
             )}
-            <p className="pt-1 text-xs text-subtle-foreground">
-              A quotation on today&apos;s rates, not a contractual premium. The premium is fixed when the policy is
-              issued, from the version active then.
-            </p>
           </div>
         </div>
       )}
