@@ -16,6 +16,9 @@ import { blankFuneralDependant, toFuneralDependants, type OpenCaseFormInput, typ
 
 const tzs = (amount: number) => formatMoney({ amount: String(amount), currencyCode: 'TZS' });
 
+/** Every role but the main member's: the main member is the applicant, never a row in the family list. */
+type DependantRole = Exclude<FuneralRoleName, 'MAIN_MEMBER'>;
+
 /**
  * A funeral plan on the case (family funeral cover): the plan, the family, and the server's own quote of it
  * as it is typed -- a line per life and the instalment, or the product's refusal in its words. The applicant
@@ -77,7 +80,36 @@ export function FuneralLivesFields({
     return () => clearTimeout(timer);
   }, [quotable, productId, productVersionId, planCode, frequency, commencement, lives, mainMember?.name, mainMember?.dateOfBirth]);
 
-  const allowedRoles = terms.roles.map((r) => r.role).filter((r) => r !== 'MAIN_MEMBER');
+  /**
+   * The roles this cover will actually take -- and so the only ones the form offers (2026-10-16).
+   *
+   * <p>It used to offer every role the VERSION rules, which is a different set from what the chosen PLAN pays for,
+   * and a new dependant row arrived hard-coded as a CHILD whether or not the product covered one. On a product with
+   * no child rule the select then showed an allowed role while the stored value stayed CHILD, and the quote came
+   * back "This product does not cover a child" about a row nobody had chosen -- the refusal the user hit.
+   *
+   * <p>Two gates, because the server has two: a role with no rule on the version is not covered at all
+   * ({@code plan.rule}), and a role the chosen plan prices no benefit for is not covered on THIS plan
+   * ({@code plan.benefit}). Before a plan is picked only the first can be applied, which is why the plan narrows
+   * the list rather than defining it.
+   */
+  const ruledRoles = terms.roles
+    .map((r) => r.role)
+    .filter((r): r is DependantRole => r !== 'MAIN_MEMBER');
+  const allowedRoles = planCode
+    ? ruledRoles.filter((r) => terms.benefits.some((b) => b.planCode === planCode && b.role === r))
+    : ruledRoles;
+
+  /**
+   * A row already entered keeps its own role in its list even when the plan just chosen does not cover it.
+   *
+   * <p>Dropping it from the options would leave the select showing one role while the form held another -- exactly
+   * the mismatch above, in reverse. Shown instead, so the quote's refusal is about something the screen admits to.
+   */
+  const rolesFor = (current: string) =>
+    current && !allowedRoles.includes(current as DependantRole)
+      ? [...allowedRoles, current as DependantRole]
+      : allowedRoles;
 
   return (
     <div className="space-y-4">
@@ -93,13 +125,22 @@ export function FuneralLivesFields({
         <p className="text-xs text-subtle-foreground">Record the main member’s date of birth to quote the family.</p>
       )}
 
+      {/* A cover that takes no dependant at all has no family to enter: the fieldset and its Add button are not
+          shown rather than offered and then refused. The main member is still covered -- that is the whole plan. */}
+      {allowedRoles.length === 0 ? (
+        <p className="text-xs text-subtle-foreground">
+          {planCode
+            ? 'This plan covers the main member only, so there are no dependants to add.'
+            : 'This product covers the main member only, so there are no dependants to add.'}
+        </p>
+      ) : (
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium">The family</legend>
         {dependants.fields.map((field, i) => (
           <div key={field.id} className="grid grid-cols-[8rem_1fr_10rem_6rem_auto] items-end gap-2">
             <FormField label="Role">
               <Select inputSize="sm" {...register(`funeralDependants.${i}.role`)}>
-                {allowedRoles.map((r) => (
+                {rolesFor(rows?.[i]?.role ?? '').map((r) => (
                   <option key={r} value={r}>{FUNERAL_ROLE_LABELS[r as FuneralRoleName]}</option>
                 ))}
               </Select>
@@ -126,10 +167,18 @@ export function FuneralLivesFields({
             </div>
           </div>
         ))}
-        <Button type="button" variant="outline" size="sm" onClick={() => dependants.append(blankFuneralDependant())}>
+        {/* The first role this cover actually takes, not a hard-coded CHILD: a row that arrives as a role the
+            product does not cover is refused by a server that is right, about a choice nobody made. */}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => dependants.append({ ...blankFuneralDependant(), role: allowedRoles[0] as DependantRole })}
+        >
           <Plus className="size-4" /> Add dependant
         </Button>
       </fieldset>
+      )}
 
       {refusal && <InlineError error={refusal} lead="This family cannot be covered as entered:" />}
       {quote && (
