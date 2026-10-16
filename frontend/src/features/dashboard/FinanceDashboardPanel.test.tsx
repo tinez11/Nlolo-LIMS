@@ -91,10 +91,11 @@ describe('FinanceDashboardPanel', () => {
     renderScreen(<FinanceDashboardPanel />);
 
     expect(await screen.findByText("Receivables")).toBeInTheDocument();
-    expect(screen.getByText("Over 90 days")).toBeInTheDocument();
-    expect(screen.getByText("TZS 400,000.00")).toBeInTheDocument();
+    expect(screen.getAllByText("Over 90 days").length).toBeGreaterThan(0);
+    // Twice over: on the bar and in the list beneath it.
+    expect(screen.getAllByText("TZS 400,000.00").length).toBeGreaterThan(0);
     // A band the server omitted is still drawn, at zero.
-    expect(screen.getByText("31-60 days".replace("-", "–"))).toBeInTheDocument();
+    expect(screen.getAllByText("31-60 days".replace("-", "–")).length).toBeGreaterThan(0);
   });
 
 });

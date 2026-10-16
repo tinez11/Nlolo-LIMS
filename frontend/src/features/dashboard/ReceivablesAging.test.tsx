@@ -23,9 +23,11 @@ describe('ReceivablesAging', () => {
       />,
     );
 
-    expect(screen.getByText('Not due')).toBeInTheDocument();
-    expect(screen.getByText('61–90 days')).toBeInTheDocument();
-    expect(screen.getByText('TZS 400,000.00')).toBeInTheDocument();
+    // Each band is named TWICE over -- once on its bar, once in the list -- which is deliberate: the bars show
+    // the shape of the book, the list gives figures a bar cannot be read to the shilling for.
+    expect(screen.getAllByText('Not due').length).toBe(2);
+    expect(screen.getAllByText('61–90 days').length).toBe(2);
+    expect(screen.getAllByText('TZS 400,000.00').length).toBeGreaterThan(0);
   });
 
   /**
@@ -39,7 +41,7 @@ describe('ReceivablesAging', () => {
       />,
     );
 
-    expect(screen.getByText('31–60 days')).toBeInTheDocument();
+    expect(screen.getAllByText('31–60 days').length).toBe(2);
     expect(screen.getAllByText('TZS 0.00').length).toBeGreaterThan(0);
   });
 

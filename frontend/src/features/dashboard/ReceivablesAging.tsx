@@ -1,4 +1,5 @@
 import type { ReceivablesAging as Aging } from '@/api/dashboard';
+import { BucketBars } from '@/components/charts/BucketBars';
 import { countValue } from '@/lib/counts';
 import { formatMoney } from '@/lib/money';
 
@@ -43,8 +44,30 @@ export function ReceivablesAging({ aging }: { aging: Aging[] }) {
 
   const byName = new Map((working?.buckets ?? []).map((b) => [b.name, b]));
 
+  // The bars show the SHAPE of the book; the list below gives the figures. A bar cannot be read to the shilling,
+  // and a list cannot be read at a glance, so both stay.
+  const bars = BANDS.map(({ name, label }) => {
+    const bucket = byName.get(name);
+    return {
+      label,
+      value: bucket ? Number(bucket.outstanding?.amount ?? 0) : 0,
+      display: bucket ? formatMoney(bucket.outstanding) : `${WORKING_CURRENCY} 0.00`,
+      count: bucket?.cases ?? 0,
+    };
+  });
+
   return (
     <div className="pb-1">
+      {working && (
+        <div className="px-4 pb-3">
+          <BucketBars
+            buckets={bars}
+            description={`Receivables by age, in ${WORKING_CURRENCY}. ${bars
+              .map((b) => `${b.label}: ${b.display}`)
+              .join('. ')}.`}
+          />
+        </div>
+      )}
       <ul className="divide-y divide-border">
         {BANDS.map(({ name, label }) => {
           const bucket = byName.get(name);
