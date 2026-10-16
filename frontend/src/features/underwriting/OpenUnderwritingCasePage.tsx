@@ -170,6 +170,41 @@ export function OpenUnderwritingCasePage() {
    */
   const requestedTermMonths = watch('requestedTermMonths');
   const singleRefusedByTerm = Number(requestedTermMonths) > 12;
+
+  /**
+   * A product that sells exactly ONE term fills that term in itself.
+   *
+   * <p>The bounds are the version's own ({@code EligibilityBounds}) and openCase refuses a term outside them --
+   * "A term of 6 months is below this product's minimum of 60" is how this was found, on an education plan sold
+   * on a single five-year term. The server rule is right and stays; what was wrong is that the form invited a
+   * number it was certain to reject. Where the minimum and the maximum are the same figure there is nothing to
+   * choose, so the field is written and locked rather than typed and refused.
+   *
+   * <p>Where the term is merely BOUNDED -- a range with room in it -- nothing is written: the choice is real.
+   * The bounds are stated as a hint instead, which is true before anything is typed, rather than as an error
+   * nobody sees until they have already broken the rule.
+   */
+  const termBounds = snapshot.data?.eligibility ?? null;
+  const fixedTermMonths =
+    termBounds?.minTermMonths != null && termBounds.minTermMonths === termBounds.maxTermMonths
+      ? termBounds.minTermMonths
+      : null;
+  useEffect(() => {
+    if (fixedTermMonths == null) return;
+    if (getValues('requestedTermMonths') !== String(fixedTermMonths)) {
+      setValue('requestedTermMonths', String(fixedTermMonths));
+    }
+  }, [fixedTermMonths, setValue, getValues]);
+  const termHint =
+    fixedTermMonths != null
+      ? `Sold on one term only: ${formatMonths(fixedTermMonths)}. Filled in here and not editable.`
+      : termBounds?.minTermMonths != null && termBounds.maxTermMonths != null
+        ? `This product sells terms from ${formatMonths(termBounds.minTermMonths)} to ${formatMonths(termBounds.maxTermMonths)}.`
+        : termBounds?.minTermMonths != null
+          ? `This product's shortest term is ${formatMonths(termBounds.minTermMonths)}.`
+          : termBounds?.maxTermMonths != null
+            ? `This product's longest term is ${formatMonths(termBounds.maxTermMonths)}.`
+            : undefined;
   const [funeralTerms, setFuneralTerms] = useState<FuneralTermsView | null>(null);
   useEffect(() => {
     if (!isFuneral || !productId || !productVersionId) return undefined;
@@ -496,8 +531,13 @@ export function OpenUnderwritingCasePage() {
                 <FormField
                   label={isUnitLinked ? 'Term (months; blank for whole of life)' : 'Term (months)'}
                   error={errors.requestedTermMonths?.message}
+                  hint={termHint}
                 >
-                  <Input placeholder="120" {...register('requestedTermMonths')} />
+                  <Input
+                    placeholder="120"
+                    readOnly={fixedTermMonths != null}
+                    {...register('requestedTermMonths')}
+                  />
                 </FormField>
 
                 {/* A unit-linked policy pays its premiums for as long as it runs. */}
@@ -531,12 +571,6 @@ export function OpenUnderwritingCasePage() {
                   </option>
                 ))}
               </Select>
-              {singleRefusedByTerm && (
-                <p className="pt-1 text-xs text-muted-foreground">
-                  A single premium is not offered over {formatMonths(Number(requestedTermMonths))}: the rate table
-                  is annual, so one charge can only cover up to twelve months until a single-premium basis exists.
-                </p>
-              )}
             </FormField>
           </div>
           )}
