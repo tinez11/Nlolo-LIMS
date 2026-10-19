@@ -14,7 +14,9 @@ import { PageHeader } from '@/components/PageHeader';
 import { InlineError } from '@/components/InlineError';
 import { AgentName } from '@/components/AgentName';
 import { PartyName } from '@/components/PartyName';
-import { PREMIUM_FREQUENCY_SUFFIXES } from '@/api/types';
+import { PREMIUM_FREQUENCY_SUFFIXES, type CashValueTermsView } from '@/api/types';
+import { getCashValueTerms } from '@/api/products';
+import { needsCashValueTerms, policyValueLine } from './policyValue';
 import { ProductName } from '@/components/ProductName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
@@ -140,6 +142,23 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   useEffect(() => {
     if (isStaff && isUnitLinked && policyNumber) void loadUnits(policyNumber);
   }, [isStaff, isUnitLinked, policyNumber, loadUnits]);
+
+  // Whether this policy's version carries a cash-value table: "no value yet" and "no value ever" read the same at
+  // 0.00, and only the version knows which. Asked only where a table is possible.
+  const termsProductId = detail.data && needsCashValueTerms(detail.data) ? detail.data.productId ?? '' : '';
+  const termsVersionId = termsProductId ? detail.data?.productVersionId ?? '' : '';
+  const [cashValueTermsFor, setCashValueTerms] = useState<{ key: string; terms: CashValueTermsView } | null>(null);
+  useEffect(() => {
+    if (!termsProductId || !termsVersionId) return undefined;
+    let live = true;
+    const key = `${termsProductId}|${termsVersionId}`;
+    getCashValueTerms(termsProductId, termsVersionId).then(
+      (terms) => { if (live) setCashValueTerms({ key, terms }); },
+      () => undefined,
+    );
+    return () => { live = false; };
+  }, [termsProductId, termsVersionId]);
+  const cashValueTerms = cashValueTermsFor?.key === `${termsProductId}|${termsVersionId}` ? cashValueTermsFor.terms : null;
 
   const policy = detail.data;
   // A group funeral scheme (2026-10-07): category FUNERAL, issued as a scheme -- every scheme number is GRP-.
@@ -647,35 +666,18 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
               {/* The note is now only for a product that will never have one. A savings policy's
                   value is real: it is restated from the product's table as premiums are paid, and
                   0.00 there means "not yet", not "never". */}
-              {isUnitLinked ? (
-                <Field
-                  label="Fund value"
-                  value={!policyUnits?.data
-                    ? '—'
-                    : policyUnits.data.totalValue == null
-                      // No units yet: the server has no value to give, and a 0.00 would read as money lost.
-                      ? 'Not invested yet'
-                      : formatMoney({ amount: policyUnits.data.totalValue,
-                          currencyCode: policyUnits.data.currency ?? policy.cashValue?.currencyCode ?? 'TZS' })}
-                  note={policyUnits?.data && policyUnits.data.totalValue == null && policyUnits.data.pending.length > 0
-                    // A count, not a sum: the amounts are on the Units tab, each as the server holds it.
-                    ? `${policyUnits.data.pending.length} purchase${policyUnits.data.pending.length === 1 ? '' : 's'} waiting for the funds' next approved price. Nothing is invested until then. See the Units tab.`
-                    : "The units held in the funds, at each fund's latest approved price. A premium buys units at the first price approved after it arrives. See the Units tab."}
-                />
-              ) : (
-              <Field
-                label="Cash value"
-                value={formatMoney(policy.cashValue)}
-                {...(savingsAccount?.data
-                  ? // Product step 3: the figure is the account's balance, projected from its ledger.
-                    { note: 'The savings account balance, after every charge and interest posted. See the Account tab.' }
-                  : VALUE_CATEGORIES.includes(policy.productCategory ?? '')
-                  ? {
-                      note: "From the product's cash-value table, restated as premiums are paid. Nothing until the first two or three full years.",
-                    }
-                  : { note: 'This product carries no cash value — it is pure protection.' })}
-              />
-              )}
+              {/* What the value IS -- units, an account, a cash-value table, an income, or nothing -- for every kind of
+                  policy and scheme (policyValue.ts, 2026-10-19). Every figure is the server's. */}
+              {(() => {
+                const line = policyValueLine({
+                  policy,
+                  isStaff,
+                  units: policyUnits?.data,
+                  cashValueTerms,
+                  vested: annuity != null && annuity.status !== 'ACCUMULATING',
+                });
+                return <Field label={line.label} value={line.value} {...(line.note ? { note: line.note } : {})} />;
+              })()}
               <Field label="Issued" value={formatDate(policy.issueDate)} />
               {/*
                 HOW IT CAME TO BE ISSUED (policy V24). An underwriting decision links to its case;

@@ -467,6 +467,26 @@ paths:
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { description: "No such version for that product in this tenant" }
+  /products/{productId}/versions/{versionId}/cash-value:
+    get:
+      summary: Whether a version carries a cash-value table, and from which policy year it pays
+      description: >-
+        For the policy page's Cash value line. 200 either way: hasTable false means the version has no cash-value
+        table, so a policy on it has no surrender value -- an answer, not an error.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The version's cash-value terms
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashValueTerms' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /products/{productId}/versions/{versionId}/annuity:
     get:
       summary: An annuity version's forms and payment frequencies, for the case form
@@ -1502,6 +1522,14 @@ components:
     FuneralRole:
       type: string
       enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED]
+    CashValueTerms:
+      type: object
+      additionalProperties: false
+      required: [hasTable]
+      properties:
+        hasTable: { type: boolean, description: False means no cash-value table, so no surrender value. }
+        minYearsForValue: { type: [integer, "null"], description: The first policy year a value exists. }
+        basisReference: { type: [string, "null"] }
     GroupFuneralQuoteRequest:
       type: object
       properties:

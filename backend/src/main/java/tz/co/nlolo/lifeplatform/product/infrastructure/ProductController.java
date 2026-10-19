@@ -258,6 +258,23 @@ public class ProductController {
      * NOT_AN_ANNUITY for any other version -- an answer the console reads as "no annuity fields".
      * Agents open cases too, so they may read it; the rate rows are not here (see the response).
      */
+    /**
+     * Whether a version carries a cash-value table, and from which policy year it pays (2026-10-19). The policy page
+     * said "nothing until the first two or three full years" on every endowment, whole life and education plan --
+     * including the ones whose version has no table and so will never have a value. 200 either way: no table is an
+     * answer, not an error.
+     */
+    @GetMapping("/products/{productId}/versions/{versionId}/cash-value")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public CashValueTermsResponse getCashValueTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {
+        return productApi.getCashValueConfig(versionId)
+            .map(c -> new CashValueTermsResponse(true, c.minYearsForValue(), c.basisReference()))
+            .orElse(new CashValueTermsResponse(false, null, null));
+    }
+
+    /** {@code hasTable} false: the version has no cash-value table, so a policy on it has no surrender value. */
+    public record CashValueTermsResponse(boolean hasTable, Integer minYearsForValue, String basisReference) {}
+
     @GetMapping("/products/{productId}/versions/{versionId}/annuity")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<AnnuityTermsResponse> getAnnuityTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {

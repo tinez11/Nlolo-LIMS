@@ -16,6 +16,7 @@ export function describeOnline(
   return put<OnlineListingView>(`/products/${encodeURIComponent(productId)}/online-listing`, listing);
 }
 import type {
+  CashValueTermsView,
   CreateProductRequest,
   ProductCategory,
   ProductSnapshot,
@@ -95,6 +96,16 @@ export function getActiveSnapshot(productId: string): Promise<ProductSnapshot> {
  */
 export function listProductVersions(productId: string): Promise<ProductVersionSummaryView[]> {
   return get<ProductVersionSummaryView[]>(`/products/${encodeURIComponent(productId)}/versions`);
+}
+
+/**
+ * Whether a version carries a cash-value table, and from which policy year it pays (2026-10-19). The policy page
+ * reads it to tell "no value yet" from "no value ever". Staff and agents.
+ */
+export function getCashValueTerms(productId: string, versionId: string): Promise<CashValueTermsView> {
+  return get<CashValueTermsView>(
+    `/products/${encodeURIComponent(productId)}/versions/${encodeURIComponent(versionId)}/cash-value`,
+  );
 }
 
 /**
