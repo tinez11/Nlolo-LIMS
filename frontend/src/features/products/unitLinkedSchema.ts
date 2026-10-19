@@ -248,12 +248,20 @@ export function validateUnitLinked(category: ProductCategory, v: UnitLinkedField
   const max = Number(v.ulMultipleMax);
   if (v.ulMultipleMin === '' || v.ulMultipleMax === '' || !(min > 0) || !(max > 0)) {
     issue(['ulMultipleMax'], "The sum assured's minimum and maximum multiples of the annual premium are required, and greater than zero");
+  } else if (min > MAX_MULTIPLE || max > MAX_MULTIPLE) {
+    // An AMOUNT typed where a multiple belongs (300000000 from the eligibility bounds) reached the database and failed
+    // as "An unexpected error occurred" -- twice, 2026-10-19. Named here, on the box, before anything is sent.
+    issue([min > MAX_MULTIPLE ? 'ulMultipleMin' : 'ulMultipleMax'],
+      'This is a multiple of the annual premium, such as 40 -- not an amount of money');
   } else if (max < min) {
     issue(['ulMultipleMax'], `The sum assured's maximum multiple ${v.ulMultipleMax} is below its minimum ${v.ulMultipleMin}`);
   }
 
   validateOptions(v, issue);
 }
+
+/** The largest multiple the server stores (NUMERIC(9,2)): anything above it is an amount typed in the wrong box. */
+const MAX_MULTIPLE = 9_999_999.99;
 
 /** The U2 options, in UnitLinkedPlanValidator.checkOptions's words: each feature's pair both or neither. */
 function validateOptions(v: UnitLinkedFields, issue: (path: (string | number)[], message: string) => void) {

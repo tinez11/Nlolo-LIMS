@@ -246,6 +246,14 @@ public final class UnitLinkedPlanValidator {
         if (min == null || max == null || min.signum() <= 0) {
             fail("The sum assured's minimum and maximum multiples of the annual premium are required, and greater than zero");
         }
+        // The column is NUMERIC(9,2). An AMOUNT typed where a multiple belongs reached the insert and failed as a 500,
+        // "An unexpected error occurred", twice on 2026-10-19 -- refused here in words a person can act on instead.
+        BigDecimal largest = new BigDecimal("9999999.99");
+        if (min.compareTo(largest) > 0 || max.compareTo(largest) > 0) {
+            fail("A sum assured multiple is how many times the annual premium the cover is, such as 40 -- "
+                + (min.compareTo(largest) > 0 ? min : max).stripTrailingZeros().toPlainString()
+                + " looks like an amount of money");
+        }
         if (max.compareTo(min) < 0) {
             fail("The sum assured's maximum multiple " + max.stripTrailingZeros().toPlainString()
                 + " is below its minimum " + min.stripTrailingZeros().toPlainString());
