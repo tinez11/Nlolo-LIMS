@@ -36,7 +36,9 @@ public final class FuneralTestMigrations {
         "db-migrations/policy/V35__covered_life.sql",
         "db-migrations/policy/V39__covered_life_member.sql",
         "db-migrations/claims/V10__funeral_claims.sql",
-        "db-migrations/claims/V12__claim_settled_at.sql",
+        // claims/V12__claim_settled_at.sql is NOT listed here: AnnuityTestMigrations.ALL, which this list extends,
+        // already applies it. Listing it twice failed every funeral and unit-linked class at setup with "column
+        // settled_at already exists" (2026-10-19, found by the quotation-document test).
     };
 
     public static final String[] ALL = Stream.concat(Stream.of(AnnuityTestMigrations.ALL), Stream.of(FUNERAL))
