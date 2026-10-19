@@ -13,6 +13,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
+import { CheckboxField } from '@/components/ui/checkbox';
 import { Input, Select } from '@/components/ui/input';
 import { approvePriceGates, decideAdjustmentGates } from '@/gates/unitLinkedGates';
 import { formatDate, formatInstant } from '@/lib/dates';
@@ -51,6 +52,7 @@ export function FundsPage() {
   const loadFunds = useUnitLinkedStore((s) => s.loadFunds);
   const loadAdjustments = useUnitLinkedStore((s) => s.loadAdjustments);
   const loadReconciliation = useUnitLinkedStore((s) => s.loadReconciliation);
+  const [showClosed, setShowClosed] = useState(false);
 
   useEffect(() => {
     void loadFunds();
@@ -63,15 +65,33 @@ export function FundsPage() {
     if (funds.status === 'error' && funds.error && funds.data === null) {
       return <ErrorPanel error={funds.error} onRetry={() => void loadFunds()} />;
     }
-    const rows = funds.data ?? [];
-    if (rows.length === 0) {
+    const all = funds.data ?? [];
+    if (all.length === 0) {
       return <EmptyState title="No fund" description="A unit-linked product can offer only funds in this register." />;
     }
+    // A closed fund takes no new money, so it is out of the way by default (2026-10-19): 78 closed test funds
+    // buried the two a person actually prices each day. Still one switch away -- a closed fund keeps its prices
+    // and the policies still holding its units.
+    const closed = all.filter((fund) => fund.status !== 'OPEN').length;
+    const rows = showClosed ? all : all.filter((fund) => fund.status === 'OPEN');
     return (
-      <div className="space-y-3" role="list" aria-label="Funds">
-        {rows.map((fund) => (
-          <FundCard key={fund.fundId} fund={fund} viewerSubject={viewerSubject} isAdmin={isAdmin} />
-        ))}
+      <div className="space-y-3">
+        {closed > 0 && (
+          <CheckboxField
+            label={`Show closed funds (${closed})`}
+            checked={showClosed}
+            onChange={(e) => setShowClosed(e.target.checked)}
+          />
+        )}
+        {rows.length === 0 ? (
+          <EmptyState title="No open fund" description="Every fund in the register is closed to new money." />
+        ) : (
+          <div className="space-y-3" role="list" aria-label="Funds">
+            {rows.map((fund) => (
+              <FundCard key={fund.fundId} fund={fund} viewerSubject={viewerSubject} isAdmin={isAdmin} />
+            ))}
+          </div>
+        )}
       </div>
     );
   }
