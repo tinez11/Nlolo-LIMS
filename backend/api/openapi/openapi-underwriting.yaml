@@ -14,47 +14,6 @@ security:
   - agentsAuth: []
   - staffAuth: []
 paths:
-  /underwriting/quotation-document:
-    post:
-      summary: A quotation an applicant can take away, as a PDF, before any case exists
-      description: >
-        The open-case form's quotation as a signed-and-kept document: who it is for, the product, the figures and a
-        table of the lives covered on a funeral plan, then the applicant's and the authorised officer's signature
-        lines and the date it was printed.
-
-
-        INPUTS ONLY. No premium, total or benefit is accepted: every figure is quoted again on the server -- a premium
-        from the version's rate table with the applicant's own date of birth, sex, smoker status and occupation class
-        read from their record, a family from the plan's grid, a deposit from its band -- because an applicant signs
-        this and it has to carry the figure the policy will charge. Nothing is recorded: no quotation row, no case, no
-        stored document.
-
-
-        An agent may quote only for a client it registered; any other applicant is a 404, as the party-detail read
-        answers it. 422 when the product cannot be priced as entered (the quoter's own reason), or for a product whose
-        price comes from terms this form does not collect -- an annuity, a unit-linked policy, a group scheme.
-      security:
-        - agentsAuth: [agent]
-        - staffAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/QuotationDocumentRequest' }
-      responses:
-        '200':
-          description: The quotation
-          content:
-            application/pdf:
-              schema: { type: string, format: binary }
-        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
-        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
-        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
-        '422':
-          description: Cannot be quoted as entered
-          content:
-            application/problem+json:
-              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /underwriting/cases/awaiting-issue:
     get:
       summary: Decided cases no policy has been issued from yet
@@ -761,44 +720,6 @@ paths:
         '404': { description: "No such case in this tenant" }
 components:
   schemas:
-    QuotationDocumentRequest:
-      type: object
-      description: Inputs only -- every figure on the document is quoted again on the server.
-      required: [productId, productVersionId, applicantPartyId]
-      properties:
-        productId: { type: string, format: uuid }
-        productVersionId: { type: string, format: uuid }
-        applicantPartyId:
-          type: string
-          format: uuid
-          description: The proposer. Their name and rating facts are read from their record, never sent.
-        sumAssured:
-          type: [number, "null"]
-          description: The sum assured, or a deposit's amount. Null on a funeral plan, whose plan sets the benefit.
-        currency: { type: [string, "null"] }
-        frequency:
-          type: [string, "null"]
-          enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE, null]
-        policyTermMonths: { type: [integer, "null"] }
-        premiumPayingTermMonths:
-          type: [integer, "null"]
-          description: Null means the whole term.
-        commencement:
-          type: [string, "null"]
-          format: date
-          description: The proposed commencement; every age and rate is taken on this day. Defaults to today.
-        funeralPlanCode: { type: [string, "null"] }
-        lives:
-          type: [array, "null"]
-          description: A funeral plan's lives, the main member first.
-          items:
-            type: object
-            required: [role]
-            properties:
-              role: { type: string, enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED] }
-              name: { type: [string, "null"] }
-              dateOfBirth: { type: [string, "null"], format: date }
-              student: { type: boolean }
     DisclosureAnswer:
       description: >-
         One question the applicant was asked and what they answered. The platform does not own

@@ -1,4 +1,4 @@
-import { get } from '@/lib/http';
+import { get, post } from '@/lib/http';
 import type { components } from '@/types/api/omnichannel';
 
 /**
@@ -11,6 +11,7 @@ export type PaymentScheduleView = components['schemas']['PaymentSchedule'];
 export type PaymentScheduleLine = PaymentScheduleView['lines'][number];
 export type SavingsStatementView = components['schemas']['SavingsStatement'];
 export type SavingsStatementLine = SavingsStatementView['lines'][number];
+export type QuotationRequest = components['schemas']['QuotationRequest'];
 export type DocumentFormat = 'pdf' | 'xlsx';
 
 const enc = encodeURIComponent;
@@ -44,6 +45,14 @@ export type ReceiptLine = components['schemas']['ReceiptLine'];
 export function downloadPolicySchedule(policyNumber: string): Promise<Blob> {
   return get<Blob>(`/policies/${enc(policyNumber)}/policy-schedule/pdf`,
     { responseType: 'blob', headers: { Accept: ACCEPT.pdf } });
+}
+
+/**
+ * A quotation to sign and keep, before any case exists (2026-10-19). Drawn like the policy schedule. Sends the
+ * form's inputs only: the server quotes every figure again from the applicant's own record. Nothing is stored.
+ */
+export function downloadQuotation(request: QuotationRequest): Promise<Blob> {
+  return post<Blob>('/quotations/pdf', request, { responseType: 'blob', headers: { Accept: ACCEPT.pdf } });
 }
 
 /** A fixed-term deposit's schedule (2026-10-09): maturity figures and the value if closed at each month. PDF only. */

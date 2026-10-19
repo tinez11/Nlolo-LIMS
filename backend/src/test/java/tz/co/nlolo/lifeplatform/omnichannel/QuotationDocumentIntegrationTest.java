@@ -1,4 +1,4 @@
-package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
+package tz.co.nlolo.lifeplatform.omnichannel;
 
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -32,8 +32,9 @@ import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
 import tz.co.nlolo.lifeplatform.product.api.ProductSummaryView;
 import tz.co.nlolo.lifeplatform.product.api.SmokerStatus;
-import tz.co.nlolo.lifeplatform.underwriting.api.QuotationDocumentInput;
-import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingValidationException;
+import tz.co.nlolo.lifeplatform.omnichannel.api.CustomerRequestRefusedException;
+import tz.co.nlolo.lifeplatform.omnichannel.application.QuotationDocuments;
+import tz.co.nlolo.lifeplatform.omnichannel.domain.DocumentPdf;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -79,15 +80,15 @@ class QuotationDocumentIntegrationTest {
 
     private static final UUID TENANT = UUID.randomUUID();
 
-    @Autowired private QuotationDocuments documents;
+    @Autowired private QuotationDocuments quotations;
     @Autowired private FuneralTestFixtures funeral;
     @Autowired private AnnuityTestFixtures annuity;
     @Autowired private AccumulationTestFixtures accumulation;
     @Autowired private ProductApi productApi;
     @Autowired private PartyApi partyApi;
 
-    private String text(QuotationDocumentInput input) {
-        byte[] pdf = asTenant(TENANT, () -> documents.render(input));
+    private String text(QuotationDocuments.Request input) {
+        byte[] pdf = asTenant(TENANT, () -> DocumentPdf.render(quotations.quotation(input)));
         try (PDDocument doc = Loader.loadPDF(pdf)) {
             return new PDFTextStripper().getText(doc);
         } catch (IOException e) {
@@ -132,17 +133,19 @@ class QuotationDocumentIntegrationTest {
         UUID[] term = termProduct();
         UUID applicant = funeral.person(TENANT, 40, Sex.MALE);
 
-        String text = text(new QuotationDocumentInput(term[0], term[1], applicant, new BigDecimal("1000000.00"), "TZS",
+        String text = text(new QuotationDocuments.Request(term[0], term[1], applicant, new BigDecimal("1000000.00"), "TZS",
             "MONTHLY", 120, null, null, null, List.of()));
 
-        assertThat(text).contains("INDIVIDUAL LIFE PREMIUM QUOTATION");
+        // The platform's customer-document look: the issuer over the title, as on the policy schedule.
+        assertThat(text).contains("NLOLO LIFE").contains("Premium quotation");
         assertThat(text).contains(nameOf(applicant));
         assertThat(text).contains("Quotation Term");
-        assertThat(text).contains("TZS 1,000,000.00");
-        assertThat(text).contains("TZS 1,000.00");
-        assertThat(text).contains("TZS 12,000.00");
-        assertThat(text).contains("Total payable over the term (120 payments)");
-        assertThat(text).contains("TZS 120,000.00");
+        // What it pays, in the table: the death benefit against the life insured.
+        assertThat(text).contains("Death benefit").contains("1,000,000.00");
+        // The totals carry the quotation panel's own labels, so paper and screen point at the same line.
+        assertThat(text).contains("TZS 1,000.00 a month");
+        assertThat(text).contains("Annual equivalent").contains("TZS 12,000.00");
+        assertThat(text).contains("Total over 10 years").contains("TZS 120,000.00 (120 payments)");
         assertThat(text).contains("Signature of applicant");
     }
 
@@ -161,15 +164,14 @@ class QuotationDocumentIntegrationTest {
         FuneralTestFixtures.family().forEach(l ->
             lives.add(new FuneralLifeInput(l.role(), l.fullName(), l.dateOfBirth(), l.student())));
 
-        String text = text(new QuotationDocumentInput(product.productId(), product.versionId(), juma, null, "TZS",
+        String text = text(new QuotationDocuments.Request(product.productId(), product.versionId(), juma, null, "TZS",
             "MONTHLY", null, null, null, "B", lives));
 
-        assertThat(text).contains("FAMILY FUNERAL PREMIUM QUOTATION");
-        assertThat(text).contains("The lives covered");
+        assertThat(text).contains("Funeral plan quotation");
+        assertThat(text).contains("Death of spouse").contains("Death of child");
         assertThat(text).contains("Asha").contains("Neema").contains("Baraka").contains("Zawadi");
-        assertThat(text).contains("TZS 138,000.00");
-        assertThat(text).contains("Each monthly payment");
-        assertThat(text).contains("TZS 12,075.00");
+        assertThat(text).contains("Family total a year").contains("TZS 138,000.00");
+        assertThat(text).contains("TZS 12,075.00 a month");
     }
 
     /** A deposit's rate is for the whole term: 5% over twelve months on five million is 250,000, once. */
@@ -178,14 +180,13 @@ class QuotationDocumentIntegrationTest {
         var deposit = accumulation.issueDeposit(TENANT, new BigDecimal("5000000.00"), 12, LocalDate.now());
         UUID saver = funeral.person(TENANT, 35, Sex.FEMALE);
 
-        String text = text(new QuotationDocumentInput(deposit.productId(), deposit.productVersionId(), saver,
+        String text = text(new QuotationDocuments.Request(deposit.productId(), deposit.productVersionId(), saver,
             new BigDecimal("5000000.00"), "TZS", "SINGLE", 12, null, null, null, List.of()));
 
-        assertThat(text).contains("FIXED-TERM DEPOSIT QUOTATION");
+        assertThat(text).contains("Fixed-term deposit quotation");
         assertThat(text).contains("5% for the term");
-        assertThat(text).contains("TZS 250,000.00");
-        assertThat(text).contains("Value at maturity");
-        assertThat(text).contains("TZS 5,250,000.00");
+        assertThat(text).contains("Interest for the term").contains("250,000.00");
+        assertThat(text).contains("Value at maturity").contains("TZS 5,250,000.00");
     }
 
     /**
@@ -197,9 +198,9 @@ class QuotationDocumentIntegrationTest {
         var product = annuity.publish(TENANT, AnnuityTestFixtures.everyForm());
         UUID annuitant = funeral.person(TENANT, 65, Sex.MALE);
 
-        assertThatThrownBy(() -> text(new QuotationDocumentInput(product.productId(), product.versionId(), annuitant,
+        assertThatThrownBy(() -> text(new QuotationDocuments.Request(product.productId(), product.versionId(), annuitant,
             new BigDecimal("10000000.00"), "TZS", "SINGLE", null, null, null, null, List.of())))
-            .isInstanceOf(UnderwritingValidationException.class)
+            .isInstanceOf(CustomerRequestRefusedException.class)
             .hasMessageContaining("not available");
     }
 }

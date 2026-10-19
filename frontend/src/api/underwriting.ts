@@ -1,6 +1,5 @@
 import { get, post, put } from '@/lib/http';
 import type {
-  QuotationDocumentRequest,
   BeneficiaryNomination,
   DecideRequest,
   GroupProposal,
@@ -88,19 +87,6 @@ export async function listCasesAwaitingIssue(q = '', pageSize = 50): Promise<Pag
     items: body.items ?? [],
     page: { page: body.page?.page ?? 0, pageSize: body.page?.pageSize ?? size, totalElements: body.page?.totalElements ?? 0 },
   };
-}
-
-/**
- * `POST /underwriting/quotation-document` -- the quotation as a PDF an applicant can sign and keep.
- *
- * <p>Inputs only: the server quotes every figure again, from the applicant's own record, because a figure that
- * travelled through a browser is not one anybody can sign for. Nothing is stored by asking.
- */
-export function downloadQuotationDocument(request: QuotationDocumentRequest): Promise<Blob> {
-  return post<Blob>('/underwriting/quotation-document', request, {
-    responseType: 'blob',
-    headers: { Accept: 'application/pdf' },
-  });
 }
 
 /** `POST /underwriting/cases` -- agent or staff. No Idempotency-Key enforcement

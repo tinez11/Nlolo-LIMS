@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { quotePremium } from '@/api/products';
 import { quoteProductSavings } from '@/api/accumulation';
 import { quoteFuneral } from '@/api/funeral';
-import { downloadQuotationDocument } from '@/api/underwriting';
+import { downloadQuotation } from '@/api/documents';
 import type { SavingsQuoteView } from '@/api/types';
 import * as download from '@/lib/download';
 import { QuotationPreview } from './QuotationPreview';
@@ -13,7 +13,7 @@ import type { QuotationInputs } from './useQuotation';
 vi.mock('@/api/products');
 vi.mock('@/api/accumulation');
 vi.mock('@/api/funeral');
-vi.mock('@/api/underwriting');
+vi.mock('@/api/documents');
 vi.mock('@/lib/download', () => ({ saveBlob: vi.fn() }));
 
 const COMPLETE: QuotationInputs = {
@@ -292,13 +292,13 @@ describe('QuotationPreview, the downloadable quotation', () => {
     );
 
   it('sends the inputs, never a figure, and saves the PDF', async () => {
-    vi.mocked(downloadQuotationDocument).mockResolvedValue(new Blob(['pdf']));
+    vi.mocked(downloadQuotation).mockResolvedValue(new Blob(['pdf']));
     renderWithApplicant('END');
 
     await userEvent.click(screen.getByRole('button', { name: 'Download the quotation as PDF' }));
 
     await waitFor(() => expect(download.saveBlob).toHaveBeenCalledWith(expect.any(Blob), 'quotation-ver-1234.pdf'));
-    const sent = vi.mocked(downloadQuotationDocument).mock.calls[0]![0];
+    const sent = vi.mocked(downloadQuotation).mock.calls[0]![0];
     expect(sent).toMatchObject({
       productId: 'prod-1',
       productVersionId: 'ver-12345678',

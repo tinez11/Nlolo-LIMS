@@ -7,7 +7,7 @@ import { PREMIUM_FREQUENCY_LABELS } from '@/api/types';
 import { DEFAULT_OCCUPATION_CLASS, useQuotation, type QuotationInputs } from './useQuotation';
 import { useSavingsQuotation } from './useSavingsQuotation';
 import { DownloadQuotationButton } from './DownloadQuotationButton';
-import type { QuotationDocumentRequest } from '@/api/types';
+import type { QuotationRequest } from '@/api/documents';
 import { useFuneralQuotation, type FuneralDependantInput, type FuneralQuotationInputs } from './useFuneralQuotation';
 import { InlineError } from '@/components/InlineError';
 import { FUNERAL_ROLE_LABELS, type FuneralRoleName } from '@/features/products/funeralSchema';
@@ -210,7 +210,7 @@ function quotationRequest(
     applicantPartyId: string;
     funeral?: { planCode: string; mainMember: { name: string; dateOfBirth: string | null } | null; dependants: FuneralDependantInput[] } | undefined;
   },
-): QuotationDocumentRequest | null {
+): QuotationRequest | null {
   const { inputs, productVersionId, applicantPartyId } = form;
   if (!inputs.productId || !productVersionId || !applicantPartyId) return null;
   const base = {

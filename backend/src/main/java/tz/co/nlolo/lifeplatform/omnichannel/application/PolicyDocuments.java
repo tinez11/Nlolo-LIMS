@@ -47,8 +47,8 @@ public class PolicyDocuments {
 
     /** The issuer printed at the top of every document, until the company's letterhead is supplied. */
     static final String ISSUER = "Nlolo Life";
-    private static final ZoneId CIVIL_ZONE = ZoneId.of("Africa/Dar_es_Salaam");
-    private static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    static final ZoneId CIVIL_ZONE = ZoneId.of("Africa/Dar_es_Salaam");
+    static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final PolicyApi policyApi;
     private final BillingApi billingApi;
@@ -367,7 +367,7 @@ public class PolicyDocuments {
         return Character.toUpperCase(words.charAt(0)) + words.substring(1);
     }
 
-    private static String roleLabel(String role) {
+    static String roleLabel(String role) {
         return switch (role) {
             case "MAIN_MEMBER" -> "main member";
             case "SPOUSE" -> "spouse";
@@ -414,7 +414,7 @@ public class PolicyDocuments {
         }
     }
 
-    private static String address(PartyDetailView p) {
+    static String address(PartyDetailView p) {
         if (p.address() == null) return "-";
         String a = java.util.stream.Stream.of(p.address().line(), p.address().ward(), p.address().district(),
                 p.address().region()).filter(Objects::nonNull).filter(s -> !s.isBlank()).collect(Collectors.joining(", "));
@@ -432,7 +432,7 @@ public class PolicyDocuments {
         };
     }
 
-    private static String frequency(String f) {
+    static String frequency(String f) {
         if (f == null) return "";
         return switch (f) {
             case "MONTHLY" -> "a month";
@@ -482,7 +482,7 @@ public class PolicyDocuments {
         return v == null ? BigDecimal.ZERO : v;
     }
 
-    private static String money(BigDecimal amount, String currency) {
+    static String money(BigDecimal amount, String currency) {
         return amount == null ? "-" : currency + " " + DocumentPdf.money(amount);
     }
 }
