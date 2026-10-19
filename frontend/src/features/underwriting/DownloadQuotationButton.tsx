@@ -1,27 +1,36 @@
 import { Download } from 'lucide-react';
 import { useState } from 'react';
-import { downloadQuotation, type QuotationRequest } from '@/api/documents';
 import { InlineError } from '@/components/InlineError';
 import { Button } from '@/components/ui/button';
 import { toApiError, type ApiError } from '@/lib/apiError';
 import { saveBlob } from '@/lib/download';
 
 /**
- * The quotation PDF (2026-10-16) -- for the applicant to sign and keep, before any case exists.
+ * A quotation PDF (2026-10-16) -- for the applicant, or an association, to sign and keep before anything exists.
  *
- * <p>Sends the form's inputs, never the figures on screen: the server quotes again from the applicant's own record,
- * because a document someone signs has to carry the premium the policy will charge. Nothing is stored by asking.
+ * <p>{@code download} sends the form's inputs, never the figures on screen: the server quotes again from the
+ * applicant's own record, because a document someone signs has to carry the premium the policy will charge. Null
+ * until there is enough to ask. Nothing is stored by asking. Shared by the individual quotation and the group funeral
+ * scheme's (2026-10-19), so the two download the same way.
  */
-export function DownloadQuotationButton({ request }: { request: QuotationRequest | null }) {
+export function DownloadQuotationButton({
+  download,
+  fileName,
+  description = 'The figures above, for the applicant to sign and keep.',
+}: {
+  download: (() => Promise<Blob>) | null;
+  fileName: string;
+  description?: string | undefined;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
 
   async function run() {
-    if (!request) return;
+    if (!download) return;
     setBusy(true);
     setError(null);
     try {
-      saveBlob(await downloadQuotation(request), `quotation-${request.productVersionId.slice(0, 8)}.pdf`);
+      saveBlob(await download(), fileName);
     } catch (e) {
       setError(toApiError(e));
     } finally {
@@ -35,14 +44,14 @@ export function DownloadQuotationButton({ request }: { request: QuotationRequest
         size="sm"
         variant="ghost"
         pending={busy}
-        disabled={!request}
+        disabled={!download}
         aria-label="Download the quotation as PDF"
         onClick={() => void run()}
       >
         <Download />
         Quotation (PDF)
       </Button>
-      <span className="text-xs text-muted-foreground">The figures above, for the applicant to sign and keep.</span>
+      <span className="text-xs text-muted-foreground">{description}</span>
       {error && <InlineError error={error} />}
     </div>
   );

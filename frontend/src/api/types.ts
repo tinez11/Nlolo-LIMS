@@ -39,6 +39,8 @@ export type FuneralTermsView = ProductComponents['schemas']['FuneralTerms'];
 export type ProductVersionSummaryView = ProductComponents['schemas']['ProductVersionSummaryView'];
 export type FuneralQuoteRequest = ProductComponents['schemas']['FuneralQuoteRequest'];
 export type FuneralQuoteView = ProductComponents['schemas']['FuneralQuote'];
+export type GroupFuneralQuoteView = ProductComponents['schemas']['GroupFuneralQuote'];
+export type GroupFuneralQuoteRequest = ProductComponents['schemas']['GroupFuneralQuoteRequest'];
 export type FuneralApplicationView = UnderwritingComponents['schemas']['FuneralApplication'];
 export type FuneralApplicationRequest = UnderwritingComponents['schemas']['FuneralApplicationRequest'];
 // Group funeral schemes (2026-10-07).

@@ -7,7 +7,7 @@ import { PREMIUM_FREQUENCY_LABELS } from '@/api/types';
 import { DEFAULT_OCCUPATION_CLASS, useQuotation, type QuotationInputs } from './useQuotation';
 import { useSavingsQuotation } from './useSavingsQuotation';
 import { DownloadQuotationButton } from './DownloadQuotationButton';
-import type { QuotationRequest } from '@/api/documents';
+import { downloadQuotation, type QuotationRequest } from '@/api/documents';
 import { useFuneralQuotation, type FuneralDependantInput, type FuneralQuotationInputs } from './useFuneralQuotation';
 import { InlineError } from '@/components/InlineError';
 import { FUNERAL_ROLE_LABELS, type FuneralRoleName } from '@/features/products/funeralSchema';
@@ -178,18 +178,23 @@ export function QuotationPreview({
 
       {/* Only where this panel prices the product itself: an annuity or a unit-linked policy is priced by its own
           fields, and a scheme by its contract, so there is no quotation here to hand over. */}
-      {(basis === 'PREMIUM' || basis === 'SAVINGS' || basis === 'FUNERAL') && (
-        <DownloadQuotationButton
-          request={quotationRequest(basis, {
+      {(basis === 'PREMIUM' || basis === 'SAVINGS' || basis === 'FUNERAL') &&
+        (() => {
+          const request = quotationRequest(basis, {
             inputs,
             premiumPayingTermMonths,
             commencementDate,
             productVersionId,
             applicantPartyId,
             funeral,
-          })}
-        />
-      )}
+          });
+          return (
+            <DownloadQuotationButton
+              download={request ? () => downloadQuotation(request) : null}
+              fileName={`quotation-${productVersionId.slice(0, 8)}.pdf`}
+            />
+          );
+        })()}
     </Panel>
   );
 }

@@ -300,6 +300,24 @@ public class ProductController {
      * Price a family on one plan: a line per life, the total and the instalment. Read-only, so agents and
      * any staff member may quote. 422 FUNERAL_QUOTE_REFUSED says what the plan will not cover.
      */
+    /**
+     * Price a group funeral scheme and check every family against the plan, before it is proposed (2026-10-19).
+     * Read-only, so agents and any staff member may quote, as the family quote. 422 FUNERAL_QUOTE_REFUSED for a version
+     * not sold to groups, a plan it does not offer, or a plan with no group rate; a family the plan will not take is
+     * NOT an error -- it comes back named in {@code problems}, so the form can say so while it is being typed.
+     */
+    @PostMapping("/products/{productId}/versions/{versionId}/group-funeral-quote")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<tz.co.nlolo.lifeplatform.product.api.GroupFuneralQuote> quoteGroupFuneral(
+            @PathVariable UUID productId, @PathVariable UUID versionId,
+            @Valid @RequestBody GroupFuneralQuoteRequest request) {
+        if (!productApi.resolveFuneralPlan(versionId).funeral()) {
+            throw new NotAFuneralProductException(versionId);
+        }
+        return ResponseEntity.ok(productApi.quoteGroupFuneral(versionId,
+            request.toInput(java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")))));
+    }
+
     @PostMapping("/products/{productId}/versions/{versionId}/funeral-quote")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<FuneralQuote> quoteFuneral(@PathVariable UUID productId, @PathVariable UUID versionId,

@@ -4,6 +4,8 @@ import type {
   GroupFuneralFamilyView,
   GroupFuneralJoiningReport,
   GroupFuneralLifeInput,
+  GroupFuneralQuoteRequest,
+  GroupFuneralQuoteView,
   GroupScheduleReading,
   GroupScheduleResult,
   PolicyMemberView,
@@ -15,6 +17,22 @@ import type {
  */
 
 const enc = encodeURIComponent;
+
+/**
+ * A scheme priced and checked before it is proposed (2026-10-19): the bill -- the plan's group rate per member, worked
+ * out on the server -- and each family run through the plan's role rules, a family the plan will not take named in
+ * {@code problems} rather than refused. Read-only.
+ */
+export function quoteGroupFuneral(
+  productId: string,
+  versionId: string,
+  request: GroupFuneralQuoteRequest,
+): Promise<GroupFuneralQuoteView> {
+  return post<GroupFuneralQuoteView>(
+    `/products/${enc(productId)}/versions/${enc(versionId)}/group-funeral-quote`,
+    request,
+  );
+}
 
 /** Every family on the scheme, in the order they joined, the main member first in each. */
 export function listGroupFuneralFamilies(policyNumber: string): Promise<GroupFuneralFamilyView[]> {

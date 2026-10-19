@@ -24,11 +24,15 @@ import {
   fromLives,
   groupPlans,
   incompleteFamilies,
-  monthlyBill,
   planBenefit,
   toLives,
+  type DependantRole,
   type FamilyRow,
 } from './groupFuneral';
+import { SchemeQuotation } from './SchemeQuotation';
+import { FUNERAL_ROLE_LABELS, type FuneralRoleName } from '@/features/products/funeralSchema';
+
+const ALL_DEPENDANT_ROLES: DependantRole[] = ['SPOUSE', 'CHILD', 'PARENT', 'EXTENDED'];
 import { UnsavedGuard } from '@/components/UnsavedGuard';
 
 /**
@@ -91,6 +95,11 @@ export function ProposeGroupFuneralPage() {
 
   const plans = groupPlans(productId && versionId ? terms : null);
   const plan = plans.find((p) => p.planCode === planCode) ?? null;
+  // The dependant roles the chosen plan pays a benefit for -- the only ones a family is offered (2026-10-19). Every
+  // role until a plan is chosen, since before then there is nothing to narrow by.
+  const coveredRoles: DependantRole[] = plan
+    ? ALL_DEPENDANT_ROLES.filter((r) => planBenefit(terms, plan.planCode, r) != null)
+    : ALL_DEPENDANT_ROLES;
   const problems = incompleteFamilies(families);
   const missing = [
     ...(association ? [] : ['Choose the association']),
@@ -199,11 +208,16 @@ export function ProposeGroupFuneralPage() {
             </FormField>
           </div>
 
+          {/* Every role the PLAN pays for, read from it -- it used to name main member, spouse and child whatever the
+              plan held, so a plan covering parents never said so. The bill is no longer worked out here: the
+              Quotation panel below shows the server's (2026-10-19). */}
           {plan && (
             <p className="rounded-md border border-border bg-hover px-3 py-2 text-xs">
-              Covered per family: main member {fmt(planBenefit(terms, plan.planCode, 'MAIN_MEMBER'))}, spouse{' '}
-              {fmt(planBenefit(terms, plan.planCode, 'SPOUSE'))}, child {fmt(planBenefit(terms, plan.planCode, 'CHILD'))}.
-              The bill: <strong>{monthlyBill(families.length, plan.rate, currency, plan.period)}</strong>.
+              Covered per family:{' '}
+              {(['MAIN_MEMBER', ...coveredRoles] as FuneralRoleName[])
+                .map((r) => `${FUNERAL_ROLE_LABELS[r].toLowerCase()} ${fmt(planBenefit(terms, plan.planCode, r))}`)
+                .join(', ')}
+              .
             </p>
           )}
 
@@ -232,7 +246,7 @@ export function ProposeGroupFuneralPage() {
 
             <div className="space-y-3">
               {families.map((family, index) => (
-                <FamilyEditor key={index} family={family}
+                <FamilyEditor key={index} family={family} roles={coveredRoles}
                   onChange={(next) => setFamilies((all) => all.map((f, i) => (i === index ? next : f)))}
                   onRemove={families.length === 1 ? undefined
                     : () => setFamilies((all) => all.filter((_, i) => i !== index))} />
@@ -244,6 +258,16 @@ export function ProposeGroupFuneralPage() {
               Add member
             </Button>
           </fieldset>
+
+          <SchemeQuotation
+            productId={productId}
+            versionId={versionId}
+            planCode={plan?.planCode ?? ''}
+            commencement={commencementDate}
+            families={families}
+            associationPartyId={association}
+            currency={currency}
+          />
 
           {showProblems && missing.length > 0 && (
             <ul className="list-disc space-y-0.5 pl-5 text-xs text-status-danger-fg" aria-label="Before proposing">

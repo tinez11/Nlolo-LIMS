@@ -24,6 +24,7 @@ import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyNotFoundException;
 import tz.co.nlolo.lifeplatform.product.api.FuneralLifeInput;
 import tz.co.nlolo.lifeplatform.product.api.FuneralRole;
+import tz.co.nlolo.lifeplatform.product.api.GroupFuneralQuote;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -80,6 +81,43 @@ public class QuotationDocumentController {
                 "attachment; filename=\"quotation-" + body.productVersionId().toString().substring(0, 8) + ".pdf\"")
             .contentType(MediaType.APPLICATION_PDF)
             .body(DocumentPdf.render(quotations.quotation(body.toRequest())));
+    }
+
+    /** A group funeral scheme to quote. Inputs only: the bill and every family's cover are priced on the server. */
+    public record SchemeBody(@NotNull UUID productId, @NotNull UUID productVersionId, @NotNull UUID associationPartyId,
+                             String planCode, LocalDate commencement, List<Family> families) {
+
+        public record Family(String memberReference, List<Body.Life> lives) {}
+
+        QuotationDocuments.SchemeRequest toRequest() {
+            return new QuotationDocuments.SchemeRequest(productId, productVersionId, associationPartyId, planCode,
+                commencement, families == null ? List.of() : families.stream()
+                    .map(f -> new GroupFuneralQuote.FamilyInput(f.memberReference(), f.lives() == null ? List.of()
+                        : f.lives().stream()
+                            .map(l -> new FuneralLifeInput(l.role(), l.name(), l.dateOfBirth(), l.student())).toList()))
+                    .toList());
+        }
+    }
+
+    /**
+     * The quotation an association signs for a group funeral scheme (2026-10-19). Refused while any family is one the
+     * plan will not take -- the proposal would refuse the whole scheme. An agent quotes only for an association it
+     * registered, as for an individual.
+     */
+    @PostMapping(value = "/quotations/scheme/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<byte[]> schemeQuotation(@Valid @RequestBody SchemeBody body, @AuthenticationPrincipal Jwt jwt,
+                                                  Authentication authentication) {
+        boolean agent = authentication.getAuthorities().stream().map(GrantedAuthority::getAuthority)
+            .anyMatch("ROLE_REALM_AGENTS"::equals);
+        if (agent && !partyApi.partyIdsRegisteredBy(jwt.getSubject()).contains(body.associationPartyId())) {
+            throw new PartyNotFoundException(body.associationPartyId());
+        }
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"scheme-quotation-" + body.productVersionId().toString().substring(0, 8) + ".pdf\"")
+            .contentType(MediaType.APPLICATION_PDF)
+            .body(DocumentPdf.render(quotations.schemeQuotation(body.toRequest())));
     }
 
     /** As {@code CustomerProductsController} answers it: a request this product cannot meet, in its own words. */

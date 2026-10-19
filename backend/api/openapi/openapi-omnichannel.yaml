@@ -9,6 +9,41 @@ info:
 servers:
   - url: https://api.nlolo-lifeplatform.tz/v1
 paths:
+  /quotations/scheme/pdf:
+    post:
+      summary: A group funeral scheme quotation an association can sign and keep, before the scheme is proposed
+      description: >
+        Drawn like every customer document: the association and the plan with its group rate in two columns, a line
+        per member with the family's cover, the bill (the plan's group rate per member, as issuance charges it) and the
+        scheme's total cover, what each role on a family is covered for, and signature lines for the association and
+        an authorised officer. Inputs only; priced on the server by the product module's group funeral quote. Nothing
+        is stored.
+
+
+        422 while any family is one the plan will not take -- the proposal would refuse the whole scheme -- naming
+        each member's problem. An agent may quote only for an association it registered; any other is a 404.
+      security:
+        - agentsAuth: []
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SchemeQuotationRequest' }
+      responses:
+        '200':
+          description: The scheme quotation
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Cannot be quoted as entered
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /quotations/pdf:
     post:
       summary: A quotation an applicant can sign and keep, before any case exists
@@ -540,6 +575,35 @@ components:
           tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/agents/protocol/openid-connect/token
           scopes: {}
   schemas:
+    SchemeQuotationRequest:
+      type: object
+      description: Inputs only -- the bill and every family's cover are priced on the server.
+      required: [productId, productVersionId, associationPartyId]
+      properties:
+        productId: { type: string, format: uuid }
+        productVersionId: { type: string, format: uuid }
+        associationPartyId:
+          type: string
+          format: uuid
+          description: The association. Its name, phone and address are read from its record, never sent.
+        planCode: { type: [string, "null"] }
+        commencement: { type: [string, "null"], format: date }
+        families:
+          type: [array, "null"]
+          items:
+            type: object
+            properties:
+              memberReference: { type: [string, "null"] }
+              lives:
+                type: array
+                items:
+                  type: object
+                  required: [role]
+                  properties:
+                    role: { type: string, enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED] }
+                    name: { type: [string, "null"] }
+                    dateOfBirth: { type: [string, "null"], format: date }
+                    student: { type: boolean }
     QuotationRequest:
       type: object
       description: Inputs only -- every figure on the document is quoted again on the server.

@@ -171,9 +171,3 @@ export function planBenefit(terms: FuneralTermsView | null, planCode: string, ro
   return terms?.benefits.find((b) => b.planCode === planCode && b.role === role)?.benefit ?? null;
 }
 
-/** "2 members x 3,000.00 = 6,000.00 a month" (or "a year") -- the association's bill, as the server computes it. */
-export function monthlyBill(members: number, rate: number, currency: string, period: RatePeriod = 'MONTHLY'): string {
-  const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `${members} member${members === 1 ? '' : 's'} x ${currency} ${fmt(rate)} = ${currency} ${fmt(members * rate)} `
-    + (period === 'YEARLY' ? 'a year' : 'a month');
-}

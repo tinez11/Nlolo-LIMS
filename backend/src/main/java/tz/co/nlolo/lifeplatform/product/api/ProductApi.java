@@ -448,6 +448,15 @@ public interface ProductApi {
     List<String> funeralFamilyProblems(UUID productVersionId, String planCode, LocalDate asOf, List<FuneralLifeInput> lives);
 
     /**
+     * A group funeral scheme priced before it is proposed (2026-10-19) -- see {@link GroupFuneralQuote}. The bill is
+     * the plan's group rate per member; each family is checked by {@link #funeralFamilyProblems}'s rules.
+     *
+     * @throws FuneralQuoteRefusedException for a version that is not a funeral plan sold to groups, a plan it does
+     *     not offer, or a plan with no group rate -- nothing a family could fix
+     */
+    GroupFuneralQuote quoteGroupFuneral(UUID productVersionId, GroupFuneralQuote.Input input);
+
+    /**
      * One life joining a family already on a group scheme, beside {@code alreadyInRole} lives in its role: its entry
      * rules on {@code asOf} and the role's count, the family's covered lives not re-checked. Empty when it may join.
      */

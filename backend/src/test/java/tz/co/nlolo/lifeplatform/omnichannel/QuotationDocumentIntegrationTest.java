@@ -27,6 +27,7 @@ import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
 import tz.co.nlolo.lifeplatform.product.api.FactorType;
 import tz.co.nlolo.lifeplatform.product.api.FuneralLifeInput;
 import tz.co.nlolo.lifeplatform.product.api.FuneralRole;
+import tz.co.nlolo.lifeplatform.product.api.GroupFuneralQuote;
 import tz.co.nlolo.lifeplatform.product.api.IfrsMeasurementModel;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
@@ -202,5 +203,121 @@ class QuotationDocumentIntegrationTest {
             new BigDecimal("10000000.00"), "TZS", "SINGLE", null, null, null, null, List.of())))
             .isInstanceOf(CustomerRequestRefusedException.class)
             .hasMessageContaining("not available");
+    }
+
+    // ---- Group funeral schemes (2026-10-19) ----------------------------------------------------------------------
+
+    private static LocalDate aged(int years) {
+        return LocalDate.now().minusYears(years).minusDays(30);
+    }
+
+    /** M001: main member 40, spouse 38, child 10. M002: main member 30 alone. */
+    private static List<GroupFuneralQuote.FamilyInput> twoFamilies() {
+        return List.of(
+            new GroupFuneralQuote.FamilyInput("M001", List.of(
+                new FuneralLifeInput(FuneralRole.MAIN_MEMBER, "Juma Ali", aged(40), false),
+                new FuneralLifeInput(FuneralRole.SPOUSE, "Asha Juma", aged(38), false),
+                new FuneralLifeInput(FuneralRole.CHILD, "Neema Juma", aged(10), false))),
+            new GroupFuneralQuote.FamilyInput("M002", List.of(
+                new FuneralLifeInput(FuneralRole.MAIN_MEMBER, "Peter Mushi", aged(30), false))));
+    }
+
+    /**
+     * A group plan that rules extended family but pays no benefit for it on plan B -- the shape of the user's
+     * NuruGroup01 / NLevel2, where the screen offered extended family and only the proposal refused it.
+     */
+    private FuneralTestFixtures.Product groupPlanWithoutExtended() {
+        var f = tz.co.nlolo.lifeplatform.product.FuneralPlans.familia();
+        return funeral.publish(TENANT, new tz.co.nlolo.lifeplatform.product.api.FuneralPlan(true,
+            f.plans().stream().map(p -> new tz.co.nlolo.lifeplatform.product.api.FuneralPlanOption(p.planCode(), p.name(),
+                new BigDecimal(p.planCode().equals("A") ? "3000.00" : "5000.00"))).toList(),
+            f.benefits().stream().filter(b -> !(b.planCode().equals("B") && b.role() == FuneralRole.EXTENDED)).toList(),
+            List.of(), f.roles(), f.maxPricedAge(), f.waitingPeriodMonths(), f.accidentWaivesWaiting(),
+            f.dependantClaimPayee(), f.onMainMemberDeath(), f.freeCoverToPaidDate(),
+            tz.co.nlolo.lifeplatform.product.api.FuneralSoldAs.GROUP));
+    }
+
+    /**
+     * The bill is the plan's group rate per MEMBER, whatever each family holds -- 2 members x 5,000 -- and each
+     * family's cover is its lives' benefits added up: 2,000,000 + 2,000,000 + 1,000,000 for M001.
+     */
+    @Test
+    void pricesASchemeAtTheGroupRatePerMember() {
+        var product = funeral.publishGroupFamilia(TENANT);
+
+        GroupFuneralQuote quote = asTenant(TENANT, () -> productApi.quoteGroupFuneral(product.versionId(),
+            new GroupFuneralQuote.Input("B", LocalDate.now(), twoFamilies())));
+
+        assertThat(quote.problems()).isEmpty();
+        assertThat(quote.members()).isEqualTo(2);
+        assertThat(quote.rate()).isEqualByComparingTo("5000.00");
+        assertThat(quote.bill()).isEqualByComparingTo("10000.00");
+        assertThat(quote.families().get(0).mainMember()).isEqualTo("Juma Ali");
+        assertThat(quote.families().get(0).cover()).isEqualByComparingTo("5000000.00");
+        assertThat(quote.families().get(1).cover()).isEqualByComparingTo("2000000.00");
+        assertThat(quote.totalCover()).isEqualByComparingTo("7000000.00");
+    }
+
+    /**
+     * A role the plan pays nothing for is named on its member while the scheme is being written, by the same rules
+     * the proposal applies -- not left for the proposal to refuse the whole scheme.
+     */
+    @Test
+    void namesAFamilyMemberThePlanDoesNotCover() {
+        var product = groupPlanWithoutExtended();
+        var families = List.of(new GroupFuneralQuote.FamilyInput("M001", List.of(
+            new FuneralLifeInput(FuneralRole.MAIN_MEMBER, "Martin Lema", aged(34), false),
+            new FuneralLifeInput(FuneralRole.EXTENDED, "Martin Fredii", aged(38), false))));
+
+        GroupFuneralQuote quote = asTenant(TENANT, () -> productApi.quoteGroupFuneral(product.versionId(),
+            new GroupFuneralQuote.Input("B", LocalDate.now(), families)));
+
+        assertThat(quote.problems()).singleElement().asString()
+            .startsWith("Member M001:").contains("Martin Fredii").contains("does not cover");
+        assertThat(quote.families().get(0).cover()).as("no cover to state for a family the plan will not take").isNull();
+        assertThat(quote.totalCover()).isNull();
+        // The bill is still the scheme's: the rate per member does not depend on what a family holds.
+        assertThat(quote.bill()).isEqualByComparingTo("5000.00");
+    }
+
+    @Test
+    void printsTheSchemeQuotationForTheAssociation() {
+        var product = funeral.publishGroupFamilia(TENANT);
+        UUID association = funeral.association(TENANT);
+
+        byte[] pdf = asTenant(TENANT, () -> DocumentPdf.render(quotations.schemeQuotation(new QuotationDocuments.SchemeRequest(
+            product.productId(), product.versionId(), association, "B", null, twoFamilies()))));
+        String text;
+        try (PDDocument doc = Loader.loadPDF(pdf)) {
+            text = new PDFTextStripper().getText(doc);
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+
+        assertThat(text).contains("NLOLO LIFE").contains("Group funeral scheme quotation");
+        assertThat(text).contains(nameOf(association));
+        assertThat(text).contains("TZS 5,000.00 per member a month");
+        // The plan as people know it, by name, with the code beside it.
+        assertThat(text).contains("Familia B (B)");
+        assertThat(text).contains("M001").contains("Juma Ali").contains("5,000,000.00");
+        assertThat(text).contains("M002").contains("Peter Mushi").contains("2,000,000.00");
+        assertThat(text).contains("Bill").contains("TZS 10,000.00 a month");
+        assertThat(text).contains("Total cover").contains("TZS 7,000,000.00");
+        assertThat(text).contains("Signature for the association");
+    }
+
+    /** A scheme the proposal would refuse is not printed for an association to sign. */
+    @Test
+    void refusesToPrintASchemeWithAFamilyThePlanWillNotTake() {
+        var product = groupPlanWithoutExtended();
+        UUID association = funeral.association(TENANT);
+        var families = List.of(new GroupFuneralQuote.FamilyInput("M001", List.of(
+            new FuneralLifeInput(FuneralRole.MAIN_MEMBER, "Martin Lema", aged(34), false),
+            new FuneralLifeInput(FuneralRole.EXTENDED, "Martin Fredii", aged(38), false))));
+
+        assertThatThrownBy(() -> asTenant(TENANT, () -> quotations.schemeQuotation(new QuotationDocuments.SchemeRequest(
+            product.productId(), product.versionId(), association, "B", null, families))))
+            .isInstanceOf(CustomerRequestRefusedException.class)
+            .hasMessageContaining("Member M001").hasMessageContaining("does not cover");
     }
 }

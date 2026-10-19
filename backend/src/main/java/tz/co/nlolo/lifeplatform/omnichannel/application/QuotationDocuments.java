@@ -13,7 +13,11 @@ import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
 import tz.co.nlolo.lifeplatform.product.api.FuneralLifeInput;
 import tz.co.nlolo.lifeplatform.product.api.FuneralQuote;
+import tz.co.nlolo.lifeplatform.product.api.FuneralPlan;
+import tz.co.nlolo.lifeplatform.product.api.FuneralPlanOption;
 import tz.co.nlolo.lifeplatform.product.api.FuneralQuoteInput;
+import tz.co.nlolo.lifeplatform.product.api.GroupFuneralQuote;
+import tz.co.nlolo.lifeplatform.product.api.GroupRatePeriod;
 import tz.co.nlolo.lifeplatform.product.api.PortfolioCode;
 import tz.co.nlolo.lifeplatform.product.api.PremiumFrequency;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
@@ -228,6 +232,84 @@ public class QuotationDocuments {
             header(applicant, product, extra), columns, rows, totals, signOff(applicant, notes), false);
     }
 
+    /**
+     * A group funeral scheme to quote: the association, the plan, and each member's family as the propose-scheme form
+     * holds them. Inputs only, as for an individual.
+     */
+    public record SchemeRequest(UUID productId, UUID productVersionId, UUID associationPartyId, String planCode,
+                                LocalDate commencement, List<GroupFuneralQuote.FamilyInput> families) {
+        public SchemeRequest {
+            families = families != null ? List.copyOf(families) : List.of();
+        }
+    }
+
+    /**
+     * The quotation an association signs for a group funeral scheme (2026-10-19): a line per member with the family's
+     * cover, and the bill -- the plan's group rate per member -- priced by the same {@code quoteGroupFuneral} the
+     * propose screen shows.
+     *
+     * <p>Refused, not printed, while any family is one the plan will not take: the proposal would refuse the whole
+     * scheme, and a quotation an association signs must be for a scheme that can actually be proposed.
+     */
+    @Transactional(readOnly = true)
+    public CustomerDocument schemeQuotation(SchemeRequest in) {
+        ProductSummaryView product = productApi.getProduct(in.productId());
+        PartyDetailView association = partyApi.getPartyDetail(in.associationPartyId());
+        LocalDate asOf = in.commencement() != null ? in.commencement() : LocalDate.now(CIVIL_ZONE);
+        String currency = product.defaultCurrency();
+
+        GroupFuneralQuote quote = productApi.quoteGroupFuneral(in.productVersionId(),
+            new GroupFuneralQuote.Input(in.planCode(), asOf, in.families()));
+        if (!quote.problems().isEmpty()) {
+            throw new CustomerRequestRefusedException("This scheme cannot be quoted as entered: "
+                + String.join("; ", quote.problems()));
+        }
+        if (quote.members() == 0) {
+            throw new CustomerRequestRefusedException("A scheme quotation needs at least one member");
+        }
+        String per = quote.period() == GroupRatePeriod.YEARLY ? "a year" : "a month";
+
+        List<Field> fields = new ArrayList<>();
+        fields.add(new Field("Association", association.displayName() == null ? "-" : association.displayName()));
+        fields.add(new Field("Phone", association.phoneNumber() != null ? association.phoneNumber() : "-"));
+        fields.add(new Field("Address", address(association)));
+        fields.add(new Field("Product", product.productName()));
+        // The plan's NAME, as staff and the association know it ("NLevel2"), with its code beside it.
+        String planName = productApi.resolveFuneralPlan(in.productVersionId()).plans().stream()
+            .filter(p -> p.planCode().equals(quote.planCode())).map(FuneralPlanOption::name).findFirst().orElse(null);
+        fields.add(new Field("Plan", planName == null ? quote.planCode() : planName + " (" + quote.planCode() + ")"));
+        fields.add(new Field("Group rate", money(quote.rate(), currency) + " per member " + per));
+        fields.add(new Field("Cover from", DMY.format(asOf)));
+        fields.add(new Field("Printed on", DMY.format(LocalDate.now(CIVIL_ZONE))));
+
+        // A line per member: who leads the family, how many lives it covers, and what their deaths pay in all.
+        List<Column> columns = List.of(new Column("Member no.", Kind.TEXT, 1.0f), new Column("Main member", Kind.TEXT, 2.4f),
+            new Column("Lives", Kind.TEXT, 0.7f), new Column("Family cover (" + currency + ")", Kind.MONEY, 1.6f));
+        List<List<Object>> rows = quote.families().stream()
+            .map(f -> List.<Object>of(f.reference() == null ? "-" : f.reference(), f.mainMember() == null ? "-" : f.mainMember(),
+                String.valueOf(f.lives()), f.cover()))
+            .toList();
+
+        List<Field> totals = List.of(
+            new Field("Members", String.valueOf(quote.members())),
+            new Field("Bill", money(quote.bill(), currency) + " " + per),
+            new Field("Total cover", money(quote.totalCover(), currency)));
+
+        // What each life on a family is covered for, read from the plan -- the line the propose screen shows.
+        FuneralPlan plan = productApi.resolveFuneralPlan(in.productVersionId());
+        String covered = plan.benefits().stream().filter(b -> b.planCode().equals(quote.planCode()))
+            .map(b -> roleLabel(b.role().name()) + " " + money(b.benefit(), currency))
+            .collect(java.util.stream.Collectors.joining("; "));
+
+        List<String> notes = new ArrayList<>();
+        notes.add("Covered per family: " + covered + ".");
+        notes.add("The association pays the plan's group rate for each member, whatever their family holds.");
+        notes.add("Each covered life has its own waiting period from the day its cover starts.");
+        return new CustomerDocument(ISSUER, "Group funeral scheme quotation", fields, columns, rows, totals,
+            signOff("Signature for the association ...................................",
+                association.displayName() == null ? "The association" : association.displayName(), notes), false);
+    }
+
     /** The policy schedule's header, with the proposer where a policy would have its holder and number. */
     private static List<Field> header(PartyDetailView applicant, ProductSummaryView product, List<Field> extra) {
         List<Field> fields = new ArrayList<>();
@@ -243,13 +325,18 @@ public class QuotationDocuments {
 
     /** The notes, then the terms that govern, then the two signatures a quotation is handed over with. */
     private static List<String> signOff(PartyDetailView applicant, List<String> notes) {
+        return signOff("Signature of applicant .........................................", name(applicant), notes);
+    }
+
+    /** {@code signer} names whose signature it is -- the applicant's, or an association's representative's. */
+    private static List<String> signOff(String signer, String signerName, List<String> notes) {
         List<String> all = new ArrayList<>(notes);
         all.add(TERMS_GOVERN);
         all.add("");
         all.add("I confirm that I have understood the information in this quotation and have received a copy of it.");
         all.add("");
-        all.add("Signature of applicant ..........................................    Date ......................");
-        all.add("(" + name(applicant) + ")");
+        all.add(signer + "    Date ......................");
+        all.add("(" + signerName + ")");
         all.add("");
         all.add("Signature (authorised officer) ..................................    Date ......................");
         return all;

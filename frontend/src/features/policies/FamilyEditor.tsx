@@ -18,10 +18,17 @@ export function FamilyEditor({
   family,
   onChange,
   onRemove,
+  roles = DEPENDANT_ROLES,
 }: {
   family: FamilyRow;
   onChange: (next: FamilyRow) => void;
   onRemove?: (() => void) | undefined;
+  /**
+   * The dependant roles the chosen plan covers (2026-10-19). It offered all four whatever the plan, so a plan with no
+   * extended-family benefit still offered extended family, and only the proposal refused it -- the whole scheme, at
+   * the end. Every role where the caller does not know the plan.
+   */
+  roles?: DependantRole[] | undefined;
 }) {
   const set = (change: Partial<FamilyRow>) => onChange({ ...family, ...change });
   const setDependant = (index: number, change: Partial<DependantRow>) =>
@@ -56,14 +63,19 @@ export function FamilyEditor({
         </FormField>
       </div>
       {family.dependants.map((d, j) => (
-        <DependantFields key={j} dependant={d} onChange={(change) => setDependant(j, change)}
+        <DependantFields key={j} dependant={d} roles={roles} onChange={(change) => setDependant(j, change)}
           onRemove={() => set({ dependants: family.dependants.filter((_, k) => k !== j) })} />
       ))}
-      <Button type="button" size="sm" variant="ghost" className="mt-1 -ml-2"
-        onClick={() => set({ dependants: [...family.dependants, blankDependant()] })}>
-        <Plus />
-        Add family member
-      </Button>
+      {/* A plan for the main member alone has no family to add: the button is not offered rather than refused. */}
+      {roles.length > 0 ? (
+        <Button type="button" size="sm" variant="ghost" className="mt-1 -ml-2"
+          onClick={() => set({ dependants: [...family.dependants, { ...blankDependant(), role: roles[0] as DependantRole }] })}>
+          <Plus />
+          Add family member
+        </Button>
+      ) : (
+        <p className="mt-2 text-xs text-muted-foreground">This plan covers the main member only.</p>
+      )}
     </div>
   );
 }
@@ -73,16 +85,22 @@ export function DependantFields({
   dependant,
   onChange,
   onRemove,
+  roles = DEPENDANT_ROLES,
 }: {
   dependant: DependantRow;
   onChange: (change: Partial<DependantRow>) => void;
   onRemove?: (() => void) | undefined;
+  /** The roles the plan covers; every role where the caller does not know the plan. */
+  roles?: DependantRole[] | undefined;
 }) {
+  // A row already holding a role the plan does not cover keeps it in its own list, so the select never shows one
+  // role while the row holds another -- the problem stays visible, and the quote names it.
+  const options = roles.includes(dependant.role) ? roles : [...roles, dependant.role];
   return (
     <div className="mt-2 grid grid-cols-[9rem_1fr_10rem_auto_auto] items-end gap-2">
       <FormField label="Role">
         <Select value={dependant.role} onChange={(e) => onChange({ role: e.target.value as DependantRole })}>
-          {DEPENDANT_ROLES.map((r) => <option key={r} value={r}>{FUNERAL_ROLE_LABELS[r]}</option>)}
+          {options.map((r) => <option key={r} value={r}>{FUNERAL_ROLE_LABELS[r]}</option>)}
         </Select>
       </FormField>
       <FormField label="Name">

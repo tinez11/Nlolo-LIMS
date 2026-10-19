@@ -12,6 +12,7 @@ export type PaymentScheduleLine = PaymentScheduleView['lines'][number];
 export type SavingsStatementView = components['schemas']['SavingsStatement'];
 export type SavingsStatementLine = SavingsStatementView['lines'][number];
 export type QuotationRequest = components['schemas']['QuotationRequest'];
+export type SchemeQuotationRequest = components['schemas']['SchemeQuotationRequest'];
 export type DocumentFormat = 'pdf' | 'xlsx';
 
 const enc = encodeURIComponent;
@@ -53,6 +54,11 @@ export function downloadPolicySchedule(policyNumber: string): Promise<Blob> {
  */
 export function downloadQuotation(request: QuotationRequest): Promise<Blob> {
   return post<Blob>('/quotations/pdf', request, { responseType: 'blob', headers: { Accept: ACCEPT.pdf } });
+}
+
+/** A group funeral scheme's quotation for the association to sign (2026-10-19). Inputs only, as above. */
+export function downloadSchemeQuotation(request: SchemeQuotationRequest): Promise<Blob> {
+  return post<Blob>('/quotations/scheme/pdf', request, { responseType: 'blob', headers: { Accept: ACCEPT.pdf } });
 }
 
 /** A fixed-term deposit's schedule (2026-10-09): maturity figures and the value if closed at each month. PDF only. */

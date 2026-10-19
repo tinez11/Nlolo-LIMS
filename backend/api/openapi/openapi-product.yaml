@@ -544,6 +544,45 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /products/{productId}/versions/{versionId}/group-funeral-quote:
+    post:
+      summary: Price a group funeral scheme and check every family against the plan, before it is proposed
+      description: >-
+        The association's bill -- the plan's group rate per member, the figure issuance charges -- and each family run
+        through the plan's role rules: covered roles, entry ages, most lives per role. A family the plan will not take
+        is NOT an error: it comes back named in `problems` ("this plan does not cover extended family"), so the form can
+        say so while the member is typed instead of when the scheme is submitted. Read-only. 422
+        FUNERAL_QUOTE_REFUSED for a version not sold to groups, a plan it does not offer, or a plan with no group rate.
+        404 NOT_A_FUNERAL_PRODUCT for any other version.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupFuneralQuoteRequest' }
+      responses:
+        '200':
+          description: The scheme, priced, with any family's problems named
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupFuneralQuote' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404':
+          description: Not a funeral plan version
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422':
+          description: The version or plan cannot be sold to a group
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /products/{productId}/versions/{versionId}/funeral-quote:
     post:
       summary: Price a family on one funeral plan
@@ -1463,6 +1502,61 @@ components:
     FuneralRole:
       type: string
       enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED]
+    GroupFuneralQuoteRequest:
+      type: object
+      properties:
+        planCode: { type: [string, "null"] }
+        asOf: { type: [string, "null"], format: date, description: "Defaults to today's civil date" }
+        families:
+          type: array
+          description: Each member's family, the main member among its lives.
+          items:
+            type: object
+            properties:
+              memberReference: { type: [string, "null"] }
+              lives:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    role: { type: [string, "null"], enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED, null] }
+                    name: { type: [string, "null"] }
+                    dateOfBirth: { type: [string, "null"], format: date }
+                    student: { type: [boolean, "null"], description: "A child only" }
+    GroupFuneralQuote:
+      type: object
+      additionalProperties: false
+      required: [planCode, rate, period, members, bill, families, problems]
+      properties:
+        planCode: { type: string }
+        rate: { type: number, description: The plan's group rate per member, charged per period }
+        period: { type: string, enum: [MONTHLY, YEARLY] }
+        members: { type: integer, description: The families on the scheme -- one member each }
+        bill: { type: number, description: "rate x members, per period: what issuance bills" }
+        totalCover:
+          type: [number, "null"]
+          description: Every family's cover added up. Null while any family has a problem.
+        families:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [lives, problems]
+            properties:
+              reference: { type: [string, "null"] }
+              mainMember: { type: [string, "null"] }
+              lives: { type: integer }
+              cover:
+                type: [number, "null"]
+                description: Each life's plan benefit added up. Null when the family has a problem.
+              problems:
+                type: array
+                items: { type: string }
+                description: The plan's role rules this family breaks, in the plan's words. Empty when it may join.
+        problems:
+          type: array
+          items: { type: string }
+          description: Every family's problems, each prefixed with its member number. Empty when the scheme may be proposed.
     FuneralQuoteRequest:
       type: object
       properties:

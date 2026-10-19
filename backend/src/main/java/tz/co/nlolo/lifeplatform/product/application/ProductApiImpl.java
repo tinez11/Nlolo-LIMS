@@ -1169,6 +1169,61 @@ public class ProductApiImpl implements ProductApi {
         return FuneralQuoter.familyProblems(resolveFuneralPlan(productVersionId), planCode, asOf, lives);
     }
 
+    /**
+     * A group funeral scheme, priced and checked before it is proposed (2026-10-19).
+     *
+     * <p>Every family through {@link FuneralQuoter#familyProblems} -- the rules the proposal and issuance apply -- so a
+     * role the plan does not cover is named while the member is typed, not when the scheme is submitted. The bill is
+     * the plan's group rate per member, the figure issuance charges, computed here so no browser multiplies money.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public tz.co.nlolo.lifeplatform.product.api.GroupFuneralQuote quoteGroupFuneral(
+            UUID productVersionId, tz.co.nlolo.lifeplatform.product.api.GroupFuneralQuote.Input input) {
+        FuneralPlan plan = resolveFuneralPlan(productVersionId);
+        if (!plan.funeral()) {
+            throw new FuneralQuoteRefusedException("This product is not a funeral plan");
+        }
+        if (!plan.soldAs().group()) {
+            throw new FuneralQuoteRefusedException("This product is not sold to group schemes");
+        }
+        String planCode = input.planCode();
+        if (planCode == null || planCode.isBlank() || !plan.offersPlan(planCode)) {
+            throw new FuneralQuoteRefusedException("Choose a plan this product offers");
+        }
+        BigDecimal rate = plan.groupMonthlyRate(planCode).orElseThrow(() -> new FuneralQuoteRefusedException(
+            "Plan " + planCode + " has no group rate, so a scheme on it cannot be billed"));
+        LocalDate asOf = input.asOf() != null ? input.asOf() : LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"));
+
+        List<tz.co.nlolo.lifeplatform.product.api.GroupFuneralQuote.Family> families = new ArrayList<>();
+        List<String> allProblems = new ArrayList<>();
+        for (var family : input.families()) {
+            List<String> problems = new ArrayList<>();
+            long mainMembers = family.lives().stream().filter(l -> l.role() == FuneralRole.MAIN_MEMBER).count();
+            // The shape the schedule file and the proposal also demand: one member, one main member.
+            if (mainMembers == 0) problems.add("the family has no main member");
+            problems.addAll(FuneralQuoter.familyProblems(plan, planCode, asOf, family.lives()));
+            BigDecimal cover = null;
+            if (problems.isEmpty()) {
+                cover = family.lives().stream().map(l -> plan.benefit(planCode, l.role()).orElseThrow())
+                    .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, java.math.RoundingMode.HALF_UP);
+            }
+            String main = family.lives().stream().filter(l -> l.role() == FuneralRole.MAIN_MEMBER)
+                .map(FuneralLifeInput::name).findFirst().orElse(null);
+            families.add(new tz.co.nlolo.lifeplatform.product.api.GroupFuneralQuote.Family(
+                family.reference(), main, family.lives().size(), cover, problems));
+            problems.forEach(p -> allProblems.add("Member " + family.reference() + ": " + p));
+        }
+
+        BigDecimal bill = rate.multiply(BigDecimal.valueOf(families.size())).setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal totalCover = allProblems.isEmpty()
+            ? families.stream().map(tz.co.nlolo.lifeplatform.product.api.GroupFuneralQuote.Family::cover)
+                .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, java.math.RoundingMode.HALF_UP)
+            : null;
+        return new tz.co.nlolo.lifeplatform.product.api.GroupFuneralQuote(planCode, rate, plan.groupRatePeriod(planCode),
+            families.size(), bill, totalCover, families, allProblems);
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<String> funeralJoinerProblems(UUID productVersionId, String planCode, LocalDate asOf, FuneralLifeInput life,

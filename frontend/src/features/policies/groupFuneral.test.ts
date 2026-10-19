@@ -4,8 +4,7 @@ import {
   blankFamily,
   fromLives,
   groupPlans,
-  incompleteFamilies,
-  monthlyBill,
+  incompleteFamilies,
   nextReference,
   planBenefit,
   toLives,
@@ -88,9 +87,4 @@ describe('group funeral plans', () => {
     expect(planBenefit(terms, 'A1', 'PARENT')).toBeNull();
   });
 
-  it('states the bill as members x rate', () => {
-    expect(monthlyBill(2, 3000, 'TZS')).toBe('2 members x TZS 3,000.00 = TZS 6,000.00 a month');
-    expect(monthlyBill(1, 3000, 'TZS')).toBe('1 member x TZS 3,000.00 = TZS 3,000.00 a month');
-    expect(monthlyBill(10, 42000, 'TZS', 'YEARLY')).toBe('10 members x TZS 42,000.00 = TZS 420,000.00 a year');
-  });
 });
