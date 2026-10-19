@@ -1,6 +1,6 @@
 # 09 — Local Development
 
-A runbook for running the platform on a development machine. Postgres, Keycloak, Redis, MinIO,
+A runbook for running the platform on a development machine. Postgres, Keycloak, Redis, SeaweedFS (the document store),
 the mobile-money stub, and Mailpit all run as Docker containers; the application itself runs on
 the host (see gotcha 2 below for why).
 
@@ -30,8 +30,8 @@ the host (see gotcha 2 below for why).
 ## Startup
 
 ```bash
-cd infra && docker compose up -d postgres keycloak minio redis mock-mobile-money mailpit && cd ..
-cd infra && docker compose up minio-init && cd ..   # one-shot: creates the four buckets
+cd infra && docker compose up -d postgres keycloak objectstore redis mock-mobile-money mailpit && cd ..
+cd infra && docker compose up objectstore-init && cd ..   # one-shot: creates the four buckets
 scripts/migrate.sh local          # nothing applies schema automatically -- see below
 scripts/configure-db.sh local     # partitions + every pg_cron job; safe to re-run, any time
 export JAVA_HOME="/c/Users/USER/.vscode/extensions/redhat.java-1.56.0-win32-x64/jre/21.0.12.1-win32-x86_64"
@@ -54,19 +54,19 @@ actually want an empty database. To get back to a clean slate:
 ```bash
 cd infra
 docker compose --profile tools down -v   # -v drops the named volumes, including postgres-data
-docker compose up -d postgres keycloak minio redis mock-mobile-money mailpit
-docker compose up minio-init             # DO NOT SKIP -- see below
+docker compose up -d postgres keycloak objectstore redis mock-mobile-money mailpit
+docker compose up objectstore-init       # DO NOT SKIP -- see below
 cd ..
 scripts/migrate.sh local
 scripts/configure-db.sh local
 ```
 
-**Do not skip `minio-init`.** `-v` drops `minio-data`, and the four buckets
+**Do not skip `objectstore-init`.** `-v` drops `objectstore-data`, and the four buckets
 (`policy-documents`, `kyc-evidence`, `underwriting-evidence`, `claim-evidence`) go with it.
 Nothing in the application recreates them -- there is no `makeBucket` call anywhere in the Java
 code, by design, because a service that creates its own storage on demand hides a
-misconfiguration instead of reporting it. `minio-init` is a one-shot `minio/mc` container that
-exists precisely for this and is the only thing that makes them.
+misconfiguration instead of reporting it. `objectstore-init` is a one-shot container running SeaweedFS's own
+`weed shell` that exists precisely for this and is the only thing that makes them.
 
 Both command lists above omitted it until 2026-09-28, which is a real trap rather than a
 cosmetic gap: **every other step succeeds without it.** Migrations apply, the seeder runs to
@@ -82,7 +82,7 @@ and the monthly ledgers run out of partitions at the end of the last hand-writte
 `migrate.sh` it is idempotent, so re-run it whenever a `_post-migration` file changes. The
 backend's health endpoint reports anything it finds missing (`scheduledJobs`).
 
-`down -v` removes `postgres-data`, `redis-data`, and `minio-data` — Postgres schema, cached
+`down -v` removes `postgres-data`, `redis-data`, and `objectstore-data` — Postgres schema, cached
 sessions, and uploaded documents all go with it. There is no partial-reset option; the compose
 project has one Postgres instance shared by every module's schema, so "reset just one module" is
 not a thing `migrate.sh` or Compose supports.
@@ -124,7 +124,7 @@ time will collide.** `docker compose config` in this directory reports `name: in
 derives the project name from the current directory's basename (`infra`), not from the worktree's
 full path. Every checkout on the machine has an `infra/` subdirectory, so every one of them gets
 the *same* project name unless told otherwise, and therefore the same container names and the same
-named volumes (`infra_postgres-data`, `infra_redis-data`, `infra_minio-data`). Two worktrees doing
+named volumes (`infra_postgres-data`, `infra_redis-data`, `infra_objectstore-data`). Two worktrees doing
 `cd infra && docker compose up` concurrently will fight over one Postgres container instead of
 each getting its own — one side's migrations can land in the other side's database, or `down -v`
 in one worktree can silently wipe the schema another worktree is relying on. Mitigation: give each
@@ -157,17 +157,17 @@ the `party_id` has to match a real party row, so guessing one just moves the `40
 | Keycloak admin | http://localhost:8081 | `admin` / `devadmin` |
 | pgAdmin | http://localhost:5050 | `dev@nlolo-lifeplatform.tz` / `devadmin` (server pre-registered) |
 | Mailpit (outbound mail) | http://localhost:8025 | none |
-| MinIO console | http://localhost:9001 | `minioadmin` / `minioadmin` (see the note below) |
+| Document store (S3 API, no console) | http://localhost:9000 | `minioadmin` / `minioadmin` (see the note below) |
 | WireMock (mobile money) | http://localhost:8082 | none |
 
-**MinIO is still the dev object store, and can no longer be pulled (2026-10-13).** MinIO withdrew
-public distribution: its Docker Hub repositories are gone, `dl.min.io` answers 410, and quay.io
-demands credentials. `infra/docker-compose.yml` still asks for `minio/minio:latest`, which works
-only on a machine that already holds the image in its local cache. A new machine will fail to
-start `minio` and `minio-init`, and the error reads like a network problem. The tests no longer
-depend on it — they use SeaweedFS through `ObjectStoreContainer` — and the pilot server runs
-SeaweedFS too (`deploy/server/compose.yml`). Moving the dev stack onto SeaweedFS is the obvious
-follow-up; until then, document uploads in dev need that cached image.
+**The dev document store is SeaweedFS (2026-10-19).** MinIO withdrew public distribution on
+2026-10-13 -- its Docker Hub repositories are gone, `dl.min.io` answers 410, quay.io demands credentials -- so
+`minio/minio:latest` pulled on no new machine. The dev stack now runs SeaweedFS (`objectstore`), as the tests
+(`ObjectStoreContainer`) and the server (`deploy/server/compose.yml`) already did. The platform still talks to it
+through the `io.minio` S3 client on **host port 9000 with the same dev credentials**, so `application.yml`'s dev
+defaults are unchanged; the credentials live in `infra/objectstore/s3-dev.json`. There is no web console -- list a
+bucket with `rclone` or the S3 API. Documents stored in the old MinIO volume were copied across with rclone and
+compared file by file; `infra_minio-data` was left in place, unused, and can be deleted once nothing is missed.
 
 **Keycloak upgrades are one-way.** The dev stack runs Keycloak 26 (`quay.io/keycloak/keycloak`),
 and starting a newer Keycloak migrates its database in place. Going back to an older one afterwards

@@ -46,35 +46,40 @@ services:
       timeout: 5s
       retries: 10
 
-  minio:
-    image: minio/minio:latest
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+  # The documents: policy documents, KYC, underwriting and claim evidence. SeaweedFS, as the server stack runs
+  # (deploy/server/compose.yml) -- MinIO withdrew its images on 2026-10-13, so `minio/minio:latest` now pulls on no
+  # new machine at all; a laptop that still ran it was running a copy it happened to have cached.
+  #
+  # The platform talks to it with the same io.minio S3 client, on the same host port 9000 and the same dev
+  # credentials, so application.yml's dev defaults are unchanged. There is no web console (MinIO's was on 9001).
+  objectstore:
+    image: chrislusf/seaweedfs:3.80
+    command: ["server", "-s3", "-s3.config=/etc/seaweedfs/s3.json", "-dir=/data"]
     ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # console
-    command: server /data --console-address ":9001"
+      - "9000:8333"   # S3 API, on the port the platform's dev default expects
     volumes:
-      - minio-data:/data
+      - objectstore-data:/data
+      - ./objectstore/s3-dev.json:/etc/seaweedfs/s3.json:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      # By its own hostname, NOT localhost: SeaweedFS binds the S3 port to the container's network address and not
+      # to loopback, so a localhost probe is refused however healthy the server is.
+      test: ["CMD-SHELL", "nc -z $$(hostname) 8333"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 30
 
-  minio-init:
-    image: minio/mc:latest
+  # The four buckets the platform writes to, made once the store is up -- as deploy/server/remote-release.sh does.
+  # An existing bucket only reports that it exists, so this is safe to run on every `up`.
+  objectstore-init:
+    image: chrislusf/seaweedfs:3.80
     depends_on:
-      minio:
+      objectstore:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin};
-      mc mb -p local/policy-documents;
-      mc mb -p local/kyc-evidence;
-      mc mb -p local/underwriting-evidence;
-      mc mb -p local/claim-evidence;
+      for b in policy-documents kyc-evidence underwriting-evidence claim-evidence; do
+        echo \"s3.bucket.create -name $$b\" | weed shell -master=objectstore:9333 -filer=objectstore:8888;
+      done;
       exit 0;
       "
 
@@ -152,9 +157,9 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD:-devapppassword}
       SPRING_REDIS_HOST: redis
       SPRING_REDIS_PORT: "6379"
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_ENDPOINT: http://objectstore:8333
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
       KEYCLOAK_ISSUER_CUSTOMERS: http://keycloak:8080/realms/customers
       KEYCLOAK_ISSUER_AGENTS: http://keycloak:8080/realms/agents
       KEYCLOAK_ISSUER_STAFF: http://keycloak:8080/realms/staff
@@ -175,7 +180,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
+      objectstore:
         condition: service_healthy
       keycloak:
         condition: service_started
@@ -196,4 +201,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
-  minio-data:
+  objectstore-data:
