@@ -50,6 +50,7 @@ import { PolicyUnitsPanel } from '@/features/unitlinked/PolicyUnitsPanel';
 import { PolicyVestingPanel } from '@/features/annuities/PolicyVestingPanel';
 import { useAnnuityStore } from '@/store/annuityStore';
 import { useBonusStore } from '@/store/bonusStore';
+import { useUnitLinkedStore } from '@/store/unitLinkedStore';
 import { ValueActions } from './ValueActions';
 
 /**
@@ -130,6 +131,15 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       void loadAnnuity(policyNumber);
     }
   }, [policyNumber, loadDetail, loadCoverage, loadAccount, loadBonuses, loadAnnuity, isStaff]);
+
+  // A unit-linked policy's value is its units (2026-10-19). Without this the summary fell through to "pure
+  // protection, TZS 0.00" -- POL-134047B9 -- while the money sat in the funds. Staff-only, as the endpoint is.
+  const isUnitLinked = detail.data?.productCategory === 'UNIT_LINKED';
+  const policyUnits = useUnitLinkedStore((s) => s.units[policyNumber]);
+  const loadUnits = useUnitLinkedStore((s) => s.loadUnits);
+  useEffect(() => {
+    if (isStaff && isUnitLinked && policyNumber) void loadUnits(policyNumber);
+  }, [isStaff, isUnitLinked, policyNumber, loadUnits]);
 
   const policy = detail.data;
   // A group funeral scheme (2026-10-07): category FUNERAL, issued as a scheme -- every scheme number is GRP-.
@@ -637,6 +647,22 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
               {/* The note is now only for a product that will never have one. A savings policy's
                   value is real: it is restated from the product's table as premiums are paid, and
                   0.00 there means "not yet", not "never". */}
+              {isUnitLinked ? (
+                <Field
+                  label="Fund value"
+                  value={!policyUnits?.data
+                    ? '—'
+                    : policyUnits.data.totalValue == null
+                      // No units yet: the server has no value to give, and a 0.00 would read as money lost.
+                      ? 'Not invested yet'
+                      : formatMoney({ amount: policyUnits.data.totalValue,
+                          currencyCode: policyUnits.data.currency ?? policy.cashValue?.currencyCode ?? 'TZS' })}
+                  note={policyUnits?.data && policyUnits.data.totalValue == null && policyUnits.data.pending.length > 0
+                    // A count, not a sum: the amounts are on the Units tab, each as the server holds it.
+                    ? `${policyUnits.data.pending.length} purchase${policyUnits.data.pending.length === 1 ? '' : 's'} waiting for the funds' next approved price. Nothing is invested until then. See the Units tab.`
+                    : "The units held in the funds, at each fund's latest approved price. A premium buys units at the first price approved after it arrives. See the Units tab."}
+                />
+              ) : (
               <Field
                 label="Cash value"
                 value={formatMoney(policy.cashValue)}
@@ -649,6 +675,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                     }
                   : { note: 'This product carries no cash value — it is pure protection.' })}
               />
+              )}
               <Field label="Issued" value={formatDate(policy.issueDate)} />
               {/*
                 HOW IT CAME TO BE ISSUED (policy V24). An underwriting decision links to its case;
