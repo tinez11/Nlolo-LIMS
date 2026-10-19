@@ -506,7 +506,7 @@ export function OpenUnderwritingCasePage() {
 
           {/* A funeral plan: the plan, the family, and the server's quote of it as it is typed. */}
           {isFuneral && funeralTerms && (
-            <FuneralLivesFields terms={funeralTerms} productId={productId} productVersionId={productVersionId}
+            <FuneralLivesFields terms={funeralTerms}
               mainMember={mainMember} register={register} control={control} errors={errors} setValue={setValue} />
           )}
 
@@ -660,6 +660,23 @@ export function OpenUnderwritingCasePage() {
           // a deposit's maturity, an account's rate, or a figure its own fields above already work out.
           portfolioCode={selectedProduct?.portfolioCode}
           productVersionId={productVersionId}
+          applicantPartyId={applicantPartyId}
+          // A funeral plan is priced from the plan and the family, not from a sum assured: the panel asks for its
+          // price with the same rows the family fields above collect.
+          funeral={
+            isFuneral
+              ? {
+                  planCode: watch('funeralPlanCode'),
+                  mainMember,
+                  dependants: (watch('funeralDependants') ?? []).map((d) => ({
+                    role: d.role,
+                    fullName: d.fullName,
+                    dateOfBirth: d.dateOfBirth,
+                    student: d.student,
+                  })),
+                }
+              : undefined
+          }
         />
 
         {opening.status === 'error' && opening.error && (

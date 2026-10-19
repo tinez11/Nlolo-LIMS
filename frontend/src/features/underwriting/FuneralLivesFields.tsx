@@ -1,20 +1,14 @@
 import { Plus, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Controller, useFieldArray, useWatch, type Control, type FieldErrors, type UseFormRegister, type UseFormSetValue } from 'react-hook-form';
-import { quoteFuneral } from '@/api/funeral';
-import type { FuneralQuoteView, FuneralTermsView } from '@/api/types';
+import type { FuneralTermsView } from '@/api/types';
 import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
-import { InlineError } from '@/components/InlineError';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox';
 import { Input, Select } from '@/components/ui/input';
-import { toApiError, type ApiError } from '@/lib/apiError';
-import { formatMoney } from '@/lib/money';
 import { FUNERAL_ROLE_LABELS, type FuneralRoleName } from '@/features/products/funeralSchema';
-import { blankFuneralDependant, toFuneralDependants, type OpenCaseFormInput, type OpenCaseFormValues } from './openCaseForm';
-
-const tzs = (amount: number) => formatMoney({ amount: String(amount), currencyCode: 'TZS' });
+import { blankFuneralDependant, type OpenCaseFormInput, type OpenCaseFormValues } from './openCaseForm';
 
 /** Every role but the main member's: the main member is the applicant, never a row in the family list. */
 type DependantRole = Exclude<FuneralRoleName, 'MAIN_MEMBER'>;
@@ -27,8 +21,6 @@ type DependantRole = Exclude<FuneralRoleName, 'MAIN_MEMBER'>;
  */
 export function FuneralLivesFields({
   terms,
-  productId,
-  productVersionId,
   mainMember,
   register,
   control,
@@ -36,8 +28,6 @@ export function FuneralLivesFields({
   setValue,
 }: {
   terms: FuneralTermsView;
-  productId: string;
-  productVersionId: string;
   mainMember: { name: string; dateOfBirth: string | null } | null;
   register: UseFormRegister<OpenCaseFormInput>;
   control: Control<OpenCaseFormInput, unknown, OpenCaseFormValues>;
@@ -46,11 +36,7 @@ export function FuneralLivesFields({
 }) {
   const dependants = useFieldArray({ control, name: 'funeralDependants' });
   const planCode = useWatch({ control, name: 'funeralPlanCode' });
-  const frequency = useWatch({ control, name: 'premiumFrequency' });
-  const commencement = useWatch({ control, name: 'proposedCommencementDate' });
   const rows = useWatch({ control, name: 'funeralDependants' });
-  const [quote, setQuote] = useState<FuneralQuoteView | null>(null);
-  const [refusal, setRefusal] = useState<ApiError | null>(null);
 
   // The sum assured follows the plan: it IS the main member's benefit (R3).
   const mainBenefit = terms.benefits.find((b) => b.planCode === planCode && b.role === 'MAIN_MEMBER')?.benefit;
@@ -58,27 +44,8 @@ export function FuneralLivesFields({
     setValue('sumAssuredAmount', mainBenefit != null ? mainBenefit.toFixed(2) : '');
   }, [mainBenefit, setValue]);
 
-  const quotable = planCode !== '' && frequency !== '' && mainMember?.dateOfBirth != null;
-  const lives = JSON.stringify(toFuneralDependants({ funeralDependants: rows ?? [] }));
-  useEffect(() => {
-    if (!quotable || !mainMember?.dateOfBirth) return undefined;
-    const timer = setTimeout(() => {
-      quoteFuneral(productId, productVersionId, {
-        planCode,
-        frequency: frequency as 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY',
-        ...(commencement ? { asOf: commencement } : {}),
-        lives: [
-          { role: 'MAIN_MEMBER', name: mainMember.name, dateOfBirth: mainMember.dateOfBirth },
-          ...(JSON.parse(lives) as { role: FuneralRoleName; fullName: string; dateOfBirth: string; student: boolean }[])
-            .map((d) => ({ role: d.role, name: d.fullName, dateOfBirth: d.dateOfBirth || null, student: d.student })),
-        ],
-      }).then(
-        (q) => { setQuote(q); setRefusal(null); },
-        (e: unknown) => { setQuote(null); setRefusal(toApiError(e)); },
-      );
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [quotable, productId, productVersionId, planCode, frequency, commencement, lives, mainMember?.name, mainMember?.dateOfBirth]);
+  /* The family price now lives in the Quotation panel with every other product: useFuneralQuotation,
+     called there, asks exactly what this used to ask. */
 
   /**
    * The roles this cover will actually take -- and so the only ones the form offers (2026-10-16).
@@ -180,41 +147,6 @@ export function FuneralLivesFields({
       </fieldset>
       )}
 
-      {refusal && <InlineError error={refusal} lead="This family cannot be covered as entered:" />}
-      {quote && (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
-            <caption className="sr-only">Family quote</caption>
-            <thead>
-              <tr className="text-left text-xs text-muted-foreground">
-                <th className="p-2">Life</th><th className="p-2">Role</th><th className="p-2">Age</th>
-                <th className="p-2">Benefit</th><th className="p-2">Yearly premium</th>
-              </tr>
-            </thead>
-            <tbody>
-              {quote.lines.map((line, i) => (
-                <tr key={i} className="border-t border-border">
-                  <td className="p-2">{line.name}</td>
-                  <td className="p-2">{FUNERAL_ROLE_LABELS[line.role as FuneralRoleName]}</td>
-                  <td className="p-2">{line.age}</td>
-                  <td className="p-2">{tzs(line.benefit)}</td>
-                  <td className="p-2">{tzs(line.yearlyPremium)}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t border-border font-medium">
-                <td className="p-2" colSpan={4}>Family total a year</td>
-                <td className="p-2">{tzs(quote.totalYearlyPremium)}</td>
-              </tr>
-              <tr className="font-medium">
-                <td className="p-2" colSpan={4}>Each {quote.frequency.toLowerCase()} payment</td>
-                <td className="p-2" aria-label="Instalment">{tzs(quote.instalment)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
     </div>
   );
 }

@@ -41,6 +41,7 @@ export type FuneralQuoteRequest = ProductComponents['schemas']['FuneralQuoteRequ
 export type FuneralQuoteView = ProductComponents['schemas']['FuneralQuote'];
 export type FuneralApplicationView = UnderwritingComponents['schemas']['FuneralApplication'];
 export type FuneralApplicationRequest = UnderwritingComponents['schemas']['FuneralApplicationRequest'];
+export type QuotationDocumentRequest = UnderwritingComponents['schemas']['QuotationDocumentRequest'];
 // Group funeral schemes (2026-10-07).
 export type GroupFuneralFamilyView = PolicyComponents['schemas']['GroupFuneralFamilyView'];
 export type GroupFuneralLifeInput = PolicyComponents['schemas']['GroupFuneralLifeInput'];

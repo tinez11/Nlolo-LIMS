@@ -1,13 +1,20 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { quotePremium } from '@/api/products';
 import { quoteProductSavings } from '@/api/accumulation';
+import { quoteFuneral } from '@/api/funeral';
+import { downloadQuotationDocument } from '@/api/underwriting';
 import type { SavingsQuoteView } from '@/api/types';
+import * as download from '@/lib/download';
 import { QuotationPreview } from './QuotationPreview';
 import type { QuotationInputs } from './useQuotation';
 
 vi.mock('@/api/products');
 vi.mock('@/api/accumulation');
+vi.mock('@/api/funeral');
+vi.mock('@/api/underwriting');
+vi.mock('@/lib/download', () => ({ saveBlob: vi.fn() }));
 
 const COMPLETE: QuotationInputs = {
   productId: 'prod-1',
@@ -209,11 +216,43 @@ describe('QuotationPreview, per pricing basis', () => {
     expect(screen.queryByText('Value at maturity')).not.toBeInTheDocument();
   });
 
-  /** Priced by its own fields on this same form: two prices for one thing on one screen is a defect, not a feature. */
-  it('points at the fields that price a funeral plan rather than quoting it twice', () => {
-    render0(COMPLETE, 'FUN');
+  /**
+   * A funeral plan is priced per life from the plan's grid, and those lines belong here with every other price
+   * (2026-10-16, the user's call). They used to sit under the family fields -- the one place a reader looking for
+   * the price would not think to look once every other product answered in this panel.
+   */
+  it('prices a funeral family here, a line per life', async () => {
+    vi.mocked(quoteFuneral).mockResolvedValue({
+      planCode: 'A',
+      frequency: 'MONTHLY',
+      lines: [
+        { name: 'Martin Lema', role: 'MAIN_MEMBER', age: 24, benefit: 4000000, yearlyPremium: 100000 },
+        { name: 'Asha Lema', role: 'SPOUSE', age: 22, benefit: 2000000, yearlyPremium: 60000 },
+      ],
+      totalYearlyPremium: 160000,
+      instalment: 13600,
+    } as never);
 
-    expect(screen.getByText(/family fields above price this plan/)).toBeInTheDocument();
+    render(
+      <QuotationPreview
+        inputs={COMPLETE}
+        premiumPayingTermMonths=""
+        commencementDate="2026-10-16"
+        portfolioCode="FUN"
+        productVersionId="ver-1"
+        funeral={{
+          planCode: 'A',
+          mainMember: { name: 'Martin Lema', dateOfBirth: '2002-01-01' },
+          dependants: [],
+        }}
+      />,
+    );
+
+    expect(await screen.findByText('Martin Lema')).toBeInTheDocument();
+    expect(screen.getByText('Main member')).toBeInTheDocument();
+    expect(screen.getByText('TZS 160,000.00')).toBeInTheDocument();
+    expect(screen.getByLabelText('Instalment')).toHaveTextContent('TZS 13,600.00');
+    // It never asks the premium engine: a funeral plan has no sum-assured rate to read.
     expect(quotePremium).not.toHaveBeenCalled();
     expect(quoteProductSavings).not.toHaveBeenCalled();
   });
@@ -230,5 +269,59 @@ describe('QuotationPreview, per pricing basis', () => {
     render0(COMPLETE, 'SOMETHING_NEW');
 
     expect(await screen.findByText('TZS 76,000.00')).toBeInTheDocument();
+  });
+});
+
+/**
+ * The quotation as a PDF the applicant signs (2026-10-16).
+ *
+ * <p>What matters is what is SENT: the form's inputs and never a figure from the screen, because the server quotes
+ * again from the applicant's own record and a premium that travelled through a browser is not one anyone can sign.
+ */
+describe('QuotationPreview, the downloadable quotation', () => {
+  const renderWithApplicant = (portfolioCode: string, applicantPartyId = 'party-1') =>
+    render(
+      <QuotationPreview
+        inputs={COMPLETE}
+        premiumPayingTermMonths=""
+        commencementDate="2026-10-16"
+        portfolioCode={portfolioCode}
+        productVersionId="ver-12345678"
+        applicantPartyId={applicantPartyId}
+      />,
+    );
+
+  it('sends the inputs, never a figure, and saves the PDF', async () => {
+    vi.mocked(downloadQuotationDocument).mockResolvedValue(new Blob(['pdf']));
+    renderWithApplicant('END');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Download the quotation as PDF' }));
+
+    await waitFor(() => expect(download.saveBlob).toHaveBeenCalledWith(expect.any(Blob), 'quotation-ver-1234.pdf'));
+    const sent = vi.mocked(downloadQuotationDocument).mock.calls[0]![0];
+    expect(sent).toMatchObject({
+      productId: 'prod-1',
+      productVersionId: 'ver-12345678',
+      applicantPartyId: 'party-1',
+      sumAssured: 5000000,
+      frequency: 'MONTHLY',
+      policyTermMonths: 60,
+    });
+    // No premium crosses the boundary: the server prices the document itself.
+    expect(JSON.stringify(sent)).not.toContain('76000');
+  });
+
+  /** Nothing to put a name on yet: the button waits for an applicant rather than sending a request sure to fail. */
+  it('waits for an applicant before it can be downloaded', () => {
+    renderWithApplicant('END', '');
+
+    expect(screen.getByRole('button', { name: 'Download the quotation as PDF' })).toBeDisabled();
+  });
+
+  /** A scheme is priced by its contract, not per life, so there is no quotation here to hand over. */
+  it('offers no document where this panel does not price the product', () => {
+    renderWithApplicant('CRL');
+
+    expect(screen.queryByRole('button', { name: 'Download the quotation as PDF' })).not.toBeInTheDocument();
   });
 });

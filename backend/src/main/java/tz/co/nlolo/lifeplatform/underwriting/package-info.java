@@ -10,5 +10,9 @@
 // This is the same validation, one field over, that openCase already performs against
 // `party::api` for the applicant: check the outbound reference at the boundary where whoever
 // supplied it is still present to fix it.
-@org.springframework.modulith.ApplicationModule(allowedDependencies = { "party::api", "product::api", "document::api", "refdata::api", "distribution::api" })
+//
+// accumulation::api added (2026-10-16) for the quotation document: a savings product is priced from its deposit
+// grid or its declared rate, which accumulation owns, and a quotation printed for an applicant to sign has to carry
+// the figure the policy will actually earn. No cycle: accumulation depends on policy, product and document only.
+@org.springframework.modulith.ApplicationModule(allowedDependencies = { "party::api", "product::api", "document::api", "refdata::api", "distribution::api", "accumulation::api" })
 package tz.co.nlolo.lifeplatform.underwriting;

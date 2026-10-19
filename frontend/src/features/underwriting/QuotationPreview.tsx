@@ -6,6 +6,11 @@ import { formatMoney } from '@/lib/money';
 import { PREMIUM_FREQUENCY_LABELS } from '@/api/types';
 import { DEFAULT_OCCUPATION_CLASS, useQuotation, type QuotationInputs } from './useQuotation';
 import { useSavingsQuotation } from './useSavingsQuotation';
+import { DownloadQuotationButton } from './DownloadQuotationButton';
+import type { QuotationDocumentRequest } from '@/api/types';
+import { useFuneralQuotation, type FuneralDependantInput, type FuneralQuotationInputs } from './useFuneralQuotation';
+import { InlineError } from '@/components/InlineError';
+import { FUNERAL_ROLE_LABELS, type FuneralRoleName } from '@/features/products/funeralSchema';
 
 /**
  * A money figure the SERVER sent as a JSON number.
@@ -28,6 +33,9 @@ function money(amount: number | undefined, currency: string | undefined): string
  * column and can be read down. A {@code suffix} rides inside that same cell -- the premium's frequency, which
  * belongs to the figure rather than being a column of its own.
  */
+/** A funeral figure: the quote endpoint answers in JSON numbers, always in the product's own TZS. */
+const tzs = (amount: number) => formatMoney({ amount: String(amount), currencyCode: 'TZS' });
+
 function Row({ label, value, suffix }: { label: string; value: string; suffix?: string | undefined }) {
   return (
     <div className="flex items-baseline gap-4 px-4 py-2">
@@ -48,7 +56,7 @@ function Row({ label, value, suffix }: { label: string; value: string; suffix?: 
  * with a red 422 ("carries no base rate table, so it cannot be priced") on a product working exactly as designed.
  * A quotation panel that only ever works for term and endowment is not a quotation panel.
  */
-type PricingBasis = 'PREMIUM' | 'SAVINGS' | 'OWN_SECTION' | 'PER_SCHEME';
+type PricingBasis = 'PREMIUM' | 'SAVINGS' | 'FUNERAL' | 'OWN_SECTION' | 'PER_SCHEME';
 
 const BASIS_BY_PORTFOLIO: Record<string, PricingBasis> = {
   // Priced from a sum assured and the version's base rate table.
@@ -60,9 +68,10 @@ const BASIS_BY_PORTFOLIO: Record<string, PricingBasis> = {
   // Priced from money paid in and a rate: a deposit's grid, or an account's declared rate.
   SAV: 'SAVINGS',
   DEP: 'SAVINGS',
-  // Priced by its own fields on THIS form, which ask for what its own quoter needs -- a family's lives, an annuity
-  // form, a fund split. Repeating their figures here would be two prices for one thing on one screen.
-  FUN: 'OWN_SECTION',
+  // Priced from the plan's own premium grid, a line per life -- quoted here, from the family entered above.
+  FUN: 'FUNERAL',
+  // Priced by its own fields on THIS form, which ask for what its own quoter needs -- an annuity form, a fund
+  // split. Repeating their figures here would be two prices for one thing on one screen.
   IANN: 'OWN_SECTION',
   DANN: 'OWN_SECTION',
   PEN: 'OWN_SECTION',
@@ -74,7 +83,6 @@ const BASIS_BY_PORTFOLIO: Record<string, PricingBasis> = {
 
 /** What prices this one, named so a staff member can go and look at it. */
 const OWN_SECTION_BY_PORTFOLIO: Record<string, string> = {
-  FUN: 'The family fields above price this plan: a line per life from the plan’s own premium grid, the family’s yearly total and the instalment.',
   IANN: 'The Annuity fields above price this purchase: the form chosen, the annuitant’s age and the version’s annuity rate decide the income.',
   DANN: 'A deferred annuity accumulates contributions now and buys the income at vesting, so there is no premium to rate today — the retirement age above sets when that happens.',
   PEN: 'A pension accumulates contributions now and buys the income at retirement, so there is no premium to rate today — the retirement age above sets when that happens.',
@@ -87,6 +95,8 @@ export function QuotationPreview({
   commencementDate,
   portfolioCode,
   productVersionId,
+  funeral,
+  applicantPartyId = '',
 }: {
   inputs: QuotationInputs;
   premiumPayingTermMonths: string;
@@ -94,6 +104,16 @@ export function QuotationPreview({
   /** The product's IFRS 17 portfolio, which is also the sharpest statement of how it is priced. */
   portfolioCode?: string | null | undefined;
   productVersionId: string;
+  /** The proposer, whose name the downloadable quotation carries. Blank until one is chosen. */
+  applicantPartyId?: string | undefined;
+  /** A funeral plan's own inputs: the plan and the family entered above, which is what prices it. */
+  funeral?:
+    | {
+        planCode: string;
+        mainMember: { name: string; dateOfBirth: string | null } | null;
+        dependants: FuneralDependantInput[];
+      }
+    | undefined;
 }) {
   // An unknown or absent portfolio keeps the original behaviour: ask for a premium and show whatever comes back.
   const basis: PricingBasis = (portfolioCode && BASIS_BY_PORTFOLIO[portfolioCode]) || 'PREMIUM';
@@ -128,6 +148,20 @@ export function QuotationPreview({
         />
       )}
 
+      {basis === 'FUNERAL' && (
+        <FuneralQuotation
+          inputs={{
+            productId: inputs.productId,
+            productVersionId,
+            planCode: funeral?.planCode ?? '',
+            frequency: inputs.frequency,
+            commencement: commencementDate,
+            mainMember: funeral?.mainMember ?? null,
+            dependants: funeral?.dependants ?? [],
+          }}
+        />
+      )}
+
       {basis === 'OWN_SECTION' && (
         <p className="px-4 pb-4 text-xs text-muted-foreground">
           {(portfolioCode && OWN_SECTION_BY_PORTFOLIO[portfolioCode]) ??
@@ -141,8 +175,80 @@ export function QuotationPreview({
           lives or the balances it covers, so there is no individual premium to quote here.
         </p>
       )}
+
+      {/* Only where this panel prices the product itself: an annuity or a unit-linked policy is priced by its own
+          fields, and a scheme by its contract, so there is no quotation here to hand over. */}
+      {(basis === 'PREMIUM' || basis === 'SAVINGS' || basis === 'FUNERAL') && (
+        <DownloadQuotationButton
+          request={quotationRequest(basis, {
+            inputs,
+            premiumPayingTermMonths,
+            commencementDate,
+            productVersionId,
+            applicantPartyId,
+            funeral,
+          })}
+        />
+      )}
     </Panel>
   );
+}
+
+/**
+ * The document's INPUTS, as the form holds them -- never a figure from the screen.
+ *
+ * <p>Null until there is enough to ask: a product, an applicant, and what that basis cannot be quoted without. The
+ * server re-checks all of it; this only keeps the button from sending a request that is certain to be refused.
+ */
+function quotationRequest(
+  basis: PricingBasis,
+  form: {
+    inputs: QuotationInputs;
+    premiumPayingTermMonths: string;
+    commencementDate: string;
+    productVersionId: string;
+    applicantPartyId: string;
+    funeral?: { planCode: string; mainMember: { name: string; dateOfBirth: string | null } | null; dependants: FuneralDependantInput[] } | undefined;
+  },
+): QuotationDocumentRequest | null {
+  const { inputs, productVersionId, applicantPartyId } = form;
+  if (!inputs.productId || !productVersionId || !applicantPartyId) return null;
+  const base = {
+    productId: inputs.productId,
+    productVersionId,
+    applicantPartyId,
+    currency: inputs.sumAssuredCurrency || 'TZS',
+    commencement: form.commencementDate || null,
+  };
+
+  if (basis === 'FUNERAL') {
+    const main = form.funeral?.mainMember;
+    if (!form.funeral?.planCode || !inputs.frequency || !main?.dateOfBirth) return null;
+    return {
+      ...base,
+      frequency: inputs.frequency,
+      funeralPlanCode: form.funeral.planCode,
+      lives: [
+        { role: 'MAIN_MEMBER', name: main.name, dateOfBirth: main.dateOfBirth, student: false },
+        ...form.funeral.dependants.map((d) => ({
+          role: d.role as 'SPOUSE' | 'CHILD' | 'PARENT' | 'EXTENDED',
+          name: d.fullName,
+          dateOfBirth: d.dateOfBirth || null,
+          student: d.student,
+        })),
+      ],
+    };
+  }
+
+  if (!inputs.sumAssuredAmount || Number(inputs.sumAssuredAmount) <= 0) return null;
+  if (basis === 'PREMIUM' && !inputs.frequency) return null;
+  return {
+    ...base,
+    sumAssured: Number(inputs.sumAssuredAmount),
+    frequency: inputs.frequency || null,
+    policyTermMonths: inputs.policyTermMonths ? Number(inputs.policyTermMonths) : null,
+    premiumPayingTermMonths: form.premiumPayingTermMonths ? Number(form.premiumPayingTermMonths) : null,
+  };
 }
 
 /**
@@ -296,6 +402,85 @@ function PremiumQuotation({
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * A family priced on one funeral plan, in the Quotation panel with every other product's price (2026-10-16).
+ *
+ * <p>These figures used to sit under the family fields, which is the one place a reader looking for the price would
+ * not think to look once every other product answered here. The request is the same one {@code FuneralLivesFields}
+ * made; only where it is shown has changed.
+ *
+ * <p>A line per life, because a funeral premium IS per life: the plan's grid prices each role and age separately,
+ * and a family total with no lines behind it cannot be checked.
+ */
+function FuneralQuotation({ inputs }: { inputs: FuneralQuotationInputs }) {
+  const quotation = useFuneralQuotation(inputs);
+
+  if (quotation.state === 'incomplete') {
+    return (
+      <p className="px-4 pb-4 text-xs text-muted-foreground">
+        A quotation needs {quotation.missing.join(', ')}. Fill those in above and it appears here.
+      </p>
+    );
+  }
+  if (quotation.state === 'loading') {
+    return <p className="px-4 pb-4 text-xs text-muted-foreground">Pricing…</p>;
+  }
+  if (quotation.state === 'refused') {
+    return (
+      <div className="px-4 pb-4">
+        <InlineError error={quotation.error} lead="This family cannot be covered as entered:" />
+      </div>
+    );
+  }
+
+  const quote = quotation.quote;
+  return (
+    <div className="px-4 pb-4">
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table className="w-full text-sm">
+          <caption className="sr-only">Family quote</caption>
+          <thead>
+            <tr className="text-left text-xs text-muted-foreground">
+              <th className="p-2">Life</th>
+              <th className="p-2">Role</th>
+              <th className="p-2">Age</th>
+              <th className="p-2 text-right">Benefit</th>
+              <th className="p-2 text-right">Yearly premium</th>
+            </tr>
+          </thead>
+          <tbody>
+            {quote.lines.map((line, i) => (
+              <tr key={i} className="border-t border-border">
+                <td className="p-2">{line.name}</td>
+                <td className="p-2">{FUNERAL_ROLE_LABELS[line.role as FuneralRoleName]}</td>
+                <td className="p-2">{line.age}</td>
+                <td className="p-2 text-right whitespace-nowrap">{tzs(line.benefit)}</td>
+                <td className="p-2 text-right whitespace-nowrap">{tzs(line.yearlyPremium)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-border font-medium">
+              <td className="p-2" colSpan={4}>
+                Family total a year
+              </td>
+              <td className="p-2 text-right whitespace-nowrap">{tzs(quote.totalYearlyPremium)}</td>
+            </tr>
+            <tr className="font-medium">
+              <td className="p-2" colSpan={4}>
+                Each {quote.frequency.toLowerCase()} payment
+              </td>
+              <td className="p-2 text-right whitespace-nowrap" aria-label="Instalment">
+                {tzs(quote.instalment)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
   );
 }
 

@@ -49,8 +49,6 @@ function Host({ terms: t, planCode = '' }: { terms: FuneralTermsView; planCode?:
   return (
     <FuneralLivesFields
       terms={t}
-      productId="prod-1"
-      productVersionId="ver-1"
       mainMember={{ name: 'Main Member', dateOfBirth: '1990-01-01' }}
       register={form.register}
       control={form.control as unknown as Parameters<typeof FuneralLivesFields>[0]['control']}
