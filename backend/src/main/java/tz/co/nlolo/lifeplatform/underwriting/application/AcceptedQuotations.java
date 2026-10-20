@@ -28,9 +28,16 @@ public class AcceptedQuotations implements AcceptedQuotationApi {
     private final AcceptedQuotationRepository quotations;
     private final TransactionTemplate tx;
 
-    public AcceptedQuotations(AcceptedQuotationRepository quotations, PlatformTransactionManager transactionManager) {
+    private final ProposalArrivals arrivals;
+    private final tz.co.nlolo.lifeplatform.underwriting.infrastructure.UnderwritingCaseRepository cases;
+
+    public AcceptedQuotations(AcceptedQuotationRepository quotations, PlatformTransactionManager transactionManager,
+                              ProposalArrivals arrivals,
+                              tz.co.nlolo.lifeplatform.underwriting.infrastructure.UnderwritingCaseRepository cases) {
         this.quotations = quotations;
         this.tx = new TransactionTemplate(transactionManager);
+        this.arrivals = arrivals;
+        this.cases = cases;
     }
 
     @Override
@@ -72,6 +79,8 @@ public class AcceptedQuotations implements AcceptedQuotationApi {
                 applicantPartyId, Instant.now()) == 0) {
             throw new UnderwritingValidationException("This quotation was already submitted as a proposal");
         }
+        // A new proposal from an agent: the underwriting team is told, after the commit (the alert email).
+        cases.findByCaseIdAndTenantId(caseId, q.getTenantId()).ifPresent(c -> arrivals.announce(c, 1));
         return view(load(quotationId, ownerSubject));
     }
 

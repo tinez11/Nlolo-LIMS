@@ -136,6 +136,9 @@ function declaredFor(realm: Realm, identity: ReturnType<typeof readIdentity>): B
   ];
 }
 
+/** How often the menu counts are read again while the console is open. */
+export const REFRESH_MS = 2 * 60 * 1000;
+
 export function useNavBadges(
   realm: Realm,
   identity: ReturnType<typeof readIdentity>,
@@ -147,29 +150,41 @@ export function useNavBadges(
     const keys = declaredFor(realm, identity);
     if (keys.length === 0) return;
 
-    void Promise.all(
-      keys.map(async (key) => {
-        try {
-          const count = await LOADERS[key].load();
-          return [key, { count, title: LOADERS[key].title(count) }] as const;
-        } catch {
-          // Deliberately silent and badge-less. A count is a convenience; a
-          // failed one must not surface an error panel over the whole console,
-          // and must not render as "0".
-          return null;
-        }
-      }),
-    ).then((settled) => {
-      if (!live) return;
-      setBadges(Object.fromEntries(settled.filter((entry) => entry !== null)));
-    });
+    const refresh = () =>
+      void Promise.all(
+        keys.map(async (key) => {
+          try {
+            const count = await LOADERS[key].load();
+            return [key, { count, title: LOADERS[key].title(count) }] as const;
+          } catch {
+            // Deliberately silent and badge-less. A count is a convenience; a
+            // failed one must not surface an error panel over the whole console,
+            // and must not render as "0".
+            return null;
+          }
+        }),
+      ).then((settled) => {
+        if (!live) return;
+        setBadges(Object.fromEntries(settled.filter((entry) => entry !== null)));
+      });
+
+    refresh();
+    // Kept current (2026-10-20): a proposal an agent submits while an underwriter is working used to go
+    // unnoticed until a reload. Every REFRESH_MS while the tab is visible, and at once on coming back to it --
+    // not on every navigation, which would add a request per count to every click.
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refresh();
+    }, REFRESH_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       live = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
     };
-    // Loaded once per realm mount. These are ambient counts, not live state --
-    // re-fetching on every navigation would add three requests to every click
-    // for a number nobody is watching change.
   }, [realm, identity]);
 
   return badges;

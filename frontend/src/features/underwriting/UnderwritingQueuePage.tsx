@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useUnderwritingStore } from '@/store/underwritingStore';
 import { UnderwritingCaseDrawer } from './UnderwritingCaseDrawer';
+import { ArrivalsTable } from './ArrivalsTable';
 import { FilterChip } from '@/components/FilterChip';
 import { Badge } from '@/components/ui/badge';
 import { Tip } from '@/components/ui/tooltip';
@@ -34,19 +35,35 @@ export function UnderwritingQueuePage() {
       ? (statusParam as UnderwritingCaseStatus)
       : undefined;
   const page = Math.max(0, Number(params.get('page') ?? '0') || 0);
+  // The arrivals views (2026-10-20): what is waiting, most recently arrived first, and what came back from agents.
+  const viewParam = params.get('view');
+  const view: 'arrivals' | 'returned' | null = viewParam === 'arrivals' || viewParam === 'returned' ? viewParam : null;
+  const [arrivalsTotal, setArrivalsTotal] = useState<number | null>(null);
 
   const list = useUnderwritingStore((s) => s.list);
   const loadList = useUnderwritingStore((s) => s.loadList);
 
   useEffect(() => {
+    if (view) return;
     void loadList({ ...(status ? { status } : {}), page, pageSize: DEFAULT_PAGE_SIZE });
-  }, [loadList, status, page]);
+  }, [loadList, status, page, view]);
 
-  function update(next: { status?: UnderwritingCaseStatus | undefined; page?: number }) {
+  function update(next: {
+    status?: UnderwritingCaseStatus | undefined;
+    page?: number;
+    view?: 'arrivals' | 'returned' | null;
+  }) {
     const merged = new URLSearchParams(params);
+    if ('view' in next) {
+      if (next.view) merged.set('view', next.view);
+      else merged.delete('view');
+      merged.delete('status');
+      merged.delete('page');
+    }
     if ('status' in next) {
       if (next.status) merged.set('status', next.status);
       else merged.delete('status');
+      merged.delete('view');
       merged.delete('page');
     }
     if (next.page !== undefined) {
@@ -59,17 +76,24 @@ export function UnderwritingQueuePage() {
   const total = list.data?.page.totalElements ?? null;
   const busy = list.status === 'loading';
 
-  const count: Stat = {
-    label: status ? `${status.toLowerCase().replace('_', ' ')} cases` : 'cases',
-    value: total,
-    pending: isInitialLoad(list),
-    hint:
-      list.status === 'error' && total === null
-        ? 'could not load'
-        : status
-          ? 'matching this filter'
-          : 'in this tenant',
-  };
+  const count: Stat = view
+    ? {
+        label: view === 'returned' ? 'back from agents' : 'waiting',
+        value: arrivalsTotal,
+        pending: arrivalsTotal === null,
+        hint: 'most recently arrived first',
+      }
+    : {
+        label: status ? `${status.toLowerCase().replace('_', ' ')} cases` : 'cases',
+        value: total,
+        pending: isInitialLoad(list),
+        hint:
+          list.status === 'error' && total === null
+            ? 'could not load'
+            : status
+              ? 'matching this filter'
+              : 'in this tenant',
+      };
 
   const columns: Column<UnderwritingCaseView>[] = [
     {
@@ -245,19 +269,34 @@ export function UnderwritingQueuePage() {
       <div className="px-6 pb-6">
         <div className="rounded-lg border border-border bg-surface">
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
-            <FilterChip label="All" active={status === undefined} onClick={() => update({ status: undefined })} />
+            {/* What is waiting, newest arrival first -- a resubmission arrives again -- and what came back from agents. */}
+            <FilterChip label="Awaiting decision" active={view === 'arrivals'} onClick={() => update({ view: 'arrivals' })} />
+            <FilterChip label="Back from agents" active={view === 'returned'} onClick={() => update({ view: 'returned' })} />
+            <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+            <FilterChip label="All" active={!view && status === undefined} onClick={() => update({ status: undefined })} />
             {UNDERWRITING_CASE_STATUSES.map((value) => (
               <FilterChip
                 key={value}
                 label={<StatusBadge kind="underwritingCase" value={value} />}
                 bare
-                active={status === value}
+                active={!view && status === value}
                 onClick={() => update({ status: value })}
               />
             ))}
           </div>
 
-          {renderBody()}
+          {view ? (
+            <ArrivalsTable
+              resubmittedOnly={view === 'returned'}
+              page={page}
+              onPage={(next) => update({ page: next })}
+              previewing={previewing}
+              onPreview={setPreviewing}
+              onTotal={setArrivalsTotal}
+            />
+          ) : (
+            renderBody()
+          )}
         </div>
       </div>
 

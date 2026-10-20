@@ -62,6 +62,7 @@ import static tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.asTenant;
 @AutoConfigureMockMvc
 @SpringBootTest(classes = Application.class, webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @Import({FuneralTestFixtures.class, AnnuityTestFixtures.class, AccumulationTestFixtures.class})
+@org.springframework.test.context.event.RecordApplicationEvents
 class ProposalAmendmentIntegrationTest {
 
     @Container
@@ -88,6 +89,7 @@ class ProposalAmendmentIntegrationTest {
     @Autowired private ObjectMapper mapper;
     @Autowired private ProductApi productApi;
     @Autowired private PartyApi partyApi;
+    @Autowired private org.springframework.test.context.event.ApplicationEvents events;
 
     private RequestPostProcessor agent(String subject) {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
@@ -363,6 +365,44 @@ class ProposalAmendmentIntegrationTest {
         // And a decided case is not returned.
         decide(p.caseId(), "ACCEPT", "Fine").andExpect(status().isOk());
         returnIt(p.caseId(), TWO_REASONS).andExpect(status().isUnprocessableEntity());
+    }
+
+    /**
+     * The underwriter's arrivals: a proposal an agent corrected and sent back is at the TOP, marked as round 2 -- not
+     * wherever it was first opened -- and "back from agents" holds it alone. Its arrival is announced for the email.
+     */
+    @Test
+    void aResubmittedProposalArrivesAtTheTopMarkedAsItsRound() throws Exception {
+        Opened older = proposal("agent-q");
+        Opened newer = proposal("agent-q");
+        returnIt(older.caseId(), TWO_REASONS).andExpect(status().isOk());
+        events.clear();
+        resubmit("agent-q", older.caseId()).andExpect(status().isOk());
+
+        JsonNode all = json(mvc.perform(get("/underwriting/arrivals").with(underwriter("uw-1"))).andExpect(status().isOk()));
+        assertThat(all.path("items").get(0).path("caseView").path("caseId").asText()).isEqualTo(older.caseId().toString());
+        assertThat(all.path("items").get(0).path("round").asInt()).isEqualTo(2);
+        assertThat(all.path("items").get(0).path("resubmitted").asBoolean()).isTrue();
+        JsonNode newerRow = null;
+        for (JsonNode row : all.path("items")) {
+            if (row.path("caseView").path("caseId").asText().equals(newer.caseId().toString())) newerRow = row;
+        }
+        assertThat(newerRow).isNotNull();
+        assertThat(newerRow.path("round").asInt()).isEqualTo(1);
+
+        JsonNode back = json(mvc.perform(get("/underwriting/arrivals?resubmittedOnly=true").with(underwriter("uw-1")))
+            .andExpect(status().isOk()));
+        assertThat(back.path("items")).extracting(r -> r.path("caseView").path("caseId").asText())
+            .contains(older.caseId().toString()).doesNotContain(newer.caseId().toString());
+
+        // Staff only.
+        mvc.perform(get("/underwriting/arrivals").with(agent("agent-q"))).andExpect(status().isForbidden());
+
+        // Announced for the underwriting team's email, as round 2.
+        assertThat(events.stream(tz.co.nlolo.lifeplatform.DomainEventEnvelope.class)
+                .filter(e -> e.eventType().equals("underwriting.ProposalSubmitted")))
+            .singleElement()
+            .satisfies(e -> assertThat(((java.util.Map<?, ?>) e.payload()).get("round")).isEqualTo(2));
     }
 
     private static JsonNode find(JsonNode list, UUID caseId) {

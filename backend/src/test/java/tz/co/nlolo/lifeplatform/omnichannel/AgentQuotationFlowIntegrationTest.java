@@ -70,6 +70,7 @@ import static tz.co.nlolo.lifeplatform.annuity.AnnuityTestFixtures.asTenant;
 @AutoConfigureMockMvc
 @SpringBootTest(classes = Application.class, webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @Import({FuneralTestFixtures.class, AnnuityTestFixtures.class, AccumulationTestFixtures.class})
+@org.springframework.test.context.event.RecordApplicationEvents
 class AgentQuotationFlowIntegrationTest {
 
     @Container
@@ -100,6 +101,7 @@ class AgentQuotationFlowIntegrationTest {
     @Autowired private UnderwritingApi underwritingApi;
     @Autowired private AcceptedQuotationApi acceptedQuotations;
     @Autowired private FuneralTestFixtures funeral;
+    @Autowired private org.springframework.test.context.event.ApplicationEvents events;
 
     private RequestPostProcessor agent(String subject) {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
@@ -232,6 +234,13 @@ class AgentQuotationFlowIntegrationTest {
 
         UUID caseId = UUID.fromString(submitted.path("caseId").asText());
         assertThat(submitted.path("proposalNumber").asText()).isNotBlank();
+        // Announced for the underwriting team's email, as a first submission.
+        assertThat(events.stream(tz.co.nlolo.lifeplatform.DomainEventEnvelope.class)
+                .filter(e -> e.eventType().equals("underwriting.ProposalSubmitted"))
+                .map(e -> (java.util.Map<?, ?>) e.payload())
+                .filter(p -> caseId.toString().equals(p.get("caseId"))))
+            .singleElement()
+            .satisfies(p -> assertThat(p.get("round")).isEqualTo(1));
         UnderwritingCaseView opened = asTenant(TENANT, () -> underwritingApi.getCase(caseId));
         assertThat(opened.applicantPartyId()).isEqualTo(client);
         assertThat(opened.productVersionId()).isEqualTo(product[1]);

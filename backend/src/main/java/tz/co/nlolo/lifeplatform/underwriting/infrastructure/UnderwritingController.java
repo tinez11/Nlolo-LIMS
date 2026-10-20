@@ -602,6 +602,27 @@ public class UnderwritingController {
         return ResponseEntity.ok(amendments.needsAction(partyApi.partyIdsRegisteredBy(jwt.getSubject()), since));
     }
 
+    /**
+     * What is waiting on an underwriter, most recently arrived first (2026-10-20) -- a resubmission counts as arriving
+     * again, so a proposal an agent has just corrected is at the top rather than wherever it was first opened. With
+     * {@code resubmittedOnly}, the ones that came back from agents alone.
+     */
+    @GetMapping("/arrivals")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<ArrivalsResponse> arrivals(@RequestParam(defaultValue = "false") boolean resubmittedOnly,
+                                                     @RequestParam(defaultValue = "0") int page,
+                                                     @RequestParam(defaultValue = "20") int pageSize) {
+        Page<ProposalAmendmentApi.Arrival> result = amendments.arrivals(resubmittedOnly,
+            PageRequest.of(Math.max(0, page), Math.min(Math.max(1, pageSize), 100)));
+        return ResponseEntity.ok(new ArrivalsResponse(result.getContent(),
+            new UnderwritingCaseSearchResponse.PageMetaDto(result.getNumber(), result.getSize(),
+                (int) result.getTotalElements())));
+    }
+
+    /** {@code GET /underwriting/arrivals}: the rows, and the page in the shape the case list already uses. */
+    public record ArrivalsResponse(List<ProposalAmendmentApi.Arrival> items,
+                                   UnderwritingCaseSearchResponse.PageMetaDto page) {}
+
     /** How long a decline stays on the agent's list after it is decided: long enough to have told the customer. */
     static final int DECLINES_SHOWN_DAYS = 30;
 

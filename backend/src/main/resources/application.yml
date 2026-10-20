@@ -152,6 +152,11 @@ communication:
     # Mailpit; the prod profile defaults it OFF until a mail provider exists, and EmailSenderAdapter then records a
     # FAILED dispatch saying so rather than attempting a server that is not there.
     enabled: ${MAIL_ENABLED:true}
+  # Who is emailed when an agent submits or resubmits a proposal (2026-10-20): the underwriting team. Comma-separated;
+  # blank sends nothing. Dev points at a Mailpit address so the alert can be seen at http://localhost:8025.
+  underwriting-alerts: ${UNDERWRITING_ALERT_EMAILS:underwriting@nlolo.local}
+  # Where the email's link opens the case -- the staff console's own address.
+  console-url: ${CONSOLE_URL:http://localhost:5173}
 
 
 server:

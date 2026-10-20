@@ -817,6 +817,33 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/CaseEvent' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /underwriting/arrivals:
+    get:
+      summary: What is waiting on an underwriter, most recently arrived first
+      description: >-
+        Open and in-review cases ordered by when they last arrived (2026-10-20): a resubmission counts as arriving
+        again, so a proposal an agent has just corrected is at the top, not wherever it was first opened. Each row
+        says which round it is in and the agent who introduced the client. resubmittedOnly keeps the ones that came
+        back from agents.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: resubmittedOnly, in: query, schema: { type: boolean, default: false } }
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Arrival' }
+                  page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
   /underwriting/needs-action:
     get:
       summary: The calling agent's proposals waiting on them
@@ -934,6 +961,16 @@ components:
             decidedAt: { type: [string, "null"], format: date-time }
         note: { type: [string, "null"] }
         at: { type: string, format: date-time }
+    Arrival:
+      type: object
+      additionalProperties: false
+      required: [caseView, lastSubmittedAt, round, resubmitted]
+      properties:
+        caseView: { $ref: '#/components/schemas/UnderwritingCaseView' }
+        lastSubmittedAt: { type: string, format: date-time, description: The latest resubmission, else when it was opened }
+        round: { type: integer, description: 1 for a first submission, then one more for each resubmission }
+        resubmitted: { type: boolean }
+        introducedBy: { type: [string, "null"], description: The agent who registered the client; null for staff or self-registered }
     NeedsAction:
       type: object
       additionalProperties: false

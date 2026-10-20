@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { getArrivals } from '@/api/proposalAmendments';
 import { KpiRow, type Kpi } from '@/components/KpiCard';
 import { Panel } from '@/components/Panel';
 import { PartyName } from '@/components/PartyName';
@@ -56,6 +57,17 @@ export function UnderwritingDashboardPanel() {
     void load('underwriting');
   }, [load]);
 
+  // Proposals agents corrected and sent back (2026-10-20). Null -- "Not available" -- if it cannot be read, never 0.
+  const [backFromAgents, setBackFromAgents] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    getArrivals({ resubmittedOnly: true, pageSize: 1 }).then(
+      (p) => { if (live) setBackFromAgents(p.page.totalElements); },
+      () => undefined,
+    );
+    return () => { live = false; };
+  }, []);
+
   if (isInitialLoad(resource)) return <LoadingBlock label="Counting cases" />;
   if (resource.status === 'error' && resource.error && resource.data === null) {
     return <ErrorPanel error={resource.error} onRetry={() => void load('underwriting')} />;
@@ -69,6 +81,12 @@ export function UnderwritingDashboardPanel() {
       value: countValue(view.openCases),
       hint: 'awaiting first review',
       to: '/staff/underwriting?status=OPEN',
+    },
+    {
+      label: 'Back from agents',
+      value: countValue(backFromAgents),
+      hint: 'corrected and resubmitted',
+      to: '/staff/underwriting?view=returned',
     },
     {
       label: 'In review',

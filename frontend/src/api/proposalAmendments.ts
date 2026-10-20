@@ -1,7 +1,7 @@
 import { get, post, put } from '@/lib/http';
 import type { components } from '@/types/api/underwriting';
 import type { components as partyComponents } from '@/types/api/party';
-import type { UnderwritingCaseView } from './types';
+import type { Page, UnderwritingCaseView } from './types';
 
 /**
  * Returned for amendment, amended, resubmitted (2026-10-20). The state machine is the server's: an underwriter returns
@@ -46,6 +46,27 @@ export function getCaseHistory(caseId: string): Promise<CaseEvent[]> {
 
 export function getNeedsAction(): Promise<NeedsAction[]> {
   return get<NeedsAction[]>('/underwriting/needs-action');
+}
+
+export type Arrival = components['schemas']['Arrival'];
+
+/**
+ * What is waiting on an underwriter, most recently arrived first -- a resubmission counts as arriving again
+ * (2026-10-20). `resubmittedOnly` keeps the ones that came back from agents.
+ */
+export async function getArrivals(
+  params: { resubmittedOnly?: boolean; page?: number; pageSize?: number } = {},
+): Promise<Page<Arrival>> {
+  const page = params.page ?? 0;
+  const pageSize = params.pageSize ?? 20;
+  const body = await get<{ items?: Arrival[]; page?: { page?: number; pageSize?: number; totalElements?: number } }>(
+    '/underwriting/arrivals',
+    { params: { resubmittedOnly: params.resubmittedOnly ?? false, page, pageSize } },
+  );
+  return {
+    items: body.items ?? [],
+    page: { page: body.page?.page ?? page, pageSize: body.page?.pageSize ?? pageSize, totalElements: body.page?.totalElements ?? 0 },
+  };
 }
 
 /** The quotation a proposal was opened from; 404 for a case opened any other way. */

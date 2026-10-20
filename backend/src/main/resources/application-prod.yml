@@ -30,3 +30,6 @@ communication:
     # Off until a mail provider is configured (the user's D4): email notifications are recorded FAILED with a
     # reason instead of trying a server that is not there.
     enabled: ${MAIL_ENABLED:false}
+  # Nobody until the team's address is set (2026-10-20): UNDERWRITING_ALERT_EMAILS=a@insurer.tz,b@insurer.tz
+  underwriting-alerts: ${UNDERWRITING_ALERT_EMAILS:}
+  console-url: ${CONSOLE_URL:https://${APP_DOMAIN:localhost}}

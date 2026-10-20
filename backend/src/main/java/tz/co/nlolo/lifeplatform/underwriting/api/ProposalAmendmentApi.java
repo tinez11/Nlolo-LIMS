@@ -58,6 +58,22 @@ public interface ProposalAmendmentApi {
      */
     record NeedsAction(UnderwritingCaseView caseView, List<ReturnReason> reasons, String note, boolean actionable) {}
 
+    /**
+     * A case waiting on an underwriter, as it arrived (2026-10-20): when it was last submitted -- a resubmission counts
+     * as arriving again -- which round it is in, and the agent who introduced the client.
+     *
+     * @param introducedBy the registering agent's name; null where staff or the customer registered the client
+     */
+    record Arrival(UnderwritingCaseView caseView, Instant lastSubmittedAt, int round, boolean resubmitted,
+                   String introducedBy) {}
+
+    /**
+     * Open and in-review cases, the most recently arrived first -- so a proposal an agent has just corrected and sent
+     * back is at the top, not wherever it was first opened. {@code resubmittedOnly} keeps those alone.
+     */
+    org.springframework.data.domain.Page<Arrival> arrivals(boolean resubmittedOnly,
+                                                           org.springframework.data.domain.Pageable pageable);
+
     /** @throws UnderwritingValidationException with no reason, a reason missing its texts, or a case not OPEN/IN_REVIEW */
     UnderwritingCaseView returnForAmendment(UUID caseId, List<ReturnReason> reasons, String note, String returnedBy);
 

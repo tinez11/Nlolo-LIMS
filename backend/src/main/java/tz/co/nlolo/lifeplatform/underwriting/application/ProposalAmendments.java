@@ -43,10 +43,14 @@ public class ProposalAmendments implements ProposalAmendmentApi {
     private final FuneralApplications funeralApplications;
     private final PartyApi partyApi;
     private final ObjectMapper objectMapper;
+    private final ProposalArrivals arrivals;
+    private final org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc;
 
     public ProposalAmendments(UnderwritingCaseRepository cases, CaseEventRepository events,
                               UnderwritingApi underwritingApi, UnderwritingApiImpl rules,
-                              FuneralApplications funeralApplications, PartyApi partyApi, ObjectMapper objectMapper) {
+                              FuneralApplications funeralApplications, PartyApi partyApi, ObjectMapper objectMapper,
+                              ProposalArrivals arrivals,
+                              org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc) {
         this.cases = cases;
         this.events = events;
         this.underwritingApi = underwritingApi;
@@ -54,6 +58,46 @@ public class ProposalAmendments implements ProposalAmendmentApi {
         this.funeralApplications = funeralApplications;
         this.partyApi = partyApi;
         this.objectMapper = objectMapper;
+        this.arrivals = arrivals;
+        this.jdbc = jdbc;
+    }
+
+    /**
+     * When each waiting case last arrived: its latest resubmission, else when it was opened. Read from the history
+     * rather than kept as a column, so the case table -- built by hand in sixty-odd test fixtures -- is unchanged.
+     */
+    private static final String ARRIVALS_FROM = """
+          FROM underwriting.underwriting_case c
+          LEFT JOIN (SELECT case_id, max(created_at) AS last_resubmitted, count(*) AS resubmissions
+                       FROM underwriting.case_event WHERE kind = 'RESUBMITTED' GROUP BY case_id) r
+                 ON r.case_id = c.case_id
+         WHERE c.tenant_id = :tenantId AND c.status IN ('OPEN', 'IN_REVIEW')
+           AND (:resubmittedOnly = false OR r.resubmissions > 0)""";
+
+    @Override
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<Arrival> arrivals(boolean resubmittedOnly,
+                                                                  org.springframework.data.domain.Pageable pageable) {
+        var params = new org.springframework.jdbc.core.namedparam.MapSqlParameterSource()
+            .addValue("tenantId", TenantContext.get())
+            .addValue("resubmittedOnly", resubmittedOnly)
+            .addValue("limit", pageable.getPageSize())
+            .addValue("offset", pageable.getOffset());
+        Long total = jdbc.queryForObject("SELECT count(*) " + ARRIVALS_FROM, params, Long.class);
+        List<Arrival> rows = jdbc.query("""
+            SELECT c.case_id, COALESCE(r.last_resubmitted, c.created_at) AS last_submitted,
+                   COALESCE(r.resubmissions, 0) AS resubmissions, c.applicant_party_id
+            """ + ARRIVALS_FROM + """
+
+             ORDER BY last_submitted DESC, c.case_id
+             LIMIT :limit OFFSET :offset""", params, (rs, i) -> {
+                UUID caseId = rs.getObject("case_id", UUID.class);
+                int resubmissions = rs.getInt("resubmissions");
+                return new Arrival(underwritingApi.getCase(caseId),
+                    rs.getTimestamp("last_submitted").toInstant(), resubmissions + 1, resubmissions > 0,
+                    arrivals.introducedBy(rs.getObject("applicant_party_id", UUID.class)));
+            });
+        return new org.springframework.data.domain.PageImpl<>(rows, pageable, total == null ? 0 : total);
     }
 
     @Override
@@ -196,6 +240,8 @@ public class ProposalAmendments implements ProposalAmendmentApi {
         cases.save(c);
         events.save(new CaseEvent(c.getTenantId(), caseId, CaseEvent.Kind.RESUBMITTED, next, resubmittedBy, null, null,
             previous == null ? null : json(previous), trimmed(note)));
+        // Back in the queue: the underwriting team is told, after the commit (the alert email).
+        arrivals.announce(c, next);
         return underwritingApi.getCase(caseId);
     }
 
