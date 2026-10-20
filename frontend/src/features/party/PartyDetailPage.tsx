@@ -1,5 +1,6 @@
-import { useEffect, useMemo, type ReactNode } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
+import { Link, useLocation, useParams } from 'react-router-dom';
+import { cameFrom, type Crumb } from '@/lib/cameFrom';
 import { PageHeader } from '@/components/PageHeader';
 import { Field } from '@/components/Field';
 import { PartyName } from '@/components/PartyName';
@@ -167,6 +168,13 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
     // per scheme for something nobody asked to see.
     if (partyId && soleSchemeNumber) void loadSchemeMembers(partyId, soleSchemeNumber);
   }, [partyId, soleSchemeNumber, loadSchemeMembers]);
+
+  // Where a record opened from here leads back to: the register this client sits in, then the client.
+  const { pathname } = useLocation();
+  const trail: Crumb[] = [
+    ...clientBreadcrumb(realm, party?.partyType),
+    { label: party?.displayName ?? 'Client', to: pathname },
+  ];
 
   const tabs = clientTabs({
     isStaff,
@@ -400,7 +408,9 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
           does not stop anything being fetched. That is what makes the tab a pure reading
           change here, and it is why the count regression tabs caused in plan 2 cannot repeat.
         */}
-        <RecordTabs label="Client sections" tabs={tabs} />
+        <ClientTrail.Provider value={trail}>
+          <RecordTabs label="Client sections" tabs={tabs} />
+        </ClientTrail.Provider>
       </DetailLayout>
     </>
   );
@@ -798,11 +808,19 @@ function MoreRow({ hidden, to, label }: { hidden: number; to?: string; label?: s
 }
 
 /** A row that links somewhere, used by four of the panels. */
+/**
+ * This client's own trail, carried by every link out of its record so the policy, claim or case it
+ * opens offers the way back here (2026-10-20). See `cameFrom`.
+ */
+const ClientTrail = createContext<Crumb[] | null>(null);
+
 function LinkRow({ to, left, right }: { to: string; left: ReactNode; right: ReactNode }) {
+  const trail = useContext(ClientTrail);
   return (
     <Link
       to={to}
       relative="path"
+      {...(trail ? { state: cameFrom(trail) } : {})}
       className="flex items-baseline justify-between gap-3 px-4 py-2 text-xs hover:bg-hover"
     >
       <span className="min-w-0 truncate">{left}</span>

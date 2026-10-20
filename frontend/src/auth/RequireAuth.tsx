@@ -3,7 +3,7 @@ import { useAuth } from 'react-oidc-context';
 import { Navigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { LoadingBlock } from '@/components/states';
-import { readReturnTo, returnToState } from './returnTo';
+import { readReturnRouterState, readReturnTo, returnToState } from './returnTo';
 import { REALM_CONFIG, type Realm } from './realms';
 
 /**
@@ -115,7 +115,13 @@ function RestoreLocation({ realm, children }: { realm: Realm; children: ReactNod
 
   if (isOidcCallback) {
     // The callback URL is never a real destination, so always leave it.
-    return <Navigate to={readReturnTo(auth.user) ?? `/${REALM_CONFIG[realm].slug}`} replace />;
+    return (
+      <Navigate
+        to={readReturnTo(auth.user) ?? `/${REALM_CONFIG[realm].slug}`}
+        state={readReturnRouterState(auth.user)}
+        replace
+      />
+    );
   }
 
   return <>{children}</>;

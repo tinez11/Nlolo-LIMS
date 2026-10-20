@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useBreadcrumb } from '@/lib/cameFrom';
 import { Pause, Play, RotateCcw, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getReferenceCodes } from '@/api/refdata';
@@ -101,6 +102,8 @@ import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
  */
 export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   const { policyNumber = '' } = useParams();
+  // Back to the client it was opened from, when it was (2026-10-20); otherwise the list it sits in.
+  const breadcrumb = useBreadcrumb([{ label: 'Policies', to: `/${realm}/policies` }]);
   const auth = useAuth();
   const canSeeReinsurance = canSeeFinance(readIdentity(auth.user?.access_token));
   const isStaff = realm === 'staff';
@@ -189,7 +192,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             error path is exactly where a person most needs to know where they are and how to
             leave. */}
         <PageHeader
-          breadcrumb={[{ label: 'Policies', to: `/${realm}/policies` }]}
+          breadcrumb={breadcrumb}
           title={policyNumber}
         />
         <div className="px-6 pt-6">
@@ -205,7 +208,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         // The breadcrumb replaces the back link that used to sit above this bar: it says
         // where the record lives as well as offering the way out, and it rides the sticky
         // bar instead of scrolling away with the first panel.
-        breadcrumb={[{ label: 'Policies', to: `/${realm}/policies` }]}
+        breadcrumb={breadcrumb}
         title={policyNumber}
         description={
           policy?.productId ? <ProductName productId={policy.productId} /> : undefined

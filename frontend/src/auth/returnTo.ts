@@ -9,9 +9,26 @@ import type { User } from 'oidc-client-ts';
  * just the first sign-in.
  */
 
-/** Build the `state` payload to hand to signinRedirect. */
-export function returnToState(): { returnTo: string } {
-  return { returnTo: `${window.location.pathname}${window.location.search}` };
+/**
+ * Build the `state` payload to hand to signinRedirect.
+ *
+ * The page's router state goes with it (2026-10-20) -- React Router keeps it in `history.state.usr` -- so a page that
+ * was opened with one, a record's way back to the client it came from, keeps it through the reload's round trip
+ * rather than only its address. It is data: `useBreadcrumb` validates what it reads, as `readReturnTo` does the path.
+ */
+export function returnToState(): { returnTo: string; routerState?: unknown } {
+  const routerState = (window.history.state as { usr?: unknown } | null)?.usr;
+  return {
+    returnTo: `${window.location.pathname}${window.location.search}`,
+    ...(routerState != null ? { routerState } : {}),
+  };
+}
+
+/** The router state carried through the round trip, or null. */
+export function readReturnRouterState(user: User | null | undefined): unknown {
+  const state = user && typeof user === 'object' ? (user as { state?: unknown }).state : undefined;
+  if (typeof state !== 'object' || state === null) return null;
+  return (state as { routerState?: unknown }).routerState ?? null;
 }
 
 /**

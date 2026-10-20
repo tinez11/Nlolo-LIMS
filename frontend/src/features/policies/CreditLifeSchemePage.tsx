@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useBreadcrumb } from '@/lib/cameFrom';
 import { Link, useParams } from 'react-router-dom';
 import {
   downloadEnrolmentReport,
@@ -90,6 +91,11 @@ function defaultOpenSubmission(
 
 export function CreditLifeSchemePage() {
   const { policyNumber = '' } = useParams<{ policyNumber: string }>();
+  // Back to the lender it was opened from, when it was (2026-10-20); otherwise its policy.
+  const breadcrumb = useBreadcrumb([
+    { label: 'Policies', to: '/staff/policies' },
+    { label: policyNumber, to: `/staff/policies/${encodeURIComponent(policyNumber)}` },
+  ]);
   const [chosenEnrolment, setChosenEnrolment] = useState<string | null | undefined>(undefined);
   const [chosenExits, setChosenExits] = useState<string | null | undefined>(undefined);
 
@@ -197,10 +203,7 @@ export function CreditLifeSchemePage() {
           reserved for the things a person can DO to the record. The relationship it was
           expressing is exactly what a breadcrumb is for, so it moves rather than disappearing.
         */
-        breadcrumb={[
-          { label: 'Policies', to: '/staff/policies' },
-          { label: policyNumber, to: `/staff/policies/${encodeURIComponent(policyNumber)}` },
-        ]}
+        breadcrumb={breadcrumb}
         title={
           <span className="flex flex-wrap items-center gap-2">
             {policyNumber}

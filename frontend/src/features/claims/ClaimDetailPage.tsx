@@ -1,4 +1,5 @@
 import { Fragment, useEffect } from 'react';
+import { useBreadcrumb } from '@/lib/cameFrom';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { canSeeFinance, readIdentity, staffRoles } from '@/auth/claims';
@@ -37,6 +38,8 @@ import { claimSections } from './claimSections';
  */
 export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents' } = {}) {
   const { claimId = '' } = useParams();
+  // Back to the client it was opened from, when it was (2026-10-20); otherwise the list it sits in.
+  const breadcrumb = useBreadcrumb([{ label: 'Claims', to: `/${realm}/claims` }]);
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const roles = staffRoles(identity);
@@ -74,7 +77,7 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
   if (detail.data === null && detail.status === 'error' && detail.error) {
     return (
       <>
-        <PageHeader breadcrumb={[{ label: 'Claims', to: `/${realm}/claims` }]} title="Claim" />
+        <PageHeader breadcrumb={breadcrumb} title="Claim" />
         <div className="px-6 pt-6">
           <ErrorPanel error={detail.error} onRetry={() => void loadDetail(claimId)} />
         </div>
@@ -93,7 +96,7 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
         // a ghost button with an arrow, doing navigation's job while pushing the sticky bar
         // 44px down the screen on every claim. Realm-aware, because this page is mounted in
         // the agents console too and an absolute /staff crumb would walk an agent into a 403.
-        breadcrumb={[{ label: 'Claims', to: `/${realm}/claims` }]}
+        breadcrumb={breadcrumb}
         title={claim ? humanizeStatus(claim.claimType) : 'Claim'}
         description={
           claim?.policyNumber ? (

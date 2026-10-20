@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useBreadcrumb } from '@/lib/cameFrom';
 import { Pause, Play } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -45,6 +46,8 @@ import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
  */
 export function AgentDetailPage() {
   const { agentId = '' } = useParams();
+  // Back to the client it was opened from, when it was (2026-10-20); otherwise the list it sits in.
+  const breadcrumb = useBreadcrumb([{ label: 'Agents', to: '/staff/agents' }]);
   const auth = useAuth();
   const roles = staffRoles(readIdentity(auth.user?.access_token));
   const canManage = roles.FINANCE_OFFICER || roles.ADMIN;
@@ -74,7 +77,7 @@ export function AgentDetailPage() {
       <>
         {/* The bar renders on the error path too, so a record that fails to load keeps its
             heading and its way out instead of leaving a bare panel. */}
-        <PageHeader breadcrumb={[{ label: 'Agents', to: '/staff/agents' }]} title="Agent" />
+        <PageHeader breadcrumb={breadcrumb} title="Agent" />
         <div className="px-6 pt-6">
           <ErrorPanel error={detail.error} onRetry={() => void loadAgent(agentId)} />
         </div>
@@ -94,7 +97,7 @@ export function AgentDetailPage() {
         already loaded, so its partyId costs no second request.
       */}
       <PageHeader
-        breadcrumb={[{ label: 'Agents', to: '/staff/agents' }]}
+        breadcrumb={breadcrumb}
         title={agent?.licenseNumber ?? 'Agent'}
         description={
           <span className="flex flex-wrap items-baseline gap-x-2">

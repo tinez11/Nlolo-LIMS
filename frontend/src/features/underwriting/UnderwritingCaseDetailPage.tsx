@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useBreadcrumb } from '@/lib/cameFrom';
 import { useEffect, useState } from 'react';
 import { getFuneralApplication } from '@/api/funeral';
 import type { FuneralApplicationView } from '@/api/types';
@@ -93,6 +94,8 @@ import { ReturnToAgentPanel } from './ReturnToAgentPanel';
  */
 export function UnderwritingCaseDetailPage() {
   const { caseId = '' } = useParams();
+  // Back to the client it was opened from, when it was (2026-10-20); otherwise the queue.
+  const breadcrumb = useBreadcrumb([{ label: 'Underwriting', to: '/staff/underwriting' }]);
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const roles = staffRoles(identity);
@@ -198,7 +201,7 @@ export function UnderwritingCaseDetailPage() {
       <>
         {/* The bar renders on the error path too, so a record that fails to load keeps its
             heading and its way out instead of leaving a bare panel. */}
-        <PageHeader breadcrumb={[{ label: 'Underwriting', to: '/staff/underwriting' }]} title="Underwriting case" />
+        <PageHeader breadcrumb={breadcrumb} title="Underwriting case" />
         <div className="px-6 pt-6">
           <ErrorPanel error={detail.error} onRetry={() => void loadCase(caseId)} />
         </div>
@@ -209,7 +212,7 @@ export function UnderwritingCaseDetailPage() {
   return (
     <>
       <PageHeader
-        breadcrumb={[{ label: 'Underwriting', to: '/staff/underwriting' }]}
+        breadcrumb={breadcrumb}
         title="Underwriting case"
         description={<span className="font-mono text-xs">{caseId}</span>}
         actions={view?.status && <StatusBadge kind="underwritingCase" value={view.status} />}
