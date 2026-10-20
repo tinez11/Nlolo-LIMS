@@ -1,7 +1,7 @@
 import type { QuotationRequest } from '@/api/documents';
 import type { PricingBasis, ProspectInputs } from './pricingBasis';
 import type { FuneralDependantInput } from './useFuneralQuotation';
-import type { QuotationInputs } from './useQuotation';
+import { isAmount, isWholeMonths, type QuotationInputs } from './useQuotation';
 
 /** What the quotation panel holds: the form's inputs, and who is quoted. */
 export interface QuotationForm {
@@ -70,7 +70,11 @@ export function quotationRequest(basis: PricingBasis, form: QuotationForm): Quot
     };
   }
 
-  if (!inputs.sumAssuredAmount || Number(inputs.sumAssuredAmount) <= 0) return null;
+  // Malformed numbers are not sent: "1,000,000" or "10 years" would reach the server as nulls and come back as a
+  // refusal about something else. The form says what is wrong beside the field.
+  if (!isAmount(inputs.sumAssuredAmount)) return null;
+  if (inputs.policyTermMonths && !isWholeMonths(inputs.policyTermMonths)) return null;
+  if (form.premiumPayingTermMonths && !isWholeMonths(form.premiumPayingTermMonths)) return null;
   if (basis === 'PREMIUM' && !inputs.frequency) return null;
   return {
     ...base,

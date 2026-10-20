@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { discardAgentQuotation, getAgentQuotation, type AgentQuotation } from '@/api/agentQuotations';
 import { LoadingBlock } from '@/components/states';
-import { AcceptedQuotationPanel } from '@/features/underwriting/AcceptedQuotationPanel';
+import { AcceptedQuotationPanel, QuotationUnavailable } from '@/features/underwriting/AcceptedQuotationPanel';
 import { toApiError, type ApiError } from '@/lib/apiError';
 import { useProductStore } from '@/store/productStore';
 import { PageHeader } from '@/components/PageHeader';
@@ -86,7 +86,10 @@ export function OnboardCustomerPage() {
 function FromQuotation({ quotationId }: { quotationId: string }) {
   const navigate = useNavigate();
   const [quotation, setQuotation] = useState<AgentQuotation | null>(null);
-  const [error, setError] = useState<ApiError | null>(null);
+  // Two different failures: the quotation could not be read (nothing to onboard from), or the discard failed (the
+  // form and what was typed into it must stay). One shared slot used to replace the whole form on a failed discard.
+  const [loadError, setLoadError] = useState<ApiError | null>(null);
+  const [discardError, setDiscardError] = useState<ApiError | null>(null);
   const [discarding, setDiscarding] = useState(false);
   const products = useProductStore((s) => s.list);
   const loadProducts = useProductStore((s) => s.loadList);
@@ -96,25 +99,43 @@ function FromQuotation({ quotationId }: { quotationId: string }) {
     void loadProducts();
     getAgentQuotation(quotationId).then(
       (q) => { if (live) setQuotation(q); },
-      (e: unknown) => { if (live) setError(toApiError(e)); },
+      (e: unknown) => { if (live) setLoadError(toApiError(e)); },
     );
     return () => { live = false; };
   }, [quotationId, loadProducts]);
 
   async function discard() {
     setDiscarding(true);
+    setDiscardError(null);
     try {
       await discardAgentQuotation(quotationId);
       // Path-relative from customers/new: two segments up is the realm.
       navigate('../../quotation', { relative: 'path' });
     } catch (e) {
-      setError(toApiError(e));
+      const error = toApiError(e);
+      // Already gone -- swept, or discarded in another tab: what the agent wanted is true, so go back regardless.
+      if (error.status === 404) {
+        navigate('../../quotation', { relative: 'path' });
+        return;
+      }
+      setDiscardError(error);
       setDiscarding(false);
     }
   }
 
-  if (error) return <InlineError error={error} />;
+  if (loadError) return <QuotationUnavailable error={loadError} />;
   if (!quotation) return <LoadingBlock label="Loading the quotation…" />;
+  // Submitted already (a reload after the proposal went in): there is nothing left to onboard from it.
+  if (quotation.caseId) {
+    return (
+      <div role="status" className="space-y-2 rounded-md border border-border p-3 text-xs">
+        <p className="font-medium">This quotation was already submitted as proposal {quotation.proposalNumber}.</p>
+        <Button asChild size="sm" variant="outline">
+          <Link to={`/agents/proposals/${quotation.caseId}`}>Open the proposal</Link>
+        </Button>
+      </div>
+    );
+  }
 
   const p = quotation.inputs.prospect;
   const productName = (products.data ?? []).find((x) => x.productId === quotation.productId)?.productName;
@@ -142,6 +163,7 @@ function FromQuotation({ quotationId }: { quotationId: string }) {
           </Button>
         }
       />
+      {discardError && <InlineError error={discardError} lead="The quotation could not be discarded:" />}
     </div>
   );
 }

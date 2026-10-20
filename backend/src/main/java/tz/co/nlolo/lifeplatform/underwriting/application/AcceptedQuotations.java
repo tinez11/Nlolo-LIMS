@@ -66,11 +66,13 @@ public class AcceptedQuotations implements AcceptedQuotationApi {
     public AcceptedQuotationView markSubmitted(UUID quotationId, String ownerSubject, UUID caseId,
                                                UUID applicantPartyId) {
         AcceptedQuotation q = load(quotationId, ownerSubject);
-        if (q.getCaseId() != null) {
+        // Conditional on the row, not on the read above: a second submission racing this one finds nothing to update
+        // and is refused, which rolls back the case it opened instead of leaving it orphaned.
+        if (q.getCaseId() != null || quotations.markSubmittedIfNot(quotationId, q.getTenantId(), caseId,
+                applicantPartyId, Instant.now()) == 0) {
             throw new UnderwritingValidationException("This quotation was already submitted as a proposal");
         }
-        q.submitted(caseId, applicantPartyId);
-        return view(quotations.save(q));
+        return view(load(quotationId, ownerSubject));
     }
 
     @Override

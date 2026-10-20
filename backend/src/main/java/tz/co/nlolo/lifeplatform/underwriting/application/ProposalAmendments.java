@@ -93,6 +93,23 @@ public class ProposalAmendments implements ProposalAmendmentApi {
         if (a.sumAssured() == null || a.sumAssured().signum() <= 0) {
             throw new UnderwritingValidationException("A proposal needs a sum assured or amount above zero");
         }
+        // Said in words here rather than left to the table's CHECKs, which answered a typo with a 500.
+        if (a.requestedTermMonths() != null && a.requestedTermMonths() <= 0) {
+            throw new UnderwritingValidationException("A term is a whole number of months above zero");
+        }
+        if (a.premiumPayingTermMonths() != null && a.premiumPayingTermMonths() <= 0) {
+            throw new UnderwritingValidationException("A premium-paying term is a whole number of months above zero");
+        }
+        if (a.premiumPayingTermMonths() != null && a.requestedTermMonths() != null
+                && a.premiumPayingTermMonths() > a.requestedTermMonths()) {
+            throw new UnderwritingValidationException("Premiums cannot be paid for longer than the policy runs: "
+                + a.premiumPayingTermMonths() + " months against a term of " + a.requestedTermMonths());
+        }
+        if (a.premiumFrequency() != null && !java.util.Set.of("MONTHLY", "QUARTERLY", "ANNUALLY", "SINGLE")
+                .contains(a.premiumFrequency())) {
+            throw new UnderwritingValidationException("A premium is paid MONTHLY, QUARTERLY, ANNUALLY or SINGLE, not "
+                + a.premiumFrequency());
+        }
         if (funeralApplications.isFuneral(c) && c.getSumAssuredAmount() != null
                 && a.sumAssured().compareTo(c.getSumAssuredAmount()) != 0) {
             throw new UnderwritingValidationException("A funeral plan's sum assured is the main member's benefit on its plan:"

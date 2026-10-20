@@ -170,6 +170,64 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
     expect(screen.getByLabelText('Full name')).toHaveValue('Halima Prospect');
   });
 
+  it('says beside the field when an amount is not digits, and sends nothing until it is', async () => {
+    renderScreen(<QuotationCalculatorPage />, { route: '/agents/quotation' });
+    await screen.findByRole('option', { name: 'Prospect Endowment (END1)' });
+    await userEvent.type(screen.getByLabelText('Full name'), 'Halima Prospect');
+    await userEvent.type(screen.getAllByLabelText('date')[0]!, '1985-05-01');
+    await userEvent.selectOptions(screen.getByLabelText('Sex'), 'MALE');
+    await userEvent.selectOptions(screen.getByLabelText('Product'), 'prod-end');
+    await userEvent.selectOptions(screen.getByLabelText('Premium frequency'), 'MONTHLY');
+    await userEvent.type(screen.getByLabelText('Sum assured or amount'), '1,000,000');
+    await userEvent.type(screen.getByLabelText('Term (months)'), '10 years');
+
+    expect(screen.getByText(/Digits only, e.g. 1500000/)).toBeInTheDocument();
+    expect(screen.getAllByText(/A whole number of months/).length).toBeGreaterThan(0);
+    // Typing "1,000,000" passes through "1", a real amount, on the way -- what matters is that nothing malformed
+    // ever went out: every amount sent was a number.
+    for (const [, request] of vi.mocked(quotePremium).mock.calls) {
+      expect(Number.isFinite(request.sumAssuredAmount)).toBe(true);
+      expect(request.policyTermMonths === undefined || Number.isInteger(request.policyTermMonths)).toBe(true);
+    }
+    expect(screen.getByRole('button', { name: 'Download the quotation as PDF' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Proceed to onboarding' })).toBeDisabled();
+  });
+
+  it('does not offer Proceed on a quotation the server refused, and says why', async () => {
+    vi.mocked(quotePremium).mockRejectedValue({
+      status: 422, kind: 'validation', title: 'Unprocessable', detail: 'No base rate for this age', traceId: 't',
+      fieldErrors: [], errorCode: null, mayBeDenied: false,
+    });
+    await fillProspectAndPlan();
+
+    expect(await screen.findByText(/the quotation above was refused/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Proceed to onboarding' })).toBeDisabled();
+    expect(acceptQuotation).not.toHaveBeenCalled();
+  });
+
+  it('says what is missing while Proceed is not available', async () => {
+    renderScreen(<QuotationCalculatorPage />, { route: '/agents/quotation' });
+    await screen.findByRole('option', { name: 'Prospect Endowment (END1)' });
+
+    expect(screen.getByText("Enter the person's name, the product and the plan to proceed.")).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Proceed to onboarding' })).toBeDisabled();
+  });
+
+  it('shows the server refusing the save inside the confirmation, and stays on the calculator', async () => {
+    vi.mocked(acceptQuotation).mockRejectedValue({
+      status: 422, kind: 'validation', title: 'Cannot do that', detail: 'This deposit is not offered over 12 months',
+      traceId: 't', fieldErrors: [], errorCode: null, mayBeDenied: false,
+    });
+    await fillProspectAndPlan();
+    await screen.findByText('TZS 1,000.00');
+    await userEvent.click(screen.getByRole('button', { name: 'Proceed to onboarding' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm and start onboarding' }));
+
+    expect(await screen.findByText(/This deposit is not offered over 12 months/)).toBeInTheDocument();
+    expect(screen.queryByText(/^onboarding/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirm and start onboarding' })).toBeEnabled();
+  });
+
   it('offers only the products it can quote, and says who quotes the rest', async () => {
     renderScreen(<QuotationCalculatorPage />, { route: '/agents/quotation' });
 

@@ -49,6 +49,14 @@ const SAVED = {
   proposalNumber: null,
 };
 
+/** What lib/http throws: an ApiError, already normalised. */
+function apiError(status: number, detail: string) {
+  return {
+    status, kind: status === 404 ? 'notFound' : 'server', title: 'Failed', detail, traceId: 't', errorCode: null,
+    fieldErrors: [], mayBeDenied: status === 404,
+  };
+}
+
 function ProposalProbe() {
   const { quotationId } = useParams();
   const [params] = useSearchParams();
@@ -96,6 +104,37 @@ describe('OnboardCustomerPage from a confirmed quotation', { timeout: 20_000 }, 
 
     await waitFor(() => expect(discardAgentQuotation).toHaveBeenCalledWith('q-1'));
     expect(registerIndividual).not.toHaveBeenCalled();
+    expect(await screen.findByText('the calculator')).toBeInTheDocument();
+  });
+
+  it('a quotation that is gone says so, and how to go on', async () => {
+    vi.mocked(getAgentQuotation).mockRejectedValue(apiError(404, 'No quotation q-1'));
+    renderOnboarding();
+
+    expect(await screen.findByText('This quotation is no longer available.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Back to the calculator' })).toHaveAttribute('href', '/agents/quotation');
+    expect(screen.queryByLabelText('Full name')).not.toBeInTheDocument();
+  });
+
+  it('a discard that fails keeps the form and what was typed, and says why', async () => {
+    vi.mocked(discardAgentQuotation).mockRejectedValue(apiError(500, 'Database unavailable'));
+    renderOnboarding();
+    const name = await screen.findByLabelText('Full name');
+    await userEvent.clear(name);
+    await userEvent.type(name, 'Halima P. Prospect');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel and discard the quotation' }));
+
+    expect(await screen.findByText(/The quotation could not be discarded/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Full name')).toHaveValue('Halima P. Prospect');
+  });
+
+  it('a discard of a quotation already gone goes back to the calculator', async () => {
+    vi.mocked(discardAgentQuotation).mockRejectedValue(apiError(404, 'No quotation q-1'));
+    renderOnboarding();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel and discard the quotation' }));
+
     expect(await screen.findByText('the calculator')).toBeInTheDocument();
   });
 

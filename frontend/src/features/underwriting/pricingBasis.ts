@@ -48,6 +48,9 @@ export function quotesHere(portfolioCode: string | null | undefined): boolean {
   return basis === 'PREMIUM' || basis === 'SAVINGS' || basis === 'FUNERAL';
 }
 
+/** Where the server's quotation stands: not askable yet, asked, priced, or refused. */
+export type QuoteState = 'incomplete' | 'loading' | 'quoted' | 'refused';
+
 /** A prospect's rating facts as the calculator holds them: blank strings for what was not answered. */
 export interface ProspectInputs {
   fullName: string;

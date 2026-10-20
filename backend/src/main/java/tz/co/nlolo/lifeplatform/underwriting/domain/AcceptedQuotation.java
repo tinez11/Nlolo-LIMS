@@ -83,13 +83,6 @@ public class AcceptedQuotation {
         this.validUntil = validUntil;
     }
 
-    /** A proposal was opened from it: from here on it is kept, as the record of what the customer agreed to. */
-    public void submitted(UUID caseId, UUID applicantPartyId) {
-        this.caseId = caseId;
-        this.applicantPartyId = applicantPartyId;
-        this.submittedAt = Instant.now();
-    }
-
     public UUID getQuotationId() { return quotationId; }
     public UUID getTenantId() { return tenantId; }
     public String getOwnerSubject() { return ownerSubject; }

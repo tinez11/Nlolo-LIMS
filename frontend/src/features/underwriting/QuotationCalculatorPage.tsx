@@ -34,7 +34,8 @@ import {
   type OpenCaseFormValues,
 } from './openCaseForm';
 import { QuotationPreview } from './QuotationPreview';
-import { pricingBasis, quotesHere, type ProspectInputs } from './pricingBasis';
+import { pricingBasis, quotesHere, type ProspectInputs, type QuoteState } from './pricingBasis';
+import { isAmount, isWholeMonths } from './useQuotation';
 import { quotationRequest } from './quotationRequest';
 
 type Who = 'PROSPECT' | 'CLIENT';
@@ -126,19 +127,46 @@ export function QuotationCalculatorPage() {
 
   // A funeral plan: the person quoted is the main member.
   const isFuneral = selectedProduct?.category === 'FUNERAL';
-  const [funeralTerms, setFuneralTerms] = useState<FuneralTermsView | null>(null);
+  // Keyed by the version they were read for, so a failure is shown for the product it belongs to and an answer for a
+  // product since changed is never used. A plan that cannot be read used to leave no plan field and no word why.
+  const [funeralTerms, setFuneralTerms] = useState<{
+    versionId: string;
+    terms?: FuneralTermsView | null;
+    error?: ApiError;
+  } | null>(null);
   useEffect(() => {
     if (!isFuneral || !productId || !productVersionId) return undefined;
     let live = true;
-    getFuneralTerms(productId, productVersionId).then((t) => { if (live) setFuneralTerms(t); }, () => undefined);
+    getFuneralTerms(productId, productVersionId).then(
+      (t) => { if (live) setFuneralTerms({ versionId: productVersionId, terms: t }); },
+      (e: unknown) => { if (live) setFuneralTerms({ versionId: productVersionId, error: toApiError(e) }); },
+    );
     return () => { live = false; };
   }, [isFuneral, productId, productVersionId]);
+  const funeralRead = funeralTerms?.versionId === productVersionId ? funeralTerms : null;
+
+  // Where the server's quotation stands: Proceed is offered only on a priced one.
+  const [quoteState, setQuoteState] = useState<QuoteState>('incomplete');
   useEffect(() => {
     setValue('isFuneral', isFuneral);
   }, [isFuneral, setValue]);
   const mainMember = rating.name ? { name: rating.name, dateOfBirth: rating.dateOfBirth ?? null } : null;
 
   const singleRefusedByTerm = Number(watch('requestedTermMonths')) > 12;
+
+  // Said beside the field, as it is typed: a malformed number is never sent, so without these the quotation would
+  // just never appear and nobody would know why.
+  const amountText = watch('sumAssuredAmount');
+  const termText = watch('requestedTermMonths');
+  const pptText = watch('premiumPayingTermMonths');
+  const amountError = amountText && !isAmount(amountText)
+    ? 'Digits only, e.g. 1500000 -- no commas, spaces or currency' : undefined;
+  const termError = termText && !isWholeMonths(termText) ? 'A whole number of months, e.g. 120' : undefined;
+  const pptError = pptText && !isWholeMonths(pptText)
+    ? 'A whole number of months, e.g. 120'
+    : pptText && termText && isWholeMonths(termText) && Number(pptText) > Number(termText)
+      ? 'Premiums cannot be paid for longer than the term'
+      : undefined;
 
   const funeral = isFuneral
     ? {
@@ -175,6 +203,21 @@ export function QuotationCalculatorPage() {
         funeral,
       })
     : null;
+
+  const canProceed = request !== null && quoteState === 'quoted';
+  const proceedHint = canProceed
+    ? 'When the customer agrees to this quotation.'
+    : !request
+      ? who === 'PROSPECT' && !prospect.fullName.trim()
+        ? "Enter the person's name, the product and the plan to proceed."
+        : who === 'CLIENT' && !applicantPartyId
+          ? 'Choose the client, the product and the plan to proceed.'
+          : 'Complete the plan above to proceed.'
+      : quoteState === 'loading'
+        ? 'Pricing…'
+        : quoteState === 'refused'
+          ? 'This cannot proceed: the quotation above was refused. Change what it names and try again.'
+          : 'Complete what the quotation above asks for to proceed.';
 
   // Proceed, then confirm: nothing is sent until the second click, and Cancel sends nothing at all.
   const navigate = useNavigate();
@@ -316,14 +359,23 @@ export function QuotationCalculatorPage() {
             )}
           </FormField>
 
-          {isFuneral && funeralTerms && (
-            <FuneralLivesFields terms={funeralTerms} mainMember={mainMember} register={register} control={control}
+          {isFuneral && funeralRead?.error && (
+            <InlineError error={funeralRead.error} lead="This funeral plan's terms could not be read:" />
+          )}
+          {isFuneral && funeralRead && !funeralRead.error && !funeralRead.terms && (
+            <p role="alert" className="text-xs text-status-danger-fg">
+              This product's current version has no funeral plans set up, so it cannot be quoted. Ask the office.
+            </p>
+          )}
+          {isFuneral && funeralRead?.terms && (
+            <FuneralLivesFields terms={funeralRead.terms} mainMember={mainMember} register={register} control={control}
               errors={errors} setValue={setValue} />
           )}
 
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <FormField
               label={isFuneral ? "Sum assured (the main member's benefit on the plan)" : 'Sum assured or amount'}
+              error={amountError}
             >
               <Input placeholder="1500000.00" readOnly={isFuneral} {...register('sumAssuredAmount')} />
             </FormField>
@@ -335,10 +387,10 @@ export function QuotationCalculatorPage() {
           <div className="grid grid-cols-2 gap-4">
             {!isFuneral && (
               <>
-                <FormField label="Term (months)" hint={termHint}>
+                <FormField label="Term (months)" hint={termHint} error={termError}>
                   <Input placeholder="120" readOnly={fixedTermMonths != null} {...register('requestedTermMonths')} />
                 </FormField>
-                <FormField label="Premium-paying term (months)">
+                <FormField label="Premium-paying term (months)" error={pptError}>
                   <Input
                     placeholder={watch('premiumFrequency') === 'SINGLE' ? 'Blank — paid once' : 'Same as the term'}
                     {...register('premiumPayingTermMonths')}
@@ -379,15 +431,18 @@ export function QuotationCalculatorPage() {
           applicantPartyId={who === 'CLIENT' ? applicantPartyId : ''}
           prospect={who === 'PROSPECT' ? prospect : undefined}
           funeral={funeral}
+          onQuoteState={setQuoteState}
         />
 
-        {/* The customer agrees: the one place on this screen that writes anything, and only after a second click. */}
+        {/* The customer agrees: the one place on this screen that writes anything, and only after a second click.
+            Offered only on a quotation the server has priced -- never on a refusal, or on inputs it was not asked
+            about -- and it says why when it is not. */}
         {step === 'quote' ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="primary" disabled={!request} onClick={() => setStep('confirm')}>
+            <Button type="button" variant="primary" disabled={!canProceed} onClick={() => setStep('confirm')}>
               {who === 'CLIENT' ? 'Proceed to proposal' : 'Proceed to onboarding'}
             </Button>
-            <span className="text-xs text-muted-foreground">When the customer agrees to this quotation.</span>
+            <span className="text-xs text-muted-foreground">{proceedHint}</span>
           </div>
         ) : (
           <ConfirmAct
@@ -405,6 +460,8 @@ export function QuotationCalculatorPage() {
             reversal="Cancel on the next screen discards it. A quotation not submitted as a proposal by the end of today is discarded."
             confirmLabel={who === 'CLIENT' ? 'Confirm and start the proposal' : 'Confirm and start onboarding'}
             busy={saving}
+            // Inputs changed while the question was open, and the new ones are not priced (yet, or at all).
+            confirmDisabled={!canProceed}
             onConfirm={() => void confirm()}
             onCancel={() => {
               setStep('quote');

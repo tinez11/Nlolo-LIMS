@@ -254,6 +254,40 @@ class AgentQuotationFlowIntegrationTest {
             .andExpect(status().isUnprocessableEntity());
     }
 
+    /**
+     * A double click, or two tabs: two submissions of one quotation at the same moment open ONE case. The loser is
+     * refused and its own case rolls back, so no proposal is left behind unlinked to any quotation.
+     */
+    @Test
+    void twoSimultaneousSubmissionsOpenOneCase() throws Exception {
+        UUID[] product = term();
+        String id = json(confirm("agent-race", prospectQuote(product, "Raced Twice"))).path("quotationId").asText();
+        UUID client = registeredBy("agent-race", "Raced Twice");
+        String body = "{\"applicantPartyId\":\"" + client + "\"}";
+
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            List<java.util.concurrent.Future<Integer>> results = new java.util.ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                results.add(pool.submit(() -> {
+                    go.await();
+                    return mvc.perform(post("/agent-quotations/" + id + "/proposal").with(agent("agent-race"))
+                        .contentType(MediaType.APPLICATION_JSON).content(body)).andReturn().getResponse().getStatus();
+                }));
+            }
+            go.countDown();
+            List<Integer> statuses = new java.util.ArrayList<>();
+            for (var r : results) statuses.add(r.get(60, java.util.concurrent.TimeUnit.SECONDS));
+            assertThat(statuses).containsExactlyInAnyOrder(201, 422);
+        } finally {
+            pool.shutdownNow();
+        }
+        Long cases = jdbc.queryForObject("SELECT count(*) FROM underwriting.underwriting_case WHERE applicant_party_id = ?",
+            Long.class, client);
+        assertThat(cases).isEqualTo(1L);
+    }
+
     /** A funeral plan's family travels from the quotation into the case, and the case is opened at the main benefit. */
     @Test
     void aFuneralProposalCarriesTheFamilyItWasQuotedFor() throws Exception {

@@ -13,6 +13,15 @@ import { InlineError } from '@/components/InlineError';
 import { FUNERAL_ROLE_LABELS, type FuneralRoleName } from '@/features/products/funeralSchema';
 import { pricingBasis, type PricingBasis, type ProspectInputs } from './pricingBasis';
 import { quotationRequest } from './quotationRequest';
+import { useEffect } from 'react';
+import type { QuoteState } from './pricingBasis';
+
+/** Tells a listening screen where the server's answer stands, each time it moves. */
+function useReport(state: QuoteState, report: ((state: QuoteState) => void) | undefined) {
+  useEffect(() => {
+    report?.(state);
+  }, [state, report]);
+}
 
 /**
  * A money figure the SERVER sent as a JSON number.
@@ -68,7 +77,13 @@ export function QuotationPreview({
   funeral,
   applicantPartyId = '',
   prospect,
+  onQuoteState,
 }: {
+  /**
+   * Told where the server's answer stands (2026-10-20), for a screen that acts on it -- the agents' calculator offers
+   * "Proceed" only once the server has priced what the customer would agree to, never on a refusal.
+   */
+  onQuoteState?: ((state: QuoteState) => void) | undefined;
   /**
    * Somebody not registered yet (2026-10-20, the agents' quotation calculator): the quotation PDF carries these
    * inputs instead of a party id, and is marked as a prospect's. Ignored once there is an applicant.
@@ -109,11 +124,13 @@ export function QuotationPreview({
           inputs={inputs}
           premiumPayingTermMonths={premiumPayingTermMonths}
           commencementDate={commencementDate}
+          report={onQuoteState}
         />
       )}
 
       {basis === 'SAVINGS' && (
         <SavingsQuotation
+          report={onQuoteState}
           productId={inputs.productId}
           productVersionId={productVersionId}
           amount={inputs.sumAssuredAmount}
@@ -125,6 +142,7 @@ export function QuotationPreview({
 
       {basis === 'FUNERAL' && (
         <FuneralQuotation
+          report={onQuoteState}
           inputs={{
             productId: inputs.productId,
             productVersionId,
@@ -196,12 +214,15 @@ function PremiumQuotation({
   inputs,
   premiumPayingTermMonths,
   commencementDate,
+  report,
 }: {
   inputs: QuotationInputs;
   premiumPayingTermMonths: string;
   commencementDate: string;
+  report?: ((state: QuoteState) => void) | undefined;
 }) {
   const quotation = useQuotation(inputs);
+  useReport(quotation.state, report);
 
   return (
     <>
@@ -342,8 +363,12 @@ function PremiumQuotation({
  * <p>A line per life, because a funeral premium IS per life: the plan's grid prices each role and age separately,
  * and a family total with no lines behind it cannot be checked.
  */
-function FuneralQuotation({ inputs }: { inputs: FuneralQuotationInputs }) {
+function FuneralQuotation({ inputs, report }: {
+  inputs: FuneralQuotationInputs;
+  report?: ((state: QuoteState) => void) | undefined;
+}) {
   const quotation = useFuneralQuotation(inputs);
+  useReport(quotation.state, report);
 
   if (quotation.state === 'incomplete') {
     return (
@@ -426,6 +451,7 @@ function SavingsQuotation({
   currency,
   termMonths,
   commencementDate,
+  report,
 }: {
   productId: string;
   productVersionId: string;
@@ -433,6 +459,7 @@ function SavingsQuotation({
   currency: string;
   termMonths: string;
   commencementDate: string;
+  report?: ((state: QuoteState) => void) | undefined;
 }) {
   const quotation = useSavingsQuotation({
     productId,
@@ -442,6 +469,12 @@ function SavingsQuotation({
     termMonths,
     asOf: commencementDate,
   });
+  // A deposit priced with a refusal attached -- a term or amount it does not take -- cannot be agreed to: the server
+  // refuses to save it, so it is reported as refused, not quoted.
+  useReport(
+    quotation.state === 'quoted' && quotation.quote.refusal ? 'refused' : quotation.state,
+    report,
+  );
 
   if (quotation.state === 'incomplete') {
     return (

@@ -39,6 +39,7 @@ import { useProductStore } from '@/store/productStore';
 import { AcceptedQuotationPanel } from './AcceptedQuotationPanel';
 import { ProposalHistoryPanel } from './ProposalHistoryPanel';
 import { QuotationPreview } from './QuotationPreview';
+import { isAmount, isWholeMonths } from './useQuotation';
 
 /**
  * One of the agent's proposals (2026-10-20): what the underwriter asked, the plan and the client's details to correct,
@@ -172,6 +173,16 @@ function PlanForm({ view, versionId, onSaved }: {
   }, [view.applicantPartyId, loadParty, loadProducts]);
   const product = (products.data ?? []).find((p) => p.productId === view.productId);
 
+  // The calculator's own checks, beside each field: a malformed number is not sent to come back as a 400.
+  const sumError = sum && !isAmount(sum) ? 'Digits only, e.g. 1500000 -- no commas, spaces or currency' : undefined;
+  const termError = term && !isWholeMonths(term) ? 'A whole number of months, e.g. 120' : undefined;
+  const pptError = ppt && !isWholeMonths(ppt)
+    ? 'A whole number of months, e.g. 120'
+    : ppt && term && isWholeMonths(term) && Number(ppt) > Number(term)
+      ? 'Premiums cannot be paid for longer than the term'
+      : undefined;
+  const valid = isAmount(sum) && !termError && !pptError;
+
   async function save() {
     setBusy(true);
     setError(null);
@@ -194,7 +205,7 @@ function PlanForm({ view, versionId, onSaved }: {
     <Panel title="The plan" subtitle="Correct the cover, term or payments if the underwriter asked.">
       <div className="space-y-4 px-4 pb-4">
         <div className="grid grid-cols-2 gap-3">
-          <FormField label="Sum assured or amount">
+          <FormField label="Sum assured or amount" error={sumError}>
             <Input value={sum} onChange={(e) => setSum(e.target.value)} />
           </FormField>
           <FormField label="Premium frequency">
@@ -205,10 +216,10 @@ function PlanForm({ view, versionId, onSaved }: {
               ))}
             </Select>
           </FormField>
-          <FormField label="Term (months)">
+          <FormField label="Term (months)" error={termError}>
             <Input value={term} onChange={(e) => setTerm(e.target.value)} />
           </FormField>
-          <FormField label="Premium-paying term (months)">
+          <FormField label="Premium-paying term (months)" error={pptError}>
             <Input placeholder="Same as the term" value={ppt} onChange={(e) => setPpt(e.target.value)} />
           </FormField>
           <FormField label="Cover from">
@@ -232,8 +243,8 @@ function PlanForm({ view, versionId, onSaved }: {
           portfolioCode={product?.portfolioCode}
           productVersionId={versionId}
         />
-        {error && <InlineError error={error} />}
-        <Button type="button" variant="outline" pending={busy} disabled={!sum} onClick={() => void save()}>
+        {error && <InlineError error={error} lead="The plan could not be saved:" />}
+        <Button type="button" variant="outline" pending={busy} disabled={!valid} onClick={() => void save()}>
           Save the plan
         </Button>
       </div>
@@ -249,6 +260,16 @@ function ClientForm({ caseId, partyId, onSaved }: { caseId: string; partyId: str
     void loadParty(partyId);
   }, [partyId, loadParty]);
 
+  // A failed read is said, with a retry -- it used to wait on "Loading" for ever.
+  if (party.status === 'error' && !party.data) {
+    return (
+      <Panel title="The client">
+        <div className="px-4 pb-4">
+          <ErrorPanel error={party.error ?? toApiError(null)} onRetry={() => void loadParty(partyId)} />
+        </div>
+      </Panel>
+    );
+  }
   if (!party.data) return <LoadingBlock label="Loading the client" />;
   return <ClientFormLoaded key={partyId} caseId={caseId} initial={editIndividualForm(party.data)} onSaved={() => {
     void loadParty(partyId);

@@ -69,6 +69,33 @@ describe('SubmitProposalPage', () => {
     expect(screen.getByRole('link', { name: 'Open the proposal' })).toHaveAttribute('href', '/agents/proposals/case-1');
   });
 
+  it('a quotation that is gone says so, and offers the way back', async () => {
+    vi.mocked(getAgentQuotation).mockRejectedValue({
+      status: 404, kind: 'notFound', title: 'Not found', detail: 'No quotation q-1', traceId: 't', errorCode: null,
+      fieldErrors: [], mayBeDenied: true,
+    });
+    renderAt('/agents/quotation/q-1?party=party-9');
+
+    expect(await screen.findByText('This quotation is no longer available.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit to underwriting' })).not.toBeInTheDocument();
+  });
+
+  it('a submission that lost to another shows the proposal that went in, not an error', async () => {
+    vi.mocked(submitProposal).mockRejectedValue({
+      status: 422, kind: 'validation', title: 'Cannot do that', detail: 'This quotation was already submitted as a proposal',
+      traceId: 't', errorCode: null, fieldErrors: [], mayBeDenied: false,
+    });
+    vi.mocked(getAgentQuotation)
+      .mockResolvedValueOnce(SAVED as never)
+      .mockResolvedValueOnce({ ...SAVED, caseId: 'case-1', proposalNumber: 'PRO-0001' } as never);
+    renderAt('/agents/quotation/q-1?party=party-9');
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Submit to underwriting' }));
+
+    expect(await screen.findByText('Submitted to underwriting')).toBeInTheDocument();
+    expect(screen.queryByText(/already submitted/)).not.toBeInTheDocument();
+  });
+
   it('cannot be submitted before the customer is registered', async () => {
     renderAt('/agents/quotation/q-1');
 

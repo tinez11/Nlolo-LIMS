@@ -32,7 +32,7 @@ public final class AmendmentRequests {
         }
     }
 
-    public record ReturnRequest(@NotEmpty List<@Valid Reason> reasons, @Size(max = 2000) String note) {}
+    public record ReturnRequest(@NotEmpty List<@NotNull @Valid Reason> reasons, @Size(max = 2000) String note) {}
 
     /** The contract as amended. Every field the new value; null means none, as at opening. */
     public record TermsRequest(@NotNull @Positive BigDecimal sumAssured, Integer requestedTermMonths,

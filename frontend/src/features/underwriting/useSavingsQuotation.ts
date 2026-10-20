@@ -40,7 +40,9 @@ export function useSavingsQuotation(inputs: SavingsQuotationInputs): SavingsQuot
 
   const missing: string[] = [];
   if (!productId || !productVersionId) missing.push('a product');
-  if (!amount || Number(amount) <= 0) missing.push('an amount');
+  // `!(n > 0)`: "5,000,000" is NaN, which `<= 0` let through to the server as a null amount.
+  if (!amount || !(Number(amount) > 0)) missing.push('an amount in digits');
+  if (termMonths && !(/^\d+$/.test(termMonths.trim()) && Number(termMonths) > 0)) missing.push('a term in whole months');
 
   const ready = missing.length === 0;
   const key = ready ? [productId, productVersionId, amount, currency, termMonths, asOf].join('|') : '';

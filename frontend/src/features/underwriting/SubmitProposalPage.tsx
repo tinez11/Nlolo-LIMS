@@ -16,7 +16,7 @@ import { LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { toApiError, type ApiError } from '@/lib/apiError';
 import { useProductStore } from '@/store/productStore';
-import { AcceptedQuotationPanel } from './AcceptedQuotationPanel';
+import { AcceptedQuotationPanel, QuotationUnavailable } from './AcceptedQuotationPanel';
 
 /**
  * The last step of the agents' prospect-to-proposal flow (2026-10-20): the customer, now registered, and the
@@ -56,7 +56,13 @@ export function SubmitProposalPage() {
     try {
       setQuotation(await submitProposal(quotationId, applicantPartyId));
     } catch (e) {
-      setError(toApiError(e));
+      const error = toApiError(e);
+      setError(error);
+      // Submitted from another tab, or a double click that lost: read it again, so the screen shows the proposal that
+      // did go in rather than an error about one that exists.
+      if (error.status === 422) {
+        getAgentQuotation(quotationId).then((q) => { if (q.caseId) { setQuotation(q); setError(null); } }, () => undefined);
+      }
     } finally {
       setBusy(null);
     }
@@ -69,7 +75,13 @@ export function SubmitProposalPage() {
       await discardAgentQuotation(quotationId);
       navigate('../../quotation', { relative: 'path' });
     } catch (e) {
-      setError(toApiError(e));
+      const error = toApiError(e);
+      // Already gone: what the agent asked for is true, so go back regardless.
+      if (error.status === 404) {
+        navigate('../../quotation', { relative: 'path' });
+        return;
+      }
+      setError(error);
       setBusy(null);
     }
   }
@@ -97,7 +109,9 @@ export function SubmitProposalPage() {
           </Panel>
         )}
 
-        {error && <InlineError error={error} />}
+        {error && (!quotation || error.status === 404
+          ? <QuotationUnavailable error={error} />
+          : <InlineError error={error} lead="The proposal could not be submitted:" />)}
 
         {quotation?.caseId ? (
           <Receipt

@@ -22,6 +22,16 @@ export type Quotation =
   | { state: 'quoted'; quote: PremiumQuoteView; assumedOccupationClass: boolean }
   | { state: 'refused'; error: unknown };
 
+/** A term the server can take: a whole number of months above zero ("12", not "12.5", "1 yr" or "-3"). */
+export function isWholeMonths(value: string): boolean {
+  return /^\d+$/.test(value.trim()) && Number(value) > 0;
+}
+
+/** An amount the server can take: digits, optionally with decimals -- no commas, spaces or currency. */
+export function isAmount(value: string): boolean {
+  return /^\d+(\.\d{1,2})?$/.test(value.trim()) && Number(value) > 0;
+}
+
 /** The occupation class assumed when the person record names none. Named on screen, never silent. */
 export const DEFAULT_OCCUPATION_CLASS = 'STANDARD';
 
@@ -54,7 +64,10 @@ export function useQuotation(inputs: QuotationInputs): Quotation {
   // What is still missing, in the words of the fields a person would go and fill in.
   const missing: string[] = [];
   if (!productId) missing.push('a product');
-  if (!sumAssuredAmount || Number(sumAssuredAmount) <= 0) missing.push('a sum assured');
+  // `!(n > 0)`, not `n <= 0`: "1,000,000" is NaN, and NaN <= 0 is false -- it was sent as a null sum assured and
+  // came back as a refusal blaming the rate table.
+  if (!sumAssuredAmount || !(Number(sumAssuredAmount) > 0)) missing.push('a sum assured in digits');
+  if (policyTermMonths && !isWholeMonths(policyTermMonths)) missing.push('a term in whole months');
   if (!frequency) missing.push('a payment frequency');
   if (!dateOfBirth) missing.push("the applicant's date of birth");
   if (!sex) missing.push("the applicant's sex");

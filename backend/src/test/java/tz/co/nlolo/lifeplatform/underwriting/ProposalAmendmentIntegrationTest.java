@@ -326,6 +326,32 @@ class ProposalAmendmentIntegrationTest {
             .andExpect(status().isUnprocessableEntity());
     }
 
+    /** A typo is refused in words (422), not by a table CHECK as a 500; a return with an empty reason is a 400. */
+    @Test
+    void badAmendmentsAndReturnsAreRefusedInWordsNotWithA500() throws Exception {
+        Opened p = proposal("agent-e");
+        returnIt(p.caseId(), "{\"reasons\":[null]}").andExpect(status().isBadRequest());
+        returnIt(p.caseId(), TWO_REASONS).andExpect(status().isOk());
+
+        for (String body : List.of(
+                "{\"sumAssured\":1000000,\"requestedTermMonths\":0}",
+                "{\"sumAssured\":1000000,\"requestedTermMonths\":120,\"premiumPayingTermMonths\":180}",
+                "{\"sumAssured\":1000000,\"premiumFrequency\":\"WEEKLY\"}",
+                "{\"sumAssured\":0}")) {
+            mvc.perform(put("/underwriting/cases/" + p.caseId() + "/terms").with(agent("agent-e"))
+                    .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().is4xxClientError());
+        }
+        JsonNode problem = json(mvc.perform(put("/underwriting/cases/" + p.caseId() + "/terms").with(agent("agent-e"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"sumAssured\":1000000,\"requestedTermMonths\":120,\"premiumPayingTermMonths\":180}"))
+            .andExpect(status().isUnprocessableEntity()));
+        assertThat(problem.path("detail").asText()).contains("cannot be paid for longer than the policy runs");
+        // Nothing half-applied: the history still holds only the return.
+        JsonNode history = json(mvc.perform(get("/underwriting/cases/" + p.caseId() + "/history").with(agent("agent-e"))));
+        assertThat(history).hasSize(1);
+    }
+
     @Test
     void nothingIsAmendedOrResubmittedWhileTheUnderwriterHasIt() throws Exception {
         Opened p = proposal("agent-o");
