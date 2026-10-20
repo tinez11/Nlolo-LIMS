@@ -127,10 +127,13 @@ test.describe('family funeral cover', () => {
     // The sum assured is the plan's main-member benefit, filled for staff (R3).
     await expect(page.getByLabel(/^Sum assured/)).toHaveValue(mainBenefit.toFixed(2));
     await page.getByLabel('Premium frequency').selectOption('MONTHLY');
+    // A new row arrives as the first role the plan covers (6e725c5b), which here is a spouse -- so each is set.
     await page.getByRole('button', { name: 'Add dependant' }).click();
+    await page.getByLabel('Role').nth(0).selectOption('CHILD');
     await page.getByLabel('Full name').nth(0).fill('Neema');
     await page.getByLabel('Date of birth').nth(0).fill(dmy(neemaBorn));
     await page.getByRole('button', { name: 'Add dependant' }).click();
+    await page.getByLabel('Role').nth(1).selectOption('CHILD');
     await page.getByLabel('Full name').nth(1).fill('Baraka');
     await page.getByLabel('Date of birth').nth(1).fill(dmy(barakaBorn));
     const quote = page.getByRole('table', { name: 'Family quote' });
