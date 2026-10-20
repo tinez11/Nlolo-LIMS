@@ -138,6 +138,32 @@ describe('OnboardCustomerPage from a confirmed quotation', { timeout: 20_000 }, 
     expect(await screen.findByText('the calculator')).toBeInTheDocument();
   });
 
+  it('a client reference already in use is said under that field, and goes when the field is changed', async () => {
+    vi.mocked(registerIndividual).mockRejectedValue({
+      ...apiError(409, 'Client reference BLIC001 already belongs to another client in this tenant'),
+      kind: 'conflict', errorCode: 'DUPLICATE_CLIENT_REFERENCE',
+    });
+    renderOnboarding();
+    await screen.findByLabelText('Full name');
+    await userEvent.selectOptions(screen.getByLabelText('ID type'), 'NATIONAL_ID');
+    await userEvent.type(screen.getByLabelText('ID number'), '19850501-12345-00001-24');
+    const reference = screen.getByLabelText('Client reference (optional)');
+    await userEvent.type(reference, 'BLIC001');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Register individual' }));
+
+    // Under the field, not in a box at the foot of the form.
+    const message = await screen.findByText(/BLIC001 already belongs to another client/);
+    expect(reference).toHaveAttribute('aria-invalid', 'true');
+    expect(message.closest('[role="alert"]')?.className ?? '').not.toMatch(/rounded-md bg-status-danger-bg/);
+
+    await userEvent.clear(reference);
+    await userEvent.type(reference, 'BLIC002');
+
+    expect(screen.queryByText(/BLIC001 already belongs to another client/)).not.toBeInTheDocument();
+    expect(reference).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
   it('after registering, goes on to submit the proposal for the new customer', async () => {
     vi.mocked(registerIndividual).mockResolvedValue({ partyId: 'party-9', kycStatus: 'PENDING' } as never);
     renderOnboarding();

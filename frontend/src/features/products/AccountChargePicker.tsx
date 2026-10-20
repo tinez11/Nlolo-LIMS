@@ -25,7 +25,7 @@ export function AccountChargePicker({ value, onChange, legend = 'Account charges
     return () => { live = false; };
   }, []);
 
-  if (error) return <InlineError error={error} lead="Could not load the charges" />;
+  if (error) return <InlineError sticky error={error} lead="Could not load the charges" />;
   if (!charges) return <LoadingBlock label="Loading charges" />;
 
   const toggle = (id: string) => onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);

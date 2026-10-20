@@ -73,7 +73,7 @@ export function QuotationCalculatorPage() {
   >({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(openCaseFormSchema), defaultValues: blankOpenCaseForm() });
 
   // The person, when they are not registered yet: registration's own fields, so onboarding can take them over.
-  const person = useForm<RegisterIndividualFormValues>({ defaultValues: blankRegisterIndividualForm() });
+  const person = useForm<RegisterIndividualFormValues>({ ...VALIDATE_ON_TOUCH, defaultValues: blankRegisterIndividualForm() });
 
   // eslint-disable-next-line react-hooks/incompatible-library -- see IssuePolicyPage
   const productId = watch('productId');
@@ -163,7 +163,7 @@ export function QuotationCalculatorPage() {
   const phoneText = person.watch('phoneNumber');
   const phoneError = who === 'PROSPECT' && phoneText.trim() && !normalisePhone(phoneText) ? PHONE_MESSAGE : undefined;
   const amountError = amountText && !isAmount(amountText)
-    ? 'Digits only, e.g. 1500000 -- no commas, spaces or currency' : undefined;
+    ? 'Digits only, e.g. 1500000 — no commas, spaces or currency' : undefined;
   const termError = termText && !isWholeMonths(termText) ? 'A whole number of months, e.g. 120' : undefined;
   const pptError = pptText && !isWholeMonths(pptText)
     ? 'A whole number of months, e.g. 120'
@@ -269,7 +269,8 @@ export function QuotationCalculatorPage() {
         description="What a product costs and what it pays, before anybody is registered. Nothing is saved."
       />
 
-      <div className="max-w-xl space-y-4 px-6 pb-8">
+      {/* One form in all but element: an edit anywhere on the page clears a refusal shown in the confirmation. */}
+      <div className="max-w-xl space-y-4 px-6 pb-8" data-edit-scope>
         <div className="inline-flex rounded-md border border-border p-0.5">
           <TypeTab label="New person" active={who === 'PROSPECT'} onClick={() => setWho('PROSPECT')} />
           <TypeTab label="Existing client" active={who === 'CLIENT'} onClick={() => setWho('CLIENT')} />
@@ -356,13 +357,13 @@ export function QuotationCalculatorPage() {
             )}
             {productId && snapshot.status === 'error' && snapshot.error && (
               <div className="mt-1">
-                <InlineError error={snapshot.error} />
+                <InlineError sticky error={snapshot.error} />
               </div>
             )}
           </FormField>
 
           {isFuneral && funeralRead?.error && (
-            <InlineError error={funeralRead.error} lead="This funeral plan's terms could not be read:" />
+            <InlineError sticky error={funeralRead.error} lead="This funeral plan's terms could not be read:" />
           )}
           {isFuneral && funeralRead && !funeralRead.error && !funeralRead.terms && (
             <p role="alert" className="text-xs text-status-danger-fg">

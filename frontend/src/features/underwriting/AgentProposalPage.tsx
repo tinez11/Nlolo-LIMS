@@ -40,6 +40,7 @@ import { AcceptedQuotationPanel } from './AcceptedQuotationPanel';
 import { ProposalHistoryPanel } from './ProposalHistoryPanel';
 import { QuotationPreview } from './QuotationPreview';
 import { isAmount, isWholeMonths } from './useQuotation';
+import { PERSON_CONFLICT_FIELDS, placeConflictOnField } from '@/features/party/conflictField';
 
 /**
  * One of the agent's proposals (2026-10-20): what the underwriter asked, the plan and the client's details to correct,
@@ -174,7 +175,7 @@ function PlanForm({ view, versionId, onSaved }: {
   const product = (products.data ?? []).find((p) => p.productId === view.productId);
 
   // The calculator's own checks, beside each field: a malformed number is not sent to come back as a 400.
-  const sumError = sum && !isAmount(sum) ? 'Digits only, e.g. 1500000 -- no commas, spaces or currency' : undefined;
+  const sumError = sum && !isAmount(sum) ? 'Digits only, e.g. 1500000 — no commas, spaces or currency' : undefined;
   const termError = term && !isWholeMonths(term) ? 'A whole number of months, e.g. 120' : undefined;
   const pptError = ppt && !isWholeMonths(ppt)
     ? 'A whole number of months, e.g. 120'
@@ -285,11 +286,12 @@ function ClientFormLoaded({ caseId, initial, onSaved }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [saved, setSaved] = useState(false);
-  const { register, control, handleSubmit, formState: { errors } } = useForm<RegisterIndividualFormValues>({
-    ...VALIDATE_ON_TOUCH,
-    resolver: zodResolver(registerIndividualFormSchema),
-    defaultValues: initial,
-  });
+  const { register, control, handleSubmit, setError: setFieldError, formState: { errors } } =
+    useForm<RegisterIndividualFormValues>({
+      ...VALIDATE_ON_TOUCH,
+      resolver: zodResolver(registerIndividualFormSchema),
+      defaultValues: initial,
+    });
 
   async function save(values: RegisterIndividualFormValues) {
     setBusy(true);
@@ -300,7 +302,8 @@ function ClientFormLoaded({ caseId, initial, onSaved }: {
       setSaved(true);
       onSaved();
     } catch (e) {
-      setError(toApiError(e));
+      // An ID or client reference already on another client goes under that field; the rest below the form.
+      if (!placeConflictOnField(toApiError(e), setFieldError, PERSON_CONFLICT_FIELDS)) setError(toApiError(e));
     } finally {
       setBusy(false);
     }
@@ -323,7 +326,7 @@ function ClientFormLoaded({ caseId, initial, onSaved }: {
 
 /** Back to the underwriter: the same proposal, its next round. */
 function ResubmitForm({ caseId, onDone }: { caseId: string; onDone: (v: UnderwritingCaseView) => void }) {
-  const { control, handleSubmit } = useForm<{ note: string }>({ defaultValues: { note: '' } });
+  const { control, handleSubmit } = useForm<{ note: string }>({ ...VALIDATE_ON_TOUCH, defaultValues: { note: '' } });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
 

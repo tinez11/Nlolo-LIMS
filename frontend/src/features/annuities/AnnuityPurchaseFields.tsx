@@ -137,7 +137,7 @@ export function AnnuityPurchaseFields({
         ) : !current ? (
           <span className="text-muted-foreground">Pricing…</span>
         ) : current.error ? (
-          <InlineError error={current.error as Parameters<typeof InlineError>[0]["error"]} />
+          <InlineError sticky error={current.error as Parameters<typeof InlineError>[0]["error"]} />
         ) : current.quote ? (
           <span>
             Quote today: <strong>{formatMoney(current.quote.instalment)}</strong>{' '}

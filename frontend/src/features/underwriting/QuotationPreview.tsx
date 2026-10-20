@@ -386,7 +386,7 @@ function FuneralQuotation({ inputs, report }: {
   if (quotation.state === 'refused') {
     return (
       <div className="px-4 pb-4">
-        <InlineError error={quotation.error} lead="This family cannot be covered as entered:" />
+        <InlineError sticky error={quotation.error} lead="This family cannot be covered as entered:" />
       </div>
     );
   }

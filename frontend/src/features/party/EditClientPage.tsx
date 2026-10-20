@@ -19,6 +19,7 @@ import {
 } from './registerIndividualForm';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { UnsavedGuard } from '@/components/UnsavedGuard';
+import { PERSON_CONFLICT_FIELDS, placeConflictOnField } from './conflictField';
 
 /**
  * Correct what the platform has recorded about a client.
@@ -53,6 +54,7 @@ export function EditClientPage() {
     control,
     handleSubmit,
     reset,
+    setError,
     formState: { errors, isDirty, isSubmitting },
   } = useForm<RegisterIndividualFormValues>({
     ...VALIDATE_ON_TOUCH,
@@ -94,7 +96,8 @@ export function EditClientPage() {
       await amendIndividual(partyId, toApiRequest(values));
       void navigate(backToClient);
     } catch (e) {
-      setSaveError(e as ApiError);
+      // A duplicate goes under the field it names; anything else in the box below the form.
+      if (!placeConflictOnField(e as ApiError, setError, PERSON_CONFLICT_FIELDS)) setSaveError(e as ApiError);
     } finally {
       setSaving(false);
     }
@@ -134,7 +137,7 @@ export function EditClientPage() {
       />
 
       {loadError && (
-        <InlineError error={loadError} />
+        <InlineError sticky error={loadError} />
       )}
 
       {party?.partyType === 'INDIVIDUAL' && (

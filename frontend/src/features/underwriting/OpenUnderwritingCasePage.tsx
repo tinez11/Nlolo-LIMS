@@ -328,7 +328,7 @@ export function OpenUnderwritingCasePage() {
               saying why. */}
           {productId && snapshot.status === 'error' && snapshot.error && (
             <div className="mt-1">
-              <InlineError error={snapshot.error} />
+              <InlineError sticky error={snapshot.error} />
             </div>
           )}
           {productId && snapshot.status !== 'error' && errors.productVersionId?.message && (
@@ -470,7 +470,7 @@ export function OpenUnderwritingCasePage() {
           <legend className="text-sm font-medium">What the applicant is asking for</legend>
 
           {isAnnuity && annuityTerms?.error != null && (
-            <InlineError error={annuityTerms.error as Parameters<typeof InlineError>[0]['error']} />
+            <InlineError sticky error={annuityTerms.error as Parameters<typeof InlineError>[0]['error']} />
           )}
           {isAnnuity && annuityTerms?.terms && (
             <AnnuityPurchaseFields

@@ -16,7 +16,7 @@ import { formatMoney } from '@/lib/money';
  * way back, rather than as a bare "not found" with nowhere to go.
  */
 export function QuotationUnavailable({ error }: { error: ApiError }) {
-  if (error.status !== 404) return <InlineError error={error} lead="The quotation could not be read:" />;
+  if (error.status !== 404) return <InlineError sticky error={error} lead="The quotation could not be read:" />;
   return (
     <div role="alert" className="space-y-2 rounded-md border border-border bg-surface-muted p-3 text-xs">
       <p className="font-medium">This quotation is no longer available.</p>

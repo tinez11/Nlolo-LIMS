@@ -36,6 +36,12 @@ import { Input } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { UnsavedGuard } from '@/components/UnsavedGuard';
+import {
+  COMPANY_CONFLICT_FIELDS,
+  isFieldConflict,
+  PERSON_CONFLICT_FIELDS,
+  placeConflictOnField,
+} from './conflictField';
 
 type CustomerType = 'INDIVIDUAL' | 'CORPORATE';
 
@@ -214,6 +220,7 @@ function RegisterIndividualForm({
     control,
     handleSubmit,
     reset,
+    setError,
     formState: { errors, isDirty, isSubmitting },
   } = useForm<RegisterIndividualFormValues>({
     ...VALIDATE_ON_TOUCH,
@@ -227,6 +234,8 @@ function RegisterIndividualForm({
     if (onRegistered && result.status === 'success' && result.data?.partyId) {
       onRegistered(result.data.partyId);
     }
+    // A client reference or ID already on another client: said under that field, gone when it is changed.
+    if (result.status === 'error') placeConflictOnField(result.error, setError, PERSON_CONFLICT_FIELDS);
   }
 
   if (!onRegistered && registering.status === 'success' && registering.data) {
@@ -249,7 +258,8 @@ function RegisterIndividualForm({
       />
       <IndividualFields register={register} control={control} errors={errors} />
 
-      {registering.status === 'error' && registering.error && (
+      {registering.status === 'error' && registering.error
+        && !isFieldConflict(registering.error, PERSON_CONFLICT_FIELDS) && (
         <InlineError error={registering.error} />
       )}
 
@@ -277,6 +287,7 @@ function RegisterCorporateForm() {
     register,
     handleSubmit,
     reset,
+    setError,
     formState: { errors, isDirty, isSubmitting },
   } = useForm<RegisterCorporateFormValues>({
     ...VALIDATE_ON_TOUCH,
@@ -286,6 +297,8 @@ function RegisterCorporateForm() {
 
   async function onSubmit(values: RegisterCorporateFormValues) {
     await registerCorporate(toCorporateApiRequest(values));
+    const result = usePartyStore.getState().registeringCorporate;
+    if (result.status === 'error') placeConflictOnField(result.error, setError, COMPANY_CONFLICT_FIELDS);
   }
 
   if (registering.status === 'success' && registering.data) {
@@ -331,7 +344,8 @@ function RegisterCorporateForm() {
         />
       </FormField>
 
-      {registering.status === 'error' && registering.error && (
+      {registering.status === 'error' && registering.error
+        && !isFieldConflict(registering.error, COMPANY_CONFLICT_FIELDS) && (
         <InlineError error={registering.error} />
       )}
 

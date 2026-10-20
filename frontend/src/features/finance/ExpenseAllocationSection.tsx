@@ -148,7 +148,7 @@ export function ExpenseAllocationSection({ period }: { period: string }) {
                 </div>
               </div>
               {total > 0 && preview.data && <Preview />}
-              {preview.status === 'error' && preview.error && <InlineError error={preview.error} />}
+              {preview.status === 'error' && preview.error && <InlineError sticky error={preview.error} />}
             </>
           )}
           {preparing?.status === 'error' && preparing.error && <InlineError error={preparing.error} />}
