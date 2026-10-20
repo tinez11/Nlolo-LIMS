@@ -45,10 +45,19 @@ describe('registerIndividualFormSchema', () => {
     ).toBe(false);
   });
 
-  it('rejects a phone number not matching the Tanzanian E.164 pattern', () => {
-    expect(
-      registerIndividualFormSchema.safeParse({ ...valid(), phoneNumber: '0712345678' }).success,
-    ).toBe(false);
+  it('rejects a phone number that is not a Tanzanian one', () => {
+    for (const phoneNumber of ['071234567', '+254712345678', 'phone', '712345678']) {
+      expect(registerIndividualFormSchema.safeParse({ ...valid(), phoneNumber }).success, phoneNumber).toBe(false);
+    }
+  });
+
+  it('accepts a Tanzanian number written the everyday way, and sends it as +255', () => {
+    for (const phoneNumber of ['0712345678', '0712 345 678', '255712345678', '+255 712-345-678']) {
+      const parsed = registerIndividualFormSchema.safeParse({ ...valid(), phoneNumber });
+      expect(parsed.success, phoneNumber).toBe(true);
+      expect(toApiRequest(registerIndividualFormSchema.parse({ ...valid(), phoneNumber })).contactInfo.phoneNumber)
+        .toBe('+255712345678');
+    }
   });
 
   it('rejects a malformed email', () => {

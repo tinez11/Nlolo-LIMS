@@ -319,7 +319,7 @@ function RegisterCorporateForm() {
 
       <FormField label="Phone number (optional)" error={errors.phoneNumber?.message}>
         <Input
-          placeholder="+255712345678"
+          placeholder="0712 345 678"
           {...register('phoneNumber')}
         />
       </FormField>

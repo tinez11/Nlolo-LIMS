@@ -163,7 +163,7 @@ export function EditClientPage() {
 
           <FormField label="Phone number (optional)">
             <Input
-              placeholder="+255712345678"
+              placeholder="0712 345 678"
               value={corporatePhone}
               onChange={(e) => setCorporatePhone(e.target.value)}
             />

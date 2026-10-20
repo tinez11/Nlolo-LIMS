@@ -193,6 +193,23 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
     expect(screen.getByRole('button', { name: 'Proceed to onboarding' })).toBeDisabled();
   });
 
+  it('takes a phone written the everyday way and sends it as +255; holds back one that is not Tanzanian', async () => {
+    await fillProspectAndPlan();
+    await screen.findByText('TZS 1,000.00');
+    const phone = screen.getByLabelText('Phone number (optional)');
+
+    await userEvent.type(phone, '0713 000 11');
+    expect(screen.getByText(/Enter a Tanzanian number/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download the quotation as PDF' })).toBeDisabled();
+    expect(screen.getByText('Correct the phone number, or leave it blank, to proceed.')).toBeInTheDocument();
+
+    await userEvent.type(phone, '1');
+    expect(screen.queryByText(/Enter a Tanzanian number/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Download the quotation as PDF' }));
+    await waitFor(() => expect(downloadQuotation).toHaveBeenCalled());
+    expect(vi.mocked(downloadQuotation).mock.calls[0]![0].prospect?.phoneNumber).toBe('+255713000111');
+  });
+
   it('does not offer Proceed on a quotation the server refused, and says why', async () => {
     vi.mocked(quotePremium).mockRejectedValue({
       status: 422, kind: 'validation', title: 'Unprocessable', detail: 'No base rate for this age', traceId: 't',

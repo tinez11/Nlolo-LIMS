@@ -21,6 +21,7 @@ import { selectProductSnapshot, useProductStore } from '@/store/productStore';
 import { selectParty, usePartyStore } from '@/store/partyStore';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { formatMonths } from '@/lib/dates';
+import { normalisePhone, PHONE_MESSAGE } from '@/lib/patterns';
 import { TypeTab } from '@/features/party/OnboardCustomerPage';
 import {
   blankRegisterIndividualForm,
@@ -159,6 +160,8 @@ export function QuotationCalculatorPage() {
   const amountText = watch('sumAssuredAmount');
   const termText = watch('requestedTermMonths');
   const pptText = watch('premiumPayingTermMonths');
+  const phoneText = person.watch('phoneNumber');
+  const phoneError = who === 'PROSPECT' && phoneText.trim() && !normalisePhone(phoneText) ? PHONE_MESSAGE : undefined;
   const amountError = amountText && !isAmount(amountText)
     ? 'Digits only, e.g. 1500000 -- no commas, spaces or currency' : undefined;
   const termError = termText && !isWholeMonths(termText) ? 'A whole number of months, e.g. 120' : undefined;
@@ -212,7 +215,9 @@ export function QuotationCalculatorPage() {
         ? "Enter the person's name, the product and the plan to proceed."
         : who === 'CLIENT' && !applicantPartyId
           ? 'Choose the client, the product and the plan to proceed.'
-          : 'Complete the plan above to proceed.'
+          : phoneError
+            ? 'Correct the phone number, or leave it blank, to proceed.'
+            : 'Complete the plan above to proceed.'
       : quoteState === 'loading'
         ? 'Pricing…'
         : quoteState === 'refused'
@@ -290,8 +295,8 @@ export function QuotationCalculatorPage() {
                   )}
                 />
               </FormField>
-              <FormField label="Phone number (optional)">
-                <Input placeholder="+255712345678" {...person.register('phoneNumber')} />
+              <FormField label="Phone number (optional)" error={phoneError}>
+                <Input placeholder="0712 345 678" {...person.register('phoneNumber')} />
               </FormField>
               <FormField label="Sex">
                 <Select {...person.register('sex')}>

@@ -408,7 +408,10 @@ components:
         contactInfo:
           type: object
           properties:
-            phoneNumber: { type: string, pattern: '^\+255\d{9}$' }
+            phoneNumber:
+              type: string
+              pattern: '^[+0-9\s\-.()]{9,20}$'
+              description: Any everyday form of a Tanzanian number (0712 345 678, 255712345678, +255712345678); stored as +255XXXXXXXXX.
             email: { type: [string, "null"], format: email }
         sex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
         smokerStatus:
@@ -476,7 +479,10 @@ components:
             optional (Jakarta @Pattern/@Email treat null as valid), but the object itself
             is @NotNull, so {} is accepted and a missing contactInfo is a 400.
           properties:
-            phoneNumber: { type: string, pattern: '^\+255\d{9}$' }
+            phoneNumber:
+              type: string
+              pattern: '^[+0-9\s\-.()]{9,20}$'
+              description: Any everyday form of a Tanzanian number (0712 345 678, 255712345678, +255712345678); stored as +255XXXXXXXXX.
             email: { type: [string, "null"], format: email }
     AmendCorporateRequest:
       type: object
@@ -492,7 +498,10 @@ components:
           type: object
           description: Same shape as RegisterCorporateRequest.contactInfo.
           properties:
-            phoneNumber: { type: string, pattern: '^\+255\d{9}$' }
+            phoneNumber:
+              type: string
+              pattern: '^[+0-9\s\-.()]{9,20}$'
+              description: Any everyday form of a Tanzanian number (0712 345 678, 255712345678, +255712345678); stored as +255XXXXXXXXX.
             email: { type: [string, "null"], format: email }
     PartyView:
       type: object

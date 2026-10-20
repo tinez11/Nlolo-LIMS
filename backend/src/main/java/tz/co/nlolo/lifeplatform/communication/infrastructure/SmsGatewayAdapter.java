@@ -177,6 +177,16 @@ public class SmsGatewayAdapter implements NotificationSender {
      * read SENT.
      */
     public static String toMsisdn(String phoneNumber) {
+        // Through the same conversion the party record is stored with (2026-10-20), so a number that reached the file
+        // some other way -- "0712 345 678", an old import -- still goes out as 255712345678 rather than as written,
+        // which the aggregator would accept and never deliver. Anything that is not a Tanzanian number is passed on
+        // as before (plus stripped) for the gateway to refuse, so the outbox records its answer rather than ours.
+        try {
+            String e164 = tz.co.nlolo.lifeplatform.party.api.PhoneNumbers.normalise(phoneNumber);
+            if (e164 != null) return e164.substring(1);
+        } catch (IllegalArgumentException notTanzanian) {
+            // fall through
+        }
         String trimmed = phoneNumber.trim();
         return trimmed.startsWith("+") ? trimmed.substring(1) : trimmed;
     }

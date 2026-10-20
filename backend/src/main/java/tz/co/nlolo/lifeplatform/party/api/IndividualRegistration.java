@@ -50,6 +50,8 @@ public record IndividualRegistration(
     public IndividualRegistration {
         // Never null downstream, so the entity and the mapper can read them without
         // a null check at every access.
+        // Written as the person wrote it, stored as +255XXXXXXXXX (2026-10-20) -- see PhoneNumbers for why one form.
+        phoneNumber = PhoneNumbers.normalise(phoneNumber);
         identityDocument = identityDocument != null ? identityDocument : IdentityDocument.none();
         address = address != null ? address : Address.none();
         nationality = nationality != null ? nationality.trim().toUpperCase() : null;

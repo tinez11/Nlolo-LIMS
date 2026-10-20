@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { RegisterCorporateRequest } from '@/api/types';
-import { PHONE_PATTERN } from '@/lib/patterns';
+import { normalisePhone, PHONE_MESSAGE } from '@/lib/patterns';
 
 /**
  * Zod schema for `POST /parties/corporates`. `registrationNumber` uniqueness
@@ -13,7 +13,7 @@ export const registerCorporateFormSchema = z.object({
   phoneNumber: z
     .string()
     .trim()
-    .refine((v) => v === '' || PHONE_PATTERN.test(v), 'Must match +255XXXXXXXXX'),
+    .refine((v) => v === '' || normalisePhone(v) !== null, PHONE_MESSAGE),
   email: z
     .string()
     .trim()
@@ -27,7 +27,7 @@ export function blankRegisterCorporateForm(): RegisterCorporateFormValues {
 }
 
 export function toApiRequest(values: RegisterCorporateFormValues): RegisterCorporateRequest {
-  const phoneNumber = values.phoneNumber.trim();
+  const phoneNumber = values.phoneNumber.trim() ? (normalisePhone(values.phoneNumber) ?? values.phoneNumber.trim()) : '';
   const email = values.email.trim();
   return {
     registeredName: values.registeredName.trim(),

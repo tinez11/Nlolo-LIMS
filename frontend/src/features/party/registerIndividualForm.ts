@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { PartyDetailView, RegisterIndividualRequest } from '@/api/types';
 import { todayIso } from '@/lib/dates';
-import { ISO_DATE_PATTERN, PHONE_PATTERN } from '@/lib/patterns';
+import { ISO_DATE_PATTERN, normalisePhone, PHONE_MESSAGE } from '@/lib/patterns';
 
 /**
  * Zod schema for `POST /parties/individuals`, mirroring `ContactInfo`'s real
@@ -41,7 +41,7 @@ export const registerIndividualFormSchema = z
     phoneNumber: z
       .string()
       .trim()
-      .refine((v) => v === '' || PHONE_PATTERN.test(v), 'Must match +255XXXXXXXXX'),
+      .refine((v) => v === '' || normalisePhone(v) !== null, PHONE_MESSAGE),
     email: z
       .string()
       .trim()
@@ -183,7 +183,8 @@ export function editIndividualForm(party: PartyDetailView): RegisterIndividualFo
 }
 
 export function toApiRequest(values: RegisterIndividualFormValues): RegisterIndividualRequest {
-  const phoneNumber = values.phoneNumber.trim();
+  // Sent in the one stored form; the schema has already refused anything that does not convert.
+  const phoneNumber = values.phoneNumber.trim() ? (normalisePhone(values.phoneNumber) ?? values.phoneNumber.trim()) : '';
   const email = values.email.trim();
 
   // Omit rather than send empty strings. An absent field means "not recorded";

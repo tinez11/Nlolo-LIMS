@@ -31,10 +31,13 @@ describe('registerCorporateFormSchema', () => {
     ).toBe(false);
   });
 
-  it('rejects a phone number not matching the Tanzanian E.164 pattern', () => {
-    expect(
-      registerCorporateFormSchema.safeParse({ ...valid(), phoneNumber: '0712345999' }).success,
-    ).toBe(false);
+  it('rejects a phone number that is not a Tanzanian one', () => {
+    expect(registerCorporateFormSchema.safeParse({ ...valid(), phoneNumber: '+254712345999' }).success).toBe(false);
+  });
+
+  it('accepts a Tanzanian number written the everyday way, and sends it as +255', () => {
+    const values = registerCorporateFormSchema.parse({ ...valid(), phoneNumber: '0712 345 999' });
+    expect(toApiRequest(values).contactInfo.phoneNumber).toBe('+255712345999');
   });
 
   it('rejects a malformed email', () => {

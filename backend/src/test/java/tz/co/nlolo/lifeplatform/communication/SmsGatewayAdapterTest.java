@@ -108,6 +108,14 @@ class SmsGatewayAdapterTest {
         assertThat(SmsGatewayAdapter.toMsisdn("  +255700000000  ")).isEqualTo("255700000000");
     }
 
+    /** A number on file in an everyday form still goes out as the aggregator's MSISDN (2026-10-20). */
+    @Test
+    void sendsAnEverydayTanzanianNumberAsTheAggregatorsMsisdn() {
+        assertThat(SmsGatewayAdapter.toMsisdn("0712 345 678")).isEqualTo("255712345678");
+        assertThat(SmsGatewayAdapter.toMsisdn("+255 712-345-678")).isEqualTo("255712345678");
+        assertThat(SmsGatewayAdapter.toMsisdn("00255712345678")).isEqualTo("255712345678");
+    }
+
     /**
      * The regression this whole rewrite exists for.
      *

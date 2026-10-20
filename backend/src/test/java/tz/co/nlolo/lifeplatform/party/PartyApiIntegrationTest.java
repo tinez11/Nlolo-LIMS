@@ -394,7 +394,25 @@ class PartyApiIntegrationTest {
     @Test
     void invalidPhoneNumberIsRejected() {
         Assertions.assertThrows(IllegalArgumentException.class,
-            () -> partyApi.registerIndividual("Bad Phone", LocalDate.of(1990, 1, 1), "0712345678", null, "test-agent"));
+            () -> partyApi.registerIndividual("Bad Phone", LocalDate.of(1990, 1, 1), "071234567", null, "test-agent"));
+        Assertions.assertThrows(IllegalArgumentException.class,
+            () -> partyApi.registerCorporate("Bad Phone Ltd", "BP-" + UUID.randomUUID(), "+254712345678", null,
+                "test-agent"));
+    }
+
+    /**
+     * The everyday form is accepted and stored the one way the SMS adapter relies on (2026-10-20) -- for a person and
+     * for a company alike.
+     */
+    @Test
+    void anEverydayPhoneNumberIsStoredAsPlus255() {
+        UUID person = partyApi.registerIndividual("Everyday Phone", LocalDate.of(1990, 1, 1), "0712 345 678", null,
+            "test-agent").partyId();
+        assertThat(partyApi.getPartyDetail(person).phoneNumber()).isEqualTo("+255712345678");
+
+        UUID company = partyApi.registerCorporate("Everyday Phone Ltd", "EP-" + UUID.randomUUID(), "255 754 000 111",
+            null, "test-agent").partyId();
+        assertThat(partyApi.getPartyDetail(company).phoneNumber()).isEqualTo("+255754000111");
     }
 
     /**

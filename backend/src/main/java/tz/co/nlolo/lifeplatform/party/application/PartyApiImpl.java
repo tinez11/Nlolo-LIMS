@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.party.application;
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.party.api.DuplicateClientReferenceException;
+import tz.co.nlolo.lifeplatform.party.api.PhoneNumbers;
 import tz.co.nlolo.lifeplatform.party.api.DuplicateIdentityDocumentException;
 import tz.co.nlolo.lifeplatform.party.api.DuplicateRegistrationNumberException;
 import tz.co.nlolo.lifeplatform.party.api.IdentityDocument;
@@ -147,6 +148,7 @@ public class PartyApiImpl implements PartyApi {
     public PartyView registerCorporate(String registeredName, String registrationNumber, String phoneNumber,
                                         String email, String registeredBy, String registeredByName,
                                         UUID registeredByAgentPartyId) {
+        phoneNumber = PhoneNumbers.normalise(phoneNumber);
         validatePhone(phoneNumber);
         UUID tenantId = TenantContext.get();
         if (partyRepository.findByTenantIdAndRegistrationNumber(tenantId, registrationNumber).isPresent()) {
@@ -354,6 +356,7 @@ public class PartyApiImpl implements PartyApi {
     @Transactional
     public PartyDetailView amendOrganisation(UUID partyId, String displayName, String phoneNumber,
                                               String email, String amendedBy) {
+        phoneNumber = PhoneNumbers.normalise(phoneNumber);
         validatePhone(phoneNumber);
         Party party = findPartyOrThrow(partyId);
         party.amendCorporateDetails(displayName, phoneNumber, email, amendedBy);
@@ -439,6 +442,11 @@ public class PartyApiImpl implements PartyApi {
         return party;
     }
 
+    /**
+     * The last word on what is stored: always the {@link PhoneNumbers#normalise normalised} value by the time it gets
+     * here, so this only ever refuses a caller that skipped normalising -- which would put an undeliverable number on
+     * file for the SMS adapter.
+     */
     private static void validatePhone(String phoneNumber) {
         if (phoneNumber != null && !TZ_PHONE_PATTERN.matcher(phoneNumber).matches()) {
             throw new IllegalArgumentException("Phone number must match the Tanzanian E.164 pattern +255XXXXXXXXX");

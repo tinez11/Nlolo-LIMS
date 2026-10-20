@@ -48,7 +48,7 @@ export function IndividualFields({
       </FormField>
 
       <FormField label="Phone number (optional)" error={errors.phoneNumber?.message}>
-        <Input placeholder="+255712345678" {...register('phoneNumber')} />
+        <Input placeholder="0712 345 678" {...register('phoneNumber')} />
       </FormField>
 
       <FormField label="Email (optional)" error={errors.email?.message}>

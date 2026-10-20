@@ -11,7 +11,11 @@ import jakarta.validation.constraints.Pattern;
  * only @NotNull/@NotBlank reject it), matching the spec rather than over-constraining it.
  */
 public record ContactInfo(
-    @Pattern(regexp = "^\\+255\\d{9}$", message = "Phone number must match the Tanzanian E.164 pattern +255XXXXXXXXX")
+    // Any everyday form of a Tanzanian number (2026-10-20): 0712 345 678, 255712345678, +255712345678. Shape only
+    // here -- the digits, spaces and separators a number is written with; PhoneNumbers converts it to +255XXXXXXXXX
+    // before it is stored, and refuses anything that is not a Tanzanian number in words.
+    @Pattern(regexp = "^[+0-9\\s\\-.()]{9,20}$",
+        message = "Enter a Tanzanian phone number, e.g. 0712 345 678 or +255712345678")
     String phoneNumber,
     @Email
     String email) {}

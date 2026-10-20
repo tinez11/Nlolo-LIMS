@@ -1,4 +1,5 @@
 import type { QuotationRequest } from '@/api/documents';
+import { normalisePhone } from '@/lib/patterns';
 import type { PricingBasis, ProspectInputs } from './pricingBasis';
 import type { FuneralDependantInput } from './useFuneralQuotation';
 import { isAmount, isWholeMonths, type QuotationInputs } from './useQuotation';
@@ -27,6 +28,10 @@ export interface QuotationForm {
 export function quotationRequest(basis: PricingBasis, form: QuotationForm): QuotationRequest | null {
   const { inputs, productVersionId, applicantPartyId, prospect } = form;
   if (!inputs.productId || !productVersionId) return null;
+  // An optional phone that is not a Tanzanian number is held back like any other malformed field: it would be
+  // printed on the paper and carried into onboarding as typed.
+  const phone = prospect?.phoneNumber.trim() ? normalisePhone(prospect.phoneNumber) : null;
+  if (!applicantPartyId && prospect?.phoneNumber.trim() && !phone) return null;
   // Who is quoted: a registered applicant by id, else a prospect by name -- never both, which the server refuses.
   const who = applicantPartyId
     ? { applicantPartyId }
@@ -34,7 +39,7 @@ export function quotationRequest(basis: PricingBasis, form: QuotationForm): Quot
       ? {
           prospect: {
             fullName: prospect.fullName.trim(),
-            phoneNumber: prospect.phoneNumber || null,
+            phoneNumber: phone,
             dateOfBirth: prospect.dateOfBirth || null,
             sex: prospect.sex || null,
             smokerStatus: prospect.smokerStatus || null,
