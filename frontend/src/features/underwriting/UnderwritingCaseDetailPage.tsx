@@ -19,7 +19,9 @@ import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { DisclosurePanel } from './DisclosurePanel';
-import { formatDate, formatInstant } from '@/lib/dates';
+import { formatDate, formatInstant, formatMonths } from '@/lib/dates';
+import { formatMoney } from '@/lib/money';
+import { PREMIUM_FREQUENCY_LABELS, type PremiumFrequency } from '@/api/types';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectCase,
@@ -332,6 +334,55 @@ export function UnderwritingCaseDetailPage() {
           </Panel>
         )}
 
+        {/*
+          WHAT IS PROPOSED, then the quotation it came from, every return since, and the
+          declarations -- all ABOVE the assessment and decision (2026-10-20). The underwriter reads
+          the proposal before judging it; with the forms first, the terms the agent sent sat
+          below the place they were being assessed.
+        */}
+        {view && !view.groupScheme && !view.evidenceForPolicyNumber && (
+          <Panel title="The proposal" subtitle="The cover applied for. Read it, and the quotation below, before assessing.">
+            <dl className="px-4 pb-2">
+              <Field label="Sum assured" value={view.sumAssured ? formatMoney(view.sumAssured) : '—'} />
+              <Field
+                label="Term"
+                value={view.requestedTermMonths != null ? formatMonths(view.requestedTermMonths) : '—'}
+              />
+              {view.premiumPayingTermMonths != null && view.premiumPayingTermMonths !== view.requestedTermMonths && (
+                <Field label="Premiums paid for" value={formatMonths(view.premiumPayingTermMonths)} />
+              )}
+              <Field
+                label="Premium frequency"
+                value={view.premiumFrequency
+                  ? PREMIUM_FREQUENCY_LABELS[view.premiumFrequency as PremiumFrequency] ?? view.premiumFrequency
+                  : '—'}
+              />
+            </dl>
+          </Panel>
+        )}
+        {quotation && view && (
+          <AcceptedQuotationPanel
+            quotation={{ ...quotation, productId: view.productId ?? '', applicantPartyId: null, caseId,
+              proposalNumber: view.proposalNumber ?? null } as unknown as AgentQuotation}
+            productName={view.productId ? <ProductName productId={view.productId} /> : undefined}
+          />
+        )}
+        <ProposalHistoryPanel events={history} />
+
+        {/* Recorded by whoever took the proposal -- agents included -- not gated on the
+            UNDERWRITER role that gates assessment below. Asking the questions and deciding
+            the case are different jobs done by different people.
+
+            This is the evidence a contestability review reads. Claims computes and shows
+            `requiresContestabilityReview` on every claim; until disclosures existed there
+            was nothing behind it. */}
+        <Panel
+          title="Declarations"
+          subtitle="What the applicant declared. Read back on a claim, so it records the question as it was put."
+        >
+          <DisclosurePanel caseId={caseId} />
+        </Panel>
+
         {view?.status === 'DECIDED' && (
           <Panel title="Decision">
             <dl className="px-4 pb-2">
@@ -363,8 +414,8 @@ export function UnderwritingCaseDetailPage() {
         )}
 
         {/*
-          The decision, below the evidence panel and above the disclosures, in the order the
-          work happens: assess, then decide.
+          The decision, after the proposal and its declarations, in the order the work happens:
+          read, assess, then decide.
 
           Same visibility rule as the assessment form -- an undecided case, or a POSTPONED
           one, which is a decision in status only. A POSTPONED case can be decided again once
@@ -466,28 +517,6 @@ export function UnderwritingCaseDetailPage() {
           <ReturnToAgentPanel caseId={caseId} onReturned={() => void loadCase(caseId)} />
         )}
 
-        {quotation && view && (
-          <AcceptedQuotationPanel
-            quotation={{ ...quotation, productId: view.productId ?? '', applicantPartyId: null, caseId,
-              proposalNumber: view.proposalNumber ?? null } as unknown as AgentQuotation}
-            productName={view.productId ? <ProductName productId={view.productId} /> : undefined}
-          />
-        )}
-        <ProposalHistoryPanel events={history} />
-
-        {/* Recorded by whoever took the proposal -- agents included -- not gated on the
-            UNDERWRITER role that gates assessment above. Asking the questions and deciding
-            the case are different jobs done by different people.
-
-            This is the evidence a contestability review reads. Claims computes and shows
-            `requiresContestabilityReview` on every claim; until disclosures existed there
-            was nothing behind it. */}
-        <Panel
-          title="Declarations"
-          subtitle="What the applicant declared. Read back on a claim, so it records the question as it was put."
-        >
-          <DisclosurePanel caseId={caseId} />
-        </Panel>
       </DetailLayout>
     </>
   );
