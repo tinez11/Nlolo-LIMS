@@ -164,7 +164,8 @@ test.describe('staff clients register', () => {
       mimeType: 'image/png',
       buffer: MINIMAL_PNG,
     });
-    await expect(page.getByText(/Evidence uploaded:/)).toBeVisible({ timeout: 20_000 });
+    // Filed evidence is listed by its name (e4fac848 replaced the "Evidence uploaded:" line).
+    await expect(page.getByText('id-scan.png', { exact: true })).toBeVisible({ timeout: 20_000 });
     await page.getByRole('button', { name: 'Verify' }).click();
     await page.getByRole('button', { name: 'Verify identity' }).click();
     await expect(page.getByText('Verified').first()).toBeVisible({ timeout: 20_000 });
