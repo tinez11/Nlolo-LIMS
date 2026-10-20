@@ -606,15 +606,28 @@ components:
                     student: { type: boolean }
     QuotationRequest:
       type: object
-      description: Inputs only -- every figure on the document is quoted again on the server.
-      required: [productId, productVersionId, applicantPartyId]
+      description: >-
+        Inputs only -- every figure on the document is quoted again on the server. Exactly one of applicantPartyId and
+        prospect names who is quoted; a prospect's quotation is marked as such, valid for 30 days, and stores nothing.
+      required: [productId, productVersionId]
       properties:
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
         applicantPartyId:
-          type: string
+          type: [string, "null"]
           format: uuid
           description: The proposer. Their name, contact and rating facts are read from their record, never sent.
+        prospect:
+          type: [object, "null"]
+          description: Somebody not registered yet (2026-10-20). Their rating facts as the agent typed them.
+          required: [fullName]
+          properties:
+            fullName: { type: string, maxLength: 255 }
+            phoneNumber: { type: [string, "null"], maxLength: 30 }
+            dateOfBirth: { type: [string, "null"], format: date }
+            sex: { type: [string, "null"], enum: [MALE, FEMALE, null] }
+            smokerStatus: { type: [string, "null"], enum: [SMOKER, NON_SMOKER, UNKNOWN, null] }
+            occupationClass: { type: [string, "null"], maxLength: 30 }
         sumAssured:
           type: [number, "null"]
           description: The sum assured, or a deposit's amount. Null on a funeral plan, whose plan sets the benefit.

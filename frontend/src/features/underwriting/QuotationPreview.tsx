@@ -11,6 +11,7 @@ import { downloadQuotation, type QuotationRequest } from '@/api/documents';
 import { useFuneralQuotation, type FuneralDependantInput, type FuneralQuotationInputs } from './useFuneralQuotation';
 import { InlineError } from '@/components/InlineError';
 import { FUNERAL_ROLE_LABELS, type FuneralRoleName } from '@/features/products/funeralSchema';
+import { pricingBasis, type PricingBasis, type ProspectInputs } from './pricingBasis';
 
 /**
  * A money figure the SERVER sent as a JSON number.
@@ -48,38 +49,6 @@ function Row({ label, value, suffix }: { label: string; value: string; suffix?: 
   );
 }
 
-/**
- * How a product is priced -- which decides what this panel can even ask for.
- *
- * <p>The premium-quote endpoint prices a sum assured off a base rate table, and that is ALL it can price. Nine of
- * the platform's fourteen portfolios are not priced that way at all, so every one of them used to answer the panel
- * with a red 422 ("carries no base rate table, so it cannot be priced") on a product working exactly as designed.
- * A quotation panel that only ever works for term and endowment is not a quotation panel.
- */
-type PricingBasis = 'PREMIUM' | 'SAVINGS' | 'FUNERAL' | 'OWN_SECTION' | 'PER_SCHEME';
-
-const BASIS_BY_PORTFOLIO: Record<string, PricingBasis> = {
-  // Priced from a sum assured and the version's base rate table.
-  TERM: 'PREMIUM',
-  WL: 'PREMIUM',
-  END: 'PREMIUM',
-  MB: 'PREMIUM',
-  PAR: 'PREMIUM',
-  // Priced from money paid in and a rate: a deposit's grid, or an account's declared rate.
-  SAV: 'SAVINGS',
-  DEP: 'SAVINGS',
-  // Priced from the plan's own premium grid, a line per life -- quoted here, from the family entered above.
-  FUN: 'FUNERAL',
-  // Priced by its own fields on THIS form, which ask for what its own quoter needs -- an annuity form, a fund
-  // split. Repeating their figures here would be two prices for one thing on one screen.
-  IANN: 'OWN_SECTION',
-  DANN: 'OWN_SECTION',
-  PEN: 'OWN_SECTION',
-  ULIP: 'OWN_SECTION',
-  // Priced per scheme, not per life: the rate belongs to the scheme contract.
-  CRL: 'PER_SCHEME',
-  GRPL: 'PER_SCHEME',
-};
 
 /** What prices this one, named so a staff member can go and look at it. */
 const OWN_SECTION_BY_PORTFOLIO: Record<string, string> = {
@@ -97,7 +66,13 @@ export function QuotationPreview({
   productVersionId,
   funeral,
   applicantPartyId = '',
+  prospect,
 }: {
+  /**
+   * Somebody not registered yet (2026-10-20, the agents' quotation calculator): the quotation PDF carries these
+   * inputs instead of a party id, and is marked as a prospect's. Ignored once there is an applicant.
+   */
+  prospect?: ProspectInputs | undefined;
   inputs: QuotationInputs;
   premiumPayingTermMonths: string;
   commencementDate: string;
@@ -115,8 +90,7 @@ export function QuotationPreview({
       }
     | undefined;
 }) {
-  // An unknown or absent portfolio keeps the original behaviour: ask for a premium and show whatever comes back.
-  const basis: PricingBasis = (portfolioCode && BASIS_BY_PORTFOLIO[portfolioCode]) || 'PREMIUM';
+  const basis: PricingBasis = pricingBasis(portfolioCode);
 
   return (
     <Panel
@@ -186,12 +160,16 @@ export function QuotationPreview({
             commencementDate,
             productVersionId,
             applicantPartyId,
+            prospect,
             funeral,
           });
           return (
             <DownloadQuotationButton
               download={request ? () => downloadQuotation(request) : null}
               fileName={`quotation-${productVersionId.slice(0, 8)}.pdf`}
+              {...(!applicantPartyId && prospect
+                ? { description: 'The figures above, for the prospect to take away and study.' }
+                : {})}
             />
           );
         })()}
@@ -213,15 +191,32 @@ function quotationRequest(
     commencementDate: string;
     productVersionId: string;
     applicantPartyId: string;
+    prospect?: ProspectInputs | undefined;
     funeral?: { planCode: string; mainMember: { name: string; dateOfBirth: string | null } | null; dependants: FuneralDependantInput[] } | undefined;
   },
 ): QuotationRequest | null {
-  const { inputs, productVersionId, applicantPartyId } = form;
-  if (!inputs.productId || !productVersionId || !applicantPartyId) return null;
+  const { inputs, productVersionId, applicantPartyId, prospect } = form;
+  if (!inputs.productId || !productVersionId) return null;
+  // Who is quoted: a registered applicant by id, else a prospect by name -- never both, which the server refuses.
+  const who = applicantPartyId
+    ? { applicantPartyId }
+    : prospect && prospect.fullName.trim()
+      ? {
+          prospect: {
+            fullName: prospect.fullName.trim(),
+            phoneNumber: prospect.phoneNumber || null,
+            dateOfBirth: prospect.dateOfBirth || null,
+            sex: prospect.sex || null,
+            smokerStatus: prospect.smokerStatus || null,
+            occupationClass: prospect.occupationClass || null,
+          },
+        }
+      : null;
+  if (!who) return null;
   const base = {
     productId: inputs.productId,
     productVersionId,
-    applicantPartyId,
+    ...who,
     currency: inputs.sumAssuredCurrency || 'TZS',
     commencement: form.commencementDate || null,
   };

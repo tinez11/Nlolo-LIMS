@@ -64,7 +64,8 @@ export function OnboardCustomerPage() {
   );
 }
 
-function TypeTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+/** The two-way switch at the top of a form. Shared with the agents' quotation calculator (2026-10-20). */
+export function TypeTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
       type="button"

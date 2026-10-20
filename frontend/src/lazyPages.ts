@@ -142,6 +142,9 @@ export const ReinsuranceStatementsPage = lazy(() =>
 export const BordereauPage = lazy(() =>
   import('@/features/reinsurance/BordereauPage').then((m) => ({ default: m.BordereauPage })),
 );
+export const QuotationCalculatorPage = lazy(() =>
+  import('@/features/underwriting/QuotationCalculatorPage').then((m) => ({ default: m.QuotationCalculatorPage })),
+);
 export const OpenUnderwritingCasePage = lazy(() =>
   import('@/features/underwriting/OpenUnderwritingCasePage').then((m) => ({ default: m.OpenUnderwritingCasePage })),
 );

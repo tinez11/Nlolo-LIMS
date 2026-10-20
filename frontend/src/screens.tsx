@@ -101,6 +101,7 @@ import {
   StatementPage,
   ReinsuranceStatementsPage,
   OpenUnderwritingCasePage,
+  QuotationCalculatorPage,
   UnderwritingCaseDetailPage,
   UnderwritingQueuePage,
   PayoutsQueuePage,
@@ -723,6 +724,12 @@ const AGENTS_SCREENS: Screen[] = [
     reach: { group: 'my-business', label: 'My clients', icon: UserCheck },
   },
   { path: 'parties/:partyId', element: <PartyDetailPage realm="agents" />, reach: 'drill-in' },
+  // Where a sale starts (2026-10-20): a price and a paper for the customer before anybody is registered or saved.
+  {
+    path: 'quotation',
+    element: <QuotationCalculatorPage />,
+    reach: { group: 'my-business', label: 'Quotation calculator', icon: Calculator },
+  },
   {
     path: 'customers/new',
     element: <OnboardCustomerPage />,
