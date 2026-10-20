@@ -108,9 +108,14 @@ export function SubmitProposalPage() {
             ]}
             note="An underwriter decides it. If it is returned for corrections, it appears under Needs your action."
             onward={
-              <Button asChild size="sm" variant="outline">
-                <Link to="/agents/dashboard">Back to the dashboard</Link>
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button asChild size="sm" variant="outline">
+                  <Link to={`/agents/proposals/${quotation.caseId}`}>Open the proposal</Link>
+                </Button>
+                <Button asChild size="sm" variant="ghost">
+                  <Link to="/agents/dashboard">Back to the dashboard</Link>
+                </Button>
+              </div>
             }
           />
         ) : (

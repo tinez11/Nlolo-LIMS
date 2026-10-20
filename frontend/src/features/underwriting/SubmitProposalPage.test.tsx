@@ -66,6 +66,7 @@ describe('SubmitProposalPage', () => {
     await waitFor(() => expect(submitProposal).toHaveBeenCalledWith('q-1', 'party-9'));
     expect(await screen.findByText('Submitted to underwriting')).toBeInTheDocument();
     expect(screen.getByText('PRO-0001')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open the proposal' })).toHaveAttribute('href', '/agents/proposals/case-1');
   });
 
   it('cannot be submitted before the customer is registered', async () => {

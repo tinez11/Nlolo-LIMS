@@ -119,7 +119,7 @@ components:
               lifeAssuredPartyId: { type: [string, 'null'], format: uuid }
               productId: { type: [string, 'null'], format: uuid }
               sumAssured: { $ref: '#/components/schemas/Money' }
-              status: { type: string, enum: [OPEN, IN_REVIEW, DECIDED] }
+              status: { type: string, enum: [OPEN, IN_REVIEW, DECIDED, RETURNED] }
         recentActivity: { type: array, items: { $ref: '#/components/schemas/ActivityItem' } }
     ClaimStatus:
       type: string

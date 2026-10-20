@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Field } from '@/components/Field';
 import { Panel } from '@/components/Panel';
 import type { AgentQuotation } from '@/api/agentQuotations';
@@ -20,7 +21,7 @@ export function AcceptedQuotationPanel({
   productName,
 }: {
   quotation: AgentQuotation;
-  productName?: string | undefined;
+  productName?: ReactNode;
 }) {
   const inputs = quotation.inputs;
   const quoted = quotation.quoted;

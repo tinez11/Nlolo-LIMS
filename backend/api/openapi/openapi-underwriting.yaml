@@ -61,7 +61,7 @@ paths:
       parameters:
         - name: status
           in: query
-          schema: { type: string, enum: [OPEN, IN_REVIEW, DECIDED] }
+          schema: { type: string, enum: [OPEN, IN_REVIEW, DECIDED, RETURNED] }
         - name: outcome
           in: query
           description: What was decided. Added 2026-10-15 for the underwriting dashboard.
@@ -676,6 +676,163 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/CaseQuotation' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /underwriting/cases/{caseId}/return:
+    post:
+      summary: Return the proposal to the agent for amendment
+      description: >-
+        2026-10-20. One or more reasons, each a category and the underwriter's own words for what is wrong and what to
+        change. From OPEN or IN_REVIEW only (422 otherwise); the case becomes RETURNED and cannot be decided until the
+        agent resubmits it.
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reasons]
+              properties:
+                reasons:
+                  type: array
+                  minItems: 1
+                  items: { $ref: '#/components/schemas/ReturnReason' }
+                note: { type: [string, "null"], maxLength: 2000 }
+      responses:
+        '200':
+          description: Returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnderwritingCaseView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Not returnable, or a reason without its texts
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /underwriting/cases/{caseId}/terms:
+    put:
+      summary: The agent amends the contract on a returned or postponed proposal
+      description: >-
+        Every field the new value, checked against the product as at opening. Refused (422) unless the case is RETURNED or
+        POSTPONED -- a decline is final. Each changed field is recorded in the case history with its old and new value.
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      security:
+        - agentsAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sumAssured]
+              properties:
+                sumAssured: { type: number }
+                requestedTermMonths: { type: [integer, "null"] }
+                premiumPayingTermMonths: { type: [integer, "null"] }
+                premiumFrequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE, null] }
+                proposedCommencementDate: { type: [string, "null"], format: date }
+      responses:
+        '200':
+          description: Amended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnderwritingCaseView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Not amendable, or terms the product refuses
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /underwriting/cases/{caseId}/applicant:
+    put:
+      summary: The agent corrects the client's record on a returned or postponed proposal
+      description: >-
+        The same body as registering a person; a full replacement. A changed name or date of birth on a VERIFIED client
+        sends their KYC back to PENDING. Recorded in the case history with each field's old and new value.
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      security:
+        - agentsAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: 'openapi-party.yaml#/components/schemas/RegisterIndividualRequest' }
+      responses:
+        '200':
+          description: Corrected
+          content:
+            application/json:
+              schema: { $ref: 'openapi-party.yaml#/components/schemas/PartyDetailView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Not amendable
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /underwriting/cases/{caseId}/resubmit:
+    post:
+      summary: The agent resubmits a returned or postponed proposal
+      description: The same case, back in the queue as OPEN, in its next round. 422 for a declined proposal -- it is final.
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      security:
+        - agentsAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: [string, "null"], maxLength: 2000 }
+      responses:
+        '200':
+          description: Resubmitted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnderwritingCaseView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Not resubmittable
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /underwriting/cases/{caseId}/history:
+    get:
+      summary: Every return, amendment and resubmission on the case, oldest first
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CaseEvent' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /underwriting/needs-action:
+    get:
+      summary: The calling agent's proposals waiting on them
+      description: >-
+        Returned for amendment (with the latest reasons) and postponed (with the decision's reason) -- both actionable --
+        and the 20 newest declines of the last 30 days (with the reason; final). Only the agent's own clients' proposals.
+      security:
+        - agentsAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/NeedsAction' }
   /underwriting/cases/{caseId}/disclosures:
     post:
       summary: Record what the applicant declared on the proposal form
@@ -739,6 +896,53 @@ paths:
         '404': { description: "No such case in this tenant" }
 components:
   schemas:
+    ReturnReason:
+      type: object
+      additionalProperties: false
+      required: [category, problem, change]
+      properties:
+        category:
+          type: string
+          enum: [PERSONAL_DETAILS, DOCUMENTS, COVER_OR_TERM, DISCLOSURES, BENEFICIARIES, WRONG_PRODUCT, OTHER]
+        problem: { type: string, maxLength: 2000, description: What is wrong }
+        change: { type: string, maxLength: 2000, description: What to change }
+    FieldChange:
+      type: object
+      additionalProperties: false
+      required: [field]
+      properties:
+        field: { type: string }
+        before: { type: [string, "null"] }
+        after: { type: [string, "null"] }
+    CaseEvent:
+      type: object
+      additionalProperties: false
+      required: [eventId, kind, round, actorSubject, reasons, changes, at]
+      properties:
+        eventId: { type: string, format: uuid }
+        kind: { type: string, enum: [RETURNED, AMENDED, RESUBMITTED] }
+        round: { type: integer, description: The submission it belongs to -- 1 is the first, each resubmission the next }
+        actorSubject: { type: string }
+        reasons: { type: array, items: { $ref: '#/components/schemas/ReturnReason' } }
+        changes: { type: array, items: { $ref: '#/components/schemas/FieldChange' } }
+        previousDecision:
+          type: [object, "null"]
+          description: The postponement a resubmission answered
+          properties:
+            outcome: { type: string, enum: [ACCEPT, LOADED, DECLINED, POSTPONED] }
+            reason: { type: [string, "null"] }
+            decidedAt: { type: [string, "null"], format: date-time }
+        note: { type: [string, "null"] }
+        at: { type: string, format: date-time }
+    NeedsAction:
+      type: object
+      additionalProperties: false
+      required: [caseView, reasons, actionable]
+      properties:
+        caseView: { $ref: '#/components/schemas/UnderwritingCaseView' }
+        reasons: { type: array, items: { $ref: '#/components/schemas/ReturnReason' } }
+        note: { type: [string, "null"], description: The return's note, or the decision's reason for a postponement or decline }
+        actionable: { type: boolean, description: False only for a decline, which is final }
     CaseQuotation:
       type: object
       description: >-
@@ -1281,7 +1485,10 @@ components:
         caseId: { type: string, format: uuid }
         applicantPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         productId: { type: string, format: uuid }
-        status: { type: string, enum: [OPEN, IN_REVIEW, DECIDED] }
+        status:
+          type: string
+          enum: [OPEN, IN_REVIEW, DECIDED, RETURNED]
+          description: RETURNED -- sent back to the agent for amendment (2026-10-20); resubmitting reopens it as OPEN.
         referralStatus: { type: string, enum: [NONE, REFERRED_TO_SENIOR, REFERRAL_RESOLVED] }
         decisionOutcome: { type: [string, "null"], enum: [ACCEPT, LOADED, DECLINED, POSTPONED, null] }
         decisionLoadingPercent: { type: [number, "null"] }

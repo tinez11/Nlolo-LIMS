@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { getNeedsAction } from '@/api/proposalAmendments';
 import { KpiRow, type Kpi } from '@/components/KpiCard';
 import { Panel } from '@/components/Panel';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -38,6 +39,18 @@ export function AgentDashboardPanel() {
     void load('agent');
   }, [load]);
 
+  // Proposals returned or postponed, waiting on the agent (2026-10-20). Null -- "Not available" -- if it cannot be
+  // read, never 0: an empty count that is really a failed one would tell the agent there is nothing to do.
+  const [needsAction, setNeedsAction] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    getNeedsAction().then(
+      (items) => { if (live) setNeedsAction(items.filter((n) => n.actionable).length); },
+      () => undefined,
+    );
+    return () => { live = false; };
+  }, []);
+
   if (isInitialLoad(resource)) return <LoadingBlock label="Counting your clients" />;
   if (resource.status === 'error' && resource.error && resource.data === null) {
     return <ErrorPanel error={resource.error} onRetry={() => void load('agent')} />;
@@ -47,6 +60,12 @@ export function AgentDashboardPanel() {
 
   const period = MONTH[Number(v.commissionPeriod.slice(5, 7)) - 1] ?? v.commissionPeriod;
   const kpis: Kpi[] = [
+    {
+      label: 'Needs your action',
+      value: countValue(needsAction),
+      hint: 'proposals returned or postponed',
+      to: '/agents/needs-action',
+    },
     { label: 'My clients', value: countValue(v.clients), hint: 'registered by you', to: '/agents/clients' },
     {
       label: 'Clients awaiting KYC',

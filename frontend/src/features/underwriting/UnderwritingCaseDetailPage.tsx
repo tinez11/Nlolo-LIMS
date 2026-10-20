@@ -45,6 +45,11 @@ import { BranchSelect } from '@/components/BranchSelect';
 import type { ApiError } from '@/lib/apiError';
 import { CHANNEL_LABEL, channelLabel } from '@/lib/ifrs17';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { getCaseHistory, getCaseQuotation, type CaseEvent, type CaseQuotation } from '@/api/proposalAmendments';
+import type { AgentQuotation } from '@/api/agentQuotations';
+import { AcceptedQuotationPanel } from './AcceptedQuotationPanel';
+import { ProposalHistoryPanel } from './ProposalHistoryPanel';
+import { ReturnToAgentPanel } from './ReturnToAgentPanel';
 
 /**
  * Reached from `OpenUnderwritingCasePage`'s own redirect, a direct visit to a
@@ -169,6 +174,20 @@ export function UnderwritingCaseDetailPage() {
   // once because four separate places have to agree about it -- whether the form renders,
   // what it is called, what it says, and what its button claims to do.
   const isPostponed = view?.decisionOutcome === 'POSTPONED';
+  const isReturned = view?.status === 'RETURNED';
+
+  // What the customer agreed to, and every return, correction and resubmission since (2026-10-20). Read again
+  // whenever the status moves, so a return just made appears in the history at once.
+  const [history, setHistory] = useState<CaseEvent[]>([]);
+  const [quotation, setQuotation] = useState<CaseQuotation | null>(null);
+  const status = view?.status;
+  useEffect(() => {
+    if (!caseId) return undefined;
+    let live = true;
+    getCaseHistory(caseId).then((h) => { if (live) setHistory(h); }, () => undefined);
+    getCaseQuotation(caseId).then((q) => { if (live) setQuotation(q); }, () => undefined);
+    return () => { live = false; };
+  }, [caseId, status]);
 
   if (isInitialLoad(detail)) {
     return <LoadingBlock label={`Loading case ${caseId}`} />;
@@ -353,7 +372,16 @@ export function UnderwritingCaseDetailPage() {
         */}
         {/* Waits for the choice read: the form's outcomes and checks differ on an annuity, and a
             form opened before the answer would keep the wrong ones. Keyed so it rebuilds if it changes. */}
-        {view && (view.status !== 'DECIDED' || isPostponed) && choicesRead && (
+        {/* With the agent: nothing to decide until it comes back (the server refuses a decision on it too). */}
+        {isReturned && (
+          <Panel title="With the agent" subtitle="Returned for corrections. It comes back to the queue when the agent resubmits it.">
+            <p className="px-4 pb-4 text-xs text-muted-foreground">
+              What was asked is in the proposal history below. Further evidence can still be recorded.
+            </p>
+          </Panel>
+        )}
+
+        {view && !isReturned && (view.status !== 'DECIDED' || isPostponed) && choicesRead && (
           <DecisionPanel
             key={annuityCase ? 'annuity' : 'risk'}
             annuity={annuityCase}
@@ -431,6 +459,21 @@ export function UnderwritingCaseDetailPage() {
             </form>
           </Panel>
         ) : null}
+
+        {/* Back to the agent for corrections, where the case is still the underwriter's to decide (2026-10-20). */}
+        {view && (view.status === 'OPEN' || view.status === 'IN_REVIEW') && !view.evidenceForPolicyNumber
+          && !view.groupScheme && roles.UNDERWRITER && (
+          <ReturnToAgentPanel caseId={caseId} onReturned={() => void loadCase(caseId)} />
+        )}
+
+        {quotation && view && (
+          <AcceptedQuotationPanel
+            quotation={{ ...quotation, productId: view.productId ?? '', applicantPartyId: null, caseId,
+              proposalNumber: view.proposalNumber ?? null } as unknown as AgentQuotation}
+            productName={view.productId ? <ProductName productId={view.productId} /> : undefined}
+          />
+        )}
+        <ProposalHistoryPanel events={history} />
 
         {/* Recorded by whoever took the proposal -- agents included -- not gated on the
             UNDERWRITER role that gates assessment above. Asking the questions and deciding
