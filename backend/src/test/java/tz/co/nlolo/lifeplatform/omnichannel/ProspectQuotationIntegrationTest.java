@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.omnichannel;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -270,6 +271,27 @@ class ProspectQuotationIntegrationTest {
             .andExpect(status().isOk());
 
         assertThat(rowCounts()).isEqualTo(before);
+    }
+
+    /**
+     * A date of birth that makes the person too young (or old) for the product is said as that -- the product's ages and
+     * the age it came to -- not as a missing rate cell (the user's "No base rate for age 0", 2026-10-20).
+     */
+    @Test
+    void anAgeOutsideTheProductsEntryAgesIsSaidAsThat() throws Exception {
+        UUID[] product = endowment();
+        UUID agent = agentParty();
+
+        JsonNode problem = new com.fasterxml.jackson.databind.ObjectMapper().readTree(mvc.perform(
+                post("/products/" + product[0] + "/premium-quote").with(agent(agent)).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"sumAssuredAmount\":1000000,\"sumAssuredCurrency\":\"TZS\",\"dateOfBirth\":\"" + TODAY
+                        + "\",\"sex\":\"FEMALE\",\"smokerStatus\":\"NON_SMOKER\",\"occupationClass\":\"STANDARD\","
+                        + "\"frequency\":\"MONTHLY\",\"policyTermMonths\":240}"))
+            .andExpect(status().isUnprocessableEntity()).andReturn().getResponse().getContentAsString());
+
+        assertThat(problem.path("detail").asText())
+            .contains("takes people aged 18 to 78").contains("would be 0").contains("Check the date of birth")
+            .doesNotContain("No base rate");
     }
 
     /** One name, or the other: a quotation for nobody, or for two people at once, is refused before anything is priced. */

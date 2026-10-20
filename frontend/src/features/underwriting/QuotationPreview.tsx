@@ -240,8 +240,8 @@ function PremiumQuotation({
         <div className="px-4 pb-4">
           <ErrorPanel error={toApiError(quotation.error)} />
           <p className="pt-2 text-xs text-muted-foreground">
-            This version cannot price this life. That is usually a rate table with no cell for the applicant&apos;s
-            age, sex and smoker status, or no multiplier for their occupation class — not a fault in this screen.
+            This product cannot price this person as entered; the message above says why. Check the date of birth,
+            sex and smoker status first. If they are right, the product is not priced for this person.
           </p>
         </div>
       )}

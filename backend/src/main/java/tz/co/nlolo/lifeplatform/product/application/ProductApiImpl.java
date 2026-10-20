@@ -611,6 +611,18 @@ public class ProductApiImpl implements ProductApi {
         if (ageAtEntry < 0) {
             throw new PremiumNotQuotableException("Date of birth " + input.dateOfBirth() + " is after " + asOf);
         }
+        // Outside the ages the version takes, said as that (2026-10-20). It used to fall through to the rate lookup and
+        // come back as "No base rate for age 0", which read as a broken rate table when the date of birth was wrong.
+        EligibilityBounds entry = version.getEligibilityBounds();
+        if (entry != null && ((entry.minEntryAge() != null && ageAtEntry < entry.minEntryAge())
+                || (entry.maxEntryAge() != null && ageAtEntry > entry.maxEntryAge()))) {
+            throw new PremiumNotQuotableException("This product takes people aged "
+                + (entry.minEntryAge() != null ? entry.minEntryAge() : 0) + " to "
+                + (entry.maxEntryAge() != null ? entry.maxEntryAge() : "any age")
+                + " when cover starts; with a date of birth of "
+                + input.dateOfBirth().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                + " this person would be " + ageAtEntry + ". Check the date of birth.");
+        }
 
         // A SINGLE premium is one charge for a term the rate table does not span: rate_per_mille is
         // an ANNUAL rate, so a single premium is only the annual figure while the term is twelve
