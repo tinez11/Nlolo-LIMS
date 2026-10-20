@@ -54,12 +54,10 @@ import { ProposalHistoryPanel } from './ProposalHistoryPanel';
 import { ReturnToAgentPanel } from './ReturnToAgentPanel';
 
 /**
- * Reached from `OpenUnderwritingCasePage`'s own redirect, a direct visit to a
- * bookmarked url, or -- now that `GET /underwriting/cases` exists -- a real
- * click-through from the Underwriting queue's drawer. Still not reachable
- * through a policy this case eventually issues, though: `GET /policies` never
- * re-surfaces `underwritingCaseId` (confirmed against the real wire DTO and
- * the OpenAPI spec, not just the internal same-named domain type).
+ * Reached from `OpenUnderwritingCasePage`'s own redirect, the Underwriting queue's drawer, the
+ * client's Underwriting tab, the dashboard, and the policy it issued ("The decided case"). The
+ * breadcrumb is the way back to the queue; the note that pointed there, and told the reader no
+ * policy linked back, went when policies began to (2026-10-20).
  *
  * Two panels, because assessing and deciding are two acts. `POST /assessments` records
  * EVIDENCE and refreshes the rules engine's recommendation; `POST /decision` is what settles
@@ -619,15 +617,6 @@ export function UnderwritingCaseDetailPage() {
             </div>
           )}
         </Panel>
-
-        <div className="rounded-lg border border-dashed border-border bg-surface-muted px-4 py-3 text-xs text-muted-foreground">
-          Browsable again from the{' '}
-          <Link to=".." relative="path" className="underline">
-            Underwriting queue
-          </Link>
-          . A policy later issued from this case still never re-exposes its id, though —
-          bookmark this page if you need direct access without going through the queue.
-        </div>
       </>
     );
   }

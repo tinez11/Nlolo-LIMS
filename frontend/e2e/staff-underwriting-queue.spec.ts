@@ -63,10 +63,8 @@ test.describe('staff underwriting queue', () => {
     await expect(page).toHaveURL(new RegExp(`/staff/underwriting/${caseId}`));
     await expect(page.getByRole('heading', { name: 'Underwriting case' })).toBeVisible();
 
-    // The detail page's own callout now correctly links back to the queue,
-    // replacing the old (now-false) "bookmark this, there's no other way
-    // back" copy.
-    await page.getByRole('link', { name: 'Underwriting queue' }).click();
+    // Back to the queue by the breadcrumb.
+    await page.getByRole('navigation', { name: /breadcrumb/i }).getByRole('link', { name: 'Underwriting' }).click();
     await expect(page).toHaveURL(/\/staff\/underwriting$/);
     await expect(page.getByText(proposalNumber)).toBeVisible();
   });
