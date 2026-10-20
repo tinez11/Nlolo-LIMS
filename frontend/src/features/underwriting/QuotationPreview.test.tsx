@@ -128,7 +128,8 @@ describe('QuotationPreview', () => {
     vi.mocked(quotePremium).mockRejectedValue({ status: 422, detail: 'No base rate for age 36' });
     render0();
 
-    expect(await screen.findByText(/cannot price this life/)).toBeInTheDocument();
+    expect(await screen.findByText(/cannot price this person as entered/)).toBeInTheDocument();
+    expect(screen.getByText(/Check the date of birth/)).toBeInTheDocument();
   });
 
   /** An assumed occupation class is named on screen, never applied silently. */
