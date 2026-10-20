@@ -712,7 +712,15 @@ component is a mistake, not a texture.
   control names in `aria-describedby`; the control also takes `aria-invalid`, and
   the red border keys off that same attribute rather than a separate class — so
   what a field looks like and what it announces cannot disagree. Server field
-  errors from a `400` bind onto the same slot.
+  errors from a `400` bind onto the same slot, and so does a refusal that names
+  one field (a client reference or ID already on another client).
+- **A refusal goes when it is corrected (2026-10-20).** Field errors re-validate
+  as the person types. The form's own `InlineError` — the server's answer to a
+  submit — disappears on the first edit inside the same form (its `<form>`, a
+  `data-edit-scope` container, or its panel), so the screen never goes on saying
+  "wrong" about something already put right; submitting again brings back the
+  server's answer to the corrected form. A failed READ shown inside a form (a
+  version or a list that could not load) is `sticky` and stays.
 - **Focus:** `focus-visible` only, so a mouse click does not draw the keyboard
   ring. The ring shifts to the danger hue on an invalid field.
 
