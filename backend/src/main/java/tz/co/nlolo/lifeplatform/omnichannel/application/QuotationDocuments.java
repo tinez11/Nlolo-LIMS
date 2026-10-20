@@ -170,8 +170,51 @@ public class QuotationDocuments {
             + ": its price comes from terms this form does not collect.");
     }
 
-    private CustomerDocument premium(Request in, ProductSummaryView product, Proposer applicant,
-                                     String currency, LocalDate asOf) {
+    /**
+     * What the customer agreed to, priced (2026-10-20): the version actually priced, the owning module's quote for these
+     * inputs, and the sum assured a proposal is opened at -- a funeral plan's being the main member's benefit on it.
+     * The same calls the PDF prints from, so the saved figures are the paper's figures.
+     */
+    public record Priced(UUID productVersionId, Object quote, BigDecimal sumAssured, String currency) {}
+
+    /**
+     * The quotation's figures without the paper, for saving what the customer accepted. Refused, as the paper would be,
+     * for a product this quotation cannot price -- and for a deposit on a term or amount it does not take, because a
+     * quotation a customer can agree to must be one a proposal can be opened from.
+     */
+    @Transactional(readOnly = true)
+    public Priced price(Request in) {
+        ProductSummaryView product = productApi.getProduct(in.productId());
+        if ((in.applicantPartyId() == null) == (in.prospect() == null)) {
+            throw new CustomerRequestRefusedException("A quotation is for a registered applicant or for a prospect: name one");
+        }
+        Proposer applicant = in.prospect() != null ? Proposer.of(in.prospect(), in.preparedBy())
+            : Proposer.of(partyApi.getPartyDetail(in.applicantPartyId()));
+        LocalDate asOf = in.commencement() != null ? in.commencement() : LocalDate.now(CIVIL_ZONE);
+        String currency = in.currency() == null || in.currency().isBlank() ? product.defaultCurrency() : in.currency();
+        PortfolioCode portfolio = product.portfolioCode();
+
+        if (portfolio == PortfolioCode.FUN) {
+            FuneralQuote quote = funeralQuote(in, asOf);
+            BigDecimal main = quote.lines().stream().filter(l -> l.role() == tz.co.nlolo.lifeplatform.product.api.FuneralRole.MAIN_MEMBER)
+                .map(l -> l.benefit()).findFirst()
+                .orElseThrow(() -> new CustomerRequestRefusedException("A funeral quotation needs the main member"));
+            return new Priced(in.productVersionId(), quote, main, currency);
+        }
+        if (SAVINGS.contains(portfolio)) {
+            SavingsQuoteView quote = savingsQuote(in, asOf);
+            if (quote.refusal() != null) throw new CustomerRequestRefusedException(quote.refusal());
+            return new Priced(in.productVersionId(), quote, in.sumAssured(), currency);
+        }
+        if (PREMIUM_RATED.contains(portfolio)) {
+            ProductApi.PremiumQuoteView quote = premiumQuote(in, applicant, currency, asOf);
+            return new Priced(quote.productVersionId(), quote, in.sumAssured(), currency);
+        }
+        throw new CustomerRequestRefusedException("A quotation is not available for " + product.productName()
+            + ": its price comes from terms this form does not collect.");
+    }
+
+    private ProductApi.PremiumQuoteView premiumQuote(Request in, Proposer applicant, String currency, LocalDate asOf) {
         if (in.sumAssured() == null || in.frequency() == null) {
             throw new CustomerRequestRefusedException("A premium quotation needs a sum assured and a payment frequency");
         }
@@ -181,11 +224,32 @@ public class QuotationDocuments {
                 : "A premium quotation needs the applicant's date of birth and sex"
                     + " on their record: the rate table is keyed on them.");
         }
-        ProductApi.PremiumQuoteView quote = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+        return productApi.quotePremium(new ProductApi.PremiumQuoteInput(
             in.productId(), in.sumAssured(), currency, applicant.dateOfBirth(), applicant.sex(),
             // UNKNOWN is a real row in the rate table; null means nobody asked, and the table prices it the same way.
             applicant.smokerStatus() == null ? SmokerStatus.UNKNOWN : applicant.smokerStatus(),
             applicant.occupationClass(), PremiumFrequency.valueOf(in.frequency()), asOf, in.policyTermMonths()));
+    }
+
+    private FuneralQuote funeralQuote(Request in, LocalDate asOf) {
+        if (in.funeralPlanCode() == null || in.funeralPlanCode().isBlank() || in.frequency() == null) {
+            throw new CustomerRequestRefusedException("A funeral quotation needs a plan and a payment frequency");
+        }
+        return productApi.quoteFuneral(in.productVersionId(), new FuneralQuoteInput(
+            in.funeralPlanCode(), PremiumFrequency.valueOf(in.frequency()), asOf, in.funeralLives()));
+    }
+
+    private SavingsQuoteView savingsQuote(Request in, LocalDate asOf) {
+        if (in.sumAssured() == null) {
+            throw new CustomerRequestRefusedException("A savings quotation needs the amount to be paid in");
+        }
+        return accumulationApi.quoteProductSavings(in.productId(), in.productVersionId(), in.sumAssured(),
+            in.policyTermMonths(), asOf);
+    }
+
+    private CustomerDocument premium(Request in, ProductSummaryView product, Proposer applicant,
+                                     String currency, LocalDate asOf) {
+        ProductApi.PremiumQuoteView quote = premiumQuote(in, applicant, currency, asOf);
 
         List<Field> extra = new ArrayList<>();
         extra.add(new Field("Age at entry", String.valueOf(quote.ageAtEntry())));
@@ -305,11 +369,7 @@ public class QuotationDocuments {
 
     private CustomerDocument funeral(Request in, ProductSummaryView product, Proposer applicant,
                                      String currency, LocalDate asOf) {
-        if (in.funeralPlanCode() == null || in.funeralPlanCode().isBlank() || in.frequency() == null) {
-            throw new CustomerRequestRefusedException("A funeral quotation needs a plan and a payment frequency");
-        }
-        FuneralQuote quote = productApi.quoteFuneral(in.productVersionId(), new FuneralQuoteInput(
-            in.funeralPlanCode(), PremiumFrequency.valueOf(in.frequency()), asOf, in.funeralLives()));
+        FuneralQuote quote = funeralQuote(in, asOf);
 
         List<Field> extra = List.of(
             new Field("Plan", in.funeralPlanCode()),
@@ -354,11 +414,7 @@ public class QuotationDocuments {
 
     private CustomerDocument savings(Request in, ProductSummaryView product, Proposer applicant,
                                      String currency, LocalDate asOf) {
-        if (in.sumAssured() == null) {
-            throw new CustomerRequestRefusedException("A savings quotation needs the amount to be paid in");
-        }
-        SavingsQuoteView quote = accumulationApi.quoteProductSavings(in.productId(), in.productVersionId(),
-            in.sumAssured(), in.policyTermMonths(), asOf);
+        SavingsQuoteView quote = savingsQuote(in, asOf);
         boolean deposit = quote.kind() == SavingsQuoteView.Kind.DEPOSIT;
         String rate = quote.ratePercent() == null ? "-"
             : quote.ratePercent().stripTrailingZeros().toPlainString() + "% " + (deposit ? "for the term" : "a year");

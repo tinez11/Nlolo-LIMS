@@ -49,9 +49,17 @@ public class UnderwritingController {
     /** Resolves an agents-realm caller's own registered clients, to scope the case list by. */
     private final PartyApi partyApi;
 
-    public UnderwritingController(UnderwritingApi underwritingApi, PartyApi partyApi) {
+    /** The quotation a proposal was opened from (2026-10-20). */
+    private final tz.co.nlolo.lifeplatform.underwriting.api.AcceptedQuotationApi acceptedQuotations;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
+    public UnderwritingController(UnderwritingApi underwritingApi, PartyApi partyApi,
+                                  tz.co.nlolo.lifeplatform.underwriting.api.AcceptedQuotationApi acceptedQuotations,
+                                  com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
         this.underwritingApi = underwritingApi;
         this.partyApi = partyApi;
+        this.acceptedQuotations = acceptedQuotations;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -283,6 +291,24 @@ public class UnderwritingController {
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<UnderwritingCaseView> getCase(@PathVariable UUID caseId) {
         return ResponseEntity.ok(underwritingApi.getCase(caseId));
+    }
+
+    /**
+     * The quotation the customer agreed to, where the proposal came from one (2026-10-20): the inputs as quoted and the
+     * figures as priced that day, so the underwriter sees what the customer was shown. 404 for a case opened any other
+     * way. An agent reads only the quotations it confirmed.
+     */
+    @GetMapping("/cases/{caseId}/quotation")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<CaseQuotationResponse> getCaseQuotation(@PathVariable UUID caseId,
+                                                                  @AuthenticationPrincipal Jwt jwt,
+                                                                  Authentication authentication) {
+        boolean isAgent = authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority).anyMatch("ROLE_REALM_AGENTS"::equals);
+        tz.co.nlolo.lifeplatform.underwriting.api.AcceptedQuotationView q = acceptedQuotations.forCase(caseId)
+            .filter(v -> !isAgent || v.ownerSubject().equals(jwt.getSubject()))
+            .orElseThrow(() -> new tz.co.nlolo.lifeplatform.underwriting.api.QuotationNotFoundException(caseId));
+        return ResponseEntity.ok(CaseQuotationResponse.from(q, objectMapper));
     }
 
     @PostMapping("/cases/{caseId}/assessments")

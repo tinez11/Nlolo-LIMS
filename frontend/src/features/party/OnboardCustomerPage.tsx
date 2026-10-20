@@ -1,7 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { discardAgentQuotation, getAgentQuotation, type AgentQuotation } from '@/api/agentQuotations';
+import { LoadingBlock } from '@/components/states';
+import { AcceptedQuotationPanel } from '@/features/underwriting/AcceptedQuotationPanel';
+import { toApiError, type ApiError } from '@/lib/apiError';
+import { useProductStore } from '@/store/productStore';
 import { PageHeader } from '@/components/PageHeader';
 
 import { Field } from '@/components/Field';
@@ -44,6 +49,9 @@ type CustomerType = 'INDIVIDUAL' | 'CORPORATE';
  */
 export function OnboardCustomerPage() {
   const [type, setType] = useState<CustomerType>('INDIVIDUAL');
+  // An agent arriving from a confirmed quotation (2026-10-20): the person is registered from it, then proposed.
+  const [params] = useSearchParams();
+  const quotationId = params.get('quotation');
 
   return (
     <>
@@ -53,14 +61,88 @@ export function OnboardCustomerPage() {
       />
 
       <div className="max-w-xl px-6 pb-8">
-        <div className="mb-4 inline-flex rounded-md border border-border p-0.5">
-          <TypeTab label="Individual" active={type === 'INDIVIDUAL'} onClick={() => setType('INDIVIDUAL')} />
-          <TypeTab label="Corporate" active={type === 'CORPORATE'} onClick={() => setType('CORPORATE')} />
-        </div>
+        {quotationId ? (
+          <FromQuotation key={quotationId} quotationId={quotationId} />
+        ) : (
+          <>
+            <div className="mb-4 inline-flex rounded-md border border-border p-0.5">
+              <TypeTab label="Individual" active={type === 'INDIVIDUAL'} onClick={() => setType('INDIVIDUAL')} />
+              <TypeTab label="Corporate" active={type === 'CORPORATE'} onClick={() => setType('CORPORATE')} />
+            </div>
 
-        {type === 'INDIVIDUAL' ? <RegisterIndividualForm key="individual" /> : <RegisterCorporateForm key="corporate" />}
+            {type === 'INDIVIDUAL' ? <RegisterIndividualForm key="individual" /> : <RegisterCorporateForm key="corporate" />}
+          </>
+        )}
       </div>
     </>
+  );
+}
+
+/**
+ * Registering the customer a confirmed quotation was for: the form starts from the details as quoted, so nothing is
+ * typed twice, and the next step is the proposal rather than "Register another". Cancel discards the quotation --
+ * the customer is not going ahead -- and returns to the calculator.
+ */
+function FromQuotation({ quotationId }: { quotationId: string }) {
+  const navigate = useNavigate();
+  const [quotation, setQuotation] = useState<AgentQuotation | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [discarding, setDiscarding] = useState(false);
+  const products = useProductStore((s) => s.list);
+  const loadProducts = useProductStore((s) => s.loadList);
+
+  useEffect(() => {
+    let live = true;
+    void loadProducts();
+    getAgentQuotation(quotationId).then(
+      (q) => { if (live) setQuotation(q); },
+      (e: unknown) => { if (live) setError(toApiError(e)); },
+    );
+    return () => { live = false; };
+  }, [quotationId, loadProducts]);
+
+  async function discard() {
+    setDiscarding(true);
+    try {
+      await discardAgentQuotation(quotationId);
+      // Path-relative from customers/new: two segments up is the realm.
+      navigate('../../quotation', { relative: 'path' });
+    } catch (e) {
+      setError(toApiError(e));
+      setDiscarding(false);
+    }
+  }
+
+  if (error) return <InlineError error={error} />;
+  if (!quotation) return <LoadingBlock label="Loading the quotation…" />;
+
+  const p = quotation.inputs.prospect;
+  const productName = (products.data ?? []).find((x) => x.productId === quotation.productId)?.productName;
+  return (
+    <div className="space-y-4">
+      <AcceptedQuotationPanel quotation={quotation} productName={productName} />
+      <RegisterIndividualForm
+        initial={{
+          ...blankRegisterIndividualForm(),
+          fullName: p?.fullName ?? '',
+          dateOfBirth: p?.dateOfBirth ?? '',
+          phoneNumber: p?.phoneNumber ?? '',
+          sex: p?.sex ?? '',
+          smokerStatus: p?.smokerStatus ?? '',
+          occupationClass: p?.occupationClass ?? '',
+        }}
+        onRegistered={(partyId) =>
+          navigate(`../../quotation/${quotationId}?party=${partyId}`, { relative: 'path' })
+        }
+        guardWhat="This customer and their accepted quotation"
+        leaving={discarding}
+        extraAction={
+          <Button type="button" variant="ghost" pending={discarding} onClick={() => void discard()}>
+            Cancel and discard the quotation
+          </Button>
+        }
+      />
+    </div>
   );
 }
 
@@ -80,7 +162,22 @@ export function TypeTab({ label, active, onClick }: { label: string; active: boo
   );
 }
 
-function RegisterIndividualForm() {
+function RegisterIndividualForm({
+  initial,
+  onRegistered,
+  guardWhat = 'This customer',
+  extraAction,
+  leaving = false,
+}: {
+  /** The page is being left on purpose (the quotation discarded): no "leave this page?" in the way. */
+  leaving?: boolean | undefined;
+  /** Where the form starts: blank, or the details a confirmed quotation carried. */
+  initial?: RegisterIndividualFormValues | undefined;
+  /** What follows registering, instead of the registered result -- the proposal, when there is a quotation. */
+  onRegistered?: ((partyId: string) => void) | undefined;
+  guardWhat?: string | undefined;
+  extraAction?: ReactNode;
+} = {}) {
   const registerIndividual = usePartyStore((s) => s.registerIndividual);
   const resetRegisterIndividual = usePartyStore((s) => s.resetRegisterIndividual);
   const registering = usePartyStore(selectRegisteringIndividual);
@@ -99,14 +196,18 @@ function RegisterIndividualForm() {
   } = useForm<RegisterIndividualFormValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(registerIndividualFormSchema),
-    defaultValues: blankRegisterIndividualForm(),
+    defaultValues: initial ?? blankRegisterIndividualForm(),
   });
 
   async function onSubmit(values: RegisterIndividualFormValues) {
     await registerIndividual(toIndividualApiRequest(values));
+    const result = usePartyStore.getState().registeringIndividual;
+    if (onRegistered && result.status === 'success' && result.data?.partyId) {
+      onRegistered(result.data.partyId);
+    }
   }
 
-  if (registering.status === 'success' && registering.data) {
+  if (!onRegistered && registering.status === 'success' && registering.data) {
     return (
       <RegisteredResult
         party={registering.data}
@@ -120,16 +221,22 @@ function RegisterIndividualForm() {
 
   return (
     <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
-      <UnsavedGuard when={isDirty && !isSubmitting} what="This customer" />
+      <UnsavedGuard
+        when={(isDirty || initial !== undefined) && !isSubmitting && !leaving && registering.status !== 'success'}
+        what={guardWhat}
+      />
       <IndividualFields register={register} control={control} errors={errors} />
 
       {registering.status === 'error' && registering.error && (
         <InlineError error={registering.error} />
       )}
 
-      <Button type="submit" variant="primary" pending={registering.status === 'loading'}>
-        Register individual
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="submit" variant="primary" pending={registering.status === 'loading'}>
+          Register individual
+        </Button>
+        {extraAction}
+      </div>
     </form>
   );
 }

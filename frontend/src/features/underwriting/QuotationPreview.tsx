@@ -7,11 +7,12 @@ import { PREMIUM_FREQUENCY_LABELS } from '@/api/types';
 import { DEFAULT_OCCUPATION_CLASS, useQuotation, type QuotationInputs } from './useQuotation';
 import { useSavingsQuotation } from './useSavingsQuotation';
 import { DownloadQuotationButton } from './DownloadQuotationButton';
-import { downloadQuotation, type QuotationRequest } from '@/api/documents';
+import { downloadQuotation } from '@/api/documents';
 import { useFuneralQuotation, type FuneralDependantInput, type FuneralQuotationInputs } from './useFuneralQuotation';
 import { InlineError } from '@/components/InlineError';
 import { FUNERAL_ROLE_LABELS, type FuneralRoleName } from '@/features/products/funeralSchema';
 import { pricingBasis, type PricingBasis, type ProspectInputs } from './pricingBasis';
+import { quotationRequest } from './quotationRequest';
 
 /**
  * A money figure the SERVER sent as a JSON number.
@@ -175,80 +176,6 @@ export function QuotationPreview({
         })()}
     </Panel>
   );
-}
-
-/**
- * The document's INPUTS, as the form holds them -- never a figure from the screen.
- *
- * <p>Null until there is enough to ask: a product, an applicant, and what that basis cannot be quoted without. The
- * server re-checks all of it; this only keeps the button from sending a request that is certain to be refused.
- */
-function quotationRequest(
-  basis: PricingBasis,
-  form: {
-    inputs: QuotationInputs;
-    premiumPayingTermMonths: string;
-    commencementDate: string;
-    productVersionId: string;
-    applicantPartyId: string;
-    prospect?: ProspectInputs | undefined;
-    funeral?: { planCode: string; mainMember: { name: string; dateOfBirth: string | null } | null; dependants: FuneralDependantInput[] } | undefined;
-  },
-): QuotationRequest | null {
-  const { inputs, productVersionId, applicantPartyId, prospect } = form;
-  if (!inputs.productId || !productVersionId) return null;
-  // Who is quoted: a registered applicant by id, else a prospect by name -- never both, which the server refuses.
-  const who = applicantPartyId
-    ? { applicantPartyId }
-    : prospect && prospect.fullName.trim()
-      ? {
-          prospect: {
-            fullName: prospect.fullName.trim(),
-            phoneNumber: prospect.phoneNumber || null,
-            dateOfBirth: prospect.dateOfBirth || null,
-            sex: prospect.sex || null,
-            smokerStatus: prospect.smokerStatus || null,
-            occupationClass: prospect.occupationClass || null,
-          },
-        }
-      : null;
-  if (!who) return null;
-  const base = {
-    productId: inputs.productId,
-    productVersionId,
-    ...who,
-    currency: inputs.sumAssuredCurrency || 'TZS',
-    commencement: form.commencementDate || null,
-  };
-
-  if (basis === 'FUNERAL') {
-    const main = form.funeral?.mainMember;
-    if (!form.funeral?.planCode || !inputs.frequency || !main?.dateOfBirth) return null;
-    return {
-      ...base,
-      frequency: inputs.frequency,
-      funeralPlanCode: form.funeral.planCode,
-      lives: [
-        { role: 'MAIN_MEMBER', name: main.name, dateOfBirth: main.dateOfBirth, student: false },
-        ...form.funeral.dependants.map((d) => ({
-          role: d.role as 'SPOUSE' | 'CHILD' | 'PARENT' | 'EXTENDED',
-          name: d.fullName,
-          dateOfBirth: d.dateOfBirth || null,
-          student: d.student,
-        })),
-      ],
-    };
-  }
-
-  if (!inputs.sumAssuredAmount || Number(inputs.sumAssuredAmount) <= 0) return null;
-  if (basis === 'PREMIUM' && !inputs.frequency) return null;
-  return {
-    ...base,
-    sumAssured: Number(inputs.sumAssuredAmount),
-    frequency: inputs.frequency || null,
-    policyTermMonths: inputs.policyTermMonths ? Number(inputs.policyTermMonths) : null,
-    premiumPayingTermMonths: form.premiumPayingTermMonths ? Number(form.premiumPayingTermMonths) : null,
-  };
 }
 
 /**

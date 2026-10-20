@@ -1,6 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
+import { useNavigate } from 'react-router-dom';
+import { acceptQuotation } from '@/api/agentQuotations';
+import { ConfirmAct } from '@/components/ConfirmAct';
+import { Button } from '@/components/ui/button';
+import { toApiError, type ApiError } from '@/lib/apiError';
 import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
 import { DatePicker } from '@/components/DatePicker';
@@ -29,7 +34,8 @@ import {
   type OpenCaseFormValues,
 } from './openCaseForm';
 import { QuotationPreview } from './QuotationPreview';
-import { quotesHere, type ProspectInputs } from './pricingBasis';
+import { pricingBasis, quotesHere, type ProspectInputs } from './pricingBasis';
+import { quotationRequest } from './quotationRequest';
 
 type Who = 'PROSPECT' | 'CLIENT';
 
@@ -133,6 +139,63 @@ export function QuotationCalculatorPage() {
   const mainMember = rating.name ? { name: rating.name, dateOfBirth: rating.dateOfBirth ?? null } : null;
 
   const singleRefusedByTerm = Number(watch('requestedTermMonths')) > 12;
+
+  const funeral = isFuneral
+    ? {
+        planCode: watch('funeralPlanCode'),
+        mainMember,
+        dependants: (watch('funeralDependants') ?? []).map((d) => ({
+          role: d.role,
+          fullName: d.fullName,
+          dateOfBirth: d.dateOfBirth,
+          student: d.student,
+        })),
+      }
+    : undefined;
+  const inputs = {
+    productId,
+    sumAssuredAmount: watch('sumAssuredAmount'),
+    sumAssuredCurrency: watch('sumAssuredCurrency'),
+    frequency: watch('premiumFrequency'),
+    policyTermMonths: watch('requestedTermMonths'),
+    dateOfBirth: rating.dateOfBirth,
+    sex: rating.sex,
+    smokerStatus: rating.smokerStatus,
+    occupationClass: rating.occupationClass,
+  };
+  // Exactly what the PDF is asked for with: the inputs, never the figures on screen.
+  const request = selectedProduct
+    ? quotationRequest(pricingBasis(selectedProduct.portfolioCode), {
+        inputs,
+        premiumPayingTermMonths: watch('premiumPayingTermMonths'),
+        commencementDate: watch('proposedCommencementDate'),
+        productVersionId,
+        applicantPartyId: who === 'CLIENT' ? applicantPartyId : '',
+        prospect: who === 'PROSPECT' ? prospect : undefined,
+        funeral,
+      })
+    : null;
+
+  // Proceed, then confirm: nothing is sent until the second click, and Cancel sends nothing at all.
+  const navigate = useNavigate();
+  const [step, setStep] = useState<'quote' | 'confirm'>('quote');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<ApiError | null>(null);
+  async function confirm() {
+    if (!request) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const saved = await acceptQuotation(request);
+      navigate(
+        who === 'CLIENT' ? `../quotation/${saved.quotationId}` : `../customers/new?quotation=${saved.quotationId}`,
+        { relative: 'path' },
+      );
+    } catch (e) {
+      setSaveError(toApiError(e));
+      setSaving(false);
+    }
+  }
 
   // A product sold on ONE term fills that term in itself, and a bounded one says its bounds -- as the staff
   // open-case form does, so the calculator never invites a term the product will refuse.
@@ -308,43 +371,59 @@ export function QuotationCalculatorPage() {
         </fieldset>
 
         <QuotationPreview
-          inputs={{
-            productId,
-            sumAssuredAmount: watch('sumAssuredAmount'),
-            sumAssuredCurrency: watch('sumAssuredCurrency'),
-            frequency: watch('premiumFrequency'),
-            policyTermMonths: watch('requestedTermMonths'),
-            dateOfBirth: rating.dateOfBirth,
-            sex: rating.sex,
-            smokerStatus: rating.smokerStatus,
-            occupationClass: rating.occupationClass,
-          }}
+          inputs={inputs}
           premiumPayingTermMonths={watch('premiumPayingTermMonths')}
           commencementDate={watch('proposedCommencementDate')}
           portfolioCode={selectedProduct?.portfolioCode}
           productVersionId={productVersionId}
           applicantPartyId={who === 'CLIENT' ? applicantPartyId : ''}
           prospect={who === 'PROSPECT' ? prospect : undefined}
-          funeral={
-            isFuneral
-              ? {
-                  planCode: watch('funeralPlanCode'),
-                  mainMember,
-                  dependants: (watch('funeralDependants') ?? []).map((d) => ({
-                    role: d.role,
-                    fullName: d.fullName,
-                    dateOfBirth: d.dateOfBirth,
-                    student: d.student,
-                  })),
-                }
-              : undefined
-          }
+          funeral={funeral}
         />
+
+        {/* The customer agrees: the one place on this screen that writes anything, and only after a second click. */}
+        {step === 'quote' ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="primary" disabled={!request} onClick={() => setStep('confirm')}>
+              {who === 'CLIENT' ? 'Proceed to proposal' : 'Proceed to onboarding'}
+            </Button>
+            <span className="text-xs text-muted-foreground">When the customer agrees to this quotation.</span>
+          </div>
+        ) : (
+          <ConfirmAct
+            heading="Has the customer agreed to this quotation?"
+            consequence={
+              <>
+                Saves this quotation for {rating.name || 'the customer'}: {selectedProduct?.productName ?? 'the product'}
+                {request?.sumAssured != null ? `, ${request.currency} ${formatAmount(request.sumAssured)}` : ''}
+                {request?.frequency ? `, ${PREMIUM_FREQUENCY_LABELS[request.frequency].toLowerCase()}` : ''}.{' '}
+                {who === 'CLIENT'
+                  ? 'Then you submit it as a proposal.'
+                  : 'Then you register the customer, with these details filled in.'}
+              </>
+            }
+            reversal="Cancel on the next screen discards it. A quotation not submitted as a proposal by the end of today is discarded."
+            confirmLabel={who === 'CLIENT' ? 'Confirm and start the proposal' : 'Confirm and start onboarding'}
+            busy={saving}
+            onConfirm={() => void confirm()}
+            onCancel={() => {
+              setStep('quote');
+              setSaveError(null);
+            }}
+          >
+            {saveError && <InlineError error={saveError} />}
+          </ConfirmAct>
+        )}
 
         <WhatHappensNext />
       </div>
     </>
   );
+}
+
+/** A sum the agent typed, with grouping -- formatting only, never arithmetic. */
+function formatAmount(amount: number): string {
+  return new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2 }).format(amount);
 }
 
 /** The road from this quotation to a policy, in the order it is travelled. */

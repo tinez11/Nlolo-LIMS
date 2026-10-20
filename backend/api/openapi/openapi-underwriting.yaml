@@ -657,6 +657,25 @@ paths:
       responses:
         '200': { description: Referral recorded }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /underwriting/cases/{caseId}/quotation:
+    get:
+      summary: The quotation the customer agreed to, where the proposal came from one
+      description: >-
+        The agents' prospect-to-proposal flow (2026-10-20): the inputs as quoted and the server's figures for them on
+        the day, so the underwriter sees what the customer was shown. 404 for a case opened any other way, and for an
+        agent reading a quotation it did not confirm.
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      security:
+        - staffAuth: []
+        - agentsAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseQuotation' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /underwriting/cases/{caseId}/disclosures:
     post:
       summary: Record what the applicant declared on the proposal form
@@ -720,6 +739,20 @@ paths:
         '404': { description: "No such case in this tenant" }
 components:
   schemas:
+    CaseQuotation:
+      type: object
+      description: >-
+        What the customer was quoted and agreed to (2026-10-20). inputs are the quotation's own inputs (the person and
+        the plan, as the calculator sent them); quoted holds the sum assured the proposal was opened at, its currency
+        and the owning module's quote for those inputs on quotedOn.
+      required: [quotationId, productVersionId, inputs, quoted, quotedOn, validUntil]
+      properties:
+        quotationId: { type: string, format: uuid }
+        productVersionId: { type: string, format: uuid }
+        inputs: { type: object, additionalProperties: true }
+        quoted: { type: object, additionalProperties: true }
+        quotedOn: { type: string, format: date }
+        validUntil: { type: string, format: date }
     DisclosureAnswer:
       description: >-
         One question the applicant was asked and what they answered. The platform does not own

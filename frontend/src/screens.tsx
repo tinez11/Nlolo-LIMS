@@ -102,6 +102,7 @@ import {
   ReinsuranceStatementsPage,
   OpenUnderwritingCasePage,
   QuotationCalculatorPage,
+  SubmitProposalPage,
   UnderwritingCaseDetailPage,
   UnderwritingQueuePage,
   PayoutsQueuePage,
@@ -730,6 +731,8 @@ const AGENTS_SCREENS: Screen[] = [
     element: <QuotationCalculatorPage />,
     reach: { group: 'my-business', label: 'Quotation calculator', icon: Calculator },
   },
+  // The confirmed quotation, submitted as a proposal once the customer is registered.
+  { path: 'quotation/:quotationId', element: <SubmitProposalPage />, reach: 'drill-in' },
   {
     path: 'customers/new',
     element: <OnboardCustomerPage />,

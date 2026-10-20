@@ -145,6 +145,9 @@ export const BordereauPage = lazy(() =>
 export const QuotationCalculatorPage = lazy(() =>
   import('@/features/underwriting/QuotationCalculatorPage').then((m) => ({ default: m.QuotationCalculatorPage })),
 );
+export const SubmitProposalPage = lazy(() =>
+  import('@/features/underwriting/SubmitProposalPage').then((m) => ({ default: m.SubmitProposalPage })),
+);
 export const OpenUnderwritingCasePage = lazy(() =>
   import('@/features/underwriting/OpenUnderwritingCasePage').then((m) => ({ default: m.OpenUnderwritingCasePage })),
 );

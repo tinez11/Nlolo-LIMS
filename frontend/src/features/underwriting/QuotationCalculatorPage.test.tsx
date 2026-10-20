@@ -6,6 +6,8 @@ import { downloadQuotation } from '@/api/documents';
 import { registerIndividual } from '@/api/party';
 import { openCase } from '@/api/underwriting';
 import { renderScreen } from '@/test/renderScreen';
+import { acceptQuotation } from '@/api/agentQuotations';
+import { Route, Routes, useSearchParams } from 'react-router-dom';
 import { QuotationCalculatorPage } from './QuotationCalculatorPage';
 
 vi.mock('@/api/products');
@@ -14,6 +16,7 @@ vi.mock('@/api/funeral');
 vi.mock('@/api/documents');
 vi.mock('@/api/party');
 vi.mock('@/api/underwriting');
+vi.mock('@/api/agentQuotations');
 vi.mock('@/lib/download', () => ({ saveBlob: vi.fn() }));
 // The segmented date control is tested on its own; a plain input stands in for it here.
 vi.mock('@/components/DatePicker', () => ({
@@ -56,8 +59,22 @@ beforeEach(() => {
   vi.mocked(downloadQuotation).mockResolvedValue(new Blob(['%PDF']));
 });
 
+/** Nested as App.tsx nests a realm, so the page's relative navigation lands where it does in the app. */
+function OnboardingProbe() {
+  const [params] = useSearchParams();
+  return <p>onboarding {params.get('quotation')}</p>;
+}
+
 async function fillProspectAndPlan() {
-  renderScreen(<QuotationCalculatorPage />, { route: '/agents/quotation' });
+  renderScreen(
+    <Routes>
+      <Route path="/agents">
+        <Route path="quotation" element={<QuotationCalculatorPage />} />
+        <Route path="customers/new" element={<OnboardingProbe />} />
+      </Route>
+    </Routes>,
+    { route: '/agents/quotation' },
+  );
   await screen.findByRole('option', { name: 'Prospect Endowment (END1)' });
   await userEvent.type(screen.getByLabelText('Full name'), 'Halima Prospect');
   // The first date on the page is the person's date of birth; the second is when cover would start.
@@ -120,6 +137,37 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
 
     expect(registerIndividual).not.toHaveBeenCalled();
     expect(openCase).not.toHaveBeenCalled();
+  });
+
+  it('proceed, then confirm: saves the inputs -- never the figures -- and goes on to onboard the customer', async () => {
+    vi.mocked(acceptQuotation).mockResolvedValue({ quotationId: 'q-1' } as never);
+    await fillProspectAndPlan();
+    await screen.findByText('TZS 1,000.00');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Proceed to onboarding' }));
+    // Nothing is sent by proceeding: the second click is the one that writes.
+    expect(acceptQuotation).not.toHaveBeenCalled();
+    expect(screen.getByRole('group', { name: 'Has the customer agreed to this quotation?' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm and start onboarding' }));
+
+    await waitFor(() => expect(acceptQuotation).toHaveBeenCalledTimes(1));
+    const request = vi.mocked(acceptQuotation).mock.calls[0]![0];
+    expect(request).toMatchObject({ productVersionId: 'ver-end', prospect: { fullName: 'Halima Prospect' }, sumAssured: 1000000 });
+    expect(JSON.stringify(request)).not.toMatch(/instalment|premium"|total|12000|240000/i);
+    expect(await screen.findByText('onboarding q-1')).toBeInTheDocument();
+  });
+
+  it('proceed, then cancel: sends nothing and returns to the calculator', async () => {
+    await fillProspectAndPlan();
+    await screen.findByText('TZS 1,000.00');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Proceed to onboarding' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(acceptQuotation).not.toHaveBeenCalled();
+    expect(registerIndividual).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Proceed to onboarding' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Full name')).toHaveValue('Halima Prospect');
   });
 
   it('offers only the products it can quote, and says who quotes the rest', async () => {
