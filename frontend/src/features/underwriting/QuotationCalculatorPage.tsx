@@ -308,9 +308,6 @@ export function QuotationCalculatorPage() {
                   <option value="UNKNOWN">Asked, declined to say</option>
                 </Select>
               </FormField>
-              <FormField label="Occupation class">
-                <Input placeholder="Rating band" {...person.register('occupationClass')} />
-              </FormField>
             </div>
           </fieldset>
         ) : (

@@ -341,7 +341,10 @@ function PremiumQuotation({
                   </div>
                 )}
             </dl>
-            {quotation.assumedOccupationClass && (
+            {/* Only where occupation actually priced it: with no box to fill in (2026-10-20) every quote "assumes" a
+                class, and saying so on products that do not rate occupation would be noise about nothing. */}
+            {quotation.assumedOccupationClass
+              && (quotation.quote.appliedFactors ?? []).some((f) => f.factorType === 'OCCUPATION_CLASS') && (
               <p className="pt-1 text-xs text-muted-foreground">
                 Priced as occupation class {DEFAULT_OCCUPATION_CLASS}: the applicant&apos;s record names none.
               </p>

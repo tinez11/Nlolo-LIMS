@@ -90,7 +90,7 @@ describe('OnboardCustomerPage from a confirmed quotation', { timeout: 20_000 }, 
     expect(screen.getByLabelText('Phone number (optional)')).toHaveValue('+255713000111');
     expect(screen.getByLabelText('Sex')).toHaveValue('FEMALE');
     expect(screen.getByLabelText('Smoker status')).toHaveValue('NON_SMOKER');
-    expect(screen.getByLabelText('Occupation class')).toHaveValue('STANDARD');
+    expect(screen.queryByLabelText('Occupation class')).not.toBeInTheDocument();
     expect(screen.getAllByLabelText('date')[0]).toHaveValue('1985-05-01');
     expect(screen.getByRole('heading', { name: 'The accepted quotation' })).toBeInTheDocument();
     expect(await screen.findByText('Prospect Endowment')).toBeInTheDocument();

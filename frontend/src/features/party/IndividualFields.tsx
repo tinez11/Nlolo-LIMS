@@ -128,15 +128,11 @@ export function IndividualFields({
             <Input placeholder="As the applicant describes it" {...register('occupation')} />
           </FormField>
 
-          <FormField label="Occupation class" error={errors.occupationClass?.message}>
-            <Input placeholder="Rating band" {...register('occupationClass')} />
+          {/* No occupation class box (user, 2026-10-20): almost no product rates it, so asking for it did nothing.
+              A class already on a record is kept -- the form still carries it through a correction unchanged. */}
+          <FormField label="Employer" error={errors.employerName?.message}>
+            <Input {...register('employerName')} />
           </FormField>
-
-          <div className="col-span-2">
-            <FormField label="Employer" error={errors.employerName?.message}>
-              <Input {...register('employerName')} />
-            </FormField>
-          </div>
         </div>
       </FieldGroup>
 
