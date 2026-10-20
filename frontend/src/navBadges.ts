@@ -4,6 +4,7 @@ import { searchClaims } from '@/api/claims';
 import { PARTY_AREAS, searchParties } from '@/api/party';
 import { listAwaitingEftExecution } from '@/api/payments';
 import { listCases } from '@/api/underwriting';
+import { getNeedsAction } from '@/api/proposalAmendments';
 import type { Realm } from '@/auth/realms';
 import { navFor, type BadgeKey } from '@/screens';
 import type { readIdentity } from '@/auth/claims';
@@ -107,6 +108,12 @@ const LOADERS: Record<BadgeKey, { load: () => Promise<number>; title: (n: number
   'eft-awaiting': {
     load: async () => (await listAwaitingEftExecution()).length,
     title: (n) => `${plural(n, 'bank transfer', 'bank transfers')} nobody has made yet`,
+  },
+  /* An agent's proposals returned or postponed (2026-10-20). Declines are on the list to be read, but are final, so
+     they are not counted as something to do. */
+  'needs-action': {
+    load: async () => (await getNeedsAction()).filter((n) => n.actionable).length,
+    title: (n) => `${plural(n, 'proposal', 'proposals')} returned or postponed, waiting on you`,
   },
 };
 

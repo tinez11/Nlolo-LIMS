@@ -371,6 +371,33 @@ public class UnderwritingCase {
         this.status = "IN_REVIEW";
     }
 
+    /** Sent back to the agent for amendment (2026-10-20). The service checks it may be; this only moves it. */
+    public void returnForAmendment() {
+        this.status = "RETURNED";
+    }
+
+    /**
+     * The agent resubmitted: back in the queue as OPEN. A postponed case keeps its decision columns until the next
+     * decision overwrites them -- {@code decide} already allows re-deciding a POSTPONED case -- and the history keeps
+     * what the postponement said.
+     */
+    public void reopenForResubmission() {
+        this.status = "OPEN";
+    }
+
+    /**
+     * What the agent amended about the contract on a returned or postponed proposal. Every argument is the new value,
+     * already validated by the service against the product, exactly as a proposal is at opening.
+     */
+    public void amendTerms(BigDecimal sumAssuredAmount, Integer requestedTermMonths, Integer premiumPayingTermMonths,
+                           String premiumFrequency, LocalDate proposedCommencementDate) {
+        this.sumAssuredAmount = sumAssuredAmount;
+        this.requestedTermMonths = requestedTermMonths;
+        this.premiumPayingTermMonths = premiumPayingTermMonths;
+        this.premiumFrequency = premiumFrequency;
+        this.proposedCommencementDate = proposedCommencementDate;
+    }
+
     public void referToSeniorUnderwriter() {
         // U1: referralStatus tracked separately from decision.outcome -- a borderline
         // case under senior review doesn't need a fake interim outcome value.

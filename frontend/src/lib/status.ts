@@ -324,6 +324,7 @@ export const STATUS_MAPS = {
     OPEN: 'pending',
     IN_REVIEW: 'pending',
     DECIDED: 'neutral', // terminal; the sentiment lives in the decision outcome
+    RETURNED: 'warning', // with the agent for amendment (2026-10-20): someone must act before it can be decided
   },
 
   // underwriting/api/DecisionOutcome.java

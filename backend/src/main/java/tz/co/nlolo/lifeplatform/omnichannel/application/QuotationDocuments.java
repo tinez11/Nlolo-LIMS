@@ -4,6 +4,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tz.co.nlolo.lifeplatform.accumulation.api.AccumulationApi;
 import tz.co.nlolo.lifeplatform.accumulation.api.SavingsQuoteView;
+import tz.co.nlolo.lifeplatform.benefitpayout.api.BenefitPayoutApi;
+import tz.co.nlolo.lifeplatform.benefitpayout.api.PlannedPayoutView;
 import tz.co.nlolo.lifeplatform.omnichannel.api.CustomerRequestRefusedException;
 import tz.co.nlolo.lifeplatform.omnichannel.domain.CustomerDocument;
 import tz.co.nlolo.lifeplatform.omnichannel.domain.CustomerDocument.Column;
@@ -18,6 +20,9 @@ import tz.co.nlolo.lifeplatform.product.api.FuneralPlanOption;
 import tz.co.nlolo.lifeplatform.product.api.FuneralQuoteInput;
 import tz.co.nlolo.lifeplatform.product.api.GroupFuneralQuote;
 import tz.co.nlolo.lifeplatform.product.api.GroupRatePeriod;
+import tz.co.nlolo.lifeplatform.product.api.PayoutKind;
+import tz.co.nlolo.lifeplatform.product.api.PayoutPlan;
+import tz.co.nlolo.lifeplatform.product.api.PayoutTerms;
 import tz.co.nlolo.lifeplatform.product.api.PortfolioCode;
 import tz.co.nlolo.lifeplatform.product.api.PremiumFrequency;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
@@ -73,11 +78,15 @@ public class QuotationDocuments {
     private final ProductApi productApi;
     private final PartyApi partyApi;
     private final AccumulationApi accumulationApi;
+    /** The schedule issuance would store, previewed for a prospect's "what you get at the end". */
+    private final BenefitPayoutApi benefitPayoutApi;
 
-    public QuotationDocuments(ProductApi productApi, PartyApi partyApi, AccumulationApi accumulationApi) {
+    public QuotationDocuments(ProductApi productApi, PartyApi partyApi, AccumulationApi accumulationApi,
+                              BenefitPayoutApi benefitPayoutApi) {
         this.productApi = productApi;
         this.partyApi = partyApi;
         this.accumulationApi = accumulationApi;
+        this.benefitPayoutApi = benefitPayoutApi;
     }
 
     /**
@@ -90,16 +99,64 @@ public class QuotationDocuments {
     public record Request(UUID productId, UUID productVersionId, UUID applicantPartyId, BigDecimal sumAssured,
                           String currency, String frequency, Integer policyTermMonths,
                           Integer premiumPayingTermMonths, LocalDate commencement, String funeralPlanCode,
-                          List<FuneralLifeInput> funeralLives) {
+                          List<FuneralLifeInput> funeralLives, Prospect prospect, Preparer preparedBy) {
         public Request {
             funeralLives = funeralLives != null ? List.copyOf(funeralLives) : List.of();
+        }
+
+        /** A registered applicant's quotation: their facts are read from their record. */
+        public Request(UUID productId, UUID productVersionId, UUID applicantPartyId, BigDecimal sumAssured,
+                       String currency, String frequency, Integer policyTermMonths, Integer premiumPayingTermMonths,
+                       LocalDate commencement, String funeralPlanCode, List<FuneralLifeInput> funeralLives) {
+            this(productId, productVersionId, applicantPartyId, sumAssured, currency, frequency, policyTermMonths,
+                premiumPayingTermMonths, commencement, funeralPlanCode, funeralLives, null, null);
+        }
+    }
+
+    /**
+     * Somebody an agent is quoting before they are registered (2026-10-20): the facts the rate table is keyed on, as the
+     * agent typed them. Nothing about them is stored by quoting.
+     */
+    public record Prospect(String fullName, String phoneNumber, LocalDate dateOfBirth, Sex sex, SmokerStatus smokerStatus,
+                           String occupationClass) {}
+
+    /** Who prepared a prospect's quotation, and how the customer reaches them. Read from the caller's own record. */
+    public record Preparer(String name, String phoneNumber) {}
+
+    /** How long a prospect's quotation stands (user, 2026-10-20). The policy's own price at issue still governs. */
+    public static final int PROSPECT_VALID_DAYS = 30;
+
+    /**
+     * Whoever is being quoted, from a party record or from a prospect's inputs -- one shape, so the three documents
+     * below do not each ask which it is.
+     */
+    private record Proposer(String name, String phone, String address, LocalDate dateOfBirth, Sex sex,
+                            SmokerStatus smokerStatus, String occupationClass, boolean prospect, Preparer preparedBy) {
+
+        static Proposer of(PartyDetailView p) {
+            // The party record keeps its own Sex and SmokerStatus; the rate table is keyed on the product's. Converted
+            // by name, as the customer portal's quote does (CustomerProducts).
+            return new Proposer(p.displayName() == null ? "The applicant" : p.displayName(), p.phoneNumber(),
+                PolicyDocuments.address(p),
+                p.dateOfBirth(), p.sex() == null ? null : Sex.valueOf(p.sex().name()),
+                p.smokerStatus() == null ? null : SmokerStatus.valueOf(p.smokerStatus().name()), p.occupationClass(),
+                false, null);
+        }
+
+        static Proposer of(Prospect p, Preparer preparedBy) {
+            return new Proposer(p.fullName() == null || p.fullName().isBlank() ? "The prospect" : p.fullName().trim(),
+                p.phoneNumber(), null, p.dateOfBirth(), p.sex(), p.smokerStatus(), p.occupationClass(), true, preparedBy);
         }
     }
 
     @Transactional(readOnly = true)
     public CustomerDocument quotation(Request in) {
         ProductSummaryView product = productApi.getProduct(in.productId());
-        PartyDetailView applicant = partyApi.getPartyDetail(in.applicantPartyId());
+        if ((in.applicantPartyId() == null) == (in.prospect() == null)) {
+            throw new CustomerRequestRefusedException("A quotation is for a registered applicant or for a prospect: name one");
+        }
+        Proposer applicant = in.prospect() != null ? Proposer.of(in.prospect(), in.preparedBy())
+            : Proposer.of(partyApi.getPartyDetail(in.applicantPartyId()));
         LocalDate asOf = in.commencement() != null ? in.commencement() : LocalDate.now(CIVIL_ZONE);
         String currency = in.currency() == null || in.currency().isBlank() ? product.defaultCurrency() : in.currency();
         PortfolioCode portfolio = product.portfolioCode();
@@ -113,22 +170,86 @@ public class QuotationDocuments {
             + ": its price comes from terms this form does not collect.");
     }
 
-    private CustomerDocument premium(Request in, ProductSummaryView product, PartyDetailView applicant,
-                                     String currency, LocalDate asOf) {
+    /**
+     * What the customer agreed to, priced (2026-10-20): the version actually priced, the owning module's quote for these
+     * inputs, and the sum assured a proposal is opened at -- a funeral plan's being the main member's benefit on it.
+     * The same calls the PDF prints from, so the saved figures are the paper's figures.
+     */
+    public record Priced(UUID productVersionId, Object quote, BigDecimal sumAssured, String currency) {}
+
+    /**
+     * The quotation's figures without the paper, for saving what the customer accepted. Refused, as the paper would be,
+     * for a product this quotation cannot price -- and for a deposit on a term or amount it does not take, because a
+     * quotation a customer can agree to must be one a proposal can be opened from.
+     */
+    @Transactional(readOnly = true)
+    public Priced price(Request in) {
+        ProductSummaryView product = productApi.getProduct(in.productId());
+        if ((in.applicantPartyId() == null) == (in.prospect() == null)) {
+            throw new CustomerRequestRefusedException("A quotation is for a registered applicant or for a prospect: name one");
+        }
+        Proposer applicant = in.prospect() != null ? Proposer.of(in.prospect(), in.preparedBy())
+            : Proposer.of(partyApi.getPartyDetail(in.applicantPartyId()));
+        LocalDate asOf = in.commencement() != null ? in.commencement() : LocalDate.now(CIVIL_ZONE);
+        String currency = in.currency() == null || in.currency().isBlank() ? product.defaultCurrency() : in.currency();
+        PortfolioCode portfolio = product.portfolioCode();
+
+        if (portfolio == PortfolioCode.FUN) {
+            FuneralQuote quote = funeralQuote(in, asOf);
+            BigDecimal main = quote.lines().stream().filter(l -> l.role() == tz.co.nlolo.lifeplatform.product.api.FuneralRole.MAIN_MEMBER)
+                .map(l -> l.benefit()).findFirst()
+                .orElseThrow(() -> new CustomerRequestRefusedException("A funeral quotation needs the main member"));
+            return new Priced(in.productVersionId(), quote, main, currency);
+        }
+        if (SAVINGS.contains(portfolio)) {
+            SavingsQuoteView quote = savingsQuote(in, asOf);
+            if (quote.refusal() != null) throw new CustomerRequestRefusedException(quote.refusal());
+            return new Priced(in.productVersionId(), quote, in.sumAssured(), currency);
+        }
+        if (PREMIUM_RATED.contains(portfolio)) {
+            ProductApi.PremiumQuoteView quote = premiumQuote(in, applicant, currency, asOf);
+            return new Priced(quote.productVersionId(), quote, in.sumAssured(), currency);
+        }
+        throw new CustomerRequestRefusedException("A quotation is not available for " + product.productName()
+            + ": its price comes from terms this form does not collect.");
+    }
+
+    private ProductApi.PremiumQuoteView premiumQuote(Request in, Proposer applicant, String currency, LocalDate asOf) {
         if (in.sumAssured() == null || in.frequency() == null) {
             throw new CustomerRequestRefusedException("A premium quotation needs a sum assured and a payment frequency");
         }
         if (applicant.dateOfBirth() == null || applicant.sex() == null) {
-            throw new CustomerRequestRefusedException("A premium quotation needs the applicant's date of birth and sex"
-                + " on their record: the rate table is keyed on them.");
+            throw new CustomerRequestRefusedException(applicant.prospect()
+                ? "A premium quotation needs the prospect's date of birth and sex: the rate table is keyed on them."
+                : "A premium quotation needs the applicant's date of birth and sex"
+                    + " on their record: the rate table is keyed on them.");
         }
-        // The party record keeps its own Sex and SmokerStatus; the rate table is keyed on the product's. Converted by
-        // name, as the customer portal's quote does (CustomerProducts).
-        ProductApi.PremiumQuoteView quote = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
-            in.productId(), in.sumAssured(), currency, applicant.dateOfBirth(), Sex.valueOf(applicant.sex().name()),
+        return productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            in.productId(), in.sumAssured(), currency, applicant.dateOfBirth(), applicant.sex(),
             // UNKNOWN is a real row in the rate table; null means nobody asked, and the table prices it the same way.
-            applicant.smokerStatus() == null ? SmokerStatus.UNKNOWN : SmokerStatus.valueOf(applicant.smokerStatus().name()),
+            applicant.smokerStatus() == null ? SmokerStatus.UNKNOWN : applicant.smokerStatus(),
             applicant.occupationClass(), PremiumFrequency.valueOf(in.frequency()), asOf, in.policyTermMonths()));
+    }
+
+    private FuneralQuote funeralQuote(Request in, LocalDate asOf) {
+        if (in.funeralPlanCode() == null || in.funeralPlanCode().isBlank() || in.frequency() == null) {
+            throw new CustomerRequestRefusedException("A funeral quotation needs a plan and a payment frequency");
+        }
+        return productApi.quoteFuneral(in.productVersionId(), new FuneralQuoteInput(
+            in.funeralPlanCode(), PremiumFrequency.valueOf(in.frequency()), asOf, in.funeralLives()));
+    }
+
+    private SavingsQuoteView savingsQuote(Request in, LocalDate asOf) {
+        if (in.sumAssured() == null) {
+            throw new CustomerRequestRefusedException("A savings quotation needs the amount to be paid in");
+        }
+        return accumulationApi.quoteProductSavings(in.productId(), in.productVersionId(), in.sumAssured(),
+            in.policyTermMonths(), asOf);
+    }
+
+    private CustomerDocument premium(Request in, ProductSummaryView product, Proposer applicant,
+                                     String currency, LocalDate asOf) {
+        ProductApi.PremiumQuoteView quote = premiumQuote(in, applicant, currency, asOf);
 
         List<Field> extra = new ArrayList<>();
         extra.add(new Field("Age at entry", String.valueOf(quote.ageAtEntry())));
@@ -142,7 +263,8 @@ public class QuotationDocuments {
         // What it pays, as the policy schedule lists it: the cover, the life, the amount.
         List<Column> columns = List.of(new Column("Cover", Kind.TEXT, 2.0f), new Column("Life insured", Kind.TEXT, 2.4f),
             new Column("Pays (" + currency + ")", Kind.MONEY, 1.4f));
-        List<List<Object>> rows = List.of(List.of("Death benefit", name(applicant), in.sumAssured()));
+        List<List<Object>> rows = new ArrayList<>();
+        rows.add(List.of("Death benefit", applicant.name(), in.sumAssured()));
 
         List<Field> totals = new ArrayList<>();
         totals.add(new Field("Premium", money(quote.instalmentAmount(), currency) + " " + frequency(in.frequency())));
@@ -154,17 +276,100 @@ public class QuotationDocuments {
                 money(quote.totalOverTerm(), currency) + " (" + quote.instalmentsOverTerm() + " payments)"));
         }
 
+        List<String> notes = new ArrayList<>();
+        if (applicant.prospect()) {
+            // What a prospect takes away must say what they get back, not only what they pay (2026-10-20): every
+            // survival, maturity and income payment the version's schedule promises, dated as issuance would date it,
+            // for the version actually priced.
+            PayoutPlan plan = productApi.resolvePayoutPlan(quote.productVersionId());
+            LocalDate maturity = in.policyTermMonths() == null ? null : asOf.plusMonths(in.policyTermMonths());
+            List<PlannedPayoutView> planned = benefitPayoutApi.previewSchedule(quote.productVersionId(), asOf, maturity,
+                in.sumAssured());
+            rows.addAll(payoutRows(planned, plan, applicant.name()));
+            notes.addAll(deathNotes(plan.terms(), currency));
+            if (planned.isEmpty() && maturity != null) {
+                notes.add("Nothing is paid if " + applicant.name() + " is alive at the end of the term on "
+                    + DMY.format(maturity) + ".");
+            }
+            if (product.portfolioCode() == PortfolioCode.PAR) {
+                notes.add("Bonuses the company declares are added to the benefits above. They are not guaranteed and"
+                    + " are not included in the figures.");
+            }
+            notes.addAll(prospectNotes(plan.terms()));
+        }
+
         return new CustomerDocument(ISSUER, "Premium quotation", header(applicant, product, extra), columns, rows,
-            totals, signOff(applicant, List.of()), false);
+            totals, signOff(applicant, notes), false);
     }
 
-    private CustomerDocument funeral(Request in, ProductSummaryView product, PartyDetailView applicant,
-                                     String currency, LocalDate asOf) {
-        if (in.funeralPlanCode() == null || in.funeralPlanCode().isBlank() || in.frequency() == null) {
-            throw new CustomerRequestRefusedException("A funeral quotation needs a plan and a payment frequency");
+    /**
+     * The schedule's payments as table lines. An income stream is one line -- its payment, how many, and when they run --
+     * because forty monthly lines would bury the one line a prospect reads for.
+     */
+    private static List<List<Object>> payoutRows(List<PlannedPayoutView> planned, PayoutPlan plan, String life) {
+        List<List<Object>> rows = new ArrayList<>();
+        List<PlannedPayoutView> income = planned.stream().filter(p -> p.kind() == PayoutKind.INCOME).toList();
+        for (PlannedPayoutView p : planned) {
+            switch (p.kind()) {
+                case SURVIVAL -> rows.add(java.util.Arrays.asList("Survival benefit on " + DMY.format(p.dueDate()), life,
+                    p.amount()));
+                case MATURITY -> rows.add(java.util.Arrays.asList("Maturity benefit on " + DMY.format(p.dueDate()), life,
+                    p.amount()));
+                case RETURN_OF_PREMIUM -> rows.add(java.util.Arrays.asList("Premiums returned on "
+                    + DMY.format(p.dueDate()) + " (" + returnedShare(plan) + ")", life, null));
+                default -> { }
+            }
         }
-        FuneralQuote quote = productApi.quoteFuneral(in.productVersionId(), new FuneralQuoteInput(
-            in.funeralPlanCode(), PremiumFrequency.valueOf(in.frequency()), asOf, in.funeralLives()));
+        if (!income.isEmpty()) {
+            PlannedPayoutView first = income.get(0);
+            rows.add(java.util.Arrays.asList("Income, " + income.size() + " payments from " + DMY.format(first.dueDate())
+                + " to " + DMY.format(income.get(income.size() - 1).dueDate()), life, first.amount()));
+        }
+        return rows;
+    }
+
+    /** "100% of the premiums paid", from the row itself: its amount depends on what is collected, so none is printed. */
+    private static String returnedShare(PayoutPlan plan) {
+        return plan.rowsOf(PayoutKind.RETURN_OF_PREMIUM).stream().findFirst()
+            .map(r -> r.amountValue().stripTrailingZeros().toPlainString() + "% of the premiums paid")
+            .orElse("the premiums paid");
+    }
+
+    /** How the death benefit is decided, where the version says more than "the sum assured". */
+    private static List<String> deathNotes(PayoutTerms terms, String currency) {
+        List<String> notes = new ArrayList<>();
+        if (terms.deathBenefitPremiumPercent() != null) {
+            notes.add("On death the policy pays the higher of the sum assured and "
+                + terms.deathBenefitPremiumPercent().stripTrailingZeros().toPlainString() + "% of the premiums paid.");
+        } else {
+            notes.add("On death the policy pays the sum assured shown above.");
+        }
+        if (Boolean.TRUE.equals(terms.survivalBenefitsDeductedFromDeath())) {
+            notes.add("Survival benefits already paid are deducted from the death benefit.");
+        }
+        return notes;
+    }
+
+    /** What every prospect's quotation closes on: the free-look period and that the price is confirmed at acceptance. */
+    private static List<String> prospectNotes(PayoutTerms terms) {
+        return prospectNotes(terms, "premium");
+    }
+
+    /** {@code what} is what acceptance confirms: a premium, or a deposit's or an account's figures. */
+    private static List<String> prospectNotes(PayoutTerms terms, String what) {
+        List<String> notes = new ArrayList<>();
+        if (terms.freeLookDays() != null) {
+            notes.add("You may cancel within " + terms.freeLookDays() + " days of the policy being issued (the free-look"
+                + " period). The policy terms say what is refunded.");
+        }
+        notes.add("The final " + what + " " + ("premium".equals(what) ? "is" : "are")
+            + " confirmed when the proposal is accepted by underwriting.");
+        return notes;
+    }
+
+    private CustomerDocument funeral(Request in, ProductSummaryView product, Proposer applicant,
+                                     String currency, LocalDate asOf) {
+        FuneralQuote quote = funeralQuote(in, asOf);
 
         List<Field> extra = List.of(
             new Field("Plan", in.funeralPlanCode()),
@@ -184,19 +389,32 @@ public class QuotationDocuments {
             new Field("Family total a year", money(quote.totalYearlyPremium(), currency)),
             new Field("Premium", money(quote.instalment(), currency) + " " + frequency(in.frequency())));
 
+        List<String> notes = new ArrayList<>();
+        notes.add("A funeral plan renews each year. The premium above is this year's, for the lives listed.");
+        if (applicant.prospect()) {
+            // The waiting period in its own figures, read from the version's plan: the one condition a family most
+            // needs to know before a death, not after one.
+            FuneralPlan plan = productApi.resolveFuneralPlan(in.productVersionId());
+            notes.add("The plan pays nothing when the policy ends; it pays the benefit above on the death of a covered life.");
+            if (plan.waitingPeriodMonths() != null && plan.waitingPeriodMonths() > 0) {
+                notes.add("Each covered life has a waiting period of " + plan.waitingPeriodMonths() + " months from the day"
+                    + " its cover starts, in which a death from natural causes is not paid."
+                    + (plan.accidentWaivesWaiting() ? " A death by accident is paid from the first day." : ""));
+            } else {
+                notes.add("There is no waiting period: cover starts on the day each life is covered.");
+            }
+            notes.addAll(prospectNotes(productApi.resolvePayoutPlan(in.productVersionId()).terms()));
+        } else {
+            notes.add("Each covered life has its own waiting period from the day its cover starts.");
+        }
+
         return new CustomerDocument(ISSUER, "Funeral plan quotation", header(applicant, product, extra), columns, rows,
-            totals, signOff(applicant, List.of(
-                "A funeral plan renews each year. The premium above is this year's, for the lives listed.",
-                "Each covered life has its own waiting period from the day its cover starts.")), false);
+            totals, signOff(applicant, notes), false);
     }
 
-    private CustomerDocument savings(Request in, ProductSummaryView product, PartyDetailView applicant,
+    private CustomerDocument savings(Request in, ProductSummaryView product, Proposer applicant,
                                      String currency, LocalDate asOf) {
-        if (in.sumAssured() == null) {
-            throw new CustomerRequestRefusedException("A savings quotation needs the amount to be paid in");
-        }
-        SavingsQuoteView quote = accumulationApi.quoteProductSavings(in.productId(), in.productVersionId(),
-            in.sumAssured(), in.policyTermMonths(), asOf);
+        SavingsQuoteView quote = savingsQuote(in, asOf);
         boolean deposit = quote.kind() == SavingsQuoteView.Kind.DEPOSIT;
         String rate = quote.ratePercent() == null ? "-"
             : quote.ratePercent().stripTrailingZeros().toPlainString() + "% " + (deposit ? "for the term" : "a year");
@@ -227,6 +445,13 @@ public class QuotationDocuments {
             ? "A fixed-term deposit earns its rate over the whole term, not each year."
             : "An account has no maturity value: it is funded by deposits, earns interest on its balance at the declared"
                 + " rate, and runs until it is closed.");
+        if (applicant.prospect()) {
+            // On death (user, 2026-10-20): a deposit pays what is in it with what it has earned so far.
+            notes.add(deposit
+                ? "On death before maturity, the deposit plus the interest earned to that date is paid."
+                : "On death, the account balance is paid.");
+            notes.addAll(prospectNotes(productApi.resolvePayoutPlan(in.productVersionId()).terms(), "figures"));
+        }
 
         return new CustomerDocument(ISSUER, deposit ? "Fixed-term deposit quotation" : "Savings account quotation",
             header(applicant, product, extra), columns, rows, totals, signOff(applicant, notes), false);
@@ -311,21 +536,43 @@ public class QuotationDocuments {
     }
 
     /** The policy schedule's header, with the proposer where a policy would have its holder and number. */
-    private static List<Field> header(PartyDetailView applicant, ProductSummaryView product, List<Field> extra) {
+    private static List<Field> header(Proposer applicant, ProductSummaryView product, List<Field> extra) {
         List<Field> fields = new ArrayList<>();
-        fields.add(new Field("Proposer", name(applicant)));
-        fields.add(new Field("Phone", applicant.phoneNumber() != null ? applicant.phoneNumber() : "-"));
-        fields.add(new Field("Address", address(applicant)));
+        // A prospect has no record and no address yet; the label says which this is before anything else does.
+        fields.add(new Field(applicant.prospect() ? "Prospect" : "Proposer", applicant.name()));
+        fields.add(new Field("Phone", applicant.phone() != null && !applicant.phone().isBlank() ? applicant.phone() : "-"));
+        if (!applicant.prospect()) fields.add(new Field("Address", applicant.address()));
         fields.add(new Field("Date of birth", applicant.dateOfBirth() != null ? DMY.format(applicant.dateOfBirth()) : "-"));
         fields.add(new Field("Product", product.productName()));
         fields.addAll(extra);
-        fields.add(new Field("Printed on", DMY.format(LocalDate.now(CIVIL_ZONE))));
+        LocalDate today = LocalDate.now(CIVIL_ZONE);
+        fields.add(new Field("Printed on", DMY.format(today)));
+        if (applicant.prospect()) {
+            fields.add(new Field("Valid until", DMY.format(validUntil(today))));
+            Preparer by = applicant.preparedBy();
+            if (by != null && by.name() != null) {
+                fields.add(new Field("Prepared by", by.phoneNumber() == null || by.phoneNumber().isBlank() ? by.name()
+                    : by.name() + ", " + by.phoneNumber()));
+            }
+        }
         return fields;
     }
 
+    /** The last civil day a prospect's quotation printed on {@code printedOn} stands. */
+    public static LocalDate validUntil(LocalDate printedOn) {
+        return printedOn.plusDays(PROSPECT_VALID_DAYS);
+    }
+
     /** The notes, then the terms that govern, then the two signatures a quotation is handed over with. */
-    private static List<String> signOff(PartyDetailView applicant, List<String> notes) {
-        return signOff("Signature of applicant .........................................", name(applicant), notes);
+    private static List<String> signOff(Proposer applicant, List<String> notes) {
+        List<String> all = new ArrayList<>();
+        if (applicant.prospect()) {
+            all.add("This is a quotation for a prospect, valid until " + DMY.format(validUntil(LocalDate.now(CIVIL_ZONE)))
+                + ". Nothing has been applied for yet.");
+        }
+        all.addAll(notes);
+        return signOff(applicant.prospect() ? "Signature of prospect ..........................................."
+            : "Signature of applicant .........................................", applicant.name(), all);
     }
 
     /** {@code signer} names whose signature it is -- the applicant's, or an association's representative's. */
@@ -340,10 +587,6 @@ public class QuotationDocuments {
         all.add("");
         all.add("Signature (authorised officer) ..................................    Date ......................");
         return all;
-    }
-
-    private static String name(PartyDetailView applicant) {
-        return applicant.displayName() == null ? "The applicant" : applicant.displayName();
     }
 
     private static String term(Integer months) {

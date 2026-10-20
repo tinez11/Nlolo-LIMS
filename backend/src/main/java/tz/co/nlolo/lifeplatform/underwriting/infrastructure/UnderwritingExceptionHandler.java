@@ -33,6 +33,14 @@ public class UnderwritingExceptionHandler {
         return problem;
     }
 
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.underwriting.api.QuotationNotFoundException.class)
+    public ProblemDetail handleNoQuotation(tz.co.nlolo.lifeplatform.underwriting.api.QuotationNotFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problem.setProperty("errorCode", "QUOTATION_NOT_FOUND");
+        problem.setProperty("traceId", UUID.randomUUID().toString());
+        return problem;
+    }
+
     @ExceptionHandler(AnnuityChoiceNotFoundException.class)
     public ProblemDetail handleNoAnnuityChoice(AnnuityChoiceNotFoundException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());

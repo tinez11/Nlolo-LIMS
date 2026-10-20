@@ -31,6 +31,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import tz.co.nlolo.lifeplatform.underwriting.api.ProposalAmendmentApi;
+
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -49,9 +51,22 @@ public class UnderwritingController {
     /** Resolves an agents-realm caller's own registered clients, to scope the case list by. */
     private final PartyApi partyApi;
 
-    public UnderwritingController(UnderwritingApi underwritingApi, PartyApi partyApi) {
+    /** The quotation a proposal was opened from (2026-10-20). */
+    private final tz.co.nlolo.lifeplatform.underwriting.api.AcceptedQuotationApi acceptedQuotations;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
+    /** Returned for amendment, amended, resubmitted (2026-10-20). */
+    private final ProposalAmendmentApi amendments;
+
+    public UnderwritingController(UnderwritingApi underwritingApi, PartyApi partyApi,
+                                  tz.co.nlolo.lifeplatform.underwriting.api.AcceptedQuotationApi acceptedQuotations,
+                                  com.fasterxml.jackson.databind.ObjectMapper objectMapper,
+                                  ProposalAmendmentApi amendments) {
         this.underwritingApi = underwritingApi;
         this.partyApi = partyApi;
+        this.acceptedQuotations = acceptedQuotations;
+        this.objectMapper = objectMapper;
+        this.amendments = amendments;
     }
 
     /**
@@ -123,6 +138,13 @@ public class UnderwritingController {
     public ResponseEntity<UnderwritingCaseView> openCase(@Valid @RequestBody OpenCaseRequest request,
                                                           @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                                           @AuthenticationPrincipal Jwt jwt) {
+        // An agent proposes only for a client it registered (2026-10-20): any other applicant is the 404 the party read
+        // gives an agent for someone not theirs.
+        if (jwt != null && org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication()
+                .getAuthorities().stream().map(GrantedAuthority::getAuthority).anyMatch("ROLE_REALM_AGENTS"::equals)
+                && !partyApi.partyIdsRegisteredBy(jwt.getSubject()).contains(request.applicantPartyId())) {
+            throw new tz.co.nlolo.lifeplatform.party.api.PartyNotFoundException(request.applicantPartyId());
+        }
         // Idempotency-Key accepted but not yet enforced -- see plan Global Constraints;
         // real dedup registry lands with payment's idempotency work in M5.
         UnderwritingCaseView view = underwritingApi.openCase(request.applicantPartyId(), request.productId(), request.productVersionId(),
@@ -179,6 +201,7 @@ public class UnderwritingController {
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<UnderwritingCaseView> recordSale(@PathVariable UUID caseId, @Valid @RequestBody SaleRequest request,
                                                             @AuthenticationPrincipal Jwt jwt) {
+        requireAgentScope(caseId);
         return ResponseEntity.ok(underwritingApi.recordSale(caseId, request.salesChannel(), request.branchCode(),
             jwt.getSubject()));
     }
@@ -187,6 +210,7 @@ public class UnderwritingController {
     @GetMapping("/cases/{caseId}/account-charges")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<AccountChargeChoice> accountCharges(@PathVariable UUID caseId) {
+        requireAgentScope(caseId);
         return ResponseEntity.ok(new AccountChargeChoice(underwritingApi.accountCharges(caseId)));
     }
 
@@ -282,7 +306,25 @@ public class UnderwritingController {
     @GetMapping("/cases/{caseId}")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<UnderwritingCaseView> getCase(@PathVariable UUID caseId) {
-        return ResponseEntity.ok(underwritingApi.getCase(caseId));
+        return ResponseEntity.ok(requireAgentScope(caseId));
+    }
+
+    /**
+     * The quotation the customer agreed to, where the proposal came from one (2026-10-20): the inputs as quoted and the
+     * figures as priced that day, so the underwriter sees what the customer was shown. 404 for a case opened any other
+     * way. An agent reads only the quotations it confirmed.
+     */
+    @GetMapping("/cases/{caseId}/quotation")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<CaseQuotationResponse> getCaseQuotation(@PathVariable UUID caseId,
+                                                                  @AuthenticationPrincipal Jwt jwt,
+                                                                  Authentication authentication) {
+        boolean isAgent = authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority).anyMatch("ROLE_REALM_AGENTS"::equals);
+        tz.co.nlolo.lifeplatform.underwriting.api.AcceptedQuotationView q = acceptedQuotations.forCase(caseId)
+            .filter(v -> !isAgent || v.ownerSubject().equals(jwt.getSubject()))
+            .orElseThrow(() -> new tz.co.nlolo.lifeplatform.underwriting.api.QuotationNotFoundException(caseId));
+        return ResponseEntity.ok(CaseQuotationResponse.from(q, objectMapper));
     }
 
     @PostMapping("/cases/{caseId}/assessments")
@@ -328,6 +370,7 @@ public class UnderwritingController {
     @GetMapping("/cases/{caseId}/annuity-choice")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<AnnuityChoice> getAnnuityChoice(@PathVariable UUID caseId) {
+        requireAgentScope(caseId);
         return underwritingApi.annuityChoice(caseId).map(ResponseEntity::ok)
             .orElseThrow(() -> new AnnuityChoiceNotFoundException(caseId));
     }
@@ -338,6 +381,7 @@ public class UnderwritingController {
     public ResponseEntity<AnnuityChoice> recordAnnuityChoice(@PathVariable UUID caseId,
                                                              @RequestBody OpenCaseRequest.AnnuityChoiceDto request,
                                                              @AuthenticationPrincipal Jwt jwt) {
+        requireAgentScope(caseId);
         return ResponseEntity.ok(underwritingApi.recordAnnuityChoice(caseId, request.toApi(), jwt.getSubject()));
     }
 
@@ -348,6 +392,7 @@ public class UnderwritingController {
     @GetMapping("/cases/{caseId}/deferred-annuity-choice")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<DeferredAnnuityChoice> getDeferredAnnuityChoice(@PathVariable UUID caseId) {
+        requireAgentScope(caseId);
         return underwritingApi.deferredAnnuityChoice(caseId).map(ResponseEntity::ok)
             .orElseThrow(() -> new DeferredAnnuityChoiceNotFoundException(caseId));
     }
@@ -358,6 +403,7 @@ public class UnderwritingController {
     public ResponseEntity<DeferredAnnuityChoice> recordDeferredAnnuityChoice(@PathVariable UUID caseId,
                                                                              @RequestBody OpenCaseRequest.DeferredAnnuityDto request,
                                                                              @AuthenticationPrincipal Jwt jwt) {
+        requireAgentScope(caseId);
         return ResponseEntity.ok(underwritingApi.recordDeferredAnnuityChoice(caseId, request.age(), jwt.getSubject()));
     }
 
@@ -368,6 +414,7 @@ public class UnderwritingController {
     @GetMapping("/cases/{caseId}/unit-linked-choice")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<UnitLinkedChoice> getUnitLinkedChoice(@PathVariable UUID caseId) {
+        requireAgentScope(caseId);
         return underwritingApi.unitLinkedChoice(caseId).map(ResponseEntity::ok)
             .orElseThrow(() -> new UnitLinkedChoiceNotFoundException(caseId));
     }
@@ -378,6 +425,7 @@ public class UnderwritingController {
     public ResponseEntity<UnitLinkedChoice> recordUnitLinkedChoice(@PathVariable UUID caseId,
                                                                    @RequestBody UnitLinkedChoice request,
                                                                    @AuthenticationPrincipal Jwt jwt) {
+        requireAgentScope(caseId);
         return ResponseEntity.ok(underwritingApi.recordUnitLinkedChoice(caseId, request, jwt.getSubject()));
     }
 
@@ -388,6 +436,7 @@ public class UnderwritingController {
     @GetMapping("/cases/{caseId}/funeral-application")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<FuneralApplication> getFuneralApplication(@PathVariable UUID caseId) {
+        requireAgentScope(caseId);
         return underwritingApi.funeralApplication(caseId).map(ResponseEntity::ok)
             .orElseThrow(() -> new FuneralApplicationNotFoundException(caseId));
     }
@@ -398,6 +447,7 @@ public class UnderwritingController {
     public ResponseEntity<FuneralApplication> recordFuneralApplication(@PathVariable UUID caseId,
                                                                        @Valid @RequestBody FuneralApplicationRequest request,
                                                                        @AuthenticationPrincipal Jwt jwt) {
+        requireAgentScope(caseId);
         return ResponseEntity.ok(underwritingApi.recordFuneralApplication(caseId, request.planCode(), request.lives(),
             jwt.getSubject()));
     }
@@ -421,7 +471,7 @@ public class UnderwritingController {
     @GetMapping("/cases/{caseId}/beneficiaries")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<List<BeneficiaryNomination>> listCaseBeneficiaries(@PathVariable UUID caseId) {
-        return ResponseEntity.ok(underwritingApi.getCase(caseId).beneficiaries());
+        return ResponseEntity.ok(requireAgentScope(caseId).beneficiaries());
     }
 
     /**
@@ -443,7 +493,7 @@ public class UnderwritingController {
     @GetMapping("/cases/{caseId}/group-proposal")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<GroupProposalResponseDto> getGroupProposal(@PathVariable UUID caseId) {
-        GroupProposal proposal = underwritingApi.getCase(caseId).groupProposal();
+        GroupProposal proposal = requireAgentScope(caseId).groupProposal();
         return proposal != null
             ? ResponseEntity.ok(GroupProposalResponseDto.from(proposal))
             : ResponseEntity.notFound().build();
@@ -472,6 +522,7 @@ public class UnderwritingController {
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<MedicalDisclosureView> recordDisclosures(@PathVariable UUID caseId,
             @Valid @RequestBody RecordDisclosuresRequest request, @AuthenticationPrincipal Jwt jwt) {
+        requireAgentScope(caseId);
         MedicalDisclosureView view = underwritingApi.recordDisclosures(caseId,
             request.toApiAnswers(), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
@@ -480,6 +531,95 @@ public class UnderwritingController {
     @GetMapping("/cases/{caseId}/disclosures")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<List<MedicalDisclosureView>> listDisclosures(@PathVariable UUID caseId) {
+        requireAgentScope(caseId);
         return ResponseEntity.ok(underwritingApi.listDisclosures(caseId));
+    }
+
+    // ---- Returned for amendment (2026-10-20) ------------------------------------------------------------------------
+
+    /**
+     * Return the proposal to the agent for amendment, with what is wrong and what to change -- one or more reasons, each
+     * a category and the underwriter's own two sentences. From OPEN or IN_REVIEW only; the case then waits as RETURNED
+     * and cannot be decided until the agent resubmits it.
+     */
+    @PostMapping("/cases/{caseId}/return")
+    @PreAuthorize("hasRole('UNDERWRITER')")
+    public ResponseEntity<UnderwritingCaseView> returnForAmendment(@PathVariable UUID caseId,
+                                                                   @Valid @RequestBody AmendmentRequests.ReturnRequest request,
+                                                                   @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(amendments.returnForAmendment(caseId,
+            request.reasons().stream().map(AmendmentRequests.Reason::toApi).toList(), request.note(), jwt.getSubject()));
+    }
+
+    /** The agent amends the contract on a returned or postponed proposal. Recorded, field by field, in its history. */
+    @PutMapping("/cases/{caseId}/terms")
+    @PreAuthorize("hasRole('REALM_AGENTS')")
+    public ResponseEntity<UnderwritingCaseView> amendTerms(@PathVariable UUID caseId,
+                                                           @Valid @RequestBody AmendmentRequests.TermsRequest request,
+                                                           @AuthenticationPrincipal Jwt jwt) {
+        requireAgentScope(caseId);
+        return ResponseEntity.ok(amendments.amendTerms(caseId, request.toApi(), jwt.getSubject()));
+    }
+
+    /**
+     * The agent corrects the client's own record on a returned or postponed proposal (user, 2026-10-20). A changed name
+     * or date of birth on a verified client sends their KYC back to PENDING.
+     */
+    @PutMapping("/cases/{caseId}/applicant")
+    @PreAuthorize("hasRole('REALM_AGENTS')")
+    public ResponseEntity<tz.co.nlolo.lifeplatform.party.api.PartyDetailView> amendApplicant(@PathVariable UUID caseId,
+            @Valid @RequestBody AmendmentRequests.ApplicantRequest request, @AuthenticationPrincipal Jwt jwt) {
+        requireAgentScope(caseId);
+        return ResponseEntity.ok(amendments.amendApplicant(caseId, request.toRegistration(), jwt.getSubject()));
+    }
+
+    /** The agent sends a returned or postponed proposal back to the queue: the same case, its next round. */
+    @PostMapping("/cases/{caseId}/resubmit")
+    @PreAuthorize("hasRole('REALM_AGENTS')")
+    public ResponseEntity<UnderwritingCaseView> resubmit(@PathVariable UUID caseId,
+                                                         @Valid @RequestBody(required = false) AmendmentRequests.ResubmitRequest request,
+                                                         @AuthenticationPrincipal Jwt jwt) {
+        requireAgentScope(caseId);
+        return ResponseEntity.ok(amendments.resubmit(caseId, request == null ? null : request.note(), jwt.getSubject()));
+    }
+
+    /** Every return, amendment and resubmission on the case, oldest first -- for the underwriter and the agent alike. */
+    @GetMapping("/cases/{caseId}/history")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<List<ProposalAmendmentApi.CaseEventView>> history(@PathVariable UUID caseId) {
+        requireAgentScope(caseId);
+        return ResponseEntity.ok(amendments.history(caseId));
+    }
+
+    /**
+     * The calling agent's "Needs your action": proposals returned to them or postponed, and those declined in the last
+     * {@value #DECLINES_SHOWN_DAYS} days with the reason. Scoped by construction to the agent's own clients.
+     */
+    @GetMapping("/needs-action")
+    @PreAuthorize("hasRole('REALM_AGENTS')")
+    public ResponseEntity<List<ProposalAmendmentApi.NeedsAction>> needsAction(@AuthenticationPrincipal Jwt jwt) {
+        Instant since = LocalDate.now(CIVIL).minusDays(DECLINES_SHOWN_DAYS).atStartOfDay(CIVIL).toInstant();
+        return ResponseEntity.ok(amendments.needsAction(partyApi.partyIdsRegisteredBy(jwt.getSubject()), since));
+    }
+
+    /** How long a decline stays on the agent's list after it is decided: long enough to have told the customer. */
+    static final int DECLINES_SHOWN_DAYS = 30;
+
+    /**
+     * An agents-realm caller reads and acts only on cases whose applicant it registered -- "my clients", as the case
+     * list scopes it (2026-10-20). Anything else is the 404 an absent case is, so another agent's case, and the reasons
+     * on it, cannot even be confirmed to exist. Staff pass through. Returns the case, so callers need not read it twice.
+     */
+    private UnderwritingCaseView requireAgentScope(UUID caseId) {
+        UnderwritingCaseView view = underwritingApi.getCase(caseId);
+        org.springframework.security.core.Authentication auth =
+            org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        boolean agent = auth != null && auth.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority).anyMatch("ROLE_REALM_AGENTS"::equals);
+        if (agent && auth.getPrincipal() instanceof Jwt jwt
+                && !partyApi.partyIdsRegisteredBy(jwt.getSubject()).contains(view.applicantPartyId())) {
+            throw new tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseNotFoundException(caseId);
+        }
+        return view;
     }
 }

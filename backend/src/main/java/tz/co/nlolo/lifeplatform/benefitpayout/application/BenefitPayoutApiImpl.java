@@ -108,6 +108,23 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
             || accumulationApi.isDeposit(policyNumber);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<tz.co.nlolo.lifeplatform.benefitpayout.api.PlannedPayoutView> previewSchedule(
+            UUID productVersionId, LocalDate start, LocalDate maturityDate, BigDecimal sumAssured) {
+        PayoutPlan plan = productApi.resolvePayoutPlan(productVersionId);
+        if (plan.rows().isEmpty()) {
+            return List.of();
+        }
+        // Issuance refuses an end-of-term row with no maturity date; a preview leaves those rows out instead.
+        PayoutPlan dated = maturityDate != null ? plan : new PayoutPlan(plan.terms(), plan.rows().stream()
+            .filter(r -> r.kind() != PayoutKind.MATURITY && r.kind() != PayoutKind.RETURN_OF_PREMIUM).toList(),
+            plan.authored());
+        return ScheduleExpander.expand(dated, start, maturityDate, sumAssured).stream()
+            .map(p -> new tz.co.nlolo.lifeplatform.benefitpayout.api.PlannedPayoutView(p.kind(), p.dueDate(), p.amount()))
+            .toList();
+    }
+
     /**
      * {@code policy.PolicyIssued}: open the premium tally and store every instalment the version's
      * plan implies.

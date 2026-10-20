@@ -15,6 +15,31 @@ import java.util.UUID;
 
 public interface UnderwritingCaseRepository extends JpaRepository<UnderwritingCase, UUID> {
     Optional<UnderwritingCase> findByCaseIdAndTenantId(UUID caseId, UUID tenantId);
+
+    /**
+     * One agent's clients' proposals waiting on them -- the "Needs your action" list (2026-10-20): returned, postponed,
+     * or declined since {@code declinedSince}. Filtered here, not in Java: an agent's book holds every case ever
+     * decided, and reading them all to keep a handful made the list too slow to load.
+     */
+    @Query("""
+        SELECT c FROM UnderwritingCase c
+         WHERE c.tenantId = :tenantId AND c.applicantPartyId IN :applicantPartyIds
+           AND (c.status = 'RETURNED' OR (c.status = 'DECIDED' AND c.decisionOutcome = 'POSTPONED'))""")
+    List<UnderwritingCase> findNeedingAgentAction(@Param("tenantId") UUID tenantId,
+                                                  @Param("applicantPartyIds") java.util.Collection<UUID> applicantPartyIds);
+
+    /**
+     * The newest declines since {@code declinedSince}, for reading only -- a page of them, never the lot: a busy agent
+     * can have hundreds, and a list of hundreds of finished decisions buries the few that need doing.
+     */
+    @Query("""
+        SELECT c FROM UnderwritingCase c
+         WHERE c.tenantId = :tenantId AND c.applicantPartyId IN :applicantPartyIds
+           AND c.status = 'DECIDED' AND c.decisionOutcome = 'DECLINED' AND c.decisionDecidedAt >= :declinedSince
+         ORDER BY c.decisionDecidedAt DESC""")
+    List<UnderwritingCase> findRecentDeclines(@Param("tenantId") UUID tenantId,
+                                              @Param("applicantPartyIds") java.util.Collection<UUID> applicantPartyIds,
+                                              @Param("declinedSince") Instant declinedSince, Pageable pageable);
     Page<UnderwritingCase> findByTenantId(UUID tenantId, Pageable pageable);
     Page<UnderwritingCase> findByTenantIdAndStatus(UUID tenantId, String status, Pageable pageable);
 

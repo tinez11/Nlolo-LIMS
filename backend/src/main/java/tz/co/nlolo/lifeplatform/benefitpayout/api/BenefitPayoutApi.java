@@ -32,6 +32,16 @@ public interface BenefitPayoutApi {
     boolean hasScheduledMaturity(String policyNumber);
 
     /**
+     * What a policy on this version would be paid while it runs and at its end, dated as issuance would date it
+     * (2026-10-20, the prospect quotation). Reads only: the same expansion {@code PolicyIssued} stores, for a policy
+     * that does not exist yet. Empty for a version with no payout rows.
+     *
+     * @param maturityDate null for a policy with no term; end-of-term rows then have nothing to fall due on and are left out
+     */
+    List<PlannedPayoutView> previewSchedule(UUID productVersionId, java.time.LocalDate start,
+                                            java.time.LocalDate maturityDate, java.math.BigDecimal sumAssured);
+
+    /**
      * DUE -> REVIEWED: confirm where the money goes, and for a survival or income payout how the
      * life assured was confirmed alive (decision Q2).
      */

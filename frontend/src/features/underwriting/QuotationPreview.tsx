@@ -7,10 +7,21 @@ import { PREMIUM_FREQUENCY_LABELS } from '@/api/types';
 import { DEFAULT_OCCUPATION_CLASS, useQuotation, type QuotationInputs } from './useQuotation';
 import { useSavingsQuotation } from './useSavingsQuotation';
 import { DownloadQuotationButton } from './DownloadQuotationButton';
-import { downloadQuotation, type QuotationRequest } from '@/api/documents';
+import { downloadQuotation } from '@/api/documents';
 import { useFuneralQuotation, type FuneralDependantInput, type FuneralQuotationInputs } from './useFuneralQuotation';
 import { InlineError } from '@/components/InlineError';
 import { FUNERAL_ROLE_LABELS, type FuneralRoleName } from '@/features/products/funeralSchema';
+import { pricingBasis, type PricingBasis, type ProspectInputs } from './pricingBasis';
+import { quotationRequest } from './quotationRequest';
+import { useEffect } from 'react';
+import type { QuoteState } from './pricingBasis';
+
+/** Tells a listening screen where the server's answer stands, each time it moves. */
+function useReport(state: QuoteState, report: ((state: QuoteState) => void) | undefined) {
+  useEffect(() => {
+    report?.(state);
+  }, [state, report]);
+}
 
 /**
  * A money figure the SERVER sent as a JSON number.
@@ -48,38 +59,6 @@ function Row({ label, value, suffix }: { label: string; value: string; suffix?: 
   );
 }
 
-/**
- * How a product is priced -- which decides what this panel can even ask for.
- *
- * <p>The premium-quote endpoint prices a sum assured off a base rate table, and that is ALL it can price. Nine of
- * the platform's fourteen portfolios are not priced that way at all, so every one of them used to answer the panel
- * with a red 422 ("carries no base rate table, so it cannot be priced") on a product working exactly as designed.
- * A quotation panel that only ever works for term and endowment is not a quotation panel.
- */
-type PricingBasis = 'PREMIUM' | 'SAVINGS' | 'FUNERAL' | 'OWN_SECTION' | 'PER_SCHEME';
-
-const BASIS_BY_PORTFOLIO: Record<string, PricingBasis> = {
-  // Priced from a sum assured and the version's base rate table.
-  TERM: 'PREMIUM',
-  WL: 'PREMIUM',
-  END: 'PREMIUM',
-  MB: 'PREMIUM',
-  PAR: 'PREMIUM',
-  // Priced from money paid in and a rate: a deposit's grid, or an account's declared rate.
-  SAV: 'SAVINGS',
-  DEP: 'SAVINGS',
-  // Priced from the plan's own premium grid, a line per life -- quoted here, from the family entered above.
-  FUN: 'FUNERAL',
-  // Priced by its own fields on THIS form, which ask for what its own quoter needs -- an annuity form, a fund
-  // split. Repeating their figures here would be two prices for one thing on one screen.
-  IANN: 'OWN_SECTION',
-  DANN: 'OWN_SECTION',
-  PEN: 'OWN_SECTION',
-  ULIP: 'OWN_SECTION',
-  // Priced per scheme, not per life: the rate belongs to the scheme contract.
-  CRL: 'PER_SCHEME',
-  GRPL: 'PER_SCHEME',
-};
 
 /** What prices this one, named so a staff member can go and look at it. */
 const OWN_SECTION_BY_PORTFOLIO: Record<string, string> = {
@@ -97,7 +76,19 @@ export function QuotationPreview({
   productVersionId,
   funeral,
   applicantPartyId = '',
+  prospect,
+  onQuoteState,
 }: {
+  /**
+   * Told where the server's answer stands (2026-10-20), for a screen that acts on it -- the agents' calculator offers
+   * "Proceed" only once the server has priced what the customer would agree to, never on a refusal.
+   */
+  onQuoteState?: ((state: QuoteState) => void) | undefined;
+  /**
+   * Somebody not registered yet (2026-10-20, the agents' quotation calculator): the quotation PDF carries these
+   * inputs instead of a party id, and is marked as a prospect's. Ignored once there is an applicant.
+   */
+  prospect?: ProspectInputs | undefined;
   inputs: QuotationInputs;
   premiumPayingTermMonths: string;
   commencementDate: string;
@@ -115,8 +106,7 @@ export function QuotationPreview({
       }
     | undefined;
 }) {
-  // An unknown or absent portfolio keeps the original behaviour: ask for a premium and show whatever comes back.
-  const basis: PricingBasis = (portfolioCode && BASIS_BY_PORTFOLIO[portfolioCode]) || 'PREMIUM';
+  const basis: PricingBasis = pricingBasis(portfolioCode);
 
   return (
     <Panel
@@ -134,11 +124,13 @@ export function QuotationPreview({
           inputs={inputs}
           premiumPayingTermMonths={premiumPayingTermMonths}
           commencementDate={commencementDate}
+          report={onQuoteState}
         />
       )}
 
       {basis === 'SAVINGS' && (
         <SavingsQuotation
+          report={onQuoteState}
           productId={inputs.productId}
           productVersionId={productVersionId}
           amount={inputs.sumAssuredAmount}
@@ -150,6 +142,7 @@ export function QuotationPreview({
 
       {basis === 'FUNERAL' && (
         <FuneralQuotation
+          report={onQuoteState}
           inputs={{
             productId: inputs.productId,
             productVersionId,
@@ -186,74 +179,21 @@ export function QuotationPreview({
             commencementDate,
             productVersionId,
             applicantPartyId,
+            prospect,
             funeral,
           });
           return (
             <DownloadQuotationButton
               download={request ? () => downloadQuotation(request) : null}
               fileName={`quotation-${productVersionId.slice(0, 8)}.pdf`}
+              {...(!applicantPartyId && prospect
+                ? { description: 'The figures above, for the prospect to take away and study.' }
+                : {})}
             />
           );
         })()}
     </Panel>
   );
-}
-
-/**
- * The document's INPUTS, as the form holds them -- never a figure from the screen.
- *
- * <p>Null until there is enough to ask: a product, an applicant, and what that basis cannot be quoted without. The
- * server re-checks all of it; this only keeps the button from sending a request that is certain to be refused.
- */
-function quotationRequest(
-  basis: PricingBasis,
-  form: {
-    inputs: QuotationInputs;
-    premiumPayingTermMonths: string;
-    commencementDate: string;
-    productVersionId: string;
-    applicantPartyId: string;
-    funeral?: { planCode: string; mainMember: { name: string; dateOfBirth: string | null } | null; dependants: FuneralDependantInput[] } | undefined;
-  },
-): QuotationRequest | null {
-  const { inputs, productVersionId, applicantPartyId } = form;
-  if (!inputs.productId || !productVersionId || !applicantPartyId) return null;
-  const base = {
-    productId: inputs.productId,
-    productVersionId,
-    applicantPartyId,
-    currency: inputs.sumAssuredCurrency || 'TZS',
-    commencement: form.commencementDate || null,
-  };
-
-  if (basis === 'FUNERAL') {
-    const main = form.funeral?.mainMember;
-    if (!form.funeral?.planCode || !inputs.frequency || !main?.dateOfBirth) return null;
-    return {
-      ...base,
-      frequency: inputs.frequency,
-      funeralPlanCode: form.funeral.planCode,
-      lives: [
-        { role: 'MAIN_MEMBER', name: main.name, dateOfBirth: main.dateOfBirth, student: false },
-        ...form.funeral.dependants.map((d) => ({
-          role: d.role as 'SPOUSE' | 'CHILD' | 'PARENT' | 'EXTENDED',
-          name: d.fullName,
-          dateOfBirth: d.dateOfBirth || null,
-          student: d.student,
-        })),
-      ],
-    };
-  }
-
-  if (!inputs.sumAssuredAmount || Number(inputs.sumAssuredAmount) <= 0) return null;
-  if (basis === 'PREMIUM' && !inputs.frequency) return null;
-  return {
-    ...base,
-    sumAssured: Number(inputs.sumAssuredAmount),
-    frequency: inputs.frequency || null,
-    policyTermMonths: inputs.policyTermMonths ? Number(inputs.policyTermMonths) : null,
-    premiumPayingTermMonths: form.premiumPayingTermMonths ? Number(form.premiumPayingTermMonths) : null,
-  };
 }
 
 /**
@@ -274,12 +214,15 @@ function PremiumQuotation({
   inputs,
   premiumPayingTermMonths,
   commencementDate,
+  report,
 }: {
   inputs: QuotationInputs;
   premiumPayingTermMonths: string;
   commencementDate: string;
+  report?: ((state: QuoteState) => void) | undefined;
 }) {
   const quotation = useQuotation(inputs);
+  useReport(quotation.state, report);
 
   return (
     <>
@@ -420,8 +363,12 @@ function PremiumQuotation({
  * <p>A line per life, because a funeral premium IS per life: the plan's grid prices each role and age separately,
  * and a family total with no lines behind it cannot be checked.
  */
-function FuneralQuotation({ inputs }: { inputs: FuneralQuotationInputs }) {
+function FuneralQuotation({ inputs, report }: {
+  inputs: FuneralQuotationInputs;
+  report?: ((state: QuoteState) => void) | undefined;
+}) {
   const quotation = useFuneralQuotation(inputs);
+  useReport(quotation.state, report);
 
   if (quotation.state === 'incomplete') {
     return (
@@ -504,6 +451,7 @@ function SavingsQuotation({
   currency,
   termMonths,
   commencementDate,
+  report,
 }: {
   productId: string;
   productVersionId: string;
@@ -511,6 +459,7 @@ function SavingsQuotation({
   currency: string;
   termMonths: string;
   commencementDate: string;
+  report?: ((state: QuoteState) => void) | undefined;
 }) {
   const quotation = useSavingsQuotation({
     productId,
@@ -520,6 +469,12 @@ function SavingsQuotation({
     termMonths,
     asOf: commencementDate,
   });
+  // A deposit priced with a refusal attached -- a term or amount it does not take -- cannot be agreed to: the server
+  // refuses to save it, so it is reported as refused, not quoted.
+  useReport(
+    quotation.state === 'quoted' && quotation.quote.refusal ? 'refused' : quotation.state,
+    report,
+  );
 
   if (quotation.state === 'incomplete') {
     return (

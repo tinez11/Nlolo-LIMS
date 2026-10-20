@@ -36,6 +36,7 @@ import {
   ListChecks,
   CircleMinus,
   Calculator,
+  Inbox,
   Coins,
   NotebookPen,
   ChartColumn,
@@ -101,6 +102,10 @@ import {
   StatementPage,
   ReinsuranceStatementsPage,
   OpenUnderwritingCasePage,
+  QuotationCalculatorPage,
+  SubmitProposalPage,
+  NeedsActionPage,
+  AgentProposalPage,
   UnderwritingCaseDetailPage,
   UnderwritingQueuePage,
   PayoutsQueuePage,
@@ -184,7 +189,8 @@ export type BadgeKey =
   | 'claims-settlement-pending'
   | 'arrears-at-lapse'
   | 'receipts-overdue'
-  | 'eft-awaiting';
+  | 'eft-awaiting'
+  | 'needs-action';
 
 interface NavPlacement {
   group: NavGroupId;
@@ -723,6 +729,21 @@ const AGENTS_SCREENS: Screen[] = [
     reach: { group: 'my-business', label: 'My clients', icon: UserCheck },
   },
   { path: 'parties/:partyId', element: <PartyDetailPage realm="agents" />, reach: 'drill-in' },
+  // Where a sale starts (2026-10-20): a price and a paper for the customer before anybody is registered or saved.
+  {
+    path: 'quotation',
+    element: <QuotationCalculatorPage />,
+    reach: { group: 'my-business', label: 'Quotation calculator', icon: Calculator },
+  },
+  // The confirmed quotation, submitted as a proposal once the customer is registered.
+  { path: 'quotation/:quotationId', element: <SubmitProposalPage />, reach: 'drill-in' },
+  // Proposals returned for corrections or postponed, and recent declines (2026-10-20). Counted in the nav.
+  {
+    path: 'needs-action',
+    element: <NeedsActionPage />,
+    reach: { group: 'my-business', label: 'Needs your action', icon: Inbox, badge: 'needs-action' },
+  },
+  { path: 'proposals/:caseId', element: <AgentProposalPage />, reach: 'drill-in' },
   {
     path: 'customers/new',
     element: <OnboardCustomerPage />,

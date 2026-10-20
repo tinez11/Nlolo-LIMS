@@ -182,7 +182,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
      * same three rules as PolicyApiImpl.refuseUnlessAValidDeposit: paid once, on an offered term, at least the lowest
      * band. A frequency or term left blank is not refused here -- the issue screen asks for it.
      */
-    private void refuseAnUnissuableDeposit(UUID productVersionId, BigDecimal amount, ProposalDetails details) {
+    void refuseAnUnissuableDeposit(UUID productVersionId, BigDecimal amount, ProposalDetails details) {
         tz.co.nlolo.lifeplatform.product.api.DepositPlan deposit = productApi.resolveDepositPlan(productVersionId);
         if (!deposit.isDeposit()) {
             return;
@@ -489,7 +489,8 @@ public class UnderwritingApiImpl implements UnderwritingApi {
      * <p>A null term is not a violation. A whole life policy, an annuity and an annually
      * renewable group scheme all genuinely have none.
      */
-    private void rejectTermOutsideProductBounds(UUID productVersionId, Integer requestedTermMonths) {
+    // Package-visible (2026-10-20) so an amended proposal is held to the rules its opening was.
+    void rejectTermOutsideProductBounds(UUID productVersionId, Integer requestedTermMonths) {
         if (requestedTermMonths == null) return;
 
         EligibilityBounds bounds = productApi.getSnapshotByVersionId(productVersionId).eligibility();
@@ -581,7 +582,11 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         if (isDecided(underwritingCase) && !DecisionOutcome.POSTPONED.name().equals(underwritingCase.getDecisionOutcome())) {
             throw new UnderwritingCaseAlreadyDecidedException(caseId);
         }
-        underwritingCase.markInReview();
+        // Evidence may still arrive while a proposal is with its agent, but it does not take the proposal back: only the
+        // agent's resubmission does (2026-10-20). Moving it to IN_REVIEW here let a returned case be decided.
+        if (!UnderwritingCaseStatus.RETURNED.name().equals(underwritingCase.getStatus())) {
+            underwritingCase.markInReview();
+        }
 
         RiskAssessment assessment = new RiskAssessment(tenantId, caseId, assessmentType.name(), assessedBy, findings, riskScore);
         riskAssessmentRepository.save(assessment);
@@ -606,6 +611,11 @@ public class UnderwritingApiImpl implements UnderwritingApi {
 
         if (isDecided(underwritingCase) && !DecisionOutcome.POSTPONED.name().equals(underwritingCase.getDecisionOutcome())) {
             throw new UnderwritingCaseAlreadyDecidedException(caseId);
+        }
+        // Returned to the agent (2026-10-20): the proposal being decided is the one the agent sends back, not this one.
+        if (UnderwritingCaseStatus.RETURNED.name().equals(underwritingCase.getStatus())) {
+            throw new UnderwritingValidationException("Case " + caseId + " was returned to the agent for amendment;"
+                + " it can be decided once the agent resubmits it");
         }
         if (decision.reason() == null || decision.reason().isBlank()) {
             throw new UnderwritingValidationException("A decision must carry a reason");

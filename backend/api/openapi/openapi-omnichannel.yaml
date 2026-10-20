@@ -85,6 +85,96 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /agent-quotations:
+    post:
+      summary: The customer agrees -- save the quotation they accepted
+      description: >
+        The FIRST write in the agents' prospect-to-proposal flow (2026-10-20): quoting, changing the inputs and
+        downloading the PDF store nothing; this is called only when the agent confirms that the customer agrees. The
+        same inputs as the quotation PDF -- never a figure -- priced again on the server, and saved with those figures
+        and the date. Discarded by the agent's cancel or, if never submitted as a proposal, at the end of the day.
+        An agent may quote a registered client only if it registered them (404 otherwise); 422 for a product or input
+        the quotation cannot price, or a deposit on a term or amount it does not take.
+      security:
+        - agentsAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuotationRequest' }
+      responses:
+        '201':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentQuotation' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Cannot be quoted as entered
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /agent-quotations/{quotationId}:
+    parameters:
+      - { name: quotationId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: One of the caller's own saved quotations -- what onboarding is filled in from
+      security:
+        - agentsAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentQuotation' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+    delete:
+      summary: The customer did not go ahead -- discard the saved quotation
+      description: 422 once a proposal was opened from it; it is then kept with the proposal.
+      security:
+        - agentsAuth: []
+      responses:
+        '204': { description: Discarded }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Already submitted
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /agent-quotations/{quotationId}/proposal:
+    parameters:
+      - { name: quotationId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Submit the saved quotation as a proposal to the underwriter
+      description: >
+        Opens an underwriting case for the registered customer from the SAVED quotation -- its product version, sum
+        assured, term, frequency and (for a funeral plan) family -- nothing typed again, and links the case to it. The
+        customer must be one the agent registered, and the one quoted where the quotation was for a registered client.
+      security:
+        - agentsAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [applicantPartyId]
+              properties:
+                applicantPartyId: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Submitted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentQuotation' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Cannot be proposed as quoted
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /policies/{policyNumber}/payment-schedule:
     get:
       summary: A policy's premium payment schedule
@@ -575,6 +665,29 @@ components:
           tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/agents/protocol/openid-connect/token
           scopes: {}
   schemas:
+    AgentQuotation:
+      type: object
+      description: >-
+        A quotation the customer agreed to (2026-10-20): the inputs as quoted, and the server's figures for them on the
+        day -- the quote of the module that owns the price (a premium quote, a savings quote or a funeral family quote).
+      required: [quotationId, productId, productVersionId, inputs, quoted, quotedOn, validUntil]
+      properties:
+        quotationId: { type: string, format: uuid }
+        applicantPartyId: { type: [string, "null"], format: uuid }
+        productId: { type: string, format: uuid }
+        productVersionId: { type: string, format: uuid, description: The version actually priced }
+        inputs: { $ref: '#/components/schemas/QuotationRequest' }
+        quoted:
+          type: object
+          required: [sumAssured, currency, quote]
+          properties:
+            sumAssured: { type: [number, "null"], description: What the proposal is opened at }
+            currency: { type: string }
+            quote: { type: object, additionalProperties: true }
+        quotedOn: { type: string, format: date }
+        validUntil: { type: string, format: date }
+        caseId: { type: [string, "null"], format: uuid, description: The proposal opened from it }
+        proposalNumber: { type: [string, "null"] }
     SchemeQuotationRequest:
       type: object
       description: Inputs only -- the bill and every family's cover are priced on the server.
@@ -606,15 +719,28 @@ components:
                     student: { type: boolean }
     QuotationRequest:
       type: object
-      description: Inputs only -- every figure on the document is quoted again on the server.
-      required: [productId, productVersionId, applicantPartyId]
+      description: >-
+        Inputs only -- every figure on the document is quoted again on the server. Exactly one of applicantPartyId and
+        prospect names who is quoted; a prospect's quotation is marked as such, valid for 30 days, and stores nothing.
+      required: [productId, productVersionId]
       properties:
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
         applicantPartyId:
-          type: string
+          type: [string, "null"]
           format: uuid
           description: The proposer. Their name, contact and rating facts are read from their record, never sent.
+        prospect:
+          type: [object, "null"]
+          description: Somebody not registered yet (2026-10-20). Their rating facts as the agent typed them.
+          required: [fullName]
+          properties:
+            fullName: { type: string, maxLength: 255 }
+            phoneNumber: { type: [string, "null"], maxLength: 30 }
+            dateOfBirth: { type: [string, "null"], format: date }
+            sex: { type: [string, "null"], enum: [MALE, FEMALE, null] }
+            smokerStatus: { type: [string, "null"], enum: [SMOKER, NON_SMOKER, UNKNOWN, null] }
+            occupationClass: { type: [string, "null"], maxLength: 30 }
         sumAssured:
           type: [number, "null"]
           description: The sum assured, or a deposit's amount. Null on a funeral plan, whose plan sets the benefit.

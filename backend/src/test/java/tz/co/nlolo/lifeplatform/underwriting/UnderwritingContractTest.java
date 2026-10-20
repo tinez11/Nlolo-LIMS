@@ -110,9 +110,13 @@ class UnderwritingContractTest {
     @Autowired
     private MockMvc mockMvc;
 
+    /**
+     * Opened by STAFF (2026-10-20): an agent may now open a case only for a client it registered, and the scoping tests
+     * below need cases for other agents' clients to exist so they can prove an agent cannot see them.
+     */
     private String openCaseViaHttp(UUID tenantId, UUID applicantPartyId, UUID productId, UUID productVersionId) throws Exception {
         return mockMvc.perform(post("/underwriting/cases")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
