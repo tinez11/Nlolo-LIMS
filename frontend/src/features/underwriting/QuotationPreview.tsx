@@ -602,6 +602,11 @@ function TermAccountQuotation({
   onUseContribution?: ((amount: string) => void) | undefined;
 }) {
   const t = q.termAccount;
+  // Quoted for a target, the contribution IS the answer: it goes straight into the form, never typed (2026-10-21).
+  const solved = t?.targetAmount && !q.refusal ? q.amount?.amount : undefined;
+  useEffect(() => {
+    if (solved) onUseContribution?.(solved);
+  }, [solved, onUseContribution]);
   if (q.refusal || !t) {
     return (
       <div className="px-4 pb-4">
@@ -628,13 +633,7 @@ function TermAccountQuotation({
             </span>
           </div>
           {onUseContribution && q.amount && (
-            <button
-              type="button"
-              className="text-sm font-medium text-primary underline-offset-2 hover:underline"
-              onClick={() => onUseContribution(q.amount!.amount)}
-            >
-              Use {formatMoney(q.amount)} as the contribution
-            </button>
+            <p className="text-xs text-muted-foreground">Filled in as the contribution above.</p>
           )}
         </div>
       )}

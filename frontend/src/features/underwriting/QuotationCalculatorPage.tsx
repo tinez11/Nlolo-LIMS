@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { acceptQuotation } from '@/api/agentQuotations';
@@ -97,6 +97,11 @@ export function QuotationCalculatorPage() {
   const termAccountTerms = useTermAccountTerms(productId, productVersionId, selectedProduct?.portfolioCode);
   const isTermAccount = termAccountTerms !== null;
   const [termAccountTarget, setTermAccountTarget] = useState('');
+  // The contribution the server works out for that target, written in as it arrives; stable, so it runs once per answer.
+  const fillSolvedContribution = useCallback((amount: string) => {
+    if (getValues('sumAssuredAmount') !== amount) setValue('sumAssuredAmount', amount, { shouldDirty: true });
+  }, [getValues, setValue]);
+  const targetSet = isTermAccount && termAccountTarget.trim() !== '';
 
   useEffect(() => {
     if (snapshot.data?.productVersionId) setValue('productVersionId', snapshot.data.productVersionId);
@@ -396,7 +401,7 @@ export function QuotationCalculatorPage() {
                 : isTermAccount ? 'Contribution per payment' : 'Sum assured or amount'}
               error={amountError}
             >
-              <Input placeholder="1500000.00" readOnly={isFuneral} {...register('sumAssuredAmount')} />
+              <Input placeholder="1500000.00" readOnly={isFuneral || targetSet} {...register('sumAssuredAmount')} />
             </FormField>
             <FormField label="Currency">
               <Input className="w-20 uppercase" {...register('sumAssuredCurrency')} />
@@ -411,7 +416,7 @@ export function QuotationCalculatorPage() {
               >
                 <Input inputMode="decimal" placeholder={String(termAccountTerms.minRatePercent)} {...register('proposedRatePercent')} />
               </FormField>
-              <FormField label="Wanted at maturity (optional)" hint="The quotation works out the contribution that reaches it.">
+              <FormField label="Wanted at maturity (optional)" hint="The contribution fills itself from this. Clear it to type one.">
                 <Input
                   inputMode="decimal"
                   placeholder="5000000"
@@ -481,10 +486,7 @@ export function QuotationCalculatorPage() {
               ? {
                   ratePercent: watch('proposedRatePercent'),
                   targetAmount: termAccountTarget,
-                  onUseContribution: (amount) => {
-                    setValue('sumAssuredAmount', amount, { shouldDirty: true });
-                    setTermAccountTarget('');
-                  },
+                  onUseContribution: fillSolvedContribution,
                 }
               : undefined
           }

@@ -1,6 +1,6 @@
 import { AccountChargePicker } from '@/features/products/AccountChargePicker';
 import { Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
@@ -256,6 +256,14 @@ export function OpenUnderwritingCasePage() {
   }, [isTermAccount, termAccountTerms, setValue]);
   // What the customer wants at maturity: not part of the case, only what the quotation works the contribution back from.
   const [termAccountTarget, setTermAccountTarget] = useState('');
+  // The contribution the server works out for that target, written into the form as it arrives. Stable, so the
+  // quotation's effect runs once per answer rather than on every render.
+  const fillSolvedContribution = useCallback((amount: string) => {
+    if (getValues('sumAssuredAmount') !== amount) {
+      setValue('sumAssuredAmount', amount, { shouldValidate: true, shouldDirty: true });
+    }
+  }, [getValues, setValue]);
+  const targetSet = isTermAccount && termAccountTarget.trim() !== '';
   const mainMemberParty = (lifeAssuredPartyId ? lifeAssured.data : applicant.data) ?? null;
   const mainMember = mainMemberParty
     ? { name: mainMemberParty.displayName ?? 'Main member', dateOfBirth: mainMemberParty.dateOfBirth ?? null }
@@ -363,11 +371,12 @@ export function OpenUnderwritingCasePage() {
             label={isDeferredAnnuity || isTermAccount ? 'Contribution per payment' : isAnnuity ? 'Purchase price'
               : isFuneral ? "Sum assured (the main member's benefit on the plan)" : 'Sum assured'}
             error={errors.sumAssuredAmount?.message}
-            hint={isTermAccount ? 'Or enter what the customer wants at maturity below, and use the contribution the quotation works out.' : undefined}
+            hint={targetSet ? 'Worked out from the amount wanted at maturity below. Clear that to type a contribution.'
+              : isTermAccount ? 'Or enter what the customer wants at maturity below, and this fills itself.' : undefined}
           >
             <Input
               placeholder="1500000.00"
-              readOnly={isFuneral}
+              readOnly={isFuneral || targetSet}
               {...register('sumAssuredAmount')}
             />
           </FormField>
@@ -731,10 +740,7 @@ export function OpenUnderwritingCasePage() {
               ? {
                   ratePercent: watch('proposedRatePercent'),
                   targetAmount: termAccountTarget,
-                  onUseContribution: (amount) => {
-                    setValue('sumAssuredAmount', amount, { shouldValidate: true, shouldDirty: true });
-                    setTermAccountTarget('');
-                  },
+                  onUseContribution: fillSolvedContribution,
                 }
               : undefined
           }

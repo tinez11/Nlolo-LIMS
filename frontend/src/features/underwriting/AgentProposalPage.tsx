@@ -222,7 +222,7 @@ function PlanForm({ view, versionId, onSaved }: {
       <div className="space-y-4 px-4 pb-4">
         <div className="grid grid-cols-2 gap-3">
           <FormField label={termAccountTerms ? 'Contribution per payment' : 'Sum assured or amount'} error={sumError}>
-            <Input value={sum} onChange={(e) => setSum(e.target.value)} />
+            <Input value={sum} readOnly={!!termAccountTerms && target.trim() !== ''} onChange={(e) => setSum(e.target.value)} />
           </FormField>
           {termAccountTerms && (
             <>
@@ -273,7 +273,7 @@ function PlanForm({ view, versionId, onSaved }: {
           productVersionId={versionId}
           termAccount={
             termAccountTerms
-              ? { ratePercent: rate, targetAmount: target, onUseContribution: (amount) => { setSum(amount); setTarget(''); } }
+              ? { ratePercent: rate, targetAmount: target, onUseContribution: setSum }
               : undefined
           }
         />
