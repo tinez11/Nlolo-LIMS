@@ -1140,3 +1140,55 @@ describe('with profits', () => {
     );
   });
 });
+
+/*
+  A term account (2026-10-21): an account version with a rate band. TermAccountPlanValidator's messages, word for word.
+*/
+describe('term account value basis', () => {
+  const endowment = publishVersionFormSchema('ENDOWMENT');
+  const termAccount = (over: Record<string, unknown> = {}) => ({
+    ...valid(),
+    payoutRows: [],
+    valueBasis: 'TERM_ACCOUNT',
+    minRatePercent: '3',
+    maxRatePercent: '7',
+    minimumBalance: '0',
+    minTermMonths: '12',
+    maxTermMonths: '60',
+    accountCharges: [{ fromPolicyYear: '1', toPolicyYear: '', contributionAllocationPercent: '0',
+      transferAllocationPercent: '0', monthlyPolicyFee: '0' }],
+    ...over,
+  });
+  const messages = (r: { error?: { issues: { message: string }[] } }) => (r.error?.issues ?? []).map((i) => i.message);
+
+  it('sends the account block with its band, and the band floor as the guarantee', () => {
+    const result = endowment.safeParse(termAccount());
+    expect(result.success).toBe(true);
+    expect(toApiRequest(result.data!).accumulation).toMatchObject({
+      guaranteedRatePercent: 3, minRatePercent: 3, maxRatePercent: 7, minimumBalance: 0,
+    });
+  });
+
+  it('needs no MATURITY row on an endowment, and refuses one', () => {
+    expect(messages(endowment.safeParse(termAccount()))).toEqual([]);
+    expect(messages(endowment.safeParse(termAccount({ payoutRows: [{ ...maturityRow, amountBasis: 'ACCOUNT_VALUE' }] }))))
+      .toContain('A term account matures through its account; it carries no payout schedule');
+  });
+
+  it('refuses half a band, an inverted band, and a missing term bound', () => {
+    expect(messages(endowment.safeParse(termAccount({ maxRatePercent: '' }))))
+      .toContain('A term account needs both a minimum and a maximum rate');
+    expect(messages(endowment.safeParse(termAccount({ minRatePercent: '7', maxRatePercent: '3' }))))
+      .toContain("A term account's maximum rate cannot be below its minimum");
+    expect(messages(endowment.safeParse(termAccount({ maxTermMonths: '' }))))
+      .toContain('A term account needs a minimum and a maximum term: its maturity date comes from the term each case names');
+  });
+
+  it('an ordinary savings account sends no band', () => {
+    const result = endowment.safeParse(termAccount({
+      valueBasis: 'ACCOUNT', guaranteedRatePercent: '3', payoutRows: [{ ...maturityRow, amountBasis: 'ACCOUNT_VALUE' }],
+    }));
+    expect(result.success).toBe(true);
+    expect(toApiRequest(result.data!).accumulation).not.toHaveProperty('minRatePercent');
+  });
+});

@@ -117,6 +117,10 @@ public class UnderwritingCase {
     @Column(name = "premium_frequency")
     private String premiumFrequency;
 
+    /** A term account's rate, % a year (V24): named inside the version's band, locked at issuance. Null otherwise. */
+    @Column(name = "proposed_rate_percent")
+    private BigDecimal proposedRatePercent;
+
     // The engine's advice (V5), kept apart from the decision columns above. Recomputed on every
     // assessment, and authoritative for nothing -- it exists so an underwriter deciding a case
     // is not starting from a blank page, and so a decision that departs from it is visible as a
@@ -219,6 +223,7 @@ public class UnderwritingCase {
         this.requestedTermMonths = details.requestedTermMonths();
         this.premiumPayingTermMonths = details.premiumPayingTermMonths();
         this.premiumFrequency = details.premiumFrequency();
+        this.proposedRatePercent = details.proposedRatePercent();
     }
 
     /**
@@ -248,6 +253,7 @@ public class UnderwritingCase {
     public Integer getRequestedTermMonths() { return requestedTermMonths; }
     public Integer getPremiumPayingTermMonths() { return premiumPayingTermMonths; }
     public String getPremiumFrequency() { return premiumFrequency; }
+    public BigDecimal getProposedRatePercent() { return proposedRatePercent; }
 
     public String getProposalNumber() { return proposalNumber; }
     public UUID getLifeAssuredPartyId() { return lifeAssuredPartyId; }
@@ -390,8 +396,9 @@ public class UnderwritingCase {
      * already validated by the service against the product, exactly as a proposal is at opening.
      */
     public void amendTerms(BigDecimal sumAssuredAmount, Integer requestedTermMonths, Integer premiumPayingTermMonths,
-                           String premiumFrequency, LocalDate proposedCommencementDate) {
+                           String premiumFrequency, LocalDate proposedCommencementDate, BigDecimal proposedRatePercent) {
         this.sumAssuredAmount = sumAssuredAmount;
+        this.proposedRatePercent = proposedRatePercent;
         this.requestedTermMonths = requestedTermMonths;
         this.premiumPayingTermMonths = premiumPayingTermMonths;
         this.premiumFrequency = premiumFrequency;

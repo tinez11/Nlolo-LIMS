@@ -39,6 +39,7 @@ import { useProductStore } from '@/store/productStore';
 import { AcceptedQuotationPanel } from './AcceptedQuotationPanel';
 import { ProposalHistoryPanel } from './ProposalHistoryPanel';
 import { QuotationPreview } from './QuotationPreview';
+import { useTermAccountTerms } from './useTermAccountTerms';
 import { isAmount, isWholeMonths } from './useQuotation';
 import { PERSON_CONFLICT_FIELDS, placeConflictOnField } from '@/features/party/conflictField';
 
@@ -170,6 +171,9 @@ function PlanForm({ view, versionId, onSaved }: {
   const [ppt, setPpt] = useState(view.premiumPayingTermMonths != null ? String(view.premiumPayingTermMonths) : '');
   const [frequency, setFrequency] = useState(view.premiumFrequency ?? '');
   const [from, setFrom] = useState(view.proposedCommencementDate ?? '');
+  // A term account's rate (2026-10-21), corrected with the rest of the plan; carried unchanged on any other product.
+  const [rate, setRate] = useState(view.proposedRatePercent != null ? String(view.proposedRatePercent) : '');
+  const [target, setTarget] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
 
@@ -182,6 +186,7 @@ function PlanForm({ view, versionId, onSaved }: {
     if (view.applicantPartyId) void loadParty(view.applicantPartyId);
   }, [view.applicantPartyId, loadParty, loadProducts]);
   const product = (products.data ?? []).find((p) => p.productId === view.productId);
+  const termAccountTerms = useTermAccountTerms(view.productId, versionId, product?.portfolioCode);
 
   // The calculator's own checks, beside each field: a malformed number is not sent to come back as a 400.
   const sumError = sum && !isAmount(sum) ? 'Digits only, e.g. 1500000 — no commas, spaces or currency' : undefined;
@@ -203,6 +208,7 @@ function PlanForm({ view, versionId, onSaved }: {
         premiumPayingTermMonths: ppt ? Number(ppt) : null,
         premiumFrequency: (frequency || null) as 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY' | 'SINGLE' | null,
         proposedCommencementDate: from || null,
+        proposedRatePercent: rate && !Number.isNaN(Number(rate)) ? Number(rate) : null,
       }));
     } catch (e) {
       setError(toApiError(e));
@@ -215,9 +221,22 @@ function PlanForm({ view, versionId, onSaved }: {
     <Panel title="The plan" subtitle="Correct the cover, term or payments if the underwriter asked.">
       <div className="space-y-4 px-4 pb-4">
         <div className="grid grid-cols-2 gap-3">
-          <FormField label="Sum assured or amount" error={sumError}>
+          <FormField label={termAccountTerms ? 'Contribution per payment' : 'Sum assured or amount'} error={sumError}>
             <Input value={sum} onChange={(e) => setSum(e.target.value)} />
           </FormField>
+          {termAccountTerms && (
+            <>
+              <FormField
+                label="Rate (% a year)"
+                hint={`This product offers ${termAccountTerms.minRatePercent}% to ${termAccountTerms.maxRatePercent}%, fixed for the term.`}
+              >
+                <Input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} />
+              </FormField>
+              <FormField label="Wanted at maturity (optional)">
+                <Input inputMode="decimal" placeholder="5000000" value={target} onChange={(e) => setTarget(e.target.value)} />
+              </FormField>
+            </>
+          )}
           <FormField label="Premium frequency">
             <Select value={frequency} onChange={(e) => setFrequency(e.target.value as typeof frequency)}>
               <option value="">Not stated</option>
@@ -252,6 +271,11 @@ function PlanForm({ view, versionId, onSaved }: {
           commencementDate={from}
           portfolioCode={product?.portfolioCode}
           productVersionId={versionId}
+          termAccount={
+            termAccountTerms
+              ? { ratePercent: rate, targetAmount: target, onUseContribution: (amount) => { setSum(amount); setTarget(''); } }
+              : undefined
+          }
         />
         {error && <InlineError error={error} lead="The plan could not be saved:" />}
         <Button type="button" variant="outline" pending={busy} disabled={!valid} onClick={() => void save()}>

@@ -881,6 +881,12 @@ public interface PolicyApi {
     void markMatured(String policyNumber, String maturedBy);
 
     /**
+     * A term account's rate, % a year (2026-10-21): the one its case named, which issuance checked against the
+     * version's band. Empty for any other policy. Accumulation reads it once, when the account opens, and keeps it.
+     */
+    java.util.Optional<java.math.BigDecimal> termAccountRate(String policyNumber);
+
+    /**
      * Accumulation's, for a fixed-term deposit: when its money arrives (commencement moves to that
      * day) and on each reinvestment (the months grow). Commencement and term together, because the
      * stored maturity date must always equal commencement + term. Returns that maturity date.

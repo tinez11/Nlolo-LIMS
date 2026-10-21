@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.underwriting.api;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -42,11 +43,23 @@ public record ProposalDetails(
     Integer requestedTermMonths,
     Integer premiumPayingTermMonths,
     String premiumFrequency,
-    List<BeneficiaryNomination> beneficiaries) {
+    List<BeneficiaryNomination> beneficiaries,
+    /* A term account's rate, % a year (2026-10-21): named inside the version's band, as the sum
+       assured and term are, and locked onto the policy. Null for every other product. */
+    BigDecimal proposedRatePercent) {
 
     /** Never null, so callers and the persistence path both stop guarding for it. */
     public ProposalDetails {
         beneficiaries = beneficiaries == null ? List.of() : List.copyOf(beneficiaries);
+    }
+
+    /** Every proposal before the term account, which names no rate -- kept so those sites need no change. */
+    public ProposalDetails(UUID lifeAssuredPartyId, String branch, String sourceOfBusiness,
+                            LocalDate proposedCommencementDate, Integer requestedTermMonths,
+                            Integer premiumPayingTermMonths, String premiumFrequency,
+                            List<BeneficiaryNomination> beneficiaries) {
+        this(lifeAssuredPartyId, branch, sourceOfBusiness, proposedCommencementDate, requestedTermMonths,
+            premiumPayingTermMonths, premiumFrequency, beneficiaries, null);
     }
 
     /**

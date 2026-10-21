@@ -80,6 +80,7 @@ class ProductIntegrityViolationTest {
             "db-migrations/product/V30__funeral_group_rate_period.sql",
             "db-migrations/product/V31__online_listing.sql",
             "db-migrations/product/V32__account_charges.sql",
+            "db-migrations/product/V33__term_account_rate_band.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",

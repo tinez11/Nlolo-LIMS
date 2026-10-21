@@ -275,6 +275,22 @@ public class ProductController {
     /** {@code hasTable} false: the version has no cash-value table, so a policy on it has no surrender value. */
     public record CashValueTermsResponse(boolean hasTable, Integer minYearsForValue, String basisReference) {}
 
+    /**
+     * Whether a version is a term account, and the band a case's rate must fall in (2026-10-21) -- for the case form's
+     * Rate field. 200 either way: not a term account is an answer, not an error.
+     */
+    @GetMapping("/products/{productId}/versions/{versionId}/term-account")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public TermAccountTermsResponse getTermAccountTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {
+        var plan = productApi.resolveAccumulationPlan(versionId);
+        return plan.isTermAccount()
+            ? new TermAccountTermsResponse(true, plan.minRatePercent(), plan.maxRatePercent())
+            : new TermAccountTermsResponse(false, null, null);
+    }
+
+    public record TermAccountTermsResponse(boolean termAccount, java.math.BigDecimal minRatePercent,
+                                           java.math.BigDecimal maxRatePercent) {}
+
     @GetMapping("/products/{productId}/versions/{versionId}/annuity")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<AnnuityTermsResponse> getAnnuityTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {

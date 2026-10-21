@@ -155,7 +155,8 @@ public class UnderwritingController {
                 request.requestedTermMonths(), request.premiumPayingTermMonths(),
                 request.premiumFrequency(),
                 request.beneficiaries() == null ? List.of()
-                    : request.beneficiaries().stream().map(OpenCaseRequest.BeneficiaryNominationDto::toApiNomination).toList()),
+                    : request.beneficiaries().stream().map(OpenCaseRequest.BeneficiaryNominationDto::toApiNomination).toList(),
+                request.proposedRatePercent()),
             jwt.getSubject());
         // Recorded with the case when the applicant chose up front (product step 5). In the same
         // request, so a refused choice is a 422 on the request that carried it.

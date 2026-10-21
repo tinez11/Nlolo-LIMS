@@ -444,6 +444,24 @@ public class UnderwritingDecisionEventListener {
                         "system:underwriting-decision-listener");
                     return;
                 }
+                // A term account (2026-10-21) is saved into, not rated: the case's amount is the contribution the
+                // customer chose -- named, or worked back from what they want at maturity -- and it is what each
+                // invoice bills, at the case's own frequency, over the case's term. issuePolicy holds the rate and
+                // term to the version.
+                if (productApi.resolveAccumulationPlan(decidedCase.productVersionId()).isTermAccount()) {
+                    String frequency = decidedCase.premiumFrequency() != null ? decidedCase.premiumFrequency() : "MONTHLY";
+                    policyApi.issuePolicy(caseId, new PolicyApi.IssueRequest(
+                        decidedCase.applicantPartyId(), decidedCase.productId(), decidedCase.productVersionId(),
+                        decidedCase.sumAssuredAmount(), decidedCase.sumAssuredCurrency(),
+                        decidedCase.sumAssuredAmount(), decidedCase.sumAssuredCurrency(), frequency,
+                        decidedCase.agentOfRecordId(), nominationsAsBeneficiaries(decidedCase),
+                        "Automatic issuance on underwriting decision " + outcome,
+                        decidedCase.proposedCommencementDate(), decidedCase.requestedTermMonths(),
+                        "SINGLE".equals(frequency) ? null : decidedCase.premiumPayingTermMonths(),
+                        decidedCase.lifeAssuredPartyId()),
+                        "system:underwriting-decision-listener");
+                    return;
+                }
                 // An annuity is bought, not rated (product step 5): its premium is the purchase
                 // price, paid once, and it has no term. The income is priced by the annuity module
                 // when the money arrives -- underwriting already proved it prices at acceptance.

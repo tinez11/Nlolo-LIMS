@@ -35,16 +35,42 @@ import java.util.List;
  * @param minimumBalance for an ACCOUNT, the least a partial withdrawal may leave behind; null where none is set
  * @param smallestDeposit for a DEPOSIT, the lowest band start -- the least this product takes
  * @param refusal why no rate applied, in a sentence a staff member can act on. Null when the quote priced.
+ * @param termAccount a TERM_ACCOUNT's projection (2026-10-21); null for the other two kinds. On a term account
+ *     {@code amount} is the contribution per payment -- the one named, or the one solved for a target -- and
+ *     {@code interest}, {@code maturityValue} and {@code maturityDate} are the projection's.
  */
 public record SavingsQuoteView(Kind kind, BigDecimal amount, BigDecimal ratePercent, List<Integer> offeredTermMonths,
                                Integer termMonths, BigDecimal interest, BigDecimal maturityValue,
                                LocalDate maturityDate, BigDecimal minimumBalance, BigDecimal smallestDeposit,
-                               String refusal) {
+                               String refusal, TermAccountQuote termAccount) {
 
-    /** A fixed-term deposit priced from a grid, or an interest-bearing account priced from a declared rate. */
-    public enum Kind { DEPOSIT, ACCOUNT }
+    /**
+     * A fixed-term deposit priced from a grid, an interest-bearing account priced from a declared rate, or a term
+     * account projected at the rate the case names, inside its band (2026-10-21).
+     */
+    public enum Kind { DEPOSIT, ACCOUNT, TERM_ACCOUNT }
+
+    /**
+     * @param frequency how often the contribution is paid
+     * @param contributions how many payments the term takes
+     * @param paidIn the contributions, in total
+     * @param charges the version's allocation charges and monthly fees over the term, in total
+     * @param targetAmount the figure the contribution was solved for; null when the contribution was named
+     * @param minRatePercent the version's band
+     * @param maxRatePercent the version's band
+     */
+    public record TermAccountQuote(String frequency, int contributions, BigDecimal paidIn, BigDecimal charges,
+                                   BigDecimal targetAmount, BigDecimal minRatePercent, BigDecimal maxRatePercent) {}
 
     public SavingsQuoteView {
         offeredTermMonths = offeredTermMonths != null ? List.copyOf(offeredTermMonths) : List.of();
+    }
+
+    /** A deposit or an ordinary account's quote. */
+    public SavingsQuoteView(Kind kind, BigDecimal amount, BigDecimal ratePercent, List<Integer> offeredTermMonths,
+                            Integer termMonths, BigDecimal interest, BigDecimal maturityValue, LocalDate maturityDate,
+                            BigDecimal minimumBalance, BigDecimal smallestDeposit, String refusal) {
+        this(kind, amount, ratePercent, offeredTermMonths, termMonths, interest, maturityValue, maturityDate,
+            minimumBalance, smallestDeposit, refusal, null);
     }
 }

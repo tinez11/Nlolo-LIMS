@@ -69,8 +69,9 @@ public class AccumulationApiImpl implements AccumulationApi {
                                TransferInRepository transfers, AdjustmentRequestRepository adjustments,
                                ApplicationEventPublisher events, StatementRepository statementRepository,
                                DocumentApi documentApi, IdempotentRequests keyed, Deposits deposits,
-                               ChosenCharges chosenCharges) {
+                               ChosenCharges chosenCharges, TermAccountRepository termAccounts) {
         this.chosenCharges = chosenCharges;
+        this.termAccounts = termAccounts;
         this.keyed = keyed;
         this.deposits = deposits;
         this.statementRepository = statementRepository;
@@ -104,6 +105,7 @@ public class AccumulationApiImpl implements AccumulationApi {
         Account account = loadOpen(policyNumber);
         deposits.refuseMovement(account);
         refuseIfLockedPension(account);
+        refuseIfLockedTermAccount(account);
         if (withdrawals.existsByPolicyNumberAndStatusIn(policyNumber, List.of("REQUESTED", "APPROVED"))) {
             throw new AccumulationStateException("A withdrawal is already in flight on policy " + policyNumber);
         }
@@ -237,6 +239,7 @@ public class AccumulationApiImpl implements AccumulationApi {
         }
         Account account = loadOpen(policyNumber);
         deposits.refuseMovement(account);
+        refuseIfMaturedTermAccount(account);
         TopUpRequest request = topUps.save(new TopUpRequest(TenantContext.get(), policyNumber,
             amount.setScale(2, RoundingMode.UNNECESSARY), account.getCurrency(), payerRef, requestedBy));
         events.publishEvent(DomainEventEnvelope.of("accumulation.TopUpRequested", TenantContext.get(), Map.of(
@@ -306,6 +309,7 @@ public class AccumulationApiImpl implements AccumulationApi {
         }
         Account account = loadOpen(policyNumber);
         deposits.refuseMovement(account);
+        refuseIfMaturedTermAccount(account);
         TransferIn transfer = transfers.save(new TransferIn(TenantContext.get(), policyNumber,
             amount.setScale(2, RoundingMode.UNNECESSARY), account.getCurrency(), sourceScheme, documentRef, recordedBy));
         LocalDate today = LocalDate.now();
@@ -484,6 +488,206 @@ public class AccumulationApiImpl implements AccumulationApi {
     @Transactional(readOnly = true)
     public List<AwaitingPayeeView> listAwaitingPayee() {
         return deposits.awaiting();
+    }
+
+    // ---- Term accounts (2026-10-21): a savings account that pays nothing out until it matures -----
+    //
+    // Everything else is an ordinary account's: contributions, top-ups, charges, month-end, the
+    // death value. What differs is the rate (the policy's own, locked at sale -- see AccountValuer),
+    // that money out is refused until maturity, and that maturity pays the whole balance out.
+
+    /** Asked of product first, as Deposits does, so an ordinary account's path never reaches V5's table. */
+    private Optional<TermAccount> termAccountOf(Account account) {
+        if (!productApi.resolveAccumulationPlan(account.getProductVersionId()).isTermAccount()) {
+            return Optional.empty();
+        }
+        return termAccounts.findByPolicyNumber(account.getPolicyNumber());
+    }
+
+    /** Money out -- a withdrawal (here) or a surrender (policy) -- waits for maturity. Money in never does. */
+    private void refuseIfLockedTermAccount(Account account) {
+        termAccountOf(account).ifPresent(t -> {
+            if (t.status() == TermAccountStatus.RUNNING) {
+                throw new AccumulationStateException("This account is locked until it matures on " + t.getMaturityDate());
+            }
+            throw new AccumulationStateException("This account matured on " + t.getMaturityDate()
+                + "; its balance is paid out to a payee, not withdrawn");
+        });
+    }
+
+    /** After maturity the account only waits to be paid out: nothing more goes in. */
+    private void refuseIfMaturedTermAccount(Account account) {
+        termAccountOf(account).filter(t -> t.status() != TermAccountStatus.RUNNING).ifPresent(t -> {
+            throw new AccumulationStateException("This account matured on " + t.getMaturityDate()
+                + " and is being paid out; nothing more can be added");
+        });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<TermAccountView> findTermAccount(String policyNumber) {
+        return accounts.findById(policyNumber).flatMap(this::termAccountOf).map(AccumulationApiImpl::view);
+    }
+
+    @Override
+    public TermAccountView payOutMaturedTermAccount(String policyNumber, String payeeRef, String requestedBy,
+                                                    String idempotencyKey) {
+        return keyed.once(idempotencyKey, "TERM_ACCOUNT_PAYOUT", policyNumber, requestedBy,
+            () -> payOutAwaitingTermAccount(policyNumber, payeeRef, requestedBy), TermAccountView::termAccountId,
+            id -> view(termAccounts.findById(id).orElseThrow()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AwaitingPayeeView> listTermAccountsAwaitingPayee() {
+        return termAccounts.findByStatusOrderByMaturedOn(TermAccountStatus.AWAITING_PAYEE.name()).stream()
+            .flatMap(t -> accounts.findById(t.getPolicyNumber()).stream()
+                .filter(a -> a.status() == AccountStatus.OPEN)
+                .map(a -> new AwaitingPayeeView(a.getPolicyNumber(), a.getBalance(), a.getCurrency(), t.getMaturedOn())))
+            .toList();
+    }
+
+    /**
+     * One term account's maturity, in one transaction: the months completed before it, the interest from the last
+     * month-end to the maturity day (once, keyed on the policy), then the whole balance to the number contributions
+     * came from -- or, with no number, the money waits on the account for finance to name one. Idempotent: an account
+     * that no longer RUNS is left alone.
+     */
+    @Transactional
+    public void matureTermAccount(String policyNumber, LocalDate today) {
+        Account account = accounts.lockForPosting(policyNumber).orElseThrow(() -> new AccountNotFoundException(policyNumber));
+        TermAccount term = termAccounts.findByPolicyNumber(policyNumber).orElse(null);
+        if (term == null || term.status() != TermAccountStatus.RUNNING || term.getMaturityDate().isAfter(today)
+                || account.status() != AccountStatus.OPEN) {
+            return;
+        }
+        LocalDate on = term.getMaturityDate();
+        postMonthEnds(policyNumber, on.plusDays(1)); // every month that ended on or before the maturity day
+        if (account.status() != AccountStatus.OPEN) {
+            return; // its last fee exhausted it: the policy lapsed, and there is nothing to pay
+        }
+        BigDecimal interest = valuer.interestBetween(account, interestFrom(account, on), on);
+        if (interest.signum() != 0) {
+            ledger.post(policyNumber, new LedgerService.Source("term-account-interest", "term-account-interest:" + policyNumber),
+                List.of(LedgerService.Line.of(EntryType.INTEREST, interest, on,
+                    "Interest to maturity at " + term.getRatePercent().stripTrailingZeros().toPlainString() + "%")),
+                "system", null);
+        }
+        String payee = term.getDefaultPayeeRef();
+        if (payee == null) {
+            log.warn("Term account {} matured with no number to pay it to; {} waits on the account for a payee",
+                policyNumber, account.getBalance());
+            term.awaitPayee(on);
+            termAccounts.save(term);
+            return;
+        }
+        payOutTermAccount(account, term, payee, on, "system");
+    }
+
+    /**
+     * The whole balance out, less the maturity charges the policy was issued on (taken once, on the first attempt),
+     * closing the account; then the payment, through payment. Each attempt is its own source reference, as a
+     * deposit's is, so a retry after a failed payment posts and pays again rather than being taken for a redelivery.
+     */
+    private void payOutTermAccount(Account account, TermAccount term, String payee, LocalDate on, String by) {
+        String policyNumber = account.getPolicyNumber();
+        int attempt = term.recordPayoutAttempt();
+        String ref = policyNumber + ":" + attempt;
+        BigDecimal value = account.getBalance();
+        List<LedgerService.Line> lines = new java.util.ArrayList<>();
+        BigDecimal paid = value;
+        var exitCharges = chosenCharges.chosen(policyNumber).stream().filter(c -> "MATURITY".equals(c.when())).toList();
+        if (attempt == 1 && !exitCharges.isEmpty() && value.signum() > 0) {
+            List<LedgerService.Line> charges = chosenCharges.lines(exitCharges, Set.of("MATURITY"), value, value, on);
+            lines.addAll(charges);
+            paid = value.subtract(ChosenCharges.total(charges));
+        }
+        if (paid.signum() > 0) {
+            lines.add(LedgerService.Line.of(EntryType.MATURITY, paid.negate(), on, "Matured; paid to " + payee));
+        }
+        if (!lines.isEmpty()) {
+            ledger.post(policyNumber, new LedgerService.Source("term-account-maturity", "term-account-maturity:" + ref),
+                lines, by, null);
+        }
+        account.close("MATURED", on);
+        accounts.save(account);
+        term.paidOut(on);
+        termAccounts.save(term);
+        if (paid.signum() > 0) {
+            events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutRequested", TenantContext.get(), Map.of(
+                "purpose", "TERM_ACCOUNT_MATURITY_PAYOUT",
+                "sourceRef", ref,
+                "idempotencyKey", "term-account-maturity:" + ref,
+                "policyNumber", policyNumber,
+                "payeeRef", payee,
+                "amount", Map.of("amount", paid.toPlainString(), "currencyCode", account.getCurrency()))));
+        }
+        policyApi.markMatured(policyNumber, "system:accumulation");
+    }
+
+    /** Finance names the number a waiting term account is paid to. */
+    @Transactional
+    public TermAccountView payOutAwaitingTermAccount(String policyNumber, String payeeRef, String by) {
+        if (payeeRef == null || payeeRef.isBlank()) {
+            throw new AccumulationStateException("A payout needs a payee reference");
+        }
+        Account account = accounts.lockForPosting(policyNumber).orElseThrow(() -> new AccountNotFoundException(policyNumber));
+        TermAccount term = termAccountOf(account).filter(t -> t.status() == TermAccountStatus.AWAITING_PAYEE)
+            .filter(t -> account.status() == AccountStatus.OPEN)
+            .orElseThrow(() -> new AccumulationStateException("Policy " + policyNumber
+                + " has no matured term account waiting for a payee"));
+        term.payTo(payeeRef);
+        payOutTermAccount(account, term, payeeRef, LocalDate.now(), by);
+        return view(term);
+    }
+
+    /**
+     * {@code payment.DisbursementCompleted} / {@code DisbursementFailed} for a term account's maturity. A failure
+     * reverses the MATURITY entry -- never edits it -- and the account reopens to wait for a payee. A completed payment
+     * needs nothing more: the account closed and the policy matured when it was requested.
+     */
+    @Transactional
+    public void settleTermAccountPayout(String sourceRef, boolean paid) {
+        Posting posting = postings.findByTenantIdAndSourceTypeAndSourceRef(TenantContext.get(), "term-account-maturity",
+            "term-account-maturity:" + sourceRef).orElse(null);
+        if (posting == null) {
+            return;
+        }
+        LedgerEntry maturity = entries.findByPostingIdOrderBySeq(posting.getPostingId()).stream()
+            .filter(e -> e.type() == EntryType.MATURITY).findFirst().orElse(null);
+        if (maturity == null) {
+            return;
+        }
+        if (paid) {
+            // IFRS 17 I3b, as a deposit's: the maturity left the bank; the ledger clears what the MATURITY entry made payable.
+            events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutPaid", TenantContext.get(), Map.of(
+                "payoutRef", "term-account-maturity:" + sourceRef, "paymentRef", sourceRef,
+                "policyNumber", maturity.getPolicyNumber(),
+                "amount", Map.of("amount", maturity.getAmount().abs().toPlainString(),
+                    "currencyCode", accounts.findById(maturity.getPolicyNumber()).orElseThrow().getCurrency()))));
+            return;
+        }
+        if (postings.findByTenantIdAndSourceTypeAndSourceRef(TenantContext.get(), "reversal",
+                "reversal:" + maturity.getEntryId()).isPresent()) {
+            return; // a redelivery
+        }
+        Account account = accounts.lockForPosting(maturity.getPolicyNumber()).orElseThrow();
+        ledger.post(account.getPolicyNumber(), new LedgerService.Source("reversal", "reversal:" + maturity.getEntryId()),
+            List.of(new LedgerService.Line(EntryType.REVERSAL, maturity.getAmount().negate(), LocalDate.now(),
+                "Maturity payment failed; waiting for a payee", maturity.getEntryId())), "system", null);
+        account.reopenAwaitingPayee();
+        accounts.save(account);
+        termAccounts.findByPolicyNumber(account.getPolicyNumber()).ifPresent(t -> {
+            t.awaitPayee(LocalDate.now());
+            termAccounts.save(t);
+        });
+        log.warn("The maturity payment of term account {} failed; the money is back on the account and waits for a payee",
+            account.getPolicyNumber());
+    }
+
+    private static TermAccountView view(TermAccount t) {
+        return new TermAccountView(t.getTermAccountId(), t.getPolicyNumber(), t.getRatePercent(), t.getMaturityDate(),
+            t.status(), t.getDefaultPayeeRef(), t.getMaturedOn());
     }
 
     // ---- Statements (task 8) ----------------------------------------------------------------------
@@ -897,6 +1101,15 @@ public class AccumulationApiImpl implements AccumulationApi {
             accounts.save(account);
             return;
         }
+        Optional<TermAccount> term = termAccountOf(account);
+        if (term.isPresent() && (term.get().status() != TermAccountStatus.RUNNING
+                || monthEnd.isAfter(term.get().getMaturityDate()))) {
+            // A term account's last month is its maturity run's: interest to the maturity day, once. After that the
+            // money only waits for a payee -- no interest, no fee -- as a matured deposit's does.
+            account.monthEndPostedThrough(monthEnd);
+            accounts.save(account);
+            return;
+        }
         String policyNumber = account.getPolicyNumber();
         if (account.getLastSeq() == 0) {
             // Never paid into: nothing to credit, nothing to charge, and nothing to lapse. A policy
@@ -1010,6 +1223,14 @@ public class AccumulationApiImpl implements AccumulationApi {
     @Transactional(readOnly = true)
     public SavingsQuoteView quoteProductSavings(UUID productId, UUID productVersionId, BigDecimal amount,
                                                 Integer termMonths, LocalDate asOf) {
+        return quoteProductSavings(productId, productVersionId, amount, termMonths, asOf, null, null, null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SavingsQuoteView quoteProductSavings(UUID productId, UUID productVersionId, BigDecimal amount,
+                                                Integer termMonths, LocalDate asOf, BigDecimal ratePercent,
+                                                String frequency, BigDecimal targetAmount) {
         LocalDate on = asOf != null ? asOf : LocalDate.now();
         // The version must belong to the product named. It matters on the ACCOUNT branch, where the rate is read
         // from the PRODUCT's declarations while the guarantee comes from the VERSION: a mismatched pair would quote
@@ -1052,12 +1273,52 @@ public class AccumulationApiImpl implements AccumulationApi {
             throw new AccumulationStateException("This product does not keep an account, so it has no savings rate to"
                 + " quote. A premium-rated product is priced from its rate table instead.");
         }
+        if (plan.isTermAccount()) {
+            return quoteTermAccount(plan, amount, termMonths, on, ratePercent, frequency, targetAmount);
+        }
         // The same max(declared, guaranteed) the valuer credits interest on, read on the commencement date.
         BigDecimal rate = new RateSchedule(
             rates.findByProductIdAndStatusOrderByEffectiveFrom(productId, RateDeclarationStatus.APPROVED.name()),
             plan.guaranteedRatePercent()).apply(on);
         return new SavingsQuoteView(SavingsQuoteView.Kind.ACCOUNT, amount, rate, List.of(), null, null, null, null,
             plan.minimumBalance(), null, null);
+    }
+
+    /**
+     * A term account (2026-10-21), projected to maturity at the rate the case would name -- see
+     * {@link TermAccountProjection}. Given a target instead of a contribution, the contribution is solved for it. What
+     * the quote cannot be asked yet (a rate outside the band, no term, no frequency) comes back as a refusal beside the
+     * band, as a deposit's term does: the useful answer to "9%" is "this product offers 3% to 7%".
+     */
+    private SavingsQuoteView quoteTermAccount(tz.co.nlolo.lifeplatform.product.api.AccumulationPlan plan, BigDecimal amount,
+                                              Integer termMonths, LocalDate on, BigDecimal ratePercent, String frequency,
+                                              BigDecimal targetAmount) {
+        BigDecimal min = plan.minRatePercent();
+        BigDecimal max = plan.maxRatePercent();
+        String band = "between " + min.stripTrailingZeros().toPlainString() + "% and "
+            + max.stripTrailingZeros().toPlainString() + "%";
+        String freq = frequency == null || frequency.isBlank() ? null : frequency;
+        String refusal = ratePercent == null ? "Name the rate the customer is offered: this product offers a rate " + band + "."
+            : !plan.offers(ratePercent) ? "This product offers a rate " + band + ", not "
+                + ratePercent.stripTrailingZeros().toPlainString() + "%."
+            : termMonths == null ? "Choose the term: the account pays out when it ends."
+            : freq == null ? "Choose how often the contribution is paid."
+            : (amount == null || amount.signum() <= 0) && (targetAmount == null || targetAmount.signum() <= 0)
+                ? "Enter the contribution, or the amount the customer wants at maturity."
+            : null;
+        if (refusal != null) {
+            return new SavingsQuoteView(SavingsQuoteView.Kind.TERM_ACCOUNT, amount, ratePercent, List.of(), termMonths,
+                null, null, termMonths == null ? null : on.plusMonths(termMonths), plan.minimumBalance(), null, refusal,
+                new SavingsQuoteView.TermAccountQuote(freq, 0, null, null, targetAmount, min, max));
+        }
+        boolean solving = amount == null || amount.signum() <= 0;
+        TermAccountProjection.Projection p = solving
+            ? TermAccountProjection.solve(targetAmount, freq, termMonths, ratePercent, on, plan)
+            : TermAccountProjection.project(amount, freq, termMonths, ratePercent, on, plan);
+        return new SavingsQuoteView(SavingsQuoteView.Kind.TERM_ACCOUNT, p.contribution(), ratePercent, List.of(), termMonths,
+            p.interest(), p.maturityValue(), p.maturityDate(), plan.minimumBalance(), null, null,
+            new SavingsQuoteView.TermAccountQuote(freq, p.contributions(), p.paidIn(), p.charges(),
+                solving ? targetAmount : null, min, max));
     }
 
     /** A rate may not rewrite interest a customer has already been credited. */
@@ -1081,7 +1342,8 @@ public class AccumulationApiImpl implements AccumulationApi {
      */
     @Transactional
     public void openIfAccountVersion(String policyNumber, UUID productVersionId, LocalDate issueDate) {
-        if (accounts.existsById(policyNumber) || !productApi.resolveAccumulationPlan(productVersionId).isAccount()) {
+        tz.co.nlolo.lifeplatform.product.api.AccumulationPlan plan = productApi.resolveAccumulationPlan(productVersionId);
+        if (accounts.existsById(policyNumber) || !plan.isAccount()) {
             return;
         }
         PolicyView policy = policyApi.getPolicy(policyNumber);
@@ -1090,6 +1352,18 @@ public class AccumulationApiImpl implements AccumulationApi {
         LocalDate opened = policy.commencementDate() != null ? policy.commencementDate() : issueDate;
         accounts.save(new Account(TenantContext.get(), policyNumber, policy.productId(), productVersionId,
             policy.policyholderPartyId(), policy.premiumCurrency(), opened));
+        if (plan.isTermAccount()) {
+            // The rate is locked HERE, in the same transaction the account opens in: the case's, which issuance held to
+            // the band. Whatever the product declares or republishes afterwards, this row is what the account earns.
+            BigDecimal rate = policyApi.termAccountRate(policyNumber).orElseThrow(() -> new AccumulationStateException(
+                "Term account " + policyNumber + " was issued with no rate on its case; the account is NOT opened"));
+            if (policy.maturityDate() == null) {
+                throw new AccumulationStateException("Term account " + policyNumber
+                    + " was issued with no maturity date; the account is NOT opened");
+            }
+            accounts.flush(); // V5's foreign key: the account row first
+            termAccounts.save(new TermAccount(TenantContext.get(), policyNumber, rate, policy.maturityDate()));
+        }
     }
 
     @Override
@@ -1158,6 +1432,13 @@ public class AccumulationApiImpl implements AccumulationApi {
             deposits.credit(account, invoiceId, amount, effective, payerRef);
             return;
         }
+        if (payerRef != null) {
+            // A term account's maturity goes back where its contributions came from, as a deposit's does.
+            termAccountOf(account).filter(t -> t.getDefaultPayeeRef() == null).ifPresent(t -> {
+                t.collectedFrom(payerRef);
+                termAccounts.save(t);
+            });
+        }
         var chosen = chosenCharges.chosen(policyNumber);
         if (!chosen.isEmpty()) {
             // The charges the policy was issued on (product V32): each deposit's, and the opening charge on the first.
@@ -1182,6 +1463,7 @@ public class AccumulationApiImpl implements AccumulationApi {
     }
 
     private final ChosenCharges chosenCharges;
+    private final TermAccountRepository termAccounts;
 
     /**
      * How much chosen charges may take from {@code balanceAfter}: all of it, or only what is above the product's minimum

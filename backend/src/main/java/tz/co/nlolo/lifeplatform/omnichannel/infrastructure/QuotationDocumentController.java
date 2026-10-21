@@ -65,7 +65,10 @@ public class QuotationDocumentController {
                        @Valid Prospect prospect,
                        @Positive BigDecimal sumAssured, String currency, String frequency, Integer policyTermMonths,
                        Integer premiumPayingTermMonths, LocalDate commencement, String funeralPlanCode,
-                       List<Life> lives) {
+                       List<Life> lives,
+                       /* A term account's rate, % a year, inside its band (2026-10-21). Saved with an accepted
+                          quotation, so the proposal opened from it names the rate the customer agreed to. */
+                       BigDecimal ratePercent) {
 
         /** One life on a funeral quotation. A blank date of birth is passed through so the quoter names the problem. */
         public record Life(@NotNull FuneralRole role, String name, LocalDate dateOfBirth, boolean student) {}
@@ -82,7 +85,7 @@ public class QuotationDocumentController {
                     .map(l -> new FuneralLifeInput(l.role(), l.name(), l.dateOfBirth(), l.student())).toList(),
                 prospect == null ? null : new QuotationDocuments.Prospect(prospect.fullName(), prospect.phoneNumber(),
                     prospect.dateOfBirth(), prospect.sex(), prospect.smokerStatus(), prospect.occupationClass()),
-                prospect == null ? null : preparedBy);
+                prospect == null ? null : preparedBy, ratePercent);
         }
     }
 

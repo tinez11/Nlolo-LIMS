@@ -6,6 +6,7 @@ import type {
   AwaitingPayeeView,
   DepositPeriodView,
   DepositView,
+  TermAccountView,
   MaturityInstructionView,
   AdjustmentView,
   ClosingQuoteView,
@@ -232,6 +233,23 @@ export function recordMaturityInstruction(
 /** Finance's: matured deposits with no number to pay them to. */
 export function listAwaitingPayee(): Promise<AwaitingPayeeView[]> {
   return get<AwaitingPayeeView[]>('/deposits/awaiting-payee');
+}
+
+// ---- Term accounts (2026-10-21) --------------------------------------------------------------
+
+/** The term account, or null for any account that is not one -- an answer, as getDeposit's null is. */
+export async function getTermAccount(policyNumber: string): Promise<TermAccountView | null> {
+  try {
+    return await get<TermAccountView>(`${account(policyNumber)}/term-account`);
+  } catch (error) {
+    if (isNotFound(error)) return null;
+    throw error;
+  }
+}
+
+/** 202: requested from the rail, not paid. Finance's: a matured term account with nobody to pay. */
+export function payOutTermAccount(policyNumber: string, payeeRef: string, attempt: MutationAttempt): Promise<TermAccountView> {
+  return post<TermAccountView>(`${account(policyNumber)}/term-account/payout`, { payeeRef }, { headers: attempt.headers() });
 }
 
 /** 202: requested from the rail, not paid. The screen must say so. */

@@ -20,6 +20,8 @@ export interface TermsAmendment {
   premiumPayingTermMonths: number | null;
   premiumFrequency: 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY' | 'SINGLE' | null;
   proposedCommencementDate: string | null;
+  /** A term account's rate, % a year (2026-10-21); null on any other product. */
+  proposedRatePercent?: number | null;
 }
 
 const enc = encodeURIComponent;

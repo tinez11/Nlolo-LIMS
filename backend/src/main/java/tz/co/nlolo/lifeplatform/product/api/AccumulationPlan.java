@@ -10,13 +10,23 @@ import java.util.List;
  * @param guaranteedRatePercent the effective annual floor; a declared rate never credits below it
  * @param minimumBalance a partial withdrawal may not leave less than this. NOT a lapse threshold --
  *     an account lapses only when its charges reach zero.
+ * @param minRatePercent a term account's band (2026-10-21): the lowest rate a case may name. Null,
+ *     with {@code maxRatePercent}, on every other account -- see {@link #isTermAccount()}.
+ * @param maxRatePercent the highest rate a case may name.
  */
 public record AccumulationPlan(ValueBasis basis, BigDecimal guaranteedRatePercent, BigDecimal minimumBalance,
-                               List<AccumulationChargeRow> charges) {
+                               List<AccumulationChargeRow> charges, BigDecimal minRatePercent,
+                               BigDecimal maxRatePercent) {
 
     public AccumulationPlan {
         basis = basis != null ? basis : ValueBasis.SCALE;
         charges = charges != null ? List.copyOf(charges) : List.of();
+    }
+
+    /** An ordinary account, with no rate band -- every account version before the term account. */
+    public AccumulationPlan(ValueBasis basis, BigDecimal guaranteedRatePercent, BigDecimal minimumBalance,
+                            List<AccumulationChargeRow> charges) {
+        this(basis, guaranteedRatePercent, minimumBalance, charges, null, null);
     }
 
     public static AccumulationPlan none() {
@@ -33,6 +43,19 @@ public record AccumulationPlan(ValueBasis basis, BigDecimal guaranteedRatePercen
     }
 
     public boolean isAccount() { return basis == ValueBasis.ACCOUNT; }
+
+    /**
+     * A term account (2026-10-21): an account whose rate each policy locks at sale from this band,
+     * and which pays nothing out until it matures. The band's presence is the whole difference --
+     * the way a deposit grid's presence is a fixed-term deposit's.
+     */
+    public boolean isTermAccount() { return isAccount() && minRatePercent != null && maxRatePercent != null; }
+
+    /** Whether a case's named rate is one this band offers. */
+    public boolean offers(BigDecimal ratePercent) {
+        return isTermAccount() && ratePercent != null
+            && ratePercent.compareTo(minRatePercent) >= 0 && ratePercent.compareTo(maxRatePercent) <= 0;
+    }
 
     /** The charge row for a policy year. The validator guarantees one exists for every year >= 1. */
     public AccumulationChargeRow chargesFor(int policyYear) {

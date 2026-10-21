@@ -45,7 +45,8 @@ public final class PayoutPlanValidator {
 
     /**
      * {@code deposit}: a fixed-term deposit matures through its account (accumulation's drain), so
-     * an endowment deposit carries no MATURITY row. Free-look and term bounds still apply.
+     * an endowment deposit carries no MATURITY row. Free-look and term bounds still apply. A term
+     * account (2026-10-21) matures the same way, so it passes true here too.
      */
     public static void validate(ProductCategory category, PayoutPlan plan, AccumulationPlan accumulation, boolean deposit) {
         if (plan == null || !plan.authored()) {

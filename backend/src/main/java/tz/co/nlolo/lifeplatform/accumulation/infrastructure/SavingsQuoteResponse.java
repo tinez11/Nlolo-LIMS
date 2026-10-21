@@ -18,7 +18,19 @@ import java.util.List;
 public record SavingsQuoteResponse(String kind, MoneyResponse amount, String ratePercent,
                                    List<Integer> offeredTermMonths, Integer termMonths, MoneyResponse interest,
                                    MoneyResponse maturityValue, String maturityDate, MoneyResponse minimumBalance,
-                                   MoneyResponse smallestDeposit, String refusal) {
+                                   MoneyResponse smallestDeposit, String refusal, TermAccount termAccount) {
+
+    /** A term account's projection (2026-10-21); null on a deposit or an ordinary account. */
+    public record TermAccount(String frequency, int contributions, MoneyResponse paidIn, MoneyResponse charges,
+                              MoneyResponse targetAmount, String minRatePercent, String maxRatePercent) {
+        static TermAccount from(SavingsQuoteView.TermAccountQuote t, String currency) {
+            return t == null ? null : new TermAccount(t.frequency(), t.contributions(),
+                t.paidIn() == null ? null : MoneyResponse.of(t.paidIn(), currency),
+                t.charges() == null ? null : MoneyResponse.of(t.charges(), currency),
+                t.targetAmount() == null ? null : MoneyResponse.of(t.targetAmount(), currency),
+                t.minRatePercent().stripTrailingZeros().toPlainString(), t.maxRatePercent().stripTrailingZeros().toPlainString());
+        }
+    }
 
     static SavingsQuoteResponse from(SavingsQuoteView v, String currency) {
         return new SavingsQuoteResponse(
@@ -32,15 +44,21 @@ public record SavingsQuoteResponse(String kind, MoneyResponse amount, String rat
             v.maturityDate() == null ? null : v.maturityDate().toString(),
             v.minimumBalance() == null ? null : MoneyResponse.of(v.minimumBalance(), currency),
             v.smallestDeposit() == null ? null : MoneyResponse.of(v.smallestDeposit(), currency),
-            v.refusal());
+            v.refusal(),
+            TermAccount.from(v.termAccount(), currency));
     }
 
     /**
      * What to price.
      *
-     * @param amount the deposit, or an account's opening balance
-     * @param termMonths a deposit's term; null asks which terms are offered without pricing one
+     * @param amount the deposit, or an account's opening balance, or a term account's contribution per payment.
+     *     Required except on a term account quoted for a {@code targetAmount}.
+     * @param termMonths a deposit's or a term account's term; null asks which terms are offered without pricing one
      * @param asOf the proposed commencement. Defaults to today in Dar es Salaam.
+     * @param ratePercent a term account's rate, inside its band
+     * @param frequency how often a term account's contribution is paid
+     * @param targetAmount what the customer wants a term account to pay at maturity; the contribution is solved for it
      */
-    public record Body(@NotNull @Positive BigDecimal amount, String currency, Integer termMonths, LocalDate asOf) {}
+    public record Body(@Positive BigDecimal amount, String currency, Integer termMonths, LocalDate asOf,
+                       BigDecimal ratePercent, String frequency, @Positive BigDecimal targetAmount) {}
 }

@@ -268,3 +268,34 @@ describe('openCaseFormSchema on an annuity product (product step 5)', () => {
     expect(toApiRequest(openCaseFormSchema.parse(valid()))).not.toHaveProperty('annuityChoice');
   });
 });
+
+// A term account (2026-10-21): the page sets the flag and the band from the version; the case names its rate inside it,
+// in UnderwritingApiImpl.refuseAnUnissuableTermAccount's words.
+describe('term account rate', () => {
+  const termAccount = (over: Record<string, unknown> = {}) => ({
+    ...valid(),
+    isTermAccount: true,
+    termAccountMinRate: '3',
+    termAccountMaxRate: '7',
+    requestedTermMonths: '24',
+    proposedRatePercent: '5',
+    ...over,
+  });
+  const messages = (over: Record<string, unknown>) =>
+    (openCaseFormSchema.safeParse(termAccount(over)).error?.issues ?? []).map((i) => i.message);
+
+  it('sends the rate with the case', () => {
+    expect(toApiRequest(openCaseFormSchema.parse(termAccount())).proposedRatePercent).toBe(5);
+  });
+
+  it('refuses a rate outside the band, a missing rate and a missing term', () => {
+    expect(messages({ proposedRatePercent: '9' })).toContain('This product offers a rate between 3% and 7%, not 9%');
+    expect(messages({ proposedRatePercent: '' })).toContain('A term account needs the rate it is sold at: between 3% and 7%');
+    expect(messages({ requestedTermMonths: '' })).toContain('A term account needs a term: it pays out when the term ends');
+  });
+
+  it('never sends a rate for any other product', () => {
+    const request = toApiRequest(openCaseFormSchema.parse({ ...valid(), proposedRatePercent: '5' }));
+    expect(request).not.toHaveProperty('proposedRatePercent');
+  });
+});

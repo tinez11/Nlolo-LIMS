@@ -135,8 +135,9 @@ public class AgentQuotationController {
 
         UnderwritingCaseView opened = underwritingApi.openCase(body.applicantPartyId(), saved.productId(),
             saved.productVersionId(), sumAssured, currency, null,
+            // A term account's rate travels as it was quoted (2026-10-21); null for every other product.
             new ProposalDetails(null, null, "Agent quotation", inputs.commencement(), inputs.policyTermMonths(),
-                inputs.premiumPayingTermMonths(), inputs.frequency(), List.of()),
+                inputs.premiumPayingTermMonths(), inputs.frequency(), List.of(), inputs.ratePercent()),
             jwt.getSubject());
         if (inputs.funeralPlanCode() != null && !inputs.funeralPlanCode().isBlank()) {
             // The main member is the registered customer; the family travels as it was quoted.

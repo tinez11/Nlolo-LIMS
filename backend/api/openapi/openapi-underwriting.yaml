@@ -736,6 +736,9 @@ paths:
                 premiumPayingTermMonths: { type: [integer, "null"] }
                 premiumFrequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE, null] }
                 proposedCommencementDate: { type: [string, "null"], format: date }
+                proposedRatePercent:
+                  description: "A term account's rate, % a year, inside its version's band; null on any other product."
+                  type: [number, "null"]
       responses:
         '200':
           description: Amended
@@ -1147,6 +1150,15 @@ components:
             the whole loaded annual figure is charged once, at inception.
           type: [string, "null"]
           enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE, null]
+        proposedRatePercent:
+          description: >-
+            A term account only (2026-10-21): the rate, % a year, the policy is issued at and keeps
+            for life. Required on a term account, and inside its version's band
+            (GET /products/{productId}/versions/{versionId}/term-account); refused on any other
+            product. A term account also needs a term.
+          type: [number, "null"]
+          minimum: 0
+          maximum: 100
         beneficiaries:
           description: >-
             Nominations as taken on the proposal form. Optional — a proposal arriving with the
@@ -1579,6 +1591,9 @@ components:
           description: "When the policy was issued and the sale fixed; null while channel and branch can still change."
           type: [string, "null"]
           format: date-time
+        proposedRatePercent:
+          description: "A term account's rate, % a year (2026-10-21), locked onto the policy at issue; null on any other product."
+          type: [number, "null"]
         recommendationOutcome:
           description: >-
             What the rules engine suggests on the evidence gathered so far. ADVICE, not the

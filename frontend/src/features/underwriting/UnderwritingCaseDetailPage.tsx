@@ -1,6 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useBreadcrumb } from '@/lib/cameFrom';
 import { useEffect, useState } from 'react';
+import type { UnderwritingCaseView } from '@/api/types';
+import { selectProductSnapshot, useProductStore } from '@/store/productStore';
+import { QuotationPreview } from './QuotationPreview';
 import { getFuneralApplication } from '@/api/funeral';
 import type { FuneralApplicationView } from '@/api/types';
 import { FuneralApplicationSummary } from './FuneralApplicationSummary';
@@ -344,7 +347,13 @@ export function UnderwritingCaseDetailPage() {
         {view && !view.groupScheme && !view.evidenceForPolicyNumber && (
           <Panel title="The proposal" subtitle="The cover applied for. Read it, and the quotation below, before assessing.">
             <dl className="px-4 pb-2">
-              <Field label="Sum assured" value={view.sumAssured ? formatMoney(view.sumAssured) : '—'} />
+              <Field
+                label={view.proposedRatePercent != null ? 'Contribution per payment' : 'Sum assured'}
+                value={view.sumAssured ? formatMoney(view.sumAssured) : '—'}
+              />
+              {view.proposedRatePercent != null && (
+                <Field label="Rate" value={`${view.proposedRatePercent}% a year, fixed for the term`} />
+              )}
               <Field
                 label="Term"
                 value={view.requestedTermMonths != null ? formatMonths(view.requestedTermMonths) : '—'}
@@ -361,6 +370,9 @@ export function UnderwritingCaseDetailPage() {
             </dl>
           </Panel>
         )}
+        {/* A term account opened by staff has no saved quotation: the underwriter reads the same projection the agent's
+            calculator shows, at the case's contribution, rate and term (2026-10-21). */}
+        {view && !quotation && view.proposedRatePercent != null && <TermAccountCaseQuotation view={view} />}
         {quotation && view && (
           <AcceptedQuotationPanel
             quotation={{ ...quotation, productId: view.productId ?? '', applicantPartyId: null, caseId,
@@ -711,3 +723,41 @@ function SaleSection({
 }
 
 
+
+/**
+ * The quotation an underwriter reads on a term account staff opened (2026-10-21): the case's own contribution, rate,
+ * frequency and term, projected by the server on the product's current version -- the panel the agents' calculator
+ * shows. It creates nothing.
+ */
+function TermAccountCaseQuotation({ view }: { view: UnderwritingCaseView }) {
+  const productId = view.productId ?? '';
+  const snapshot = useProductStore(selectProductSnapshot(productId));
+  const loadSnapshot = useProductStore((s) => s.loadSnapshot);
+  useEffect(() => {
+    if (productId) void loadSnapshot(productId);
+  }, [productId, loadSnapshot]);
+  const versionId = snapshot.data?.productVersionId;
+  if (!versionId) return null;
+  return (
+    <QuotationPreview
+      inputs={{
+        productId,
+        sumAssuredAmount: view.sumAssured?.amount ?? '',
+        sumAssuredCurrency: view.sumAssured?.currencyCode ?? 'TZS',
+        frequency: (view.premiumFrequency ?? '') as never,
+        policyTermMonths: view.requestedTermMonths != null ? String(view.requestedTermMonths) : '',
+        // A savings quote reads no rating facts.
+        dateOfBirth: undefined,
+        sex: undefined,
+        smokerStatus: undefined,
+        occupationClass: undefined,
+      }}
+      premiumPayingTermMonths={view.premiumPayingTermMonths != null ? String(view.premiumPayingTermMonths) : ''}
+      commencementDate={view.proposedCommencementDate ?? ''}
+      portfolioCode="SAV"
+      productVersionId={versionId}
+      applicantPartyId={view.applicantPartyId ?? ''}
+      termAccount={{ ratePercent: String(view.proposedRatePercent ?? ''), targetAmount: '' }}
+    />
+  );
+}

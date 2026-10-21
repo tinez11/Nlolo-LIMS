@@ -36,10 +36,11 @@ public final class AmendmentRequests {
 
     /** The contract as amended. Every field the new value; null means none, as at opening. */
     public record TermsRequest(@NotNull @Positive BigDecimal sumAssured, Integer requestedTermMonths,
-                        Integer premiumPayingTermMonths, String premiumFrequency, LocalDate proposedCommencementDate) {
+                        Integer premiumPayingTermMonths, String premiumFrequency, LocalDate proposedCommencementDate,
+                        BigDecimal proposedRatePercent) {
         ProposalAmendmentApi.TermsAmendment toApi() {
             return new ProposalAmendmentApi.TermsAmendment(sumAssured, requestedTermMonths, premiumPayingTermMonths,
-                premiumFrequency, proposedCommencementDate);
+                premiumFrequency, proposedCommencementDate, proposedRatePercent);
         }
     }
 

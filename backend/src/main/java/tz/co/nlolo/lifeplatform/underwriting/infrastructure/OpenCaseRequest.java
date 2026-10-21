@@ -122,7 +122,13 @@ public record OpenCaseRequest(
      * On an account-based savings product only (2026-10-09, product V32): the account charges the policy is charged by.
      * Absent or empty, the product version's own charges apply.
      */
-    List<UUID> accountChargeIds) {
+    List<UUID> accountChargeIds,
+
+    /**
+     * On a term account only (2026-10-21): the rate, % a year, inside the version's band. Unannotated: the service
+     * refuses a missing or out-of-band rate in the console's words, with the band named.
+     */
+    java.math.BigDecimal proposedRatePercent) {
 
     /** A deferred annuity applicant's retirement age. Unannotated: a missing age is refused by the window rule. */
     public record DeferredAnnuityDto(Integer retirementAge) {

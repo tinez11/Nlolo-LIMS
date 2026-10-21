@@ -145,7 +145,31 @@ export const openCaseFormSchema = z.object({
   isUnitLinked: z.boolean(),
   ulPremium: z.string().trim(),
   ulSplit: z.array(z.object({ fundCode: z.string(), percent: z.string().trim() })),
+
+  /**
+   * A term account (2026-10-21): set by the page from the version's band, never typed. The case names the rate the
+   * policy is sold at, inside the band, and keeps it for life.
+   */
+  isTermAccount: z.boolean(),
+  termAccountMinRate: z.string(),
+  termAccountMaxRate: z.string(),
+  proposedRatePercent: z.string().trim(),
 }).superRefine((values, ctx) => {
+  // Mirrors UnderwritingApiImpl.refuseAnUnissuableTermAccount, in its words.
+  if (values.isTermAccount) {
+    const rate = values.proposedRatePercent;
+    const band = `between ${values.termAccountMinRate}% and ${values.termAccountMaxRate}%`;
+    if (rate === '') {
+      ctx.addIssue({ code: 'custom', path: ['proposedRatePercent'], message: `A term account needs the rate it is sold at: ${band}` });
+    } else if (!/^\d{1,3}(\.\d{1,4})?$/.test(rate)) {
+      ctx.addIssue({ code: 'custom', path: ['proposedRatePercent'], message: 'A rate in percent, like 5 or 5.25' });
+    } else if (Number(rate) < Number(values.termAccountMinRate) || Number(rate) > Number(values.termAccountMaxRate)) {
+      ctx.addIssue({ code: 'custom', path: ['proposedRatePercent'], message: `This product offers a rate ${band}, not ${Number(rate)}%` });
+    }
+    if (values.requestedTermMonths === '') {
+      ctx.addIssue({ code: 'custom', path: ['requestedTermMonths'], message: 'A term account needs a term: it pays out when the term ends' });
+    }
+  }
   // Mirrors UnitLinkedChoices.validate, in its words. The minimum premium and the sum-assured range are
   // the version's, and are checked by the page against the terms it read, then by the server.
   if (values.isUnitLinked) {
@@ -274,6 +298,10 @@ export function blankOpenCaseForm(): OpenCaseFormInput {
     isUnitLinked: false,
     ulPremium: '',
     ulSplit: [],
+    isTermAccount: false,
+    termAccountMinRate: '',
+    termAccountMaxRate: '',
+    proposedRatePercent: '',
   };
 }
 
@@ -347,6 +375,10 @@ export function toApiRequest(values: OpenCaseFormValues): OpenCaseRequest {
       ? { premiumPayingTermMonths: Number(values.premiumPayingTermMonths) }
       : {}),
     ...(values.premiumFrequency ? { premiumFrequency: values.premiumFrequency } : {}),
+    // A term account's rate, and only a term account's: the server refuses one on any other product.
+    ...(values.isTermAccount && values.proposedRatePercent
+      ? { proposedRatePercent: Number(values.proposedRatePercent) }
+      : {}),
   };
 }
 

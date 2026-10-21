@@ -15,6 +15,8 @@ export interface QuotationForm {
   funeral?:
     | { planCode: string; mainMember: { name: string; dateOfBirth: string | null } | null; dependants: FuneralDependantInput[] }
     | undefined;
+  /** A term account's rate (2026-10-21): it is quoted, and the proposal opened, at the rate the case names. */
+  ratePercent?: string | undefined;
 }
 
 /**
@@ -87,5 +89,6 @@ export function quotationRequest(basis: PricingBasis, form: QuotationForm): Quot
     frequency: inputs.frequency || null,
     policyTermMonths: inputs.policyTermMonths ? Number(inputs.policyTermMonths) : null,
     premiumPayingTermMonths: form.premiumPayingTermMonths ? Number(form.premiumPayingTermMonths) : null,
+    ...(form.ratePercent && !Number.isNaN(Number(form.ratePercent)) ? { ratePercent: Number(form.ratePercent) } : {}),
   };
 }

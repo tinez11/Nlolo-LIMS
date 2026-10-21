@@ -35,6 +35,7 @@ import {
   type OpenCaseFormValues,
 } from './openCaseForm';
 import { QuotationPreview } from './QuotationPreview';
+import { useTermAccountTerms } from './useTermAccountTerms';
 import { pricingBasis, quotesHere, type ProspectInputs, type QuoteState } from './pricingBasis';
 import { isAmount, isWholeMonths } from './useQuotation';
 import { quotationRequest } from './quotationRequest';
@@ -91,6 +92,11 @@ export function QuotationCalculatorPage() {
   // other frequency on (2026-10-21). It used to be refused only when the proposal reached the underwriter, after the
   // agent had already onboarded the customer; filtering the choice here means MONTHLY can never be picked at all.
   const isDeposit = selectedProduct?.portfolioCode === 'DEP';
+  // A term account (2026-10-21): the customer is quoted at a rate inside the version's band, and may name what they
+  // want at maturity instead of a contribution.
+  const termAccountTerms = useTermAccountTerms(productId, productVersionId, selectedProduct?.portfolioCode);
+  const isTermAccount = termAccountTerms !== null;
+  const [termAccountTarget, setTermAccountTarget] = useState('');
 
   useEffect(() => {
     if (snapshot.data?.productVersionId) setValue('productVersionId', snapshot.data.productVersionId);
@@ -212,6 +218,7 @@ export function QuotationCalculatorPage() {
         applicantPartyId: who === 'CLIENT' ? applicantPartyId : '',
         prospect: who === 'PROSPECT' ? prospect : undefined,
         funeral,
+        ratePercent: isTermAccount ? watch('proposedRatePercent') : undefined,
       })
     : null;
 
@@ -385,7 +392,8 @@ export function QuotationCalculatorPage() {
 
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <FormField
-              label={isFuneral ? "Sum assured (the main member's benefit on the plan)" : 'Sum assured or amount'}
+              label={isFuneral ? "Sum assured (the main member's benefit on the plan)"
+                : isTermAccount ? 'Contribution per payment' : 'Sum assured or amount'}
               error={amountError}
             >
               <Input placeholder="1500000.00" readOnly={isFuneral} {...register('sumAssuredAmount')} />
@@ -394,6 +402,25 @@ export function QuotationCalculatorPage() {
               <Input className="w-20 uppercase" {...register('sumAssuredCurrency')} />
             </FormField>
           </div>
+
+          {isTermAccount && termAccountTerms && (
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                label="Rate (% a year)"
+                hint={`This product offers ${termAccountTerms.minRatePercent}% to ${termAccountTerms.maxRatePercent}%, fixed for the term.`}
+              >
+                <Input inputMode="decimal" placeholder={String(termAccountTerms.minRatePercent)} {...register('proposedRatePercent')} />
+              </FormField>
+              <FormField label="Wanted at maturity (optional)" hint="The quotation works out the contribution that reaches it.">
+                <Input
+                  inputMode="decimal"
+                  placeholder="5000000"
+                  value={termAccountTarget}
+                  onChange={(e) => setTermAccountTarget(e.target.value)}
+                />
+              </FormField>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             {!isFuneral && (
@@ -449,6 +476,18 @@ export function QuotationCalculatorPage() {
           prospect={who === 'PROSPECT' ? prospect : undefined}
           funeral={funeral}
           onQuoteState={setQuoteState}
+          termAccount={
+            isTermAccount
+              ? {
+                  ratePercent: watch('proposedRatePercent'),
+                  targetAmount: termAccountTarget,
+                  onUseContribution: (amount) => {
+                    setValue('sumAssuredAmount', amount, { shouldDirty: true });
+                    setTermAccountTarget('');
+                  },
+                }
+              : undefined
+          }
         />
 
         {/* The customer agrees: the one place on this screen that writes anything, and only after a second click.

@@ -360,6 +360,7 @@ export type BenefitCalculationMethod = NonNullable<
 export type IfrsMeasurementModel = NonNullable<ProductVersionSpec['ifrsMeasurementModel']>;
 export type VersionRatingView = ProductComponents['schemas']['VersionRatingView'];
 export type CashValueTermsView = ProductComponents['schemas']['CashValueTerms'];
+export type TermAccountTermsView = ProductComponents['schemas']['TermAccountTerms'];
 
 /** A premium quotation and the whole derivation behind it. The ONE authority on a premium (2026-10-16). */
 export type PremiumQuoteView = ProductComponents['schemas']['PremiumQuoteView'];
@@ -585,6 +586,7 @@ export type DepositView = AccumulationComponents['schemas']['Deposit'];
 export type DepositPeriodView = AccumulationComponents['schemas']['DepositPeriod'];
 export type MaturityInstructionView = AccumulationComponents['schemas']['MaturityInstruction'];
 export type AwaitingPayeeView = AccumulationComponents['schemas']['AwaitingPayee'];
+export type TermAccountView = AccumulationComponents['schemas']['TermAccount'];
 export type RateDeclarationView = AccumulationComponents['schemas']['RateDeclaration'];
 
 // With-profits bonuses (product step 4).

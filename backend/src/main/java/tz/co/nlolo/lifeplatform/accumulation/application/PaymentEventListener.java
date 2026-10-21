@@ -34,6 +34,10 @@ public class PaymentEventListener {
                     deposits.settlePayout((String) p.get("sourceRef"), paid);
                     return;
                 }
+                if ("TERM_ACCOUNT_MATURITY_PAYOUT".equals(p.get("purpose"))) {
+                    api.settleTermAccountPayout((String) p.get("sourceRef"), paid);
+                    return;
+                }
                 if (!"WITHDRAWAL_PAYOUT".equals(p.get("purpose"))) return;
                 api.settleWithdrawal(UUID.fromString((String) p.get("sourceRef")), (UUID) p.get("disbursementId"), paid);
             });

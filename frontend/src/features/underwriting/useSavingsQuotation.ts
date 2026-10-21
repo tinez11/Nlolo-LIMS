@@ -13,6 +13,11 @@ export interface SavingsQuotationInputs {
   termMonths: string;
   /** The proposed commencement, or blank for today. */
   asOf: string;
+  /**
+   * A term account's (2026-10-21): the rate the case would name, how often the contribution is paid, and what the
+   * customer wants at maturity. A target asks the server for the contribution that reaches it, in place of `amount`.
+   */
+  termAccount?: { ratePercent: string; frequency: string; targetAmount: string } | undefined;
 }
 
 export type SavingsQuotation =
@@ -36,16 +41,26 @@ export type SavingsQuotation =
  * useful answer to "9 months" is "this deposit runs 3, 6 or 12". Only a product that keeps no account at all throws.
  */
 export function useSavingsQuotation(inputs: SavingsQuotationInputs): SavingsQuotation {
-  const { productId, productVersionId, amount, currency, termMonths, asOf } = inputs;
+  const { productId, productVersionId, amount, currency, termMonths, asOf, termAccount } = inputs;
+  const rate = termAccount?.ratePercent.trim() ?? '';
+  const frequency = termAccount?.frequency ?? '';
+  const target = termAccount?.targetAmount.trim() ?? '';
+  // A target, when one is given, is what is asked about: the contribution is the answer.
+  const solving = !!termAccount && target !== '' && Number(target) > 0;
 
   const missing: string[] = [];
   if (!productId || !productVersionId) missing.push('a product');
   // `!(n > 0)`: "5,000,000" is NaN, which `<= 0` let through to the server as a null amount.
-  if (!amount || !(Number(amount) > 0)) missing.push('an amount in digits');
+  if (!solving && (!amount || !(Number(amount) > 0))) {
+    missing.push(termAccount ? 'a contribution, or the amount wanted at maturity, in digits' : 'an amount in digits');
+  }
   if (termMonths && !(/^\d+$/.test(termMonths.trim()) && Number(termMonths) > 0)) missing.push('a term in whole months');
+  if (termAccount && rate !== '' && Number.isNaN(Number(rate))) missing.push('a rate in digits');
 
   const ready = missing.length === 0;
-  const key = ready ? [productId, productVersionId, amount, currency, termMonths, asOf].join('|') : '';
+  const key = ready
+    ? [productId, productVersionId, solving ? '' : amount, currency, termMonths, asOf, rate, frequency, solving ? target : ''].join('|')
+    : '';
 
   const [loaded, setLoaded] = useState<{ key: string; quote?: SavingsQuoteView; error?: unknown } | null>(null);
 
@@ -53,10 +68,12 @@ export function useSavingsQuotation(inputs: SavingsQuotationInputs): SavingsQuot
     if (!key) return undefined;
     let live = true;
     quoteProductSavings(productId, productVersionId, {
-      amount: Number(amount),
+      ...(solving ? { targetAmount: Number(target) } : { amount: Number(amount) }),
       ...(currency ? { currency } : {}),
       ...(termMonths ? { termMonths: Number(termMonths) } : {}),
       ...(asOf ? { asOf } : {}),
+      ...(rate ? { ratePercent: Number(rate) } : {}),
+      ...(frequency ? { frequency: frequency as 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY' | 'SINGLE' } : {}),
     }).then(
       (quote) => live && setLoaded({ key, quote }),
       (error: unknown) => live && setLoaded({ key, error }),
@@ -64,7 +81,7 @@ export function useSavingsQuotation(inputs: SavingsQuotationInputs): SavingsQuot
     return () => {
       live = false;
     };
-  }, [key, productId, productVersionId, amount, currency, termMonths, asOf]);
+  }, [key, productId, productVersionId, amount, currency, termMonths, asOf, rate, frequency, target, solving]);
 
   if (!ready) return { state: 'incomplete', missing };
   // Derived, not reset in the effect: an answer for other inputs is no answer for these.

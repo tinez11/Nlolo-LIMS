@@ -7,6 +7,8 @@ import {
   getAccount,
   getClosingQuote,
   getDeposit,
+  getTermAccount,
+  payOutTermAccount,
   listAwaitingPayee,
   payOutDeposit,
   recordMaturityInstruction,
@@ -34,6 +36,7 @@ import type {
   AccountView,
   AwaitingPayeeView,
   DepositView,
+  TermAccountView,
   AdjustmentView,
   ClosingQuoteView,
   RateDeclarationView,
@@ -69,6 +72,8 @@ interface AccumulationState {
   rates: Keyed<RateDeclarationView[]>;
   /** null for an account that is not a fixed-term deposit -- an answer, like account's null. */
   deposit: Keyed<DepositView | null>;
+  /** null for an account that is not a term account (2026-10-21). */
+  termAccount: Keyed<TermAccountView | null>;
   awaiting: Resource<AwaitingPayeeView[]>;
   acting: Keyed<unknown>;
 
@@ -81,6 +86,8 @@ interface AccumulationState {
   loadAwaiting: () => Promise<void>;
   instruct: (policyNumber: string, body: MaturityInstructionBody, attempt: MutationAttempt) => Promise<void>;
   payOutDeposit: (policyNumber: string, payeeRef: string, attempt: MutationAttempt) => Promise<void>;
+  loadTermAccount: (policyNumber: string) => Promise<void>;
+  payOutTermAccount: (policyNumber: string, payeeRef: string, attempt: MutationAttempt) => Promise<void>;
 
   withdraw: (policyNumber: string, body: WithdrawalBody, attempt: MutationAttempt) => Promise<void>;
   approveWithdrawal: (policyNumber: string, withdrawalId: string, attempt: MutationAttempt) => Promise<void>;
@@ -133,6 +140,7 @@ export const useAccumulationStore = create<AccumulationState>((set, getState) =>
     statements: {},
     rates: {},
     deposit: {},
+    termAccount: {},
     awaiting: idle(),
     acting: {},
 
@@ -163,6 +171,16 @@ export const useAccumulationStore = create<AccumulationState>((set, getState) =>
       act(`depositPayout.${policyNumber}`, async () => {
         await payOutDeposit(policyNumber, payeeRef, attempt);
         await Promise.all([getState().loadDeposit(policyNumber), getState().loadAccount(policyNumber)]);
+      }),
+
+    loadTermAccount: (policyNumber) =>
+      keyed('termAccount', policyNumber, 'termAccount', () => getTermAccount(policyNumber)),
+
+    // Rereads the account too, as a deposit's payout does: a payout closes it.
+    payOutTermAccount: (policyNumber, payeeRef, attempt) =>
+      act(`termAccountPayout.${policyNumber}`, async () => {
+        await payOutTermAccount(policyNumber, payeeRef, attempt);
+        await Promise.all([getState().loadTermAccount(policyNumber), getState().loadAccount(policyNumber)]);
       }),
 
     withdraw: (policyNumber, body, attempt) =>

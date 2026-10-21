@@ -86,7 +86,26 @@ export function AcceptedQuotationPanel({
             />
           </>
         )}
-        {'kind' in q && (
+        {'kind' in q && q.kind === 'TERM_ACCOUNT' && (() => {
+          // A term account (2026-10-21): the contribution, the rate locked for the term, and the projection to maturity.
+          const t = (q.termAccount ?? {}) as Record<string, unknown>;
+          const m = (v: unknown) => (v && typeof v === 'object' && 'amount' in v
+            ? formatMoney(v as { amount: string; currencyCode: string }) : '—');
+          return (
+            <>
+              <Field
+                label="Contribution"
+                value={`${m(q.amount)}${frequency ? ` ${PREMIUM_FREQUENCY_LABELS[frequency].toLowerCase()}` : ''}`}
+              />
+              <Field label="Interest rate" value={`${String(q.ratePercent)}% a year, fixed for the term`} />
+              <Field label="Paid in" value={`${m(t.paidIn)} (${String(t.contributions)} payments)`} />
+              <Field label="Interest to maturity" value={m(q.interest)} />
+              <Field label="Paid out at maturity" value={m(q.maturityValue)} />
+              {typeof q.maturityDate === 'string' && <Field label="Matures on" value={formatDate(q.maturityDate)} />}
+            </>
+          );
+        })()}
+        {'kind' in q && q.kind !== 'TERM_ACCOUNT' && (
           <>
             <Field label={q.kind === 'DEPOSIT' ? 'Deposit' : 'Opening balance'} value={money(q.amount, currency)} />
             {typeof q.ratePercent === 'number' && (

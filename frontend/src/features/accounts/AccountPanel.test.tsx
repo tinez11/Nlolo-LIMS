@@ -50,9 +50,40 @@ beforeEach(() => {
     withdrawals: {},
     adjustments: {},
     deposit: {},
+    termAccount: {},
     loadAccount: async () => {},
     loadMovements: async () => {},
     loadDeposit: async () => {},
+    loadTermAccount: async () => {},
+  });
+});
+
+const termAccount = (status: 'RUNNING' | 'MATURED' | 'AWAITING_PAYEE') => ({
+  policyNumber: 'POL-1',
+  ratePercent: 5.25,
+  maturityDate: '2028-10-21',
+  status,
+  defaultPayeeRef: status === 'AWAITING_PAYEE' ? null : '+255700000777',
+  maturedOn: status === 'RUNNING' ? null : '2028-10-21',
+});
+
+describe('AccountPanel on a term account', () => {
+  it('shows the locked rate and maturity, takes money in, and offers no withdrawal', () => {
+    useAccumulationStore.setState({ termAccount: { 'POL-1': success(termAccount('RUNNING')) } });
+    render(<AccountPanel policyNumber="POL-1" />);
+    expect(screen.getByText('5.25% a year')).toBeInTheDocument();
+    expect(screen.getByText(/Nothing can be withdrawn or surrendered until it matures/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request withdrawal' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Request top-up' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Record transfer in' })).toBeInTheDocument();
+  });
+
+  it('once matured and waiting, offers finance the payee form and takes nothing in', () => {
+    useAccumulationStore.setState({ termAccount: { 'POL-1': success(termAccount('AWAITING_PAYEE')) } });
+    render(<AccountPanel policyNumber="POL-1" />);
+    expect(screen.getByRole('button', { name: 'Record payee and pay' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request top-up' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record transfer in' })).not.toBeInTheDocument();
   });
 });
 

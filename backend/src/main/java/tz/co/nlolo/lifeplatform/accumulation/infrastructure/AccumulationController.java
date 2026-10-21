@@ -9,6 +9,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import tz.co.nlolo.lifeplatform.accumulation.api.AccountNotFoundException;
 import tz.co.nlolo.lifeplatform.accumulation.api.AccumulationApi;
+import tz.co.nlolo.lifeplatform.accumulation.api.AccumulationStateException;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -57,9 +58,13 @@ public class AccumulationController {
     public SavingsQuoteResponse quoteSavings(@PathVariable UUID productId, @PathVariable UUID versionId,
                                              @Valid @RequestBody SavingsQuoteResponse.Body body) {
         String currency = body.currency() == null || body.currency().isBlank() ? "TZS" : body.currency();
+        if (body.amount() == null && body.targetAmount() == null) {
+            throw new AccumulationStateException("A savings quotation needs the amount to be paid in");
+        }
         return SavingsQuoteResponse.from(api.quoteProductSavings(productId, versionId, body.amount(),
             body.termMonths(), body.asOf() != null ? body.asOf()
-                : java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"))), currency);
+                : java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")),
+            body.ratePercent(), body.frequency(), body.targetAmount()), currency);
     }
 
     @PostMapping("/rate-declarations/{declarationId}/approve")
@@ -252,5 +257,32 @@ public class AccumulationController {
                                          @AuthenticationPrincipal Jwt jwt) {
         var paid = api.payOutMaturedDeposit(policyNumber, body.payeeRef(), jwt.getSubject(), idempotencyKey);
         return DepositResponse.Period.from(paid, api.findAccount(policyNumber).orElseThrow().currency());
+    }
+
+    // ---- Term accounts (2026-10-21) ------------------------------------------------------------
+
+    /** Any staff member, as the account is. 404 for a policy that is not a term account. */
+    @GetMapping("/policies/{policyNumber}/account/term-account")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public TermAccountResponse termAccount(@PathVariable String policyNumber) {
+        return TermAccountResponse.from(api.findTermAccount(policyNumber)
+            .orElseThrow(() -> new AccountNotFoundException(policyNumber)));
+    }
+
+    @GetMapping("/term-accounts/awaiting-payee")
+    @PreAuthorize(FINANCE)
+    public List<DepositResponse.Awaiting> termAccountsAwaitingPayee() {
+        return api.listTermAccountsAwaitingPayee().stream().map(DepositResponse.Awaiting::from).toList();
+    }
+
+    /** 202: REQUESTED from the rail, not paid. Money out, so finance's -- as a deposit's payout is. */
+    @PostMapping("/policies/{policyNumber}/account/term-account/payout")
+    @PreAuthorize(FINANCE)
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public TermAccountResponse payOutTermAccount(@PathVariable String policyNumber, @Valid @RequestBody DepositBodies.Payout body,
+                                                 @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+                                                 @AuthenticationPrincipal Jwt jwt) {
+        return TermAccountResponse.from(api.payOutMaturedTermAccount(policyNumber, body.payeeRef(), jwt.getSubject(),
+            idempotencyKey));
     }
 }

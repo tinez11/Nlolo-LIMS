@@ -3,7 +3,7 @@ import { ErrorPanel } from '@/components/states';
 import { toApiError } from '@/lib/apiError';
 import { formatMonths } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
-import { PREMIUM_FREQUENCY_LABELS } from '@/api/types';
+import { PREMIUM_FREQUENCY_LABELS, type SavingsQuoteView } from '@/api/types';
 import { DEFAULT_OCCUPATION_CLASS, useQuotation, type QuotationInputs } from './useQuotation';
 import { useSavingsQuotation } from './useSavingsQuotation';
 import { DownloadQuotationButton } from './DownloadQuotationButton';
@@ -93,7 +93,13 @@ export function QuotationPreview({
   applicantPartyId = '',
   prospect,
   onQuoteState,
+  termAccount,
 }: {
+  /**
+   * A term account's own inputs (2026-10-21): the rate the case names, and what the customer wants at maturity. With a
+   * target the panel shows the contribution that reaches it, and `onUseContribution` puts that figure in the form.
+   */
+  termAccount?: { ratePercent: string; targetAmount: string; onUseContribution?: ((amount: string) => void) | undefined } | undefined;
   /**
    * Told where the server's answer stands (2026-10-20), for a screen that acts on it -- the agents' calculator offers
    * "Proceed" only once the server has priced what the customer would agree to, never on a refusal.
@@ -152,6 +158,7 @@ export function QuotationPreview({
           currency={inputs.sumAssuredCurrency || 'TZS'}
           termMonths={inputs.policyTermMonths}
           commencementDate={commencementDate}
+          termAccount={termAccount ? { ...termAccount, frequency: inputs.frequency ?? '' } : undefined}
         />
       )}
 
@@ -196,6 +203,7 @@ export function QuotationPreview({
             applicantPartyId,
             prospect,
             funeral,
+            ratePercent: termAccount?.ratePercent,
           });
           return (
             <DownloadQuotationButton
@@ -470,6 +478,7 @@ function SavingsQuotation({
   termMonths,
   commencementDate,
   report,
+  termAccount,
 }: {
   productId: string;
   productVersionId: string;
@@ -478,6 +487,9 @@ function SavingsQuotation({
   termMonths: string;
   commencementDate: string;
   report?: ((state: QuoteState) => void) | undefined;
+  termAccount?:
+    | { ratePercent: string; frequency: string; targetAmount: string; onUseContribution?: ((amount: string) => void) | undefined }
+    | undefined;
 }) {
   const quotation = useSavingsQuotation({
     productId,
@@ -486,6 +498,7 @@ function SavingsQuotation({
     currency,
     termMonths,
     asOf: commencementDate,
+    termAccount,
   });
   // A deposit priced with a refusal attached -- a term or amount it does not take -- cannot be agreed to: the server
   // refuses to save it, so it is reported as refused, not quoted.
@@ -514,6 +527,9 @@ function SavingsQuotation({
 
   const q = quotation.quote;
   const deposit = q.kind === 'DEPOSIT';
+  if (q.kind === 'TERM_ACCOUNT') {
+    return <TermAccountQuotation quote={q} onUseContribution={termAccount?.onUseContribution} />;
+  }
 
   return (
     <div className="divide-y divide-border">
@@ -569,6 +585,73 @@ function SavingsQuotation({
           <p className="text-xs text-muted-foreground">{q.refusal}</p>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * A term account (2026-10-21), projected to maturity at the rate the case names: what is paid in, what it earns, and
+ * what it pays out on the maturity date -- every figure the server's. Quoted for a target, it leads with the
+ * contribution that reaches it, and offers to use that figure on the form.
+ */
+function TermAccountQuotation({
+  quote: q,
+  onUseContribution,
+}: {
+  quote: SavingsQuoteView;
+  onUseContribution?: ((amount: string) => void) | undefined;
+}) {
+  const t = q.termAccount;
+  if (q.refusal || !t) {
+    return (
+      <div className="px-4 pb-4">
+        <p role="alert" className="text-sm text-status-danger-fg">{q.refusal ?? 'This term account cannot be quoted as entered.'}</p>
+        {t && (
+          <p className="pt-1 text-xs text-muted-foreground">
+            This product offers a rate between {t.minRatePercent}% and {t.maxRatePercent}% a year.
+          </p>
+        )}
+      </div>
+    );
+  }
+  const frequency = t.frequency ? PREMIUM_FREQUENCY_LABELS[t.frequency].toLowerCase() : undefined;
+  return (
+    <div className="divide-y divide-border">
+      {t.targetAmount && (
+        <div className="space-y-2 px-4 py-3">
+          <Row label="Wanted at maturity" value={formatMoney(t.targetAmount)} />
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <span className="text-sm font-medium">Contribution needed</span>
+            <span className="text-sm font-medium">
+              {q.amount ? formatMoney(q.amount) : '—'}
+              {frequency && <span className="pl-1.5 text-xs text-muted-foreground">{frequency}</span>}
+            </span>
+          </div>
+          {onUseContribution && q.amount && (
+            <button
+              type="button"
+              className="text-sm font-medium text-primary underline-offset-2 hover:underline"
+              onClick={() => onUseContribution(q.amount!.amount)}
+            >
+              Use {formatMoney(q.amount)} as the contribution
+            </button>
+          )}
+        </div>
+      )}
+      {!t.targetAmount && q.amount && <Row label="Contribution" value={formatMoney(q.amount)} suffix={frequency} />}
+      <Row label="Interest rate" value={`${q.ratePercent}%`} suffix="a year, fixed for the term" />
+      <Row label="Paid in" value={t.paidIn ? formatMoney(t.paidIn) : '—'} suffix={`${t.contributions} payments`} />
+      {t.charges && Number(t.charges.amount) > 0 && <Row label="Charges over the term" value={formatMoney(t.charges)} />}
+      <Row label="Interest to maturity" value={q.interest ? formatMoney(q.interest) : '—'} />
+      <Row label="Paid out at maturity" value={q.maturityValue ? formatMoney(q.maturityValue) : '—'} />
+      {q.termMonths != null && <Row label="Term" value={formatMonths(q.termMonths)} />}
+      {q.maturityDate && <Row label="Matures on" value={q.maturityDate} />}
+      <div className="px-4 py-2">
+        <p className="text-xs text-muted-foreground">
+          Nothing can be withdrawn or surrendered before it matures; then the whole balance is paid out. The figure at
+          maturity assumes every contribution is paid on its due date.
+        </p>
+      </div>
     </div>
   );
 }
