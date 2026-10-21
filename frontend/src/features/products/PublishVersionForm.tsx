@@ -10,7 +10,9 @@ import {
   type ProductCategory,
 } from '@/api/types';
 import { ConfirmAct } from '@/components/ConfirmAct';
-import { BUCKET_LABEL, MODEL_LABEL } from '@/lib/ifrs17';
+import { BUCKET_LABEL, MODEL_LABEL, PORTFOLIO_LABEL, portfolioLabel, type PortfolioCode } from '@/lib/ifrs17';
+import { changeProductPortfolio } from '@/api/accountCharges';
+import { toApiError, type ApiError } from '@/lib/apiError';
 import { DatePicker } from '@/components/DatePicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
@@ -103,10 +105,15 @@ export function PublishVersionForm({
   productId,
   category,
   onPublished,
+  portfolioCode,
+  draft = false,
 }: {
   productId: string;
   category: ProductCategory;
   onPublished: () => void;
+  /** The product's IFRS 17 portfolio, and whether it can still change (2026-10-21): see `requiredPortfolios`. */
+  portfolioCode?: string | undefined;
+  draft?: boolean | undefined;
 }) {
   const publishVersion = useProductStore((s) => s.publishVersion);
   const resetPublishVersion = useProductStore((s) => s.resetPublishVersion);
@@ -242,7 +249,33 @@ export function PublishVersionForm({
   */
   const [pending, setPending] = useState<PublishVersionFormValues | null>(null);
 
+  /*
+    The portfolio a version that keeps an account must sit in (2026-10-21) -- ProductApiImpl.refuseUnlessASavingsPortfolio,
+    which used to be met only as a refusal at the very end. A draft takes the right one here, filled in and changeable,
+    and is moved to it as the version is published; a published product's portfolio is fixed, so it is said up front.
+  */
+  const requiredPortfolios: readonly string[] | null =
+    valueBasis === 'DEPOSIT' ? ['DEP']
+      : deferredAnnuity ? ['PEN', 'DANN']
+        : keepsAccount(valueBasis) ? ['SAV', 'PEN']
+          : null;
+  const portfolioMismatch = requiredPortfolios !== null && !!portfolioCode && !requiredPortfolios.includes(portfolioCode);
+  const [portfolioPick, setPortfolioPick] = useState('');
+  const portfolioTarget = requiredPortfolios
+    ? (requiredPortfolios.includes(portfolioPick) ? portfolioPick : requiredPortfolios[0]!)
+    : '';
+  const [portfolioError, setPortfolioError] = useState<ApiError | null>(null);
+
   async function onSubmit(values: PublishVersionFormValues) {
+    if (portfolioMismatch && draft) {
+      setPortfolioError(null);
+      try {
+        await changeProductPortfolio(productId, portfolioTarget);
+      } catch (e) {
+        setPortfolioError(toApiError(e));
+        return;
+      }
+    }
     await publishVersion(productId, toApiRequest(values, category));
     if (useProductStore.getState().publishing[productId]?.status === 'success') {
       onPublished();
@@ -956,6 +989,28 @@ export function PublishVersionForm({
               </FormField>
             </div>
           )}
+          {portfolioMismatch && draft && requiredPortfolios && (
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <FormField
+                label="IFRS 17 portfolio"
+                hint={`This product is in ${portfolioLabel(portfolioCode)}. A version that keeps an account is booked as savings, so the product moves to this portfolio when the version is published.`}
+              >
+                <Select inputSize="sm" value={portfolioTarget} onChange={(e) => setPortfolioPick(e.target.value)}>
+                  {requiredPortfolios.map((p) => (
+                    <option key={p} value={p}>{PORTFOLIO_LABEL[p as PortfolioCode] ?? p}</option>
+                  ))}
+                </Select>
+              </FormField>
+            </div>
+          )}
+          {portfolioMismatch && !draft && (
+            <p role="alert" className="mt-3 text-xs text-status-danger-fg">
+              This product is in the {portfolioLabel(portfolioCode)} portfolio and already has a published version, so its
+              portfolio is fixed. A version that keeps an account needs a product in{' '}
+              {(requiredPortfolios ?? []).map((p) => portfolioLabel(p)).join(' or ')}: create the product again in that portfolio.
+            </p>
+          )}
+          {portfolioError && <InlineError error={portfolioError} lead="The product's portfolio could not be changed, so nothing was published:" />}
           {keepsAccount(valueBasis) && (
             <div className="mt-3 space-y-3">
               {valueBasis === 'TERM_ACCOUNT' && (

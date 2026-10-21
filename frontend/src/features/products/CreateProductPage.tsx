@@ -177,6 +177,8 @@ export function CreateProductPage() {
             <PublishVersionForm
               productId={created.productId}
               category={created.category ?? 'TERM_LIFE'}
+              portfolioCode={created.portfolioCode}
+              draft
               onPublished={() => navigate(`../${created.productId}`, { relative: 'path' })}
             />
           )}

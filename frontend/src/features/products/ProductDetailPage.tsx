@@ -129,6 +129,8 @@ export function ProductDetailPage() {
                 <PublishVersionForm
                   productId={productId}
                   category={product.category ?? 'TERM_LIFE'}
+                  portfolioCode={product.portfolioCode}
+                  draft={product.status === 'DRAFT'}
                   onPublished={() => { setPublishOpen(false); setPublished((n) => n + 1); }}
                 />
               </div>
