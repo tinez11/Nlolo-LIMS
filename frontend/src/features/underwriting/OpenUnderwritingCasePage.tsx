@@ -159,6 +159,10 @@ export function OpenUnderwritingCasePage() {
 
   // A funeral plan (family funeral cover): the life assured -- else the applicant -- is the main member.
   const isFuneral = selectedProduct?.category === 'FUNERAL';
+  // A fixed-term deposit is paid once -- the portfolio UnderwritingApiImpl.refuseAnUnissuableDeposit refuses any
+  // other frequency on (2026-10-21). It used to be refused only when the case was opened, after everything else on
+  // this form had already been filled in; filtering the choice here means MONTHLY can never be picked at all.
+  const isDeposit = selectedProduct?.portfolioCode === 'DEP';
 
   /**
    * A single premium is refused over twelve months of cover, so it is not offered there either.
@@ -218,6 +222,9 @@ export function OpenUnderwritingCasePage() {
     // product is cleared rather than left selected behind an option the list no longer shows.
     if (isFuneral && getValues('premiumFrequency') === 'SINGLE') setValue('premiumFrequency', '');
   }, [isFuneral, setValue, getValues]);
+  useEffect(() => {
+    if (isDeposit && getValues('premiumFrequency') !== 'SINGLE') setValue('premiumFrequency', 'SINGLE');
+  }, [isDeposit, setValue, getValues]);
 
   // A unit-linked case (product step 6): the version's funds, premium minimums and sum-assured multiples.
   // One split row per offered fund, set when the terms arrive.
@@ -558,13 +565,17 @@ export function OpenUnderwritingCasePage() {
             <FormField
               label={isDeferredAnnuity ? 'Contribution frequency' : 'Premium frequency'}
               error={errors.premiumFrequency?.message}
+              hint={isDeposit ? 'Paid once — a fixed-term deposit takes no recurring premium.' : undefined}
             >
-              <Select {...register('premiumFrequency')}>
+              <Select {...register('premiumFrequency')} disabled={isDeposit}>
                 {/* Blank first and selected by default: a frequency the applicant did not
                     state is not monthly, and it is what the issued policy is billed on. */}
                 <option value="">Not stated</option>
                 {PREMIUM_FREQUENCIES.filter(
-                  (f) => !(isFuneral && f === 'SINGLE') && !(f === 'SINGLE' && singleRefusedByTerm),
+                  (f) =>
+                    !(isFuneral && f === 'SINGLE') &&
+                    !(f === 'SINGLE' && singleRefusedByTerm) &&
+                    !(isDeposit && f !== 'SINGLE'),
                 ).map((f) => (
                   <option key={f} value={f}>
                     {PREMIUM_FREQUENCY_LABELS[f]}

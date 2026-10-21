@@ -192,6 +192,31 @@ describe('QuotationPreview, per pricing basis', () => {
 
     expect(await screen.findByText('This deposit is not offered over 9 months.')).toBeInTheDocument();
     expect(screen.getByText(/offered: 3 months, 6 months, 1 year/)).toBeInTheDocument();
+    // A genuine refusal, not merely a term not yet chosen: red, so it reads as a problem rather than as
+    // ordinary absent data (2026-10-21).
+    expect(screen.getAllByText('Not determinable')).toHaveLength(2);
+    for (const value of screen.getAllByText('Not determinable')) {
+      expect(value).toHaveClass('text-status-danger-fg');
+    }
+  });
+
+  /** No term chosen yet is the ordinary state while the form is still being filled in -- not a problem, so not red. */
+  it('is not red when a deposit has simply not been given a term yet', async () => {
+    vi.mocked(quoteProductSavings).mockResolvedValue({
+      ...DEPOSIT_QUOTE,
+      ratePercent: null,
+      interest: null,
+      maturityValue: null,
+      termMonths: null,
+      refusal: null,
+    });
+    render0({ ...COMPLETE, policyTermMonths: '' }, 'DEP');
+
+    const values = await screen.findAllByText('Not determinable');
+    expect(values).toHaveLength(2);
+    for (const value of values) {
+      expect(value).not.toHaveClass('text-status-danger-fg');
+    }
   });
 
   it('quotes a savings account as a rate, since it has no maturity to quote', async () => {

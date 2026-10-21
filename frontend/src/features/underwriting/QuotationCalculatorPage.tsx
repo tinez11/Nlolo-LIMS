@@ -66,7 +66,7 @@ export function QuotationCalculatorPage() {
   }, []);
 
   // The plan: the open-case form's schema, never submitted here.
-  const { register, watch, setValue, control, formState: { errors } } = useForm<
+  const { register, watch, setValue, getValues, control, formState: { errors } } = useForm<
     OpenCaseFormInput,
     unknown,
     OpenCaseFormValues
@@ -87,11 +87,19 @@ export function QuotationCalculatorPage() {
 
   const offered = (products.data ?? []).filter((p) => isSingleLifeProduct(p) && quotesHere(p.portfolioCode));
   const selectedProduct = offered.find((p) => p.productId === productId);
+  // A fixed-term deposit is paid once -- the portfolio UnderwritingApiImpl.refuseAnUnissuableDeposit refuses any
+  // other frequency on (2026-10-21). It used to be refused only when the proposal reached the underwriter, after the
+  // agent had already onboarded the customer; filtering the choice here means MONTHLY can never be picked at all.
+  const isDeposit = selectedProduct?.portfolioCode === 'DEP';
 
   useEffect(() => {
     if (snapshot.data?.productVersionId) setValue('productVersionId', snapshot.data.productVersionId);
     if (selectedProduct?.defaultCurrency) setValue('sumAssuredCurrency', selectedProduct.defaultCurrency);
   }, [snapshot.data, selectedProduct, setValue]);
+
+  useEffect(() => {
+    if (isDeposit && getValues('premiumFrequency') !== 'SINGLE') setValue('premiumFrequency', 'SINGLE');
+  }, [isDeposit, setValue, getValues]);
 
   // An existing client is read from their record, exactly as the staff screen reads an applicant.
   const loadParty = usePartyStore((s) => s.loadParty);
@@ -401,11 +409,17 @@ export function QuotationCalculatorPage() {
                 </FormField>
               </>
             )}
-            <FormField label="Premium frequency">
-              <Select {...register('premiumFrequency')}>
+            <FormField
+              label="Premium frequency"
+              hint={isDeposit ? 'Paid once — a fixed-term deposit takes no recurring premium.' : undefined}
+            >
+              <Select {...register('premiumFrequency')} disabled={isDeposit}>
                 <option value="">Not stated</option>
                 {PREMIUM_FREQUENCIES.filter(
-                  (f) => !(isFuneral && f === 'SINGLE') && !(f === 'SINGLE' && singleRefusedByTerm),
+                  (f) =>
+                    !(isFuneral && f === 'SINGLE') &&
+                    !(f === 'SINGLE' && singleRefusedByTerm) &&
+                    !(isDeposit && f !== 'SINGLE'),
                 ).map((f) => (
                   <option key={f} value={f}>
                     {PREMIUM_FREQUENCY_LABELS[f]}

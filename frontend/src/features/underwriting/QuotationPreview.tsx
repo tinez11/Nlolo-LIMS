@@ -47,11 +47,26 @@ function money(amount: number | undefined, currency: string | undefined): string
 /** A funeral figure: the quote endpoint answers in JSON numbers, always in the product's own TZS. */
 const tzs = (amount: number) => formatMoney({ amount: String(amount), currencyCode: 'TZS' });
 
-function Row({ label, value, suffix }: { label: string; value: string; suffix?: string | undefined }) {
+function Row({
+  label,
+  value,
+  suffix,
+  danger,
+}: {
+  label: string;
+  value: string;
+  suffix?: string | undefined;
+  /** This figure could not be priced -- the amount or term named is refused -- not merely not asked for yet. */
+  danger?: boolean | undefined;
+}) {
   return (
     <div className="flex items-baseline gap-4 px-4 py-2">
       <span className="min-w-0 flex-1 text-sm">{label}</span>
-      <span className="shrink-0 text-right text-sm whitespace-nowrap">
+      <span
+        className={
+          'shrink-0 text-right text-sm whitespace-nowrap' + (danger ? ' text-status-danger-fg font-medium' : '')
+        }
+      >
         {value}
         {suffix && <span className="pl-1.5 text-xs text-muted-foreground">{suffix}</span>}
       </span>
@@ -512,10 +527,18 @@ function SavingsQuotation({
       />
       {deposit && (
         <>
-          <Row label="Interest" value={q.interest ? formatMoney(q.interest) : 'Not determinable'} />
+          {/* Red only when the amount or term named is actually REFUSED (q.refusal says why, below) -- not merely
+              because no term has been chosen yet, which is the ordinary state while the form is still being filled
+              in and reads the same "Not determinable" but is not a problem. */}
+          <Row
+            label="Interest"
+            value={q.interest ? formatMoney(q.interest) : 'Not determinable'}
+            danger={!q.interest && !!q.refusal}
+          />
           <Row
             label="Value at maturity"
             value={q.maturityValue ? formatMoney(q.maturityValue) : 'Not determinable'}
+            danger={!q.maturityValue && !!q.refusal}
           />
           <Row
             label="Term"

@@ -41,6 +41,14 @@ const ANNUITY = {
   portfolioCode: 'IANN',
   defaultCurrency: 'TZS',
 };
+const DEPOSIT = {
+  productId: 'prod-dep',
+  productCode: 'FTD1',
+  productName: 'Fixed Term Deposit',
+  category: 'EDUCATION_SAVINGS',
+  portfolioCode: 'DEP',
+  defaultCurrency: 'TZS',
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -251,6 +259,24 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
     expect(await screen.findByRole('option', { name: 'Prospect Endowment (END1)' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'Immediate Annuity (ANN1)' })).not.toBeInTheDocument();
     expect(screen.getByText(/Annuities, unit-linked and group cover are quoted by the office/)).toBeInTheDocument();
+  });
+
+  // 2026-10-21: a MONTHLY deposit used to pass the calculator and fail only at submission, after the agent had
+  // already onboarded the customer ("A fixed-term deposit is paid once: choose SINGLE, not MONTHLY"). Filtering the
+  // choice here means that can no longer happen.
+  it('a fixed-term deposit offers no recurring frequency -- it is paid once', async () => {
+    vi.mocked(listProducts).mockResolvedValue([ENDOWMENT, ANNUITY, DEPOSIT] as never);
+    renderScreen(<QuotationCalculatorPage />, { route: '/agents/quotation' });
+
+    await screen.findByRole('option', { name: 'Fixed Term Deposit (FTD1)' });
+    await userEvent.selectOptions(screen.getByLabelText('Product'), 'prod-dep');
+    await waitFor(() => expect(getActiveSnapshot).toHaveBeenCalledWith('prod-dep'));
+
+    const frequency = screen.getByLabelText('Premium frequency') as HTMLSelectElement;
+    await waitFor(() => expect(frequency).toHaveValue('SINGLE'));
+    expect(frequency).toBeDisabled();
+    expect(screen.queryByRole('option', { name: 'Monthly' })).not.toBeInTheDocument();
+    expect(screen.getByText(/takes no recurring premium/)).toBeInTheDocument();
   });
 
   it('says what happens after the quotation, in the order it happens', async () => {
