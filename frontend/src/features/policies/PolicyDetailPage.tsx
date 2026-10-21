@@ -260,22 +260,16 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       />
 
       {/*
-        Two columns, and the split is the point: the rail is the record, the tabs are the
-        work. The rail holds only what a reader needs WHILE working in another tab -- who,
-        how much, which product, when, who issued it -- and everything that is a register or
-        an act is a tab.
-
-        This replaces a vertical ordering argument that tabs made obsolete. The old stack ran
-        bounded panels before unbounded ones so a twenty-row invoice ledger could not bury
-        the beneficiary editor below the fold; there is no fold to fall below now, and no
-        panel sits after another. What survives of that reasoning is the rule for the RAIL,
-        which is still 320px and still has to stay short.
-
-        Nothing takes `emphasis`, deliberately. Unlike a claim or an underwriting case, this
-        page is not opened to perform one act -- most visits are somebody looking something
-        up -- so promoting one panel would mis-state why the reader is here.
+        No rail (2026-10-21, reversing the rail this page had carried since it grew tabs). The
+        record facts -- who, how much, which product, when, who issued it -- now lead Overview
+        instead of living in a 320px margin on every tab. That trades "visible while working
+        Billing or the Account tab" for "full width, and only on Overview" -- a deliberate
+        product call, not an oversight: this page is not opened to perform one act the way a
+        claim or an underwriting case is, so there is no acting panel that a rail would otherwise
+        crowd, and most visits are somebody looking something up rather than working a register
+        beside a pinned identity.
       */}
-      <DetailLayout record={renderRecord()}>
+      <DetailLayout>
         <RecordTabs label="Policy sections" tabs={policyTabs()} />
       </DetailLayout>
     </>
@@ -304,6 +298,20 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         {renderCoverage()}
       </Panel>,
     ];
+
+    // The record itself, right after what it covers -- full width now that there is no rail
+    // to hold it on every other tab (2026-10-21).
+    const policyPanel = renderPolicyPanel();
+    if (policyPanel) {
+      overview.push(<div key="policy">{policyPanel}</div>);
+    }
+    if (policy && isStaff) {
+      overview.push(
+        <Panel key="sale-ifrs17" title="Sale & IFRS 17" subtitle="Classified at issue and never changed">
+          <Ifrs17Classification policy={policy} showAccounting={canSeeReinsurance} />
+        </Panel>,
+      );
+    }
 
     /*
       First, above everything else, and not a badge.
@@ -601,209 +609,218 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     return tabs;
   }
 
-  function renderRecord() {
+  /**
+   * The record, full width now (2026-10-21) -- three blocks of a few short fields each, where it
+   * used to be eleven rows stacked one to a line because 320px was the only width this ever had.
+   * Each block is its own `<dl>` so the gap between them is a real break, not a margin hack:
+   * `mt-3` on a lead field was the right fix for a single column, and the wrong one the moment
+   * fields wrap into a grid -- a row's extra top margin lands wherever that field falls, not at a
+   * clean edge. Cover first (what it promises and costs), then timeline (how and when it started),
+   * then parties (who is involved) -- the same order the rail always read in.
+   */
+  function renderPolicyPanel(): ReactNode {
+    if (!policy) return null;
     return (
-      <>
-        <Panel title="Policy">
-          {policy && (
-            <dl className="px-4 pb-2">
-              <Field
-                label="Sum assured"
-                value={formatMoney(policy.sumAssured)}
-                emphasis
-                // On a scheme this figure is not a term of the contract anyone
-                // typed -- it is the total of the member schedule, restated
-                // whenever somebody joins or leaves. Saying so stops it being
-                // read as a fixed sum that has quietly changed.
-                {...(policy.productCategory === 'GROUP_LIFE' || policy.productCategory === 'CREDIT_LIFE' || isGroupFuneral
-                  ? {
-                      note: 'The total of every covered member — it moves as the schedule does, and keeps its last figure once nobody is covered.',
-                    }
-                  : {})}
-              />
-              {policy.productCategory === 'CREDIT_LIFE' ? (
-                /*
-                  NOT policy.premium. On credit life that is a figure typed at set-up; the real
-                  premium is charged file by file, per borrower, at the scheme's rate. Showing
-                  "500,000.00 single" beside a 13,800 invoice was a number that reconciled with
-                  nothing.
-                */
-                // No total here: totals are the backend's to compute (lib/money), and billing
-                // publishes none across files. Each invoice below states its own.
-                <Field
-                  label="Premium"
-                  value="Charged per monthly file"
-                  // No count any more, and it had to go rather than be moved. It read
-                  // `invoices.data?.length`, and the ONLY caller of `loadInvoices` on the
-                  // platform is InvoicesPanel -- which mounts when the Billing tab is
-                  // opened. So from the moment this record grew tabs the clause was absent
-                  // on every arrival and appeared only after a detour through Billing. A
-                  // count that is usually missing is worse than no count; the pointer to
-                  // where the invoices actually are is the half that was carrying its
-                  // weight, and it now names the tab rather than a panel that moved.
-                  note="Single premium per borrower at the scheme's rate, invoiced when a file is accepted — see Billing."
-                />
-              ) : vestedOn !== undefined ? (
-                // A vested pension pays no more premiums; the figure on the policy is what it was paying.
-                <Field
-                  label="Premium"
-                  value="Ended at vesting"
-                  note={`Was ${formatMoney(policy.premium)} ${policy.premiumFrequency ? PREMIUM_FREQUENCY_SUFFIXES[policy.premiumFrequency] : ''}`
-                    + (vestedOn ? ` until ${formatDate(vestedOn)}.` : '.') + ' The pension now pays out; see the Annuity tab.'}
-                />
-              ) : (
-                <Field
-                  label="Premium"
-                  value={
-                    <>
-                      {formatMoney(policy.premium)}
-                      {policy.premiumFrequency && (
-                        <span className="ml-1 text-xs text-subtle-foreground">
-                          {PREMIUM_FREQUENCY_SUFFIXES[policy.premiumFrequency]}
-                        </span>
-                      )}
-                    </>
+      <Panel title="Policy">
+        <div className="space-y-4 px-4 pb-3">
+          <dl className="grid grid-cols-1 gap-x-8 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
+            <Field
+              label="Sum assured"
+              value={formatMoney(policy.sumAssured)}
+              emphasis
+              // On a scheme this figure is not a term of the contract anyone
+              // typed -- it is the total of the member schedule, restated
+              // whenever somebody joins or leaves. Saying so stops it being
+              // read as a fixed sum that has quietly changed.
+              {...(policy.productCategory === 'GROUP_LIFE' || policy.productCategory === 'CREDIT_LIFE' || isGroupFuneral
+                ? {
+                    note: 'The total of every covered member — it moves as the schedule does, and keeps its last figure once nobody is covered.',
                   }
-                />
-              )}
-              {/* The note is now only for a product that will never have one. A savings policy's
-                  value is real: it is restated from the product's table as premiums are paid, and
-                  0.00 there means "not yet", not "never". */}
-              {/* What the value IS -- units, an account, a cash-value table, an income, or nothing -- for every kind of
-                  policy and scheme (policyValue.ts, 2026-10-19). Every figure is the server's. */}
-              {(() => {
-                const line = policyValueLine({
-                  policy,
-                  isStaff,
-                  units: policyUnits?.data,
-                  cashValueTerms,
-                  vested: annuity != null && annuity.status !== 'ACCUMULATING',
-                });
-                return <Field label={line.label} value={line.value} {...(line.note ? { note: line.note } : {})} />;
-              })()}
-              <Field label="Issued" value={formatDate(policy.issueDate)} />
-              {/*
-                HOW IT CAME TO BE ISSUED (policy V24). An underwriting decision links to its case;
-                an exception route -- manual issue, a scheme set up from agreed terms -- says why,
-                in the issuer's own words, and who issued it, for compliance. Both used to be
-                collected and discarded, so a policy could not say whether anyone underwrote it.
-              */}
-              {policy.underwritingCaseId && (
-                <Field
-                  label="Underwriting"
-                  value={
-                    <Link className="hover:underline" to={`/staff/underwriting/${policy.underwritingCaseId}`}>
-                      The decided case
-                    </Link>
-                  }
-                />
-              )}
-              {policy.issuanceBasis && (
-                <Field
-                  label="Issued outside underwriting"
-                  value={humanizeStatus(policy.issuanceBasis)}
-                  {...(policy.issuanceReason ? { note: policy.issuanceReason } : {})}
-                />
-              )}
-              {policy.issuedByName && <Field label="Issued by" value={policy.issuedByName} />}
+                : {})}
+            />
+            {policy.productCategory === 'CREDIT_LIFE' ? (
+              /*
+                NOT policy.premium. On credit life that is a figure typed at set-up; the real
+                premium is charged file by file, per borrower, at the scheme's rate. Showing
+                "500,000.00 single" beside a 13,800 invoice was a number that reconciled with
+                nothing.
+              */
+              // No total here: totals are the backend's to compute (lib/money), and billing
+              // publishes none across files. Each invoice below states its own.
               <Field
-                label="Risk commences"
-                value={formatDate(policy.commencementDate)}
-                // Not the same date as "Issued", and the difference is the point: a
-                // policy issued today may carry risk from next month.
-                {...(policy.commencementDate
-                  ? {}
-                  : { note: 'Not recorded — issued before the term was captured.' })}
+                label="Premium"
+                value="Charged per monthly file"
+                // No count any more, and it had to go rather than be moved. It read
+                // `invoices.data?.length`, and the ONLY caller of `loadInvoices` on the
+                // platform is InvoicesPanel -- which mounts when the Billing tab is
+                // opened. So from the moment this record grew tabs the clause was absent
+                // on every arrival and appeared only after a detour through Billing. A
+                // count that is usually missing is worse than no count; the pointer to
+                // where the invoices actually are is the half that was carrying its
+                // weight, and it now names the tab rather than a panel that moved.
+                note="Single premium per borrower at the scheme's rate, invoiced when a file is accepted — see Billing."
               />
-              {/* With neither a term nor a maturity date there is one fact to state, not two dashes
-                  and a three-line note (2026-10-09). "None on record" rather than "No fixed term":
-                  the backend cannot tell a whole-life product from a policy issued before the
-                  term was captured, so the console does not claim to. */}
-              {policy.policyTermMonths || policy.maturityDate ? (
-                <>
-                  <Field
-                    label="Term"
-                    value={policy.policyTermMonths ? formatMonths(policy.policyTermMonths) : '—'}
-                    {...(policy.premiumPayingTermMonths &&
-                    policy.premiumPayingTermMonths !== policy.policyTermMonths
-                      ? { note: `Premiums paid for ${formatMonths(policy.premiumPayingTermMonths)}.` }
-                      : {})}
-                  />
-                  <Field label="Matures" value={formatDate(policy.maturityDate)} />
-                </>
-              ) : (
-                <Field label="Term and maturity" value="None on record" />
-              )}
-              {/* Rendered only when the two differ. On a self-insured policy — the
-                  common case — a second row repeating the same name would be noise
-                  that teaches people to skip the panel. */}
-              {policy.lifeAssuredPartyId &&
-                policy.lifeAssuredPartyId !== policy.policyholderPartyId && (
-                  <Field
-                    label="Life assured"
-                    value={
-                      isStaff ? (
-                        <Link
-                          to={`/staff/parties/${policy.lifeAssuredPartyId}`}
-                          className="underline"
-                        >
-                          <PartyName partyId={policy.lifeAssuredPartyId} />
-                        </Link>
-                      ) : (
-                        <PartyName partyId={policy.lifeAssuredPartyId} />
-                      )
-                    }
-                    note="A death claim is assessed against this person, not the policyholder."
-                  />
-                )}
+            ) : vestedOn !== undefined ? (
+              // A vested pension pays no more premiums; the figure on the policy is what it was paying.
               <Field
-                label="Policyholder"
-                value={
-                  policy.policyholderPartyId ? (
-                    isStaff ? (
-                      <Link to={`/staff/parties/${policy.policyholderPartyId}`} className="underline">
-                        <PartyName partyId={policy.policyholderPartyId} />
-                      </Link>
-                    ) : (
-                      <PartyName partyId={policy.policyholderPartyId} />
-                    )
-                  ) : (
-                    '—'
-                  )
-                }
-                {...(!isStaff && policy.policyholderPartyId
-                  ? { note: 'No drill-in yet outside the staff console' }
-                  : {})}
+                label="Premium"
+                value="Ended at vesting"
+                note={`Was ${formatMoney(policy.premium)} ${policy.premiumFrequency ? PREMIUM_FREQUENCY_SUFFIXES[policy.premiumFrequency] : ''}`
+                  + (vestedOn ? ` until ${formatDate(vestedOn)}.` : '.') + ' The pension now pays out; see the Annuity tab.'}
               />
+            ) : (
               <Field
-                label="Agent of record"
+                label="Premium"
                 value={
-                  policy.agentOfRecordId ? (
-                    isStaff ? (
-                      <Link to={`/staff/agents/${policy.agentOfRecordId}`} className="underline">
-                        <AgentName agentId={policy.agentOfRecordId} />
-                      </Link>
-                    ) : (
-                      <AgentName agentId={policy.agentOfRecordId} />
-                    )
-                  ) : (
-                    'Direct — no agent'
-                  )
+                  <>
+                    {formatMoney(policy.premium)}
+                    {policy.premiumFrequency && (
+                      <span className="ml-1 text-xs text-subtle-foreground">
+                        {PREMIUM_FREQUENCY_SUFFIXES[policy.premiumFrequency]}
+                      </span>
+                    )}
+                  </>
                 }
               />
-            </dl>
-          )}
-        </Panel>
+            )}
+            {/* The note is now only for a product that will never have one. A savings policy's
+                value is real: it is restated from the product's table as premiums are paid, and
+                0.00 there means "not yet", not "never". */}
+            {/* What the value IS -- units, an account, a cash-value table, an income, or nothing -- for every kind of
+                policy and scheme (policyValue.ts, 2026-10-19). Every figure is the server's. */}
+            {(() => {
+              const line = policyValueLine({
+                policy,
+                isStaff,
+                units: policyUnits?.data,
+                cashValueTerms,
+                vested: annuity != null && annuity.status !== 'ACCUMULATING',
+              });
+              return <Field label={line.label} value={line.value} {...(line.note ? { note: line.note } : {})} />;
+            })()}
+          </dl>
 
-        {policy && isStaff && (
-          <Panel title="Sale & IFRS 17" subtitle="Classified at issue and never changed">
-            <Ifrs17Classification policy={policy} showAccounting={canSeeReinsurance} />
-          </Panel>
-        )}
-      </>
+          {/* TIMELINE -- how and when cover started. */}
+          <dl className="grid grid-cols-1 gap-x-8 gap-y-1 border-t border-border pt-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="Issued" value={formatDate(policy.issueDate)} />
+            {/*
+              HOW IT CAME TO BE ISSUED (policy V24). An underwriting decision links to its case;
+              an exception route -- manual issue, a scheme set up from agreed terms -- says why,
+              in the issuer's own words, and who issued it, for compliance. Both used to be
+              collected and discarded, so a policy could not say whether anyone underwrote it.
+            */}
+            {policy.underwritingCaseId && (
+              <Field
+                label="Underwriting"
+                value={
+                  <Link className="hover:underline" to={`/staff/underwriting/${policy.underwritingCaseId}`}>
+                    The decided case
+                  </Link>
+                }
+              />
+            )}
+            {policy.issuanceBasis && (
+              <Field
+                label="Issued outside underwriting"
+                value={humanizeStatus(policy.issuanceBasis)}
+                {...(policy.issuanceReason ? { note: policy.issuanceReason } : {})}
+              />
+            )}
+            {policy.issuedByName && <Field label="Issued by" value={policy.issuedByName} />}
+            <Field
+              label="Risk commences"
+              value={formatDate(policy.commencementDate)}
+              // Not the same date as "Issued", and the difference is the point: a
+              // policy issued today may carry risk from next month.
+              {...(policy.commencementDate
+                ? {}
+                : { note: 'Not recorded — issued before the term was captured.' })}
+            />
+            {/* With neither a term nor a maturity date there is one fact to state, not two dashes
+                and a three-line note (2026-10-09). "None on record" rather than "No fixed term":
+                the backend cannot tell a whole-life product from a policy issued before the
+                term was captured, so the console does not claim to. */}
+            {policy.policyTermMonths || policy.maturityDate ? (
+              <>
+                <Field
+                  label="Term"
+                  value={policy.policyTermMonths ? formatMonths(policy.policyTermMonths) : '—'}
+                  {...(policy.premiumPayingTermMonths &&
+                  policy.premiumPayingTermMonths !== policy.policyTermMonths
+                    ? { note: `Premiums paid for ${formatMonths(policy.premiumPayingTermMonths)}.` }
+                    : {})}
+                />
+                <Field label="Matures" value={formatDate(policy.maturityDate)} />
+              </>
+            ) : (
+              <Field label="Term and maturity" value="None on record" />
+            )}
+          </dl>
+
+          {/* PARTIES -- who is involved, separate from the cover and timeline facts above.
+              Rendered only when it differs from the policyholder -- on a self-insured policy,
+              the common case, a second row repeating the same name would be noise that teaches
+              people to skip the panel. */}
+          <dl className="grid grid-cols-1 gap-x-8 gap-y-1 border-t border-border pt-4 sm:grid-cols-2 lg:grid-cols-3">
+            {policy.lifeAssuredPartyId &&
+              policy.lifeAssuredPartyId !== policy.policyholderPartyId && (
+                <Field
+                  label="Life assured"
+                  value={
+                    isStaff ? (
+                      <Link
+                        to={`/staff/parties/${policy.lifeAssuredPartyId}`}
+                        className="underline"
+                      >
+                        <PartyName partyId={policy.lifeAssuredPartyId} />
+                      </Link>
+                    ) : (
+                      <PartyName partyId={policy.lifeAssuredPartyId} />
+                    )
+                  }
+                  note="A death claim is assessed against this person, not the policyholder."
+                />
+              )}
+            <Field
+              label="Policyholder"
+              value={
+                policy.policyholderPartyId ? (
+                  isStaff ? (
+                    <Link to={`/staff/parties/${policy.policyholderPartyId}`} className="underline">
+                      <PartyName partyId={policy.policyholderPartyId} />
+                    </Link>
+                  ) : (
+                    <PartyName partyId={policy.policyholderPartyId} />
+                  )
+                ) : (
+                  '—'
+                )
+              }
+              {...(!isStaff && policy.policyholderPartyId
+                ? { note: 'No drill-in yet outside the staff console' }
+                : {})}
+            />
+            <Field
+              label="Agent of record"
+              value={
+                policy.agentOfRecordId ? (
+                  isStaff ? (
+                    <Link to={`/staff/agents/${policy.agentOfRecordId}`} className="underline">
+                      <AgentName agentId={policy.agentOfRecordId} />
+                    </Link>
+                  ) : (
+                    <AgentName agentId={policy.agentOfRecordId} />
+                  )
+                ) : (
+                  'Direct — no agent'
+                )
+              }
+            />
+          </dl>
+        </div>
+      </Panel>
     );
   }
-
 
   function renderCoverage() {
     if (isInitialLoad(coverage)) return <LoadingBlock />;

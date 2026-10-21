@@ -32,6 +32,10 @@ import { shouldPin } from './railPin';
  * identifying name and status are already in `PageHeader` above -- and it needs no
  * `order` utilities, so DOM order still matches visual order for keyboard and
  * assistive tech at every width.
+ *
+ * `record` is optional for the page that has decided it has nothing worth pinning beside the
+ * work -- its record facts live inside a tab instead (the Policy page's Overview, 2026-10-21).
+ * Omitting it gives `children` the full page width; it does not leave a blank 320px margin.
  */
 export function DetailLayout({ record, children }: { record?: ReactNode; children: ReactNode }) {
   const rail = useRef<HTMLDivElement>(null);
@@ -74,7 +78,10 @@ export function DetailLayout({ record, children }: { record?: ReactNode; childre
   }, []);
 
   return (
-    <div className="grid gap-5 px-6 pt-5 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
+    // The rail column only exists in the template when there is a rail. Reserving it
+    // unconditionally left a blank 320px gap on a page with no `record` -- `children` would
+    // still only fill the `minmax(0,1fr)` track, not the width the missing column gave back.
+    <div className={cn('grid gap-5 px-6 pt-5 pb-8', record && 'lg:grid-cols-[minmax(0,1fr)_320px]')}>
       <div className="min-w-0 space-y-5">{children}</div>
 
       {record && (
