@@ -94,23 +94,40 @@ public final class TermAccountProjection {
     }
 
     /**
-     * The contribution, to the cent above, whose projection reaches {@code target}. The value at maturity rises in step
-     * with the contribution -- each one buys the same share of it -- so two projections fix the line, and a third
-     * confirms the cent; the fees are the same whatever is paid.
+     * The smallest contribution, to the cent, whose projection reaches {@code target}. Found by halving: the value at
+     * maturity only rises as the contribution does, so about thirty projections settle the cent whatever the charges.
+     *
+     * <p>Not a straight line through two projections, which this was: a monthly fee takes nothing from an account
+     * that has nothing, so the line bent near zero, the first guess fell short, and the cent-by-cent climb that
+     * followed ran a five-year projection per cent -- the quotation never came back (2026-10-21, CliveFF, a 1,000 fee).
      */
     public static Projection solve(BigDecimal target, String frequency, int termMonths, BigDecimal ratePercent,
                                    LocalDate start, AccumulationPlan plan) {
-        BigDecimal base = project(BigDecimal.ZERO, frequency, termMonths, ratePercent, start, plan).maturityValue();
-        BigDecimal perUnit = project(new BigDecimal("1000000"), frequency, termMonths, ratePercent, start, plan)
-            .maturityValue().subtract(base).divide(new BigDecimal("1000000"), MC);
-        BigDecimal contribution = target.subtract(base).divide(perUnit, 2, RoundingMode.CEILING).max(new BigDecimal("0.01"));
-        Projection p = project(contribution, frequency, termMonths, ratePercent, start, plan);
-        // Each month's rounding can leave it a cent short; the customer is never quoted a figure that falls below.
-        while (p.maturityValue().compareTo(target) < 0) {
-            contribution = contribution.add(new BigDecimal("0.01"));
-            p = project(contribution, frequency, termMonths, ratePercent, start, plan);
+        BigDecimal cent = new BigDecimal("0.01");
+        BigDecimal low = BigDecimal.ZERO;     // reaches less than the target
+        BigDecimal high = target.max(cent);   // paying the whole target every time reaches it, unless charges eat it
+        Projection reached = project(high, frequency, termMonths, ratePercent, start, plan);
+        for (int doublings = 0; reached.maturityValue().compareTo(target) < 0; doublings++) {
+            if (doublings == 40) {
+                throw new IllegalArgumentException("No contribution reaches " + target.toPlainString()
+                    + " on this product's charges over " + termMonths + " months");
+            }
+            low = high;
+            high = high.multiply(BigDecimal.TWO);
+            reached = project(high, frequency, termMonths, ratePercent, start, plan);
         }
-        return p;
+        while (high.subtract(low).compareTo(cent) > 0) {
+            BigDecimal mid = low.add(high).divide(BigDecimal.TWO, 2, RoundingMode.DOWN);
+            if (mid.compareTo(low) <= 0) mid = low.add(cent);
+            Projection p = project(mid, frequency, termMonths, ratePercent, start, plan);
+            if (p.maturityValue().compareTo(target) >= 0) {
+                high = mid;
+                reached = p;
+            } else {
+                low = mid;
+            }
+        }
+        return reached;
     }
 
     private static AccumulationChargeRow charge(AccumulationPlan plan, LocalDate start, LocalDate on) {
