@@ -585,8 +585,81 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/account/term-account:
+    get:
+      summary: A term account -- the rate its policy locked at sale, when it matures, and what became of it
+      description: >-
+        2026-10-21. A savings account that pays nothing out until it matures: a withdrawal or a surrender is refused
+        (422) until then, and at maturity the whole balance is paid to the number contributions came from. Its balance
+        and movements are the account's own (GET /policies/{policyNumber}/account and its entries).
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The term account
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TermAccount' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /term-accounts/awaiting-payee:
+    get:
+      summary: Matured term accounts whose money waits for a payee
+      description: Finance. A term account lands here when no number came with its contributions, or the payment failed.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The waiting term accounts, longest-waiting first
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AwaitingPayee' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /policies/{policyNumber}/account/term-account/payout:
+    post:
+      summary: Pay a matured term account to a payee finance records
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 200 }, description: "The same key is the same request: a retry is answered with what the first one created, and creates nothing. Reused for a different request, it is refused (422)." }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DepositPayoutRequest' }
+      responses:
+        '202':
+          description: Requested from the payment rail, not yet paid
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TermAccount' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Refused -- this term account is not waiting for a payee
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   schemas:
+    TermAccount:
+      type: object
+      additionalProperties: false
+      required: [policyNumber, ratePercent, maturityDate, status]
+      properties:
+        policyNumber: { type: string }
+        ratePercent: { type: number, description: "% a year, locked when the policy was sold; never a declared rate" }
+        maturityDate: { type: string, format: date }
+        status:
+          type: string
+          enum: [RUNNING, MATURED, AWAITING_PAYEE]
+          description: "MATURED: the balance was sent to a payee. AWAITING_PAYEE: matured with nobody to pay, or its payment failed."
+        defaultPayeeRef: { type: [string, "null"], description: "Where the maturity goes: the number contributions came from" }
+        maturedOn: { type: [string, "null"], format: date }
     DepositPeriod:
       type: object
       required: [periodId, seq, principal, termMonths, ratePercent, rateVersionId, startDate, maturityDate, status]

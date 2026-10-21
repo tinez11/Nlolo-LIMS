@@ -251,6 +251,7 @@ public class PolicyApiImpl implements PolicyApi {
         partyApi.getParty(request.policyholderPartyId()); // existence check -- PartyNotFoundException propagates as-is
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(request.productId(), LocalDate.now());
         refuseUnlessAValidDeposit(request);
+        refuseUnlessAValidTermAccount(underwritingCaseId, request);
         refuseUnlessAValidAnnuity(request);
         refuseAFirstDepositBelowTheMinimum(request);
 
@@ -1431,6 +1432,11 @@ public class PolicyApiImpl implements PolicyApi {
         if (vesting != null && !Boolean.TRUE.equals(vesting.surrenderBeforeVesting())) {
             throw new InvalidPolicyStateException("This pension cannot be surrendered or withdrawn from before it vests");
         }
+        // A term account (2026-10-21): nothing leaves before it matures, in accumulation's words -- the same lock a
+        // withdrawal meets there. At maturity the whole balance is paid out and the policy closes, so there is no after.
+        if (productApi.resolveAccumulationPlan(policy.getProductVersionId()).isTermAccount()) {
+            throw new InvalidPolicyStateException("This account is locked until it matures on " + policy.getMaturityDate());
+        }
         if (surrenderRequestRepository.findLive(policyNumber, tenantId).isPresent()) {
             throw new InvalidPolicyStateException("A surrender is already in flight for policy " + policyNumber);
         }
@@ -1653,7 +1659,9 @@ public class PolicyApiImpl implements PolicyApi {
                 || productApi.resolveDepositPlan(policy.getProductVersionId()).isDeposit()
                 // ...and a unit-linked policy's units mature through unitlinked's own run (plan R4): expiring it
                 // here would end cover on a contract whose units are still owed to the customer.
-                || "UNIT_LINKED".equals(policy.getProductCategory())) {
+                || "UNIT_LINKED".equals(policy.getProductCategory())
+                // ...and a term account (2026-10-21) pays its whole balance out through accumulation's maturity run.
+                || productApi.resolveAccumulationPlan(policy.getProductVersionId()).isTermAccount()) {
             // ...and a fixed-term deposit matures through accumulation's own run (pay out or
             // reinvest), never by expiry: its money is still on the account.
             return;
@@ -1876,6 +1884,49 @@ public class PolicyApiImpl implements PolicyApi {
                 + account.minimumBalance().stripTrailingZeros().toPlainString() + " "
                 + (request.premiumCurrency() == null ? "" : request.premiumCurrency()));
         }
+    }
+
+    /**
+     * A term account (2026-10-21) is issued at the rate its case named, inside the version's band, and over a term --
+     * the account locks that rate when it opens and matures when the term ends, so neither may be missing. Read off the
+     * case rather than the request: the case is where the rate was agreed, and the account reads it from there too.
+     */
+    private void refuseUnlessAValidTermAccount(UUID underwritingCaseId, IssueRequest request) {
+        tz.co.nlolo.lifeplatform.product.api.AccumulationPlan plan =
+            productApi.resolveAccumulationPlan(request.productVersionId());
+        if (!plan.isTermAccount()) {
+            return;
+        }
+        if (request.policyTermMonths() == null) {
+            throw new IllegalArgumentException("A term account needs a term: it pays out when the term ends");
+        }
+        BigDecimal rate = underwritingCaseId == null ? null : caseRate(underwritingCaseId).orElse(null);
+        if (!plan.offers(rate)) {
+            throw new IllegalArgumentException("A term account is issued at the rate its case names, between "
+                + plan.minRatePercent().stripTrailingZeros().toPlainString() + "% and "
+                + plan.maxRatePercent().stripTrailingZeros().toPlainString() + "%; "
+                + (rate == null ? "this case names none" : "this case names " + rate.stripTrailingZeros().toPlainString() + "%"));
+        }
+    }
+
+    /** The case's rate; empty for a reference that is not an underwriting case (a migrated policy's). */
+    private Optional<BigDecimal> caseRate(UUID underwritingCaseId) {
+        try {
+            return Optional.ofNullable(underwritingApi.getCase(underwritingCaseId).proposedRatePercent());
+        } catch (tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseNotFoundException e) {
+            return Optional.empty();
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<BigDecimal> termAccountRate(String policyNumber) {
+        Policy policy = findPolicyOrThrow(policyNumber, TenantContext.get());
+        if (policy.getUnderwritingCaseId() == null
+                || !productApi.resolveAccumulationPlan(policy.getProductVersionId()).isTermAccount()) {
+            return Optional.empty();
+        }
+        return caseRate(policy.getUnderwritingCaseId());
     }
 
     private void refuseUnlessAValidDeposit(IssueRequest request) {

@@ -161,8 +161,9 @@ public class ProposalAmendments implements ProposalAmendmentApi {
         }
         // The rules the proposal was opened under, applied again to what it now asks for.
         ProposalDetails asked = new ProposalDetails(null, null, null, a.proposedCommencementDate(), a.requestedTermMonths(),
-            a.premiumPayingTermMonths(), a.premiumFrequency(), List.of());
+            a.premiumPayingTermMonths(), a.premiumFrequency(), List.of(), a.proposedRatePercent());
         rules.refuseAnUnissuableDeposit(c.getProductVersionId(), a.sumAssured(), asked);
+        rules.refuseAnUnissuableTermAccount(c.getProductVersionId(), asked);
         rules.rejectTermOutsideProductBounds(c.getProductVersionId(), a.requestedTermMonths());
         if ("SINGLE".equals(a.premiumFrequency()) && a.premiumPayingTermMonths() != null && a.premiumPayingTermMonths() != 1) {
             throw new UnderwritingValidationException("A SINGLE premium is charged once, so its premium-paying term"
@@ -175,11 +176,12 @@ public class ProposalAmendments implements ProposalAmendmentApi {
         change(changes, "Premium-paying term (months)", c.getPremiumPayingTermMonths(), a.premiumPayingTermMonths());
         change(changes, "Premium frequency", c.getPremiumFrequency(), a.premiumFrequency());
         change(changes, "Cover from", c.getProposedCommencementDate(), a.proposedCommencementDate());
+        change(changes, "Rate (%)", c.getProposedRatePercent(), a.proposedRatePercent());
         if (changes.isEmpty()) {
             return underwritingApi.getCase(caseId);
         }
         c.amendTerms(a.sumAssured(), a.requestedTermMonths(), a.premiumPayingTermMonths(), a.premiumFrequency(),
-            a.proposedCommencementDate());
+            a.proposedCommencementDate(), a.proposedRatePercent());
         cases.save(c);
         events.save(new CaseEvent(c.getTenantId(), caseId, CaseEvent.Kind.AMENDED, round(c), amendedBy, null,
             json(changes), null, null));

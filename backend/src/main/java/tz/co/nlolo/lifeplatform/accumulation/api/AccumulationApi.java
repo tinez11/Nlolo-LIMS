@@ -162,4 +162,15 @@ public interface AccumulationApi {
 
     /** Matured deposits whose money waits for a payee, longest-waiting first. */
     List<AwaitingPayeeView> listAwaitingPayee();
+
+    // ---- Term accounts (2026-10-21) -------------------------------------------------------------
+
+    /** Empty for any policy that is not a term account. */
+    Optional<TermAccountView> findTermAccount(String policyNumber);
+
+    /** Finance pays a matured term account that had no number to go to, or whose payment failed. Once per key. */
+    TermAccountView payOutMaturedTermAccount(String policyNumber, String payeeRef, String requestedBy, String idempotencyKey);
+
+    /** Matured term accounts whose money waits for a payee, longest-waiting first. */
+    List<AwaitingPayeeView> listTermAccountsAwaitingPayee();
 }

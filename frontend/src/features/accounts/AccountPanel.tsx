@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { useForm, type FieldValues, type UseFormReturn } from 'react-hook-form';
 import { useAuth } from 'react-oidc-context';
-import type { AccountView, AdjustmentView, LedgerEntryView, WithdrawalView } from '@/api/types';
+import type { AccountView, AdjustmentView, LedgerEntryView, TermAccountView, WithdrawalView } from '@/api/types';
 import { canSeeFinance, readIdentity } from '@/auth/claims';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';
@@ -34,6 +34,7 @@ import {
   type WithdrawalValues,
 } from './accountForms';
 import { DepositSection } from './DepositSection';
+import { TermAccountSection } from './TermAccountSection';
 import { ENTRY_LABEL } from './entryLabels';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
@@ -53,6 +54,9 @@ export function AccountPanel({ policyNumber }: { policyNumber: string }) {
   // A fixed-term deposit carries its terms beside the ledger; null for any other account.
   const deposit = useAccumulationStore((s) => s.deposit[policyNumber]);
   const loadDeposit = useAccumulationStore((s) => s.loadDeposit);
+  // A term account (2026-10-21) carries its locked rate and maturity beside the ledger; null for any other account.
+  const termAccount = useAccumulationStore((s) => s.termAccount[policyNumber]);
+  const loadTermAccount = useAccumulationStore((s) => s.loadTermAccount);
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const isFinance = identity ? canSeeFinance(identity) : false;
@@ -61,7 +65,8 @@ export function AccountPanel({ policyNumber }: { policyNumber: string }) {
     void loadAccount(policyNumber);
     void loadMovements(policyNumber);
     void loadDeposit(policyNumber);
-  }, [policyNumber, loadAccount, loadMovements, loadDeposit]);
+    void loadTermAccount(policyNumber);
+  }, [policyNumber, loadAccount, loadMovements, loadDeposit, loadTermAccount]);
 
   if (!account || isInitialLoad(account)) return <LoadingBlock />;
   if (account.status === 'error' && account.error && account.data === null) {
@@ -73,10 +78,11 @@ export function AccountPanel({ policyNumber }: { policyNumber: string }) {
     <div className="space-y-5">
       <Summary account={account.data} />
       {deposit?.data && <DepositSection deposit={deposit.data} isFinance={isFinance} />}
+      {termAccount?.data && <TermAccountSection termAccount={termAccount.data} isFinance={isFinance} />}
       {/* An unpaid deposit's empty ledger would invite a top-up or transfer it cannot take; the
           deposit section already says what is awaited. */}
       {!(deposit?.data && account.data.entries.length === 0) && <Ledger entries={account.data.entries} />}
-      <Movements account={account.data} deposit={Boolean(deposit?.data)} />
+      <Movements account={account.data} deposit={Boolean(deposit?.data)} termAccount={termAccount?.data ?? null} />
     </div>
   );
 }
@@ -146,9 +152,14 @@ const NONE_ADJUSTED: AdjustmentView[] = [];
 /**
  * `deposit`: a fixed-term deposit takes nothing in and lets nothing out during its term (spec
  * D5), so only the adjustment -- the two-person correction -- is offered.
+ *
+ * `termAccount`: money comes in during its term but nothing goes out, so no withdrawal is offered; once it has
+ * matured, nothing comes in either -- it only waits to be paid out.
  */
-function Movements({ account, deposit }: { account: AccountView; deposit: boolean }) {
+function Movements({ account, deposit, termAccount }: { account: AccountView; deposit: boolean; termAccount: TermAccountView | null }) {
   const policyNumber = account.policyNumber;
+  const moneyIn = !deposit && (termAccount === null || termAccount.status === 'RUNNING');
+  const moneyOut = !deposit && termAccount === null;
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const viewerSubject = identity?.subject ?? undefined;
@@ -168,22 +179,22 @@ function Movements({ account, deposit }: { account: AccountView; deposit: boolea
     <div className="space-y-4">
       {open && (
         <div className="flex flex-wrap gap-2">
-          {!deposit && (
-            <>
-              <Button size="sm" variant={action === 'withdraw' ? 'secondary' : 'outline'} onClick={() => setAction('withdraw')}>
-                Request withdrawal
-              </Button>
-              <Button size="sm" variant={action === 'topup' ? 'secondary' : 'outline'} onClick={() => setAction('topup')}>
-                Request top-up
-              </Button>
-            </>
+          {moneyOut && (
+            <Button size="sm" variant={action === 'withdraw' ? 'secondary' : 'outline'} onClick={() => setAction('withdraw')}>
+              Request withdrawal
+            </Button>
+          )}
+          {moneyIn && (
+            <Button size="sm" variant={action === 'topup' ? 'secondary' : 'outline'} onClick={() => setAction('topup')}>
+              Request top-up
+            </Button>
           )}
           {/* Finance's: recording a transfer puts money on the account, and an adjustment is a
               correction a second finance user signs. Not offered at all to anyone else, rather than
               a button that would 403. */}
           {isFinance && (
             <>
-              {!deposit && (
+              {moneyIn && (
                 <Button size="sm" variant={action === 'transfer' ? 'secondary' : 'outline'} onClick={() => setAction('transfer')}>
                   Record transfer in
                 </Button>

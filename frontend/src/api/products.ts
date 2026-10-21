@@ -17,6 +17,7 @@ export function describeOnline(
 }
 import type {
   CashValueTermsView,
+  TermAccountTermsView,
   CreateProductRequest,
   ProductCategory,
   ProductSnapshot,
@@ -105,6 +106,16 @@ export function listProductVersions(productId: string): Promise<ProductVersionSu
 export function getCashValueTerms(productId: string, versionId: string): Promise<CashValueTermsView> {
   return get<CashValueTermsView>(
     `/products/${encodeURIComponent(productId)}/versions/${encodeURIComponent(versionId)}/cash-value`,
+  );
+}
+
+/**
+ * Whether a version is a term account, and the band a case's rate must fall in (2026-10-21). The case form reads it
+ * for its Rate field. Staff and agents; 200 either way.
+ */
+export function getTermAccountTerms(productId: string, versionId: string): Promise<TermAccountTermsView> {
+  return get<TermAccountTermsView>(
+    `/products/${encodeURIComponent(productId)}/versions/${encodeURIComponent(versionId)}/term-account`,
   );
 }
 

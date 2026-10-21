@@ -126,7 +126,11 @@ public record UnderwritingCaseView(UUID caseId, UUID applicantPartyId, UUID prod
                                     // when the issue fixed them (null while they can still change).
                                     String salesChannel,
                                     String branchCode,
-                                    Instant saleLockedAt) {
+                                    Instant saleLockedAt,
+                                    // A term account's rate, % a year (V24); null on every other
+                                    // product. Serialized: the case shows what was proposed and the
+                                    // amendment form starts from it.
+                                    BigDecimal proposedRatePercent) {
 
     /**
      * The sum assured the proposal asked for, as Money on the wire -- null on a group case, which

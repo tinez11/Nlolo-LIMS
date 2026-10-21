@@ -3,17 +3,22 @@ package tz.co.nlolo.lifeplatform.accumulation.application;
 import org.springframework.stereotype.Component;
 import tz.co.nlolo.lifeplatform.accumulation.api.DepositPeriodStatus;
 import tz.co.nlolo.lifeplatform.accumulation.api.RateDeclarationStatus;
+import tz.co.nlolo.lifeplatform.accumulation.api.TermAccountStatus;
+import tz.co.nlolo.lifeplatform.accumulation.domain.TermAccount;
 import tz.co.nlolo.lifeplatform.accumulation.infrastructure.DepositPeriodRepository;
 import tz.co.nlolo.lifeplatform.accumulation.domain.Account;
 import tz.co.nlolo.lifeplatform.accumulation.domain.LedgerEntry;
 import tz.co.nlolo.lifeplatform.accumulation.infrastructure.LedgerEntryRepository;
 import tz.co.nlolo.lifeplatform.accumulation.infrastructure.RateDeclarationRepository;
+import tz.co.nlolo.lifeplatform.accumulation.infrastructure.TermAccountRepository;
+import tz.co.nlolo.lifeplatform.product.api.AccumulationPlan;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * Interest an account has earned over a span, replayed from its entries -- there is no accrual
@@ -26,13 +31,15 @@ class AccountValuer {
     private final RateDeclarationRepository rates;
     private final ProductApi productApi;
     private final DepositPeriodRepository periods;
+    private final TermAccountRepository termAccounts;
 
     AccountValuer(LedgerEntryRepository entries, RateDeclarationRepository rates, ProductApi productApi,
-                  DepositPeriodRepository periods) {
+                  DepositPeriodRepository periods, TermAccountRepository termAccounts) {
         this.entries = entries;
         this.rates = rates;
         this.productApi = productApi;
         this.periods = periods;
+        this.termAccounts = termAccounts;
     }
 
     /** Rounded once, 2 dp half-even. Zero when {@code to} is before {@code from}. */
@@ -47,15 +54,29 @@ class AccountValuer {
         if (to.isBefore(from)) {
             return BigDecimal.ZERO.setScale(2);
         }
+        AccumulationPlan plan = productApi.resolveAccumulationPlan(account.getProductVersionId());
+        Function<LocalDate, BigDecimal> schedule;
+        if (plan.isTermAccount()) {
+            // A term account earns at the rate its policy locked at sale, never a declaration (2026-10-21) -- and
+            // nothing once it has matured: its final interest was posted then, and the money only waits for a payee.
+            TermAccount term = termAccounts.findByPolicyNumber(account.getPolicyNumber()).orElseThrow(() -> new IllegalStateException(
+                "Term account " + account.getPolicyNumber() + " has no locked rate; it cannot be valued"));
+            if (term.status() != TermAccountStatus.RUNNING) {
+                return BigDecimal.ZERO.setScale(2);
+            }
+            BigDecimal locked = term.getRatePercent();
+            schedule = d -> locked;
+        } else {
+            schedule = new RateSchedule(
+                rates.findByProductIdAndStatusOrderByEffectiveFrom(account.getProductId(), RateDeclarationStatus.APPROVED.name()),
+                plan.guaranteedRatePercent());
+        }
         List<LedgerEntry> all = entries.findByPolicyNumberOrderBySeq(account.getPolicyNumber());
         BigDecimal opening = all.stream().filter(e -> e.getEffectiveDate().isBefore(from))
             .map(LedgerEntry::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         List<InterestCalculator.Movement> within = all.stream()
             .filter(e -> !e.getEffectiveDate().isBefore(from) && !e.getEffectiveDate().isAfter(to))
             .map(e -> new InterestCalculator.Movement(e.getEffectiveDate(), e.getAmount())).toList();
-        RateSchedule schedule = new RateSchedule(
-            rates.findByProductIdAndStatusOrderByEffectiveFrom(account.getProductId(), RateDeclarationStatus.APPROVED.name()),
-            productApi.resolveAccumulationPlan(account.getProductVersionId()).guaranteedRatePercent());
         return InterestCalculator.interest(opening, within, from, to, schedule).setScale(2, RoundingMode.HALF_EVEN);
     }
 }

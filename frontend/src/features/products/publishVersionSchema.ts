@@ -446,7 +446,7 @@ interface PayoutFields {
   survivalBenefitsDeductedFromDeath: string;
   deathBenefitPremiumPercent: string;
   payoutRows: PayoutRowValues[];
-  /** A DEPOSIT version matures through its account, so it carries no schedule even as an endowment. */
+  /** A DEPOSIT or TERM_ACCOUNT version matures through its account, so it carries no schedule even as an endowment. */
   valueBasis?: string;
 }
 
@@ -479,7 +479,7 @@ function validatePayoutPlan(category: ProductCategory, v: PayoutFields, ctx: z.R
   if (v.payoutRows.length === 0) {
     // A product with no rows is an ordinary term or whole-life version; only the two SCHEDULED
     // categories must carry one, and that is checked below.
-    if (!SCHEDULED_CATEGORIES.includes(category) || v.valueBasis === 'DEPOSIT') {
+    if (!SCHEDULED_CATEGORIES.includes(category) || v.valueBasis === 'DEPOSIT' || v.valueBasis === 'TERM_ACCOUNT') {
       checkPayoutTermBounds(v, issue);
       return;
     }
@@ -578,11 +578,40 @@ interface AccumulationFields {
   valueBasis: string;
   guaranteedRatePercent: string;
   minimumBalance: string;
+  minRatePercent: string;
+  maxRatePercent: string;
+  minTermMonths?: string | undefined;
+  maxTermMonths?: string | undefined;
   accountCharges: AccountChargeRowValues[];
   payoutRows: PayoutRowValues[];
 }
 
 const isNumber = (v: string) => v !== '' && !Number.isNaN(Number(v));
+
+/**
+ * A term account (2026-10-21) is a console name, as DEPOSIT is: on the server it is an ACCOUNT version that also
+ * carries a rate band. So everything that holds of an account holds of it.
+ */
+export const keepsAccount = (valueBasis: string) => valueBasis === 'ACCOUNT' || valueBasis === 'TERM_ACCOUNT';
+
+/** `TermAccountPlanValidator`, rule for rule and message for message. */
+function validateTermAccount(v: AccumulationFields, issue: (path: (string | number)[], message: string) => void) {
+  const inRange = (s: string) => isNumber(s) && Number(s) >= 0 && Number(s) <= 100;
+  if (v.minRatePercent === '' || v.maxRatePercent === '') {
+    issue([v.minRatePercent === '' ? 'minRatePercent' : 'maxRatePercent'], 'A term account needs both a minimum and a maximum rate');
+  } else if (!inRange(v.minRatePercent) || !inRange(v.maxRatePercent)) {
+    issue([inRange(v.minRatePercent) ? 'maxRatePercent' : 'minRatePercent'], "A term account's rates must be between 0 and 100 percent");
+  } else if (Number(v.maxRatePercent) < Number(v.minRatePercent)) {
+    issue(['maxRatePercent'], "A term account's maximum rate cannot be below its minimum");
+  }
+  if (!v.minTermMonths || !v.maxTermMonths) {
+    issue([v.minTermMonths ? 'maxTermMonths' : 'minTermMonths'],
+      'A term account needs a minimum and a maximum term: its maturity date comes from the term each case names');
+  }
+  if (v.payoutRows.length > 0) {
+    issue(['payoutRows'], 'A term account matures through its account; it carries no payout schedule');
+  }
+}
 
 /**
  * `AccumulationPlanValidator` and `PayoutPlanValidator.checkAccountRules`, rule for rule and message
@@ -591,7 +620,7 @@ const isNumber = (v: string) => v !== '' && !Number.isNaN(Number(v));
  */
 function validateAccumulation(category: ProductCategory, v: AccumulationFields & CashValueFields, ctx: z.RefinementCtx) {
   const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: 'custom', path, message });
-  const account = v.valueBasis === 'ACCOUNT';
+  const account = keepsAccount(v.valueBasis);
 
   // checkAccountRules: these run whatever the basis, because an ACCOUNT_VALUE row on a scale version
   // is refused too.
@@ -618,9 +647,14 @@ function validateAccumulation(category: ProductCategory, v: AccumulationFields &
   if (hasCashValue(v)) {
     issue(['valueBasis'], 'A version is valued either by a cash-value scale or by an account, not both');
   }
-  const rate = Number(v.guaranteedRatePercent);
-  if (!isNumber(v.guaranteedRatePercent) || rate < 0 || rate > 100) {
-    issue(['guaranteedRatePercent'], 'An account-based version needs a guaranteed interest rate between 0 and 100 percent');
+  if (v.valueBasis === 'TERM_ACCOUNT') {
+    // Its rate is each policy's own, from the band; the band's floor is sent as the guarantee.
+    validateTermAccount(v, issue);
+  } else {
+    const rate = Number(v.guaranteedRatePercent);
+    if (!isNumber(v.guaranteedRatePercent) || rate < 0 || rate > 100) {
+      issue(['guaranteedRatePercent'], 'An account-based version needs a guaranteed interest rate between 0 and 100 percent');
+    }
   }
   if (!isNumber(v.minimumBalance) || Number(v.minimumBalance) < 0) {
     issue(['minimumBalance'], 'An account-based version needs a minimum balance for withdrawals, zero or more');
@@ -705,7 +739,7 @@ function validateBonus(category: ProductCategory, v: BonusFields & CashValueFiel
     issue(['withProfits'], 'A fixed-term deposit cannot be with-profits');
     return;
   }
-  if (v.valueBasis === 'ACCOUNT') {
+  if (keepsAccount(v.valueBasis)) {
     issue(['withProfits'], 'A version is valued either by an account or with profits, not both');
     return;
   }
@@ -1039,6 +1073,9 @@ export function publishVersionFormSchema(category: ProductCategory) {
     valueBasis: z.string().trim(),
     guaranteedRatePercent: z.string().trim(),
     minimumBalance: z.string().trim(),
+    // A term account's band (2026-10-21): each case names its rate inside it.
+    minRatePercent: z.string().trim(),
+    maxRatePercent: z.string().trim(),
     accountCharges: z.array(accountChargeRowSchema),
     // A fixed-term deposit (2026-10-02): rates by band x term, each for the TERM.
     depositTerms: z.array(depositTermSchema),
@@ -1218,6 +1255,8 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
     valueBasis: 'SCALE',
     guaranteedRatePercent: '',
     minimumBalance: '',
+    minRatePercent: '',
+    maxRatePercent: '',
     accountCharges: [],
     depositTerms: [],
     depositBands: [],
@@ -1380,10 +1419,17 @@ export function toApiRequest(values: PublishVersionFormValues, category?: Produc
       }),
     })),
     // Product step 3. Omitted entirely on a SCALE version -- absent IS the scale basis on the server.
-    ...(values.valueBasis === 'ACCOUNT' && {
+    // A term account is the same block with its band, and the band's floor as the guarantee it never needs.
+    ...(keepsAccount(values.valueBasis) && {
       accumulation: {
-        guaranteedRatePercent: Number(values.guaranteedRatePercent),
+        guaranteedRatePercent: Number(
+          values.valueBasis === 'TERM_ACCOUNT' ? values.minRatePercent : values.guaranteedRatePercent,
+        ),
         minimumBalance: Number(values.minimumBalance),
+        ...(values.valueBasis === 'TERM_ACCOUNT' && {
+          minRatePercent: Number(values.minRatePercent),
+          maxRatePercent: Number(values.maxRatePercent),
+        }),
         charges: values.accountCharges.map((c) => ({
           fromPolicyYear: Number(c.fromPolicyYear),
           ...(c.toPolicyYear !== '' && { toPolicyYear: Number(c.toPolicyYear) }),

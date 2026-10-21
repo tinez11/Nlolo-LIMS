@@ -17,6 +17,7 @@ import { FormField } from '@/components/FormField';
 import { selectPublishing, useProductStore } from '@/store/productStore';
 import {
   ACCOUNT_CATEGORIES,
+  keepsAccount,
   WITH_PROFITS_CATEGORIES,
   blankBonusSurrenderRow,
   blankAccountChargeRow,
@@ -172,6 +173,8 @@ export function PublishVersionForm({
       valueBasis: 'SCALE',
       guaranteedRatePercent: '',
       minimumBalance: '',
+      minRatePercent: '',
+      maxRatePercent: '',
       accountCharges: [],
       depositTerms: [],
       depositBands: [],
@@ -948,16 +951,36 @@ export function PublishVersionForm({
                   <option value="SCALE">Cash-value table (scale)</option>
                   <option value="ACCOUNT">Savings account</option>
                   <option value="DEPOSIT">Fixed-term deposit</option>
+                  <option value="TERM_ACCOUNT">Term account</option>
                 </Select>
               </FormField>
             </div>
           )}
-          {valueBasis === 'ACCOUNT' && (
+          {keepsAccount(valueBasis) && (
             <div className="mt-3 space-y-3">
+              {valueBasis === 'TERM_ACCOUNT' && (
+                <p className="text-xs text-subtle-foreground">
+                  Contributions come in as on a savings account, but nothing can be withdrawn or surrendered until the term
+                  ends, when the whole balance is paid out. Each case names its rate inside the band below, and the policy
+                  keeps it for life. Set a minimum and maximum term above; the version carries no payout schedule.
+                </p>
+              )}
+              {valueBasis === 'TERM_ACCOUNT' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField label="Minimum rate (% a year)" error={errors.minRatePercent?.message}>
+                    <Input inputSize="sm" inputMode="decimal" placeholder="3" {...register('minRatePercent')} />
+                  </FormField>
+                  <FormField label="Maximum rate (% a year)" error={errors.maxRatePercent?.message}>
+                    <Input inputSize="sm" inputMode="decimal" placeholder="7" {...register('maxRatePercent')} />
+                  </FormField>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
-                <FormField label="Guaranteed interest rate (% a year)" error={errors.guaranteedRatePercent?.message}>
-                  <Input inputSize="sm" inputMode="decimal" placeholder="3" {...register('guaranteedRatePercent')} />
-                </FormField>
+                {valueBasis === 'ACCOUNT' && (
+                  <FormField label="Guaranteed interest rate (% a year)" error={errors.guaranteedRatePercent?.message}>
+                    <Input inputSize="sm" inputMode="decimal" placeholder="3" {...register('guaranteedRatePercent')} />
+                  </FormField>
+                )}
                 <FormField label="Minimum balance after a withdrawal" error={errors.minimumBalance?.message}>
                   <Input inputSize="sm" inputMode="decimal" placeholder="50000" {...register('minimumBalance')} />
                 </FormField>

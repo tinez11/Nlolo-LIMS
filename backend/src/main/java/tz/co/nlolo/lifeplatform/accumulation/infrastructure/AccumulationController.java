@@ -253,4 +253,31 @@ public class AccumulationController {
         var paid = api.payOutMaturedDeposit(policyNumber, body.payeeRef(), jwt.getSubject(), idempotencyKey);
         return DepositResponse.Period.from(paid, api.findAccount(policyNumber).orElseThrow().currency());
     }
+
+    // ---- Term accounts (2026-10-21) ------------------------------------------------------------
+
+    /** Any staff member, as the account is. 404 for a policy that is not a term account. */
+    @GetMapping("/policies/{policyNumber}/account/term-account")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public TermAccountResponse termAccount(@PathVariable String policyNumber) {
+        return TermAccountResponse.from(api.findTermAccount(policyNumber)
+            .orElseThrow(() -> new AccountNotFoundException(policyNumber)));
+    }
+
+    @GetMapping("/term-accounts/awaiting-payee")
+    @PreAuthorize(FINANCE)
+    public List<DepositResponse.Awaiting> termAccountsAwaitingPayee() {
+        return api.listTermAccountsAwaitingPayee().stream().map(DepositResponse.Awaiting::from).toList();
+    }
+
+    /** 202: REQUESTED from the rail, not paid. Money out, so finance's -- as a deposit's payout is. */
+    @PostMapping("/policies/{policyNumber}/account/term-account/payout")
+    @PreAuthorize(FINANCE)
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public TermAccountResponse payOutTermAccount(@PathVariable String policyNumber, @Valid @RequestBody DepositBodies.Payout body,
+                                                 @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+                                                 @AuthenticationPrincipal Jwt jwt) {
+        return TermAccountResponse.from(api.payOutMaturedTermAccount(policyNumber, body.payeeRef(), jwt.getSubject(),
+            idempotencyKey));
+    }
 }

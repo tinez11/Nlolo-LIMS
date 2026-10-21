@@ -14,17 +14,24 @@ public class VersionAccumulationTerms {
     @Column(name = "value_basis", nullable = false) private String valueBasis = "ACCOUNT";
     @Column(name = "guaranteed_rate_percent", nullable = false) private BigDecimal guaranteedRatePercent;
     @Column(name = "minimum_balance", nullable = false) private BigDecimal minimumBalance;
+    /** A term account's band (V33); both null on every other account. */
+    @Column(name = "min_rate_percent") private BigDecimal minRatePercent;
+    @Column(name = "max_rate_percent") private BigDecimal maxRatePercent;
 
     protected VersionAccumulationTerms() {}
 
     public VersionAccumulationTerms(UUID tenantId, UUID productVersionId, BigDecimal guaranteedRatePercent,
-                                    BigDecimal minimumBalance) {
+                                    BigDecimal minimumBalance, BigDecimal minRatePercent, BigDecimal maxRatePercent) {
         this.tenantId = tenantId;
         this.productVersionId = productVersionId;
         this.guaranteedRatePercent = guaranteedRatePercent;
         this.minimumBalance = minimumBalance;
+        this.minRatePercent = minRatePercent;
+        this.maxRatePercent = maxRatePercent;
     }
 
     public BigDecimal getGuaranteedRatePercent() { return guaranteedRatePercent; }
     public BigDecimal getMinimumBalance() { return minimumBalance; }
+    public BigDecimal getMinRatePercent() { return minRatePercent; }
+    public BigDecimal getMaxRatePercent() { return maxRatePercent; }
 }

@@ -38,6 +38,8 @@ import { FuneralLivesFields } from './FuneralLivesFields';
 import { QuotationPreview } from './QuotationPreview';
 import { getUnitLinkedTerms } from '@/api/unitlinked';
 import type { UnitLinkedTermsView } from '@/api/types';
+import { getTermAccountTerms } from '@/api/products';
+import type { TermAccountTermsView } from '@/api/types';
 import { UnitLinkedChoiceFields } from './UnitLinkedChoiceFields';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { UnsavedGuard } from '@/components/UnsavedGuard';
@@ -243,6 +245,27 @@ export function OpenUnderwritingCasePage() {
   useEffect(() => {
     setValue('isUnitLinked', isUnitLinked);
   }, [isUnitLinked, setValue]);
+
+  // A term account (2026-10-21): a savings product whose version carries a rate band. The case names the rate inside
+  // it. Asked only of a savings (SAV) product -- every term account is one.
+  const maybeTermAccount = selectedProduct?.portfolioCode === 'SAV';
+  const [termAccountTerms, setTermAccountTerms] = useState<TermAccountTermsView | null>(null);
+  useEffect(() => {
+    if (!maybeTermAccount || !productId || !productVersionId) return undefined;
+    let live = true;
+    getTermAccountTerms(productId, productVersionId).then((t) => {
+      if (!live) return;
+      setTermAccountTerms(t);
+      setValue('isTermAccount', t.termAccount);
+      setValue('termAccountMinRate', t.minRatePercent != null ? String(t.minRatePercent) : '');
+      setValue('termAccountMaxRate', t.maxRatePercent != null ? String(t.maxRatePercent) : '');
+    }, () => undefined);
+    return () => { live = false; };
+  }, [maybeTermAccount, productId, productVersionId, setValue]);
+  const isTermAccount = maybeTermAccount && termAccountTerms?.termAccount === true;
+  useEffect(() => {
+    if (!maybeTermAccount) setValue('isTermAccount', false);
+  }, [maybeTermAccount, setValue]);
   const mainMemberParty = (lifeAssuredPartyId ? lifeAssured.data : applicant.data) ?? null;
   const mainMember = mainMemberParty
     ? { name: mainMemberParty.displayName ?? 'Main member', dateOfBirth: mainMemberParty.dateOfBirth ?? null }
@@ -583,6 +606,16 @@ export function OpenUnderwritingCasePage() {
                 ))}
               </Select>
             </FormField>
+
+            {isTermAccount && termAccountTerms && (
+              <FormField
+                label="Rate (% a year)"
+                error={errors.proposedRatePercent?.message}
+                hint={`This product offers a rate between ${termAccountTerms.minRatePercent}% and ${termAccountTerms.maxRatePercent}%. The policy keeps it for life; nothing can be withdrawn until the term ends.`}
+              >
+                <Input inputMode="decimal" placeholder={String(termAccountTerms.minRatePercent)} {...register('proposedRatePercent')} />
+              </FormField>
+            )}
           </div>
           )}
 

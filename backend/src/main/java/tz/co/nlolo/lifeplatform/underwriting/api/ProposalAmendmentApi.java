@@ -37,8 +37,16 @@ public interface ProposalAmendmentApi {
     record ReturnReason(ReturnCategory category, String problem, String change) {}
 
     /** The contract as amended: every field the new value, null meaning "none", exactly as at opening. */
+    /** {@code proposedRatePercent}: a term account's rate (2026-10-21); null on any other product. */
     record TermsAmendment(BigDecimal sumAssured, Integer requestedTermMonths, Integer premiumPayingTermMonths,
-                          String premiumFrequency, LocalDate proposedCommencementDate) {}
+                          String premiumFrequency, LocalDate proposedCommencementDate, BigDecimal proposedRatePercent) {
+
+        /** Every amendment before the term account, which names no rate. */
+        public TermsAmendment(BigDecimal sumAssured, Integer requestedTermMonths, Integer premiumPayingTermMonths,
+                              String premiumFrequency, LocalDate proposedCommencementDate) {
+            this(sumAssured, requestedTermMonths, premiumPayingTermMonths, premiumFrequency, proposedCommencementDate, null);
+        }
+    }
 
     record FieldChange(String field, String before, String after) {}
 

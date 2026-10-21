@@ -202,6 +202,37 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         }
     }
 
+    /**
+     * A term account's case (2026-10-21) names its rate inside the version's band, and a term -- its maturity date comes
+     * from nothing else. Refused here, at opening and amendment, for the reason the deposit's rule above is: issuance
+     * refuses both, and a case decided on them could never issue. A rate on any other product is refused too, so a
+     * case's rate always means the one its policy will keep.
+     */
+    void refuseAnUnissuableTermAccount(UUID productVersionId, ProposalDetails details) {
+        tz.co.nlolo.lifeplatform.product.api.AccumulationPlan plan = productApi.resolveAccumulationPlan(productVersionId);
+        BigDecimal rate = details.proposedRatePercent();
+        if (!plan.isTermAccount()) {
+            if (rate != null) {
+                throw new UnderwritingValidationException("This product's rate is not chosen on the proposal; leave the"
+                    + " rate blank");
+            }
+            return;
+        }
+        if (rate == null) {
+            throw new UnderwritingValidationException("A term account needs the rate it is sold at: between "
+                + percent(plan.minRatePercent()) + "% and " + percent(plan.maxRatePercent()) + "%");
+        }
+        if (!plan.offers(rate)) {
+            throw new UnderwritingValidationException("This product offers a rate between " + percent(plan.minRatePercent())
+                + "% and " + percent(plan.maxRatePercent()) + "%, not " + percent(rate) + "%");
+        }
+        if (details.requestedTermMonths() == null) {
+            throw new UnderwritingValidationException("A term account needs a term: it pays out when the term ends");
+        }
+    }
+
+    private static String percent(BigDecimal rate) { return rate.stripTrailingZeros().toPlainString(); }
+
     /** @param memberEvidence the free-cover-limit case for one scheme member, the one individual
      *  case a scheme product may carry -- see {@link UnderwritingApi#openMemberEvidenceCase}. */
     private UnderwritingCaseView openIndividualCase(UUID applicantPartyId, UUID productId, UUID productVersionId,
@@ -225,6 +256,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
 
         ProposalDetails details = proposal != null ? proposal : ProposalDetails.selfInsured();
         refuseAnUnissuableDeposit(productVersionId, sumAssuredAmount, details);
+        refuseAnUnissuableTermAccount(productVersionId, details);
         // The SINGLE arm of Policy.applyTerm, on every product. Left to issuance it refused only after the
         // decision, leaving a decided case with no policy (PRO-9A26219C, 2026-10-09: SINGLE over 3 months, paying 3).
         if ("SINGLE".equals(details.premiumFrequency()) && details.premiumPayingTermMonths() != null
@@ -1329,7 +1361,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             // proposal lookup above.
             c.getCreatedBy(), riskAssessmentRepository.findDistinctAssessors(c.getTenantId(), c.getCaseId()),
             c.getEvidenceForPolicyNumber(), c.getEvidenceForMemberId(),
-            c.getSalesChannel(), c.getBranchCode(), c.getSaleLockedAt());
+            c.getSalesChannel(), c.getBranchCode(), c.getSaleLockedAt(), c.getProposedRatePercent());
     }
 
     /**
@@ -1365,7 +1397,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             base.issuanceFailureReason(), base.issuanceFailedAt(),
             nominations, base.openedBy(), base.assessedBy(),
             base.evidenceForPolicyNumber(), base.evidenceForMemberId(),
-            base.salesChannel(), base.branchCode(), base.saleLockedAt());
+            base.salesChannel(), base.branchCode(), base.saleLockedAt(), base.proposedRatePercent());
     }
 
     /**

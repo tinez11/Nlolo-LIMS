@@ -487,6 +487,26 @@ paths:
               schema: { $ref: '#/components/schemas/CashValueTerms' }
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /products/{productId}/versions/{versionId}/term-account:
+    get:
+      summary: Whether a version is a term account, and the rate band a case must name its rate in
+      description: >-
+        2026-10-21. For the case form's Rate field. 200 either way: termAccount false means an ordinary
+        version, on which a case names no rate.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The version's term-account band
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TermAccountTerms' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /products/{productId}/versions/{versionId}/annuity:
     get:
       summary: An annuity version's forms and payment frequencies, for the case form
@@ -891,11 +911,17 @@ components:
             and interest instead of step 1's per-mille scale. Refused on a version that also carries
             a cashValue scale, and on any category but ENDOWMENT, WHOLE_LIFE and EDUCATION_SAVINGS.
             Its charges must start at policy year 1, cover every year once, and end open-ended.
+            A rate band (minRatePercent and maxRatePercent, both or neither) makes it a term account
+            (2026-10-21): each case names its rate inside the band, locked for the policy's life, and
+            nothing is paid out until it matures -- so it needs a minimum and maximum term and takes no
+            payout schedule.
           type: [object, "null"]
           required: [guaranteedRatePercent, minimumBalance, charges]
           properties:
             guaranteedRatePercent: { type: number, minimum: 0, maximum: 100, description: "Effective annual floor" }
             minimumBalance: { type: number, minimum: 0, description: "A partial withdrawal may not leave less" }
+            minRatePercent: { type: [number, "null"], minimum: 0, maximum: 100, description: "A term account's lowest rate, % a year" }
+            maxRatePercent: { type: [number, "null"], minimum: 0, maximum: 100, description: "A term account's highest rate, % a year" }
             charges:
               type: array
               minItems: 1
@@ -1530,6 +1556,14 @@ components:
         hasTable: { type: boolean, description: False means no cash-value table, so no surrender value. }
         minYearsForValue: { type: [integer, "null"], description: The first policy year a value exists. }
         basisReference: { type: [string, "null"] }
+    TermAccountTerms:
+      type: object
+      additionalProperties: false
+      required: [termAccount]
+      properties:
+        termAccount: { type: boolean, description: "False means an ordinary version; a case names no rate on it." }
+        minRatePercent: { type: [number, "null"], description: "The lowest rate a case may name, % a year." }
+        maxRatePercent: { type: [number, "null"], description: "The highest rate a case may name, % a year." }
     GroupFuneralQuoteRequest:
       type: object
       properties:

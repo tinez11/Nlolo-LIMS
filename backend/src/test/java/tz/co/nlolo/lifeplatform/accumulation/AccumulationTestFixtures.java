@@ -42,13 +42,97 @@ public class AccumulationTestFixtures {
     private final ApplicationEventPublisher publisher;
     private final TransactionTemplate tx;
 
+    private final tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi underwritingApi;
+
     public AccumulationTestFixtures(PartyApi partyApi, ProductApi productApi, PolicyApi policyApi,
-                                    ApplicationEventPublisher publisher, PlatformTransactionManager transactionManager) {
+                                    ApplicationEventPublisher publisher, PlatformTransactionManager transactionManager,
+                                    tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi underwritingApi) {
         this.partyApi = partyApi;
         this.productApi = productApi;
         this.policyApi = policyApi;
         this.publisher = publisher;
         this.tx = new TransactionTemplate(transactionManager);
+        this.underwritingApi = underwritingApi;
+    }
+
+    /**
+     * A term account (2026-10-21): rates from 3% to 7% a year, terms of 12 to 60 months, and no charges -- so a test's
+     * interest is the locked rate's alone, nothing taken out beside it.
+     */
+    public static final AccumulationPlan TERM_ACCOUNT = new AccumulationPlan(ValueBasis.ACCOUNT, BigDecimal.ZERO,
+        BigDecimal.ZERO, List.of(new AccumulationChargeRow(1, null, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)),
+        new BigDecimal("3"), new BigDecimal("7"));
+
+    public static final EligibilityBounds TERM_ACCOUNT_BOUNDS = new EligibilityBounds(null, null, 12, 60, null, null);
+
+    /** Publishes (and so makes active for new business) a term-account version on an existing product. */
+    public UUID publishTermAccountVersion(UUID tenant, UUID productId, AccumulationPlan plan) {
+        UUID previous = TenantContext.getOrNull();
+        TenantContext.set(tenant);
+        try {
+            productApi.publishVersion(productId, IfrsMeasurementModel.GMM, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-49", BigDecimal.ONE, 30, 49),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+                null, List.of(), TERM_ACCOUNT_BOUNDS, FrequencyLoading.none(), ANY_FILING, CashValuePlan.none(),
+                // No MATURITY row: a term account matures through its account, as a deposit does.
+                PayoutPlan.authored(new PayoutTerms(15, null, null, null), List.of()), plan, "actuary");
+            return productApi.getActiveSnapshot(productId, LocalDate.now()).productVersionId();
+        } finally {
+            if (previous != null) TenantContext.set(previous); else TenantContext.clear();
+        }
+    }
+
+    /** A term-account product. */
+    public Issued termAccountProduct(UUID tenant) {
+        UUID previous = TenantContext.getOrNull();
+        TenantContext.set(tenant);
+        try {
+            int n = SEQ.incrementAndGet();
+            ProductSummaryView product = productApi.createProduct("TA-" + n + "-" + tenant.toString().substring(0, 4),
+                "Term account", ProductCategory.ENDOWMENT, tz.co.nlolo.lifeplatform.product.api.PortfolioCode.SAV, "TZS",
+                "actuary");
+            return new Issued(null, product.productId(), publishTermAccountVersion(tenant, product.productId(), TERM_ACCOUNT));
+        } finally {
+            if (previous != null) TenantContext.set(previous); else TenantContext.clear();
+        }
+    }
+
+    public UUID applicant(UUID tenant) {
+        UUID previous = TenantContext.getOrNull();
+        TenantContext.set(tenant);
+        try {
+            int n = SEQ.incrementAndGet();
+            return partyApi.registerIndividual("Term Account Life " + n, LocalDate.of(1985, 1, 1),
+                "+25571700" + String.format("%04d", n % 10000), null, "test-agent").partyId();
+        } finally {
+            if (previous != null) TenantContext.set(previous); else TenantContext.clear();
+        }
+    }
+
+    /**
+     * An in-force term account (not yet paid into) at {@code ratePercent}, for {@code termMonths} from
+     * {@code commencement}: through a REAL case carrying the rate, because issuance reads the rate off the case.
+     */
+    public Issued issueTermAccount(UUID tenant, BigDecimal ratePercent, int termMonths, LocalDate commencement) {
+        Issued product = termAccountProduct(tenant);
+        UUID applicant = applicant(tenant);
+        UUID previous = TenantContext.getOrNull();
+        TenantContext.set(tenant);
+        try {
+            UUID caseId = underwritingApi.openCase(applicant, product.productId(), product.productVersionId(),
+                new BigDecimal("1000000.00"), "TZS", null,
+                new tz.co.nlolo.lifeplatform.underwriting.api.ProposalDetails(null, null, null, commencement, termMonths,
+                    null, "MONTHLY", List.of(), ratePercent), "test-csr").caseId();
+            PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(applicant, product.productId(),
+                product.productVersionId(), new BigDecimal("1000000.00"), "TZS", new BigDecimal("50000.00"), "TZS",
+                "MONTHLY", null, List.of(), "term account test", commencement, termMonths, null, null, null);
+            String policyNumber = policyApi.issuePolicy(caseId, request, "test-staff").policyNumber();
+            policyApi.activateOnFirstPremium(policyNumber);
+            return new Issued(policyNumber, product.productId(), product.productVersionId());
+        } finally {
+            if (previous != null) TenantContext.set(previous); else TenantContext.clear();
+        }
     }
 
     public record Issued(String policyNumber, UUID productId, UUID productVersionId) {}

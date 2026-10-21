@@ -457,7 +457,10 @@ public class ProductApiImpl implements ProductApi {
         AccumulationPlan effectiveAccumulation = deposit.isDeposit() ? AccumulationPlan.forDeposit() : accumulationPlan;
         AnnuityPlan annuity = annuityPlan != null ? annuityPlan : AnnuityPlan.none();
         AccumulationPlanValidator.validate(category, effectiveAccumulation, cashValue, annuity.deferred());
-        PayoutPlanValidator.validate(category, payoutPlan, effectiveAccumulation, deposit.isDeposit());
+        TermAccountPlanValidator.validate(effectiveAccumulation, payoutPlan, bounds);
+        // A term account matures through its account (accumulation's drain), as a deposit does: no MATURITY row.
+        PayoutPlanValidator.validate(category, payoutPlan, effectiveAccumulation,
+            deposit.isDeposit() || (effectiveAccumulation != null && effectiveAccumulation.isTermAccount()));
         // The EFFECTIVE account plan, so a deposit is told the deposit rule rather than the account one.
         BonusPlanValidator.validate(category, bonusPlan, cashValue, effectiveAccumulation, payoutPlan, deposit);
         AnnuityPlanValidator.validate(category, annuity, bounds, cashValue, effectiveAccumulation, deposit, bonusPlan, payoutPlan);
@@ -1053,7 +1056,7 @@ public class ProductApiImpl implements ProductApi {
             return; // a SCALE version writes nothing -- its absence here IS the scale basis
         }
         versionAccumulationTermsRepository.save(new VersionAccumulationTerms(tenantId, productVersionId,
-            plan.guaranteedRatePercent(), plan.minimumBalance()));
+            plan.guaranteedRatePercent(), plan.minimumBalance(), plan.minRatePercent(), plan.maxRatePercent()));
         for (AccumulationChargeRow row : plan.charges()) {
             accumulationChargeRepository.save(new AccumulationCharge(tenantId, productVersionId, row));
         }
@@ -1302,7 +1305,7 @@ public class ProductApiImpl implements ProductApi {
             .map(terms -> new AccumulationPlan(ValueBasis.ACCOUNT, terms.getGuaranteedRatePercent(),
                 terms.getMinimumBalance(),
                 accumulationChargeRepository.findByProductVersionIdOrderByFromPolicyYear(productVersionId).stream()
-                    .map(AccumulationCharge::toRow).toList()))
+                    .map(AccumulationCharge::toRow).toList(), terms.getMinRatePercent(), terms.getMaxRatePercent()))
             .orElse(AccumulationPlan.none());
     }
 
