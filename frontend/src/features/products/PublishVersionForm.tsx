@@ -1041,7 +1041,8 @@ export function PublishVersionForm({
                 </FormField>
               </div>
               <p className="text-xs text-subtle-foreground">
-                Charges by policy year. Start at year 1 and leave the last row&apos;s end blank, so every year has a charge.
+                Charges by policy year (optional). Add no rows and the account charges nothing. If you add rows, start at
+                year 1 and leave the last row&apos;s end blank, so every year has a charge.
               </p>
               {accountCharges.fields.map((field, index) => {
                 const rowErrors = errors.accountCharges?.[index];

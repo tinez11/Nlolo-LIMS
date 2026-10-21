@@ -660,7 +660,7 @@ function validateAccumulation(category: ProductCategory, v: AccumulationFields &
     issue(['minimumBalance'], 'An account-based version needs a minimum balance for withdrawals, zero or more');
   }
   if (v.accountCharges.length === 0) {
-    issue(['accountCharges'], 'An account-based version needs at least one row of charges');
+    // Charges are optional (the user, 2026-10-21): no rows charges nothing, and the server writes the zero row.
     return;
   }
   const rows = v.accountCharges

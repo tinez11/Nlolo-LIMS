@@ -563,15 +563,17 @@ components:
       description: Decimal string -- never a binary float.
     CreateFundRequest:
       type: object
-      required: [code, name, currency, assetClass, annualManagementChargePercent, cutOffTime]
+      required: [code, name, currency, assetClass, cutOffTime]
       properties:
         code: { type: string, pattern: '^[A-Z0-9][A-Z0-9_-]{1,19}$' }
         name: { type: string, minLength: 1, maxLength: 120 }
         currency: { type: string, pattern: '^[A-Z]{3}$' }
         assetClass: { type: string, enum: [EQUITY, BOND, MONEY_MARKET, BALANCED] }
         annualManagementChargePercent:
-          type: string
-          description: Decimal string; already built into the price, recorded for disclosure.
+          type: [string, "null"]
+          description: >-
+            Decimal string; already built into the price, recorded for disclosure. Optional (2026-10-21): absent is
+            no management charge.
         cutOffTime: { type: string, description: "Local time HH:mm[:ss], East Africa Time" }
     Fund:
       type: object

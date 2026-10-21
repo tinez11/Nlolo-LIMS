@@ -63,6 +63,21 @@ public record UnitLinkedPlan(boolean unitLinked, List<String> fundCodes, List<Al
             sumAssuredMultipleMin, sumAssuredMultipleMax, options);
     }
 
+    /**
+     * Charges are optional (the user, 2026-10-21): no monthly fee is a fee of zero, and no allocation band means every
+     * premium buys units in full -- 100% from year 1. What was authored is kept as it is.
+     */
+    public UnitLinkedPlan withChargesDefaulted() {
+        if (!unitLinked || (monthlyPolicyFee != null && !allocationBands.isEmpty())) {
+            return this;
+        }
+        return new UnitLinkedPlan(unitLinked, fundCodes,
+            allocationBands.isEmpty() ? List.of(new AllocationBand(1, null, BigDecimal.valueOf(100))) : allocationBands,
+            monthlyPolicyFee != null ? monthlyPolicyFee : BigDecimal.ZERO, mortalityBasis, mortality, deathRule, lapseRule,
+            minimumPremiumYears, minimumSurrenderYears, lowFundWarningMonths, premiumMinimums, sumAssuredMultipleMin,
+            sumAssuredMultipleMax, options);
+    }
+
     public static UnitLinkedPlan none() {
         return new UnitLinkedPlan(false, List.of(), List.of(), null, null, List.of(), null, null, null, 0, 0, List.of(),
             null, null, UnitLinkedOptions.none());

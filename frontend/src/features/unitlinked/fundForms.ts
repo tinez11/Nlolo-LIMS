@@ -29,7 +29,8 @@ export const createFundSchema = z.object({
   annualManagementChargePercent: z
     .string()
     .trim()
-    .regex(/^\d{1,2}(\.\d{1,4})?$/, 'A percent with at most four decimals, for example 1.5'),
+    // Optional (the user, 2026-10-21): blank is no management charge.
+    .regex(/^(\d{1,2}(\.\d{1,4})?)?$/, 'A percent with at most four decimals, for example 1.5, or blank for none'),
   cutOffTime: z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'The daily cut-off as HH:mm, East Africa Time'),
 });
 export type CreateFundValues = z.infer<typeof createFundSchema>;

@@ -84,8 +84,9 @@ class FundRegister {
         if (in.assetClass() == null || !ASSET_CLASSES.contains(in.assetClass())) {
             throw new IllegalArgumentException("A fund's asset class is one of " + ASSET_CLASSES);
         }
-        BigDecimal charge = in.annualManagementChargePercent();
-        if (charge == null || charge.signum() < 0 || charge.compareTo(BigDecimal.valueOf(100)) >= 0) {
+        // Optional (the user, 2026-10-21): none is no management charge.
+        BigDecimal charge = in.annualManagementChargePercent() != null ? in.annualManagementChargePercent() : BigDecimal.ZERO;
+        if (charge.signum() < 0 || charge.compareTo(BigDecimal.valueOf(100)) >= 0) {
             throw new IllegalArgumentException("A fund's annual management charge is a percent from 0 to under 100");
         }
         if (in.cutOffTime() == null) {

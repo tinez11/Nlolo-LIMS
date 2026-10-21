@@ -42,6 +42,13 @@ public record AccumulationPlan(ValueBasis basis, BigDecimal guaranteedRatePercen
             new AccumulationChargeRow(1, null, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)));
     }
 
+    /** These terms with one zero charge row for every policy year -- an account that charges nothing. */
+    public AccumulationPlan withoutCharges() {
+        return new AccumulationPlan(basis, guaranteedRatePercent, minimumBalance,
+            List.of(new AccumulationChargeRow(1, null, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)),
+            minRatePercent, maxRatePercent);
+    }
+
     public boolean isAccount() { return basis == ValueBasis.ACCOUNT; }
 
     /**

@@ -381,7 +381,8 @@ function CreateFundForm() {
       aria-label="Add a fund"
       className="space-y-3 rounded-lg border border-border bg-surface p-4"
       onSubmit={form.handleSubmit((v) =>
-        void create({ ...v, cutOffTime: `${v.cutOffTime}:00` }).then(() => {
+        void create({ ...v, annualManagementChargePercent: v.annualManagementChargePercent || '0',
+          cutOffTime: `${v.cutOffTime}:00` }).then(() => {
           if (useUnitLinkedStore.getState().acting['fund.create']?.status === 'success') form.reset();
         }),
       )}

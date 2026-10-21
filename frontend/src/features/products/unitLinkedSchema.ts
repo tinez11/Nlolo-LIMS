@@ -178,7 +178,8 @@ export function validateUnitLinked(category: ProductCategory, v: UnitLinkedField
 
   if (v.ulFundCodes.length === 0) issue(['ulFundCodes'], 'A UNIT_LINKED version offers at least one fund');
 
-  if (v.ulPolicyFee === '' || !(Number(v.ulPolicyFee) >= 0)) issue(['ulPolicyFee'], 'A monthly policy fee of zero or more is required');
+  // Charges are optional (the user, 2026-10-21): a blank fee is no fee.
+  if (v.ulPolicyFee !== '' && !(Number(v.ulPolicyFee) >= 0)) issue(['ulPolicyFee'], 'A monthly policy fee is zero or more, or left blank for none');
   if (v.ulDeathRule === '') issue(['ulDeathRule'], 'A UNIT_LINKED version says what death pays: the higher of sum assured and fund value, or both');
   if (v.ulMinimumPremiumYears !== '' && !between(v.ulMinimumPremiumYears, 1, 50)) {
     issue(['ulMinimumPremiumYears'], 'Minimum premium-paying years must be between 1 and 50, or left blank for none');
@@ -188,8 +189,8 @@ export function validateUnitLinked(category: ProductCategory, v: UnitLinkedField
 
   const allocation = parseAllocation(v.ulAllocationText);
   if (allocation.error) issue(['ulAllocationText'], allocation.error);
-  else if (allocation.rows.length === 0) issue(['ulAllocationText'], 'A UNIT_LINKED version needs at least one allocation band');
-  else {
+  // No bands: every premium buys units in full, which the server writes as 100% from year 1.
+  else if (allocation.rows.length > 0) {
     const bands = allocation.rows;
     for (let i = 0; i < bands.length; i++) {
       const b = bands[i];

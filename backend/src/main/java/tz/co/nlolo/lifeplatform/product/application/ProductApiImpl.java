@@ -412,7 +412,7 @@ public class ProductApiImpl implements ProductApi {
         // A UNIT_LINKED version is likewise not rated: its cost of insurance is taken monthly from units, by its
         // mortality table (spec §4). Validated here, before the rating rules, for the same reason.
         boolean unitLinkedCategory = ProductCategory.UNIT_LINKED.name().equals(product.getCategory());
-        UnitLinkedPlan unitLinked = unitLinkedPlan != null ? unitLinkedPlan : UnitLinkedPlan.none();
+        UnitLinkedPlan unitLinked = unitLinkedPlan != null ? unitLinkedPlan.withChargesDefaulted() : UnitLinkedPlan.none();
         UnitLinkedPlanValidator.validate(ProductCategory.valueOf(product.getCategory()), unitLinked,
             product.getDefaultCurrency(), bounds != null ? bounds.minEntryAge() : null, fundDirectory.getIfAvailable(),
             priced || (unitLinkedCategory && !ratingTable.isEmpty()));
@@ -454,7 +454,12 @@ public class ProductApiImpl implements ProductApi {
         DepositPlanValidator.validate(category, deposit, accumulationPlan, cashValue, frequencyLoading, payoutPlan, bounds);
         // A deposit's account plan is the server's: an account that charges and guarantees nothing,
         // so every ACCOUNT seam (lapse exemption, surrender event, death valuation) applies to it.
-        AccumulationPlan effectiveAccumulation = deposit.isDeposit() ? AccumulationPlan.forDeposit() : accumulationPlan;
+        AccumulationPlan effectiveAccumulation = deposit.isDeposit() ? AccumulationPlan.forDeposit()
+            // Charges are optional (the user, 2026-10-21): a version that keeps an account published with none
+            // charges nothing -- its rows are the server's, one zero row for every year, as a deposit's are.
+            : accumulationPlan != null && accumulationPlan.isAccount() && accumulationPlan.charges().isEmpty()
+                ? accumulationPlan.withoutCharges()
+                : accumulationPlan;
         AnnuityPlan annuity = annuityPlan != null ? annuityPlan : AnnuityPlan.none();
         AccumulationPlanValidator.validate(category, effectiveAccumulation, cashValue, annuity.deferred());
         TermAccountPlanValidator.validate(effectiveAccumulation, payoutPlan, bounds);
