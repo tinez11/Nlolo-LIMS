@@ -1,6 +1,8 @@
 # Deployment phase: the pilot server — design
 
-Date: 2026-10-13. Status: approved in conversation section by section; awaiting review of this written spec.
+> Object store: SeaweedFS replaced MinIO on 2026-10-13 (MinIO withdrew its images); read `minio` below as the SeaweedFS `objectstore` service in deploy/server/compose.yml.
+
+Date: 2026-10-13. **Status:** merged ec42fe75 (2026-10-14)
 
 ## 1. Goal and decisions
 

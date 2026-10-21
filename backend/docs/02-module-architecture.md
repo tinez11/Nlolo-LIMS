@@ -1,6 +1,8 @@
 # Deliverable 2 — Module Architecture (Revision 2)
 **Digital Life Insurance Core Platform — Tanzania (Phase 0, Artifact 2 of 8)**
 
+> Design-era document. Current state differs: there are 25 modules under backend/src/main/java/tz/co/nlolo/lifeplatform/ (this lists 18; accumulation, annuity, benefitpayout, bonus, dashboard, reporting and unitlinked came later); no Camunda/workflow engine was adopted; the event publication registry (spring-modulith-events-jpa) is not in use. Read the code for module boundaries (package-info.java allowedDependencies).
+
 > Supersedes Revision 1. This revision resolves your Phase A/B/C/D review in full. Where I've refined rather than literally applied a recommendation (B1, D4), I've explained why below — flag if you want the literal version instead.
 
 ---

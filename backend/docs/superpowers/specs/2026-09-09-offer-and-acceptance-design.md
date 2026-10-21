@@ -1,6 +1,6 @@
 # Offer and acceptance: cover starts when the premium clears
 
-**Status:** approved, ready for implementation
+**Status:** merged (see git log; built on main 2026-09-09, no merge commit)
 **Follows:** `2026-09-08-underwriting-decision-and-single-issuance.md`, `2026-09-08-proposal-capture-design.md`
 **Project 1 of 2.** Project 2 is the communication module, which consumes the events this
 produces. See "Why this is two projects" below.

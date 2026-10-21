@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-21
 **Requirement:** §4 of the client's underwriting requirements table.
-**Status:** plans 1 and 2 built and merged. Eight of the nine client questions were
+**Status:** plans 1-6 built and merged (plan 1 8b6acf84, plan 2 db05d76f, plan 3 d44c1beb, plan 6 ce681a06 on 2026-09-25; plans 4-5 see git log). Eight of the nine client questions were
 answered on 2026-09-22 — see §0. §6 of the requirements table will NOT be supplied (§0b).
 
 ---

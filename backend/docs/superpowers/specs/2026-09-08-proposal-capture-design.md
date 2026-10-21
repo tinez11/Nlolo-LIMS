@@ -1,6 +1,6 @@
 # Proposal capture: term, frequency and beneficiary nominations
 
-**Status:** approved, ready for implementation
+**Status:** merged (see git log; built on main 2026-09-08, no merge commit)
 **Follows:** `2026-09-08-underwriting-decision-and-single-issuance.md` (Stage 1)
 
 ## The problem

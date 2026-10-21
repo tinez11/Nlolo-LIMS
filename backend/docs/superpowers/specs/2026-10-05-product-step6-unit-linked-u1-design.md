@@ -1,6 +1,6 @@
 # Product step 6 / U1: unit-linked core — design
 
-**Status:** design agreed section by section with the user on 2026-10-05; awaiting review of this written spec.
+**Status:** merged 99a1c6af (2026-10-05, with review fixes)
 **Scope:** U1 only, the core engine. U2 (switches, partial withdrawals, top-ups, surrender charges, changing the split) is a later spec.
 **Guide reference:** Life_Insurance_Products_Guide.pdf §9 (ULIP) and §21.4 (product rules as data; separate the bucket from the tap; date-driven batch jobs; full audit trail).
 

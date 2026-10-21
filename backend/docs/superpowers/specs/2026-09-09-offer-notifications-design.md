@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-09
 **Project:** 2 of 2 (Project 1 was offer and acceptance)
-**Status:** design, awaiting review
+**Status:** merged (see git log; built on main 2026-09-09, e.g. 3ee7eb0b, no merge commit)
 
 ## The problem
 

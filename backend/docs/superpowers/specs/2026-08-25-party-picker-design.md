@@ -1,6 +1,6 @@
 # Party Picker — searchable party selection, replacing raw-UUID fields
 
-**Status:** design approved, pending implementation plan
+**Status:** merged (see git log; built on main 2026-08-25, no merge commit)
 **Date:** 2026-08-25
 **Depends on:** `GET /parties` (staff KYC review queue, shipped `e586eac`) — this design extends that endpoint rather than adding a new one.
 **Explicitly out of scope:** agent search (`GET /agents` doesn't exist — a separate, later design), product/policy pickers (product already has a real `<select>` dropdown via `GET /products`; policy numbers are short human-legible codes, not opaque UUIDs).

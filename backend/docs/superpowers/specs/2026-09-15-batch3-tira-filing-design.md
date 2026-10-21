@@ -1,7 +1,7 @@
 # Batch 3 — TIRA Filing on a Product Version — Design
 
 Date: 2026-09-15
-Status: approved, not yet implemented
+**Status:** merged (see git log; built on main 2026-09-15, no merge commit)
 
 ## Where this came from
 

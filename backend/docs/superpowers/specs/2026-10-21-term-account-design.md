@@ -1,6 +1,19 @@
 # Term account — recurring contributions, locked until maturity
 
-**Status:** design agreed 2026-10-21, not built.
+**Status:** built and merged 45c6ba38 (2026-10-21); follow-ups 4c85864c, 7c14bf89, 0bd516be, 4d1f5235, 7dbf8f3d.
+
+**As built (differs from this document):**
+
+- Rate band: two columns, `min_rate_percent` / `max_rate_percent`, on `product.version_accumulation_terms` (product V33) — not a new table.
+- Case rate: `underwriting_case.proposed_rate_percent` (underwriting V24).
+- `accumulation.term_account` has its own UUID `term_account_id` (V5), with a trigger fixing the rate and the maturity.
+- The locked rate is applied in `AccountValuer`, not in `postMonthEnds`.
+- `policy` needed changes: issuance refuses a term account without its case's rate in band; the expiry sweep skips it; surrender is refused in `requestSurrender`.
+- payment V15 adds the `TERM_ACCOUNT_MATURITY_PAYOUT` purpose.
+- `PayoutPlanValidator` exempts term accounts from the MATURITY row.
+- On a term account the case amount is the contribution and is billed as the premium (`UnderwritingDecisionEventListener`); the savings quote has a `TERM_ACCOUNT` kind with a projection (`TermAccountProjection`) that solves the contribution for a target at maturity.
+- The publish form fills the SAV portfolio on a draft.
+- Since 4d1f5235 every charge is optional (an empty charge table charges nothing).
 **Builds on:** step 3, the savings account (`accumulation`, merged at `5fc2c8f8`) — this reuses its
 ledger, posting, month-end interest and statement machinery wholesale. Also borrows the maturity-drain
 and default-payee pattern from the fixed-term deposit

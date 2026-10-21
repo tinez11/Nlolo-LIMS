@@ -1,6 +1,6 @@
 # Product step 3 — the accumulation engine (sub-project B)
 
-**Status:** design agreed 2026-10-01, not built.
+**Status:** merged 5fc2c8f8 (2026-10-02)
 **Builds on:** step 0 (rolling billing, EXPIRED at term end, pinned version), step 1 (cash-value
 scale, surrender, paid-up, loans), step 2 / sub-project A (the payout engine,
 `plans/2026-10-01-product-step2-payout-engine.md`).

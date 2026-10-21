@@ -1,4 +1,6 @@
-# IFRS 17 I4 — Manual Journals (DRAFT, awaiting confirmation)
+# IFRS 17 I4 — Manual Journals
+
+**Status:** merged 83900b43 (2026-10-06)
 
 > Inline execution, no subagents. Branch `ifrs17-i4` from main after I3b merges.
 

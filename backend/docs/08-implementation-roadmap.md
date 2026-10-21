@@ -1,6 +1,8 @@
 # Deliverable 8 — Implementation Roadmap
 **Digital Life Insurance Core Platform — Tanzania (Phase 0, Artifact 8 of 8 — Final)**
 
+> Historical (Phase 0 sequencing). M0-M11 are delivered; Camunda was never adopted.
+
 ---
 
 ## 1. What This Is and Isn't

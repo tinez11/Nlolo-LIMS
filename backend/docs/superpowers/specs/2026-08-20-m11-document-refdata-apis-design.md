@@ -1,6 +1,6 @@
 # M11 — `document`/`refdata` APIs, and a local environment that can actually be logged into
 
-**Status:** design approved, pending implementation plan
+**Status:** merged (see git log; built on main 2026-08-21, no merge commit)
 **Date:** 2026-08-20
 **Depends on:** M0–M10 (all merged to `main` at `f5f817e`, 642/642 tests green)
 **Blocks:** M12 (Customer Portal) — on both deliverables

@@ -1,4 +1,6 @@
-# IFRS 17 I3b — The guide's entries for money out, commission, loans and IFRS 9 (DRAFT, awaiting confirmation)
+# IFRS 17 I3b — The guide's entries for money out, commission, loans and IFRS 9
+
+**Status:** merged 102d2c81 (2026-10-06)
 
 > Inline execution, no subagents. Branch `ifrs17-i3b` from main after I3a merges.
 

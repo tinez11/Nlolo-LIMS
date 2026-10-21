@@ -1,6 +1,8 @@
 # Product step 5 / D2 — deferred annuities and pension vesting
 
-Status: design approved section by section, 2026-10-03. Builds on D1 (immediate annuities,
+**Status:** merged d69ce400 (2026-10-04)
+
+Builds on D1 (immediate annuities,
 `2026-10-03-product-step5-annuities-d1-design.md`) and step 3 (accumulation).
 
 ## 1. What D2 is

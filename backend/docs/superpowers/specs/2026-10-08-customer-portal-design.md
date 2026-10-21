@@ -1,6 +1,6 @@
 # Customer self-service portal — design
 
-Date: 2026-10-08. Status: proposed, awaiting the user's review.
+Date: 2026-10-08. **Status:** merged 648e5e64 (2026-10-09; steps 5-7, the last of steps 0-7)
 Source: the user's PRD "DLICP Customer Self-Service Portal v1.0", checked against the code on main (737f0c6e).
 
 ## 1. Decisions (the user's, 2026-10-08)

@@ -1,5 +1,7 @@
 # M12 Customer Portal Implementation Plan
 
+> **Superseded** by specs/2026-10-08-customer-portal-design.md (the Vite SPA customer portal); the Next.js portal this describes was deleted.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship the platform's first frontend — a customer self-service portal covering policies, billing, claims, and policy loans — plus the three backend authorization changes it needs to function.

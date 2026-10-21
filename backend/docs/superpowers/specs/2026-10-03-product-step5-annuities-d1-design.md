@@ -1,6 +1,6 @@
 # Product step 5 — immediate annuities (sub-project D1)
 
-**Status:** design agreed 2026-10-03. Next: implementation plan.
+**Status:** merged d99b96bc (2026-10-04)
 **Builds on:** step 0 (rolling billing, pinned version), step 2 (payout engine, `benefitpayout`:
 streams, proof of life, two-person approval, payment runs, free-look), step 3 (accumulation),
 step 4 (bonuses, merged after its gate).

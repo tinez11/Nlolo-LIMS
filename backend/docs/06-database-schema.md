@@ -1,6 +1,8 @@
 # Deliverable 6 — Database Schema
 **Digital Life Insurance Core Platform — Tanzania (Phase 0, Artifact 6 of 8)**
 
+> Design-era document. Migrations now live per module under `backend/db-migrations/<module>/` (Flyway per module, run by `backend/scripts/migrate.sh`) and are far more than the 16 files described here. Row-level security is live, using the `NULLIF(current_setting(...), '')` pattern.
+
 > Companion files: 16 Flyway-style migration files under `db-migrations/<module>/V1__create_<module>_schema.sql` — one per module, per Deliverable 2 Rev 2's per-module-schema decision (A1). Every migration was executed end-to-end against a real, locally-provisioned PostgreSQL 16 instance (not just syntax-checked) — the fresh-database run-through, plus four targeted smoke tests, are reported in §1 because they surfaced a real bug and a real operational gotcha worth knowing before this goes anywhere near production.
 
 ---

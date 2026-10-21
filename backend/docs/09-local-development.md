@@ -1,8 +1,8 @@
 # 09 — Local Development
 
 A runbook for running the platform on a development machine. Postgres, Keycloak, Redis, SeaweedFS (the document store),
-the mobile-money stub, and Mailpit all run as Docker containers; the application itself runs on
-the host (see gotcha 2 below for why).
+the mobile-money and SMS stubs, and Mailpit all run as Docker containers; the backend and the console run on the host
+(see gotcha 2 below for why).
 
 ## Prerequisites
 
@@ -10,12 +10,10 @@ the host (see gotcha 2 below for why).
   enough free RAM to run six-plus containers plus the JVM.
 - **Node** (for any frontend tooling this repo's `package.json` scripts assume — not required to
   run the backend alone).
-- **The VS Code Java extension's bundled JRE 21**, under
-  `~/.vscode/extensions/redhat.java-<version>/jre/<jdk>/`. The extension updates itself, so the
-  version in that path moves: check it rather than copying an old one. As of 2026-10-13 it is
-  `/c/Users/USER/.vscode/extensions/redhat.java-1.56.0-win32-x64/jre/21.0.12.1-win32-x86_64`.
-  Export it as `JAVA_HOME` before running Maven; do not rely on a separately-installed JDK unless
-  you know it is also Java 21.
+- **A JDK 21**, exported as `JAVA_HOME` before running Maven. On the main dev machine it is
+  `/c/Users/USER/.jdks/jdk-21.0.12.1+1` (already on `PATH`; `java -version` says 21). Do **not** use the
+  VS Code Java extension's bundled runtime any more: since extension 1.58.0 (2026-10) it ships Java **25**,
+  not 21, and its path changes with every extension update.
 - **Do NOT install Postgres or Keycloak natively.** They run as containers on host ports `15432`
   and `8081` respectively (Postgres is published on `15432`, not the standard `5432`, specifically
   because a native Postgres install will silently win that port instead of failing to bind —
@@ -30,14 +28,23 @@ the host (see gotcha 2 below for why).
 ## Startup
 
 ```bash
-cd infra && docker compose up -d postgres keycloak objectstore redis mock-mobile-money mailpit && cd ..
+# from backend/
+cd infra && docker compose up -d postgres keycloak objectstore redis mock-mobile-money mock-sms-gateway mailpit && cd ..
 cd infra && docker compose up objectstore-init && cd ..   # one-shot: creates the four buckets
 scripts/migrate.sh local          # nothing applies schema automatically -- see below
 scripts/configure-db.sh local     # partitions + every pg_cron job; safe to re-run, any time
-export JAVA_HOME="/c/Users/USER/.vscode/extensions/redhat.java-1.56.0-win32-x64/jre/21.0.12.1-win32-x86_64"
-./mvnw -B -o spring-boot:run -Dspring-boot.run.profiles=local
+export JAVA_HOME="/c/Users/USER/.jdks/jdk-21.0.12.1+1"
+./mvnw -B -o spring-boot:run -Dspring-boot.run.profiles=local   # API on :8080, about a minute to start
 scripts/seed-dev-data.sh          # in a second terminal, once the app is up
+
+# the console (staff, agents and customers), from frontend/ in a third terminal
+npm install                       # first time only
+npm run generate:api              # after any change under backend/api/openapi -- the types are not committed
+npm run dev                       # http://localhost:5173
 ```
+
+After pulling a change that adds a migration, run `scripts/migrate.sh local` (and `configure-db.sh` if a
+`_post-migration` file changed) and restart the backend -- the running app does not pick up schema changes.
 
 `pgadmin` is intentionally not in that container list — it lives behind the `tools` Compose
 profile and is optional. Start it with:
@@ -54,7 +61,7 @@ actually want an empty database. To get back to a clean slate:
 ```bash
 cd infra
 docker compose --profile tools down -v   # -v drops the named volumes, including postgres-data
-docker compose up -d postgres keycloak objectstore redis mock-mobile-money mailpit
+docker compose up -d postgres keycloak objectstore redis mock-mobile-money mock-sms-gateway mailpit
 docker compose up objectstore-init       # DO NOT SKIP -- see below
 cd ..
 scripts/migrate.sh local
@@ -153,12 +160,14 @@ the `party_id` has to match a real party row, so guessing one just moves the `40
 
 | Service | URL | Credentials |
 |---|---|---|
+| Console (staff, agents, customers) | http://localhost:5173 | the realm users -- see `keycloak/README.md` |
 | Application API | http://localhost:8080 | bearer token from Keycloak |
 | Keycloak admin | http://localhost:8081 | `admin` / `devadmin` |
 | pgAdmin | http://localhost:5050 | `dev@nlolo-lifeplatform.tz` / `devadmin` (server pre-registered) |
 | Mailpit (outbound mail) | http://localhost:8025 | none |
 | Document store (S3 API, no console) | http://localhost:9000 | `minioadmin` / `minioadmin` (see the note below) |
 | WireMock (mobile money) | http://localhost:8082 | none |
+| WireMock (SMS gateway) | http://localhost:8083 | none |
 
 **The dev document store is SeaweedFS (2026-10-19).** MinIO withdrew public distribution on
 2026-10-13 -- its Docker Hub repositories are gone, `dl.min.io` answers 410, quay.io demands credentials -- so

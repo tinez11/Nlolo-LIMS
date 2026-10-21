@@ -1,6 +1,8 @@
 # Deliverable 3 — Aggregate Design (Revision 2)
 **Digital Life Insurance Core Platform — Tanzania (Phase 0, Artifact 3 of 8)**
 
+> Design-era document. §12's Camunda-orchestrated surrender/maturity loan netting was never built: no Camunda engine was adopted. Surrender is a request/approve flow in `policy` and `accumulation`; maturity runs through `benefitpayout`, and `accumulation` drains matured accounts.
+
 > Supersedes Revision 1. Resolves your full 🔴/🟡/🟢/🟣 review. Blocking items B1–B4 are resolved as configurable, structurally-safe placeholders (same pattern as C1's `finaccounting` treatment) so Deliverable 4 isn't held hostage by values that Legal/Product/Actuarial haven't confirmed yet — each is flagged **[VERIFY]** with the specific parameter or field that will absorb the eventual real answer without a redesign.
 
 ---

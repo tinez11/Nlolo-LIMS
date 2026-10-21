@@ -1,4 +1,6 @@
-# IFRS 17 I3a — Posting Engine Implementation Plan (DRAFT, awaiting confirmation)
+# IFRS 17 I3a — Posting Engine Implementation Plan
+
+**Status:** merged 55a3a986 (2026-10-06)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans. Inline execution, no subagents.
 > Branch `ifrs17-i3a` from main AFTER I2 merges. Nothing in this plan is compiled before then.

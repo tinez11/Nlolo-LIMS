@@ -105,8 +105,8 @@ This gives 17 bounded contexts total. That's a large but not unreasonable number
 - Key aggregates: none (delegated to Keycloak); this context owns the **claims contract**, not user records.
 
 **2.16 Document & Content Management**
-- Responsibility: KYC documents, policy documents, claim evidence, signed forms — stored in MinIO, referenced by URI from other contexts' aggregates. Generic capability, exposed as a simple port (`DocumentStorePort`) other contexts inject.
-- Key aggregates: `DocumentRecord` (metadata only; binary lives in MinIO).
+- Responsibility: KYC documents, policy documents, claim evidence, signed forms — stored in SeaweedFS (S3-compatible; MinIO until 2026-10-13), referenced by URI from other contexts' aggregates. Generic capability, exposed as a simple port (`DocumentStorePort`) other contexts inject.
+- Key aggregates: `DocumentRecord` (metadata only; binary lives in SeaweedFS, S3-compatible (MinIO until 2026-10-13)).
 
 **2.17 Reference & Master Data**
 - Responsibility: **tenant-global** lookup data — country/currency codes, occupation classification, TIRA product/return codes. Explicitly *not* tenant-scoped (per your multi-tenancy rules), read-heavy, rarely written.

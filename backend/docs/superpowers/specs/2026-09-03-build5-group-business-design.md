@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-03
 **Requirement:** §5 of the client's underwriting requirements table.
-**Status:** slice 1 shipped (schema, domain, service, HTTP). Frontend and later slices open.
+**Status:** slice 1 shipped (schema, domain, service, HTTP). The later group-scheme work was merged afterwards (group underwriting pipeline, group claims, substitution and notices on main 2026-09-10; group funeral scheme 983b33e7, 2026-10-07) — see git log.
 
 ---
 

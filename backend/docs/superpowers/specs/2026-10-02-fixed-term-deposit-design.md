@@ -1,7 +1,6 @@
 # Fixed-term deposit — a savings plan with a rate for its term
 
-**Status:** design agreed 2026-10-02. Next: implementation plan. Built before step 4 (bonuses), whose
-plan waits until this merges.
+**Status:** merged 3241b20e (2026-10-02)
 **Builds on:** step 3, the savings account (`accumulation`, merged at `5fc2c8f8`), and the
 Idempotency-Key fix (`6dca71a8`).
 

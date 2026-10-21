@@ -1,6 +1,8 @@
 # Deliverable 7 — Infrastructure Architecture
 **Digital Life Insurance Core Platform — Tanzania (Phase 0, Artifact 7 of 8)**
 
+> Design-era document. Current state differs: there is no Camunda engine; the object store is SeaweedFS (S3 API) since 2026-10-13, not MinIO; the frontend is a Vite SPA (staff, agents and customers consoles) using Keycloak PKCE, and the Next.js BFF was deleted; RLS was adopted. See deploy/README.md for the server stack.
+
 > Companion files: `infra/docker-compose.yml` + `infra/docker-compose.observability.yml` (validated with `docker compose config` — 15 services merge cleanly), `infra/postgres/Dockerfile`, `infra/postgres/init/01-create-app-role.sql`, `infra/app/Dockerfile`, `db-migrations/_post-migration/configure-pg-partman.sql`, `observability/prometheus.yml`, `observability/alert-rules.yml`, `observability/tempo.yaml`, `.github/workflows/ci-cd.yml`.
 
 ---

@@ -1,6 +1,6 @@
 # Staff list improvements — newest-first sort, search bar, popover date picker
 
-**Status:** design approved, pending implementation plan
+**Status:** merged (see git log; built on main 2026-08-26, no merge commit)
 **Date:** 2026-08-26
 **Depends on:** the party-picker work (`2026-08-25-party-picker-design.md`) — this reuses its `q`-search JPQL pattern for Policies/Claims and its Radix-Popover component shell for the date picker.
 

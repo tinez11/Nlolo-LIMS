@@ -1,6 +1,6 @@
 # Agent commission view — design
 
-Date: 2026-10-12. Status: approved in brainstorming, not yet planned.
+Date: 2026-10-12. **Status:** merged 513775d5 (2026-10-12)
 
 ## Goal
 

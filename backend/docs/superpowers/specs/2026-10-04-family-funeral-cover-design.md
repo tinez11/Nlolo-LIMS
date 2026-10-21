@@ -1,6 +1,6 @@
 # Family funeral cover (FUNERAL category) — design
 
-Date: 2026-10-04. Status: agreed with the user section by section; awaiting review of this document.
+Date: 2026-10-04. **Status:** merged 32c0e98d (2026-10-05)
 
 ## 1. What it is
 

@@ -1,6 +1,6 @@
 # Product step 4 — with-profits bonuses (sub-project C)
 
-**Status:** design agreed 2026-10-02. Next: implementation plan.
+**Status:** merged 5c69aa84 (2026-10-03)
 **Builds on:** step 0 (rolling billing, EXPIRED at term end, pinned version), step 1 (cash-value
 scale, surrender, paid-up, loans), step 2 (payout engine, `benefitpayout`), step 3 (accumulation,
 merged at `5fc2c8f8`).

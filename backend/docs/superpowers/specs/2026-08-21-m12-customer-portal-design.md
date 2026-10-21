@@ -1,5 +1,7 @@
 # M12 — Customer Portal (frontend)
 
+> **Superseded** by specs/2026-10-08-customer-portal-design.md (the Vite SPA customer portal); the Next.js portal this describes was deleted.
+
 **Status:** design approved, pending implementation plan
 **Date:** 2026-08-21
 **Depends on:** M0–M11 (all merged to `main` at `5d5a1d1`, 661/661 tests green). M11 specifically —

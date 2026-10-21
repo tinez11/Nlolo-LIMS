@@ -1,5 +1,7 @@
 # Credit Life, Plan 1 — status
 
+> Historical: credit-life plans 1-6 are merged.
+
 **Branch:** `credit-life-1-the-contract` (10 commits, not merged)
 **Date:** 2026-09-21
 **Spec:** `../specs/2026-09-21-credit-life-design.md`

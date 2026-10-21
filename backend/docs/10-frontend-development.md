@@ -1,7 +1,8 @@
 # 10 — Frontend Development
 
-A runbook for running the staff console (`frontend/`, Vite + React, realm-scoped
-SPA) against the real local stack described in `docs/09-local-development.md`.
+A runbook for running the console (`frontend/`, Vite + React, realm-scoped SPA: the
+staff, agents and customers consoles in one app) against the real local stack described
+in `docs/09-local-development.md`.
 
 Unlike the Next.js portal this replaces, the SPA is **not** a BFF: it is a plain
 browser client that calls the backend directly, authenticating via PKCE against a
@@ -12,7 +13,7 @@ server proxies `/api` to the backend to stay same-origin (`vite.config.ts`).
 ## Prerequisites
 
 - Everything in `docs/09-local-development.md`'s prerequisites, plus:
-- **Node 22** (`frontend/package.json`'s `engines`). `npm` ships with it.
+- **Node 22 or newer** (the dev machine runs 24; `package.json` declares no `engines`). `npm` ships with it.
 - The backend running per `docs/09-local-development.md`'s startup sequence,
   **including the seeder** -- the console has nothing to show without it.
 - The `lifeplatform-spa` client actually present in Keycloak -- see Gotcha 1. This
@@ -21,12 +22,11 @@ server proxies `/api` to the backend to stay same-origin (`vite.config.ts`).
 ## Startup order
 
 ```bash
-# 1. Infra + backend, exactly as in docs/09-local-development.md
-cd infra && docker compose up -d postgres keycloak minio redis mock-mobile-money mailpit && cd ..
-scripts/migrate.sh local
-export JAVA_HOME="/c/Users/USER/.vscode/extensions/redhat.java-1.56.0-win32-x64/jre/21.0.12.1-win32-x86_64"
-./mvnw -B -o spring-boot:run -Dspring-boot.run.profiles=local
-scripts/seed-dev-data.sh          # REQUIRED -- writes party_id back into Keycloak, see Gotcha 2
+# 1. Infra + backend: follow the Startup block in docs/09-local-development.md exactly
+#    (containers incl. objectstore-init, migrate.sh, configure-db.sh, the backend, then the seeder).
+#    It is not repeated here because two copies drifted apart: this one still started a `minio`
+#    service months after the object store became SeaweedFS.
+#    The seeder is REQUIRED -- it writes party_id back into Keycloak, see Gotcha 2.
 
 # 2. The lifeplatform-spa Keycloak client -- see Gotcha 1 for why this is a
 #    separate step and not just part of the realm import
@@ -52,7 +52,7 @@ is a public PKCE client by construction (see `frontend/PLAN.md` §3).
 ### After any OpenAPI change
 
 `src/types/api/*.ts` are generated, not hand-written, from `api/openapi/openapi-*.yaml`
-(15 separate specs -- there is no aggregate spec on this platform) and are
+(one per module, 25 as of 2026-10-21 -- there is no aggregate spec on this platform) and are
 gitignored, so **every fresh checkout needs this before typecheck or build will
 succeed**, not just after a spec change:
 
@@ -72,7 +72,7 @@ Two independent layers, run differently on purpose:
 - **`npm test`** (Vitest) -- fast, mocked at the data-shape level (MSW is
   permitted for response bodies), no live stack required. Run in the foreground.
 - **`npm run test:e2e`** (Playwright) -- slow, real Keycloak login, real backend,
-  real Postgres/MinIO. Requires the full stack above (infra, backend with seeded
+  real Postgres and SeaweedFS. Requires the full stack above (infra, backend with seeded
   data, and `lifeplatform-spa` applied) to already be running.
   `playwright.config.ts`'s `webServer` starts `npm run dev` itself if port 5173 is
   free, and `reuseExistingServer: !CI` happily attaches to one you already
@@ -83,9 +83,12 @@ Two independent layers, run differently on purpose:
   npm run test:e2e
   ```
 
-  Expected: 7 tests pass (`setup` logs in as `staff.underwriter` once and saves
-  Keycloak's SSO cookie to `e2e/.auth/staff.json`; `staff-policies.spec.ts` runs
-  against `chromium`). What gets saved is the **SSO cookie**, not app tokens --
+  About 60 specs across two projects: `staff` (`staff-*.spec.ts`) and `agents`
+  (`agents-*.spec.ts`). The `setup` project logs in once per role (`e2e/auth*.setup.ts`:
+  underwriter, admin, assessor, manager, senior, finance, finance approver, agent) and
+  saves each SSO cookie under `e2e/.auth/`. The full run is long; run one spec while
+  working (`npx playwright test e2e/<spec>`), and if a spec times out in a full run,
+  re-run it alone before diagnosing. What gets saved is the **SSO cookie**, not app tokens --
   the console holds tokens in memory only (see Gotcha 3), so every subsequent test
   exercises a real silent re-authentication rather than replaying a saved session.
 
@@ -138,17 +141,18 @@ form. This SPA's `RequireAuth` redirects straight to Keycloak -- there is no
 intermediate app-owned page. A script written against the old two-hop flow will
 find `#username` immediately after `page.goto()`, without an intervening click.
 
-**5. The one seeded policy is a dead end for new claims and reads
-`cashValue: 0.00`.** `scripts/seed-dev-data.sh` leaves exactly one policy,
-`POL-6BD5702F`, in status SURRENDERED with one SETTLED claim against it -- see the
-old portal runbook's equivalent gotcha (now in git history) for the full
-claims-specific detail, which no longer applies directly to this staff-only
-console but is worth knowing if a future realm's E2E suite exercises claims. The
-`cashValue: 0.00` is not a display bug: `PolicyAccount.cashValueAmount` is
-hardcoded to zero at issuance platform-wide (see `project-platform-status`'s M11
-entry), and the console's Policy detail page annotates it rather than hiding it.
+**5. The seeded data is a starting point, not a fixture.** The seeder creates the
+realm users' parties, products and a few policies; e2e specs create what they need
+themselves. A cash value of zero on a policy is real, not a display bug: a version
+with no cash-value table has no surrender value (the Policy page says so), and a
+savings account's value is its balance.
 
-**6. `pg-hostproxy` (port 15432), not `5432`, for any direct Postgres connection
-from the host.** A native Postgres process independently occupies host port 5432
-on this machine; connecting there reaches the wrong server. `application-local.yml`
-already points at 15432 -- this matters only when inspecting seeded data by hand.
+**6. Port 15432, not 5432, for any direct Postgres connection from the host.**
+The `postgres` container publishes on host port 15432, because a native Postgres on
+5432 would silently win that port; `application-local.yml` already points at 15432.
+For a quick look, `docker exec infra-postgres-1 psql -U postgres -d lifeplatform`
+needs no client install.
+
+**7. After a backend change, restart the backend; after a spec change, regenerate types.**
+Vite reloads the console by itself, but the backend (`spring-boot:run`) does not reload,
+and `src/types/api/` is regenerated only by `npm run generate:api`.

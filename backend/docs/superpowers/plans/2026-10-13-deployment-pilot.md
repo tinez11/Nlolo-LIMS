@@ -1,5 +1,7 @@
 # Deployment Pilot Implementation Plan
 
+> Object store: SeaweedFS replaced MinIO on 2026-10-13 (MinIO withdrew its images); read `minio` below as the SeaweedFS `objectstore` service in deploy/server/compose.yml.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Put the platform on one internet-facing VPS for a pilot: Caddy + TLS, Keycloak 26 configured as code, Flyway migrations, SMS portal invites, a release script, backups and a restore path.
