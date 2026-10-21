@@ -89,8 +89,9 @@ export function AcceptedQuotationPanel({
         {'kind' in q && q.kind === 'TERM_ACCOUNT' && (() => {
           // A term account (2026-10-21): the contribution, the rate locked for the term, and the projection to maturity.
           const t = (q.termAccount ?? {}) as Record<string, unknown>;
+          // The saved quote is the server's own record: its figures are JSON numbers, in the quotation's currency.
           const m = (v: unknown) => (v && typeof v === 'object' && 'amount' in v
-            ? formatMoney(v as { amount: string; currencyCode: string }) : '—');
+            ? formatMoney(v as { amount: string; currencyCode: string }) : money(v, currency));
           return (
             <>
               <Field
