@@ -74,7 +74,10 @@ export function DepositSection({ deposit, isFinance }: { deposit: DepositView; i
     <div className="space-y-4">
       {running && (
         <>
-          <dl className="divide-y divide-border rounded-md border border-border" aria-label="Running term">
+          <dl
+            className="grid grid-cols-1 gap-x-6 rounded-md border border-border px-4 py-1 sm:grid-cols-2"
+            aria-label="Running term"
+          >
             <Field label="Deposit" value={formatMoney(running.principal)} emphasis />
             <Field label="Term" value={`${running.termMonths} months, ${running.ratePercent}% for the term`} />
             <Field label="Started" value={formatDate(running.startDate)} />

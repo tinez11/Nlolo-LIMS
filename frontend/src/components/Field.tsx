@@ -23,16 +23,23 @@ export function Field({
   value,
   note,
   emphasis = false,
+  className,
 }: {
   label: string;
   value: ReactNode;
   note?: string;
   emphasis?: boolean;
+  /**
+   * An escape hatch for spacing only -- a group's first field takes `mt-3` so a long flat list
+   * reads as clusters (who / contact / record) instead of one undifferentiated run. Never a rule:
+   * the gap between rows is already the system's way of grouping without lined paper.
+   */
+  className?: string;
 }) {
   return (
     // No rule between rows (2026-10-09): a record rail ruled under every field read as lined paper,
     // one line every row. The label/value pairing across the row is carried by the baseline.
-    <div className="flex flex-wrap items-baseline justify-between gap-x-4 py-2">
+    <div className={`flex flex-wrap items-baseline justify-between gap-x-4 py-2${className ? ` ${className}` : ''}`}>
       <dt className="shrink-0 text-xs text-muted-foreground">{label}</dt>
       <dd className="min-w-0 text-right">
         <span className={emphasis ? 'text-title' : 'text-sm'}>{value}</span>

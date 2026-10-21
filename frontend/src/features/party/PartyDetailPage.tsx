@@ -268,6 +268,9 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
             <Panel title="Identity">
               {party && (
                 <dl className="px-4 pb-2">
+                  {/* WHO -- the facts a reviewer judges evidence against. Nationality sits beside
+                      type/DOB here, not after the ID document, because it answers the same
+                      question ("who is this") rather than the document question ("prove it"). */}
                   <Field label="Type" value={partyTypeLabel(party.partyType)} />
                   {/* Each field only where it applies to this kind of party (2026-10-09), or where one
                       is recorded anyway. A company showed "Date of birth —", and the em dash, which
@@ -278,10 +281,20 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
                   {(isOrganisation || party.registrationNumber) && (
                     <Field label="Registration no." value={party.registrationNumber ?? '—'} />
                   )}
-                  <Field label="Phone" value={party.phoneNumber ?? '—'} />
+                  {(!isOrganisation || party.nationality) && (
+                    <Field label="Nationality" value={party.nationality ?? '—'} />
+                  )}
+
+                  {/* CONTACT -- how to reach them. */}
+                  <Field className="mt-3" label="Phone" value={party.phoneNumber ?? '—'} />
                   <Field label="Email" value={party.email ?? '—'} />
+
+                  {/* VERIFICATION -- what was checked, and against what document. The group's
+                      opening margin sits on whichever field actually leads it: the ID document
+                      when one is on file, Client reference otherwise. */}
                   {party.identityDocument?.type && (
                     <Field
+                      className="mt-3"
                       label={ID_TYPE_LABELS[party.identityDocument.type]}
                       value={
                         <span className="font-mono text-xs select-all">
@@ -290,14 +303,12 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
                       }
                     />
                   )}
-                  {(!isOrganisation || party.nationality) && (
-                    <Field label="Nationality" value={party.nationality ?? '—'} />
-                  )}
                   {/*
                     Selectable and monospaced like the ID above it, because the only thing
                     anybody does with this number is copy it into another system.
                   */}
                   <Field
+                    {...(party.identityDocument?.type ? {} : { className: 'mt-3' })}
                     label="Client reference"
                     value={
                       party.clientReference ? (
@@ -312,7 +323,9 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
                     value={party.kycVerifiedAt ? formatInstant(party.kycVerifiedAt) : '—'}
                     {...(party.kycVerifiedAt ? {} : { note: 'No decision recorded yet.' })}
                   />
-                  <Field label="Registered" value={formatInstant(party.createdAt) || '—'} />
+
+                  {/* RECORD -- provenance: when and by whom this client entered the register. */}
+                  <Field className="mt-3" label="Registered" value={formatInstant(party.createdAt) || '—'} />
                   {/*
                     ONE ROW, NEVER A LOGIN ID. `createdBy` is a Keycloak subject -- a uuid
                     nothing on this platform can name -- and it used to be printed raw here,

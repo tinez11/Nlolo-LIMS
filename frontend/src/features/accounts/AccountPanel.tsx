@@ -81,9 +81,16 @@ export function AccountPanel({ policyNumber }: { policyNumber: string }) {
   );
 }
 
+/**
+ * Four facts, laid out two to a row. A single column here left this box mostly empty on any
+ * screen wider than a phone -- the same complaint the policy record rail never had, because the
+ * rail is only 320px wide and these facts had the room to be read as a column of short rows. Full
+ * panel width turns that column into a lot of blank space beside each short value, so it reflows
+ * sm+ the way `Summary` and `DepositSection`'s running-term box both now do.
+ */
 function Summary({ account }: { account: AccountView }) {
   return (
-    <dl className="divide-y divide-border rounded-md border border-border">
+    <dl className="grid grid-cols-1 gap-x-6 rounded-md border border-border px-4 py-1 sm:grid-cols-2">
       <Field label="Status" value={<StatusBadge kind="savingsAccount" value={account.status} />} />
       <Field label="Balance" value={formatMoney(account.balance)} emphasis />
       <Field label="Opened" value={formatDate(account.openedOn)} />
