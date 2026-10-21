@@ -38,8 +38,7 @@ import { FuneralLivesFields } from './FuneralLivesFields';
 import { QuotationPreview } from './QuotationPreview';
 import { getUnitLinkedTerms } from '@/api/unitlinked';
 import type { UnitLinkedTermsView } from '@/api/types';
-import { getTermAccountTerms } from '@/api/products';
-import type { TermAccountTermsView } from '@/api/types';
+import { useTermAccountTerms } from './useTermAccountTerms';
 import { UnitLinkedChoiceFields } from './UnitLinkedChoiceFields';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { UnsavedGuard } from '@/components/UnsavedGuard';
@@ -248,24 +247,15 @@ export function OpenUnderwritingCasePage() {
 
   // A term account (2026-10-21): a savings product whose version carries a rate band. The case names the rate inside
   // it. Asked only of a savings (SAV) product -- every term account is one.
-  const maybeTermAccount = selectedProduct?.portfolioCode === 'SAV';
-  const [termAccountTerms, setTermAccountTerms] = useState<TermAccountTermsView | null>(null);
+  const termAccountTerms = useTermAccountTerms(productId, productVersionId, selectedProduct?.portfolioCode);
+  const isTermAccount = termAccountTerms !== null;
   useEffect(() => {
-    if (!maybeTermAccount || !productId || !productVersionId) return undefined;
-    let live = true;
-    getTermAccountTerms(productId, productVersionId).then((t) => {
-      if (!live) return;
-      setTermAccountTerms(t);
-      setValue('isTermAccount', t.termAccount);
-      setValue('termAccountMinRate', t.minRatePercent != null ? String(t.minRatePercent) : '');
-      setValue('termAccountMaxRate', t.maxRatePercent != null ? String(t.maxRatePercent) : '');
-    }, () => undefined);
-    return () => { live = false; };
-  }, [maybeTermAccount, productId, productVersionId, setValue]);
-  const isTermAccount = maybeTermAccount && termAccountTerms?.termAccount === true;
-  useEffect(() => {
-    if (!maybeTermAccount) setValue('isTermAccount', false);
-  }, [maybeTermAccount, setValue]);
+    setValue('isTermAccount', isTermAccount);
+    setValue('termAccountMinRate', termAccountTerms?.minRatePercent != null ? String(termAccountTerms.minRatePercent) : '');
+    setValue('termAccountMaxRate', termAccountTerms?.maxRatePercent != null ? String(termAccountTerms.maxRatePercent) : '');
+  }, [isTermAccount, termAccountTerms, setValue]);
+  // What the customer wants at maturity: not part of the case, only what the quotation works the contribution back from.
+  const [termAccountTarget, setTermAccountTarget] = useState('');
   const mainMemberParty = (lifeAssuredPartyId ? lifeAssured.data : applicant.data) ?? null;
   const mainMember = mainMemberParty
     ? { name: mainMemberParty.displayName ?? 'Main member', dateOfBirth: mainMemberParty.dateOfBirth ?? null }
@@ -370,9 +360,10 @@ export function OpenUnderwritingCasePage() {
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <FormField
-            label={isDeferredAnnuity ? 'Contribution per payment' : isAnnuity ? 'Purchase price'
+            label={isDeferredAnnuity || isTermAccount ? 'Contribution per payment' : isAnnuity ? 'Purchase price'
               : isFuneral ? "Sum assured (the main member's benefit on the plan)" : 'Sum assured'}
             error={errors.sumAssuredAmount?.message}
+            hint={isTermAccount ? 'Or enter what the customer wants at maturity below, and use the contribution the quotation works out.' : undefined}
           >
             <Input
               placeholder="1500000.00"
@@ -387,6 +378,20 @@ export function OpenUnderwritingCasePage() {
             />
           </FormField>
         </div>
+
+        {isTermAccount && (
+          <FormField
+            label="Wanted at maturity (optional)"
+            hint="The quotation below works out the contribution that reaches it, at the rate and term chosen."
+          >
+            <Input
+              inputMode="decimal"
+              placeholder="5000000"
+              value={termAccountTarget}
+              onChange={(e) => setTermAccountTarget(e.target.value)}
+            />
+          </FormField>
+        )}
 
         {/*
           THE INTRODUCING AGENT WINS, so this field is replaced rather than silently overridden.
@@ -718,6 +723,18 @@ export function OpenUnderwritingCasePage() {
                     dateOfBirth: d.dateOfBirth,
                     student: d.student,
                   })),
+                }
+              : undefined
+          }
+          termAccount={
+            isTermAccount
+              ? {
+                  ratePercent: watch('proposedRatePercent'),
+                  targetAmount: termAccountTarget,
+                  onUseContribution: (amount) => {
+                    setValue('sumAssuredAmount', amount, { shouldValidate: true, shouldDirty: true });
+                    setTermAccountTarget('');
+                  },
                 }
               : undefined
           }

@@ -99,9 +99,21 @@ public class QuotationDocuments {
     public record Request(UUID productId, UUID productVersionId, UUID applicantPartyId, BigDecimal sumAssured,
                           String currency, String frequency, Integer policyTermMonths,
                           Integer premiumPayingTermMonths, LocalDate commencement, String funeralPlanCode,
-                          List<FuneralLifeInput> funeralLives, Prospect prospect, Preparer preparedBy) {
+                          List<FuneralLifeInput> funeralLives, Prospect prospect, Preparer preparedBy,
+                          /* A term account's rate, % a year (2026-10-21): it is quoted at the rate the case will
+                             name, so the rate is an input like the term. Null for every other product. */
+                          BigDecimal ratePercent) {
         public Request {
             funeralLives = funeralLives != null ? List.copyOf(funeralLives) : List.of();
+        }
+
+        /** Every product but a term account, which names no rate. */
+        public Request(UUID productId, UUID productVersionId, UUID applicantPartyId, BigDecimal sumAssured,
+                       String currency, String frequency, Integer policyTermMonths, Integer premiumPayingTermMonths,
+                       LocalDate commencement, String funeralPlanCode, List<FuneralLifeInput> funeralLives,
+                       Prospect prospect, Preparer preparedBy) {
+            this(productId, productVersionId, applicantPartyId, sumAssured, currency, frequency, policyTermMonths,
+                premiumPayingTermMonths, commencement, funeralPlanCode, funeralLives, prospect, preparedBy, null);
         }
 
         /** A registered applicant's quotation: their facts are read from their record. */
@@ -244,7 +256,7 @@ public class QuotationDocuments {
             throw new CustomerRequestRefusedException("A savings quotation needs the amount to be paid in");
         }
         return accumulationApi.quoteProductSavings(in.productId(), in.productVersionId(), in.sumAssured(),
-            in.policyTermMonths(), asOf);
+            in.policyTermMonths(), asOf, in.ratePercent(), in.frequency(), null);
     }
 
     private CustomerDocument premium(Request in, ProductSummaryView product, Proposer applicant,
@@ -415,6 +427,9 @@ public class QuotationDocuments {
     private CustomerDocument savings(Request in, ProductSummaryView product, Proposer applicant,
                                      String currency, LocalDate asOf) {
         SavingsQuoteView quote = savingsQuote(in, asOf);
+        if (quote.kind() == SavingsQuoteView.Kind.TERM_ACCOUNT) {
+            return termAccount(quote, in.productVersionId(), product, applicant, currency, asOf);
+        }
         boolean deposit = quote.kind() == SavingsQuoteView.Kind.DEPOSIT;
         String rate = quote.ratePercent() == null ? "-"
             : quote.ratePercent().stripTrailingZeros().toPlainString() + "% " + (deposit ? "for the term" : "a year");
@@ -455,6 +470,44 @@ public class QuotationDocuments {
 
         return new CustomerDocument(ISSUER, deposit ? "Fixed-term deposit quotation" : "Savings account quotation",
             header(applicant, product, extra), columns, rows, totals, signOff(applicant, notes), false);
+    }
+
+    /**
+     * A term account's quotation (2026-10-21): the contribution, how often and how many, the rate locked for the term,
+     * and what it pays out on the maturity date -- every figure the server's projection, the one the case is opened on.
+     */
+    private CustomerDocument termAccount(SavingsQuoteView quote, java.util.UUID productVersionId, ProductSummaryView product,
+                                         Proposer applicant, String currency, LocalDate asOf) {
+        if (quote.refusal() != null) throw new CustomerRequestRefusedException(quote.refusal());
+        SavingsQuoteView.TermAccountQuote t = quote.termAccount();
+        List<Field> extra = new ArrayList<>();
+        extra.add(new Field("Interest rate", quote.ratePercent().stripTrailingZeros().toPlainString()
+            + "% a year, fixed for the term"));
+        extra.add(new Field("Term", term(quote.termMonths())));
+        extra.add(new Field("Starts on", DMY.format(asOf)));
+        extra.add(new Field("Matures on", DMY.format(quote.maturityDate())));
+
+        List<Column> columns = List.of(new Column("Item", Kind.TEXT, 3.0f), new Column("Amount (" + currency + ")", Kind.MONEY, 1.4f));
+        List<List<Object>> rows = new ArrayList<>();
+        rows.add(List.of("Contribution " + frequency(t.frequency()), quote.amount()));
+        rows.add(List.of("Paid in over the term (" + t.contributions() + " payments)", t.paidIn()));
+        if (t.charges().signum() > 0) rows.add(List.of("Charges over the term", t.charges().negate()));
+        rows.add(List.of("Interest to maturity", quote.interest()));
+
+        List<Field> totals = new ArrayList<>();
+        totals.add(new Field("Paid out at maturity", money(quote.maturityValue(), currency)));
+
+        List<String> notes = new ArrayList<>();
+        notes.add("Nothing can be withdrawn or surrendered before " + DMY.format(quote.maturityDate())
+            + ". On that day the whole balance is paid out.");
+        notes.add("The figure at maturity assumes every contribution is paid on its due date. A contribution paid late"
+            + " earns less, and one missed is not made up.");
+        if (applicant.prospect()) {
+            notes.add("On death, the higher of the account balance and the share of contributions the product sets is paid.");
+            notes.addAll(prospectNotes(productApi.resolvePayoutPlan(productVersionId).terms(), "figures"));
+        }
+        return new CustomerDocument(ISSUER, "Term account quotation", header(applicant, product, extra), columns, rows,
+            totals, signOff(applicant, notes), false);
     }
 
     /**

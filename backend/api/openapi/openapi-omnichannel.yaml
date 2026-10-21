@@ -743,7 +743,12 @@ components:
             occupationClass: { type: [string, "null"], maxLength: 30 }
         sumAssured:
           type: [number, "null"]
-          description: The sum assured, or a deposit's amount. Null on a funeral plan, whose plan sets the benefit.
+          description: >-
+            The sum assured, or a deposit's amount, or a term account's contribution per payment. Null on a funeral
+            plan, whose plan sets the benefit.
+        ratePercent:
+          type: [number, "null"]
+          description: "A term account's rate, % a year, inside its version's band (2026-10-21). Null on any other product."
         currency: { type: [string, "null"] }
         frequency:
           type: [string, "null"]

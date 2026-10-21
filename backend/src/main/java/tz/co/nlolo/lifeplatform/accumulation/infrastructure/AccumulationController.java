@@ -9,6 +9,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import tz.co.nlolo.lifeplatform.accumulation.api.AccountNotFoundException;
 import tz.co.nlolo.lifeplatform.accumulation.api.AccumulationApi;
+import tz.co.nlolo.lifeplatform.accumulation.api.AccumulationStateException;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -57,9 +58,13 @@ public class AccumulationController {
     public SavingsQuoteResponse quoteSavings(@PathVariable UUID productId, @PathVariable UUID versionId,
                                              @Valid @RequestBody SavingsQuoteResponse.Body body) {
         String currency = body.currency() == null || body.currency().isBlank() ? "TZS" : body.currency();
+        if (body.amount() == null && body.targetAmount() == null) {
+            throw new AccumulationStateException("A savings quotation needs the amount to be paid in");
+        }
         return SavingsQuoteResponse.from(api.quoteProductSavings(productId, versionId, body.amount(),
             body.termMonths(), body.asOf() != null ? body.asOf()
-                : java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"))), currency);
+                : java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")),
+            body.ratePercent(), body.frequency(), body.targetAmount()), currency);
     }
 
     @PostMapping("/rate-declarations/{declarationId}/approve")

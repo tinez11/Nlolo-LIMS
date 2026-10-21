@@ -50,6 +50,16 @@ public interface AccumulationApi {
     SavingsQuoteView quoteProductSavings(java.util.UUID productId, java.util.UUID productVersionId,
                                          java.math.BigDecimal amount, Integer termMonths, java.time.LocalDate asOf);
 
+    /**
+     * The same, with what a term account (2026-10-21) is also quoted on: the rate the case would name, how often the
+     * contribution is paid, and -- in place of {@code amount} -- the figure the customer wants at maturity, for which
+     * the contribution is solved. Ignored by a deposit and an ordinary account.
+     */
+    SavingsQuoteView quoteProductSavings(java.util.UUID productId, java.util.UUID productVersionId,
+                                         java.math.BigDecimal amount, Integer termMonths, java.time.LocalDate asOf,
+                                         java.math.BigDecimal ratePercent, String frequency,
+                                         java.math.BigDecimal targetAmount);
+
     // ---- Money in and out (task 6) ------------------------------------------------------------
 
     /**

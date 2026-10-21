@@ -1223,6 +1223,14 @@ public class AccumulationApiImpl implements AccumulationApi {
     @Transactional(readOnly = true)
     public SavingsQuoteView quoteProductSavings(UUID productId, UUID productVersionId, BigDecimal amount,
                                                 Integer termMonths, LocalDate asOf) {
+        return quoteProductSavings(productId, productVersionId, amount, termMonths, asOf, null, null, null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SavingsQuoteView quoteProductSavings(UUID productId, UUID productVersionId, BigDecimal amount,
+                                                Integer termMonths, LocalDate asOf, BigDecimal ratePercent,
+                                                String frequency, BigDecimal targetAmount) {
         LocalDate on = asOf != null ? asOf : LocalDate.now();
         // The version must belong to the product named. It matters on the ACCOUNT branch, where the rate is read
         // from the PRODUCT's declarations while the guarantee comes from the VERSION: a mismatched pair would quote
@@ -1265,12 +1273,52 @@ public class AccumulationApiImpl implements AccumulationApi {
             throw new AccumulationStateException("This product does not keep an account, so it has no savings rate to"
                 + " quote. A premium-rated product is priced from its rate table instead.");
         }
+        if (plan.isTermAccount()) {
+            return quoteTermAccount(plan, amount, termMonths, on, ratePercent, frequency, targetAmount);
+        }
         // The same max(declared, guaranteed) the valuer credits interest on, read on the commencement date.
         BigDecimal rate = new RateSchedule(
             rates.findByProductIdAndStatusOrderByEffectiveFrom(productId, RateDeclarationStatus.APPROVED.name()),
             plan.guaranteedRatePercent()).apply(on);
         return new SavingsQuoteView(SavingsQuoteView.Kind.ACCOUNT, amount, rate, List.of(), null, null, null, null,
             plan.minimumBalance(), null, null);
+    }
+
+    /**
+     * A term account (2026-10-21), projected to maturity at the rate the case would name -- see
+     * {@link TermAccountProjection}. Given a target instead of a contribution, the contribution is solved for it. What
+     * the quote cannot be asked yet (a rate outside the band, no term, no frequency) comes back as a refusal beside the
+     * band, as a deposit's term does: the useful answer to "9%" is "this product offers 3% to 7%".
+     */
+    private SavingsQuoteView quoteTermAccount(tz.co.nlolo.lifeplatform.product.api.AccumulationPlan plan, BigDecimal amount,
+                                              Integer termMonths, LocalDate on, BigDecimal ratePercent, String frequency,
+                                              BigDecimal targetAmount) {
+        BigDecimal min = plan.minRatePercent();
+        BigDecimal max = plan.maxRatePercent();
+        String band = "between " + min.stripTrailingZeros().toPlainString() + "% and "
+            + max.stripTrailingZeros().toPlainString() + "%";
+        String freq = frequency == null || frequency.isBlank() ? null : frequency;
+        String refusal = ratePercent == null ? "Name the rate the customer is offered: this product offers a rate " + band + "."
+            : !plan.offers(ratePercent) ? "This product offers a rate " + band + ", not "
+                + ratePercent.stripTrailingZeros().toPlainString() + "%."
+            : termMonths == null ? "Choose the term: the account pays out when it ends."
+            : freq == null ? "Choose how often the contribution is paid."
+            : (amount == null || amount.signum() <= 0) && (targetAmount == null || targetAmount.signum() <= 0)
+                ? "Enter the contribution, or the amount the customer wants at maturity."
+            : null;
+        if (refusal != null) {
+            return new SavingsQuoteView(SavingsQuoteView.Kind.TERM_ACCOUNT, amount, ratePercent, List.of(), termMonths,
+                null, null, termMonths == null ? null : on.plusMonths(termMonths), plan.minimumBalance(), null, refusal,
+                new SavingsQuoteView.TermAccountQuote(freq, 0, null, null, targetAmount, min, max));
+        }
+        boolean solving = amount == null || amount.signum() <= 0;
+        TermAccountProjection.Projection p = solving
+            ? TermAccountProjection.solve(targetAmount, freq, termMonths, ratePercent, on, plan)
+            : TermAccountProjection.project(amount, freq, termMonths, ratePercent, on, plan);
+        return new SavingsQuoteView(SavingsQuoteView.Kind.TERM_ACCOUNT, p.contribution(), ratePercent, List.of(), termMonths,
+            p.interest(), p.maturityValue(), p.maturityDate(), plan.minimumBalance(), null, null,
+            new SavingsQuoteView.TermAccountQuote(freq, p.contributions(), p.paidIn(), p.charges(),
+                solving ? targetAmount : null, min, max));
     }
 
     /** A rate may not rewrite interest a customer has already been credited. */
