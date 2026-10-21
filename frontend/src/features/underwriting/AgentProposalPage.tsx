@@ -69,7 +69,7 @@ export function AgentProposalPage() {
   if (error && !view) {
     return (
       <>
-        <PageHeader breadcrumb={[{ label: 'Needs your action', to: '/agents/needs-action' }]} title="Proposal" />
+        <PageHeader breadcrumb={[{ label: 'Proposals', to: '/agents/proposals' }]} title="Proposal" />
         <div className="px-6 pt-6"><ErrorPanel error={error} /></div>
       </>
     );
@@ -78,13 +78,16 @@ export function AgentProposalPage() {
 
   const postponed = view.status === 'DECIDED' && view.decisionOutcome === 'POSTPONED';
   const declined = view.status === 'DECIDED' && view.decisionOutcome === 'DECLINED';
+  // 2026-10-21: an accepted or loaded case is now reachable from the Proposals list, not only from "Needs your
+  // action" -- where every case was either returned, postponed, or declined, so nothing yet said "accepted" here.
+  const accepted = view.status === 'DECIDED' && (view.decisionOutcome === 'ACCEPT' || view.decisionOutcome === 'LOADED');
   const amendable = view.status === 'RETURNED' || postponed;
   const lastReturn = [...history].reverse().find((e) => e.kind === 'RETURNED');
 
   return (
     <>
       <PageHeader
-        breadcrumb={[{ label: 'Needs your action', to: '/agents/needs-action' }]}
+        breadcrumb={[{ label: 'Proposals', to: '/agents/proposals' }]}
         title={`Proposal ${view.proposalNumber ?? ''}`}
         actions={
           view.status === 'DECIDED' ? (
@@ -122,7 +125,13 @@ export function AgentProposalPage() {
                 <Link className="underline" to="/agents/quotation">new quotation</Link>.
               </p>
             )}
-            {!amendable && !declined && (
+            {accepted && (
+              <p className="text-xs">
+                {view.decisionOutcome === 'LOADED' ? 'Accepted, with a loading.' : 'Accepted.'} Nothing is needed from
+                you; the policy is issued from here.
+              </p>
+            )}
+            {!amendable && !declined && !accepted && (
               <p className="text-xs">With the underwriter. Nothing is needed from you.</p>
             )}
           </div>

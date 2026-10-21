@@ -104,7 +104,7 @@ import {
   OpenUnderwritingCasePage,
   QuotationCalculatorPage,
   SubmitProposalPage,
-  NeedsActionPage,
+  AgentProposalsPage,
   AgentProposalPage,
   UnderwritingCaseDetailPage,
   UnderwritingQueuePage,
@@ -277,7 +277,9 @@ export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
     { id: 'communications', label: 'Communications' },
     { id: 'configuration', label: 'Configuration' },
   ],
-  agents: [{ id: 'my-business', label: 'My business' }],
+  // 'new-business' second, right under Dashboard (2026-10-21): where a sale starts and how it is going, kept
+  // apart from the book an agent already has -- the same split 'new-business' already draws for staff.
+  agents: [{ id: 'my-business', label: 'My business' }, { id: 'new-business', label: 'New business' }],
   customers: [{ id: 'my-cover', label: 'My cover' }],
   regulators: [],
 };
@@ -729,26 +731,31 @@ const AGENTS_SCREENS: Screen[] = [
     reach: { group: 'my-business', label: 'My clients', icon: UserCheck },
   },
   { path: 'parties/:partyId', element: <PartyDetailPage realm="agents" />, reach: 'drill-in' },
-  // Where a sale starts (2026-10-20): a price and a paper for the customer before anybody is registered or saved.
-  {
-    path: 'quotation',
-    element: <QuotationCalculatorPage />,
-    reach: { group: 'my-business', label: 'Quotation calculator', icon: Calculator },
-  },
-  // The confirmed quotation, submitted as a proposal once the customer is registered.
-  { path: 'quotation/:quotationId', element: <SubmitProposalPage />, reach: 'drill-in' },
-  // Proposals returned for corrections or postponed, and recent declines (2026-10-20). Counted in the nav.
-  {
-    path: 'needs-action',
-    element: <NeedsActionPage />,
-    reach: { group: 'my-business', label: 'Needs your action', icon: Inbox, badge: 'needs-action' },
-  },
-  { path: 'proposals/:caseId', element: <AgentProposalPage />, reach: 'drill-in' },
   {
     path: 'customers/new',
     element: <OnboardCustomerPage />,
     reach: { group: 'my-business', label: 'Onboard a customer', icon: UserPlus },
   },
+  // Where a sale starts (2026-10-20): a price and a paper for the customer before anybody is registered or saved.
+  // Its own group with Proposals, below Dashboard (2026-10-21): new business, kept apart from the book above.
+  {
+    path: 'quotation',
+    element: <QuotationCalculatorPage />,
+    reach: { group: 'new-business', label: 'Quotation calculator', icon: Calculator },
+  },
+  // The confirmed quotation, submitted as a proposal once the customer is registered.
+  { path: 'quotation/:quotationId', element: <SubmitProposalPage />, reach: 'drill-in' },
+  // Every proposal submitted, with its current status -- open, in review, returned, or decided (2026-10-21).
+  // "Needs your action" (returned, postponed, recent declines) is a filter on this page now, not a page of its
+  // own: it used to be the only place a proposal was visible at all, so an accepted one, or one still being
+  // reviewed, was invisible here until a policy -- or nothing -- eventually turned up. Badged the same way its
+  // predecessor was: what is waiting on the agent, not the count of everything in the list.
+  {
+    path: 'proposals',
+    element: <AgentProposalsPage />,
+    reach: { group: 'new-business', label: 'Proposals', icon: Inbox, badge: 'needs-action' },
+  },
+  { path: 'proposals/:caseId', element: <AgentProposalPage />, reach: 'drill-in' },
 ];
 
 /**

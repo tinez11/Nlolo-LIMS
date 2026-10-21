@@ -64,7 +64,7 @@ export function AgentDashboardPanel() {
       label: 'Needs your action',
       value: countValue(needsAction),
       hint: 'proposals returned or postponed',
-      to: '/agents/needs-action',
+      to: '/agents/proposals?view=needs-action',
     },
     { label: 'My clients', value: countValue(v.clients), hint: 'registered by you', to: '/agents/clients' },
     {
