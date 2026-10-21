@@ -277,9 +277,14 @@ export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
     { id: 'communications', label: 'Communications' },
     { id: 'configuration', label: 'Configuration' },
   ],
-  // 'new-business' second, right under Dashboard (2026-10-21): where a sale starts and how it is going, kept
-  // apart from the book an agent already has -- the same split 'new-business' already draws for staff.
-  agents: [{ id: 'my-business', label: 'My business' }, { id: 'new-business', label: 'New business' }],
+  // Dashboard on its own first, same as staff's ungrouped 'work' (2026-10-21) -- it is not "my business" or "new
+  // business", it is the landing page. 'new-business' second: where a sale starts and how it is going, kept apart
+  // from the book an agent already has -- the same split 'new-business' already draws for staff.
+  agents: [
+    { id: 'work', label: 'Your work' },
+    { id: 'new-business', label: 'New business' },
+    { id: 'my-business', label: 'My business' },
+  ],
   customers: [{ id: 'my-cover', label: 'My cover' }],
   regulators: [],
 };
@@ -680,7 +685,7 @@ const STAFF_SCREENS: Screen[] = [
  */
 const AGENTS_SCREENS: Screen[] = [
   // An agent lands here too (2026-10-14): their clients, their book and their commission in one place.
-  { path: 'dashboard', element: <DashboardPage realm="agents" />, reach: { group: 'my-business', label: 'Dashboard', icon: LayoutDashboard } },
+  { path: 'dashboard', element: <DashboardPage realm="agents" />, reach: { group: 'work', label: 'Dashboard', icon: LayoutDashboard } },
   {
     path: 'me',
     element: <AgentProfilePage />,
