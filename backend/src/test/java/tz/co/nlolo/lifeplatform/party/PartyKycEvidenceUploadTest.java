@@ -173,6 +173,47 @@ class PartyKycEvidenceUploadTest {
             .andExpect(status().isForbidden());
     }
 
+    /**
+     * A client document of a named type (2026-10-22, the user): a signed form is filed on the client as one, and is
+     * listed with its type -- the same agent rule as identity evidence, and only the two client types are taken.
+     */
+    @Test
+    void aSignedFormIsFiledOnTheClientWithItsType() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID partyId = registerIndividual(tenantId);
+
+        mockMvc.perform(multipart("/parties/" + partyId + "/documents")
+                .file(new MockMultipartFile("file", "proposal-signed.pdf", "application/pdf", "signed".getBytes())).param("type", "SIGNED_FORM")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject(REGISTERING_AGENT_SUBJECT)
+                        .claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.documentRef").isNotEmpty());
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .get("/parties/" + partyId + "/documents").with(staffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].documentType").value("SIGNED_FORM"))
+            .andExpect(jsonPath("$[0].uploadedBy").value(REGISTERING_AGENT_SUBJECT));
+
+        mockMvc.perform(multipart("/parties/" + partyId + "/documents")
+                .file(new MockMultipartFile("file", "x.pdf", "application/pdf", "x".getBytes())).param("type", "SIGNED_FORM")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject("a-different-agent").claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void aClientDocumentIsIdentityEvidenceOrASignedFormAndNothingElse() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID partyId = registerIndividual(tenantId);
+
+        mockMvc.perform(multipart("/parties/" + partyId + "/documents")
+                .file(new MockMultipartFile("file", "x.pdf", "application/pdf", "x".getBytes())).param("type", "CLAIM_EVIDENCE")
+                .with(staffOf(tenantId)))
+            .andExpect(status().isBadRequest());
+    }
+
     @Test
     void uploadKycEvidenceRejectsADisallowedContentTypeWith400() throws Exception {
         UUID tenantId = UUID.randomUUID();

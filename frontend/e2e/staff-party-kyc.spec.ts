@@ -76,7 +76,8 @@ test.describe('staff party KYC verification', () => {
     const partyHref = await policyholderLink.getAttribute('href');
     await policyholderLink.click();
     await expect(page).toHaveURL(partyHref as string);
-    await expect(page.getByRole('heading', { level: 2, name: 'KYC verification' })).toBeVisible();
+    await page.getByRole('tab', { name: 'KYC & documents', exact: true }).click();
+    await expect(page.getByRole('heading', { level: 2, name: 'KYC & documents' })).toBeVisible();
 
     await rejectThenVerify(page);
   });

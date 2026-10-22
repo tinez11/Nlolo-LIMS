@@ -2,10 +2,12 @@ import { useEffect } from 'react';
 import { Controller, useWatch, type Control, type FieldErrors, type UseFormRegister } from 'react-hook-form';
 import { FormField } from '@/components/FormField';
 import { CheckboxField } from '@/components/ui/checkbox';
-import { Input, Select, Textarea } from '@/components/ui/input';
+import { Input, Select } from '@/components/ui/input';
 import { useUnitLinkedStore } from '@/store/unitLinkedStore';
 import type { PublishVersionFormInput, PublishVersionFormValues } from './publishVersionSchema';
-import { UL_FREQUENCIES, UL_FREQUENCY_LABELS, parseAllocation, parseMortality } from './unitLinkedSchema';
+import { UL_FREQUENCIES, UL_FREQUENCY_LABELS } from './unitLinkedSchema';
+import { BandTable } from './BandTable';
+import { continueFrom } from './bandRows';
 
 function Alert({ message }: { message: string | undefined }) {
   return message ? <p role="alert" className="mt-1 text-xs text-status-danger-fg">{message}</p> : null;
@@ -36,10 +38,7 @@ export function UnitLinkedTermsSection({
   }, [loadFunds]);
   const offerable = (funds.data ?? []).filter((f) => f.status === 'OPEN' && (!currency || f.currency === currency));
 
-  const allocationText = useWatch({ control, name: 'ulAllocationText' }) ?? '';
-  const mortalityText = useWatch({ control, name: 'ulMortalityText' }) ?? '';
-  const allocation = parseAllocation(allocationText);
-  const mortality = parseMortality(mortalityText);
+  const mortalityBasis = useWatch({ control, name: 'ulMortalityBasis' });
 
   return (
     <div data-outline="Unit-linked terms" className="space-y-3 rounded-md border border-border p-3">
@@ -91,16 +90,22 @@ export function UnitLinkedTermsSection({
 
       <fieldset className="space-y-2 rounded-md border border-border p-3">
         <legend className="text-xs font-medium text-muted-foreground">Allocation and charges</legend>
-        <p className="text-xs text-subtle-foreground">
-          One band per line: <code>fromYear,toYear,percent</code> — e.g. <code>1,1,60</code> then <code>2,,97.5</code>. The
-          bands start at year 1 and the last is open-ended. What is not allocated is the allocation charge.
-        </p>
-        <FormField label="Allocation bands" error={errors.ulAllocationText?.message}>
-          <Textarea rows={3} className="font-mono text-xs" {...register('ulAllocationText')} />
-        </FormField>
-        {!allocation.error && allocation.rows.length > 0 && (
-          <p className="text-xs text-subtle-foreground">{allocation.rows.length} allocation bands read.</p>
-        )}
+        <p className="text-xs font-medium">Allocation bands</p>
+        <p className="text-xs text-subtle-foreground">From year 1; leave the last band’s end blank. What is not allocated is the charge.</p>
+        <Controller
+          control={control}
+          name="ulAllocationText"
+          render={({ field }) => (
+            <BandTable label="Allocation bands" value={field.value ?? ''} onChange={field.onChange}
+              error={errors.ulAllocationText?.message}
+              columns={[
+                { header: 'From year' },
+                { header: 'To year', placeholder: 'and after' },
+                { header: 'Allocated %' },
+              ]}
+              next={continueFrom(0, 1, 3, '1')} />
+          )}
+        />
         <FormField label={`Monthly policy fee${currency ? ` (${currency})` : ''}`} error={errors.ulPolicyFee?.message}>
           <Input inputSize="sm" inputMode="decimal" {...register('ulPolicyFee')} />
         </FormField>
@@ -115,17 +120,25 @@ export function UnitLinkedTermsSection({
             <option value="BY_SEX">By sex</option>
           </Select>
         </FormField>
+        <p className="text-xs font-medium">Mortality table</p>
         <p className="text-xs text-subtle-foreground">
-          One band per line: <code>ageFrom,ageTo,sex,ratePerMille</code> — e.g. <code>18,39,,1.2</code> on a unisex table or{' '}
-          <code>18,39,FEMALE,1.0</code> by sex. The rate is a year's charge per 1,000 of the amount at risk; the table starts at
-          the minimum entry age and its last band is open-ended.
+          A year’s charge per 1,000 at risk. From the minimum entry age; leave the last band’s end blank.
         </p>
-        <FormField label="Mortality table" error={errors.ulMortalityText?.message}>
-          <Textarea rows={6} className="font-mono text-xs" {...register('ulMortalityText')} />
-        </FormField>
-        {!mortality.error && mortality.rows.length > 0 && (
-          <p className="text-xs text-subtle-foreground">{mortality.rows.length} mortality rows read.</p>
-        )}
+        <Controller
+          control={control}
+          name="ulMortalityText"
+          render={({ field }) => (
+            <BandTable label="Mortality table" value={field.value ?? ''} onChange={field.onChange}
+              error={errors.ulMortalityText?.message}
+              columns={[
+                { header: 'Age from' },
+                { header: 'Age to', placeholder: 'and over' },
+                { header: 'Sex', kind: 'sex', hidden: mortalityBasis !== 'BY_SEX' },
+                { header: 'Rate per 1,000' },
+              ]}
+              next={continueFrom(0, 1, 4)} />
+          )}
+        />
       </fieldset>
 
       <fieldset className="space-y-2 rounded-md border border-border p-3">
@@ -204,14 +217,24 @@ export function UnitLinkedTermsSection({
           </FormField>
         </div>
         <CheckboxField label="A withdrawal reduces the sum assured" {...register('ulWithdrawalCutsCover')} />
+        <p className="text-xs font-medium">Surrender charge bands</p>
         <p className="text-xs text-subtle-foreground">
-          Surrender charge, one band per line: <code>fromYear,toYear,percent</code> — e.g. <code>1,1,10</code>,{' '}
-          <code>2,5,5</code>, <code>6,,0</code>. It applies to surrenders, withdrawals and a lapse for non-payment; never to
-          death, maturity, free-look or a fund that ran out.
+          On surrenders, withdrawals and a lapse; never on death, maturity or free-look.
         </p>
-        <FormField label="Surrender charge bands" error={errors.ulSurrenderText?.message}>
-          <Textarea rows={3} className="font-mono text-xs" {...register('ulSurrenderText')} />
-        </FormField>
+        <Controller
+          control={control}
+          name="ulSurrenderText"
+          render={({ field }) => (
+            <BandTable label="Surrender charge bands" value={field.value ?? ''} onChange={field.onChange}
+              error={errors.ulSurrenderText?.message}
+              columns={[
+                { header: 'From year' },
+                { header: 'To year', placeholder: 'and after' },
+                { header: 'Charge %' },
+              ]}
+              next={continueFrom(0, 1, 3, '1')} />
+          )}
+        />
       </fieldset>
     </div>
   );

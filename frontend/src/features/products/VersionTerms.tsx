@@ -27,7 +27,7 @@ export function FuneralTermsDetail({ terms }: { terms: FuneralTermsView }) {
 
   return (
     <div className="space-y-1 pb-2">
-      <SectionHeading>Plans and benefits</SectionHeading>
+      <SectionHeading hint="What each plan pays for each person it covers.">Plans and benefits</SectionHeading>
       <p className="px-4 text-xs text-muted-foreground">Sold to: {SOLD_AS[terms.soldAs] ?? terms.soldAs}</p>
       <div className="overflow-x-auto px-4">
         <table className="text-xs">
@@ -62,7 +62,7 @@ export function FuneralTermsDetail({ terms }: { terms: FuneralTermsView }) {
 
       {terms.premiums.length > 0 && (
         <>
-          <SectionHeading>Premium table — yearly premium per life</SectionHeading>
+          <SectionHeading hint="The yearly premium for each life, by plan, role and age.">Premium table</SectionHeading>
           <div className="overflow-x-auto px-4">
             <table className="text-xs">
               <caption className="sr-only">Yearly premium per plan, role and age band</caption>
@@ -93,6 +93,7 @@ export function FuneralTermsDetail({ terms }: { terms: FuneralTermsView }) {
 
       <FactorSection
         title="Who may be covered"
+        hint="Entry ages, when cover stops, and how many of each."
         empty="No roles."
         rows={terms.roles.map((r) => ({
           key: r.role,
@@ -105,6 +106,7 @@ export function FuneralTermsDetail({ terms }: { terms: FuneralTermsView }) {
       />
       <FactorSection
         title="Claims"
+        hint="When a death is paid, and to whom."
         empty=""
         rows={[
           { key: 'wait', label: 'Waiting period', note: terms.accidentWaivesWaiting ? 'an accidental death is paid from day one' : null,
@@ -124,6 +126,7 @@ export function AnnuityTermsDetail({ terms }: { terms: AnnuityTermsView }) {
     <div className="pb-2">
       <FactorSection
         title="Annuity forms"
+        hint="The kinds of income a buyer can choose."
         empty="No forms."
         rows={terms.forms.map((f) => ({
           key: f.formCode,
@@ -138,6 +141,7 @@ export function AnnuityTermsDetail({ terms }: { terms: AnnuityTermsView }) {
       />
       <FactorSection
         title="Payments"
+        hint="When income is paid, and the factor for paying it more often."
         empty="No frequencies."
         rows={[
           { key: 'timing', label: 'Paid', note: null, value: terms.timing === 'ADVANCE' ? 'In advance' : 'In arrears' },
@@ -149,34 +153,134 @@ export function AnnuityTermsDetail({ terms }: { terms: AnnuityTermsView }) {
   );
 }
 
+const FREQUENCY: Record<string, string> = { MONTHLY: 'Monthly', QUARTERLY: 'Quarterly', ANNUALLY: 'Annually', SINGLE: 'Single' };
+
+/** "Year 1", "Years 2–5", "Year 6 and after". */
+function years(from: number, to: number | null | undefined): string {
+  if (to == null) return `Year ${from} and after`;
+  return from === to ? `Year ${from}` : `Years ${from}–${to}`;
+}
+
+/** "Ages 18–39", "Ages 60 and over". */
+function ages(from: number, to: number | null | undefined): string {
+  return to == null ? `Ages ${from} and over` : `Ages ${from}–${to}`;
+}
+
+/**
+ * A version's bands, read-only: the table it was published with, not a count of its rows (the user, 2026-10-22 --
+ * "Mortality table, 1 rows" said nothing a reviewer could check).
+ */
+function BandsShown({ caption, columns, rows }: { caption: string; columns: string[]; rows: string[][] }) {
+  return (
+    <div className="px-4">
+      <table className="w-full max-w-xl text-sm">
+        <caption className="sr-only">{caption}</caption>
+        <thead>
+          <tr className="bg-control text-xs text-muted-foreground">
+            {columns.map((c, i) => (
+              <th key={c} scope="col" className={i === 0 ? 'px-3 py-1.5 text-left font-medium' : 'px-3 py-1.5 text-right font-medium'}>{c}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, r) => (
+            <tr key={r} className="border-b border-border">
+              {row.map((cell, i) => (
+                i === 0
+                  ? <th key={i} scope="row" className="px-3 py-1.5 text-left font-normal">{cell}</th>
+                  : <td key={i} className="px-3 py-1.5 text-right tabular-nums">{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function UnitLinkedTermsDetail({ terms }: { terms: UnitLinkedTermsView }) {
+  const bySex = terms.mortalityBasis === 'BY_SEX';
+  const options = terms.options;
+  const multiple = terms.sumAssuredMultipleMin === terms.sumAssuredMultipleMax
+    ? `${terms.sumAssuredMultipleMin}× the annual premium`
+    : `${terms.sumAssuredMultipleMin}× to ${terms.sumAssuredMultipleMax}× the annual premium`;
+  const optionRows = options ? [
+    ...(options.freeSwitchesPerYear != null ? [{ key: 'switch', label: 'Fund switches', note: null,
+      value: `${options.freeSwitchesPerYear} free a year, then ${amount(options.switchFee)} each` }] : []),
+    ...(options.minimumWithdrawal != null ? [{ key: 'withdraw', label: 'Withdrawals',
+      note: options.withdrawalReducesSumAssured ? 'a withdrawal reduces the sum assured' : null,
+      value: `from ${amount(options.minimumWithdrawal)}, leaving at least ${amount(options.minimumRemainingValue)}` }] : []),
+    ...(options.topUpAllocationPercent != null ? [{ key: 'topup', label: 'Top-ups', note: null,
+      value: `from ${amount(options.minimumTopUp)}, ${options.topUpAllocationPercent}% buys units` }] : []),
+  ] : [];
+  const surrender = options?.surrenderCharges ?? [];
+
   return (
     <div className="pb-2">
       <FactorSection
-        title="Funds and charges"
+        title="Funds and premiums"
+        hint="What the policy invests in, what it must be paid, and the cover it buys."
         empty=""
         rows={[
           { key: 'funds', label: 'Funds offered', note: null, value: terms.fundCodes.join(', ') || '—' },
-          { key: 'fee', label: 'Monthly policy fee', note: null, value: amount(terms.monthlyPolicyFee) },
-          { key: 'mortality', label: 'Mortality table', note: `${terms.mortality.length} rows`, value: terms.mortalityBasis === 'BY_SEX' ? 'By sex' : 'Unisex' },
+          { key: 'fee', label: 'Monthly policy fee', note: null,
+            value: terms.monthlyPolicyFee > 0 ? amount(terms.monthlyPolicyFee) : 'None' },
+          ...terms.premiumMinimums.map((m) => ({ key: `min-${m.frequency}`, label: `Minimum premium, ${(FREQUENCY[m.frequency] ?? m.frequency).toLowerCase()}`,
+            note: null, value: amount(m.amount) })),
+          { key: 'multiple', label: 'Sum assured', note: null, value: multiple },
+        ]}
+      />
+
+      <section>
+        <SectionHeading hint="The share of each premium that buys units; the rest is the allocation charge.">Allocation</SectionHeading>
+        {terms.allocationBands.length === 0 ? <p className="px-4 text-xs text-muted-foreground">No bands.</p> : (
+          <BandsShown caption="Allocation by policy year" columns={['Policy years', 'Buys units', 'Charge']}
+            rows={terms.allocationBands.map((b) => [years(b.fromYear, b.toYear), `${b.percent}%`, `${AMOUNT.format(100 - b.percent)}%`])} />
+        )}
+      </section>
+
+      <section>
+        <SectionHeading hint={`A year's charge per 1,000 of the amount at risk, ${bySex ? 'by sex' : 'the same for women and men'}.`}>
+          Cost of insurance
+        </SectionHeading>
+        {terms.mortality.length === 0 ? <p className="px-4 text-xs text-muted-foreground">No mortality bands.</p> : (
+          <BandsShown caption="Mortality rates" columns={bySex ? ['Ages', 'Sex', 'Rate per 1,000'] : ['Ages', 'Rate per 1,000']}
+            rows={terms.mortality.map((m) => [ages(m.ageFrom, m.ageTo),
+              ...(bySex ? [m.sex === 'FEMALE' ? 'Female' : m.sex === 'MALE' ? 'Male' : '—'] : []),
+              String(m.annualRatePerMille)])} />
+        )}
+      </section>
+
+      <FactorSection
+        title="Rules"
+        hint="What death pays, when the policy lapses, and when it can be surrendered."
+        empty=""
+        rows={[
           { key: 'death', label: 'On death pays', note: null,
             value: terms.deathRule === 'HIGHER_OF' ? 'The higher of sum assured and fund' : 'Sum assured plus fund' },
           { key: 'lapse', label: 'Lapses on', note: null, value: terms.lapseRule === 'NON_PAYMENT' ? 'Non-payment' : 'The fund running out' },
-          { key: 'surrender', label: 'Surrender from year', note: null, value: String(terms.minimumSurrenderYears) },
-          { key: 'multiple', label: 'Sum assured', note: 'times the annual premium',
-            value: `${terms.sumAssuredMultipleMin}–${terms.sumAssuredMultipleMax}` },
+          { key: 'warn', label: 'Low-fund warning', note: null,
+            value: `Under ${terms.lowFundWarningMonths} months of charges left` },
+          { key: 'surrender', label: 'Surrender', note: null,
+            value: terms.minimumSurrenderYears > 0 ? `After ${terms.minimumSurrenderYears} years` : 'Any time' },
+          ...(terms.minimumPremiumYears != null ? [{ key: 'minyears', label: 'Premiums required for', note: null,
+            value: `${terms.minimumPremiumYears} years` }] : []),
         ]}
       />
-      <FactorSection
-        title="Allocation"
-        empty="No bands."
-        rows={terms.allocationBands.map((b) => ({
-          key: String(b.fromYear),
-          label: `Year ${b.fromYear}${b.toYear == null ? ' on' : `–${b.toYear}`}`,
-          note: null,
-          value: `${b.percent}% buys units`,
-        }))}
-      />
+
+      {optionRows.length > 0 && (
+        <FactorSection title="Options" hint="Switching funds, taking money out, and paying in more." empty="" rows={optionRows} />
+      )}
+
+      {surrender.length > 0 && (
+        <section>
+          <SectionHeading hint="Taken on surrenders, withdrawals and a lapse; never on death, maturity or free-look.">
+            Surrender charges
+          </SectionHeading>
+          <BandsShown caption="Surrender charge by policy year" columns={['Policy years', 'Charge']}
+            rows={surrender.map((b) => [years(b.fromYear, b.toYear), `${b.percent}%`])} />
+        </section>
+      )}
     </div>
   );
 }

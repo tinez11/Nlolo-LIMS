@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Check, FileCheck, X } from 'lucide-react';
+import { Check, ChevronDown, FileCheck, X } from 'lucide-react';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { DocumentViewer } from '@/components/DocumentViewer';
 import { InlineError } from '@/components/InlineError';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { formatInstant } from '@/lib/dates';
-import type { KycStatus, PartyDocumentView } from '@/api/types';
+import type { ClientDocumentType } from '@/api/party';
+import type { KycStatus, PartyDetailView, PartyDocumentView } from '@/api/types';
 import { isInitialLoad, type Resource } from '@/store/createResourceSlice';
 import { ErrorPanel } from '@/components/states';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -19,59 +20,70 @@ import {
 } from '@/store/partyStore';
 
 /**
- * KYC: filing the evidence, and deciding on it.
+ * KYC and the client's own documents: filing them, and deciding on the identity evidence among them.
  *
- * <b>The defect this file exists to close.</b> The decision used to be gated on
- * `uploading.status === 'success'` -- the upload THIS BROWSER SESSION made. A reviewer opening a
- * client whose evidence was already on record saw a dropzone and nothing else: no Verify, no
- * Reject, no sight of the document. The only way to decide was to upload a file yourself, which
- * is precisely the thing the server-side split was built to prevent. `PartyController`'s own
- * comment states the intent -- "the agent who took the documents supplies them and a staff member
- * decides whether they are good" -- and `POST /parties/{id}/kyc-evidence` has accepted an agents
- * token since it was written. Nothing in the console ever called it as an agent, and nothing ever
- * decided against a document it had not just produced. Recorded in `PLAN.md` §14.3.
+ * <b>One place for what the client filed (2026-10-22, the user).</b> A client's record holds what was filed on the
+ * client -- identity evidence and signed forms. Policy schedules, underwriting evidence and claim evidence stay on
+ * their own records. There used to be a separate Documents tab listing the same files again, saying nothing of where
+ * they came from; it is folded in here, each document saying who filed it.
  *
- * So the evidence on record is the subject of this screen, and the upload is one way of adding to
- * it rather than the only way in.
+ * <b>The decision rests on a document someone read.</b> It used to be gated on the upload THIS BROWSER SESSION made,
+ * so a reviewer could only decide by uploading a file themselves. The evidence on record is the subject; the upload is
+ * one way of adding to it. Only identity evidence can carry a decision -- a signed form proves no identity.
  *
- * <b>Two panels, because two realms do two different jobs.</b> {@link KycDecisionPanel} is staff:
- * read the evidence, then decide against the one you read. {@link KycFilingPanel} is the agent:
- * send what you collected, and see what you have sent. The agent panel does not merely hide the
- * buttons -- it cannot show the documents either, because `GET /documents/{ref}` is staff-only and
- * would 403 on a file that agent uploaded themselves. That is a real gap and it is named on
- * screen rather than left to look like a loading failure.
+ * <b>Two realms, two jobs.</b> {@link KycDecisionPanel} is staff: read, then decide. {@link KycFilingPanel} is the
+ * agent: send what was collected, and see what was sent. The agent cannot open files -- `GET /documents/{ref}` is
+ * staff-only -- and the screen says so rather than looking broken.
  */
 
-const ACCEPTED_EVIDENCE_TYPES = {
+const ACCEPTED_TYPES = {
   'image/jpeg': ['.jpg', '.jpeg'],
   'image/png': ['.png'],
   'application/pdf': ['.pdf'],
 };
 
-/**
- * A filed document this screen can actually act on.
- *
- * Every field on the generated `PartyDocumentView` is optional, `documentRef` included. A row
- * without one cannot be opened or decided against — it is not a document, it is a gap in a
- * response — so it is filtered out here rather than defended against at four call sites.
- */
-type FiledEvidence = PartyDocumentView & { documentRef: string };
+const TYPE_LABEL: Record<ClientDocumentType, string> = {
+  KYC_EVIDENCE: 'Identity evidence',
+  SIGNED_FORM: 'Signed form',
+};
 
-/** The KYC half of everything filed against this party. A policy document is not evidence of identity. */
-function kycEvidenceOf(documents: PartyDocumentView[]): FiledEvidence[] {
-  return documents.filter(
-    (d): d is FiledEvidence => d.documentType === 'KYC_EVIDENCE' && !!d.documentRef,
-  );
+/**
+ * A filed document this screen can act on. Every field of the generated view is optional, `documentRef` included; a
+ * row without one is a gap in a response, not a document, so it is dropped here once.
+ */
+type FiledDocument = PartyDocumentView & { documentRef: string };
+
+function filedOf(documents: PartyDocumentView[], type: ClientDocumentType): FiledDocument[] {
+  return documents.filter((d): d is FiledDocument => d.documentType === type && !!d.documentRef);
+}
+
+/** Who registered the client, for saying where a document came from. */
+type Registrar = Pick<PartyDetailView, 'createdBy' | 'createdByName' | 'registeredByPartyId'>;
+
+/**
+ * Where a document came from. The uploader is stored as a Keycloak subject nothing can name, so it is compared, not
+ * shown: the registering agent's own uploads are theirs by name; anything else came from the office.
+ */
+function provenance(d: PartyDocumentView, registrar: Registrar | null): string {
+  if (registrar?.createdBy && d.uploadedBy === registrar.createdBy) {
+    const who = registrar.createdByName?.trim();
+    return registrar.registeredByPartyId
+      ? `Sent by ${who || 'the registering agent'}${who ? ', the registering agent' : ''}`
+      : `Filed by ${who || 'whoever registered this client'}`;
+  }
+  return 'Filed by the office';
 }
 
 export function KycDecisionPanel({
   partyId,
   currentStatus,
+  registrar,
   documents,
   onRetryDocuments,
 }: {
   partyId: string;
   currentStatus: KycStatus | undefined;
+  registrar: Registrar | null;
   documents: Resource<PartyDocumentView[]>;
   onRetryDocuments: () => void;
 }) {
@@ -80,35 +92,36 @@ export function KycDecisionPanel({
   const deciding = usePartyStore(selectSubmittingKyc(partyId));
 
   /*
-   * Which document the reviewer is reading, and therefore the one any decision is recorded
-   * against. Deliberately NOT preselected: the server stores the ref as the evidence the
-   * decision rests on, and a document chosen for someone by a default is a document nobody
-   * read. Choosing it is one click and it is the click that matters.
-   *
-   * Both pieces of state carry the party they belong to, and are read only when that party is
-   * the one on screen. Resetting them in an effect instead would be a setState in an effect
-   * body, which this project lints as an error -- and would leave a window of one render in
-   * which the previous client's chosen document is still armed under this client's name.
+   * Which document is open, and therefore the one a decision is recorded against. Deliberately NOT preselected: a
+   * document chosen for someone by a default is a document nobody read. Both pieces of state carry the party they
+   * belong to and are read only when that party is on screen -- resetting them in an effect would be a setState in
+   * an effect body, which this project lints as an error.
    */
   const [selection, setSelection] = useState<{ partyId: string; ref: string } | null>(null);
   const [armed, setArmed] = useState<{ partyId: string; status: KycStatus } | null>(null);
   const selected = selection?.partyId === partyId ? selection.ref : null;
   const pending = armed?.partyId === partyId ? armed.status : null;
-  const setSelected = (ref: string) => setSelection({ partyId, ref });
-  const setPending = (status: KycStatus | null) =>
-    setArmed(status === null ? null : { partyId, status });
+  const open = (ref: string) => {
+    setSelection({ partyId, ref });
+    // Arming a decision and then changing the document under it would confirm one file and commit another.
+    setArmed(null);
+  };
+  const setPending = (status: KycStatus | null) => setArmed(status === null ? null : { partyId, status });
 
   useEffect(() => {
     resetSubmitKyc(partyId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partyId]);
 
-  const evidence = kycEvidenceOf(documents.data ?? []);
-  const chosen = evidence.find((d) => d.documentRef === selected) ?? null;
+  const all = documents.data ?? [];
+  const evidence = filedOf(all, 'KYC_EVIDENCE');
+  const forms = filedOf(all, 'SIGNED_FORM');
+  const chosen = [...evidence, ...forms].find((d) => d.documentRef === selected) ?? null;
+  const chosenEvidence = chosen?.documentType === 'KYC_EVIDENCE' ? chosen : null;
 
   async function decide(status: KycStatus) {
-    if (!chosen) return;
-    await submitKyc(partyId, status, chosen.documentRef);
+    if (!chosenEvidence) return;
+    await submitKyc(partyId, status, chosenEvidence.documentRef);
     if (usePartyStore.getState().submittingKyc[partyId]?.status === 'success') {
       setPending(null);
     }
@@ -119,65 +132,73 @@ export function KycDecisionPanel({
   }
 
   return (
-    <div className="grid gap-5 px-4 pt-3 pb-4 lg:grid-cols-[17rem_minmax(0,1fr)]">
-      <div className="space-y-3">
-        <EvidenceList
-          evidence={evidence}
+    // On a phone: the lists, then the open document and its decision, then the upload -- so a tapped document opens
+    // right under the finger. From lg: lists and upload on the left, the document beside them.
+    <div className="grid gap-6 px-4 pt-3 pb-4 lg:grid-cols-[20rem_minmax(0,1fr)] lg:grid-rows-[auto_1fr]">
+      <div className="space-y-5 lg:col-start-1 lg:row-start-1">
+        <DocumentGroup
+          title="Identity evidence"
+          empty="No ID or proof of address yet."
+          documents={evidence}
+          registrar={registrar}
           loading={isInitialLoad(documents)}
           selected={selected}
-          onSelect={(ref) => {
-            setSelected(ref);
-            // Arming a decision and then changing the document under it would leave the
-            // confirmation describing one file and committing another.
-            setPending(null);
-          }}
+          onSelect={open}
         />
-        <EvidenceDropzone
-          partyId={partyId}
-          label="Add evidence"
-          onUploaded={(ref) => {
-            setSelected(ref);
-            setPending(null);
-          }}
+        <DocumentGroup
+          title="Signed forms"
+          empty="None filed."
+          documents={forms}
+          registrar={registrar}
+          loading={isInitialLoad(documents)}
+          selected={selected}
+          onSelect={open}
         />
       </div>
 
-      <div className="space-y-3">
+      <div className="order-last lg:order-none lg:col-start-1 lg:row-start-2 lg:self-start">
+        <DocumentUpload partyId={partyId} onUploaded={open} />
+      </div>
+
+      <div className="space-y-4 lg:col-start-2 lg:row-span-2 lg:row-start-1">
         {chosen ? (
-          <DocumentViewer
-            documentRef={chosen.documentRef}
-            contentType={chosen.contentType}
-            fileName={chosen.fileName}
-          />
+          <DocumentViewer documentRef={chosen.documentRef} contentType={chosen.contentType} fileName={chosen.fileName} />
         ) : (
-          <div className="flex h-96 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border px-6 text-center lg:h-[30rem]">
-            <p className="text-sm">
-              {evidence.length === 0 ? 'No identity evidence on file' : 'Nothing open'}
+          <div className="flex h-80 flex-col items-center justify-center gap-1.5 rounded-lg bg-control px-6 text-center lg:h-[28rem]">
+            <FileCheck className="size-6 text-muted-foreground" aria-hidden />
+            <p className="text-sm font-medium">
+              {evidence.length === 0 ? 'No identity evidence on file' : 'Open a document to read it'}
             </p>
-            <p className="text-xs text-muted-foreground">
+            <p className="max-w-sm text-sm text-muted-foreground">
               {evidence.length === 0
                 ? 'Upload an ID scan or proof of address, or ask the agent who registered this client to send it.'
-                : 'Choose a document on the left to read it here, then decide against it.'}
+                : 'The decision is recorded against the identity document you open.'}
             </p>
           </div>
         )}
 
-        <DecisionControls
-          partyId={partyId}
-          chosen={chosen}
-          currentStatus={currentStatus}
-          pending={pending}
-          onArm={setPending}
-          onCancel={() => setPending(null)}
-          onConfirm={decide}
-          busy={deciding.status === 'loading'}
-        />
+        {chosen && !chosenEvidence ? (
+          <p className="text-sm text-muted-foreground">
+            A signed form is not proof of identity. Open identity evidence to decide on KYC.
+          </p>
+        ) : (
+          <DecisionControls
+            partyId={partyId}
+            chosen={chosenEvidence}
+            currentStatus={currentStatus}
+            pending={pending}
+            onArm={setPending}
+            onCancel={() => setPending(null)}
+            onConfirm={decide}
+            busy={deciding.status === 'loading'}
+          />
+        )}
         {deciding.status === 'error' && deciding.error && <InlineError error={deciding.error} />}
 
         <DecisionHistory
           partyId={partyId}
           openableRefs={new Set(evidence.map((d) => d.documentRef))}
-          onOpen={setSelected}
+          onOpen={open}
         />
       </div>
     </div>
@@ -185,130 +206,117 @@ export function KycDecisionPanel({
 }
 
 /**
- * The agent's half: send the papers in, and see what has been sent.
- *
- * No viewer and no decision. Both absences are the server's rules rather than a UI choice, and
- * both are written on the screen -- an agent who can see a control reasonably concludes the act
- * is theirs, and finds out otherwise at the point of saving.
+ * The agent's half: send the papers in, and see what has been sent. No viewer and no decision -- both the server's
+ * rules, and both said on screen.
  */
 export function KycFilingPanel({
   partyId,
+  registrar,
   documents,
   onRetryDocuments,
 }: {
   partyId: string;
+  registrar: Registrar | null;
   documents: Resource<PartyDocumentView[]>;
   onRetryDocuments: () => void;
 }) {
   if (documents.status === 'error' && documents.error && documents.data === null) {
     return <ErrorPanel error={documents.error} onRetry={onRetryDocuments} />;
   }
-  const evidence = kycEvidenceOf(documents.data ?? []);
+  const all = documents.data ?? [];
+  const evidence = filedOf(all, 'KYC_EVIDENCE');
 
   return (
-    <div className="space-y-3 px-4 pt-3 pb-4">
-      <EvidenceDropzone partyId={partyId} label="Send evidence" onUploaded={() => undefined} />
-
-      <EvidenceList evidence={evidence} loading={isInitialLoad(documents)} readOnly />
-
-      <p className="text-xs text-subtle-foreground">
-        {evidence.length === 0
-          ? 'Verification is the office’s decision. Send the ID scan and they will review it.'
-          : 'Sent. A staff member verifies it — you will see this client’s KYC status change when they do. Filed documents cannot be opened again from here.'}
-      </p>
+    <div className="grid gap-6 px-4 pt-3 pb-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="space-y-5">
+        <DocumentGroup title="Identity evidence" empty="No ID or proof of address sent yet." documents={evidence}
+          registrar={registrar} loading={isInitialLoad(documents)} />
+        <DocumentGroup title="Signed forms" empty="None sent." documents={filedOf(all, 'SIGNED_FORM')}
+          registrar={registrar} loading={isInitialLoad(documents)} />
+        <p className="text-sm text-muted-foreground">
+          {evidence.length === 0
+            ? 'Verification is the office’s decision. Send the ID scan and they will review it.'
+            : 'The office verifies identity. You will see this client’s KYC status change when they do. Filed documents cannot be opened again from here.'}
+        </p>
+      </div>
+      <DocumentUpload partyId={partyId} verb="Send" onUploaded={() => undefined} />
     </div>
   );
 }
 
 /**
- * What is on record, and which of it is open.
- *
- * Real `<button>`s with `aria-pressed`, which is this console's own idiom for "this is the one
- * on screen" (`StatCards`, and the table row the drawer is previewing). A radio group would be
- * the other defensible shape and would be the first radio input in the console -- a system
- * decision, not a local one.
+ * One kind of document on file. Real buttons with `aria-pressed` -- this console's idiom for "this is the one on
+ * screen" -- when they can be opened, plain rows when they cannot (an agent).
  */
-function EvidenceList({
-  evidence,
+function DocumentGroup({
+  title,
+  empty,
+  documents,
+  registrar,
   loading,
   selected,
   onSelect,
-  readOnly = false,
 }: {
-  evidence: FiledEvidence[];
+  title: string;
+  empty: string;
+  documents: FiledDocument[];
+  registrar: Registrar | null;
   loading: boolean;
   selected?: string | null;
   onSelect?: (documentRef: string) => void;
-  readOnly?: boolean;
 }) {
-  if (loading) {
-    return <p className="text-xs text-muted-foreground">Loading evidence…</p>;
-  }
-  if (evidence.length === 0) {
-    return <p className="text-xs text-muted-foreground">No identity evidence on file.</p>;
-  }
-
   return (
-    <div>
-      <p className="pb-1.5 text-xs font-medium text-muted-foreground">
-        Identity evidence on file
-      </p>
-      <ul className="overflow-hidden rounded-md border border-border">
-        {evidence.map((d, index) => {
-          const label = d.fileName?.trim() || d.documentRef;
-          const meta = formatInstant(d.uploadedAt) || 'Date not recorded';
-          const row = (
-            <>
-              <span className="block truncate text-sm" title={label}>
-                {label}
-              </span>
-              {/* The uploader is stored as a Keycloak subject and nothing on this platform can
-                  turn it into a name, so the date is all that is said. A raw subject printed
-                  under a file name would read as an answer to "who filed this". */}
-              <span className="block text-xs text-muted-foreground">Filed {meta}</span>
-            </>
-          );
-          return (
-            <li key={d.documentRef} className={cn(index > 0 && 'border-t border-border')}>
-              {readOnly ? (
-                <div className="px-3 py-2">{row}</div>
-              ) : (
-                <button
-                  type="button"
-                  aria-pressed={selected === d.documentRef}
-                  onClick={() => onSelect?.(d.documentRef)}
-                  className={cn(
-                    'block w-full px-3 py-2 text-left transition-colors active:duration-0',
-                    selected === d.documentRef
-                      ? 'bg-selected'
-                      : 'hover:bg-hover active:bg-selected',
-                  )}
-                >
-                  {row}
-                </button>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+    <section aria-label={title}>
+      <h3 className="pb-2 text-sm font-semibold">
+        {title}
+        {documents.length > 0 && <span className="ml-1.5 font-normal text-muted-foreground">{documents.length}</span>}
+      </h3>
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : documents.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{empty}</p>
+      ) : (
+        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+          {documents.map((d) => {
+            const label = d.fileName?.trim() || d.documentRef;
+            const row = (
+              <>
+                <span className="block truncate text-sm" title={label}>{label}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {provenance(d, registrar)} · {formatInstant(d.uploadedAt) || 'date not recorded'}
+                </span>
+              </>
+            );
+            return (
+              <li key={d.documentRef}>
+                {onSelect ? (
+                  <button
+                    type="button"
+                    aria-pressed={selected === d.documentRef}
+                    onClick={() => onSelect(d.documentRef)}
+                    className={cn(
+                      'block w-full px-3 py-2.5 text-left transition-colors active:duration-0',
+                      selected === d.documentRef ? 'bg-selected' : 'hover:bg-hover active:bg-selected',
+                    )}
+                  >
+                    {row}
+                  </button>
+                ) : (
+                  <div className="px-3 py-2.5">{row}</div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 
 /**
- * Every decision taken on this client, newest first.
- *
- * <b>Why this is worth a panel.</b> `Party.applyKycDecision` assigns the new status with no guard
- * on the old one, so a KYC decision can be overturned — and the party row keeps only the last
- * one. A client who was rejected in March and verified in April reads, everywhere else in this
- * console, as a client who has simply always been verified. These rows are the only record that
- * March happened, and they had been written since the platform's first decision without a single
- * way to read them: no getters on the entity, no query on the repository, no endpoint.
- *
- * The evidence ref on a row is a real link back into the viewer where the document is still on
- * file. Where it is not — an older decision whose document has since been removed, or one taken
- * against something filed outside this list — it stays text, because a control that opens
- * nothing is worse than a fact.
+ * Every decision taken on this client, newest first, folded away -- the outcome is already stated above it, and the
+ * history is what a reviewer opens when they need to know how it got there. These rows are the only record that an
+ * overturned decision happened at all.
  */
 function DecisionHistory({
   partyId,
@@ -336,14 +344,20 @@ function DecisionHistory({
   const rows = decisions.data ?? [];
 
   return (
-    <div>
-      <p className="pb-1.5 text-xs font-medium text-muted-foreground">Decision history</p>
+    <details className="group rounded-lg border border-border">
+      <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm font-medium">
+        <span>
+          Decision history
+          <span className="ml-1.5 font-normal text-muted-foreground">{rows.length}</span>
+        </span>
+        <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden />
+      </summary>
       {rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          No decision recorded yet. This client has never been verified or rejected.
+        <p className="border-t border-border px-3 py-2.5 text-sm text-muted-foreground">
+          No decision yet. This client has never been verified or rejected.
         </p>
       ) : (
-        <ul className="divide-y divide-border rounded-md border border-border">
+        <ul className="divide-y divide-border border-t border-border">
           {rows.map((d, index) => (
             <li
               key={`${d.decidedAt}-${d.evidenceDocumentRef}-${index}`}
@@ -351,18 +365,11 @@ function DecisionHistory({
             >
               <span className="flex items-center gap-2">
                 <StatusBadge kind="kyc" value={d.status} />
-                <span className="text-xs text-muted-foreground">
-                  {formatInstant(d.decidedAt) || 'Date not recorded'}
-                </span>
+                <span className="text-xs text-muted-foreground">{formatInstant(d.decidedAt) || 'Date not recorded'}</span>
               </span>
               <span className="flex items-center gap-2 text-xs">
-                {/* Null is "not recorded" and never "nobody": every decision taken before the
-                    name was captured looks like this, and so does one taken without a token.
-                    The subject is deliberately not shown in its place — it names the person to
-                    Keycloak and to nobody else. */}
-                <span className="text-muted-foreground">
-                  {d.decidedByName?.trim() || 'Name not recorded'}
-                </span>
+                {/* Null is "not recorded", never "nobody". The subject is not shown in its place. */}
+                <span className="text-muted-foreground">{d.decidedByName?.trim() || 'Name not recorded'}</span>
                 {openableRefs.has(d.evidenceDocumentRef) ? (
                   <Button
                     size="sm"
@@ -373,30 +380,21 @@ function DecisionHistory({
                     Evidence
                   </Button>
                 ) : (
-                  <span className="font-mono text-xs text-subtle-foreground">
-                    {d.evidenceDocumentRef}
-                  </span>
+                  <span className="font-mono text-xs text-subtle-foreground">{d.evidenceDocumentRef}</span>
                 )}
               </span>
             </li>
           ))}
         </ul>
       )}
-    </div>
+    </details>
   );
 }
 
 /**
- * Verify / Reject, the second click in front of each — and nothing at all once the case is
- * decided.
- *
- * <b>Why a decided case puts its controls away (2026-10-14, the user's call).</b> The
- * confirmation always closed on success; what stayed was the Verify/Reject pair, so a verified
- * client still led with a live Reject button and an acting panel that read as unfinished work.
- * A KYC decision is not irreversible — {@code Party.applyKycDecision} assigns with no guard on
- * the previous status — so the act cannot simply be removed either: overturning a wrong
- * rejection is a real thing a reviewer does. It moves behind one deliberate click instead,
- * which is the difference between offering an act and leaving it armed.
+ * Verify / Reject, the second click in front of each -- and nothing at all once the case is decided. A decision is
+ * not irreversible ({@code Party.applyKycDecision} has no guard on the old status), so changing it stays possible,
+ * behind one deliberate click.
  */
 function DecisionControls({
   partyId,
@@ -409,7 +407,7 @@ function DecisionControls({
   busy,
 }: {
   partyId: string;
-  chosen: FiledEvidence | null;
+  chosen: FiledDocument | null;
   currentStatus: KycStatus | undefined;
   pending: KycStatus | null;
   onArm: (status: KycStatus) => void;
@@ -420,13 +418,7 @@ function DecisionControls({
   const name = chosen?.fileName?.trim() || chosen?.documentRef;
   const decided = currentStatus === 'VERIFIED' || currentStatus === 'REJECTED';
 
-  /*
-   * Tagged with the party AND the status it was opened against, so it needs no resetting: a
-   * re-decision changes `currentStatus`, the tag stops matching, and the controls put
-   * themselves away again. Clearing it in an effect would be the setState-in-effect this
-   * project lints as an error, and would leave one render in which the previous client's
-   * reopened panel sits under this client's name.
-   */
+  // Tagged with the party and the status it was opened against, so a re-decision puts the controls away by itself.
   const [changing, setChanging] = useState<{ partyId: string; from: KycStatus } | null>(null);
   const reopened = changing?.partyId === partyId && changing.from === currentStatus;
 
@@ -438,24 +430,16 @@ function DecisionControls({
         consequence={
           pending === 'VERIFIED' ? (
             <>
-              Mark this client KYC-verified against <span className="font-medium">{name}</span>,
-              the document open beside this. They become eligible to hold a policy.
+              Mark this client KYC-verified against <span className="font-medium">{name}</span>, the document open
+              above. They become eligible to hold a policy.
             </>
           ) : (
             <>
-              Refuse this client’s identity evidence, recorded against{' '}
-              <span className="font-medium">{name}</span>. They cannot be taken on as a
-              policyholder while their KYC reads rejected.
+              Refuse this client’s identity evidence, recorded against <span className="font-medium">{name}</span>. They
+              cannot be taken on as a policyholder while their KYC reads rejected.
             </>
           )
         }
-        /*
-          Deliberately NOT phrased as irreversible, because it is not: Party.updateKycStatus
-          assigns the new status with no guard on the old one, so a rejected identity can be
-          verified later and the reverse. The critique listed this among the irreversible six;
-          it was checked rather than taken, and a confirmation that overstates is how every
-          confirmation on the screen stops being read.
-        */
         reversal="A KYC decision can be changed later by re-deciding against fresh evidence — but it is recorded, and it gates whether this client can hold a policy in the meantime."
         confirmLabel={pending === 'VERIFIED' ? 'Verify identity' : 'Reject identity'}
         busy={busy}
@@ -465,27 +449,15 @@ function DecisionControls({
     );
   }
 
-  // Decided, and nobody has asked to change it: state the outcome and put the act away.
   if (decided && !reopened) {
     return (
-      <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-control px-4 py-3">
         <p className="text-sm">
           {currentStatus === 'VERIFIED'
             ? 'Identity verified. This client may hold a policy.'
             : 'Identity rejected. This client cannot be taken on as a policyholder.'}
         </p>
-        <p className="text-xs text-muted-foreground">
-          Who decided it and the document it was decided on are in the history below.
-        </p>
-        {/* Outline, not danger or primary: re-deciding is a real act and a rare one, and a
-            decided case is not a page asking to be acted on. The Acting-Panel Rule's own
-            reasoning — promoting a rare destructive action above the record somebody came to
-            read is a different mistake, not a fix. */}
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => currentStatus && setChanging({ partyId, from: currentStatus })}
-        >
+        <Button size="sm" variant="outline" onClick={() => currentStatus && setChanging({ partyId, from: currentStatus })}>
           Change this decision
         </Button>
       </div>
@@ -495,21 +467,11 @@ function DecisionControls({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5">
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={!chosen || currentStatus === 'VERIFIED'}
-          onClick={() => onArm('VERIFIED')}
-        >
+        <Button size="sm" variant="primary" disabled={!chosen || currentStatus === 'VERIFIED'} onClick={() => onArm('VERIFIED')}>
           <Check />
           Verify
         </Button>
-        <Button
-          size="sm"
-          variant="danger"
-          disabled={!chosen || currentStatus === 'REJECTED'}
-          onClick={() => onArm('REJECTED')}
-        >
+        <Button size="sm" variant="danger" disabled={!chosen || currentStatus === 'REJECTED'} onClick={() => onArm('REJECTED')}>
           <X />
           Reject
         </Button>
@@ -519,58 +481,48 @@ function DecisionControls({
           </Button>
         )}
       </div>
-      {/* Why the controls are dead, said once and in the open. A disabled pair with no
-          explanation is the state a reviewer reads as "this console is broken". */}
+      {/* Why the controls are dead, said once. A disabled pair with no reason reads as a broken console. */}
       {!chosen && (
-        <p className="text-xs text-muted-foreground">
-          Open a document first — a decision is recorded against the evidence it was taken on.
-        </p>
+        <p className="text-xs text-muted-foreground">Open identity evidence first — a decision is recorded against it.</p>
       )}
       {chosen && currentStatus === 'VERIFIED' && (
         <p className="text-xs text-muted-foreground">
-          Already verified. Reject to overturn it, or re-verify against fresh evidence by
-          uploading it first.
+          Already verified. Reject to overturn it, or re-verify against fresh evidence by uploading it first.
         </p>
       )}
       {chosen && currentStatus === 'REJECTED' && (
-        <p className="text-xs text-muted-foreground">
-          Already rejected. Verify to overturn it.
-        </p>
+        <p className="text-xs text-muted-foreground">Already rejected. Verify to overturn it.</p>
       )}
     </div>
   );
 }
 
 /**
- * Adding a file to the record.
- *
- * The dropzone's keyboard and ARIA handling is `EvidencePanel`'s, which the earlier KYC
- * dropzone did not have: `noKeyboard` drops react-dropzone's unnamed focusable root (a
- * `role="presentation"` div with `tabIndex=0`, which also nests the file input inside it and
- * trips axe's `nested-interactive`), and the input itself is put in the tab order with a real
- * name instead.
+ * Adding a document: say what it is, then drop it. The dropzone's keyboard handling drops react-dropzone's unnamed
+ * focusable root (`noKeyboard`) and puts the real file input in the tab order with a name.
  */
-function EvidenceDropzone({
+function DocumentUpload({
   partyId,
-  label,
+  verb = 'Add',
   onUploaded,
 }: {
   partyId: string;
-  label: string;
+  verb?: 'Add' | 'Send';
   onUploaded: (documentRef: string) => void;
 }) {
-  const uploadKycEvidence = usePartyStore((s) => s.uploadKycEvidence);
-  const resetUploadKycEvidence = usePartyStore((s) => s.resetUploadKycEvidence);
+  const uploadDocument = usePartyStore((s) => s.uploadKycEvidence);
+  const resetUpload = usePartyStore((s) => s.resetUploadKycEvidence);
   const loadPartyDocuments = usePartyStore((s) => s.loadPartyDocuments);
   const uploading = usePartyStore(selectUploadingKycEvidence(partyId));
+  const [type, setType] = useState<ClientDocumentType>('KYC_EVIDENCE');
 
   useEffect(() => {
-    resetUploadKycEvidence(partyId);
+    resetUpload(partyId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partyId]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    accept: ACCEPTED_EVIDENCE_TYPES,
+    accept: ACCEPTED_TYPES,
     multiple: false,
     noKeyboard: true,
     onDrop: (accepted) => {
@@ -579,7 +531,7 @@ function EvidenceDropzone({
   });
 
   async function submit(file: File) {
-    await uploadKycEvidence(partyId, file);
+    await uploadDocument(partyId, file, type);
     const result = usePartyStore.getState().uploadingKycEvidence[partyId];
     if (result?.status === 'success' && result.data?.documentRef) {
       // The list this file now belongs to is a separate read, so it does not know yet.
@@ -589,31 +541,50 @@ function EvidenceDropzone({
   }
 
   return (
-    <div className="space-y-2">
+    <section aria-label={`${verb} a document`} className="space-y-2">
+      <h3 className="text-sm font-semibold">{verb} a document</h3>
+      <div role="radiogroup" aria-label="Document type" className="inline-flex rounded-lg bg-control p-0.5">
+        {(Object.keys(TYPE_LABEL) as ClientDocumentType[]).map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="radio"
+            aria-checked={type === t}
+            onClick={() => setType(t)}
+            className={cn(
+              'rounded-md px-3 py-1 text-sm transition-colors',
+              type === t ? 'bg-surface font-medium text-foreground shadow-raise' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {TYPE_LABEL[t]}
+          </button>
+        ))}
+      </div>
       <div
         {...getRootProps()}
         className={cn(
-          'flex cursor-pointer flex-col items-center gap-1.5 rounded-md border border-dashed border-border px-4 py-5 text-center transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent',
+          'flex cursor-pointer flex-col items-center gap-1 rounded-lg border border-dashed border-border-strong px-4 py-5 text-center transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent',
           isDragActive ? 'border-accent bg-hover' : 'hover:bg-hover',
           uploading.status === 'loading' && 'pointer-events-none opacity-60',
         )}
       >
         <input
-          {...getInputProps({ tabIndex: 0, 'aria-label': label })}
+          {...getInputProps({ tabIndex: 0, 'aria-label': `${verb} ${TYPE_LABEL[type].toLowerCase()}` })}
           disabled={uploading.status === 'loading'}
         />
         <FileCheck className="size-5 text-muted-foreground" aria-hidden />
-        <p className="text-xs text-muted-foreground" aria-live="polite">
+        <p className="text-sm text-muted-foreground" aria-live="polite">
           {uploading.status === 'loading'
             ? 'Uploading…'
             : isDragActive
               ? 'Drop the file'
-              : 'Drag an ID scan or proof of address here, or click to browse'}
+              : type === 'KYC_EVIDENCE'
+                ? 'Drop an ID scan or proof of address, or click to browse'
+                : 'Drop the signed form, or click to browse'}
         </p>
-        <p className="text-xs text-subtle-foreground">JPEG, PNG, or PDF</p>
+        <p className="text-xs text-subtle-foreground">JPEG, PNG or PDF</p>
       </div>
-
       {uploading.status === 'error' && uploading.error && <InlineError error={uploading.error} />}
-    </div>
+    </section>
   );
 }

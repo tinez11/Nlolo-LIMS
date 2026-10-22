@@ -80,11 +80,26 @@ describe('RecordTabs', () => {
       vi.restoreAllMocks();
     });
 
-    it('returns to the tab strip when a tab is opened', async () => {
+    /** Where the strip sits when a tab is opened: scrolled past (above the page bar), or in plain view. */
+    function stripAt(top: number) {
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ top } as DOMRect);
+    }
+
+    it('returns to the tab strip when a tab is opened from a scrolled-past strip', async () => {
       renderAt('/p');
+      stripAt(-600);
       await userEvent.click(screen.getByRole('tab', { name: /Billing/ }));
       expect(screen.getByText('Billing body')).toBeInTheDocument();
       expect(scrollIntoView).toHaveBeenCalled();
+    });
+
+    // The user, 2026-10-22: a tab clicked in plain view moved the page.
+    it('leaves the page where it is when the strip is already in view', async () => {
+      renderAt('/p');
+      stripAt(120);
+      await userEvent.click(screen.getByRole('tab', { name: /Billing/ }));
+      expect(screen.getByText('Billing body')).toBeInTheDocument();
+      expect(scrollIntoView).not.toHaveBeenCalled();
     });
 
     // A deep link and a first paint are someone ARRIVING, not switching. Scrolling

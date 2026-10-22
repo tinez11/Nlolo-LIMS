@@ -379,6 +379,37 @@ public class PartyController {
     public ResponseEntity<KycEvidenceUploadResponseDto> uploadKycEvidence(@PathVariable UUID partyId,
             @RequestPart("file") MultipartFile file, @AuthenticationPrincipal Jwt jwt,
             Authentication authentication) {
+        return fileClientDocument(partyId, file, DocumentType.KYC_EVIDENCE, jwt, authentication);
+    }
+
+    /** What a client's own record may hold (2026-10-22): identity evidence, and forms they signed. */
+    private static final java.util.Set<DocumentType> CLIENT_DOCUMENT_TYPES =
+        java.util.EnumSet.of(DocumentType.KYC_EVIDENCE, DocumentType.SIGNED_FORM);
+
+    /**
+     * A document filed on the client, of a type the person filing it names (the user, 2026-10-22): identity evidence
+     * (an ID scan, proof of address) or a signed form. Same people and the same rule as {@code kyc-evidence}, which
+     * stays for identity evidence alone. Only identity evidence can carry a KYC decision.
+     */
+    @PostMapping(value = "/parties/{partyId}/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_AGENTS')")
+    public ResponseEntity<KycEvidenceUploadResponseDto> uploadClientDocument(@PathVariable UUID partyId,
+            @RequestPart("file") MultipartFile file, @RequestParam("type") String type,
+            @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        DocumentType documentType;
+        try {
+            documentType = DocumentType.valueOf(type);
+        } catch (IllegalArgumentException e) {
+            documentType = null;
+        }
+        if (documentType == null || !CLIENT_DOCUMENT_TYPES.contains(documentType)) {
+            throw new IllegalArgumentException("A client document is KYC_EVIDENCE or SIGNED_FORM, not " + type);
+        }
+        return fileClientDocument(partyId, file, documentType, jwt, authentication);
+    }
+
+    private ResponseEntity<KycEvidenceUploadResponseDto> fileClientDocument(UUID partyId, MultipartFile file,
+            DocumentType documentType, Jwt jwt, Authentication authentication) {
         // Same ownership rule as getParty, and checked the same way: the owner is a property of
         // the PARTY, so it cannot be expressed in the @PreAuthorize above. Without this an agent
         // could file documents against any client in the tenant -- a narrower hole than reading
@@ -388,15 +419,15 @@ public class PartyController {
             .anyMatch("ROLE_REALM_AGENTS"::equals);
         if (isAgent && !jwt.getSubject().equals(partyApi.getPartyDetail(partyId).createdBy())) {
             throw new AccessDeniedException(
-                "Access denied: agent may only file KYC evidence for a client they registered");
+                "Access denied: agent may only file documents for a client they registered");
         }
         String contentType = AllowedDocumentContentTypes.normalizeOrThrow(file.getContentType());
         String documentRef;
         try {
-            documentRef = documentApi.upload("party:" + partyId, DocumentType.KYC_EVIDENCE, jwt.getSubject(),
+            documentRef = documentApi.upload("party:" + partyId, documentType, jwt.getSubject(),
                 file.getInputStream(), file.getSize(), contentType, file.getOriginalFilename());
         } catch (IOException e) {
-            throw new UncheckedIOException("Failed to read uploaded KYC evidence file", e);
+            throw new UncheckedIOException("Failed to read the uploaded client document", e);
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(new KycEvidenceUploadResponseDto(documentRef));
     }

@@ -185,6 +185,7 @@ export function RatingBasis({
         <>
           <FactorSection
             title="Rating multipliers"
+            hint="Applied on top of the base rate. 1 changes nothing."
             empty="No multipliers on this version."
             rows={factors.map((f) => ({
               key: `${f.factorType}-${f.band}`,
@@ -196,6 +197,7 @@ export function RatingBasis({
 
           <FactorSection
             title="Benefit schedule"
+            hint="What a claim pays."
             empty="No benefits on this version."
             rows={benefits.map((b) => ({
               key: `${b.benefitType}-${b.calculationMethod}`,
@@ -216,6 +218,7 @@ export function RatingBasis({
       {loadingRows.length > 0 && (
         <FactorSection
           title="Instalment loading"
+          hint="Added when the premium is paid monthly or quarterly."
           empty="This version charges every frequency the same."
           rows={loadingRows}
         />
@@ -228,6 +231,7 @@ export function RatingBasis({
       */}
       <FactorSection
         title="TIRA filing"
+        hint="The approval this version is sold under."
         empty="No filing on record — this version was published before filings were required."
         rows={
           rating.data.tiraFiling
@@ -250,7 +254,7 @@ export function RatingBasis({
       />
 
       {!otherwise && <section>
-        <SectionHeading>Base rates</SectionHeading>
+        <SectionHeading hint="A year's rate per 1,000 of sum assured, by age, sex and smoker status.">Base rates</SectionHeading>
         {baseRates.length === 0 ? (
           // NOT an empty table. Every version published before M13 has no rate
           // table at all, which is a different fact from "the table is empty" --
@@ -288,11 +292,16 @@ export function RatingBasis({
  * rather than the old `pt-3 mt-1`: more room above a heading than below it, so
  * the heading groups with what follows it rather than floating between sections.
  */
-export function SectionHeading({ children }: { children: ReactNode }) {
+/**
+ * A section of a version's terms: a heading in the record's own voice, and one short line on what it is (the user,
+ * 2026-10-22). It was a small all-caps label, which read as a tag rather than the heading of what follows.
+ */
+export function SectionHeading({ children, hint }: { children: ReactNode; hint?: string | undefined }) {
   return (
-    <h3 className="px-4 pt-5 pb-2 text-eyebrow text-subtle-foreground uppercase">
-      {children}
-    </h3>
+    <div className="px-4 pt-6 pb-2">
+      <h3 className="text-sm font-semibold">{children}</h3>
+      {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
+    </div>
   );
 }
 
@@ -370,26 +379,29 @@ function factorLabel(factor: RatingFactorRow): string {
  */
 export function FactorSection({
   title,
+  hint,
   empty,
   rows,
 }: {
   title: string;
+  hint?: string | undefined;
   empty: string;
   rows: { key: string; label: string; note: string | null; value: string }[];
 }) {
   return (
     <section>
-      <SectionHeading>{title}</SectionHeading>
+      <SectionHeading hint={hint}>{title}</SectionHeading>
       {rows.length === 0 ? (
         <p className="px-4 text-xs text-muted-foreground">{empty}</p>
       ) : (
-        <dl className="max-w-md px-4">
+        // Two columns across the record's width, where it has it -- one narrow column left most of the card empty.
+        <dl className="grid gap-x-10 px-4 sm:grid-cols-2">
           {rows.map((row) => (
             <div
               key={row.key}
-              className="flex items-baseline justify-between gap-4 border-b border-border py-2 last:border-0"
+              className="flex items-baseline justify-between gap-4 border-b border-border py-2"
             >
-              <dt className="min-w-0 text-xs text-muted-foreground">
+              <dt className="w-32 shrink-0 text-xs text-muted-foreground">
                 {row.label}
                 {row.note && (
                   // The band the actuary typed, and the age bounds where they
@@ -398,7 +410,7 @@ export function FactorSection({
                   <span className="block text-xs text-subtle-foreground">{row.note}</span>
                 )}
               </dt>
-              <dd className="shrink-0 text-sm">{row.value}</dd>
+              <dd className="min-w-0 text-right text-sm">{row.value}</dd>
             </div>
           ))}
         </dl>

@@ -92,10 +92,12 @@ test.describe('unit-linked U2', () => {
       await step(admin, 'Pricing');
       await admin.getByLabel(`${equity} · E2E ${equity}`).check();
       await admin.getByLabel(`${cash} · E2E ${cash}`).check();
-      await admin.getByLabel('Allocation bands').fill('1,2,90\n3,,98');
+      await admin.getByRole('button', { name: 'Edit allocation bands as text' }).click();
+      await admin.getByRole('textbox', { name: 'Allocation bands' }).fill('1,2,90\n3,,98');
       await admin.getByLabel('Monthly policy fee').fill('2000');
       await admin.getByLabel('Mortality basis').selectOption('UNISEX');
-      await admin.getByLabel('Mortality table').fill('0,39,,1.2\n40,59,,4.5\n60,,,25');
+      await admin.getByRole('button', { name: 'Edit mortality table as text' }).click();
+      await admin.getByRole('textbox', { name: 'Mortality table' }).fill('0,39,,1.2\n40,59,,4.5\n60,,,25');
       await admin.getByLabel('Minimum years before surrender').fill('0');
       await admin.getByLabel('Warn when the units cover fewer months of charges than').fill('3');
       await admin.getByLabel('Monthly minimum').fill('50000');
@@ -112,7 +114,8 @@ test.describe('unit-linked U2', () => {
       await admin.getByLabel('Minimum value left after a withdrawal').fill('500000');
       await admin.getByLabel('Top-up allocation (%)').fill('98');
       await admin.getByLabel('Minimum top-up').fill('50000');
-      await admin.getByLabel('Surrender charge bands').fill('1,1,10\n2,5,5\n6,,0');
+      await admin.getByRole('button', { name: 'Edit surrender charge bands as text' }).click();
+      await admin.getByRole('textbox', { name: 'Surrender charge bands' }).fill('1,1,10\n2,5,5\n6,,0');
 
       await publishVersion(admin);
       await admin.getByRole('button', { name: 'Publish and make active' }).click();

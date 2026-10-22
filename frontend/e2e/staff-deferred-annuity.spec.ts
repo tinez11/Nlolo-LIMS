@@ -61,7 +61,9 @@ test.describe('a pension (deferred annuity)', () => {
     await page.getByRole('button', { name: 'Add an annuity form' }).click();
     await page.getByLabel('Form code').fill('LIFE');
     const grid = Array.from({ length: 85 - 18 + 1 }, (_, i) => `${18 + i}, ${RATE_PER_MILLE}`).join('\n');
-    await page.getByLabel(/^Rates — one line each/).fill(grid);
+    // The rates are a table since 2026-10-22; a grid this long is pasted as text.
+    await page.getByRole('button', { name: 'Edit form life rates as text' }).click();
+    await page.getByRole('textbox', { name: 'Form LIFE rates' }).fill(grid);
 
     await page.getByLabel('Minimum vesting age').fill('18');
     await page.getByLabel('Maximum vesting age').fill('85');
@@ -70,9 +72,10 @@ test.describe('a pension (deferred annuity)', () => {
     await page.getByLabel('Default frequency').selectOption('MONTHLY');
     await page.getByLabel('Locked before vesting').selectOption('NO');
 
-    // An account that saves gets a Charges step, ticked from Account charges; none ticked charges nothing.
+    // An account that saves gets a Charges step, added from Account charges; none added charges nothing.
     await step(page, 'Charges');
-    await expect(page.getByRole('button', { name: 'New charge' })).toBeVisible();
+    await expect(page.getByText('No charges: the account charges nothing.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add charge' })).toBeVisible();
 
     await publishVersion(page);
     await page.getByRole('button', { name: 'Publish and make active' }).click();

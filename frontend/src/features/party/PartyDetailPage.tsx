@@ -3,19 +3,16 @@ import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'r
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { cameFrom, type Crumb } from '@/lib/cameFrom';
 import { PageHeader } from '@/components/PageHeader';
-import { Field } from '@/components/Field';
 import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { formatDate, formatInstant } from '@/lib/dates';
 import { partyTypeLabel } from '@/lib/partyType';
 import type { ApiError } from '@/lib/apiError';
 import type {
   AgentView,
   BeneficiaryOfView,
   ClaimView,
-  IdentityDocumentView,
   Page,
   PartyDetailView,
   PartyDocumentView,
@@ -42,7 +39,7 @@ import { RecordTabs, type TabDef } from '@/components/RecordTabs';
 import { DetailLayout } from '@/components/DetailLayout';
 import { PortalAccessPanel } from './PortalAccessPanel';
 import { KycDecisionPanel, KycFilingPanel } from './KycPanel';
-import { downloadStoredDocument } from '@/api/documents';
+import { ClientOverview } from './ClientOverview';
 
 /**
  * One client's whole record: who they are, what they hold, and what is outstanding.
@@ -229,7 +226,12 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
       <PageHeader
         breadcrumb={clientBreadcrumb(realm, party?.partyType)}
         title={party?.displayName ?? 'Client'}
-        description={party?.partyType ? <span>{partyTypeLabel(party.partyType)}</span> : undefined}
+        description={party?.partyType ? (
+          <span>
+            {partyTypeLabel(party.partyType)}
+            {party.clientReference && <span className="text-muted-foreground"> · {party.clientReference}</span>}
+          </span>
+        ) : undefined}
         // `status`, not `actions`: a KYC status is what the record IS. The Correct details
         // link stays in `actions`, which is where a control belongs.
         status={party?.kycStatus && <StatusBadge kind="kyc" value={party.kycStatus} />}
@@ -261,175 +263,10 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
       />
 
       {/*
-        KYC leads, because this page acts on KYC and only on KYC -- and it used to be
-        the LAST of five panels, under four read-only registers. A reviewer whose
-        whole task is deciding an identity had to scroll past the client's policies,
-        claims, underwriting cases and beneficiary interests to reach the one control
-        they came for.
-
-        The rail is the identity itself: who this person is, the underwriting facts a
-        premium is rated on, and where they live. Pinned, so the name and date of
-        birth stay beside the evidence being judged against them.
+        No rail (2026-10-22, the user, as on the Policy page): who the client is moved to the Overview tab, where it
+        has the width to be read, instead of a column repeated beside every tab.
       */}
-      <DetailLayout
-        record={
-          <>
-            <Panel title="Identity">
-              {party && (
-                <dl className="px-4 pb-2">
-                  {/* WHO -- the facts a reviewer judges evidence against. Nationality sits beside
-                      type/DOB here, not after the ID document, because it answers the same
-                      question ("who is this") rather than the document question ("prove it"). */}
-                  <Field label="Type" value={partyTypeLabel(party.partyType)} />
-                  {/* Each field only where it applies to this kind of party (2026-10-09), or where one
-                      is recorded anyway. A company showed "Date of birth —", and the em dash, which
-                      means "not known", said something false: there is nothing to know. */}
-                  {(!isOrganisation || party.dateOfBirth) && (
-                    <Field label="Date of birth" value={formatDate(party.dateOfBirth) || '—'} />
-                  )}
-                  {(isOrganisation || party.registrationNumber) && (
-                    <Field label="Registration no." value={party.registrationNumber ?? '—'} />
-                  )}
-                  {(!isOrganisation || party.nationality) && (
-                    <Field label="Nationality" value={party.nationality ?? '—'} />
-                  )}
-
-                  {/* CONTACT -- how to reach them. */}
-                  <Field className="mt-3" label="Phone" value={party.phoneNumber ?? '—'} />
-                  <Field label="Email" value={party.email ?? '—'} />
-
-                  {/* VERIFICATION -- what was checked, and against what document. The group's
-                      opening margin sits on whichever field actually leads it: the ID document
-                      when one is on file, Client reference otherwise. */}
-                  {party.identityDocument?.type && (
-                    <Field
-                      className="mt-3"
-                      label={ID_TYPE_LABELS[party.identityDocument.type]}
-                      value={
-                        <span className="font-mono text-xs select-all">
-                          {party.identityDocument.number ?? '—'}
-                        </span>
-                      }
-                    />
-                  )}
-                  {/*
-                    Selectable and monospaced like the ID above it, because the only thing
-                    anybody does with this number is copy it into another system.
-                  */}
-                  <Field
-                    {...(party.identityDocument?.type ? {} : { className: 'mt-3' })}
-                    label="Client reference"
-                    value={
-                      party.clientReference ? (
-                        <span className="font-mono text-xs select-all">{party.clientReference}</span>
-                      ) : (
-                        '—'
-                      )
-                    }
-                  />
-                  <Field
-                    label="KYC decided"
-                    value={party.kycVerifiedAt ? formatInstant(party.kycVerifiedAt) : '—'}
-                    {...(party.kycVerifiedAt ? {} : { note: 'No decision recorded yet.' })}
-                  />
-
-                  {/* RECORD -- provenance: when and by whom this client entered the register. */}
-                  <Field className="mt-3" label="Registered" value={formatInstant(party.createdAt) || '—'} />
-                  {/*
-                    ONE ROW, NEVER A LOGIN ID. `createdBy` is a Keycloak subject -- a uuid
-                    nothing on this platform can name -- and it used to be printed raw here,
-                    beside a second "Introduced by" row that named the same agent. An agent
-                    registration links to the agent, who is also who commission accrues to;
-                    anyone else is named from the token at registration (party V5), and an
-                    older record that could not be named exactly says so rather than guessing.
-                  */}
-                  {party.registeredByPartyId ? (
-                    <Field
-                      label="Registered by"
-                      value={
-                        <span>
-                          <Link
-                            className="hover:underline"
-                            to={`/staff/parties/${party.registeredByPartyId}`}
-                          >
-                            {party.createdByName ?? <PartyName partyId={party.registeredByPartyId} />}
-                          </Link>
-                          <span className="text-muted-foreground"> · agent</span>
-                        </span>
-                      }
-                      note="The agent who brought this client in. Commission on their policies accrues to this agent."
-                    />
-                  ) : (
-                    <Field
-                      label="Registered by"
-                      value={party.createdByName ?? 'Name not recorded'}
-                      note={
-                        party.createdByName
-                          ? 'Who entered this record. No agent introduced this client, so their business is direct.'
-                          : 'Registered before names were kept. No agent introduced this client.'
-                      }
-                    />
-                  )}
-                  <Field label="Client id" value={<span className="font-mono text-xs">{partyId}</span>} />
-                </dl>
-              )}
-            </Panel>
-
-            {/* Rendered only for individuals, and only when something is on record.
-                A corporate has none of this, and an empty panel of eight em dashes
-                would read as data the platform lost rather than never asked for. */}
-            {party?.partyType === 'INDIVIDUAL' && hasPersonRecord(party) && (
-              <Panel
-                title="Person"
-                subtitle="Underwriting facts. Sex, smoker status and date of birth are what a premium is rated on."
-              >
-                <dl className="px-4 pb-2">
-                  <Field label="Sex" value={party.sex ? SEX_LABELS[party.sex] : '—'} />
-                  <Field
-                    label="Smoker status"
-                    value={party.smokerStatus ? SMOKER_LABELS[party.smokerStatus] : '—'}
-                    // The distinction the column exists to preserve: UNKNOWN is a
-                    // recorded answer a product may price; absent means nobody asked.
-                    {...(party.smokerStatus ? {} : { note: 'Never asked — not the same as declined.' })}
-                  />
-                  <Field label="Occupation" value={party.occupation ?? '—'} />
-                  <Field
-                    label="Occupation class"
-                    value={party.occupationClass ?? '—'}
-                    {...(party.occupationClass
-                      ? {}
-                      : { note: 'Unclassified — a quote cannot apply an occupation loading.' })}
-                  />
-                  <Field label="Employer" value={party.employerName ?? '—'} />
-                </dl>
-              </Panel>
-            )}
-
-            {party?.partyType === 'INDIVIDUAL' && hasAddress(party) && (
-              <Panel title="Address">
-                <dl className="px-4 pb-2">
-                  <Field label="Street or plot" value={party.address?.line ?? '—'} />
-                  <Field label="Ward" value={party.address?.ward ?? '—'} />
-                  <Field label="District" value={party.address?.district ?? '—'} />
-                  <Field label="Region" value={party.address?.region ?? '—'} />
-                  <Field label="Postal code" value={party.address?.postalCode ?? '—'} />
-                </dl>
-              </Panel>
-            )}
-          </>
-        }
-      >
-        {/*
-          TABS, which the agreed proposal named for this record alongside the policy one. The
-          work column was eight panels -- KYC, policies, schemes, claims, underwriting,
-          beneficiary interests, documents, agent record -- and the fourth of them was a long
-          scroll away on a page whose whole job is deciding an identity.
-
-          Unlike the policy record, this costs no load behaviour: the seven reads fire together
-          in one page-level effect above, not inside the panels, so unmounting an inactive tab
-          does not stop anything being fetched. That is what makes the tab a pure reading
-          change here, and it is why the count regression tabs caused in plan 2 cannot repeat.
-        */}
+      <DetailLayout>
         <ClientTrail.Provider value={trail}>
           <RecordTabs label="Client sections" tabs={tabs} />
         </ClientTrail.Provider>
@@ -499,48 +336,45 @@ function clientTabs({
 }: ClientTabInputs): TabDef[] {
   const tabs: TabDef[] = [];
 
-  // KYC LEADS, and that was true before tabs for the same reason it is true now: this page
-  // acts on KYC and only on KYC. As the first tab it is what a reviewer lands on, which is
-  // what the old ordering was reaching for when it moved the panel to the top of a scroll.
-  //
-  // THE DECISION is staff and stays staff -- an agent who can see the control reasonably
-  // concludes the record is theirs to change, and finds out otherwise at the point of saving.
-  //
-  // FILING THE EVIDENCE is not the decision, and the agents realm now has its own tab for it
-  // (2026-10-14). `POST /parties/{id}/kyc-evidence` has accepted an agents token since it was
-  // written -- "the agent who took the documents supplies them and a staff member decides
-  // whether they are good", in PartyController's own words -- and no console screen had ever
-  // called it as one. The tab is narrower than the staff one in both directions: it files and
-  // lists, it does not open or decide.
-  if (isStaff) {
+  // OVERVIEW LEADS, for staff and for an agent viewing their own client (2026-10-22, the user): who this client is
+  // and where their KYC stands, before any of the registers below.
+  if (party) {
     tabs.push({
-      value: 'kyc',
-      label: 'KYC',
-      content: (
-        <Panel
-          emphasis
-          title="KYC verification"
-          // The subtitle instructs only while there is something to do. A decided case that
-          // still says "then decide" reads as work outstanding, which is the same thing the
-          // decision controls were doing by staying on screen.
-          subtitle={
-            party?.kycStatus === 'VERIFIED' || party?.kycStatus === 'REJECTED'
-              ? 'The decision on record, and the evidence it was taken on.'
-              : 'Read the evidence on record, then decide against the document you read.'
-          }
-        >
-          {party && (
+      value: 'overview',
+      label: 'Overview',
+      content: <ClientOverview party={party} partyId={partyId} isStaff={isStaff} documents={documents} />,
+    });
+  }
+
+  // KYC AND THE CLIENT'S OWN DOCUMENTS, one tab: what was filed on this client is the evidence a KYC decision rests
+  // on, plus their signed forms. The decision is staff's; the agent files and sees what was filed.
+  tabs.push({
+    value: 'kyc',
+    label: 'KYC & documents',
+    content: (
+      <Panel
+        emphasis={isStaff}
+        title="KYC & documents"
+        subtitle={isStaff
+          ? 'Identity evidence and signed forms filed on this client. Open identity evidence to decide on KYC.'
+          : 'Send this client’s ID and signed forms to the office. Verification is theirs to decide.'}
+      >
+        {isStaff ? (
+          party && (
             <KycDecisionPanel
               partyId={partyId}
               currentStatus={party.kycStatus}
+              registrar={party}
               documents={documents}
               onRetryDocuments={onRetryDocuments}
             />
-          )}
-        </Panel>
-      ),
-    });
-  }
+          )
+        ) : (
+          <KycFilingPanel partyId={partyId} registrar={party} documents={documents} onRetryDocuments={onRetryDocuments} />
+        )}
+      </Panel>
+    ),
+  });
 
   // Policies and schemes share a tab because they answer one question -- what does this client
   // hold -- and the schemes panel is DERIVED from the policies page already loaded. Splitting
@@ -658,47 +492,6 @@ function clientTabs({
     ),
   });
 
-  // The agent's half of the KYC split (2026-10-14). Late rather than first: an agent opens a
-  // client record to see the book, which is why the staff KYC tab's absence left them landing
-  // on Policies. Filing papers is an errand they came to do deliberately, not the thing they
-  // need to see on arrival.
-  if (!isStaff) {
-    tabs.push({
-      value: 'kyc',
-      label: 'KYC',
-      content: (
-        <Panel
-          title="Identity evidence"
-          subtitle="Send this client’s ID documents to the office. Verification is theirs to decide."
-        >
-          <KycFilingPanel
-            partyId={partyId}
-            documents={documents}
-            onRetryDocuments={onRetryDocuments}
-          />
-        </Panel>
-      ),
-    });
-  }
-
-  tabs.push({
-    value: 'documents',
-    label: 'Documents',
-    content: (
-      <Panel
-        title="Documents"
-        subtitle="Filed against this client. Claim evidence lives on the claim."
-      >
-        {/*
-          Opening a file is staff-only, and the flag is the endpoint's rule rather than this
-          screen's: `GET /documents/{ref}` is `hasRole('REALM_STAFF')` whole-class, so an agent
-          offered a View button would get a 403 on a document they uploaded themselves.
-        */}
-        <DocumentList resource={documents} onRetry={onRetryDocuments} canOpen={isStaff} />
-      </Panel>
-    ),
-  });
-
   // `GET /agents` is staff-only, so the agents realm never even fetches this -- a tab offering
   // it there would open onto a guaranteed 403.
   if (isStaff) {
@@ -774,39 +567,6 @@ function PanelState({
  * humaniser so a literal added server-side fails the typecheck here instead of
  * silently rendering as `DRIVING_LICENCE`.
  */
-const ID_TYPE_LABELS: Record<NonNullable<IdentityDocumentView['type']>, string> = {
-  NATIONAL_ID: 'National ID',
-  PASSPORT: 'Passport',
-  DRIVING_LICENCE: 'Driving licence',
-  VOTER_ID: 'Voter ID',
-};
-
-const SEX_LABELS: Record<NonNullable<PartyDetailView['sex']>, string> = {
-  FEMALE: 'Female',
-  MALE: 'Male',
-};
-
-const SMOKER_LABELS: Record<NonNullable<PartyDetailView['smokerStatus']>, string> = {
-  SMOKER: 'Smoker',
-  NON_SMOKER: 'Non-smoker',
-  // Not "Unknown": the value means the question was put and the applicant declined,
-  // which is a recorded answer a product may price. An absent value is the unknown.
-  UNKNOWN: 'Declined to say',
-};
-
-/** Whether any V2 person fact is on record, so the panel is not eight em dashes. */
-function hasPersonRecord(party: PartyDetailView): boolean {
-  return Boolean(
-    party.sex ?? party.smokerStatus ?? party.occupation ?? party.occupationClass ?? party.employerName,
-  );
-}
-
-function hasAddress(party: PartyDetailView): boolean {
-  const address = party.address;
-  if (!address) return false;
-  return Boolean(address.line ?? address.ward ?? address.district ?? address.region ?? address.postalCode);
-}
-
 const PANEL_ROW_CAP = 6;
 
 /**
@@ -1219,90 +979,6 @@ function BeneficiaryOfList({
       }}
     </PanelState>
   );
-}
-
-/**
- * What is held on this client, and — for staff — a way to read it.
- *
- * The list was inert text until 2026-10-14: a file name, a type and a date, with no way to open
- * any of it. `GET /documents/{ref}` had existed and been staff-only since the document module was
- * built, and the console had never called it from anywhere, so no stored document on the platform
- * could be opened outside a claim. A list of evidence nobody can read is a list of file names.
- *
- * A new tab here, not the inline viewer the KYC decision uses: this panel is an inventory, and
- * the reader is looking something up rather than deciding against it. That is `EvidencePanel`'s
- * reasoning and it holds wherever the document is not the subject of an act on the same screen.
- */
-function DocumentList({
-  resource,
-  onRetry,
-  canOpen,
-}: {
-  resource: Resource<PartyDocumentView[]>;
-  onRetry: () => void;
-  canOpen: boolean;
-}) {
-  return (
-    <PanelState resource={resource} onRetry={onRetry} empty="No documents filed.">
-      {() => {
-        const rows = resource.data ?? [];
-        if (rows.length === 0) return null;
-        return (
-          <ul className="border-t border-border px-4 py-2">
-            {rows.slice(0, PANEL_ROW_CAP).map((d) => {
-              // Bound once, because every field of the generated view is optional and the
-              // click handler below is a closure TypeScript cannot narrow through.
-              const ref = d.documentRef;
-              return (
-              <li key={ref} className="flex items-center gap-2 py-1 text-xs">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate" title={d.fileName ?? ref}>
-                    {d.fileName ?? <span className="font-mono">{ref}</span>}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {(d.documentType ?? '').replace(/_/g, ' ').toLowerCase()} ·{' '}
-                    {formatInstant(d.uploadedAt)}
-                  </p>
-                </div>
-                {canOpen && ref && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="shrink-0"
-                    // Named for the row it belongs to. Six buttons all announced "View" leave a
-                    // screen-reader user counting rows to work out which file they are on.
-                    aria-label={`View ${d.fileName ?? ref}`}
-                    onClick={() => void openStoredDocument(ref)}
-                  >
-                    View
-                  </Button>
-                )}
-              </li>
-              );
-            })}
-            {rows.length > PANEL_ROW_CAP && (
-              <li className="pt-1 text-xs text-muted-foreground">
-                {rows.length - PANEL_ROW_CAP} more not shown
-              </li>
-            )}
-          </ul>
-        );
-      }}
-    </PanelState>
-  );
-}
-
-/**
- * Fetch the file as an authenticated blob, then hand it to a new tab.
- *
- * Not an `<a href>`: this SPA holds its tokens in memory, so a plain anchor is an anonymous
- * request — see `lib/download.ts`, which makes the same point about saving. The object URL is
- * revoked by the browser when that tab closes rather than here, because revoking it in this
- * frame would race the new tab's own load.
- */
-async function openStoredDocument(documentRef: string): Promise<void> {
-  const blob = await downloadStoredDocument(documentRef);
-  window.open(URL.createObjectURL(blob), '_blank', 'noopener');
 }
 
 function AgentRecordList({
