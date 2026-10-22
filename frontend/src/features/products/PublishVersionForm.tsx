@@ -14,6 +14,7 @@ import { BUCKET_LABEL, MODEL_LABEL, PORTFOLIO_LABEL, portfolioLabel, type Portfo
 import { changeProductPortfolio } from '@/api/accountCharges';
 import { toApiError, type ApiError } from '@/lib/apiError';
 import { cn } from '@/lib/cn';
+import { revealIfHidden } from '@/lib/reveal';
 import { DatePicker } from '@/components/DatePicker';
 import { Button } from '@/components/ui/button';
 import { Tip } from '@/components/ui/tooltip';
@@ -343,7 +344,9 @@ export function PublishVersionForm({
   function goTo(id: StepId) {
     setStepId(id);
     setPending(null);
-    document.getElementById('publish-version-form')?.scrollIntoView?.({ block: 'start' });
+    // Back to the step bar only when it has scrolled out of sight, and then to just under the sticky page bar -- a
+    // plain scrollIntoView put the bar behind the header and moved the page on every click (the user, 2026-10-22).
+    revealIfHidden(document.getElementById('publish-version-form'));
   }
 
   // Enter in a field moves nothing and publishes nothing before Review; on Review it is the Publish button's.
@@ -354,7 +357,7 @@ export function PublishVersionForm({
   return (
     <form
       id="publish-version-form"
-      className="space-y-5"
+      className="scroll-mt-[calc(var(--pagebar-h,0px)+1rem)] space-y-5"
       onKeyDown={holdEnter}
       onSubmit={(e) => {
         setReviewed(true);

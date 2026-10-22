@@ -1,6 +1,7 @@
 import * as TabsPrimitive from '@radix-ui/react-tabs';
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { revealIfHidden } from '@/lib/reveal';
 
 export interface TabDef {
   value: string;
@@ -69,8 +70,8 @@ export function RecordTabs({
       arrived.current = true;
       return;
     }
-    // jsdom implements no scrolling, hence the optional call -- same as `DatePicker`.
-    root.current?.scrollIntoView?.({ block: 'start' });
+    // Only when the strip has scrolled out of sight: a tab clicked in plain view must not move the page (2026-10-22).
+    revealIfHidden(root.current);
   }, [active]);
 
   return (

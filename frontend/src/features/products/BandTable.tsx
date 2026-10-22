@@ -92,7 +92,7 @@ export function BandTable({
           <Textarea rows={Math.max(4, rows.length + 1)} className="font-mono text-xs" aria-label={label} value={value}
             onChange={(e) => onChange(e.target.value)} />
           <p className="px-1 pt-1.5 text-xs text-subtle-foreground">
-            One band a line, {shown.map((col) => col.header.toLowerCase()).join(', ')} -- separated by commas.
+            One band a line, {shown.map((col) => col.header.toLowerCase()).join(', ')} — separated by commas.
           </p>
         </div>
       ) : (

@@ -111,6 +111,8 @@ describe('design guards', () => {
         // A side plus a width -- `border-b-2`, `border-t-0` -- is a border width, which the
         // name pattern would otherwise read as a colour called "b-2".
         if (prefix === 'border' && /^[tblrxyse]-\d+$/.test(name)) continue;
+        // `border-spacing-*` is the gap between a separated table's cells, not a colour.
+        if (prefix === 'border' && /^spacing(-[xy])?(-\d+)?$/.test(name)) continue;
         if (!TOKENS.has(name)) unknown.push(`${path}: ${prefix}-${name}`);
       }
     }
