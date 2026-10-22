@@ -77,9 +77,9 @@ export function CustomerHomePage() {
 
 function Card({ label, value, note, warn = false }: { label: string; value: string; note?: string; warn?: boolean }) {
   return (
-    <div className={cn('rounded-lg border bg-surface px-4 py-3', warn ? 'border-status-warning-fg/50' : 'border-border')}>
+    <div className={cn('@container min-w-0 rounded-xl border bg-surface px-4 py-3 shadow-card', warn ? 'border-status-warning-fg/50' : 'border-border')}>
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-headline tabular-nums">{value}</p>
+      <p className="mt-1 whitespace-nowrap text-figure tabular-nums">{value}</p>
       {note && <p className="mt-0.5 text-xs text-subtle-foreground">{note}</p>}
     </div>
   );

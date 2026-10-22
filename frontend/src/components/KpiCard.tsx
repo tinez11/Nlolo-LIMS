@@ -9,9 +9,10 @@ import { cn } from '@/lib/cn';
  * already filtered, so the rows a person lands on are the rows the number promised. A figure whose destination cannot
  * reproduce its filter has no `to`, and is drawn as a card that is not clickable.
  *
- * <b>Never wraps.</b> The figure is `whitespace-nowrap`, and the card is a size container: it is set in the Display
- * tier when the card is wide enough and steps down to the Headline tier when it is not. Both are tiers already on the
- * page (the stat figure and the page title), so stepping down adds no third size (DESIGN.md, the Two-Peaks Rule).
+ * <b>Never wraps.</b> The figure is `whitespace-nowrap`, and the card is a size container: the Figure tier is the
+ * Display size when the card is wide enough and shrinks with the card when it is not, so a TZS billion never runs out
+ * of its card. It used to step down to the Headline tier -- which went wrong when the headline grew past the display
+ * size (2026-10-21) and every narrow card stepped UP instead.
  *
  * <b>A delta is ink.</b> Up is a direction, not a verdict (the Stamp Rule).
  */
@@ -30,11 +31,11 @@ function Body({ kpi }: { kpi: Kpi }) {
       <span className="block text-xs font-medium text-muted-foreground">{kpi.label}</span>
       {kpi.value === null ? (
         // The dash is decoration; the words below it say what it means, once, to everyone.
-        <span className="mt-1 block text-headline text-subtle-foreground" aria-hidden>
+        <span className="mt-1 block text-figure text-subtle-foreground" aria-hidden>
           —
         </span>
       ) : (
-        <span className="mt-1 block whitespace-nowrap text-headline @[20rem]:text-display">{kpi.value}</span>
+        <span className="mt-1 block whitespace-nowrap text-figure">{kpi.value}</span>
       )}
       {kpi.delta && kpi.value !== null && (
         <span data-delta className="mt-0.5 flex items-center gap-1 text-xs text-foreground">
@@ -54,7 +55,7 @@ function Body({ kpi }: { kpi: Kpi }) {
 }
 
 function KpiCard({ kpi }: { kpi: Kpi }) {
-  const frame = '@container block min-w-0 rounded-lg border border-border bg-surface px-4 py-3';
+  const frame = '@container block min-w-0 rounded-xl border border-border bg-surface px-4 py-3 shadow-card';
   // A failed figure is never a link: it would open a list whose count contradicts the "Not available" on the card.
   if (!kpi.to || kpi.value === null) {
     return (

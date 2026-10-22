@@ -77,10 +77,13 @@ test.describe('staff credit-life invoices', () => {
       await http.dispose();
     }
 
-    await page.goto(`/staff/policies/${policyNumber}?tab=billing`);
-
-    // The summary no longer quotes the set-up figure as the premium.
+    // The summary no longer quotes the set-up figure as the premium. It is read on the Overview tab: since the
+    // policy page dropped its record rail (2026-10-21) the record's facts show there and only there, and this
+    // looked for them on Billing, where they no longer are.
+    await page.goto(`/staff/policies/${policyNumber}`);
     await expect(page.getByText('Charged per monthly file')).toBeVisible({ timeout: 30_000 });
+
+    await page.goto(`/staff/policies/${policyNumber}?tab=billing`);
 
     const invoices = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Invoices' }) });
     // OWED leads, with what was charged beside it.

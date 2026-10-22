@@ -54,7 +54,7 @@ export function YearEndPage() {
         {preparing?.status === 'error' && preparing.error && <InlineError error={preparing.error} />}
 
         {(closes.data ?? []).length > 0 && (
-          <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Closes">
+          <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Closes">
             <table className="w-full text-sm" aria-label="Year-end closes">
               <tbody>
                 {(closes.data ?? []).map((c) => (

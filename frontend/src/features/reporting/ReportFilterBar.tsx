@@ -74,7 +74,7 @@ export function ReportFilterBar({
   );
 
   return (
-    <form onSubmit={submit} className="space-y-2 rounded-lg border border-border bg-surface p-3">
+    <form onSubmit={submit} className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-3">
       <div className="flex flex-wrap items-end gap-3">
         {(kind === 'AS_OF' || kind === 'AS_OF_AND_PERIOD') && field('asOf', 'As of', 'date')}
         {kind === 'AS_OF' && definition.comparable && field('compareAsOf', 'Compare with', 'date')}

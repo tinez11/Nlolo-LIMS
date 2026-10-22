@@ -320,6 +320,8 @@ describe('QuotationPreview, the downloadable quotation', () => {
   it('sends the inputs, never a figure, and saves the PDF', async () => {
     vi.mocked(downloadQuotation).mockResolvedValue(new Blob(['pdf']));
     renderWithApplicant('END');
+    // The PDF is offered once the quotation is priced (2026-10-22), not on inputs the server has not answered yet.
+    await screen.findByText('TZS 76,000.00');
 
     await userEvent.click(screen.getByRole('button', { name: 'Download the quotation as PDF' }));
 

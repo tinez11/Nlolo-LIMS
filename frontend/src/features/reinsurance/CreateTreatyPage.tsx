@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
+import { FormLayout } from '@/components/FormLayout';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { useReinsuranceStore } from '@/store/reinsuranceStore';
 import {
@@ -77,7 +78,8 @@ export function CreateTreatyPage() {
         description="Staff/finance only."
       />
 
-      <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+      <FormLayout formId="create-treaty-form" outlineLabel="Treaty sections">
+      <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
         <UnsavedGuard when={isDirty && !isSubmitting} what="This treaty" />
         <FormField label="Reinsurer name" error={errors.reinsurerName?.message}>
           <Input
@@ -200,6 +202,7 @@ export function CreateTreatyPage() {
           </Button>
         </div>
       </form>
+      </FormLayout>
     </>
   );
 }

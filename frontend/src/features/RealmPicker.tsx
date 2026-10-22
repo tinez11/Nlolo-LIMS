@@ -36,7 +36,7 @@ export function RealmPicker() {
                 {available ? (
                   <Link
                     to={`/${config.slug}`}
-                    className="flex items-center justify-between gap-4 rounded-lg border border-border bg-surface px-4 py-3 transition-colors hover:border-border-strong hover:bg-hover"
+                    className="flex items-center justify-between gap-4 rounded-xl border border-border bg-surface shadow-card px-4 py-3 transition-colors hover:border-border-strong hover:bg-hover"
                   >
                     <span className="min-w-0">
                       <span className="block text-sm font-medium">{config.label}</span>

@@ -47,7 +47,7 @@ function Journal({ journal: j }: { journal: ManualJournalView }) {
     <>
       <PageHeader title={j.title} description={`${STATUS_LABEL[j.status] ?? j.status} · period ${j.period}`} />
       <div className="space-y-4 px-6 pb-6">
-        <section className="grid grid-cols-1 gap-2 rounded-lg border border-border bg-surface p-4 text-sm sm:grid-cols-2"
+        <section className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-surface shadow-card p-4 text-sm sm:grid-cols-2"
           aria-label="About this journal">
           <p><span className="text-muted-foreground">Reason:</span> {j.reason ?? '—'}</p>
           <p><span className="text-muted-foreground">Reason code:</span> {j.reasonCode ?? '—'}</p>
@@ -97,7 +97,7 @@ function Lines({ journal: j }: { journal: ManualJournalView }) {
   const acting = useManualJournalsStore((s) => s.acting[`lines.${j.id}`]);
   const input = useRef<HTMLInputElement>(null);
   return (
-    <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Lines">
+    <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Lines">
       <p className="text-xs font-medium">Lines</p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm" aria-label="Journal lines">
@@ -160,7 +160,7 @@ function Documents({ journal: j, editable }: { journal: ManualJournalView; edita
   const acting = useManualJournalsStore((s) => s.acting[`documents.${j.id}`]);
   const input = useRef<HTMLInputElement>(null);
   return (
-    <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Documents">
+    <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Documents">
       <p className="text-xs font-medium">Supporting documents</p>
       {j.documentRefs.length === 0 ? (
         <p className="text-sm text-muted-foreground">None yet — a journal needs at least one to be submitted.</p>
@@ -224,7 +224,7 @@ function Actions({ journal: j, isPreparer, mayDecide }: { journal: ManualJournal
   */
   if (j.status === 'SUBMITTED' && mayDecide && confirming) {
     return (
-      <section className="space-y-3 rounded-lg border border-border bg-surface p-4" aria-label="Actions">
+      <section className="space-y-3 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Actions">
         {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
         <ConfirmAct
           heading="Post this journal to the ledger?"
@@ -255,7 +255,7 @@ function Actions({ journal: j, isPreparer, mayDecide }: { journal: ManualJournal
   }
 
   return (
-    <section className="space-y-3 rounded-lg border border-border bg-surface p-4" aria-label="Actions">
+    <section className="space-y-3 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Actions">
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <div className="flex flex-wrap items-end gap-2">
         {j.status === 'DRAFT' && isPreparer && (

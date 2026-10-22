@@ -41,9 +41,12 @@ export function Panel({
   title,
   subtitle,
   emphasis = false,
+  outline = false,
   actions,
   children,
 }: {
+  /** A section of a full-page form: listed by its title in the `FormLayout` rail's outline. */
+  outline?: boolean;
   /**
    * An anchor target for `SectionNav`, on the pages that must stay one scroll. The scroll
    * margin below clears the sticky page bar and the section bar under it, so a jumped-to
@@ -67,14 +70,15 @@ export function Panel({
   return (
     <section
       id={id}
+      data-outline={outline ? title : undefined}
       className={cn(
-        'scroll-mt-[calc(var(--pagebar-h,0px)+var(--sectionbar-h,0px)+1rem)] rounded-lg border bg-surface',
+        'scroll-mt-[calc(var(--pagebar-h,0px)+var(--sectionbar-h,0px)+1rem)] rounded-xl border bg-surface shadow-card',
         emphasis ? 'border-border-strong' : 'border-border',
       )}
     >
       {/* No rule under the title (2026-10-09): the gap to the content separates them. A ruled
           header put two lines between a panel's edge and its first row. */}
-      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 px-4 pt-3 pb-2">
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 px-4 pt-4 pb-2">
         <div className="min-w-0">
           <h2 className={emphasis ? 'text-title' : 'text-sm font-semibold'}>{title}</h2>
           {subtitle && <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>}

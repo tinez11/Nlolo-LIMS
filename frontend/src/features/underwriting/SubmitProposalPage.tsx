@@ -7,6 +7,7 @@ import {
   type AgentQuotation,
 } from '@/api/agentQuotations';
 import { Field } from '@/components/Field';
+import { FormLayout } from '@/components/FormLayout';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
@@ -93,7 +94,8 @@ export function SubmitProposalPage() {
         title="Submit the proposal"
         description="The customer and the quotation they agreed to, to the underwriter."
       />
-      <div className="max-w-xl space-y-4 px-6 pb-8">
+      <FormLayout formId="submit-proposal" outlineLabel="Proposal sections" card={false}>
+      <div className="space-y-4">
         {!quotation && !error && <LoadingBlock label="Loading the quotation…" />}
         {quotation && <AcceptedQuotationPanel quotation={quotation} productName={productName} />}
 
@@ -157,6 +159,7 @@ export function SubmitProposalPage() {
           )
         )}
       </div>
+      </FormLayout>
     </>
   );
 }

@@ -49,7 +49,7 @@ function Run({ run: r }: { run: EngineRunView }) {
         description={`${RUN_STATUS_LABEL[r.status] ?? r.status} · period ${r.period ?? '—'} · extract #${r.extractNumber ?? '—'}`}
       />
       <div className="space-y-4 px-6 pb-6">
-        <section className="grid grid-cols-1 gap-2 rounded-lg border border-border bg-surface p-4 text-sm sm:grid-cols-2"
+        <section className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-surface shadow-card p-4 text-sm sm:grid-cols-2"
           aria-label="About this run">
           <p><span className="text-muted-foreground">Engine:</span> {r.engineName ?? '—'} · measured {r.measurementDate ?? '—'}</p>
           <p><span className="text-muted-foreground">Uploaded:</span> {formatInstant(r.uploadedAt)} by {r.uploadedBy}</p>
@@ -69,7 +69,7 @@ function Run({ run: r }: { run: EngineRunView }) {
         </section>
 
         {r.errors.length > 0 && (
-          <section className="space-y-1 rounded-lg border border-border bg-surface p-4" aria-label="Errors">
+          <section className="space-y-1 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Errors">
             <p className="text-xs font-medium text-status-danger-fg">Why the file was rejected ({r.errors.length})</p>
             <ul className="list-disc pl-5 text-sm">
               {r.errors.map((e) => <li key={e}>{e}</li>)}
@@ -78,7 +78,7 @@ function Run({ run: r }: { run: EngineRunView }) {
         )}
 
         {r.groups.map((g) => (
-          <section key={g.group} className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label={`Group ${g.group}`}>
+          <section key={g.group} className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label={`Group ${g.group}`}>
             <p className="text-xs font-medium">{g.group}{g.reinsurance ? ' (reinsurance held)' : ''}</p>
             <table className="w-full text-sm" aria-label={`Lines of ${g.group}`}>
               <tbody>
@@ -124,7 +124,7 @@ function Decision({ run: r }: { run: EngineRunView }) {
   const input = useRef<HTMLInputElement>(null);
   const busy = acting?.status === 'loading';
   return (
-    <section className="space-y-3 rounded-lg border border-border bg-surface p-4" aria-label="Decision">
+    <section className="space-y-3 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Decision">
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <form className="flex flex-wrap items-end gap-2" aria-label="Approve run"
         onSubmit={(e) => {
@@ -163,7 +163,7 @@ function Decision({ run: r }: { run: EngineRunView }) {
 
 function Reconciliation({ run: r, viewer, approver }: { run: EngineRunView; viewer: string | null | undefined; approver: boolean }) {
   return (
-    <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Reconciliation section">
+    <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Reconciliation section">
       <p className="text-xs font-medium">The ledger against the engine (net Dr − Cr)</p>
       <table className="w-full text-sm" aria-label="Reconciliation">
         <thead>

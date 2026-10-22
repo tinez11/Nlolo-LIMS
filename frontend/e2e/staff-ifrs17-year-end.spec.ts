@@ -13,6 +13,9 @@ test.describe('IFRS 17 year-end close', () => {
   test.use({ storageState: 'e2e/.auth/staff-finance.json' });
 
   test('a year with payroll closed to retained earnings by two people, and December locked', async ({ page, browser }) => {
+    // Three approvals by a second person, each in its own signed-in browser, plus a period close and a lock: in a full
+    // run it ran out of the 60s budget at the last approval. Slow, as the KYC round trip is.
+    test.slow();
     const december = await untouchedPeriod(page, '12');
     const year = december.slice(0, 4);
 
@@ -40,6 +43,8 @@ test.describe('IFRS 17 year-end close', () => {
     const first = await approverPage(browser);
     await first.page.goto(journalUrl);
     await first.page.getByRole('button', { name: 'Approve and post' }).click();
+    // A journal asks twice since a118ddeb; only the confirmation's own button posts it.
+    await first.page.getByRole('button', { name: 'Post to the ledger' }).click();
     await expect(first.page.getByText(/Posted · period/)).toBeVisible({ timeout: 15_000 });
     await first.context.close();
 
@@ -75,6 +80,8 @@ test.describe('IFRS 17 year-end close', () => {
     const third = await approverPage(browser);
     await third.page.goto(closeUrl);
     await third.page.getByRole('button', { name: 'Approve and post' }).click();
+    // So does the close (a118ddeb): it posts the closing journal and locks the year.
+    await third.page.getByRole('button', { name: 'Post the close' }).click();
     await expect(third.page.getByText(/^Posted · Loss 1,000.00/)).toBeVisible({ timeout: 15_000 });
     await third.context.close();
 

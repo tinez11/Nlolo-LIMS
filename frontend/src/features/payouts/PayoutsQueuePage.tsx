@@ -176,7 +176,7 @@ export function PayoutsQueuePage() {
       />
 
       <div className="px-6 pb-6">
-        <div className="rounded-lg border border-border bg-surface">
+        <div className="rounded-xl border border-border bg-surface shadow-card">
           <div className="flex flex-wrap items-center gap-1.5 gap-y-2 border-b border-border px-3 py-2.5">
             <FilterChip label="All" active={status === undefined} onClick={() => update({ status: undefined })} />
             {INSTALMENT_STATUSES.map((value) => (
@@ -216,7 +216,7 @@ function AwaitingDeposits() {
   return (
     <section className="mt-6" aria-label="Matured deposits waiting for a payee">
       <h2 className="mb-2 text-sm font-medium">Matured deposits waiting for a payee</h2>
-      <div className="divide-y divide-border rounded-lg border border-border bg-surface" role="list">
+      <div className="divide-y divide-border rounded-xl border border-border bg-surface shadow-card" role="list">
         {rows.map((row) => (
           <div key={row.policyNumber} role="listitem" className="flex items-center justify-between gap-3 px-4 py-2.5">
             <span className="text-sm">

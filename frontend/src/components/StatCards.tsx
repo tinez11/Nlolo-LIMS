@@ -91,7 +91,7 @@ export function StatCards({ stats }: { stats: Stat[] }) {
             {...(interactive ? { type: 'button' as const, onClick: stat.onSelect } : {})}
             aria-pressed={interactive ? stat.selected : undefined}
             className={cn(
-              'min-w-36 flex-1 basis-0 rounded-lg border border-border bg-surface px-4 py-3 text-left transition-colors sm:max-w-60',
+              'min-w-36 flex-1 basis-0 rounded-xl border border-border bg-surface shadow-card px-4 py-3 text-left transition-colors sm:max-w-60',
               interactive && 'hover:border-border-strong',
               stat.selected && 'border-border-strong bg-selected',
             )}

@@ -123,7 +123,7 @@ function FundCard({ fund, viewerSubject, isAdmin }: { fund: FundView; viewerSubj
   }, [open, fund.code, loadFund]);
 
   return (
-    <section role="listitem" aria-label={`Fund ${fund.code}`} className="rounded-lg border border-border bg-surface p-4">
+    <section role="listitem" aria-label={`Fund ${fund.code}`} className="rounded-xl border border-border bg-surface shadow-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-sm font-medium">
@@ -379,7 +379,7 @@ function CreateFundForm() {
   return (
     <form
       aria-label="Add a fund"
-      className="space-y-3 rounded-lg border border-border bg-surface p-4"
+      className="space-y-3 rounded-xl border border-border bg-surface shadow-card p-4"
       onSubmit={form.handleSubmit((v) =>
         void create({ ...v, annualManagementChargePercent: v.annualManagementChargePercent || '0',
           cutOffTime: `${v.cutOffTime}:00` }).then(() => {
@@ -451,7 +451,7 @@ function AdjustmentQueue({ viewerSubject }: { viewerSubject: string | undefined 
     );
   }
   return (
-    <section aria-label="Price-correction adjustments" className="space-y-2 rounded-lg border border-border bg-surface p-4">
+    <section aria-label="Price-correction adjustments" className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4">
       <p className="text-sm font-medium">Price-correction adjustments</p>
       <p className="text-xs text-muted-foreground">
         A correction that moves money already paid out is never taken back silently: it waits here to be paid, recorded as
@@ -529,7 +529,7 @@ function ReconciliationPanel() {
   const currency = data.funds[0]?.currency ?? 'TZS';
   const reconciled = Number(data.difference) === 0;
   return (
-    <section aria-label="Unit-linked reconciliation" className="space-y-2 rounded-lg border border-border bg-surface p-4">
+    <section aria-label="Unit-linked reconciliation" className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4">
       <p className="text-sm font-medium">Reconciliation</p>
       <p className={reconciled ? 'text-xs text-status-success-fg' : 'text-xs text-status-danger-fg'}>
         Units at their latest prices {formatMoney({ amount: data.totalValue, currencyCode: currency })} · ledger 2150{' '}

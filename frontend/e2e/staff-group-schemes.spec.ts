@@ -57,8 +57,9 @@ test.describe('staff group schemes', () => {
     await page.getByLabel('Premium', { exact: true }).fill('1200000.00');
 
     // The running total is this page's preview of what the server will derive:
-    // two lives at 5,000,000 each.
-    await expect(page.getByText('TZS 10,000,000.00')).toBeVisible();
+    // two lives at 5,000,000 each. Read inside the form: since 2026-10-22 the side rail repeats the same total
+    // ("The scheme so far") so it stays in view, and the form's own preview is the one this checks.
+    await expect(page.locator('#group-scheme-form').getByText('TZS 10,000,000.00')).toBeVisible();
 
     await page.getByRole('button', { name: 'Propose scheme' }).click();
 

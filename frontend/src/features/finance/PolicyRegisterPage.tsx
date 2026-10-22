@@ -75,7 +75,7 @@ export function PolicyRegisterPage() {
     const keys = [...new Set(inForce.map((e) => e.key))];
     return (
       <>
-        <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Awaiting a decision">
+        <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Awaiting a decision">
           <p className="text-xs font-medium">Awaiting a decision</p>
           {proposed.length === 0 ? (
             <EmptyState title="Nothing awaiting a decision" description="A proposed change appears here until a second person decides it." />
@@ -88,12 +88,12 @@ export function PolicyRegisterPage() {
           )}
         </section>
         {scheduled.length > 0 && (
-          <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Approved, not yet in force">
+          <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Approved, not yet in force">
             <p className="text-xs font-medium">Approved, not yet in force</p>
             <ElectionTable label="Scheduled elections" rows={scheduled} showKey />
           </section>
         )}
-        <section className="space-y-3 rounded-lg border border-border bg-surface p-4" aria-label="In force today">
+        <section className="space-y-3 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="In force today">
           <p className="text-xs font-medium">In force today</p>
           {keys.map((key) => (
             <ElectionTable key={key} label={keyLabel(key)} rows={inForce.filter((e) => e.key === key)} />
@@ -228,7 +228,7 @@ function ProposeForm() {
 
   return (
     <form
-      className="space-y-3 rounded-lg border border-border bg-surface p-4"
+      className="space-y-3 rounded-xl border border-border bg-surface shadow-card p-4"
       aria-label="Propose a change"
       onSubmit={form.handleSubmit(async (v) => {
         const ok = await propose({

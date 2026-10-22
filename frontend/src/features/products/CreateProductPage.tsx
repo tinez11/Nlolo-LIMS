@@ -211,7 +211,7 @@ function Step({
   children: React.ReactNode;
 }) {
   return (
-    <section className={`rounded-lg border border-border bg-surface ${disabled ? 'opacity-50' : ''}`}>
+    <section className={`rounded-xl border border-border bg-surface shadow-card ${disabled ? 'opacity-50' : ''}`}>
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
         <span className="grid size-5 place-items-center rounded-full bg-selected text-xs font-semibold">
           {done ? <Check className="size-3" /> : number}

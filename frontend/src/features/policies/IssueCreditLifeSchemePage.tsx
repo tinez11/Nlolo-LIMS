@@ -7,6 +7,7 @@ import { useAuth } from 'react-oidc-context';
 import { canUnderwriteGroupSchemes, readIdentity } from '@/auth/claims';
 import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
+import { FormLayout } from '@/components/FormLayout';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyPicker } from '@/components/PartyPicker';
 import { ErrorPanel, NoAccess } from '@/components/states';
@@ -157,8 +158,10 @@ export function IssueCreditLifeSchemePage() {
       {!canUnderwrite && <NoAccess what="Setting up a credit-life scheme" who="underwriters" />}
 
       {canUnderwrite && (
-        <form className="max-w-2xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+        <FormLayout formId="credit-life-scheme-form" outlineLabel="Credit-life scheme sections">
+        <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
           <UnsavedGuard when={isDirty && !isSubmitting} what="This credit-life scheme" />
+          <div data-outline="Lender and product" className="space-y-4">
           <FormField label="The lender" error={errors.policyholderPartyId?.message}>
             <Controller
               control={control}
@@ -214,9 +217,10 @@ export function IssueCreditLifeSchemePage() {
               </Select>
             )}
           </FormField>
+          </div>
 
           {/* --- What the insurer agreed with the lender ----------------------- */}
-          <fieldset className="border-t border-border pt-3">
+          <fieldset data-outline="Scheme terms" className="border-t border-border pt-3">
             <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
               Scheme terms
             </legend>
@@ -343,7 +347,7 @@ export function IssueCreditLifeSchemePage() {
           {issuing.status === 'error' && issuing.error && <ErrorPanel error={issuing.error} />}
 
           <div className="flex items-center gap-2 border-t border-border pt-3">
-            <Button type="submit" pending={issuing.status === 'loading'}>
+            <Button type="submit" variant="primary" pending={issuing.status === 'loading'}>
               Set up the scheme
             </Button>
             <p className="text-xs text-muted-foreground">
@@ -351,6 +355,7 @@ export function IssueCreditLifeSchemePage() {
             </p>
           </div>
         </form>
+        </FormLayout>
       )}
     </>
   );

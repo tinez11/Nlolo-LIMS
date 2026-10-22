@@ -83,7 +83,7 @@ export function ExpenseAllocationSection({ period }: { period: string }) {
   const canSubmit = none ? nilReason.trim() !== '' : valid && total > 0 && study.trim() !== '';
 
   return (
-    <section className="space-y-3 rounded-lg border border-border bg-surface p-4" aria-label="Expense allocation">
+    <section className="space-y-3 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Expense allocation">
       <p className="text-xs font-medium">Expense allocation (step 5)</p>
       {isInitialLoad(allocations) ? (
         <LoadingBlock />

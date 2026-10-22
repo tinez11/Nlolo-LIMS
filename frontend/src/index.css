@@ -28,22 +28,27 @@
   one, because a finance officer scanning a table reads hue before text: mistaking
   IN_DOUBT for FAILED is a real operational error, not a cosmetic one.
 */
+/*
+  The Tinezz direction (2026-10-21): navy ink on a cool, faintly teal page; white cards that float
+  on a soft shadow; one teal that carries the primary action, the focus ring and the brand mark;
+  a navy sidebar. Contrast floors from the Ledger palette are kept -- muted ink stays near 5:1 on
+  the page, a field edge stays at 3:1 -- only the hue and the material changed.
+*/
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.16 0 0);
+  --background: oklch(0.975 0.006 200);
+  --foreground: oklch(0.22 0.03 230);
 
   --surface: oklch(1 0 0);
-  --surface-foreground: oklch(0.16 0 0);
-  --surface-muted: oklch(0.985 0 0);
+  --surface-foreground: oklch(0.22 0.03 230);
+  --surface-muted: oklch(0.965 0.006 200);
 
-  --muted-foreground: oklch(0.52 0 0);
-  /* 4.85:1 on white. Was 0.63 -- 3.50:1, and it carries trace ids, error text,
-     stat captions and the em dash meaning "absent", all at 11px, so there is no
-     large-text exemption to hide behind. */
-  --subtle-foreground: oklch(0.55 0 0);
+  --muted-foreground: oklch(0.5 0.025 230);
+  /* ~4.7:1 on the page, ~5:1 on a card. It carries trace ids, error text and the em dash
+     meaning "absent" at 12px, so there is no large-text exemption to hide behind. */
+  --subtle-foreground: oklch(0.53 0.02 230);
 
-  --border: oklch(0.918 0 0);
-  --border-strong: oklch(0.85 0 0);
+  --border: oklch(0.915 0.01 210);
+  --border-strong: oklch(0.85 0.012 210);
   /*
     3.11:1 against --surface, which is pure white. Was 0.918 -- 1.27:1, so every
     input boundary on the platform failed WCAG 1.4.11's 3:1 for a UI component.
@@ -58,27 +63,32 @@
     measured 1.27:1 at L=0.918 exactly. At L=0.80 the ratio is 1.87:1 -- still
     failing. 3:1 needs L <= 0.67.
   */
-  --input: oklch(0.66 0 0);
-  --ring: oklch(0.16 0 0);
+  --input: oklch(0.66 0.015 220);
+  --ring: oklch(0.52 0.11 190);
 
-  --accent: oklch(0.16 0 0);
+  /* Teal. White on it is ~5.5:1. */
+  --accent: oklch(0.52 0.11 190);
   --accent-foreground: oklch(0.99 0 0);
-  --hover: oklch(0.968 0 0);
-  --selected: oklch(0.955 0 0);
+  /* Both teal-tinted, selected one step deeper so a hovered row never reads as the chosen one. */
+  --hover: oklch(0.96 0.022 190);
+  --selected: oklch(0.935 0.04 190);
 
   /* The filled ground of a control -- Espresso's #f3f3f3. A GROUND, never a boundary: at
      1.11:1 against paper it cannot identify a field on its own (WCAG 1.4.11), which is why
      text fields keep their --input border on top of it. Buttons need no boundary: their
      label identifies them. */
-  --control: oklch(0.965 0 0);
-  --control-hover: oklch(0.935 0 0);
+  --control: oklch(0.96 0.008 200);
+  --control-hover: oklch(0.935 0.01 200);
   /* A filled control while it is held down: one step past hover, so a press reads as a press. */
-  --control-press: oklch(0.9 0 0);
-  /* A table header row. Toned enough to read as a band on its own (2026-10-09), so it needs no
-     rule above or below it: at 0.982 it was near-white and read as two lines rather than a
-     band. Muted header ink on it is ~4.98:1 (Y ~ L cubed: 0.52 against 0.965). */
-  --band: oklch(0.965 0 0);
-  --raise: 0 0 0 1px oklch(0 0 0 / 6%), 0 1px 2px oklch(0 0 0 / 10%);
+  --control-press: oklch(0.9 0.012 200);
+  /* A table header row, toned enough to read as a band on its own. */
+  --band: oklch(0.965 0.008 200);
+  --raise: 0 1px 2px oklch(0.2 0.03 230 / 6%), 0 2px 6px -2px oklch(0.2 0.03 230 / 10%);
+  /* What a card floats on: a tight contact shadow and a wide soft one. */
+  --card: 0 1px 2px oklch(0.2 0.03 230 / 5%), 0 8px 24px -12px oklch(0.2 0.03 230 / 12%);
+  /* The figures band: the accent deepening toward navy. */
+  --hero: linear-gradient(135deg, var(--accent), color-mix(in oklab, var(--accent) 55%, oklch(0.25 0.05 240)));
+  --hero-foreground: oklch(0.99 0 0);
 
   /* status: neutral / pending / active / success / warning / danger */
   --status-neutral-bg: oklch(0.96 0.002 250);
@@ -94,43 +104,44 @@
   --status-danger-bg: oklch(0.95 0.035 22);
   --status-danger-fg: oklch(0.48 0.17 25);
 
-  /* 8px, Espresso's control radius. Was 6px. */
-  --radius: 0.5rem;
+  /* 10px controls; cards take the xl step. */
+  --radius: 0.625rem;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.97 0 0);
+  --background: oklch(0.17 0.02 235);
+  --foreground: oklch(0.95 0.01 200);
 
-  --surface: oklch(0.185 0 0);
-  --surface-foreground: oklch(0.97 0 0);
-  --surface-muted: oklch(0.165 0 0);
+  --surface: oklch(0.21 0.025 232);
+  --surface-foreground: oklch(0.95 0.01 200);
+  --surface-muted: oklch(0.19 0.022 234);
 
-  --muted-foreground: oklch(0.68 0 0);
-  /* 5.76:1 on --surface, 6.1:1 on --background. Was 0.57 -- 4.18:1 on surface,
-     which is the pairing that matters and the one that failed. */
-  --subtle-foreground: oklch(0.65 0 0);
+  --muted-foreground: oklch(0.74 0.02 220);
+  --subtle-foreground: oklch(0.7 0.02 220);
 
-  --border: oklch(1 0 0 / 11%);
-  --border-strong: oklch(1 0 0 / 20%);
+  --border: oklch(1 0 0 / 10%);
+  --border-strong: oklch(1 0 0 / 18%);
   /* 3.04:1 against --surface. Was 14%, which composites to 1.36:1 -- the same
      1.4.11 failure as the light theme, and worse. Alpha rather than a flat
      lightness so it keeps working over both --surface and --surface-muted. */
   --input: oklch(1 0 0 / 38%);
-  --ring: oklch(0.85 0 0);
+  --ring: oklch(0.75 0.11 190);
 
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.16 0 0);
-  --hover: oklch(1 0 0 / 5%);
-  --selected: oklch(1 0 0 / 8%);
+  /* The teal lifts in the dark and carries navy ink rather than white. */
+  --accent: oklch(0.72 0.11 190);
+  --accent-foreground: oklch(0.18 0.03 230);
+  --hover: oklch(0.72 0.11 190 / 8%);
+  --selected: oklch(0.72 0.11 190 / 16%);
 
   --control: oklch(1 0 0 / 7%);
   --control-hover: oklch(1 0 0 / 11%);
   --control-press: oklch(1 0 0 / 16%);
-  /* Above --surface (0.185), not below it: a band darker than the panel it sits in read as a
-     hole. Muted header ink on it is ~6.2:1. */
-  --band: oklch(0.215 0 0);
+  /* Above --surface, not below it: a band darker than the panel it sits in read as a hole. */
+  --band: oklch(0.24 0.025 232);
   --raise: 0 0 0 1px oklch(1 0 0 / 8%), 0 1px 2px oklch(0 0 0 / 40%);
+  --card: 0 0 0 1px oklch(1 0 0 / 5%), 0 8px 24px -12px oklch(0 0 0 / 55%);
+  --hero: linear-gradient(135deg, oklch(0.42 0.09 192), oklch(0.27 0.05 225));
+  --hero-foreground: oklch(0.97 0.01 200);
 
   /* Dark badges invert: a dim tinted ground with a bright foreground. The same
      hue order is preserved so the mapping is learnable across themes. */
@@ -146,6 +157,55 @@
   --status-warning-fg: oklch(0.86 0.10 88);
   --status-danger-bg: oklch(0.30 0.07 25);
   --status-danger-fg: oklch(0.83 0.12 22);
+}
+
+/*
+  The sidebar is a navy island in both themes. It redefines the same token names rather than
+  growing sidebar-only utilities, so the nav, its badges, the search button and the user block
+  keep their classes and simply resolve darker here. Colour is set on the island itself because
+  the body colour is inherited as a computed value and would otherwise stay page ink.
+*/
+.sidebar-scope {
+  color-scheme: dark;
+  color: var(--foreground);
+  --foreground: oklch(0.95 0.01 200);
+  --surface: oklch(0.3 0.04 228);
+  --surface-muted: oklch(0.22 0.035 230);
+  --muted-foreground: oklch(0.74 0.02 220);
+  --subtle-foreground: oklch(0.68 0.02 220);
+  --border: oklch(0.32 0.03 228);
+  --border-strong: oklch(0.42 0.03 228);
+  --input: oklch(1 0 0 / 38%);
+  --ring: oklch(0.78 0.1 190);
+  /* The page teal, not a lighter one: white on 0.6 measured 3.59:1 (axe, the LP monogram on every page), and 14px
+     text needs 4.5:1. On 0.52 it is ~5.5:1. */
+  --accent: oklch(0.52 0.11 190);
+  --accent-foreground: oklch(0.99 0 0);
+  --hover: oklch(0.27 0.04 228);
+  --selected: oklch(0.3 0.04 228);
+  --control: oklch(0.27 0.035 228);
+  --control-hover: oklch(0.31 0.035 228);
+  --control-press: oklch(0.34 0.035 228);
+  --raise: 0 0 0 1px oklch(1 0 0 / 6%);
+}
+
+.dark .sidebar-scope {
+  --surface: oklch(0.24 0.035 230);
+  --surface-muted: oklch(0.14 0.025 235);
+  --border: oklch(0.26 0.03 230);
+  --hover: oklch(0.2 0.035 230);
+  --selected: oklch(0.24 0.035 230);
+  --control: oklch(0.2 0.03 230);
+  --control-hover: oklch(0.24 0.03 230);
+  --control-press: oklch(0.27 0.03 230);
+}
+
+/* The figures band: the record headline figures, light ink on the accent gradient. */
+.hero-scope {
+  color: var(--foreground);
+  --foreground: var(--hero-foreground);
+  --muted-foreground: color-mix(in oklab, var(--hero-foreground) 82%, transparent);
+  --subtle-foreground: color-mix(in oklab, var(--hero-foreground) 78%, transparent);
 }
 
 @theme inline {
@@ -168,7 +228,9 @@
   --color-control-hover: var(--control-hover);
   --color-control-press: var(--control-press);
   --color-band: var(--band);
+  --color-hero-foreground: var(--hero-foreground);
   --shadow-raise: var(--raise);
+  --shadow-card: var(--card);
 
   --color-status-neutral-bg: var(--status-neutral-bg);
   --color-status-neutral-fg: var(--status-neutral-fg);
@@ -186,11 +248,12 @@
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
 
-  /* Inter Variable is the self-hosted file imported in main.tsx; a locally installed Inter is the
-     fallback before the platform fonts. */
+  /* Both self-hosted variable files, imported in main.tsx. */
   --font-sans:
-    'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    'Manrope Variable', Manrope, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Sora Variable', Sora, 'Manrope Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
 
   /*
@@ -204,14 +267,24 @@
   --text-display--line-height: 1.2;
   --text-display--letter-spacing: -0.015em;
   --text-display--font-weight: 600;
-  --text-headline: 1.25rem;
-  --text-headline--line-height: 1.3;
-  --text-headline--letter-spacing: -0.015em;
+  --text-headline: 1.75rem;
+  --text-headline--line-height: 1.2;
+  --text-headline--letter-spacing: -0.02em;
   --text-headline--font-weight: 600;
   --text-title: 1rem;
   --text-title--line-height: 1.4;
   --text-title--letter-spacing: -0.005em;
   --text-title--font-weight: 600;
+  /*
+    A headline figure that must fit its card on one line: the Display size when the card has room,
+    shrinking with the card below that. Measured against the nearest @container, so it is only
+    for a figure inside a card that declares one. 7cqi holds a 21-character TZS amount
+    ("TZS -1,015,815,007.07") in Manrope tabular figures.
+  */
+  --text-figure: clamp(1rem, 7cqi, 1.5rem);
+  --text-figure--line-height: 1.2;
+  --text-figure--letter-spacing: -0.015em;
+  --text-figure--font-weight: 600;
   /* Group captions. Always used with uppercase, which a font token cannot carry. */
   --text-eyebrow: 0.75rem;
   --text-eyebrow--line-height: 1.4;
@@ -233,10 +306,14 @@
     /* Tabular figures everywhere: money and dates sit in columns, and proportional
        digits make a currency column visibly ragged. */
     font-variant-numeric: tabular-nums;
-    /* Espresso's body tracking, halved: it sets 0.02em on InterVariable at weight 420, and
-       this console sets 400, where 0.02em reads loose at 14px. The heading tiers above
-       carry their own negative tracking. */
-    letter-spacing: 0.01em;
+  }
+
+  /* Headings set in Sora; the tiers carry their own size and tracking. */
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
   }
 
   /* Visible focus only for keyboard users, but never suppressed outright. */
@@ -361,6 +438,10 @@
   Reduced transparency needs nothing while the console has no translucent surface: the review
   proposed glass bars, and the proposal was declined (DESIGN.md, Considered and declined).
 */
+
+@utility bg-hero {
+  background-image: var(--hero);
+}
 
 /* A section FormOutline jumps to lands below the sticky page bar, not behind it. */
 [data-outline] {

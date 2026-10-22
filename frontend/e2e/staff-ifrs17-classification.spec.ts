@@ -26,16 +26,23 @@ test.describe('IFRS 17 classification at sale -- a policy', () => {
   test.use({ storageState: 'e2e/.auth/staff-finance.json' });
 
   test('the case sale is changed, fixed at issue, and the policy is classified into its group', async ({ page }) => {
+    // A case, a manual issue and a classification event that lands after the issue commits: about a minute alone,
+    // and in a full run it ran out of the 60s budget at the last panel. Slow, as the KYC round trip is, for the same
+    // reason -- a test that decides its outcome on machine load teaches the room to discount red.
+    test.slow();
     const caseId = await caseAwaitingManualIssue(page);
 
     await page.goto(`/staff/underwriting/${caseId}`);
     await page.getByRole('button', { name: 'Change sale' }).click();
     const sale = page.getByRole('form', { name: 'Change sale' });
     await sale.getByLabel('Sales channel').selectOption('DIGITAL');
-    await sale.getByLabel('Sale branch').selectOption('ZNZ');
+    // Arusha: a branch in refdata V8's seed AND in the branch-network decision (V10/V11, which retire Zanzibar,
+    // Mwanza and Dodoma), and not the head-office default -- so it proves the change on either database. This used
+    // Zanzibar, which a dev database carrying that decision no longer has, and the select waited for it forever.
+    await sale.getByLabel('Sale branch').selectOption('ARU');
     await sale.getByRole('button', { name: 'Save sale' }).click();
     await expect(page.getByRole('form', { name: 'Change sale' })).toHaveCount(0, { timeout: 15_000 });
-    await expect(page.getByText('ZNZ', { exact: true })).toBeVisible();
+    await expect(page.getByText('ARU', { exact: true })).toBeVisible();
 
     // Manual issue, as the finaccounting spec does it: the case was declined to be overturned.
     await page.goto('/staff/policies/new');
@@ -51,7 +58,7 @@ test.describe('IFRS 17 classification at sale -- a policy', () => {
     const panel = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Sale & IFRS 17' }) });
     await expect(panel).toContainText('Term life');
     await expect(panel).toContainText('Digital');
-    await expect(panel).toContainText('ZNZ');
+    await expect(panel).toContainText('ARU');
     // Finaccounting classifies from PolicyIssued, after the issue commits.
     const groupKey = `TERM-GMM-${new Date().getFullYear()}-REM`;
     await expect(async () => {

@@ -191,7 +191,7 @@ export function AuditLogPage() {
       </div>
 
       <div className="px-6 pb-6">
-        <div className="rounded-lg border border-border bg-surface">
+        <div className="rounded-xl border border-border bg-surface shadow-card">
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
             {/* `mono` on every chip here, including the prose one, because that
                 is exactly how this row already rendered: the module names are

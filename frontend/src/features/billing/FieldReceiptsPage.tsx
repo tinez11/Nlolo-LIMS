@@ -286,7 +286,7 @@ export function FieldReceiptsPage() {
       />
 
       <div className="px-6 pb-6">
-        <div className="rounded-lg border border-border bg-surface">
+        <div className="rounded-xl border border-border bg-surface shadow-card">
           <div className="flex flex-wrap items-center gap-1.5 gap-y-2 border-b border-border px-3 py-2.5">
             {FIELD_RECEIPT_STATUSES.map((value) => (
               <FilterChip

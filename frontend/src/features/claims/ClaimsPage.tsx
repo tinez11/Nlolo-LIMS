@@ -248,7 +248,7 @@ export function ClaimsPage({
       />
 
       <div className="px-6 pb-6">
-        <div className="rounded-lg border border-border bg-surface">
+        <div className="rounded-xl border border-border bg-surface shadow-card">
           {/* `gap-y-2` because this row wraps, and it wraps sooner here than on the policies
               register: there are more claim statuses than policy statuses, and the chips are
               32px tall, so without it the search box lands hard against them. */}

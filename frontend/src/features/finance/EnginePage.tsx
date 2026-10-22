@@ -65,7 +65,7 @@ export function EnginePage() {
 
         <ExpenseAllocationSection period={period} />
 
-        <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Extracts">
+        <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Extracts">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium">Extracts (step 6)</p>
             <Button type="button" size="sm" variant="primary" disabled={extracting?.status === 'loading' || gate !== null}
@@ -110,7 +110,7 @@ export function EnginePage() {
           )}
         </section>
 
-        <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Engine runs">
+        <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Engine runs">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium">Engine runs (step 7)</p>
             <div>

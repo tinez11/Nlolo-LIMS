@@ -39,6 +39,9 @@ test.describe('IFRS 17 manual journals', () => {
     const { page: approver, context: approverContext } = await approverPage(browser);
     await approver.goto(url);
     await approver.getByRole('button', { name: 'Approve and post' }).click();
+    // Posting asks twice since a118ddeb: the confirmation states the totals and the period, and only its own button
+    // posts. This spec predated that and waited for a post the first click no longer makes.
+    await approver.getByRole('button', { name: 'Post to the ledger' }).click();
     await expect(approver.getByText(/Posted · period/)).toBeVisible({ timeout: 15_000 });
     await expect(approver.getByRole('link', { name: 'journal entry' })).toBeVisible();
     await approverContext.close();

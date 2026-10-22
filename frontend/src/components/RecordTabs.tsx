@@ -68,8 +68,12 @@ export function RecordTabs({
         // over it -- and since `overflow-x-auto` computes the vertical axis to `auto` as well,
         // that overhanging pixel grew a vertical scrollbar: up/down arrows at the end of every
         // record's tabs. `overflow-y-hidden` stays as the backstop.
-        className="sticky top-[var(--pagebar-h,0px)] z-10 flex gap-5 overflow-x-auto overflow-y-hidden bg-background shadow-[inset_0_-1px_0_var(--color-border)]"
+        //
+        // The triggers sit in a pill track (the Tinezz direction): the strip stays full width and
+        // opaque so content scrolling under it never shows beside a narrow track.
+        className="sticky top-[var(--pagebar-h,0px)] z-10 flex overflow-x-auto overflow-y-hidden bg-background py-2"
       >
+        <div className="flex w-fit shrink-0 gap-1 rounded-xl bg-control p-1">
         {tabs.map((tab) => (
           <TabsPrimitive.Trigger
             key={tab.value}
@@ -79,16 +83,17 @@ export function RecordTabs({
             // which measures 4.17:1 on white and fails AA at this size.
             // The focus ring is drawn INSIDE the trigger: the strip clips both axes, so the
             // global 2px-outside ring would be cut off above and below.
-            className="inline-flex min-h-10 focus-visible:-outline-offset-2 shrink-0 items-center gap-1.5 border-b-2 border-transparent text-sm text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-foreground data-[state=active]:font-medium data-[state=active]:text-foreground pointer-coarse:min-h-11"
+            className="inline-flex min-h-8 focus-visible:-outline-offset-2 shrink-0 items-center gap-1.5 rounded-lg px-3.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:bg-surface data-[state=active]:text-foreground data-[state=active]:shadow-raise pointer-coarse:min-h-11"
           >
             {tab.label}
             {tab.count !== undefined && (
-              <span className="rounded-full bg-control px-1.5 text-xs tabular-nums" aria-hidden>
+              <span className="rounded-full bg-control-hover px-1.5 text-xs tabular-nums" aria-hidden>
                 {tab.count}
               </span>
             )}
           </TabsPrimitive.Trigger>
         ))}
+        </div>
       </TabsPrimitive.List>
       {tabs.map((tab) => (
         <TabsPrimitive.Content

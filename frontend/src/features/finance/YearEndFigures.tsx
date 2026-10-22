@@ -8,7 +8,7 @@ import { CLASS_LABEL, money, resultLabel } from './yearEnd';
 export function YearEndFigures({ close }: { close: YearEndCloseView }) {
   return (
     <div className="space-y-4">
-      <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Result">
+      <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Result">
         <p className="text-sm font-medium">{resultLabel(close.profit)}</p>
         <p className="text-xs text-muted-foreground">
           Dividends declared {money(close.dividends)} · retained earnings move by {money(close.profit - close.dividends)}
@@ -22,7 +22,7 @@ export function YearEndFigures({ close }: { close: YearEndCloseView }) {
         </ul>
       </section>
 
-      <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Accounts">
+      <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Accounts">
         <p className="text-xs font-medium">Accounts closed (balance for the year, net Dr − Cr)</p>
         <table className="w-full text-sm" aria-label="Accounts closed">
           <tbody>
@@ -37,7 +37,7 @@ export function YearEndFigures({ close }: { close: YearEndCloseView }) {
         </table>
       </section>
 
-      <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Journal">
+      <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Journal">
         <p className="text-xs font-medium">The closing journal, in December</p>
         <table className="w-full text-sm" aria-label="Closing journal">
           <tbody>

@@ -20,6 +20,7 @@ import { UnderwritingCasePicker } from '@/components/UnderwritingCasePicker';
 import { listCaseBeneficiaries } from '@/api/underwriting';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
+import { FormLayout } from '@/components/FormLayout';
 import { GatePanel } from '@/components/GatePanel';
 import { BeneficiaryRow } from './BeneficiaryRow';
 import { formatDate, todayIso } from '@/lib/dates';
@@ -247,8 +248,10 @@ export function IssuePolicyPage() {
         description="The staff exception path — outside the normal underwriting-decision pipeline."
       />
 
-      <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+      <FormLayout formId="issue-policy-form" outlineLabel="Policy sections">
+      <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
         <UnsavedGuard when={isDirty && !isSubmitting} what="This policy" />
+        <div data-outline="Parties and product" className="space-y-4">
         {/*
           First, because everything below is a review of what it says.
 
@@ -442,11 +445,12 @@ export function IssuePolicyPage() {
             ))}
           </Select>
         </FormField>
+        </div>
 
         {/* The policy term. Optional as a group: whole life, an annuity and an
             annually renewable group scheme genuinely have none, so leaving these blank
             is a real answer rather than an omission. */}
-        <fieldset className="border-t border-border pt-3">
+        <fieldset data-outline="Term" className="border-t border-border pt-3">
           <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
             Term
           </legend>
@@ -505,6 +509,7 @@ export function IssuePolicyPage() {
           </div>
         </fieldset>
 
+        <div data-outline="Agent and reason" className="space-y-4 border-t border-border pt-3">
         {/*
           THE INTRODUCING AGENT WINS, so this field is disabled rather than silently overridden.
 
@@ -604,8 +609,9 @@ export function IssuePolicyPage() {
             </p>
           )}
         </FormField>
+        </div>
 
-        <div className="rounded-md border border-border p-3">
+        <div data-outline="Beneficiaries" className="rounded-md border border-border p-3">
           <p className="mb-2 text-xs font-medium text-muted-foreground">Beneficiaries (optional)</p>
           <div className="space-y-3">
             {fields.map((field, index) => {
@@ -707,6 +713,7 @@ export function IssuePolicyPage() {
           </Button>
         </div>
       </form>
+      </FormLayout>
     </>
   );
 }

@@ -60,7 +60,7 @@ const NOT_COLOURS: Record<string, Set<string>> = {
     'xl', '2xl', '3xl', '4xl', 'wrap', 'nowrap', 'balance', 'pretty', 'ellipsis', 'clip',
     ...TYPE_TIERS]),
   bg: new Set(['clip', 'fixed', 'local', 'scroll', 'cover', 'contain', 'center', 'no-repeat',
-    'repeat', 'none']),
+    'repeat', 'none', 'hero']),
   border: new Set(['t', 'b', 'l', 'r', 'x', 'y', 's', 'e',
     'collapse', 'separate', 'dashed', 'dotted', 'solid', 'double', 'none', 'hidden']),
   ring: new Set(['inset', 'offset']),
@@ -200,7 +200,10 @@ describe('design guards', () => {
     // header, same `text-sm font-semibold` h2 -- so they looked right and inherited nothing:
     // not the scroll margin that makes a jumped-to section land below the sticky bars, not
     // `emphasis`, and not any later change to what a panel is.
-    expect(offenders(/<section className="rounded-lg border border-border bg-surface"/)).toEqual([]);
+    // Both spellings: the card a page-level box became (2026-10-22) as well as the flat one before it.
+    expect(
+      offenders(/<section className="rounded-(lg border border-border bg-surface|xl border border-border bg-surface shadow-card)"/),
+    ).toEqual([]);
   });
 
   it('clips the vertical axis of every sticky sideways scroller', () => {

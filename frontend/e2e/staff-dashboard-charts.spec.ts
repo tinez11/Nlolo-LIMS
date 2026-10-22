@@ -7,14 +7,25 @@ import { expect, test } from '@playwright/test';
  * and it is the one part of a chart that is worth pinning. A test that counted bars would break every time the
  * window moved by a month while proving nothing about what the chart says.
  */
-test.describe('staff dashboard charts', () => {
+test.describe('staff dashboard charts, as finance', () => {
+  // The finance dashboard is offered to FINANCE_OFFICER or ADMIN only (dashboards.ts). This ran as the project's
+  // default identity, staff.underwriter (UNDERWRITER alone), who correctly gets no Finance tab -- so the page showed
+  // the underwriting dashboard and there was never a premiums chart to find.
+  test.use({ storageState: 'e2e/.auth/staff-finance.json' });
+
   test('the finance dashboard draws premiums by month and ages its receivables', async ({ page }) => {
     await page.goto('/staff/dashboard?dashboard=finance');
 
     await expect(page.getByRole('img', { name: /Premiums collected by month/ })).toBeVisible();
-    await expect(page.getByRole('img', { name: /Receivables by age/ })).toBeVisible();
+    // Either the chart or its empty line, as the underwriting test below allows: with nothing overdue in the dev
+    // database the panel correctly says so, and requiring bars made this fail on the data rather than the screen.
+    const aging = page.getByRole('img', { name: /Receivables by age/ });
+    const nothingOwed = page.getByText('Nothing is owed.');
+    await expect(aging.or(nothingOwed)).toBeVisible();
   });
+});
 
+test.describe('staff dashboard charts', () => {
   test('the underwriting dashboard draws its decisions', async ({ page }) => {
     await page.goto('/staff/dashboard?dashboard=underwriting');
 

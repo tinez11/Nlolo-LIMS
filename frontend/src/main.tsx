@@ -1,11 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-// Inter, self-hosted as one variable file with its optical-size axis (2026-10-09). It was fetched
-// from Google's font CDN: a white-label console hosted per tenant made a third-party request for its
-// only typeface on every load, could not work offline in dev, and had static 400/500/600 only, so the
-// gate marker's 700 was a browser-faked bold. `opsz` lets the letterforms tighten for headings and
-// open up at 12px on their own.
-import '@fontsource-variable/inter/opsz.css';
+// Manrope for every working line, Sora for the headings (the Tinezz direction, 2026-10-21). Both
+// self-hosted as variable files, as Inter was before them: a white-label console hosted per tenant
+// makes no third-party request for its typefaces, and every weight is real rather than faked.
+import '@fontsource-variable/manrope/index.css';
+import '@fontsource-variable/sora/index.css';
 import './index.css';
 import { App } from './App';
 

@@ -13,6 +13,7 @@ import { Field } from '@/components/Field';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
+import { FormLayout } from '@/components/FormLayout';
 import { IndividualFields } from './IndividualFields';
 import { cn } from '@/lib/cn';
 import {
@@ -66,12 +67,12 @@ export function OnboardCustomerPage() {
         description="Registers a new individual or corporate party, PENDING KYC verification by staff."
       />
 
-      <div className="max-w-xl px-6 pb-8">
+      <FormLayout formId="onboard-customer-form" outlineLabel="Customer sections" card={!quotationId}>
         {quotationId ? (
           <FromQuotation key={quotationId} quotationId={quotationId} />
         ) : (
           <>
-            <div className="mb-4 inline-flex rounded-md border border-border p-0.5">
+            <div className="mb-5 inline-flex gap-1 rounded-xl bg-control p-1">
               <TypeTab label="Individual" active={type === 'INDIVIDUAL'} onClick={() => setType('INDIVIDUAL')} />
               <TypeTab label="Corporate" active={type === 'CORPORATE'} onClick={() => setType('CORPORATE')} />
             </div>
@@ -79,7 +80,7 @@ export function OnboardCustomerPage() {
             {type === 'INDIVIDUAL' ? <RegisterIndividualForm key="individual" /> : <RegisterCorporateForm key="corporate" />}
           </>
         )}
-      </div>
+      </FormLayout>
     </>
   );
 }
@@ -177,11 +178,14 @@ function FromQuotation({ quotationId }: { quotationId: string }) {
 /** The two-way switch at the top of a form. Shared with the agents' quotation calculator (2026-10-20). */
 export function TypeTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
+    // The record tabs' pill: a raised white pill in a control track. `aria-pressed` because the
+    // active side was told by its fill alone, which a screen reader never hears.
     <button
       type="button"
+      aria-pressed={active}
       className={cn(
-        'rounded px-3 py-1.5 text-sm font-medium transition-colors',
-        active ? 'bg-selected text-foreground' : 'text-muted-foreground hover:text-foreground',
+        'rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors pointer-coarse:min-h-11',
+        active ? 'bg-surface text-foreground shadow-raise' : 'text-muted-foreground hover:text-foreground',
       )}
       onClick={onClick}
     >
@@ -364,7 +368,8 @@ function RegisteredResult({
   onRegisterAnother: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-surface p-4">
+    // Flat: it sits inside the form's card, and a card inside a card is a box in a box.
+    <div className="rounded-lg border border-border p-4">
       <p className="text-sm font-medium">Registered</p>
       <dl className="mt-2">
         <Field label="Party id" value={<span className="font-mono text-xs">{party.partyId}</span>} />

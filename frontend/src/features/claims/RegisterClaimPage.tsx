@@ -14,6 +14,7 @@ import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
+import { FormLayout } from '@/components/FormLayout';
 import { GatePanel } from '@/components/GatePanel';
 import { claimGates } from '@/gates/claimGates';
 import { ClaimPolicyChooser } from './ClaimPolicyChooser';
@@ -281,12 +282,13 @@ export function RegisterClaimPage() {
         and only where the page exists to perform an act; here all three ARE the act, and
         promoting every panel promotes none of them.
       */}
+      <FormLayout formId="register-claim-form" outlineLabel="Claim sections" card={false}>
       <form
-        className="max-w-xl space-y-5 px-6 pb-8 pt-5"
+        className="space-y-5"
         onSubmit={(e) => void handleSubmit(onSubmit)(e)}
       >
         <UnsavedGuard when={isDirty && !isSubmitting} what="This claim" />
-        <Panel title="Who and which policy">
+        <Panel outline title="Who and which policy">
         <div className="space-y-4 p-4">
         {/* Claimant BEFORE policy, which is the order the conversation actually happens in:
             somebody arrives and says who they are, not which contract number they hold. It is
@@ -450,7 +452,7 @@ export function RegisterClaimPage() {
         </div>
         </Panel>
 
-        <Panel title="The event">
+        <Panel outline title="The event">
         <div className="space-y-4 p-4">
         <FormField label="Date of event" error={errors.dateOfEvent?.message}>
           <Controller
@@ -500,6 +502,7 @@ export function RegisterClaimPage() {
 
         {claimType && (
         <Panel
+          outline
           title="Details"
           subtitle={`Specific to a ${humanizeStatus(claimType).toLowerCase()} claim`}
         >
@@ -622,6 +625,7 @@ export function RegisterClaimPage() {
           </Button>
         </div>
       </form>
+      </FormLayout>
     </>
   );
 }

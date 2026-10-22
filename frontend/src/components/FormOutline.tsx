@@ -88,7 +88,7 @@ export function FormOutline({ containerId, label }: { containerId: string; label
               className={cn(
                 '-ml-px block w-full border-l-2 py-1 pl-3 text-left transition-colors hover:text-foreground active:duration-0',
                 section.id === current
-                  ? 'border-foreground font-medium text-foreground'
+                  ? 'border-accent font-medium text-foreground'
                   : 'border-transparent text-muted-foreground',
               )}
             >
