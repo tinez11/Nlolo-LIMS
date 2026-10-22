@@ -22,8 +22,8 @@ import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { PORTFOLIO_CODES, PORTFOLIO_LABEL, portfolioDefaultFor } from '@/lib/ifrs17';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
-import { FormOutline } from '@/components/FormOutline';
 import { UnsavedGuard } from '@/components/UnsavedGuard';
+import { humanizeStatus } from '@/lib/status';
 
 /**
  * A genuinely two-phase flow, not a stylistic choice: `GET /products` only
@@ -76,14 +76,12 @@ export function CreateProductPage() {
       <PageHeader
         breadcrumb={[{ label: 'Products', to: '/staff/products' }]}
         title="New product"
-        description="Two steps: define the product, then publish a version — a product with no version is invisible everywhere else in this console."
+        description="Define it, then publish its first version to start selling."
       />
 
-      {/* Two columns from lg (2026-10-09, review C2): the form kept to a readable width, and the
-          space it left empty -- half the screen at 1280 -- holds a map of the version form once
-          step 2 is open, so its seventh section is a jump rather than a long scroll. */}
-      <div className="grid gap-8 px-6 pb-8 lg:grid-cols-[minmax(0,40rem)_13rem]">
-      <div className="min-w-0 space-y-5">
+      {/* The version form carries its own steps (2026-10-22), so no outline rail beside it. */}
+      <div className="px-6 pb-8">
+      <div className="min-w-0 max-w-3xl space-y-5">
         <Step number={1} title="Product definition" done={created !== null}>
           {created === null ? (
             <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
@@ -116,14 +114,14 @@ export function CreateProductPage() {
                 >
                   {PRODUCT_CATEGORIES.map((c: ProductCategory) => (
                     <option key={c} value={c}>
-                      {c.replace(/_/g, ' ')}
+                      {humanizeStatus(c)}
                     </option>
                   ))}
                 </Select>
               </FormField>
               <FormField
                 label="IFRS 17 portfolio"
-                hint="Contracts with similar risks, managed together. With the year of issue and expected profitability it decides each policy's group. A product that keeps a savings account must be SAV (savings), DEP (fixed deposit) or PEN (pension) — it is booked as savings, not insurance."
+                hint="Savings, deposit and pension products are booked as savings, not insurance."
                 error={errors.portfolioCode?.message}
               >
                 <Select {...register('portfolioCode')}>
@@ -152,11 +150,7 @@ export function CreateProductPage() {
                     exactly right and was impossible to work out from the message alone.
                   */}
                   {creating.error.kind === 'conflict' && (
-                    <p className="mt-1.5">
-                      If it is not in the products list, it is an unpublished draft: the list
-                      shows only products with a published version. Use a different code, or
-                      ask an administrator to publish or remove the draft.
-                    </p>
+                    <p className="mt-1.5">Not in the list? It is an unpublished draft — see Drafts on the products page.</p>
                   )}
                 </InlineError>
               )}
@@ -184,13 +178,6 @@ export function CreateProductPage() {
           )}
         </Step>
       </div>
-      {created?.productId && (
-        <aside className="hidden lg:block">
-          <div className="sticky top-[calc(var(--pagebar-h,0px)+1.25rem)]">
-            <FormOutline containerId="publish-version-form" label="Version form sections" />
-          </div>
-        </aside>
-      )}
       </div>
       </>)}
     </>

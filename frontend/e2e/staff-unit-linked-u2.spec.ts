@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { asAdmin } from './admin';
 import { dmy, todayIso } from './dates';
+import { fillBasics, publishVersion, step } from './publishForm';
 import { asSeniorOnSameCase, assess } from './underwriting';
 
 /**
@@ -85,10 +86,10 @@ test.describe('unit-linked U2', () => {
       await admin.getByRole('button', { name: 'Create product' }).click();
       await expect(admin.getByText('DRAFT')).toBeVisible();
 
-      await admin.getByLabel('Effective date').fill(dmy('2026-01-01'));
-      await admin.getByLabel('TIRA filing reference').fill('TIRA/E2E/UL2');
-      await admin.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
+      await fillBasics(admin, 'TIRA/E2E/UL2');
+      await step(admin, 'What it pays');
       await admin.getByLabel('Free-look days').fill('15');
+      await step(admin, 'Pricing');
       await admin.getByLabel(`${equity} · E2E ${equity}`).check();
       await admin.getByLabel(`${cash} · E2E ${cash}`).check();
       await admin.getByLabel('Allocation bands').fill('1,2,90\n3,,98');
@@ -102,8 +103,10 @@ test.describe('unit-linked U2', () => {
       await admin.getByLabel('Sum assured, greatest multiple of the annual premium').fill('20');
 
       await admin.getByLabel('Free switches per policy year').fill('2');
-      await admin.getByRole('button', { name: 'Publish version' }).click();
-      await expect(admin.getByText('Switching needs both the free switches per year and the fee for each switch after them')).toBeVisible();
+      await publishVersion(admin);
+      await expect(admin.getByText('Switching needs both the free switches per year and the fee for each switch after them').first()).toBeVisible();
+      // Review lists the problem with the way back to its step.
+      await admin.getByRole('button', { name: 'Go to Pricing' }).first().click();
       await admin.getByLabel('Fee per extra switch').fill('5000');
       await admin.getByLabel('Minimum withdrawal').fill('100000');
       await admin.getByLabel('Minimum value left after a withdrawal').fill('500000');
@@ -111,7 +114,7 @@ test.describe('unit-linked U2', () => {
       await admin.getByLabel('Minimum top-up').fill('50000');
       await admin.getByLabel('Surrender charge bands').fill('1,1,10\n2,5,5\n6,,0');
 
-      await admin.getByRole('button', { name: 'Publish version' }).click();
+      await publishVersion(admin);
       await admin.getByRole('button', { name: 'Publish and make active' }).click();
       await expect(admin).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
     });

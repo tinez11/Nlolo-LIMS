@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { asAdmin } from './admin';
 import { dmy, todayIso } from './dates';
+import { fillBasics, publishVersion, step } from './publishForm';
 import { fillPolicyNumberManually } from './guards';
 import { acceptProposedScheme, pickParty } from './groupSchemes';
 
@@ -48,10 +49,10 @@ test.describe('group funeral schemes', () => {
       await admin.getByRole('button', { name: 'Create product' }).click();
       await expect(admin.getByText('DRAFT')).toBeVisible();
 
-      await admin.getByLabel('Effective date').fill(dmy('2026-01-01'));
-      await admin.getByLabel('TIRA filing reference').fill('TIRA/E2E/FUNGRP');
-      await admin.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
+      await fillBasics(admin, 'TIRA/E2E/FUNGRP');
+      await step(admin, 'What it pays');
       await admin.getByLabel('Free-look days').fill('15');
+      await step(admin, 'Pricing');
       await admin.getByLabel('Sold as').selectOption('GROUP');
       await admin.getByRole('button', { name: 'Add plan' }).click();
       await admin.getByLabel('Plan code').fill('A1');
@@ -62,7 +63,7 @@ test.describe('group funeral schemes', () => {
       await admin.getByLabel('Child benefit').fill('500000');
       await admin.getByLabel('When a dependant dies, pay').selectOption('MAIN_MEMBER_BENEFICIARY');
       await admin.getByLabel('When the main member dies').selectOption('POLICY_ENDS');
-      await admin.getByRole('button', { name: 'Publish version' }).click();
+      await publishVersion(admin);
       await admin.getByRole('button', { name: 'Publish and make active' }).click();
       await expect(admin).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
     });

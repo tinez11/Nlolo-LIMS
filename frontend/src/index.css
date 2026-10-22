@@ -254,7 +254,11 @@
   --font-sans:
     'Manrope Variable', Manrope, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Sora Variable', Sora, 'Manrope Variable', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+  /*
+    Identifiers (codes, policy numbers, trace ids) in the console's own face, figures tabular: the
+    system monospace fell to a Courier on Windows and sat badly beside Manrope (the user, 2026-10-22).
+  */
+  --font-mono: 'Manrope Variable', Manrope, ui-sans-serif, system-ui, sans-serif;
 
   /*
     The type tiers of DESIGN.md, as utilities that carry size, leading, tracking and weight
@@ -441,6 +445,12 @@
 
 @utility bg-hero {
   background-image: var(--hero);
+}
+
+/* An identifier keeps its digits in columns and is never broken across lines. */
+.font-mono {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
 }
 
 /* A section FormOutline jumps to lands below the sticky page bar, not behind it. */

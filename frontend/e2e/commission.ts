@@ -1,6 +1,7 @@
 import { expect, type Browser, type Page } from '@playwright/test';
 import { asAdmin } from './admin';
 import { dmy } from './dates';
+import { fillBasics, publishVersion, step } from './publishForm';
 import { selectAgentOfRecord } from './policies';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
 
@@ -42,25 +43,15 @@ export async function createRealActiveProduct(page: Page): Promise<{ productId: 
   await page.getByRole('button', { name: 'Create product' }).click();
   await expect(page.getByText('DRAFT')).toBeVisible();
 
-  const ratingSection = page.locator('p', { hasText: 'Rating table — must cover' }).locator('..');
-  await ratingSection.getByRole('button', { name: 'Remove rating factor' }).last().click();
-  await ratingSection.getByLabel('Rating factor 1 band').fill('18-30');
-  // AGE is rated by range now: the band text is a label, these two are what the platform
-  // resolves against. Publishing without them is a real 422.
-  await ratingSection.getByLabel('Rating factor 1 from age').fill('18');
-  await ratingSection.getByLabel('Rating factor 1 to age').fill('30');
-  await ratingSection.getByRole('button', { name: 'Add rating factor' }).click();
-  await ratingSection.locator('select').nth(1).selectOption('SUM_ASSURED_BAND');
-  await ratingSection.getByLabel('Rating factor 2 band').fill('1-99999999');
-  await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
+  // The rating rows the server requires come filled in as neutral (every age, every amount, x1).
   // The TIRA filing that authorises this version -- required as of V12.
-  await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
-  await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
+  await fillBasics(page, 'TIRA/E2E/0001');
   // Required on an individual product as of product step 2 (PayoutPlanValidator). Without it the
   // form refuses the publish, the product stays a DRAFT, and every caller below fails far from
   // here -- on a Product picker that simply does not list it.
+  await step(page, 'What it pays');
   await page.getByLabel('Free-look days').fill('15');
-  await page.getByRole('button', { name: 'Publish version' }).click();
+  await publishVersion(page);
   // PROOF it published. This used to wait for the product page's url, which the CREATE step had
   // already reached -- so a publish the form refused passed straight through, leaving a DRAFT that
   // no picker lists. The server's own answer to the publish is what is asserted now; armed before

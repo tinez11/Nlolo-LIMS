@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { asAdmin } from './admin';
 import { dmy, todayIso } from './dates';
+import { fillBasics, publishVersion, step } from './publishForm';
 import { asSeniorOnSameCase, assess } from './underwriting';
 
 /**
@@ -95,13 +96,13 @@ test.describe('unit-linked', () => {
       await admin.getByRole('button', { name: 'Create product' }).click();
       await expect(admin.getByText('DRAFT')).toBeVisible();
 
-      // No rating table: the cost of insurance comes from the mortality table.
-      await expect(admin.getByText(/Rating table — must cover/)).not.toBeVisible();
-      await admin.getByLabel('Effective date').fill(dmy('2026-01-01'));
-      await admin.getByLabel('TIRA filing reference').fill('TIRA/E2E/UL');
-      await admin.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
+      await fillBasics(admin, 'TIRA/E2E/UL');
+      await step(admin, 'What it pays');
       await admin.getByLabel('Free-look days').fill('15');
 
+      // No rating table: the cost of insurance comes from the mortality table.
+      await step(admin, 'Pricing');
+      await expect(admin.getByRole('heading', { name: 'Adjustments' })).toHaveCount(0);
       await admin.getByLabel(`${equity} · E2E ${equity}`).check();
       await admin.getByLabel(`${cash} · E2E ${cash}`).check();
       await admin.getByLabel('Allocation bands').fill('1,2,90\n3,,98');
@@ -114,7 +115,7 @@ test.describe('unit-linked', () => {
       await admin.getByLabel('Sum assured, least multiple of the annual premium').fill('5');
       await admin.getByLabel('Sum assured, greatest multiple of the annual premium').fill('20');
 
-      await admin.getByRole('button', { name: 'Publish version' }).click();
+      await publishVersion(admin);
       await admin.getByRole('button', { name: 'Publish and make active' }).click();
       await expect(admin).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
     });

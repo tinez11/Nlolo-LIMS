@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { dmy, todayIso } from './dates';
+import { fillBasics, publishVersion, step } from './publishForm';
 import { asSeniorOnSameCase } from './underwriting';
 
 /**
@@ -85,18 +86,15 @@ test.describe('an immediate annuity', () => {
     await page.getByRole('button', { name: 'Create product' }).click();
     await expect(page.getByText('DRAFT')).toBeVisible();
 
-    const ratingSection = page.locator('p', { hasText: 'Rating table — must cover' }).locator('..');
-    await ratingSection.getByLabel('Rating factor 1 band').fill('18-85');
-    await ratingSection.getByLabel('Rating factor 1 from age').fill('18');
-    await ratingSection.getByLabel('Rating factor 1 to age').fill('85');
-    await ratingSection.getByLabel('Rating factor 2 band').fill('1-999999999');
-    await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
-    await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/ANN');
-    await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
+    // An annuity is priced from its own grid: the rating rows the server requires are neutral and unseen.
+    await fillBasics(page, 'TIRA/E2E/ANN');
+    await step(page, 'What it pays');
     await page.getByLabel('Free-look days').fill('15');
+    await step(page, 'Who can buy');
     await page.getByLabel('Minimum entry age').fill('18');
     await page.getByLabel('Maximum entry age').fill('85');
 
+    await step(page, 'Pricing');
     await page.getByLabel('Income paid').selectOption('ADVANCE');
     await page.getByLabel('Rate basis reference').fill('E2E-BASIS-NOT-ACTUARIAL');
     await page.getByLabel('Rate basis date').fill(dmy('2026-01-01'));
@@ -106,7 +104,7 @@ test.describe('an immediate annuity', () => {
     const grid = Array.from({ length: 85 - 18 + 1 }, (_, i) => `${18 + i}, ${RATE_PER_MILLE}`).join('\n');
     await page.getByLabel(/^Rates — one line each/).fill(grid);
 
-    await page.getByRole('button', { name: 'Publish version' }).click();
+    await publishVersion(page);
     await page.getByRole('button', { name: 'Publish and make active' }).click();
     await expect(page).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 

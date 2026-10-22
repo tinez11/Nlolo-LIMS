@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { dmy, todayIso } from './dates';
+import { fillBasics, publishVersion, step } from './publishForm';
 import { asSeniorOnSameCase } from './underwriting';
 
 /**
@@ -39,26 +40,19 @@ test.describe('a pension (deferred annuity)', () => {
     await page.getByRole('button', { name: 'Create product' }).click();
     await expect(page.getByText('DRAFT')).toBeVisible();
 
-    const ratingSection = page.locator('p', { hasText: 'Rating table — must cover' }).locator('..');
-    await ratingSection.getByLabel('Rating factor 1 band').fill('18-84');
-    await ratingSection.getByLabel('Rating factor 1 from age').fill('18');
-    await ratingSection.getByLabel('Rating factor 1 to age').fill('84');
-    await ratingSection.getByLabel('Rating factor 2 band').fill('1-999999999');
-    await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
-    await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/PEN');
-    await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
+    // An annuity is priced from its own grid: the rating rows the server requires are neutral and unseen.
+    await fillBasics(page, 'TIRA/E2E/PEN');
+    await step(page, 'What it pays');
     await page.getByLabel('Free-look days').fill('15');
+    await step(page, 'Who can buy');
     await page.getByLabel('Minimum entry age').fill('18');
     await page.getByLabel('Maximum entry age').fill('84');
 
     // Deferred: the account section appears, and the grid covers the vesting window instead.
+    await step(page, 'Pricing');
     await page.getByLabel('Annuity kind').selectOption('DEFERRED');
     await page.getByLabel('Guaranteed interest rate (% a year)').fill('4');
     await page.getByLabel('Minimum balance after a withdrawal').fill('0');
-    await page.getByRole('button', { name: 'Add a charge row' }).click();
-    await page.getByLabel('Charge row 1 from policy year').fill('1');
-    await page.getByLabel('Charge row 1 allocation charge on premiums').fill('0');
-    await page.getByLabel('Charge row 1 monthly policy fee').fill('0');
 
     await page.getByLabel('Income paid').selectOption('ARREARS');
     await page.getByLabel('Rate basis reference').fill('E2E-BASIS-NOT-ACTUARIAL');
@@ -76,7 +70,14 @@ test.describe('a pension (deferred annuity)', () => {
     await page.getByLabel('Default frequency').selectOption('MONTHLY');
     await page.getByLabel('Locked before vesting').selectOption('NO');
 
-    await page.getByRole('button', { name: 'Publish version' }).click();
+    // An account that saves gets a Charges step.
+    await step(page, 'Charges');
+    await page.getByRole('button', { name: 'Add a charge row' }).click();
+    await page.getByLabel('Charge row 1 from policy year').fill('1');
+    await page.getByLabel('Charge row 1 allocation charge on premiums').fill('0');
+    await page.getByLabel('Charge row 1 monthly policy fee').fill('0');
+
+    await publishVersion(page);
     await page.getByRole('button', { name: 'Publish and make active' }).click();
     await expect(page).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 

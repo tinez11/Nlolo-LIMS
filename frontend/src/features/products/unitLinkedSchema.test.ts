@@ -38,11 +38,16 @@ describe('unit-linked terms on the publish form (UnitLinkedPlanValidator)', () =
     expect(form.ulLapseRule).toBe('EXHAUSTION');
   });
 
-  it('needs a fund, a fee, and a minimum for at least one frequency, in the server words', () => {
-    const m = messages({ ...valid(), ulFundCodes: [], ulPolicyFee: '', ulMinimums: ['', '', '', ''] });
+  it('needs a fund and a minimum for at least one frequency, in the server words', () => {
+    const m = messages({ ...valid(), ulFundCodes: [], ulMinimums: ['', '', '', ''] });
     expect(m).toContain('A UNIT_LINKED version offers at least one fund');
-    expect(m).toContain('A monthly policy fee of zero or more is required');
     expect(m).toContain('A UNIT_LINKED version sets a minimum premium for each frequency it takes');
+  });
+
+  // Every charge is optional since 4d1f5235 (the user, 2026-10-21): a blank fee is no fee, and only a negative one is refused.
+  it('takes a blank policy fee as none, and refuses a negative one', () => {
+    expect(messages({ ...valid(), ulPolicyFee: '' })).not.toContain('A monthly policy fee is zero or more, or left blank for none');
+    expect(messages({ ...valid(), ulPolicyFee: '-1' })).toContain('A monthly policy fee is zero or more, or left blank for none');
   });
 
   it('refuses allocation bands that do not start at year 1 or end open', () => {
