@@ -29,9 +29,11 @@ function renderForm(dirty: boolean) {
 describe('UnsavedGuard', () => {
   it('stops a sidebar click on unsaved work, and asks', async () => {
     const user = userEvent.setup();
-    renderForm(true);
+    const router = renderForm(true);
     await user.click(screen.getByRole('link', { name: 'Policies' }));
-    expect(screen.getByRole('heading', { name: 'The form' })).toBeInTheDocument();
+    // Still on the form, behind a popup that hides it from everything but the question.
+    expect(router.state.location.pathname).toBe('/form');
+    expect(screen.getByRole('heading', { name: 'The form', hidden: true })).toBeInTheDocument();
     expect(screen.getByRole('alertdialog')).toHaveTextContent(
       'The product version you were building is not saved',
     );

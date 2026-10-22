@@ -101,7 +101,6 @@ export function QuotationCalculatorPage() {
   const fillSolvedContribution = useCallback((amount: string) => {
     if (getValues('sumAssuredAmount') !== amount) setValue('sumAssuredAmount', amount, { shouldDirty: true });
   }, [getValues, setValue]);
-  const targetSet = isTermAccount && termAccountTarget.trim() !== '';
 
   useEffect(() => {
     if (snapshot.data?.productVersionId) setValue('productVersionId', snapshot.data.productVersionId);
@@ -410,8 +409,10 @@ export function QuotationCalculatorPage() {
               label={isFuneral ? "Sum assured (the main member's benefit on the plan)"
                 : isTermAccount ? 'Contribution per payment' : 'Sum assured or amount'}
               error={amountError}
+              hint={isTermAccount ? 'Worked out from the amount wanted at maturity.' : undefined}
             >
-              <Input placeholder="1500000.00" readOnly={isFuneral || targetSet} {...register('sumAssuredAmount')} />
+              <Input placeholder={isTermAccount ? '' : '1500000.00'} readOnly={isFuneral || isTermAccount}
+                {...register('sumAssuredAmount')} />
             </FormField>
             <FormField label="Currency">
               <Input className="w-20 uppercase" {...register('sumAssuredCurrency')} />
@@ -426,12 +427,16 @@ export function QuotationCalculatorPage() {
               >
                 <Input inputMode="decimal" placeholder={String(termAccountTerms.minRatePercent)} {...register('proposedRatePercent')} />
               </FormField>
-              <FormField label="Wanted at maturity (optional)" hint="The contribution fills itself from this. Clear it to type one.">
+              <FormField label="Wanted at maturity">
                 <Input
                   inputMode="decimal"
                   placeholder="5000000"
                   value={termAccountTarget}
-                  onChange={(e) => setTermAccountTarget(e.target.value)}
+                  onChange={(e) => {
+                    setTermAccountTarget(e.target.value);
+                    // No target, no contribution: one is only ever worked out from the other.
+                    if (e.target.value.trim() === '') setValue('sumAssuredAmount', '');
+                  }}
                 />
               </FormField>
             </div>
