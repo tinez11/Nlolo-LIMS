@@ -28,13 +28,15 @@ import { fillPolicyNumberManually } from './guards';
  * is a lighter, best-effort companion on top of it.
  */
 async function ownAgentId(page: import('@playwright/test').Page): Promise<string> {
-  await page.goto('/agents');
+  // My profile, not the realm root: agents land on the Dashboard since 2026-10-14, and the id is a profile field.
+  // This read it off `/agents` and waited the whole budget for a field that page no longer has.
+  await page.goto('/agents/me');
   const agentId = (
     await page
       .locator('dt')
       .filter({ hasText: 'Agent id' })
       .locator('xpath=following-sibling::dd[1]')
-      .textContent()
+      .textContent({ timeout: 30_000 })
   )?.trim();
   expect(agentId, 'the agent console must be able to tell us its own agent id').toMatch(
     /^[0-9a-f-]{36}$/,
@@ -104,10 +106,13 @@ test.describe('agents my book of business', () => {
     await page.goto(`/agents/policies/${policyOutsideBook}`);
     await expect(page.getByRole('alert')).toBeVisible();
 
-    // Search scoping: the list itself only ever returns this agent's own team.
-    await page.goto('/agents/policies');
+    // Search scoping: the list itself only ever returns this agent's own team. Searched by number rather than read off
+    // page one: agent.senior's book grows with every run, and in a long e2e run the new policy fell past the first page.
+    await page.goto(`/agents/policies?q=${policyInBook}`);
     await expect(page.getByRole('heading', { name: 'My policies' })).toBeVisible();
-    await expect(page.getByText(policyInBook)).toBeVisible();
+    await expect(page.getByText(policyInBook)).toBeVisible({ timeout: 15_000 });
+    await page.goto(`/agents/policies?q=${policyOutsideBook}`);
+    await expect(page.getByRole('heading', { name: 'My policies' })).toBeVisible();
     await expect(page.getByText(policyOutsideBook)).not.toBeVisible();
 
     // The claim filed against the in-book policy is visible under My claims;

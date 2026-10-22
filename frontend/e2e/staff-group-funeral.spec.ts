@@ -81,7 +81,9 @@ test.describe('group funeral schemes', () => {
     await family.getByLabel('Role').selectOption('CHILD');
     await family.getByLabel('Name').fill(neema);
     await family.getByLabel('Date of birth').last().fill(dmy(`${year - 8}-06-01`));
-    await expect(page.getByText('1 member x TZS 3,000.00 = TZS 3,000.00 a month')).toBeVisible();
+    // The server's quote, not a sum on the page: since f6007732 the "1 member x rate = bill" line is the scheme
+    // Quotation panel, and the bill it shows is the figure issuance will bill.
+    await expect(page.getByLabel('The bill')).toHaveText('TZS 3,000.00 a month', { timeout: 15_000 });
     await page.getByRole('button', { name: 'Propose scheme' }).click();
 
     // ---- Underwritten and accepted by someone else: the scheme is issued as an offer.

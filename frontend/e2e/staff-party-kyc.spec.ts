@@ -82,33 +82,52 @@ test.describe('staff party KYC verification', () => {
   });
 });
 
-async function rejectThenVerify(page: import('@playwright/test').Page) {
-  // Reject.
-  await page.locator('input[type="file"]').setInputFiles({
-    name: 'id-scan.png',
-    mimeType: 'image/png',
-    buffer: MINIMAL_PNG,
-  });
-  await expect(page.getByText(/Evidence uploaded:/)).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('button', { name: 'Reject' }).click();
+/*
+ * Written for the KYC panel as it is since e4fac848 and 1c037d1d: evidence is LISTED and opened beside the decision
+ * (there is no "Evidence uploaded:" line any more), and a decided client puts Verify/Reject away behind "Change this
+ * decision". The fixture client is shared across runs, so it may arrive already decided either way.
+ */
+type Page = import('@playwright/test').Page;
+
+/** Uploads a PNG under a name no earlier run used, and waits for it to be listed -- and so opened -- in the panel. */
+async function uploadEvidence(page: Page, stem: string) {
+  const name = `${stem}-${Date.now()}.png`;
+  await page.locator('input[type="file"]').setInputFiles({ name, mimeType: 'image/png', buffer: MINIMAL_PNG });
+  await expect(page.getByText(name).first()).toBeVisible({ timeout: 15_000 });
+}
+
+/** A decided client offers the act behind one deliberate click; an undecided one offers it already. */
+async function openDecision(page: Page) {
+  const change = page.getByRole('button', { name: 'Change this decision' });
+  if (await change.isVisible()) await change.click();
+}
+
+async function decide(page: Page, arm: 'Verify' | 'Reject', confirm: string, outcome: RegExp) {
+  await page.getByRole('button', { name: arm, exact: true }).click();
   // A KYC decision gates whether this client can hold a policy, so it takes a
   // second click -- but it is genuinely re-decidable (Party.updateKycStatus
   // assigns with no guard on the previous status), and the copy says so rather
   // than claiming an irreversibility the backend does not have.
   await expect(page.getByText(/can be changed later/)).toBeVisible();
-  await page.getByRole('button', { name: 'Reject identity' }).click();
-  await expect(page.getByText('Rejected')).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('button', { name: confirm }).click();
+  await expect(page.getByText(outcome)).toBeVisible({ timeout: 15_000 });
+}
 
-  // Then verify -- a fresh upload, since the same documentRef could in
-  // principle be reused, but a real staff workflow re-checks evidence per
-  // decision, and the dropzone always starts empty again after a decision.
-  await page.locator('input[type="file"]').setInputFiles({
-    name: 'id-scan-2.png',
-    mimeType: 'image/png',
-    buffer: MINIMAL_PNG,
-  });
-  await expect(page.getByText(/Evidence uploaded:/)).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('button', { name: 'Verify' }).click();
-  await page.getByRole('button', { name: 'Verify identity' }).click();
-  await expect(page.getByText('Verified')).toBeVisible({ timeout: 15_000 });
+async function rejectThenVerify(page: Page) {
+  await uploadEvidence(page, 'id-scan');
+  await openDecision(page);
+  // A previous run may have left this shared client rejected, where Reject is (rightly) disabled. Verify first, so the
+  // round trip below always crosses both ways.
+  if (await page.getByRole('button', { name: 'Reject', exact: true }).isDisabled()) {
+    await decide(page, 'Verify', 'Verify identity', /^Identity verified\./);
+    await openDecision(page);
+  }
+
+  // Reject.
+  await decide(page, 'Reject', 'Reject identity', /^Identity rejected\./);
+
+  // Then verify -- against fresh evidence, as a real staff workflow re-checks evidence per decision.
+  await uploadEvidence(page, 'id-scan-2');
+  await openDecision(page);
+  await decide(page, 'Verify', 'Verify identity', /^Identity verified\./);
 }

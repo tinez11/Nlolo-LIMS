@@ -58,7 +58,7 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
     register,
     handleSubmit,
     reset,
-    formState: { errors, isDirty },
+    formState: { errors },
   } = useForm<SubmitClaimAssessmentFormValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(submitClaimAssessmentSchema(cover)),
@@ -72,11 +72,14 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
     less types it; one who does not is not made to transcribe a figure the
     platform already knows.
 
-    Guarded on `isDirty` so a slow read cannot overwrite a figure already typed.
+    A slow read never overwrites what was typed. `keepDirtyValues` makes that true by construction: the reset fills
+    only fields nobody has touched. It used to be guarded on `isDirty` from the last render, which a read landing
+    between a keystroke and the next render got past -- the e2e run of 2026-10-22 once saw findings typed straight
+    after the page opened wiped to "Findings are required" by the cover arriving.
   */
   useEffect(() => {
-    if (isDirty || !cover) return;
-    reset(blankSubmitClaimAssessmentForm(cover));
+    if (!cover) return;
+    reset(blankSubmitClaimAssessmentForm(cover), { keepDirtyValues: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cover?.amount, cover?.currencyCode]);
 
