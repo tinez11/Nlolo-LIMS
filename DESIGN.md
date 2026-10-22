@@ -1,22 +1,28 @@
 ---
 name: Life Platform Console
-description: A ledger-sober, vendor-neutral operating console for life insurance administration — ink on paper, hairline rules, and colour reserved for state.
+description: A vendor-neutral operating console for life insurance administration — white record cards on a cool page, navy ink, and one teal that marks the act and lights the answer.
 colors:
-  ink: "oklch(0.16 0 0)"
+  navy-ink: "oklch(0.22 0.03 230)"
   ink-inverse: "oklch(0.99 0 0)"
-  paper: "oklch(1 0 0)"
-  paper-muted: "oklch(0.985 0 0)"
-  muted-ink: "oklch(0.52 0 0)"
-  subtle-ink: "oklch(0.55 0 0)"
-  rule: "oklch(0.918 0 0)"
-  rule-strong: "oklch(0.85 0 0)"
-  input: "oklch(0.66 0 0)"
-  control: "oklch(0.965 0 0)"
-  control-hover: "oklch(0.935 0 0)"
-  control-press: "oklch(0.9 0 0)"
-  band: "oklch(0.965 0 0)"
-  hover: "oklch(0.968 0 0)"
-  selected: "oklch(0.955 0 0)"
+  tide-teal: "oklch(0.52 0.11 190)"
+  mist-page: "oklch(0.975 0.006 200)"
+  card-white: "oklch(1 0 0)"
+  quiet-mist: "oklch(0.965 0.006 200)"
+  muted-ink: "oklch(0.5 0.025 230)"
+  subtle-ink: "oklch(0.53 0.02 230)"
+  rule: "oklch(0.915 0.01 210)"
+  rule-strong: "oklch(0.85 0.012 210)"
+  input-edge: "oklch(0.66 0.015 220)"
+  control: "oklch(0.96 0.008 200)"
+  control-hover: "oklch(0.935 0.01 200)"
+  control-press: "oklch(0.9 0.012 200)"
+  band: "oklch(0.965 0.008 200)"
+  hover-tint: "oklch(0.96 0.022 190)"
+  selected-tint: "oklch(0.935 0.04 190)"
+  harbour-navy: "oklch(0.22 0.035 230)"
+  harbour-navy-raised: "oklch(0.3 0.04 228)"
+  harbour-ink: "oklch(0.95 0.01 200)"
+  harbour-muted: "oklch(0.74 0.02 220)"
   status-neutral-bg: "oklch(0.96 0.002 250)"
   status-neutral-fg: "oklch(0.42 0.008 250)"
   status-pending-bg: "oklch(0.95 0.032 240)"
@@ -30,56 +36,64 @@ colors:
   status-danger-bg: "oklch(0.95 0.035 22)"
   status-danger-fg: "oklch(0.48 0.17 25)"
 typography:
+  headline:
+    fontFamily: "'Sora Variable', Sora, 'Manrope Variable', ui-sans-serif, system-ui, sans-serif"
+    fontSize: "1.75rem"
+    fontWeight: 600
+    lineHeight: 1.2
+    letterSpacing: "-0.02em"
   display:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+    fontFamily: "'Manrope Variable', Manrope, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
     fontSize: "1.5rem"
     fontWeight: 600
     lineHeight: 1.2
     letterSpacing: "-0.015em"
-    fontVariant: "tabular-nums"
-  headline:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "1.25rem"
+    fontFeature: "tnum"
+  figure:
+    fontFamily: "'Manrope Variable', Manrope, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "clamp(1rem, 7cqi, 1.5rem)"
     fontWeight: 600
-    lineHeight: 1.3
+    lineHeight: 1.2
     letterSpacing: "-0.015em"
+    fontFeature: "tnum"
   title:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+    fontFamily: "'Sora Variable', Sora, 'Manrope Variable', ui-sans-serif, system-ui, sans-serif"
     fontSize: "1rem"
     fontWeight: 600
     lineHeight: 1.4
+    letterSpacing: "-0.005em"
   body:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+    fontFamily: "'Manrope Variable', Manrope, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 400
     lineHeight: 1.45
+    fontFeature: "tnum"
   label:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+    fontFamily: "'Manrope Variable', Manrope, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.75rem"
     fontWeight: 500
     lineHeight: 1.4
   micro:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+    fontFamily: "'Manrope Variable', Manrope, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.75rem"
     fontWeight: 400
     lineHeight: 1.4
   eyebrow:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+    fontFamily: "'Manrope Variable', Manrope, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.75rem"
     fontWeight: 500
     lineHeight: 1.4
     letterSpacing: "0.03em"
-    textTransform: "uppercase"
   mono:
     fontFamily: "ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace"
     fontSize: "0.75rem"
     fontWeight: 400
     lineHeight: 1.4
 rounded:
-  xs: "0.25rem"
-  sm: "0.375rem"
-  md: "0.5rem"
-  lg: "0.625rem"
+  sm: "8px"
+  md: "10px"
+  lg: "12px"
+  xl: "16px"
   full: "9999px"
 spacing:
   hairline-gap: "2px"
@@ -91,7 +105,7 @@ spacing:
   gutter: "24px"
 components:
   button-primary:
-    backgroundColor: "{colors.ink}"
+    backgroundColor: "{colors.tide-teal}"
     textColor: "{colors.ink-inverse}"
     typography: "{typography.body}"
     rounded: "{rounded.md}"
@@ -99,30 +113,22 @@ components:
     height: "36px"
   button-secondary:
     backgroundColor: "{colors.control}"
-    textColor: "{colors.ink}"
+    textColor: "{colors.navy-ink}"
     typography: "{typography.body}"
     rounded: "{rounded.md}"
     padding: "0 14px"
     height: "36px"
-    pointerCoarseHeight: "44px"
+  button-secondary-hover:
+    backgroundColor: "{colors.control-hover}"
   button-outline:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    borderColor: "{colors.rule-strong}"
-    typography: "{typography.body}"
-    rounded: "{rounded.md}"
-    padding: "0 14px"
-    height: "36px"
-    pointerCoarseHeight: "44px"
-  button-ghost:
-    backgroundColor: "transparent"
-    textColor: "{colors.ink}"
+    backgroundColor: "{colors.card-white}"
+    textColor: "{colors.navy-ink}"
     typography: "{typography.body}"
     rounded: "{rounded.md}"
     padding: "0 14px"
     height: "36px"
   button-ghost-hover:
-    backgroundColor: "{colors.hover}"
+    backgroundColor: "{colors.hover-tint}"
   button-danger:
     backgroundColor: "{colors.status-danger-fg}"
     textColor: "{colors.ink-inverse}"
@@ -135,61 +141,64 @@ components:
     rounded: "{rounded.md}"
     padding: "0 10px"
     height: "32px"
-  button-icon:
-    rounded: "{rounded.md}"
-    height: "32px"
-    width: "32px"
   input-text:
     backgroundColor: "{colors.control}"
-    borderColor: "{colors.input}"
-    focusBackgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
+    textColor: "{colors.navy-ink}"
     typography: "{typography.body}"
     rounded: "{rounded.md}"
     padding: "0 10px"
     height: "36px"
-    pointerCoarseHeight: "44px"
   status-badge:
     typography: "{typography.label}"
     rounded: "{rounded.full}"
     padding: "2px 8px"
-  card-stat:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.lg}"
-    padding: "12px 16px"
-  panel:
-    backgroundColor: "{colors.paper}"
-    rounded: "{rounded.lg}"
+  card:
+    backgroundColor: "{colors.card-white}"
+    rounded: "{rounded.xl}"
     padding: "16px"
+  figures-band:
+    backgroundColor: "{colors.tide-teal}"
+    textColor: "{colors.ink-inverse}"
+    typography: "{typography.display}"
+    rounded: "{rounded.xl}"
+    padding: "20px"
+  record-tab:
+    backgroundColor: "{colors.control}"
+    textColor: "{colors.muted-ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.lg}"
+    padding: "0 14px"
+    height: "32px"
+  record-tab-active:
+    backgroundColor: "{colors.card-white}"
+    textColor: "{colors.navy-ink}"
   table-header-cell:
+    backgroundColor: "{colors.band}"
     typography: "{typography.label}"
     textColor: "{colors.muted-ink}"
     padding: "10px 16px"
   table-row:
-    backgroundColor: "{colors.paper}"
+    backgroundColor: "{colors.card-white}"
     typography: "{typography.body}"
     height: "44px"
   table-row-hover:
-    backgroundColor: "{colors.hover}"
+    backgroundColor: "{colors.hover-tint}"
   table-row-selected:
-    backgroundColor: "{colors.selected}"
+    backgroundColor: "{colors.selected-tint}"
+  sidebar:
+    backgroundColor: "{colors.harbour-navy}"
+    textColor: "{colors.harbour-ink}"
+    width: "240px"
   nav-item:
-    backgroundColor: "transparent"
-    textColor: "{colors.muted-ink}"
+    textColor: "{colors.harbour-muted}"
     typography: "{typography.body}"
     rounded: "{rounded.md}"
     padding: "8px 10px"
   nav-item-active:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    fontWeight: 500
-    shadow: "raise"
-  sidebar:
-    backgroundColor: "{colors.paper-muted}"
-    width: "240px"
+    backgroundColor: "{colors.harbour-navy-raised}"
+    textColor: "{colors.harbour-ink}"
   slide-over:
-    backgroundColor: "{colors.paper}"
+    backgroundColor: "{colors.card-white}"
     width: "28rem"
     padding: "16px 20px"
 ---
@@ -198,889 +207,415 @@ components:
 
 ## Overview
 
-**Creative North Star: "The Ledger"**
+**Creative North Star: "The Lit Figure"**
 
-This console is a bound accounting ledger rendered in software. Ink on paper,
-ruled hairlines, figures standing in true columns, and colour used only where a
-clerk would once have reached for a coloured stamp. Nothing here is decorative,
-because nothing in a ledger ever was: the beauty is in the ruling, the alignment
-and the fact that the totals can be trusted. A staff member spends their whole
-working day inside this surface, so it is built to be read rather than admired,
-and to be read for eight hours without fatigue.
+Every record in this console is a white card laid on a cool, quiet page, read under a
+navy margin. Each card says what it is in navy ink, and the one figure a person opened
+it for — the premium a life pays, what a policy assures, what a deposit is worth at
+maturity — is lit in teal. Nothing else is lit. A clerk scanning forty records a day
+should find the answer on each one without looking for it, and should never mistake a
+decoration for the answer, because there are no decorations.
 
-The doctrine that gives the world its edge is inherited straight from the
-product: **render only what the platform can prove.** A trend arrow, a delta or a
-chart appears only where a report the platform runs computed every point on it;
-anything else is a count. A status the build has never seen
-is ringed and flagged rather than quietly dressed as a neutral. An absent value
-is an em dash, never a grey pill reading "Unknown". This refusal is not a
-limitation the design works around — it is the design's argument, and it is what
-makes the console feel like a record instead of a dashboard.
+The direction was adopted on 2026-10-21 from the *tinezz-insurance-console* mockup
+(Lovable, in `sample data/`) and replaced the achromatic "Ledger". It keeps everything
+the Ledger proved about working software for a back office — tabular figures, the six
+status buckets, contrast floors, the record rail, confirmations that state real values,
+receipts that state only returned facts — and changes the material: from ink on paper
+to cards on a page, from one ink colour to navy and one teal, from Inter to Manrope and
+Sora. **Render only what the platform can prove** still governs: the lit figure is
+always a value the server returned, never a total the browser made up.
 
-Character is **confident and tactile**. The palette is achromatic and the
-structure is flat, but the controls should feel pressable and the boundaries
-should feel drawn on purpose — a ledger is a physical object, and the pen has
-weight. This is a deliberate small step forward from the incumbent build, which
-is quieter than this: hover today is a background-colour swap and little else.
-Where this file states a tactile behaviour that the code has not yet grown, it is
-stating the target, and the gap is a backlog item rather than licence to invent a
-different world. The system is emphatically not soft, rounded, playful,
-gradient-lit or glassy, and it carries no insurer's brand — several insurers are
-tenants of the same console, so the identity belongs to the platform.
+Character is **calm, confident and legible at a glance**. The page is cool and nearly
+white so cards read by their lift rather than by lines; the sidebar is a deep navy
+island so the work area is never confused with navigation; the teal is rationed so it
+keeps its two meanings. The console is still emphatically not glassy, not playful and
+not gradient-lit outside the one figures band, and it still carries no insurer's brand:
+the teal and the LP mark belong to the platform, never to a tenant.
 
 **Key Characteristics:**
 
-- Achromatic by default; six status hues are the entire chromatic vocabulary
-- Space, tone and three kinds of hairline carry the structure — no shadows at rest
-  (see *The Three Lines Rule*)
-- Tabular figures globally, so every money and date column reads as a column
-- A compressed, functional type scale that prizes density over display
-- Dark mode is a first-class peer, not a filter: every token is defined twice
-- Vendor-neutral and tenant-invisible by construction
-
-### Espresso, adapted
-
-The console's **structure** is taken from Frappe's Espresso (the ERPNext desk),
-measured from its own published `desk.bundle` stylesheet rather than eyeballed
-from a screenshot: a sticky page bar carrying breadcrumb, title, status and
-actions; sticky record tabs beneath it; a grey band on table headers; filled
-controls; a raised pill for the active nav item; 8px control radius; and a
-12px type floor. All of it suits a console whose users sit in it all day, and
-none of it touches the palette — the ink, the paper and the six stamps are
-unchanged, because the identity is not Espresso's to lend.
-
-**Its contrast values are deliberately NOT adopted.** Four of them fail WCAG AA,
-measured from those same published tokens:
-
-| Espresso | Measured | Needs |
-| --- | --- | --- |
-| Borderless filled field (`#f3f3f3` on white) | 1.11:1 | 3:1 (1.4.11) |
-| Focus ring `#c9c9c9` on white | 1.66:1 | 3:1 |
-| `text-light` `#7c7c7c` — inactive tabs, meta | 4.17:1 | 4.5:1 |
-| Checkbox border `#999` | 2.85:1 | 3:1 |
-
-So this console takes the filled ground **and keeps its own 3:1 `input` border
-on top of it**, keeps the ink focus ring, uses Muted Ink (~7:1) where Espresso
-uses `text-light`, and gives the active nav item weight as well as a shadow —
-Espresso's white-on-grey pill is 1.06:1 and leans on the shadow alone. Espresso
-sizes controls at 28px; this console stays at 32/36px and lifts every control to
-44px under `pointer-coarse`, which catches a touch laptop as well as a phone.
-
-### Two shapes for a record, and the rule for choosing
-
-A record with many sections gets one of exactly two structures, and the choice is
-decided by **how the work is done, not by how much of it there is**.
-
-**Tabs (`RecordTabs`)** — when the sections are separate jobs done by separate
-people, and nobody needs two of them at once. A policy's beneficiaries, invoices,
-loans, messages and cessions are five such jobs, so four stay unmounted and load
-when opened. The tab lives in the URL, so a section can be linked to and Back
-still works.
-
-**A section bar (`SectionNav`)** — when the sections must stay on one scroll,
-because a person reads one while writing another. A claim is the case: an assessor
-reads the death certificate *while* writing the findings that cite it, so tabs
-would put the evidence one click from the form quoting it. Nothing is hidden; the
-bar only makes the fifth section a jump instead of a drag, and says which one you
-are in.
-
-Both stick under the page bar, so three things now compete for the top of the
-viewport. Each publishes its own height — `--pagebar-h`, `--sectionbar-h` — and
-everything that must clear them reads both: `Panel`'s scroll margin, so a jumped-to
-panel lands below them rather than behind them, and `DetailLayout`'s pinned record
-rail. A page with no section bar leaves `--sectionbar-h` unset, and the
-`var(…, 0px)` fallback is what keeps every one of those pages unchanged.
+- Cool mist page, white cards on a soft two-layer shadow, a navy sidebar island
+- One teal with two meanings: *act here* (primary action, focus, mark) and *this is the answer* (the figures band)
+- Six status hues, unchanged, are the only other colour
+- Manrope for every working line and every number, tabular; Sora only for heading words
+- A compressed, functional type scale; density over display
+- Light and dark defined for every token; the sidebar is navy in both
 
 ## Colors
 
-An achromatic ink-on-paper base carrying six low-chroma status hues, which are
-the only colour permitted anywhere in the system.
+A cool, near-neutral page and card system in navy ink, with one saturated teal and six
+low-chroma status hues.
 
 ### Primary
 
-- **Ledger Ink** (`oklch(0.16 0 0)`): the near-black that is simultaneously the
-  body text colour, the primary button ground, and the focus ring. It is the only
-  "brand" colour the system has, and it is deliberately a neutral — a console
-  shared by competing insurers cannot carry a hue that belongs to one of them. In
-  dark mode ink and paper swap roles rather than dimming.
-- **Paper White** (`oklch(1 0 0)`): the surface every panel, table, card and
-  slide-over sits on. Pure white in light mode; `oklch(0.185 0 0)` in dark, one
-  step *above* the page ground so a panel reads as laid on the page.
+- **Tide Teal** (`tide-teal`): the primary button ground, the focus ring, the LP mark,
+  the active outline in a form's section list, and the ground of the figures band (as a
+  gradient deepening toward navy). White on it measures ~5.5:1. In dark mode it lifts
+  to `oklch(0.72 0.11 190)` and carries navy ink instead of white. Hover and Selected
+  are faint teal tints of the page (`hover-tint`, `selected-tint`), so a hovered row and
+  a chosen one read as the same family, Selected one step deeper.
 
 ### Neutral
 
-- **Page Ground** (`oklch(1 0 0)` light / `oklch(0.145 0 0)` dark): the body
-  backdrop. In light mode it is identical to Paper White by design — separation
-  comes from rules, not tone. In dark mode it is one step darker than a panel,
-  which is where the tonal relationship actually does the work.
-- **Quiet Paper** (`oklch(0.985 0 0)`): the sidebar ground and the skeleton-row
-  fill. The one place a tonal shift, rather than a rule, marks a region.
-- **Muted Ink** (`oklch(0.52 0 0)`): labels, table headers, descriptions,
-  inactive nav items. The workhorse secondary — roughly 70% of all text on screen.
-- **Subtle Ink** (`oklch(0.55 0 0)`): the quietest legible tier — the em dash that
-  stands for an absent value, nav group captions, field notes, trace IDs. 4.85:1
-  on Paper. It was `0.63` and therefore 3.50:1, which is a fail at the 11px this
-  tier is always rendered at: there is no large-text exemption to appeal to, and
-  a trace ID nobody can read is a support call nobody can close.
-- **Rule** (`oklch(0.918 0 0)`): the hairline. Applied globally to `*` as the
-  default border colour, so any element that grows a border grows the right one.
-- **Rule Strong** (`oklch(0.85 0 0)`): a rule that is doing more work — a selected
-  stat card, a hovered interactive card, the ring around an unrecognised status.
-- **Input Rule** (`oklch(0.66 0 0)` light / `oklch(1 0 0 / 38%)` dark): the edge of
-  a control, and **deliberately darker than Rule**. The two were the same value,
-  which read as tidy and was wrong: a panel edge is decoration, while the edge of
-  a field is the only thing saying *you can type here*, and WCAG 1.4.11 asks 3:1
-  of it. At `0.918` it was 1.27:1. This is 3.11:1.
-- **Hover** (`oklch(0.968 0 0)`) and **Selected** (`oklch(0.955 0 0)`): the two
-  interaction grounds. Selected is deliberately one step deeper than hover so a
-  hovered row and a selected row are never confusable.
+- **Navy Ink** (`navy-ink`): body text, headings, every value. Navy rather than black,
+  so the page reads as one temperature.
+- **Mist Page** (`mist-page`): the page ground behind cards. Faintly teal-tinted so a
+  white card is visible on it by tone alone.
+- **Card White** (`card-white`): every card, panel, table and slide-over.
+- **Quiet Mist** (`quiet-mist`): skeleton fills and the quietest grounds.
+- **Muted Ink** (`muted-ink`): labels, descriptions, inactive tabs, table headers —
+  ~4.7:1 on the page, ~5:1 on a card.
+- **Subtle Ink** (`subtle-ink`): field notes, trace ids, the em dash that means
+  "absent". 12px is its floor, and it holds ~4.5:1 there.
+- **Rule** (`rule`) and **Rule Strong** (`rule-strong`): a card's hairline edge, row
+  rules, an emphasised panel's edge.
+- **Input Edge** (`input-edge`): the edge of every field, deliberately darker than
+  Rule — a field's edge is the only thing saying "you can type here", and WCAG 1.4.11
+  asks 3:1 of it.
+- **Control** / **Control Hover** / **Control Press** and **Band**: the filled ground
+  of fields and secondary buttons, its two interaction steps, and the table header band.
+
+### The sidebar island
+
+- **Harbour Navy** (`harbour-navy`), **Harbour Navy Raised** (`harbour-navy-raised`),
+  **Harbour Ink** (`harbour-ink`), **Harbour Muted** (`harbour-muted`): the sidebar
+  redefines the same token names inside `.sidebar-scope` rather than growing
+  sidebar-only utilities, so the nav, its count badges, the search button and the user
+  block keep their classes and resolve navy there. In dark mode the island goes darker
+  than the page (`oklch(0.14 0.025 235)`), so it still reads as a margin.
 
 ### The six status hues
 
-Not "accents" — a fixed semantic vocabulary onto which roughly 25 backend enums
-are mapped. They are distinct hues rather than shades of one, because a finance
-officer scanning a table reads hue before text, and mistaking `IN_DOUBT` for
-`FAILED` is an operational error rather than a cosmetic one. Each is a
-low-chroma tinted ground carrying a saturated same-hue foreground.
+Unchanged from the Ledger, and still the semantic vocabulary for ~25 backend enums:
+**Slate** neutral, **Periwinkle** pending, **Teal** active, **Moss** success, **Amber**
+warning, **Rust** danger — each a tinted ground with a same-hue foreground, inverted in
+dark mode with the hue order preserved.
 
-- **Slate** — *neutral* (`oklch(0.96 0.002 250)` / `oklch(0.42 0.008 250)`):
-  closed without incident, or no state worth reporting. `WAIVED` lives here.
-- **Periwinkle** — *pending* (`oklch(0.95 0.032 240)` / `oklch(0.45 0.14 250)`):
-  waiting on someone. `REOPENED` lives here.
-- **Teal** — *active* (`oklch(0.95 0.036 190)` / `oklch(0.44 0.09 195)`): live and
-  running normally. In force, in progress.
-- **Moss** — *success* (`oklch(0.95 0.043 150)` / `oklch(0.43 0.11 152)`): a good
-  terminal outcome. `LOADED` lives here — an acceptance, with loading.
-- **Amber** — *warning* (`oklch(0.96 0.055 92)` / `oklch(0.47 0.11 75)`):
-  unresolved, needs a person. `IN_DOUBT`, `POSTPONED` and `IN_GRACE` live here.
-- **Rust** — *danger* (`oklch(0.95 0.035 22)` / `oklch(0.48 0.17 25)`): failed,
-  refused or forced. `FORCED_LAPSE_TRIGGERED` lives here.
-
-In dark mode the pair inverts — a dim tinted ground with a bright foreground — and
-the hue order is preserved exactly, so the mapping is learnable once and holds in
-both themes.
+*Open (2026-10-21):* the **active** bucket's teal sits close to Tide Teal, so an
+"Active" badge can read as brand colour. Moving active to a green was proposed and not
+yet decided.
 
 ### Named Rules
 
-**The Six Buckets Rule.** Six status buckets are the complete chromatic
-vocabulary of this system. A seventh bucket is never added; a new backend enum is
-mapped onto an existing one, and if it genuinely fits none, that is a product
-conversation and not a colour decision.
+**The Two Meanings Rule.** Teal means *act here* or *this is the answer*, and nothing
+else. It never marks a status (the six buckets do that), never brands a section, never
+colours a chart series, and never fills a decorative surface. A screen with no action
+and no headline figure has almost no teal on it, and that is correct.
 
-**The Stamp Rule.** Colour reports state and does nothing else. It never marks
-hierarchy, never brands a section, never highlights a call to action, and never
-decorates. A screen on which nothing notable is happening is entirely
-achromatic — and that emptiness is information.
+**The Six Buckets Rule.** Six status buckets are the complete status vocabulary. A new
+backend enum maps onto an existing one; one that fits none is a product conversation.
 
-**The Both Themes Rule.** Every colour is declared as a token in `:root` *and*
-redefined in `.dark`. A component never branches on theme and never hard-codes a
-hex. A colour that exists in only one theme is not finished.
-
-**The Inverted-Pair Rule.** When a status hue is used as a solid ground (the gate
-panel's check glyphs), its foreground is the *matching* `-bg` token, never white.
-The pair inverts together across themes, so `text-white` on a `-fg` ground would
-be white-on-light in dark mode.
+**The Both Themes Rule.** Every colour is a token in `:root` and again in `.dark`, and
+every island (`.sidebar-scope`, `.hero-scope`) redefines token names rather than
+hard-coding values. Inside an island, use the raw token (`var(--surface-muted)`), never
+the `--color-*` alias: the aliases resolve once at the root and would paint the page's
+colours inside the island.
 
 ## Typography
 
-**Display Font:** Inter (none — Inter carries the whole system)
-**Body Font:** Inter Variable, **self-hosted** (`@fontsource-variable/inter`,
-its `opsz` build, imported in `main.tsx`), with a locally installed Inter, then
-`ui-sans-serif`, `system-ui`, `-apple-system`, `'Segoe UI'`, `Roboto` behind it.
-Until 2026-10-09 it came from Google's font CDN: a third-party request on every
-load of a white-label console, no offline dev, and static 400/500/600 only. The
-variable file carries every weight and the optical-size axis, so the letterforms
-tighten for headings and open up at 12px on their own.
-**Mono Font:** `ui-monospace`, `'SF Mono'`, `'Cascadia Mono'`, `Menlo`, reserved
-for trace IDs and machine identifiers, and **never for money** (guarded):
-figures already line up through the global tabular figures.
+**Display Font:** Sora Variable (self-hosted), for heading words only
+**Body Font:** Manrope Variable (self-hosted), for every working line and every number
+**Mono Font:** `ui-monospace`, `'SF Mono'`, `'Cascadia Mono'`, Menlo — machine identifiers only
 
-**Character:** One neutral grotesque doing every job, tuned for figures rather
-than for voice. The personality is not in the letterforms — it is in the
-`font-variant-numeric: tabular-nums` set globally on `body`, which is what makes
-a TZS column read as a column instead of a ragged list. Inter is chosen for its
-tall x-height and unambiguous `1`/`l`/`I` and `0`/`O`, which matters when the
-figures are policy numbers and money.
+**Character:** Manrope is a calm, open grotesque with clear figures; Sora gives the page
+title and panel titles a slightly geometric voice, so a heading reads as a heading
+before it is read. Both are self-hosted variable files (`@fontsource-variable`), so a
+white-label console makes no third-party font request and every weight is real.
 
 ### Hierarchy
 
-**The scale is compressed on purpose, and it is compressed further than a
-publication scale would admit.** This is a confirmed decision, not drift: a
-back-office operator wants rows on screen, and density beats comfort here. The
-measured distribution was 226 uses of 0.75rem, 98 of 0.875rem, 94 of 0.6875rem,
-16 of 0.625rem, and exactly one each of the two largest sizes. Read that as the
-real hierarchy: **0.75rem is the workhorse of this console**, and 0.875rem is
-reserved for the values a person actually reads a row to find.
-
-**0.75rem is now also the floor.** The 0.6875rem and 0.625rem tiers are gone:
-168 hard-coded runs across 59 files, carrying trace IDs, field notes, stat
-captions and the em dash that means "absent" — the tier a console reaches for
-when a value is secondary, which is not the same as unreadable. Espresso's own
-floor is 12px, and a guard test (`src/test/designGuards.test.ts`) keeps it.
-Where a caption and its neighbour are now the same size, hierarchy is carried by
-ink (Subtle against Muted) and by case, which it largely already was.
-
-- **Display** (600, 1.5rem, −0.015em): the stat-card figure, and nothing
-  else. One occurrence in the codebase, by design — and now on **one screen**,
-  the group-scheme member register, which is the only screen left with more than
-  one number to compare. The other nine registers carried a single count in a
-  four-column card grid; that count is a Micro line in the page header instead
-  (`CountLine`), so a list screen no longer has a Display figure at all.
-- **Headline** (600, 1.25rem, −0.015em): the page `<h1>` in `PageHeader`.
-  One occurrence, because one component owns it.
-- **Title** (600, 1rem): the slide-over title, the emphasised panel heading, and
-  the heaviest in-panel headings. It went unused on detail pages for a long time
-  while every panel heading sat at Body — which is why an eight-panel client
-  record read as eight equal boxes. `Panel emphasis` is what claims it.
-- **Body** (400, 0.875rem): the *content* tier — table cell values, form control
-  text, buttons, nav items, gate titles. Reserved for what carries the answer.
-- **Label** (500, 0.75rem): the **most-used size in the system by a wide margin**,
-  and the true default for chrome — table headers, field labels, descriptions,
-  stat labels, form captions, most secondary cell content.
-- **Micro** (400, 0.75rem): notes, error messages, badge counts, trace IDs,
-  stat hints. The floor, and now genuinely the same size as Label — the two are
-  separated by ink, not by size.
-- **Eyebrow** (500, 0.75rem, +0.03em, uppercase): sidebar group captions and
-  gate-panel titles. The only uppercase in the system, and it is structural
-  labelling, never a marketing device.
-
-**The tiers are utilities** (2026-10-09). `text-display`, `text-headline`,
-`text-title` and `text-eyebrow` are defined in `index.css` `@theme`, each carrying
-its size, leading, tracking and weight together. Body, Label and Micro stay
-`text-sm` / `text-xs`. Before this the tiers existed only in this file, and every
-heading rebuilt its tier by hand slightly differently: the page title took
-`tracking-tight` (−0.025em) where the scale says −0.015em, and the eyebrow had four
-spellings. Guards now refuse `tracking-*`, arbitrary `text-[…]` sizes and
-`text-lg` and above outside the tiers, and an uppercase `text-xs` line that is not
-`text-eyebrow`.
-
-Weights are three: 400, 500 and 600. A single 700 exists, on the glyph inside a
-gate marker — a real 700 now, where the static web font made it a browser-faked
-bold. Nothing lighter than 400 appears anywhere.
-
-*Resolved drift:* the small button's 0.8125rem is Body (`text-sm`), as this file
-always specified; the filter chip's 0.8125rem is Label (`text-xs`), so the claims
-filter row still fits one line; `RealmPicker`'s 1.125rem `<h1>` is Headline; three
-1.125rem figures on the scheme cover panel and the vesting date are Title.
+- **Headline** (Sora 600, 1.75rem on `md` and up, 1.5rem below, −0.02em): the page
+  `<h1>` in `PageHeader`, and nothing else. One step down on a phone because the page
+  bar is sticky and a 28px title wrapping to two lines held a third of the screen.
+- **Display** (Manrope 600, 1.5rem, tabular): the lit figure — the figures band, the
+  quotation headline, a stat figure.
+- **Figure** (Manrope 600, `clamp(1rem, 7cqi, 1.5rem)`): a KPI figure inside a card that
+  declares `@container`. It is the Display size when the card has room and shrinks with
+  the card below that, so a 21-character TZS amount never leaves its card.
+- **Title** (Sora 600, 1rem): an emphasised panel heading, the slide-over title.
+- **Body** (Manrope 400, 0.875rem): values, table cells, controls, nav.
+- **Label** (Manrope 500, 0.75rem): field labels, table headers, captions — the most used size.
+- **Micro** (Manrope 400, 0.75rem): notes, errors, trace ids, badge counts. The floor.
+- **Eyebrow** (Manrope 500, 0.75rem, +0.03em, uppercase): sidebar group captions and form
+  section legends. The only uppercase.
 
 ### Named Rules
 
-**The Tabular Rule.** `font-variant-numeric: tabular-nums` is set on `body` and
-is never overridden. Every figure in this product is meant to be compared
-vertically against the figure above it.
+**The Manrope Figures Rule.** Every number — money, dates, counts, rates — is set in
+Manrope with tabular figures. Sora is for words in headings; a page title that is an
+identifier (a policy number) is the one place digits appear in Sora. A crawl of 46
+screens on 2026-10-22 found no figure outside Manrope.
 
-**The Two-Peaks Rule.** Exactly two type sizes above body exist on any screen: the
-page headline and one second peak — the stat figure on a screen that still has a
-stat row, or the emphasised panel heading on a detail page. A screen that grows a
-third display size has invented a hierarchy the system does not have.
+**The Tabular Rule.** `tabular-nums` is set on `body` and never overridden. Every figure
+is meant to be compared against the one above it.
 
-The rule binds in both directions, and it is why `GroupSchemePage` leads with its
-add-member panel but does **not** emphasise it: that screen keeps a real stat row,
-so a 1rem heading beside a 1.5rem figure and a 1.25rem title would be three sizes
-above body. Where a fix for one thing would break this, the fix loses.
+**The Twelve Floor Rule.** Nothing is set below 12px (guarded in
+`designGuards.test.ts`). Hierarchy below Body is carried by ink and weight, not by size.
 
-**The Uppercase-Is-Structure Rule.** Uppercase marks a navigational or sectional
-group caption. It is never used for a button, a badge, a status, or emphasis.
+**The Two-Peaks Rule.** At most two sizes above Title on a screen: the page headline and
+the lit figure.
+
+**The Uppercase-Is-Structure Rule.** Uppercase marks a navigational or sectional group
+caption, and only through the Eyebrow tier. Never a button, a badge or emphasis.
 
 ## Layout
 
-**The shell.** A fixed 240px sidebar (224px until 2026-10-09, where "Corporate/Group" beside its count truncated) in Quiet Paper with a hairline right rule,
-against a scrolling main column. The sidebar holds a wordmark block, the
-role-gated nav groups, and a user block pinned to the bottom by a top rule. Nav
-groups are ordered along the business flow — Clients, New business, Policies &
-claims, then the finance work in the order money moves (Collections, Paying out,
-Ledger, Valuation & close, Reinsurance & returns — one flat "Finance" of 21 items
-until 2026-10-09), Distribution, Records, Communications, Configuration — with
-configuration last because authoring a product is rare set-up rather than daily
-work. Every destination in a realm has its own icon (tested): an icon two items
-share helps nobody find either.
+**The shell.** A fixed 240px navy sidebar against a scrolling main column. The sidebar
+holds the LP mark and wordmark, the search, the role-gated nav groups (ordered along the
+business flow, configuration last) and the user block. Every destination has its own icon.
 
 **The shell owns the viewport, and the page never scrolls.** The shell is
-`fixed inset-0`, and `main` is the one vertical scroller. This is a rule, not an
-implementation detail: with a percentage height (`h-full`) the shell measured
-correctly at every viewport, yet 161px of layout overflow escaped `main` and gave
-the document a second scrollbar underneath main's own. Scrolling a register to
-the bottom then lifted the whole shell off the viewport floor, leaving the
-sidebar short by that much with a band of bare background beneath it — visible at
-1920x900, invisible at 1920x1080, so it hid from anyone testing on a tall window.
-Clipping did not cure it; `overflow: hidden` on the shell, `#root`, `body` and
-`html` all left the overflow intact. Nothing may reintroduce a second scroller:
-if a pane needs to scroll, it scrolls inside `main`.
+`fixed inset-0` and `main` is the one vertical scroller. A second document scrollbar
+once lifted the whole shell off the viewport floor; nothing may reintroduce one.
 
-**The page rhythm.** A 24px page gutter governs everything: the header block
-(24px sides, 24px top, 16px bottom), the stat row (24px sides, 20px bottom), and
-the content beneath. Table cells step inward to 16px; slide-over content sits at
-20px. These four values — 24 / 20 / 16 / 12 — are the spacing spine, and 8px and
-6px handle intra-component gaps.
+**The page rhythm.** A 24px page gutter governs everything that meets the page edge.
+Cards step inward to 16px; a form card to 24px; slide-over content to 20px. 24 / 20 /
+16 / 12 is the spacing spine, 8 and 6 handle intra-component gaps.
 
-**Density.** One comfortable row density, fixed: table rows are 44px tall, which
-is also the minimum comfortable pointer target, so row height and hit target are
-the same decision. Controls come in two heights — 36px for a primary control,
-32px for a compact or in-table one.
+**The page bar.** Sticky, carrying breadcrumb, headline, an optional status pill beside
+the title and actions aligned to the title block's last line. It publishes
+`--pagebar-h` so everything else that sticks stops under it.
 
-**Stat row.** A wrapping row of cards sized to their content — each one flexes
-between 9rem and 15rem, 12px gaps — rather than a fixed grid. It was
-`grid-cols-2 lg:grid-cols-4` regardless of how many stats it was handed, which is
-how nine screens ended up with one 282px card and three empty columns.
+**Density.** Table rows are 44px, which is also the pointer target. Controls are 36px,
+32px compact, and step to 44px under `pointer-coarse`.
 
-**The detail page.** `DetailLayout` owns it: a `minmax(0,1fr)` work column and a
-320px record rail, 20px gaps, collapsing to one column below `lg`.
+**The detail page.** `DetailLayout`: a `minmax(0,1fr)` work column and, where the page
+has one, a 320px record rail, pinned only while it fits. The policy record has no rail
+(2026-10-21): its facts lead the Overview tab, behind the figures band. Below `lg` the
+rail falls after the work in DOM order.
 
-- **The rail is the record, and it is pinned when it fits.** Identifying facts
-  only — who, what, how much, as of when. `sticky` below the page bar, but only
-  while the rail is shorter than the space available: `shouldPin` in
-  `railPin.ts` compares the rail against the viewport less the bars and a 2rem
-  margin, and a rail that does not fit scrolls with the page instead. Capping it
-  at `100dvh - 3rem` with its own `overflow-y` was the earlier answer and was
-  reverted: it put a third scrollbar on screen beside the sidebar's and the
-  page's, and the credit-life scheme record had all three at once. Un-pinning
-  keeps the last rows reachable without that scrollbar.
-- **The work column is ordered by task.** The acting panel leads where the page
-  exists to perform an act, then the registers that evidence it. Read-only tables
-  belong here rather than in the rail, which is where they were: a recoveries
-  table and a member's filename both need more than 320px.
-- **Bounded panels before unbounded ones.** After the act, a panel of a few fixed
-  rows — the terms of a contract — precedes a ledger that grows for the life of
-  the record. A page that leads with unbounded height buries everything after it,
-  and on the policy page it buried the beneficiary editor under twenty-plus
-  invoices until the editor could not be reached at all.
-- **Nothing that mutates goes in the rail.** See The Record-Rail Rule below.
-- Below `lg` the record falls after the work, with no `order` utilities, so DOM
-  order still matches visual order for keyboard and assistive tech at every width.
+**The form page.** `FormLayout`: the form on a card at up to 48rem and a 16rem rail
+beside it, sticky at the page bar's height. The rail holds the form's own section list
+(`FormOutline`, read from `data-outline` sections, drawn only from two sections up) and,
+where the page derives one, a live figure (the group scheme so far). Below `lg` the rail
+is hidden and the card is full width, so the rail may never hold anything the form does
+not also show. A form whose sections are already `Panel`s takes `card={false}`.
 
-**Responsive posture.** Desktop-first and honest about it: the console is built
-for a back-office desk and a large monitor. The only breakpoint doing real work
-is `sm`, which reveals table columns marked `secondary` — columns that are useful
-but not identifying, hidden on narrow viewports so the identifying column always
-survives. Below `md` the sidebar collapses to a drawer: a hamburger in a top bar
-opens it, a pointer dismiss layer and Escape close it, and it carries `invisible`
-rather than a transform alone so a phone user does not tab through twenty-two
-off-screen destinations before reaching the page. Touch targets step up to 44px
-under `pointer-coarse`. Narrow-viewport work beyond this is still new design
-rather than a rule to be looked up here.
+**The quotation page.** Inputs left (up to 40rem), the quotation right (20–26rem),
+sticky and bounded to the screen with its own scroll, the next step pinned to its foot.
+One column on a phone, in the order of the conversation: person, plan, price.
 
-**Overflow.** A wide table scrolls inside its own `overflow-x` container. The
-page body never scrolls horizontally.
+**Responsive posture.** Desktop-first and honest about it. `sm` reveals `secondary`
+table columns; below `md` the sidebar becomes a drawer (`invisible` when closed so it
+leaves the tab order). A wide table scrolls inside its own container; the page body
+never scrolls sideways (crawled at 1280px on 2026-10-22: none does).
 
 ### Named Rules
 
-**The 24 Rule.** The page gutter is 24px, and every element that meets the page
-edge aligns to it — header, stat row, empty state, error panel. An element that
-sets its own page margin has broken the ledger's ruling.
+**The 24 Rule.** The page gutter is 24px, and everything that meets the page edge aligns to it.
 
-**The Record-Rail Rule.** The 320px rail holds facts and never an action. It is
-the ledger's record header — the figures you must not lose sight of while working
-the entries beside them — which is exactly why it is pinned, and exactly why a
-settlement, a suspension or a KYC decision cannot live in it. *Preview is
-dismissable; acting is not* applies to a margin as much as to a drawer: a person
-reads a 320px column as a summary, and an action they read as a summary is an
-action they take without reading. The policy page had five panels in that rail,
-including its suspend/resume/reinstate control, and only two in the wide column.
+**The Record-Rail Rule.** The 320px rail holds facts and never an action. A person reads
+a narrow column as a summary, and an action read as a summary is taken without reading.
 
-**The Acting-Panel Rule.** One panel per detail page may take `emphasis`, and only
-where the page exists to perform that act — an assessment, a settlement decision, a
-KYC decision. It leads its column. A page whose act is occasional (a policy
-lifecycle change, publishing a product version) still lifts the act out of the
-rail, but takes no emphasis: promoting a rare destructive action above the record
-somebody actually came to read is a different mistake, not a fix. Emphasis is
-achromatic — Title tier and a Rule-Strong edge — because of the Stamp Rule.
+**The Acting-Panel Rule.** One panel per page may take `emphasis`, only where the page
+exists to perform that act. Emphasis is the Title tier and a Rule-Strong edge, never a tint.
 
-**The 44px Row Rule.** A table row is 44px and the activation control fills it.
-Row height and touch target are one number, so they cannot drift apart.
+**The 44px Row Rule.** A table row is 44px and its activation control fills it.
 
 ## Elevation & Depth
 
-**This system is flat, and that is law.** Structure is carried by space, by the
-three hairlines of *The Three Lines Rule*, by the table header's band, and, in
-dark mode, by a two-step tonal relationship between the page ground and panel
-surfaces. Thirty container instances across the codebase
-use a hairline border and no shadow. Nothing lifts on hover, nothing has a
-resting shadow, and there is no ambient depth of any kind.
-
-Shadow exists in exactly three places in the entire product, and all three are
-the same idea: a layer that genuinely floats above the page and needs to be read
-as detached from it — the right-hand slide-over, and two popovers.
+**Cards float; what is inside a card does not.** Depth is a two-layer shadow under every
+page-level box — a tight contact shadow and a wide soft one — on a page ground a step
+darker than the card. Inside a card everything is flat: nested boxes take a hairline
+and no shadow. Layers that genuinely float above the page (slide-over, popovers) keep a
+stronger, separate shadow.
 
 ### Shadow Vocabulary
 
-- **Floating layer** (`box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)`):
-  the slide-over. Paired with a `border-l` hairline and a `black/20` backdrop
-  (`black/50` in dark), because the shadow alone does not separate reliably
-  against a dark ground.
-- **Floating menu** (`box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)`):
-  popovers — the date picker and the party picker.
+- **Card** (`box-shadow: 0 1px 2px oklch(0.2 0.03 230 / 5%), 0 8px 24px -12px oklch(0.2 0.03 230 / 12%)`):
+  every page-level card — panels, KPI cards, list frames, form cards, the quotation.
+  In dark mode a 1px light hairline plus a deeper ambient shadow.
+- **Raise** (`box-shadow: 0 1px 2px oklch(0.2 0.03 230 / 6%), 0 2px 6px -2px oklch(0.2 0.03 230 / 10%)`):
+  the active pill in a tab track or a two-way switch.
+- **Floating layer** and **floating menu**: the slide-over and popovers, unchanged.
 
 ### Named Rules
 
-**The Floating-Layer Rule.** A shadow means "this element is not on the page." If
-the element is on the page, it has a hairline and no shadow. There is no third
-option, and there is no such thing as a subtle resting elevation here. (Two
-`box-shadow`s are not shadows in this sense and are the only exceptions: the 1px
-band-coloured seam cover on table header cells, and the inset 1px rule of the
-record tabs. Both are drawn in the colour of the surface or the rule they stand
-for, and neither lifts anything.)
+**The Card Rule.** A page-level box is a card: 16px radius, Card White, hairline, Card
+shadow. A box inside a card is flat: a smaller radius and a hairline, no shadow. A
+shadow inside a card is a box in a box. (80 hand-built page boxes were converted on
+2026-10-22; the inner `rounded-md border` boxes were deliberately left flat.)
 
-**The Three Lines Rule.** Only three kinds of line remain: **a box's outline, the
-faint rule between table rows, and the tab strip's rule.** Everything else is
-separated by space or by tone. The page bar draws its rule only while content is
-passing under it. A panel's title is not ruled off from its content, a table's
-header band is not ruled off from its rows, and a `Field` list is not ruled
-between fields. Adopted 2026-10-09 after a policy's Billing tab was counted at
-about twenty horizontal lines against about six on a reference settings page. Not
-covered: the edges of controls keep their 3:1 Input Rule border (WCAG 1.4.11).
+**The One Band Rule.** The only gradient is the figures band: Tide Teal deepening toward
+navy (`--hero`), under the lit figure. No other surface carries a gradient, and the band
+holds figures, never controls.
+
+**The Three Lines Rule.** Only three kinds of line: a box's outline, the faint rule
+between table rows, and a form section's rule. A panel's title is not ruled off, a table
+header band is not ruled off, a `Field` list is not ruled between fields. Control edges
+keep their 3:1 Input Edge (WCAG 1.4.11).
 
 ## Shapes
 
-A single radius carries the system: 151 of the 207 radius applications in the
-codebase are `rounded-md`, which is **8px** (`--radius: 0.5rem`, Espresso's
-control radius, since console-redesign plan 1; it was 6px before, and this
-section said 6px until 2026-10-09). It is soft enough not to read as brutalist
-and tight enough to keep a dense table from looking like a set of lozenges.
+A rounded, soft family keyed to one variable (`--radius: 0.625rem`):
 
-Three exceptions, each meaning something specific:
+- **10px** (`rounded-md`): controls — buttons, fields, nav items. The default.
+- **12px** (`rounded-lg`): a pill inside a track (an active record tab, a switch side);
+  a flat box inside a card.
+- **16px** (`rounded-xl`): every card and the figures band; a tab track.
+- **Full**: things that report a state — status badges, count badges, avatars, gate markers.
 
-- **8px (`rounded-lg`)** on the outer container of a *card-like region* — stat
-  cards and detail panels. A larger radius marks an enclosure rather than a
-  control.
-- **Full round** on things that are a *state* rather than an object: status
-  badges, nav count badges, avatar initials, gate markers. The pill silhouette is
-  itself a signal — if it is round, it is reporting something, not doing
-  something.
-- **4px (`rounded`)** on the in-row activation button, kept tighter than its
-  6px neighbours so it never competes with the row's own edges.
-
-Borders are always 1px. A border is either **Rule** (default, applied globally to
-`*`) or **Rule Strong** (a border doing extra work). There is no 2px border
-anywhere except the focus outline, which is a 2px solid ring in Ledger Ink at 2px
-offset, applied via `:focus-visible` — visible for keyboard users, and never
-suppressed.
+Borders are 1px, Rule or Rule Strong. The focus outline is a 2px Tide Teal ring at 2px
+offset on `:focus-visible`, never suppressed; inside a clipped strip (record tabs) it is
+drawn inside the control.
 
 ### Named Rules
 
-**The Pill-for-State Rule.** Full radius is reserved for elements reporting a
-state. A fully-rounded button would be lying about what it is.
+**The Pill-for-State Rule.** Full radius is reserved for an element reporting a state.
 
-**The One-Radius Rule.** `rounded-md` (8px) unless there is a stated reason. Two radii inside one
-component is a mistake, not a texture.
+**The Nesting Radius Rule.** A box inside a card takes a smaller radius than the card.
+Equal radii nested read as a misalignment.
 
 ## Components
 
 ### Buttons
 
-- **Shape:** 8px radius (`rounded-md`), 36px tall at default, 32px compact, 32px
-  square for icon-only. Horizontal padding 14px / 10px. Icons are always 16px and
-  never shrink.
-- **Primary:** Ledger Ink ground, inverse text. Reserved for the one action a
-  screen exists to perform.
-- **Secondary (the default variant):** the filled Control ground, ink text, no
-  border — Espresso's filled button, since console-redesign plan 1. Most buttons in
-  the console are this — a page with three equally-weighted primary buttons has no
-  primary action.
-- **Outline:** Paper ground, Rule-Strong border, ink text, for a control that
-  must read as a control on a filled ground.
-- **Ghost:** no ground until hover, when it takes the Hover token. Icon controls
-  and toolbar actions.
-- **Danger:** the danger `-fg` hue as a solid ground with white text (the
-  `-bg` token in dark mode). Reserved for genuinely destructive actions so the
-  colour keeps its meaning.
-- **Hover / Focus:** hover is a colour transition only — `transition-colors`, no
-  transform, no lift. Focus is the global 2px `:focus-visible` ring.
-- **Disabled:** 50% opacity and pointer-events off. A `501` deferred endpoint
-  renders its action disabled with a tooltip, never as a live button.
-
-- **Press** (closed 2026-10-09, was a target gap): every variant takes a pressed
-  tone one step past its hover — primary and danger `opacity-80`, secondary the
-  new **Control Press** token (`0.9` / `16%` white in dark), outline and ghost
-  Selected — and `active:duration-0` lands it on pointer-down rather than after
-  the 150ms colour transition, which a quick click had already outrun. Table
-  rows, nav items, filter chips and section-bar links press the same way. Tone
-  only: no transform, no scale, no lift.
+- **Shape:** 10px, 36px default, 32px compact, 32px icon-only; 14px / 10px padding;
+  16px icons.
+- **Primary:** Tide Teal ground, white label. The one act a screen exists for; every
+  form's submit is Primary.
+- **Secondary (default):** the filled Control ground, navy label, no border.
+- **Outline:** Card White ground, Rule Strong edge — "Correct details" beside a teal
+  "New case".
+- **Ghost:** no ground until the teal Hover tint. Toolbars, Cancel, icon controls.
+- **Danger:** Rust ground, reserved for genuinely destructive acts.
+- **States:** hover and press are tone only (`active:duration-0` lands the press on
+  pointer-down). `pending` shows a spinner and `aria-busy` and never renames the button.
+  Disabled is 50% opacity.
 
 ### Inputs / Fields
 
-`components/ui/input` — `Input`, `Select`, `Textarea`.
+- **Style:** Control ground, 1px Input Edge, 10px radius; on focus the ground turns
+  Card White, the edge Rule Strong, with a teal ring at 40%.
+- **Label and error:** `FormField` pairs a real `<label>` with the control; an error is
+  Micro in the danger hue below the control, outside the label, wired by
+  `aria-describedby` and `aria-invalid`. Forms validate when a field is left.
+- **A refusal goes when it is corrected:** an `InlineError` from a submit clears on the
+  first edit inside its form or `data-edit-scope`; a failed read is `sticky`.
 
-- **Style:** Paper ground, 1px Input Rule border, 6px radius. Two sizes, matching
-  the button scale so a field and the button beside it agree: `md` is 36px with
-  10px padding, `sm` is 32px with 8px. Textarea is the same treatment with the
-  caller's `min-height` and 8px vertical padding.
-- **Label:** `FormField` renders a real `<label htmlFor>` and hands the control
-  its `id` through context, so no call site owns the pairing and none can drift.
-  Caption is Label type in Muted Ink, 4px above the control.
-- **Error:** Micro type in the danger `-fg` hue, 4px below the control and
-  **outside the label**. It carries `role="alert"` and its own id, which the
-  control names in `aria-describedby`; the control also takes `aria-invalid`, and
-  the red border keys off that same attribute rather than a separate class — so
-  what a field looks like and what it announces cannot disagree. Server field
-  errors from a `400` bind onto the same slot, and so does a refusal that names
-  one field (a client reference or ID already on another client).
-- **A refusal goes when it is corrected (2026-10-20).** Field errors re-validate
-  as the person types. The form's own `InlineError` — the server's answer to a
-  submit — disappears on the first edit inside the same form (its `<form>`, a
-  `data-edit-scope` container, or its panel), so the screen never goes on saying
-  "wrong" about something already put right; submitting again brings back the
-  server's answer to the corrected form. A failed READ shown inside a form (a
-  version or a list that could not load) is `sticky` and stays.
-- **Focus:** `focus-visible` only, so a mouse click does not draw the keyboard
-  ring. The ring shifts to the danger hue on an invalid field.
+### Cards and Panels
 
-The error used to live *inside* the label. That folds it into the control's
-accessible name, so a rejected field announced "Sum assured Must be at least
-0.01" as its **name** — and kept announcing it after the user fixed the problem,
-because a name is not a thing that changes. An error is a description.
+`Panel` is the titled card every record is built from: 16px radius, Card White,
+hairline, Card shadow, a header of `<h2>` (Sora; Title tier when `emphasis`), optional
+subtitle and actions. Content brings its own padding. `Panel outline` lists it in a
+`FormLayout` rail. `Field` rows are label-left, value-right on one baseline; `Field
+stacked` puts the label above a Display-tier value for the figures band.
 
-*Resolved drift:* this treatment was a literal class string in **136 places across
-24 variants**, with two of those variants quietly acting as a size scale. That is
-why the ARIA wiring above lives in the component: as 136 hand-written attributes
-it would never have been finished, and the parts that were would have drifted the
-first time somebody copied a neighbouring field.
+### Figures Band (Signature)
 
-### Status Badge
+The lit figure. A 16px teal-to-navy gradient band (`bg-hero` inside `.hero-scope`,
+which redefines the inks to white at 82% and 78%), holding up to three Display figures
+with their labels above and a Micro caption below.
 
-The signature component. A fully-rounded pill, Label type, 2px/8px padding, a
-tinted status ground with the matching same-hue foreground. One component maps
-every enum on the platform through six buckets, keyed by domain because the same
-literal genuinely means different things in different domains.
+- **Policy record:** sum assured, premium with its frequency, and the account or cash
+  value, leading the Policy panel.
+- **Quotation:** one `Headline` — the premium and frequency, "for TZS 5,000,000.00 of
+  cover over 10 years"; a deposit's value at maturity; an account's rate; a family's
+  payment. Its row is removed from the list beneath, so each figure appears once.
+- **Only server figures.** The band shows what the server returned; a caption may
+  restate the inputs the figure answers, never a computed total.
 
-Three behaviours that are the component's whole point:
+### Record Tabs and Switches
 
-- An **absent** status renders an em dash in Subtle Ink — never a grey pill
-  reading "Unknown", which would imply the backend said something when it said
-  nothing.
-- An **unrecognised** literal renders in its fallback bucket *plus* an inset
-  Rule-Strong ring, a trailing `?`, and a title attribute naming the literal. A
-  newly-added backend enum becomes visible on screen instead of silently
-  defaulting.
-- Colour is never the sole carrier: the humanised literal is always present as
-  text.
+A tab track: Control ground, 16px radius, 4px inset, holding 32px pills of Body 500 in
+Muted Ink; the active pill is Card White with the Raise shadow. The strip is sticky
+under the page bar, full width and opaque so content never shows beside the track. A
+two-way switch (Individual / Corporate, New person / Existing client) is the same pill
+pair with `aria-pressed`.
+
+### Status Badge (Signature)
+
+A full pill, Label type, tinted ground and same-hue ink, mapping every enum through the
+six buckets per domain. An absent status is an em dash; an unrecognised literal takes
+its fallback plus a Rule Strong ring and a `?`. Colour never carries meaning alone.
 
 ### Tables
 
-- **Header:** Label type in Muted Ink, 16px/10px padding, left-aligned, on the
-  Band ground (`0.965`, ~5:1 for its ink). The band's tone is the edge, so there
-  is no rule beneath it. Each header cell casts a 1px band-coloured shadow to its
-  right, covering the seam Chrome leaves between cells at fractional widths.
-- **Rows:** 44px, hairline separated, last row unruled. A cell whose value
-  answers a question about the row (a premium's cover period, when and how it
-  was paid) stacks it under the figure in Label type rather than taking a
-  column. Right-aligned and `nowrap` columns never wrap. Hover takes the Hover
-  token; the row previewed in the drawer takes Selected and `aria-current`.
-- **Numerics:** right-aligned, always. Combined with global tabular figures, a
-  money column is a true column.
-- **Activation:** the first cell carries a real `<button>` filling the row height,
-  so the row is keyboard-reachable and announced as one action. Never a click
-  handler on a `<tr>`.
-- **Secondary columns** are hidden below `sm`; the identifying column never is.
-- **Pager:** mounted only for the four genuinely paged endpoints. Reads
-  `"1–20 of 143"` in Label type with `aria-live="polite"`, and two ghost icon
-  buttons. The eleven bare-array endpoints get the table and no pager, because a
-  pager over a fully-downloaded array lies about the network.
+Header on the Band ground in Label Muted Ink, unruled; 44px rows on hairlines, hover the
+teal Hover tint, the previewed row Selected with `aria-current`. Numerics right-aligned
+and tabular. Activation is a real `<button>` in the first cell. Registers drop columns
+nobody scans by — the client register shows name and KYC status, and the 36-character
+party id lives on the record as "Client id".
 
-### Panel
+### Dashboard and KPI cards
 
-The titled section every detail page is built from. 8px radius, Paper ground,
-hairline outline, and an unruled header block (16px sides, 12px top, 8px bottom)
-carrying an `<h2>`, an optional Label-type subtitle, and optional `actions` on
-the right for controls that act on the whole panel, such as a download. Content
-brings its own padding, because a panel wraps two different kinds of thing — a
-`<dl>` of `Field` rows, and a full-bleed table whose rows must reach the panel's
-edges.
+`KpiCard`: a card that is a `@container`, Label caption, Figure-tier value that never
+wraps, Micro hint, optional ink-only delta; a link to exactly the list it counted, or
+not a link. Charts: series are navy ink and Rule Strong grey, never teal and never a
+status hue; every point a report returned; the month in progress an outline.
 
-`Field` rows are not ruled. Label left, value right, on one baseline, 8px above
-and below; a note takes its own line under the label, left-aligned, in Micro and
-Subtle Ink. A rail with a rule under every field read as lined paper. Two fields
-that would both be empty with an explanation each collapse into one ("Term and
-maturity: None on record").
+### Navigation (the sidebar island)
 
-`emphasis` promotes exactly one panel per page to the Title tier with a
-Rule-Strong edge. See **The Acting-Panel Rule** for when that is earned. It is
-achromatic by law: a status tint here would make colour mean hierarchy, and colour
-on this platform means state.
+Navy island, 240px. Items are Body in Harbour Muted with a 16px icon at 10px radius;
+active is Harbour Navy Raised, Harbour Ink, weight 500. Group captions are Eyebrow.
+Count badges are full pills with screen-reader text naming what was counted. The LP
+mark is a 36px Tide Teal tile — platform, never tenant.
 
-### Counts
+### Slide-over, Gate Panel, Confirm Act, Receipt (Signatures)
 
-**One number is a sentence; several are a row.**
+Behaviour unchanged from the Ledger and still binding:
 
-- **`CountLine`** — a register's total, inline in `PageHeader` under the
-  description, in Micro. The figure takes full-strength ink and tabular figures;
-  the hint that says what was counted stays in Subtle Ink after a middot: "**67**
-  clients · in this tenant", "**12** pending clients · matching this filter". Its
-  label is phrased to follow a number, which is why the old card caption "All
-  clients" became "clients".
-- **`StatCards`** — a wrapping row of cards, 8px radius, Paper ground, hairline:
-  Label caption, Display figure, Micro hint. Interactive cards are real
-  `<button>`s with `aria-pressed` and take a Rule-Strong border when selected. Only
-  for screens with more than one count, which today means one screen.
+- **Slide-over** previews and never acts; dismissable, so it hosts no mutation.
+- **Gate Panel** states preconditions before an act, tinted danger or warning.
+- **Confirm Act** is the inline second click: the question, the consequence with real
+  values, and the required reversal line; the confirming button carries the verb.
+- **Receipt** is a persistent `status` of facts the server returned, only where the
+  screen does not otherwise show the outcome.
 
-**A trend only where a report stands behind it** (revised 2026-10-14). Until the
-reporting module existed this read "counts only, and no trend arrows", because no
-endpoint computed anything over time. Now some figures are computed — premium
-collections by month, new business, the balance sheet, the income statement — and
-a delta between two of those report values is as provable as either value. The
-rule that survives the revision: **every point on a chart and every side of a
-delta is a value a report returned.** A card reading "↗ 12% wk/wk" with no report
-behind it is still worse than no card, and a figure summed in the browser is still
-refused. A delta reports a direction, not a verdict: up is not "good", so it is
-drawn in ink, never in the success or danger hue (The Stamp Rule). A null
-value with `pending` shows a spinner; a null value without it shows an em dash
-labelled "Not available", because a spinner that spins forever next to an error
-panel is worse than an honest dash. Both components carry those three states, and
-neither is a live region: the pager below the table already announces the same
-total politely, and two regions reading out one number is worse than one.
+### Quotation (Signature, 2026-10-22)
 
-### Dashboard (2026-10-14)
-
-Where a working role lands: underwriting, claims, finance, and the agent. Replaces "Today", whose work-waiting counts
-became each dashboard's work panel. One tab per dashboard a person holds; an inactive tab is not mounted.
-
-- **`KpiCard`** — a figure, its label, a hint, and optionally a delta. A **link** to exactly the list or report it was
-  read from, already filtered, or **not a link** when that destination cannot reproduce its filter (the journals list
-  reads no status from its URL, so "journals awaiting approval" is not clickable). A failed figure is "Not available"
-  with an em dash, never 0, and never a link.
-- **A figure never wraps.** It is `whitespace-nowrap`; the card is a size container and the figure steps from the
-  Display tier to the Headline tier when the card is narrow — both tiers already on the page, so no third size. The row
-  is `auto-fill` with a 16rem floor, so a narrow screen gets fewer cards across rather than a squeezed number. Money is
-  never abbreviated ("1.28M"): a finance reader reconciles to the cent.
-- **The work panel** leads the work column with `emphasis` — the one act the dashboard exists for. Then the rest.
-- **The right column** holds alerts, quick actions and "Not here yet". It is not a record rail: quick actions are links
-  into the screens that own each act, every one with its own confirmation, not acts in their own right.
-- **"Not here yet"** names what is deliberately missing because the platform has no concept behind it (SLA deadlines,
-  quotes, leads, a risk-level field, a cash-flow statement). An honest list beats an empty widget. It is a list that
-  must SHRINK: phase 2 (2026-10-15) delivered turnaround, decisions by outcome, referrals, settled amounts, open
-  document requests and receivables aging, and each left this list the day it arrived.
-- **The activity feed** ends the three staff dashboards. It says what happened and when, never who: the audit log
-  records no actor, and the subtitle says so rather than letting the feed pass for an audit trail of people. An event
-  type the console has no words for is humanised from its own name instead of being dropped.
-
-**Charts** (2026-10-16). One `BarChart` serves every monthly chart — premiums collected, decisions by outcome,
-benefits paid — and one `BucketBars` the categorical one, receivables aging. Five named buckets forced through a
-monthly API would be a lie about what the data is, which is why there are two components and not one. Every rule
-below is already a rule elsewhere in this file:
-
-- **Every point is a value a report or a module aggregate returned.** Nothing is summed or averaged in the browser,
-  not even counts: accepted-plus-loaded is grouped on the server precisely because "the browser never adds" is only
-  a rule while it has no exceptions. A month with no value is a **gap** — never a zero, and never a line drawn
-  through it.
-- **Series are ink and Rule Strong grey.** A hue here would make colour mean something other than state (the Stamp
-  Rule), and the one place it is most tempting — a red "over 90 days" — is exactly where it is refused.
-- **The month in progress is an ink outline**, never a solid bar beside complete months: a half-month drawn solid
-  reads as a collapse that has not happened.
-- **Money is never added across currencies.** A chart draws the working currency and *names* the others underneath.
-  A reader who believes a bar is the whole month when it is not is worse served than one told plainly.
-- **Every chart is a described image** naming its series, its period and its latest real value, and sits beside the
-  card or list holding the same number. **A chart is never the only way to read a figure** — the receivables bars
-  keep their list, because a bar cannot be read to the shilling.
-
-### Navigation
-
-Sidebar items are Body type in Muted Ink at 6px/8px with a 6px radius and a 16px
-leading icon; active takes the Paper ground lifted by the `raise` shadow (the
-Selected ground in dark mode, where Paper sits barely above the sidebar),
-full-strength ink and weight 500.
-Group captions are Eyebrow type in Subtle Ink. A count badge is a fully-rounded
-Selected-ground pill in Micro type, carrying both a `title` and screen-reader
-text naming what was counted — because "3" alone reads as "3 claims", which is
-not what it means.
-
-Groups gate per-group, not per-item, and a group with no visible items renders
-nothing at all.
-
-**A badge belongs to the list beside it.** Where one group holds two items that
-are two filtered views of the same endpoint — the client register's Individuals
-and Corporate & groups — each item counts its own backlog. A single combined
-count on one of them would promise rows that are behind the other item, and the
-click would land on a shorter list than the number said.
-
-**Two items may share a component, never a path.** Active state is derived from
-the path, so two nav items differing only by a query parameter would both read as
-active and the sidebar would stop answering "where am I". Each area gets a real
-route, and its page `<h1>` names it too — the sidebar is not the only thing that
-should say which of two similar lists you are looking at.
-
-### Slide-over (Signature)
-
-The right-hand panel is the "preview" half of **drawer previews, page acts**. Up
-to 28rem wide, full height, Paper ground, hairline left rule, floating-layer
-shadow, over a 20%-black backdrop. Header is a ruled block with Title, Micro
-subtitle and a 28px close control; body scrolls at 20px/16px; the footer is a
-ruled strip holding the link to the full page.
-
-It slides in from the right over 200ms and fades its backdrop. It is dismissable
-by clicking the backdrop, and therefore **must never host a mutating action** —
-settlement decisions, waivers and payouts belong on a page a person navigated to
-on purpose.
-
-### Gate Panel (Signature)
-
-The component that makes this an insurance console rather than a CRUD app.
-Renders a set of business preconditions as a bordered 6px region whose ground
-takes the danger tint if any hard gate fails, the warning tint if only soft gates
-fail, and Quiet Paper if all pass. Each gate is a 16px round marker (✓ or !) in
-the inverted status pair, a Body-weight-500 title, and a Muted-Ink Body
-explanation. Every gate carries screen-reader text stating its outcome, because
-the marker is colour and glyph only. An empty gate set renders nothing — the
-panel appears when there is something to say, never as an empty frame.
-
-### Confirm Act (Signature)
-
-The second, deliberate click in front of an action that cannot be taken back.
-Shares the Gate Panel silhouette — a bordered 6px region, danger tint when money
-leaves or a benefit is refused, Quiet Paper otherwise — because it is the same
-idea pointed the other way: the gate says what must be true before, this says
-what becomes true after.
-
-**Inline, never a modal.** A dialog that closes on a backdrop click is the wrong
-shape for "move money", and inline keeps the values being committed on screen
-above it, so the operator re-reads the real thing rather than a summary of it.
-Nothing traps focus, so it is announced as a named `group` — calling it a dialog
-would describe an interaction the user is not in.
-
-Three lines, in order: the question, the consequence **with the real values**
-("Pay TZS 1,240,000.00 to Juma Senior"), and what happens if this is wrong. The
-third is a required prop, not an optional one — writing the confirmation forces
-someone to have answered it.
-
-**The confirming button carries the verb, never "Confirm" or "Yes", and never
-the arming button's own words.** Two identical-looking buttons a click apart is
-how the second click becomes as automatic as the first.
-
-**The consequence must be true of the backend.** This is the Gate Panel doctrine
-— *assert only what the platform can prove* — applied to outcomes. Where
-something is genuinely recoverable the copy says how, so that the warnings on the
-actions with no way back keep their meaning. A confirmation that cries wolf is
-worse than none, because it teaches the room to click through them.
-
-### Receipt
-
-What happened, left where the form was. Success ground and `-fg` ink, a check
-glyph, then label/value pairs and an optional note. Announced as a `status`, not
-an `alert`: a result is not a problem.
-
-**Persistent, not a toast.** A toast is gone in four seconds and cannot be
-re-read, copied or screenshotted for a file note. Where being wrong costs money,
-the record of what was done outlives the moment.
-
-**Only facts the server returned.** The lines come from the response the caller
-actually got; anything the client merely knows goes in the note, worded so the
-difference is visible. A receipt with no lines is the honest rendering of a `202`
-with no body, not a gap to fill with invented fields.
-
-Shown only where the screen does not otherwise reveal the outcome — a settlement,
-whose consequence is an invisible policy closure, and a payout, which answers
-`202` with nothing. Waiving, reinstating and a KYC decision each change a status
-badge already on the page, and a receipt restating it would be a second copy of
-the same fact.
+Inputs and price side by side, repricing as the agent types. The answer leads on the
+figures band; details below; "How it was priced" folds behind its summary in front of a
+customer and stays open on a staff form; rows that only echo the inputs are dropped
+beside the inputs. A refusal is an inline strip in plain words. The PDF is offered only
+on a priced quotation. "Proceed" is pinned in view at the foot of the column and offered
+only on a quotation the server priced.
 
 ### Loading, Empty and Error States
 
-One shared set, so every screen fails identically. Skeleton rows are Control-tone
-pulses (`0.965`; Quiet Paper at `0.985` was all but invisible on Paper) at
-staggered widths so a table does not jump when data lands. `LoadingBlock` is the
-same idea for anything that is not a table — three lines and a small visible
-label, never a centred spinner (2026-10-09). The label stays on screen because
-e2e waits for it to disappear. A spinner remains only inside a button that is
-pending and on a stat whose value is pending. Empty states
-are centre-stacked with a 20px Subtle-Ink icon, a Body-weight-500 title and a
-Micro description. Error panels are the same silhouette with a danger-hue icon
-and copy written per error kind — a `403` is a permission boundary and offers no
-retry, a `404` may be a disguised denial and never promises absence, a `501`
-states the operation is not implemented and offers no retry. A `traceId` renders
-in Mono in Subtle Ink with `select-all`, because it is the only thread back to
-the backend logs.
+One shared set: skeleton rows in Control tone, `LoadingBlock` with a visible label, empty
+states centre-stacked, error copy per error kind, trace ids in Mono with `select-all`.
 
 ### Motion
 
-Almost none, deliberately. `transition-colors` on interactive surfaces, an
-instant press tone, a 200ms slide-and-fade on the slide-over, a 150ms
-grow-from-the-trigger on popovers and tips (`POPOVER_MOTION` / `TOOLTIP_MOTION`
-in `components/ui/motion.ts`: fade plus 95%→100% scale from Radix's
-transform origin, reversed on close), a spinner, and a skeleton pulse. That is
-the complete motion vocabulary. Nothing eases in on scroll, nothing staggers,
-nothing parallaxes.
-
-**The person's settings win** (2026-10-09). Under `prefers-reduced-motion:
-reduce` every enter and exit keeps its fade but loses its slide and scale — the
-tw-animate-css translate and scale properties are zeroed globally, so the
-slide-over cross-fades — the skeleton stops pulsing, and the mobile drawer
-arrives at once. A pending button's spinner keeps turning, because it reports
-status. Under `prefers-contrast: more` hairlines take a Rule-Strong value,
-the control edge darkens, and Muted and Subtle Ink step one notch stronger,
-in both themes. Reduced transparency needs nothing: there is no translucent
-surface.
+Almost none: colour transitions, an instant press tone, a 200ms slide-over, 150ms
+popovers growing from their trigger, a spinner, a skeleton pulse. Under
+`prefers-reduced-motion` travel and scale are zeroed and fades kept; under
+`prefers-contrast: more` hairlines and secondary inks step stronger, in both themes.
 
 ## Do's and Don'ts
 
 ### Do:
 
-- **Do** define every new colour twice — in `:root` and in `.dark`. A token that
-  exists in one theme is unfinished.
-- **Do** map a new backend enum onto one of the six existing status buckets, and
-  take the literal from the OpenAPI spec or the Java enum rather than typing it
-  from memory.
-- **Do** right-align every numeric column and leave the global `tabular-nums`
-  alone.
-- **Do** align anything meeting the page edge to the 24px gutter.
-- **Do** put a wide table in its own `overflow-x` container so the page body never
-  scrolls sideways.
-- **Do** make an activatable row a real `<button>` in the first cell, filling the
-  44px row height.
-- **Do** render an absent value as an em dash in Subtle Ink, and label it for
-  screen readers when the absence is meaningful.
-- **Do** give an icon-only control an `aria-label`, and give any badge or marker
-  that carries meaning by colour a screen-reader text equivalent.
-- **Do** use the outline button as the default and reserve Ledger Ink for the one
-  action the screen exists to perform.
+- **Do** put every page-level box on a card (16px, Card White, hairline, Card shadow) and keep what is inside it flat.
+- **Do** set every figure in Manrope with tabular figures, right-aligned in a column.
+- **Do** lead a record with the figure it exists for, on the figures band, and only a figure the server returned.
+- **Do** make the one act on a screen the Primary teal button, and every form's submit Primary.
+- **Do** define every colour in `:root` and `.dark`, and inside an island use the raw token, not the `--color-*` alias.
+- **Do** put a full-page form in `FormLayout`, and mark its sections with `data-outline` (or `Panel outline`).
+- **Do** size a figure inside a card with the Figure tier, so it never leaves the card.
+- **Do** map a new enum onto one of the six status buckets.
+- **Do** render an absent value as an em dash in Subtle Ink.
+- **Do** keep the 3:1 Input Edge on every field and the 2px teal focus ring on every control.
+- **Do** check white text on any teal at 4.5:1 — a lighter teal measured 3.59:1 on the LP mark.
 
 ### Don't:
 
-- **Don't** hard-code a hex, an `oklch()` or an `rgb()` in a component. Every
-  colour is a token; the sole sanctioned exception is the hashed avatar hue,
-  which is computed from an identifier.
-- **Don't** add a seventh status bucket, or use a status hue for anything that is
-  not a status.
-- **Don't** add a trend arrow, sparkline, percentage delta or chart unless every
-  value on it came back from a report the platform ran. Never sum, average or
-  difference in the browser, and never colour a delta green or red — a direction
-  is not a verdict.
-- **Don't** colour a chart series. Series are ink and greys; the six status hues
-  stay reserved for state, so a chart cannot make the Stamp Rule lie.
-- **Don't** put a mutating action inside the slide-over. If it changes money,
-  cover or a case, it belongs on a page.
-- **Don't** put a mutating action in the 320px record rail either, and don't lead
-  a work column with a panel whose height is unbounded — the ledger goes after
-  the contract terms, or it buries them.
-- **Don't** reach for a stat card to show one number. One count is a `CountLine`
-  in the page header; `StatCards` is for numbers a person compares.
-- **Don't** emphasise more than one panel on a page, and never with a status
-  tint. If two panels are both the point, neither is.
-- **Don't** give anything a resting shadow. Shadow means "floating above the
-  page", and the only floating things are the slide-over and popovers.
-- **Don't** introduce a third display size on a screen. Two peaks: the page
-  headline, and the stat figure.
-- **Don't** use uppercase for anything but a group caption.
-- **Don't** suppress the `:focus-visible` outline, on any control, ever.
-- **Don't** introduce a tenant name, tenant switcher or per-insurer branding.
-  Tenancy is invisible by design and the console is white-label by requirement.
-- **Don't** render a grey "Unknown" pill for a missing status, or a spinner for a
-  value whose load has already failed.
-- **Don't** copy the input class string into a new file. It is already duplicated
-  past seventy times; the next one should be extracting the component, not adding
-  to the count.
+- **Don't** use teal for a status, a section, a chart series or decoration. It means *act here* or *this is the answer*.
+- **Don't** put a shadow on a box inside a card, or a gradient anywhere but the figures band.
+- **Don't** set a number in Sora, or any text below 12px.
+- **Don't** hard-code a colour in a component; the hashed avatar hue is the only exception.
+- **Don't** add a seventh status bucket, or colour a delta green or red.
+- **Don't** sum, average or difference in the browser to make a figure look complete.
+- **Don't** put a mutating action in the slide-over or the record rail.
+- **Don't** emphasise more than one panel, or emphasise with a tint.
+- **Don't** introduce a tenant name, switcher or per-insurer branding; the teal is the platform's.
+- **Don't** load a font from a third party; both faces are self-hosted.
+- **Don't** suppress `:focus-visible` on any control.
 
-### Considered and declined (2026-10-09)
+### Considered and declined
 
-From a review that measured the console against Apple's WWDC design guidance. Each
-was put to the product owner and declined; do not re-offer them unless this file
-changes first.
-
-- **Raising content text from 12px to 14px.** The compressed scale is a confirmed
-  decision (*Typography → Hierarchy*). The review's screenshots were at 150%
-  display scaling, where 12px renders at about 18 physical pixels.
-- **Translucent, blurred sticky bars** (an Apple "material"). The system is "not
-  … glassy", and flat is law.
-- **Spring physics and drag-to-dismiss** on the slide-over and mobile nav.
-  *Motion* is "almost none, deliberately", and the console is desk-first. Taken
-  instead, where they fit the Ledger: instant press feedback, popovers that grow
-  from their trigger, and honouring reduced motion.
-- **A receipt on every mutation.** Receipts are for outcomes the screen does not
-  otherwise reveal (*Receipt*).
+- **A category palette** (violet, plum, rose dots and tinted values on the Policy panel), 2026-10-21: built, seen, and reversed by the product owner on sight. Colour here carries action, answer and state, not category.
+- **Raising content text from 12px to 14px** (2026-10-09). The compressed scale is a confirmed decision.
+- **Translucent, blurred sticky bars**, **spring physics and drag-to-dismiss**, and **a receipt on every mutation** (2026-10-09).
+- **The mockup's right-hand "Policy summary" rail** on the policy record: the policy page dropped its rail on 2026-10-21 and kept it dropped through the redesign. Not re-offered unless the product owner asks.
