@@ -404,29 +404,9 @@ export function QuotationCalculatorPage() {
               errors={errors} setValue={setValue} />
           )}
 
-          <div className="grid grid-cols-[1fr_auto] gap-2">
-            <FormField
-              label={isFuneral ? "Sum assured (the main member's benefit on the plan)"
-                : isTermAccount ? 'Contribution per payment' : 'Sum assured or amount'}
-              error={amountError}
-              hint={isTermAccount ? 'Worked out from the amount wanted at maturity.' : undefined}
-            >
-              <Input placeholder={isTermAccount ? '' : '1500000.00'} readOnly={isFuneral || isTermAccount}
-                {...register('sumAssuredAmount')} />
-            </FormField>
-            <FormField label="Currency">
-              <Input className="w-20 uppercase" {...register('sumAssuredCurrency')} />
-            </FormField>
-          </div>
-
+          {/* A term account starts from what the customer wants at maturity, at a rate; the contribution follows. */}
           {isTermAccount && termAccountTerms && (
             <div className="grid grid-cols-2 gap-4">
-              <FormField
-                label="Rate (% a year)"
-                hint={`This product offers ${termAccountTerms.minRatePercent}% to ${termAccountTerms.maxRatePercent}%, fixed for the term.`}
-              >
-                <Input inputMode="decimal" placeholder={String(termAccountTerms.minRatePercent)} {...register('proposedRatePercent')} />
-              </FormField>
               <FormField label="Wanted at maturity">
                 <Input
                   inputMode="decimal"
@@ -439,8 +419,29 @@ export function QuotationCalculatorPage() {
                   }}
                 />
               </FormField>
+              <FormField
+                label="Rate (% a year)"
+                hint={`This product offers ${termAccountTerms.minRatePercent}% to ${termAccountTerms.maxRatePercent}%, fixed for the term.`}
+              >
+                <Input inputMode="decimal" placeholder={String(termAccountTerms.minRatePercent)} {...register('proposedRatePercent')} />
+              </FormField>
             </div>
           )}
+
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <FormField
+              label={isFuneral ? "Sum assured (the main member's benefit on the plan)"
+                : isTermAccount ? 'Contribution per payment' : 'Sum assured or amount'}
+              error={amountError}
+              hint={isTermAccount ? 'Worked out from the amount wanted at maturity, at the rate, term and frequency.' : undefined}
+            >
+              <Input placeholder={isTermAccount ? '' : '1500000.00'} readOnly={isFuneral || isTermAccount}
+                {...register('sumAssuredAmount')} />
+            </FormField>
+            <FormField label="Currency">
+              <Input className="w-20 uppercase" {...register('sumAssuredCurrency')} />
+            </FormField>
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             {!isFuneral && (

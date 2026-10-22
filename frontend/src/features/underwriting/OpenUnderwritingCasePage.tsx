@@ -385,27 +385,7 @@ export function OpenUnderwritingCasePage() {
           )}
         </FormField>
 
-        <div className="grid grid-cols-[1fr_auto] gap-2">
-          <FormField
-            label={isDeferredAnnuity || isTermAccount ? 'Contribution per payment' : isAnnuity ? 'Purchase price'
-              : isFuneral ? "Sum assured (the main member's benefit on the plan)" : 'Sum assured'}
-            error={errors.sumAssuredAmount?.message}
-            hint={isTermAccount ? 'Worked out from the amount wanted at maturity.' : undefined}
-          >
-            <Input
-              placeholder={isTermAccount ? '' : '1500000.00'}
-              readOnly={isFuneral || isTermAccount}
-              {...register('sumAssuredAmount')}
-            />
-          </FormField>
-          <FormField label="Currency" error={errors.sumAssuredCurrency?.message}>
-            <Input
-              className="w-20 uppercase"
-              {...register('sumAssuredCurrency')}
-            />
-          </FormField>
-        </div>
-
+        {/* A term account starts from what the customer wants at maturity; the contribution follows from it. */}
         {isTermAccount && (
           <FormField label="Wanted at maturity" error={targetError ?? undefined}>
             <Input
@@ -421,6 +401,30 @@ export function OpenUnderwritingCasePage() {
             />
           </FormField>
         )}
+
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <FormField
+            label={isDeferredAnnuity || isTermAccount ? 'Contribution per payment' : isAnnuity ? 'Purchase price'
+              : isFuneral ? "Sum assured (the main member's benefit on the plan)" : 'Sum assured'}
+            // Nothing to correct by hand in a worked-out contribution: what is missing is what it is worked out from.
+            error={isTermAccount
+              ? (errors.sumAssuredAmount && targetSet ? 'Not worked out yet: choose the rate, term and how often it is paid' : undefined)
+              : errors.sumAssuredAmount?.message}
+            hint={isTermAccount ? 'Worked out from the amount wanted at maturity, at the rate, term and frequency below.' : undefined}
+          >
+            <Input
+              placeholder={isTermAccount ? '' : '1500000.00'}
+              readOnly={isFuneral || isTermAccount}
+              {...register('sumAssuredAmount')}
+            />
+          </FormField>
+          <FormField label="Currency" error={errors.sumAssuredCurrency?.message}>
+            <Input
+              className="w-20 uppercase"
+              {...register('sumAssuredCurrency')}
+            />
+          </FormField>
+        </div>
 
         {/*
           THE INTRODUCING AGENT WINS, so this field is replaced rather than silently overridden.
