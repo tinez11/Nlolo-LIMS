@@ -157,6 +157,10 @@ class PolicyApiIntegrationTest {
             // The offer-validity window the expiry sweep reads.
             "db-migrations/refdata/V5__seed_offer_validity.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
+            // This class validates a branch against the live set, so it needs the network as it stands:
+            // V10 adds Moshi and Tanga, V11 retires Mwanza, Dodoma and Zanzibar out of it.
+            "db-migrations/refdata/V10__add_moshi_and_tanga_branches.sql",
+            "db-migrations/refdata/V11__retire_mwanza_dodoma_zanzibar_branches.sql",
             "db-migrations/refdata/V9__journal_reason_codes.sql",
             // Issuance now validates agentOfRecordId against distribution, so this schema has to
             // exist here -- without it the check fails on a missing relation rather than on the
@@ -1145,7 +1149,7 @@ class PolicyApiIntegrationTest {
         TenantContext.set(tenantId);
         UnderwritingCaseView opened = underwritingApi.openCase(fixture.applicantId(), fixture.productId(),
             fixture.productVersionId(), new BigDecimal("1000000"), "TZS", null, ProposalDetails.selfInsured(), "agent1");
-        underwritingApi.recordSale(opened.caseId(), "DIGITAL", "ZNZ", "uw");
+        underwritingApi.recordSale(opened.caseId(), "DIGITAL", "TGA", "uw");
         underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Standard", new BigDecimal("10"), "uw");
         underwritingApi.decide(opened.caseId(),
             new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "uw-decider", false);
@@ -1158,7 +1162,7 @@ class PolicyApiIntegrationTest {
         }
         assertThat(found).hasSize(1);
         assertThat(found.get(0).salesChannel()).isEqualTo("DIGITAL");
-        assertThat(found.get(0).branchCode()).isEqualTo("ZNZ");
+        assertThat(found.get(0).branchCode()).isEqualTo("TGA");
 
         TenantContext.set(tenantId);
         assertThat(underwritingApi.getCase(opened.caseId()).saleLockedAt()).isNotNull();

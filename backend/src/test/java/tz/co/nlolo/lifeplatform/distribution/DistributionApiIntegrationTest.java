@@ -85,6 +85,10 @@ class DistributionApiIntegrationTest {
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/refdata/V4__seed_distribution_parameters.sql",
             "db-migrations/refdata/V8__ifrs17_branches_and_channels.sql",
+            // This class validates a branch against the live set, so it needs the network as it stands:
+            // V10 adds Moshi and Tanga, V11 retires Mwanza, Dodoma and Zanzibar out of it.
+            "db-migrations/refdata/V10__add_moshi_and_tanga_branches.sql",
+            "db-migrations/refdata/V11__retire_mwanza_dodoma_zanzibar_branches.sql",
             "db-migrations/refdata/V9__journal_reason_codes.sql",
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
@@ -208,9 +212,9 @@ class DistributionApiIntegrationTest {
         assertThat(defaulted.homeBranch()).isNull();
 
         TenantContext.set(tenantId);
-        AgentView moved = distributionApi.updateAgentPlacement(placed.agentId(), SalesChannel.BANCASSURANCE, "MWZ", "staff-2");
+        AgentView moved = distributionApi.updateAgentPlacement(placed.agentId(), SalesChannel.BANCASSURANCE, "MOS", "staff-2");
         assertThat(moved.salesChannel()).isEqualTo(SalesChannel.BANCASSURANCE);
-        assertThat(distributionApi.getAgent(placed.agentId()).homeBranch()).isEqualTo("MWZ");
+        assertThat(distributionApi.getAgent(placed.agentId()).homeBranch()).isEqualTo("MOS");
     }
 
     @Test

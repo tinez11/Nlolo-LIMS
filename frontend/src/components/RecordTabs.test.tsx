@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RecordTabs } from './RecordTabs';
 
 const TABS = [
@@ -53,5 +53,44 @@ describe('RecordTabs', () => {
   it('says what a count counts', () => {
     renderAt('/p');
     expect(screen.getByRole('tab', { name: 'Billing, 12 items' })).toBeInTheDocument();
+  });
+
+  /*
+    Opening a tab from halfway down a record used to leave the scroll where it was.
+    The panel that was there is unmounted, so the new one mounts at the TOP of a
+    container the reader is scrolled past -- and on a `DetailLayout` page the sticky
+    tab strip leaves with it, because the strip sticks within the tabs' own box and
+    that box can be far shorter than the record rail beside it. The reader lands on
+    the bottom of the rail, seeing neither the section they asked for nor the tabs.
+
+    jsdom implements no scrolling, so these assert the call rather than a pixel --
+    which is also the honest limit of what a unit test can say here.
+  */
+  describe('returning to the top of the section', () => {
+    let scrollIntoView: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('returns to the tab strip when a tab is opened', async () => {
+      renderAt('/p');
+      await userEvent.click(screen.getByRole('tab', { name: /Billing/ }));
+      expect(screen.getByText('Billing body')).toBeInTheDocument();
+      expect(scrollIntoView).toHaveBeenCalled();
+    });
+
+    // A deep link and a first paint are someone ARRIVING, not switching. Scrolling
+    // them would fight the browser's own restoration and move a page nobody moved.
+    it('does not scroll on first render, including straight to a named tab', () => {
+      renderAt('/p?tab=billing');
+      expect(screen.getByText('Billing body')).toBeInTheDocument();
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
   });
 });
