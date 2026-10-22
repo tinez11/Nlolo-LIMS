@@ -615,13 +615,13 @@ export function PublishVersionForm({
         hint="Multipliers on the rate, e.g. a higher rate for large amounts. 1 means no change."
       >
         <div className="@container">
-          <div className="mb-1 hidden items-center gap-2 px-1 text-xs text-subtle-foreground @min-[37.5rem]:flex">
-            <span className="w-44 shrink-0">Factor</span>
-            <span className="min-w-32 flex-1">Band</span>
-            <span className="w-24 shrink-0 text-right">From</span>
-            <span className="w-24 shrink-0 text-right">To</span>
-            <span className="w-24 shrink-0 text-right">Multiplier</span>
-            <span className="w-8 shrink-0" aria-hidden />
+          <div className="mb-1 hidden items-center gap-2 px-1 text-xs text-subtle-foreground @min-[34rem]:grid @min-[34rem]:grid-cols-[9rem_minmax(4rem,1fr)_6rem_6rem_4.5rem_2rem]">
+            <span>Factor</span>
+            <span>Band</span>
+            <span className="text-right">From</span>
+            <span className="text-right">To</span>
+            <span className="text-right">Multiplier</span>
+            <span aria-hidden />
           </div>
           <div className="space-y-2">
             {ratingTable.fields.map((field, index) => {
@@ -638,10 +638,10 @@ export function PublishVersionForm({
                   rowErrors?.multiplier?.message);
               return (
                 <div key={field.id}>
-                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 @min-[37.5rem]:rounded-none @min-[37.5rem]:border-0 @min-[37.5rem]:p-0">
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 @min-[34rem]:rounded-none @min-[34rem]:border-0 @min-[34rem]:p-0 @min-[34rem]:grid @min-[34rem]:grid-cols-[9rem_minmax(4rem,1fr)_6rem_6rem_4.5rem_2rem]">
                     <Select
                       inputSize="sm"
-                      className="w-44 shrink-0"
+                      className="w-44 shrink-0 @min-[34rem]:w-full"
                       aria-label={`Rating factor ${index + 1} type`}
                       aria-invalid={doubleCounted ? true : undefined}
                       {...register(`ratingTable.${index}.factorType`)}
@@ -652,7 +652,7 @@ export function PublishVersionForm({
                     </Select>
                     <Input
                       inputSize="sm"
-                      className="min-w-32 flex-1"
+                      className="min-w-32 flex-1 @min-[34rem]:w-full @min-[34rem]:min-w-0"
                       placeholder={BAND_PLACEHOLDER[rowType ?? 'AGE']}
                       aria-label={`Rating factor ${index + 1} band`}
                       aria-invalid={!doubleCounted && rowErrors?.band ? true : undefined}
@@ -660,33 +660,33 @@ export function PublishVersionForm({
                     />
                     {rowType === 'AGE' ? (
                       <>
-                        <Input type="number" min={0} inputSize="sm" className="w-24 shrink-0 text-right" placeholder="from"
+                        <Input type="number" min={0} inputSize="sm" className="w-24 shrink-0 text-right @min-[34rem]:w-full" placeholder="from"
                           aria-label={`Rating factor ${index + 1} from age`}
                           aria-invalid={!doubleCounted && rowErrors?.ageFrom ? true : undefined}
                           {...register(`ratingTable.${index}.ageFrom`)} />
-                        <Input type="number" min={0} inputSize="sm" className="w-24 shrink-0 text-right" placeholder="to"
+                        <Input type="number" min={0} inputSize="sm" className="w-24 shrink-0 text-right @min-[34rem]:w-full" placeholder="to"
                           aria-label={`Rating factor ${index + 1} to age`}
                           aria-invalid={!doubleCounted && rowErrors?.ageTo ? true : undefined}
                           {...register(`ratingTable.${index}.ageTo`)} />
                       </>
                     ) : rowType === 'SUM_ASSURED_BAND' ? (
                       <>
-                        <Input type="number" min={0} inputSize="sm" className="w-24 shrink-0 text-right" placeholder="from"
+                        <Input type="number" min={0} inputSize="sm" className="w-24 shrink-0 text-right @min-[34rem]:w-full" placeholder="from"
                           aria-label={`Rating factor ${index + 1} from sum assured`}
                           aria-invalid={!doubleCounted && rowErrors?.sumAssuredFrom ? true : undefined}
                           {...register(`ratingTable.${index}.sumAssuredFrom`)} />
-                        <Input type="number" min={0} inputSize="sm" className="w-24 shrink-0 text-right" placeholder="to"
+                        <Input type="number" min={0} inputSize="sm" className="w-24 shrink-0 text-right @min-[34rem]:w-full" placeholder="to"
                           aria-label={`Rating factor ${index + 1} to sum assured`}
                           aria-invalid={!doubleCounted && rowErrors?.sumAssuredTo ? true : undefined}
                           {...register(`ratingTable.${index}.sumAssuredTo`)} />
                       </>
                     ) : (
                       <>
-                        <span className="hidden w-24 shrink-0 text-right text-xs text-subtle-foreground @min-[37.5rem]:inline">—</span>
-                        <span className="hidden w-24 shrink-0 text-right text-xs text-subtle-foreground @min-[37.5rem]:inline">—</span>
+                        <span className="hidden w-24 shrink-0 text-right text-xs text-subtle-foreground @min-[34rem]:inline">—</span>
+                        <span className="hidden w-24 shrink-0 text-right text-xs text-subtle-foreground @min-[34rem]:inline">—</span>
                       </>
                     )}
-                    <Input type="number" min={0} step="0.01" inputSize="sm" className="w-24 shrink-0 text-right" placeholder="1.0"
+                    <Input type="number" min={0} step="0.01" inputSize="sm" className="w-24 shrink-0 text-right @min-[34rem]:w-full" placeholder="1.0"
                       aria-label={`Rating factor ${index + 1} multiplier`}
                       aria-invalid={!doubleCounted && rowErrors?.multiplier ? true : undefined}
                       {...register(`ratingTable.${index}.multiplier`)} />

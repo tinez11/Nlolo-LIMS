@@ -102,7 +102,9 @@ test.describe('an immediate annuity', () => {
     await page.getByRole('button', { name: 'Add an annuity form' }).click();
     await page.getByLabel('Form code').fill('LIFE');
     const grid = Array.from({ length: 85 - 18 + 1 }, (_, i) => `${18 + i}, ${RATE_PER_MILLE}`).join('\n');
-    await page.getByLabel(/^Rates — one line each/).fill(grid);
+    // The rates are a table since 2026-10-22; a grid this long is pasted as text.
+    await page.getByRole('button', { name: 'Edit form life rates as text' }).click();
+    await page.getByRole('textbox', { name: 'Form LIFE rates' }).fill(grid);
 
     await publishVersion(page);
     await page.getByRole('button', { name: 'Publish and make active' }).click();

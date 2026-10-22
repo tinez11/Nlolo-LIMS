@@ -12,9 +12,20 @@ import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox';
-import { Input, Select, Textarea } from '@/components/ui/input';
+import { Input, Select } from '@/components/ui/input';
+import { BandTable, type BandColumn } from './BandTable';
+import { continueFrom } from './bandRows';
 import { blankAnnuityForm, rateColumns } from './annuitySchema';
 import type { PublishVersionFormInput, PublishVersionFormValues } from './publishVersionSchema';
+
+/** The rate grid's columns, as rateColumns names them, for the table's headers. */
+const RATE_COLUMN: Record<string, BandColumn> = {
+  sex: { header: 'Sex', kind: 'sex' },
+  age: { header: 'Age' },
+  'difference from': { header: 'Age difference from' },
+  'difference to': { header: 'Age difference to' },
+  'rate per 1,000': { header: 'Rate per 1,000' },
+};
 
 const FREQUENCY_LABEL: Record<string, string> = {
   MONTHLY: 'Monthly',
@@ -215,16 +226,21 @@ export function AnnuityTermsSection({
               {/* Rendered even on a single-life form: "only for a joint-life form" lands here after
                   untick-ing joint with a percentage left behind. */}
               {!value.joint && <Alert message={formErrors?.survivorPercent?.message} />}
-              <FormField
-                label={`Rates — one line each: ${rateColumns(value).join(', ')}`}
-                error={formErrors?.ratesText?.message}
-              >
-                <Textarea
-                  className="min-h-28 font-mono text-xs"
-                  placeholder={value.joint ? '65, -5, 5, 62.5' : value.rateBasis === 'BY_SEX' ? 'FEMALE, 65, 58.2' : '65, 60.75'}
-                  {...register(`annuityForms.${index}.ratesText`)}
-                />
-              </FormField>
+              <p className="text-xs font-medium">Rates</p>
+              <p className="text-xs text-subtle-foreground">A year’s income per 1,000 of purchase price, one row per age.</p>
+              <Controller
+                control={control}
+                name={`annuityForms.${index}.ratesText`}
+                render={({ field }) => {
+                  const columns = rateColumns(value).map((c) => RATE_COLUMN[c] ?? { header: c });
+                  const age = columns.findIndex((c) => c.header === 'Age');
+                  return (
+                    <BandTable label={`Form ${value.formCode || index + 1} rates`} value={field.value ?? ''}
+                      onChange={field.onChange} error={formErrors?.ratesText?.message} columns={columns}
+                      next={continueFrom(age, age, columns.length)} />
+                  );
+                }}
+              />
             </fieldset>
           );
         })}

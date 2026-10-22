@@ -105,10 +105,17 @@ test.describe('unit-linked', () => {
       await expect(admin.getByRole('heading', { name: 'Adjustments' })).toHaveCount(0);
       await admin.getByLabel(`${equity} · E2E ${equity}`).check();
       await admin.getByLabel(`${cash} · E2E ${cash}`).check();
-      await admin.getByLabel('Allocation bands').fill('1,2,90\n3,,98');
+      // The allocation bands as a table (2026-10-22): a row per band, the next starting where the last ended.
+      await admin.getByRole('button', { name: 'Add row' }).first().click();
+      await admin.getByLabel('Allocation bands row 1 to year').fill('2');
+      await admin.getByLabel('Allocation bands row 1 allocated %').fill('90');
+      await admin.getByRole('button', { name: 'Add row' }).first().click();
+      await expect(admin.getByLabel('Allocation bands row 2 from year')).toHaveValue('3');
+      await admin.getByLabel('Allocation bands row 2 allocated %').fill('98');
       await admin.getByLabel('Monthly policy fee').fill('2000');
       await admin.getByLabel('Mortality basis').selectOption('UNISEX');
-      await admin.getByLabel('Mortality table').fill('0,39,,1.2\n40,59,,4.5\n60,,,25');
+      await admin.getByRole('button', { name: 'Edit mortality table as text' }).click();
+      await admin.getByRole('textbox', { name: 'Mortality table' }).fill('0,39,,1.2\n40,59,,4.5\n60,,,25');
       await admin.getByLabel('Minimum years before surrender').fill('0');
       await admin.getByLabel('Warn when the units cover fewer months of charges than').fill('3');
       await admin.getByLabel('Monthly minimum').fill('50000');
