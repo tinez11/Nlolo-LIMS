@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { RecordTabs } from './RecordTabs';
 
 const TABS = [
@@ -67,10 +67,12 @@ describe('RecordTabs', () => {
     which is also the honest limit of what a unit test can say here.
   */
   describe('returning to the top of the section', () => {
-    let scrollIntoView: ReturnType<typeof vi.fn>;
+    // Typed with scrollIntoView's own signature: the vitest typings on main (newer than this test's 2026-10-14 cut)
+    // no longer let a bare `vi.fn()` stand in for a DOM method.
+    let scrollIntoView: Mock<(arg?: boolean | ScrollIntoViewOptions) => void>;
 
     beforeEach(() => {
-      scrollIntoView = vi.fn();
+      scrollIntoView = vi.fn<(arg?: boolean | ScrollIntoViewOptions) => void>();
       Element.prototype.scrollIntoView = scrollIntoView;
     });
 
