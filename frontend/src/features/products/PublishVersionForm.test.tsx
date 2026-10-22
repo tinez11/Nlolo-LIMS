@@ -1,8 +1,17 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ProductCategory } from '@/api/types';
 import { PublishVersionForm } from './PublishVersionForm';
+
+// The Charges step ticks from the Account charges list (2026-10-22, V34).
+vi.mock('@/api/accountCharges', async (original) => ({
+  ...(await original<typeof import('@/api/accountCharges')>()),
+  listAccountCharges: vi.fn(async () => [{
+    chargeId: 'c-1', name: 'Premium allocation', description: null, when: 'PREMIUM', amountType: 'PERCENT', amount: 2,
+    currency: 'TZS', fromPolicyYear: 1, toPolicyYear: 3, active: true, createdBy: 'finance', createdAt: '2026-10-22T08:00:00Z',
+  }]),
+}));
 
 /**
  * The version form as steps (2026-10-22). Each step is reached the way a person reaches it, from the step list; a
@@ -259,7 +268,12 @@ describe('PublishVersionForm product type', () => {
     expect(screen.getByLabelText('Guaranteed interest rate (% a year)')).toBeInTheDocument();
     expect(screen.getByLabelText('Minimum balance after a withdrawal')).toBeInTheDocument();
     await step(user, 'Charges');
-    expect(screen.getByRole('button', { name: /Add a charge row/ })).toBeInTheDocument();
+    // Picked from Account charges, not typed: each with when, how much and which years.
+    const charge = await screen.findByRole('checkbox', { name: /Premium allocation/ });
+    expect(screen.getByText('On each premium or top-up · 2% of each premium · Years 1–3')).toBeInTheDocument();
+    await user.click(charge);
+    expect(charge).toBeChecked();
+    expect(screen.getByRole('button', { name: /New charge/ })).toBeInTheDocument();
     await step(user, 'What it pays');
     expect(screen.queryByText('Cash value (optional)')).not.toBeInTheDocument();
   });

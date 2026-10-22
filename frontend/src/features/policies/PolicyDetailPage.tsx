@@ -520,9 +520,10 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                       <AccountPanel policyNumber={policyNumber} />
                     </div>
                   </Panel>
-                  <Panel title="Charges" subtitle="What this account is charged, chosen when the policy was issued">
+                  <Panel title="Charges" subtitle="What this account is charged">
                     <div className="px-4 py-2">
-                      <PolicyChargesPanel policyNumber={policyNumber} />
+                      <PolicyChargesPanel policyNumber={policyNumber} productId={detail.data?.productId}
+                        versionId={detail.data?.productVersionId ?? undefined} />
                     </div>
                   </Panel>
                   <Panel title="Statement" subtitle="A period of the account, reconciled, and filed as a PDF on request">

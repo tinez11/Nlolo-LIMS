@@ -45,12 +45,19 @@ public class AccountCharges implements AccountChargeApi {
     @Transactional
     public AccountChargeView create(String name, String description, String when, String amountType, BigDecimal amount,
                                     String currency, String createdBy) {
+        return create(name, description, when, amountType, amount, currency, 1, null, createdBy);
+    }
+
+    @Override
+    @Transactional
+    public AccountChargeView create(String name, String description, String when, String amountType, BigDecimal amount,
+                                    String currency, int fromPolicyYear, Integer toPolicyYear, String createdBy) {
         UUID tenantId = TenantContext.get();
         if (name != null && charges.existsByTenantIdAndNameIgnoreCase(tenantId, name.trim())) {
             throw new IllegalArgumentException("There is already a charge called " + name.trim());
         }
         return view(charges.save(new AccountCharge(tenantId, name, description, when, amountType, amount, currency,
-            createdBy)));
+            fromPolicyYear, toPolicyYear, createdBy)));
     }
 
     @Override
@@ -107,6 +114,7 @@ public class AccountCharges implements AccountChargeApi {
 
     private static AccountChargeView view(AccountCharge c) {
         return new AccountChargeView(c.getChargeId(), c.getName(), c.getDescription(), c.getWhen(), c.getAmountType(),
-            c.getAmount(), c.getCurrency(), c.isActive(), c.getCreatedBy(), c.getCreatedAt());
+            c.getAmount(), c.getCurrency(), c.getFromPolicyYear(), c.getToPolicyYear(), c.isActive(), c.getCreatedBy(),
+            c.getCreatedAt());
     }
 }

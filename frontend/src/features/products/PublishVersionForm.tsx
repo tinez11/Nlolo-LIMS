@@ -23,7 +23,6 @@ import {
   ACCOUNT_CATEGORIES,
   keepsAccount,
   blankBonusSurrenderRow,
-  blankAccountChargeRow,
   blankBenefitRow,
   blankDepositBand,
   blankCashValueRow,
@@ -49,6 +48,7 @@ import { FuneralTermsSection } from './FuneralTermsSection';
 import { blankUnitLinkedFields } from './unitLinkedSchema';
 import { UnitLinkedTermsSection } from './UnitLinkedTermsSection';
 import { BaseRateGrid } from './BaseRateGrid';
+import { VersionChargePicker } from './VersionChargePicker';
 import {
   KIND_LABEL,
   KIND_SUMMARY,
@@ -124,6 +124,7 @@ const STEP_OF_FIELD: Partial<Record<string, StepId>> = {
   bonusSurrenderBasis: 'pays',
   bonusSurrenderRows: 'pays',
   accountCharges: 'charges',
+  accountChargeIds: 'charges',
 };
 
 /** Every message in the form's errors, once each, with the step it belongs to. */
@@ -221,6 +222,7 @@ export function PublishVersionForm({
       minRatePercent: '',
       maxRatePercent: '',
       accountCharges: [],
+      accountChargeIds: [],
       depositTerms: [],
       depositBands: [],
       withProfits: false,
@@ -250,7 +252,6 @@ export function PublishVersionForm({
       setValue(`depositBands.${i}.rates`, band.rates.filter((_, k) => k !== j)),
     );
   }
-  const accountCharges = useFieldArray({ control, name: 'accountCharges' });
   const valueBasis = useWatch({ control, name: 'valueBasis' });
   const annuityKind = useWatch({ control, name: 'annuityKind' });
   const deferredAnnuity = category === 'ANNUITY' && annuityKind === 'DEFERRED';
@@ -1097,51 +1098,12 @@ export function PublishVersionForm({
 
   function renderCharges() {
     return (
-      <Section
-        title="Charges (optional)"
-        hint="By policy year. No rows: the account charges nothing."
-        tip="Start at year 1 and leave the last row's end blank, so every year has a charge."
-      >
-        {accountCharges.fields.length > 0 && (
-          <div className="grid grid-cols-[5rem_5rem_6rem_6rem_7rem_2rem] gap-2 px-1 text-xs text-subtle-foreground">
-            <span className="text-right">From year</span>
-            <span className="text-right">To year</span>
-            <span className="text-right">Premium %</span>
-            <span className="text-right">Transfer %</span>
-            <span className="text-right">Monthly fee</span>
-            <span aria-hidden />
-          </div>
-        )}
-        {accountCharges.fields.map((field, index) => {
-          const rowErrors = errors.accountCharges?.[index];
-          const rowMessage = rowErrors?.contributionAllocationPercent?.message ?? rowErrors?.monthlyPolicyFee?.message ?? rowErrors?.toPolicyYear?.message;
-          return (
-            <div key={field.id}>
-              <div className="grid grid-cols-[5rem_5rem_6rem_6rem_7rem_2rem] items-center gap-2">
-                <Input type="number" min={1} inputSize="sm" className="text-right" placeholder="1"
-                  aria-label={`Charge row ${index + 1} from policy year`} {...register(`accountCharges.${index}.fromPolicyYear`)} />
-                <Input type="number" min={1} inputSize="sm" className="text-right" placeholder="—"
-                  aria-label={`Charge row ${index + 1} to policy year`} {...register(`accountCharges.${index}.toPolicyYear`)} />
-                <Input inputSize="sm" inputMode="decimal" className="text-right"
-                  aria-label={`Charge row ${index + 1} allocation charge on premiums`} {...register(`accountCharges.${index}.contributionAllocationPercent`)} />
-                <Input inputSize="sm" inputMode="decimal" className="text-right"
-                  aria-label={`Charge row ${index + 1} allocation charge on transfers in`} {...register(`accountCharges.${index}.transferAllocationPercent`)} />
-                <Input inputSize="sm" inputMode="decimal" className="text-right"
-                  aria-label={`Charge row ${index + 1} monthly policy fee`} {...register(`accountCharges.${index}.monthlyPolicyFee`)} />
-                <Button type="button" size="icon" variant="ghost" aria-label={`Remove charge row ${index + 1}`}
-                  onClick={() => accountCharges.remove(index)}>
-                  <X className="size-4" />
-                </Button>
-              </div>
-              {rowMessage && <p role="alert" className="mt-1 text-xs text-status-danger-fg">{rowMessage}</p>}
-            </div>
-          );
-        })}
-        {errors.accountCharges?.root?.message && <p role="alert" className="text-xs text-status-danger-fg">{errors.accountCharges.root.message}</p>}
-        {errors.accountCharges?.message && <p role="alert" className="text-xs text-status-danger-fg">{errors.accountCharges.message}</p>}
-        <Button type="button" size="sm" variant="ghost" className="-ml-2" onClick={() => accountCharges.append(blankAccountChargeRow())}>
-          <Plus className="size-4" /> Add a charge row
-        </Button>
+      <Section title="Charges (optional)" hint="From Account charges. None ticked: the account charges nothing.">
+        <Controller
+          control={control}
+          name="accountChargeIds"
+          render={({ field }) => <VersionChargePicker value={field.value} onChange={field.onChange} />}
+        />
       </Section>
     );
   }
@@ -1255,7 +1217,7 @@ function ReviewSummary({ control, kind, category }: { control: Control<PublishVe
   if ((FREE_LOOK_CATEGORIES.includes(category) || SCHEDULED_CATEGORIES.includes(category)) && v.freeLookDays) {
     rows.push(['Free-look', `${v.freeLookDays} days`]);
   }
-  if ((v.accountCharges ?? []).length) rows.push(['Charges', `${(v.accountCharges ?? []).length} rows`]);
+  if ((v.accountChargeIds ?? []).length) rows.push(['Charges', `${(v.accountChargeIds ?? []).length} from Account charges`]);
   return (
     <dl className="divide-y divide-border rounded-lg border border-border">
       {rows.map(([label, value]) => (

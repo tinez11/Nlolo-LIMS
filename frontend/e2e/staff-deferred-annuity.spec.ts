@@ -70,12 +70,9 @@ test.describe('a pension (deferred annuity)', () => {
     await page.getByLabel('Default frequency').selectOption('MONTHLY');
     await page.getByLabel('Locked before vesting').selectOption('NO');
 
-    // An account that saves gets a Charges step.
+    // An account that saves gets a Charges step, ticked from Account charges; none ticked charges nothing.
     await step(page, 'Charges');
-    await page.getByRole('button', { name: 'Add a charge row' }).click();
-    await page.getByLabel('Charge row 1 from policy year').fill('1');
-    await page.getByLabel('Charge row 1 allocation charge on premiums').fill('0');
-    await page.getByLabel('Charge row 1 monthly policy fee').fill('0');
+    await expect(page.getByRole('button', { name: 'New charge' })).toBeVisible();
 
     await publishVersion(page);
     await page.getByRole('button', { name: 'Publish and make active' }).click();

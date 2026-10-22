@@ -1077,6 +1077,8 @@ export function publishVersionFormSchema(category: ProductCategory) {
     minRatePercent: z.string().trim(),
     maxRatePercent: z.string().trim(),
     accountCharges: z.array(accountChargeRowSchema),
+    // The Account charges the version takes (2026-10-22, product V34), in the order ticked.
+    accountChargeIds: z.array(z.string()),
     // A fixed-term deposit (2026-10-02): rates by band x term, each for the TERM.
     depositTerms: z.array(depositTermSchema),
     depositBands: z.array(depositBandSchema),
@@ -1258,6 +1260,7 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
     minRatePercent: '',
     maxRatePercent: '',
     accountCharges: [],
+    accountChargeIds: [],
     depositTerms: [],
     depositBands: [],
     withProfits: false,
@@ -1437,6 +1440,7 @@ export function toApiRequest(values: PublishVersionFormValues, category?: Produc
           transferAllocationPercent: Number(c.transferAllocationPercent),
           monthlyPolicyFee: Number(c.monthlyPolicyFee),
         })),
+        ...(values.accountChargeIds.length > 0 && { accountChargeIds: values.accountChargeIds }),
       },
     }),
     // Product step 4. Omitted entirely unless ticked -- absent IS a non-participating version.

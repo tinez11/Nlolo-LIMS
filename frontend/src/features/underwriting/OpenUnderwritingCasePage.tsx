@@ -564,7 +564,8 @@ export function OpenUnderwritingCasePage() {
 
           {keepsAccount && (
             <div className="rounded-md border border-border p-3">
-              <AccountChargePicker value={chargeIds} onChange={setChargeIds} legend="Account charges for this policy" />
+              <AccountChargePicker value={chargeIds} onChange={setChargeIds} legend="Account charges for this policy"
+                productId={productId || undefined} versionId={productVersionId || undefined} />
             </div>
           )}
 

@@ -568,7 +568,8 @@ export function IssuePolicyPage() {
         */}
         {keepsAccount && (
           <div className="rounded-md border border-border p-3">
-            <AccountChargePicker value={chargeIds} onChange={setChargeIds} legend="Account charges for this policy" />
+            <AccountChargePicker value={chargeIds} onChange={setChargeIds} legend="Account charges for this policy"
+              productId={productId || undefined} versionId={watch('productVersionId') || undefined} />
           </div>
         )}
         <FormField label="Why is this being issued by hand?" error={errors.issuanceBasis?.message}>

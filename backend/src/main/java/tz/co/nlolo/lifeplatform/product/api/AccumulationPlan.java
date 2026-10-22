@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.product.api;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * A version's account terms (product step 3). {@link #none()} is a SCALE version: the step 1
@@ -13,14 +14,23 @@ import java.util.List;
  * @param minRatePercent a term account's band (2026-10-21): the lowest rate a case may name. Null,
  *     with {@code maxRatePercent}, on every other account -- see {@link #isTermAccount()}.
  * @param maxRatePercent the highest rate a case may name.
+ * @param accountChargeIds the Account charges the version takes (product V34, the user, 2026-10-22). When there are any,
+ *     they are what its policies are charged by, and {@code charges} is one zero row for every year.
  */
 public record AccumulationPlan(ValueBasis basis, BigDecimal guaranteedRatePercent, BigDecimal minimumBalance,
                                List<AccumulationChargeRow> charges, BigDecimal minRatePercent,
-                               BigDecimal maxRatePercent) {
+                               BigDecimal maxRatePercent, List<UUID> accountChargeIds) {
 
     public AccumulationPlan {
         basis = basis != null ? basis : ValueBasis.SCALE;
         charges = charges != null ? List.copyOf(charges) : List.of();
+        accountChargeIds = accountChargeIds != null ? List.copyOf(accountChargeIds) : List.of();
+    }
+
+    /** An account on its own charge rows, as every version before V34 was. */
+    public AccumulationPlan(ValueBasis basis, BigDecimal guaranteedRatePercent, BigDecimal minimumBalance,
+                            List<AccumulationChargeRow> charges, BigDecimal minRatePercent, BigDecimal maxRatePercent) {
+        this(basis, guaranteedRatePercent, minimumBalance, charges, minRatePercent, maxRatePercent, List.of());
     }
 
     /** An ordinary account, with no rate band -- every account version before the term account. */
@@ -46,7 +56,13 @@ public record AccumulationPlan(ValueBasis basis, BigDecimal guaranteedRatePercen
     public AccumulationPlan withoutCharges() {
         return new AccumulationPlan(basis, guaranteedRatePercent, minimumBalance,
             List.of(new AccumulationChargeRow(1, null, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)),
-            minRatePercent, maxRatePercent);
+            minRatePercent, maxRatePercent, accountChargeIds);
+    }
+
+    /** These terms charged by Account charges instead of rows of their own. */
+    public AccumulationPlan withAccountCharges(List<UUID> chargeIds) {
+        return new AccumulationPlan(basis, guaranteedRatePercent, minimumBalance, charges, minRatePercent, maxRatePercent,
+            chargeIds);
     }
 
     public boolean isAccount() { return basis == ValueBasis.ACCOUNT; }

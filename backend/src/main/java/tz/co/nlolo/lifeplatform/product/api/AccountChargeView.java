@@ -6,14 +6,23 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * An account charge staff choose per savings policy (product V32).
+ * An account charge (product V32), taken by the versions that pick it (V34) and by policies issued on a choice of their own.
  *
- * @param when when it is taken: DEPOSIT, WITHDRAWAL, MONTHLY, YEARLY, OPENING or MATURITY
+ * @param when when it is taken: DEPOSIT (every deposit), PREMIUM (premiums and top-ups), TRANSFER_IN, WITHDRAWAL,
+ *     MONTHLY, YEARLY, OPENING or MATURITY
  * @param amountType FLAT (an amount in {@code currency}) or PERCENT (of the deposit, the withdrawal or the balance)
- * @param active whether it may still be chosen; a policy already on it keeps it
+ * @param fromPolicyYear the first policy year it is taken in
+ * @param toPolicyYear the last, or null for every year after
+ * @param active whether it may still be chosen; a version or policy already on it keeps it
  */
 public record AccountChargeView(UUID chargeId, String name, String description, String when, String amountType,
-                                BigDecimal amount, String currency, boolean active, String createdBy, Instant createdAt) {
+                                BigDecimal amount, String currency, int fromPolicyYear, Integer toPolicyYear,
+                                boolean active, String createdBy, Instant createdAt) {
+
+    /** Whether it is taken in {@code policyYear}. */
+    public boolean covers(int policyYear) {
+        return policyYear >= fromPolicyYear && (toPolicyYear == null || policyYear <= toPolicyYear);
+    }
 
     /** What this charge takes on {@code base} -- the deposit, the amount withdrawn or the balance, by when it is taken. */
     public BigDecimal on(BigDecimal base) {

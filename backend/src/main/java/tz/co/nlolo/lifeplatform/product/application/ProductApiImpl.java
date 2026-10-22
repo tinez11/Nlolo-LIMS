@@ -41,6 +41,8 @@ public class ProductApiImpl implements ProductApi {
     private final AnnuityFrequencyEntryRepository annuityFrequencyEntryRepository;
     private final VersionVestingTermsRepository versionVestingTermsRepository;
     private final FuneralTermsStore funeralTermsStore;
+    private final VersionAccountChargeRepository versionAccountChargeRepository;
+    private final AccountChargeApi accountChargeApi;
 
     public ProductApiImpl(ProductDefinitionRepository productDefinitionRepository, ProductVersionRepository productVersionRepository,
                            RatingFactorRepository ratingFactorRepository, BenefitScheduleEntryRepository benefitScheduleEntryRepository,
@@ -59,7 +61,10 @@ public class ProductApiImpl implements ProductApi {
                            AnnuityFrequencyEntryRepository annuityFrequencyEntryRepository,
                            VersionVestingTermsRepository versionVestingTermsRepository,
                            FuneralTermsStore funeralTermsStore, UnitLinkedTermsStore unitLinkedTermsStore,
-                           org.springframework.beans.factory.ObjectProvider<FundDirectory> fundDirectory) {
+                           org.springframework.beans.factory.ObjectProvider<FundDirectory> fundDirectory,
+                           VersionAccountChargeRepository versionAccountChargeRepository, AccountChargeApi accountChargeApi) {
+        this.versionAccountChargeRepository = versionAccountChargeRepository;
+        this.accountChargeApi = accountChargeApi;
         this.unitLinkedTermsStore = unitLinkedTermsStore;
         this.fundDirectory = fundDirectory;
         this.versionVestingTermsRepository = versionVestingTermsRepository;
@@ -473,6 +478,7 @@ public class ProductApiImpl implements ProductApi {
         if (effectiveAccumulation != null && effectiveAccumulation.isAccount()) {
             refuseUnlessASavingsPortfolio(product, deposit.isDeposit(), annuity.deferred());
         }
+        refuseUnfitAccountCharges(product, accumulationPlan, deposit.isDeposit());
 
         // Version rollover: ux_product_version_active permits at most one
         // is_active_for_new_business = true row per product_id. Retire whatever version
@@ -1065,6 +1071,35 @@ public class ProductApiImpl implements ProductApi {
         for (AccumulationChargeRow row : plan.charges()) {
             accumulationChargeRepository.save(new AccumulationCharge(tenantId, productVersionId, row));
         }
+        int position = 1;
+        for (UUID chargeId : plan.accountChargeIds()) {
+            versionAccountChargeRepository.save(new VersionAccountCharge(tenantId, productVersionId, chargeId, position++));
+        }
+    }
+
+    /**
+     * The Account charges a version picks (V34): only on an account that is not a fixed deposit, never beside rows of its
+     * own, each still offered, and a flat one in the product's currency.
+     */
+    private void refuseUnfitAccountCharges(ProductDefinition product, AccumulationPlan plan, boolean deposit) {
+        if (plan == null || plan.accountChargeIds().isEmpty()) {
+            return;
+        }
+        if (!plan.isAccount() || deposit) {
+            throw new InvalidProductVersionException("Only a version that keeps an account takes account charges");
+        }
+        boolean ownRows = plan.charges().stream().anyMatch(r -> r.contributionAllocationPercent().signum() > 0
+            || r.transferAllocationPercent().signum() > 0 || r.monthlyPolicyFee().signum() > 0);
+        if (ownRows) {
+            throw new InvalidProductVersionException(
+                "A version takes its charges from Account charges or from rows of its own, not both");
+        }
+        for (AccountChargeView charge : accountChargeApi.requireChoosable(plan.accountChargeIds())) {
+            if ("FLAT".equals(charge.amountType()) && !charge.currency().equals(product.getDefaultCurrency())) {
+                throw new InvalidProductVersionException("The charge " + charge.name() + " is in " + charge.currency()
+                    + "; this product is in " + product.getDefaultCurrency());
+            }
+        }
     }
 
     /** A deposit version's grid (V20). Nothing for any other version. */
@@ -1310,7 +1345,9 @@ public class ProductApiImpl implements ProductApi {
             .map(terms -> new AccumulationPlan(ValueBasis.ACCOUNT, terms.getGuaranteedRatePercent(),
                 terms.getMinimumBalance(),
                 accumulationChargeRepository.findByProductVersionIdOrderByFromPolicyYear(productVersionId).stream()
-                    .map(AccumulationCharge::toRow).toList(), terms.getMinRatePercent(), terms.getMaxRatePercent()))
+                    .map(AccumulationCharge::toRow).toList(), terms.getMinRatePercent(), terms.getMaxRatePercent(),
+                versionAccountChargeRepository.findByProductVersionIdOrderByPosition(productVersionId).stream()
+                    .map(VersionAccountCharge::getChargeId).toList()))
             .orElse(AccumulationPlan.none());
     }
 
