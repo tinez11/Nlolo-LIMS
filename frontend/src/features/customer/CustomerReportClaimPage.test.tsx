@@ -30,6 +30,7 @@ const funeral: CustomerPolicyView = {
 };
 
 describe('CustomerReportClaimPage', () => {
+  // A whole wizard typed through: past the default 5s when the full suite runs in parallel.
   it('asks a funeral policyholder who died, reviews, then files the claim as theirs', async () => {
     vi.mocked(portalApi.getMe).mockResolvedValue({ partyId: 'party-1', displayName: 'Nadine Kileo', email: null, phoneNumber: null });
     vi.mocked(portalApi.getCustomerDashboard).mockResolvedValue({ displayName: 'Nadine Kileo', activePolicies: 1,
@@ -61,5 +62,5 @@ describe('CustomerReportClaimPage', () => {
     expect(await screen.findByText('claim page')).toBeInTheDocument();
     expect(claimsApi.registerClaim).toHaveBeenCalledWith(expect.objectContaining({ policyNumber: 'POL-F',
       claimantPartyId: 'party-1', claimType: 'DEATH', coveredLifeId: 'life-mum', dateOfEvent: '2026-10-01' }), expect.anything());
-  });
+  }, 15_000);
 });
