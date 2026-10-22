@@ -268,12 +268,15 @@ describe('PublishVersionForm product type', () => {
     expect(screen.getByLabelText('Guaranteed interest rate (% a year)')).toBeInTheDocument();
     expect(screen.getByLabelText('Minimum balance after a withdrawal')).toBeInTheDocument();
     await step(user, 'Charges');
-    // Picked from Account charges, not typed: each with when, how much and which years.
-    const charge = await screen.findByRole('checkbox', { name: /Premium allocation/ });
-    expect(screen.getByText('On each premium or top-up · 2% of each premium · Years 1–3')).toBeInTheDocument();
-    await user.click(charge);
-    expect(charge).toBeChecked();
+    // Added from Account charges, not typed: only what is picked is listed, each with when, how much and which years.
+    expect(await screen.findByText('No charges: the account charges nothing.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Add charge/ }));
     expect(screen.getByRole('button', { name: /New charge/ })).toBeInTheDocument();
+    await user.click(within(screen.getByRole('list', { name: 'Charges to add' })).getByRole('button', { name: /Premium allocation/ }));
+    const picked = screen.getByRole('list', { name: 'Charges picked' });
+    expect(picked).toHaveTextContent('On each premium or top-up · 2% of each premium · Years 1–3');
+    await user.click(within(picked).getByRole('button', { name: 'Remove Premium allocation' }));
+    expect(screen.queryByRole('list', { name: 'Charges picked' })).not.toBeInTheDocument();
     await step(user, 'What it pays');
     expect(screen.queryByText('Cash value (optional)')).not.toBeInTheDocument();
   });

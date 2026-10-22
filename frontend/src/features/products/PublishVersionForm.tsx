@@ -1098,7 +1098,7 @@ export function PublishVersionForm({
 
   function renderCharges() {
     return (
-      <Section title="Charges (optional)" hint="From Account charges. None ticked: the account charges nothing.">
+      <Section title="Charges (optional)" hint="Added from Account charges.">
         <Controller
           control={control}
           name="accountChargeIds"

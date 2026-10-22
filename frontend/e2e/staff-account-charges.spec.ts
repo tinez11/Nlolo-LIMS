@@ -48,9 +48,12 @@ test.describe('account charges', () => {
     await page.getByLabel('Payout 1 basis').selectOption('ACCOUNT_VALUE');
     await page.getByLabel('Payout 1 amount').fill('100');
 
-    // ---- Its charges, ticked from the list rather than typed.
+    // ---- Its charges, added from the list rather than typed.
     await step(page, 'Charges');
-    await page.getByRole('checkbox', { name: new RegExp(chargeName) }).check();
+    await page.getByRole('button', { name: 'Add charge' }).click();
+    await page.getByLabel('Find a charge').fill(chargeName);
+    await page.getByRole('list', { name: 'Charges to add' }).getByRole('button', { name: new RegExp(chargeName) }).click();
+    await expect(page.getByRole('list', { name: 'Charges picked' })).toContainText(chargeName);
     await publishVersion(page);
     await page.getByRole('button', { name: 'Publish and make active' }).click();
     await expect(page).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
