@@ -1,6 +1,6 @@
 import { expect, type Browser, type Page } from '@playwright/test';
 import { asAdmin } from './admin';
-import { dmy } from './dates';
+import { fillBasics, publishVersion } from './publishForm';
 import { decideAsSenior } from './underwriting';
 
 /**
@@ -62,21 +62,11 @@ export async function createGroupProduct(page: Page): Promise<string> {
   await page.getByRole('button', { name: 'Create product' }).click();
   await expect(page.getByText('DRAFT')).toBeVisible();
 
-  // A version must be published before the product can be issued against, and the rating
-  // table must cover AGE and SUM_ASSURED_BAND or publishing is a 422.
-  const ratingSection = page.locator('p', { hasText: 'Rating table — must cover' }).locator('..');
-  await ratingSection.getByRole('button', { name: 'Remove rating factor' }).last().click();
-  await ratingSection.getByLabel('Rating factor 1 band').fill('18-70');
-  await ratingSection.getByLabel('Rating factor 1 from age').fill('18');
-  await ratingSection.getByLabel('Rating factor 1 to age').fill('70');
-  await ratingSection.getByRole('button', { name: 'Add rating factor' }).click();
-  await ratingSection.locator('select').nth(1).selectOption('SUM_ASSURED_BAND');
-  await ratingSection.getByLabel('Rating factor 2 band').fill('1-99999999');
-  await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
+  // A version must be published before the product can be issued against. The AGE and
+  // SUM_ASSURED_BAND rows the server requires come filled in as neutral (x1).
   // The TIRA filing that authorises this version -- required as of V12.
-  await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
-  await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
-  await page.getByRole('button', { name: 'Publish version' }).click();
+  await fillBasics(page, 'TIRA/E2E/0001');
+  await publishVersion(page);
   // Publishing retires the currently-active version, so it is confirmed.
   await page.getByRole('button', { name: 'Publish and make active' }).click();
   await expect(page).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });

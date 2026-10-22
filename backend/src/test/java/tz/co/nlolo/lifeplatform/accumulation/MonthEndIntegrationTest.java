@@ -84,6 +84,7 @@ class MonthEndIntegrationTest {
             "db-migrations/product/V31__online_listing.sql",
             "db-migrations/product/V32__account_charges.sql",
             "db-migrations/product/V33__term_account_rate_band.sql",
+            "db-migrations/product/V34__version_account_charges.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
@@ -297,6 +298,72 @@ class MonthEndIntegrationTest {
         // Each month-end: the chosen 300, not the product's 1,000.
         assertThat(entries).filteredOn(e -> e.type() == EntryType.POLICY_FEE).hasSize(3)
             .allSatisfy(e -> assertThat(e.amount()).isEqualByComparingTo("-300.00"));
+    }
+
+    // ---- Account charges a version picks (2026-10-22, product V34) ---------------------------------------------
+
+    private UUID charge(String name, String when, String type, String amount, int fromYear, Integer toYear) {
+        return asTenant(() -> chargeApi.create(name + " " + UUID.randomUUID().toString().substring(0, 6), null, when, type,
+            new BigDecimal(amount), "TZS", fromYear, toYear, "finance-one").chargeId());
+    }
+
+    /** SAVINGS' terms with no rows of their own, charged by the Account charges named. */
+    private static AccumulationPlan onCharges(UUID... chargeIds) {
+        var s = AccumulationTestFixtures.SAVINGS;
+        return new AccumulationPlan(ValueBasis.ACCOUNT, s.guaranteedRatePercent(), s.minimumBalance(), List.of(), null,
+            null, List.of(chargeIds));
+    }
+
+    @Test
+    void aVersionsChargesChargeItsPoliciesByPolicyYear() {
+        LocalDate start = LocalDate.now().withDayOfMonth(1).minusMonths(14);
+        var issued = fixtures.issueSavingsPlan(TENANT, onCharges(
+            charge("Premium allocation", "PREMIUM", "PERCENT", "2", 1, null),
+            charge("Transfer-in allocation", "TRANSFER_IN", "PERCENT", "3", 1, null),
+            charge("Monthly fee", "MONTHLY", "FLAT", "300", 1, 1),
+            charge("Monthly fee", "MONTHLY", "FLAT", "700", 2, null)), start);
+        fixtures.collectPremium(TENANT, issued.policyNumber(), UUID.randomUUID(), new BigDecimal("100000.00"), start);
+        runMonthEnds(issued.policyNumber(), LocalDate.now());
+
+        List<LedgerEntryView> entries = entriesOf(issued.policyNumber());
+        // A premium takes the premium charge, not the transfer-in one -- as the version's own rows did.
+        assertThat(entries).filteredOn(e -> e.type() == EntryType.ALLOCATION_CHARGE)
+            .singleElement().satisfies(e -> assertThat(e.amount()).isEqualByComparingTo("-2000.00"));
+        // Year 1's fee for its twelve months, year 2's after.
+        assertThat(entries).filteredOn(e -> e.type() == EntryType.POLICY_FEE)
+            .extracting(e -> e.amount().negate().setScale(2))
+            .containsExactly(java.util.stream.Stream.concat(
+                java.util.Collections.nCopies(12, new BigDecimal("300.00")).stream(),
+                java.util.Collections.nCopies(2, new BigDecimal("700.00")).stream()).toArray(BigDecimal[]::new));
+    }
+
+    @Test
+    void aPolicysOwnChoiceReplacesItsVersionsCharges() {
+        LocalDate start = LocalDate.now().withDayOfMonth(1).minusMonths(3);
+        var issued = fixtures.issueSavingsPlan(TENANT, onCharges(charge("Monthly fee", "MONTHLY", "FLAT", "900", 1, null)),
+            start);
+        UUID own = charge("Monthly fee", "MONTHLY", "FLAT", "100", 1, null);
+        asTenant(() -> { policyCharges.assignAccountCharges(issued.policyNumber(), List.of(own)); return null; });
+        fixtures.collectPremium(TENANT, issued.policyNumber(), UUID.randomUUID(), new BigDecimal("100000.00"), start);
+        runMonthEnds(issued.policyNumber(), LocalDate.now());
+
+        assertThat(entriesOf(issued.policyNumber())).filteredOn(e -> e.type() == EntryType.POLICY_FEE).hasSize(3)
+            .allSatisfy(e -> assertThat(e.amount()).isEqualByComparingTo("-100.00"));
+    }
+
+    @Test
+    void aVersionTakesAccountChargesOrRowsOfItsOwnNotBoth() {
+        UUID fee = charge("Monthly fee", "MONTHLY", "FLAT", "500", 1, null);
+        assertThatThrownBy(() -> fixtures.issueSavingsPlan(TENANT,
+                AccumulationTestFixtures.SAVINGS.withAccountCharges(List.of(fee)), LocalDate.now()))
+            .hasMessageContaining("not both");
+        UUID usd = asTenant(() -> chargeApi.create("Dollar fee " + UUID.randomUUID().toString().substring(0, 6), null,
+            "MONTHLY", "FLAT", new BigDecimal("5"), "USD", "finance-one").chargeId());
+        assertThatThrownBy(() -> fixtures.issueSavingsPlan(TENANT, onCharges(usd), LocalDate.now()))
+            .hasMessageContaining("is in USD");
+        asTenant(() -> chargeApi.setActive(fee, false));
+        assertThatThrownBy(() -> fixtures.issueSavingsPlan(TENANT, onCharges(fee), LocalDate.now()))
+            .hasMessageContaining("no longer offered");
     }
 
     @Test

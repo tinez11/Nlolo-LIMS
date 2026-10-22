@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as chargesApi from '@/api/accountCharges';
 import type { AccountChargeView } from '@/api/accountCharges';
 import { AccountChargesPage } from './AccountChargesPage';
-import { chargeSize } from './chargeText';
+import { chargeLine, chargeSize, chargeYears } from './chargeText';
 
 vi.mock('@/api/accountCharges');
 vi.mock('react-oidc-context', () => ({ useAuth: () => ({ user: { access_token: 'token' } }) }));
@@ -16,13 +16,21 @@ vi.mock('@/auth/claims', () => ({
 
 const fee: AccountChargeView = {
   chargeId: 'c-1', name: 'Withdrawal fee', description: null, when: 'WITHDRAWAL', amountType: 'PERCENT', amount: 1.5,
-  currency: 'TZS', active: true, createdBy: 'finance', createdAt: '2026-10-09T08:00:00Z',
+  currency: 'TZS', fromPolicyYear: 1, toPolicyYear: null, active: true, createdBy: 'finance', createdAt: '2026-10-09T08:00:00Z',
 };
 
 describe('account charges', () => {
   it('says what a charge takes, flat or of what', () => {
     expect(chargeSize(fee)).toBe('1.5% of the amount withdrawn');
     expect(chargeSize({ ...fee, amountType: 'FLAT', amount: 1000, when: 'MONTHLY' })).toBe('TZS 1,000.00');
+  });
+
+  it('says which policy years a charge is taken in, and nothing for every year', () => {
+    expect(chargeYears(fee)).toBe('');
+    expect(chargeYears({ fromPolicyYear: 2, toPolicyYear: null })).toBe('From year 2');
+    expect(chargeYears({ fromPolicyYear: 1, toPolicyYear: 1 })).toBe('Year 1');
+    expect(chargeYears({ fromPolicyYear: 1, toPolicyYear: 3 })).toBe('Years 1–3');
+    expect(chargeLine({ ...fee, toPolicyYear: 5 })).toBe('On each withdrawal · 1.5% of the amount withdrawn · Years 1–5');
   });
 
   it('lists the charges, the minimum-balance rule, and creates a flat monthly fee', async () => {
@@ -38,8 +46,9 @@ describe('account charges', () => {
     await userEvent.selectOptions(screen.getByLabelText('When it is taken'), 'MONTHLY');
     await userEvent.selectOptions(screen.getByLabelText('Type'), 'FLAT');
     await userEvent.type(screen.getByLabelText('Amount'), '1000');
+    await userEvent.type(screen.getByLabelText('To policy year'), '3');
     await userEvent.click(screen.getByRole('button', { name: 'Create charge' }));
     expect(chargesApi.createAccountCharge).toHaveBeenCalledWith({ name: 'Monthly fee', description: null, when: 'MONTHLY',
-      amountType: 'FLAT', amount: 1000, currency: 'TZS' });
-  });
+      amountType: 'FLAT', amount: 1000, currency: 'TZS', fromPolicyYear: 1, toPolicyYear: 3 });
+  }, 15_000);
 });

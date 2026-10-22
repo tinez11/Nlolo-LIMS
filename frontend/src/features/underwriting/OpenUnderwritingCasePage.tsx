@@ -259,8 +259,10 @@ export function OpenUnderwritingCasePage() {
     setValue('termAccountMinRate', termAccountTerms?.minRatePercent != null ? String(termAccountTerms.minRatePercent) : '');
     setValue('termAccountMaxRate', termAccountTerms?.maxRatePercent != null ? String(termAccountTerms.maxRatePercent) : '');
   }, [isTermAccount, termAccountTerms, setValue]);
-  // What the customer wants at maturity: not part of the case, only what the quotation works the contribution back from.
+  // What the customer wants at maturity: not part of the case, but required -- the contribution is only ever worked back
+  // from it (the user, 2026-10-22).
   const [termAccountTarget, setTermAccountTarget] = useState('');
+  const [targetError, setTargetError] = useState<string | null>(null);
   // The contribution the server works out for that target, written into the form as it arrives. Stable, so the
   // quotation's effect runs once per answer rather than on every render.
   const fillSolvedContribution = useCallback((amount: string) => {
@@ -297,7 +299,17 @@ export function OpenUnderwritingCasePage() {
       />
 
       <FormLayout formId="open-case-form" outlineLabel="Underwriting case sections">
-      <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          if (isTermAccount && !targetSet) {
+            e.preventDefault();
+            setTargetError('Enter what the customer wants at maturity');
+            return;
+          }
+          void handleSubmit(onSubmit)(e);
+        }}
+      >
         <UnsavedGuard when={isDirty && !isSubmitting} what="This underwriting case" />
         <div data-outline="Applicant and product" className="space-y-4">
         {/* "Applicant" is who proposes; "life assured" is whose mortality is assessed.
@@ -373,17 +385,36 @@ export function OpenUnderwritingCasePage() {
           )}
         </FormField>
 
+        {/* A term account starts from what the customer wants at maturity; the contribution follows from it. */}
+        {isTermAccount && (
+          <FormField label="Wanted at maturity" error={targetError ?? undefined}>
+            <Input
+              inputMode="decimal"
+              placeholder="5000000"
+              value={termAccountTarget}
+              onChange={(e) => {
+                setTermAccountTarget(e.target.value);
+                setTargetError(null);
+                // No target, no contribution: one is only ever worked out from the other.
+                if (e.target.value.trim() === '') setValue('sumAssuredAmount', '');
+              }}
+            />
+          </FormField>
+        )}
+
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <FormField
             label={isDeferredAnnuity || isTermAccount ? 'Contribution per payment' : isAnnuity ? 'Purchase price'
               : isFuneral ? "Sum assured (the main member's benefit on the plan)" : 'Sum assured'}
-            error={errors.sumAssuredAmount?.message}
-            hint={targetSet ? 'Worked out from the amount wanted at maturity below. Clear that to type a contribution.'
-              : isTermAccount ? 'Or enter what the customer wants at maturity below, and this fills itself.' : undefined}
+            // Nothing to correct by hand in a worked-out contribution: what is missing is what it is worked out from.
+            error={isTermAccount
+              ? (errors.sumAssuredAmount && targetSet ? 'Not worked out yet: choose the rate, term and how often it is paid' : undefined)
+              : errors.sumAssuredAmount?.message}
+            hint={isTermAccount ? 'Worked out from the amount wanted at maturity, at the rate, term and frequency below.' : undefined}
           >
             <Input
-              placeholder="1500000.00"
-              readOnly={isFuneral || targetSet}
+              placeholder={isTermAccount ? '' : '1500000.00'}
+              readOnly={isFuneral || isTermAccount}
               {...register('sumAssuredAmount')}
             />
           </FormField>
@@ -394,20 +425,6 @@ export function OpenUnderwritingCasePage() {
             />
           </FormField>
         </div>
-
-        {isTermAccount && (
-          <FormField
-            label="Wanted at maturity (optional)"
-            hint="The quotation below works out the contribution that reaches it, at the rate and term chosen."
-          >
-            <Input
-              inputMode="decimal"
-              placeholder="5000000"
-              value={termAccountTarget}
-              onChange={(e) => setTermAccountTarget(e.target.value)}
-            />
-          </FormField>
-        )}
 
         {/*
           THE INTRODUCING AGENT WINS, so this field is replaced rather than silently overridden.
@@ -564,7 +581,8 @@ export function OpenUnderwritingCasePage() {
 
           {keepsAccount && (
             <div className="rounded-md border border-border p-3">
-              <AccountChargePicker value={chargeIds} onChange={setChargeIds} legend="Account charges for this policy" />
+              <AccountChargePicker value={chargeIds} onChange={setChargeIds} legend="Account charges for this policy"
+                productId={productId || undefined} versionId={productVersionId || undefined} />
             </div>
           )}
 

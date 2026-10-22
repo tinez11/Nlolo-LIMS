@@ -85,7 +85,7 @@ typography:
     lineHeight: 1.4
     letterSpacing: "0.03em"
   mono:
-    fontFamily: "ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace"
+    fontFamily: "'Manrope Variable', Manrope, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.75rem"
     fontWeight: 400
     lineHeight: 1.4
@@ -315,7 +315,7 @@ colours inside the island.
 
 **Display Font:** Sora Variable (self-hosted), for heading words only
 **Body Font:** Manrope Variable (self-hosted), for every working line and every number
-**Mono Font:** `ui-monospace`, `'SF Mono'`, `'Cascadia Mono'`, Menlo — machine identifiers only
+**Mono Font:** Manrope with tabular figures — machine identifiers only. Not a monospace: the system one fell to a Courier on Windows and clashed with the console's face.
 
 **Character:** Manrope is a calm, open grotesque with clear figures; Sora gives the page
 title and panel titles a slightly geometric voice, so a heading reads as a heading
@@ -574,7 +574,7 @@ only on a quotation the server priced.
 ### Loading, Empty and Error States
 
 One shared set: skeleton rows in Control tone, `LoadingBlock` with a visible label, empty
-states centre-stacked, error copy per error kind, trace ids in Mono with `select-all`.
+states centre-stacked, error copy per error kind, trace ids in the mono token with `select-all`.
 
 ### Motion
 

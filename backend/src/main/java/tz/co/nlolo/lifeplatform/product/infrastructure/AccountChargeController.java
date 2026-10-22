@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import tz.co.nlolo.lifeplatform.product.api.AccountChargeApi;
 import tz.co.nlolo.lifeplatform.product.api.AccountChargeView;
+import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -26,17 +27,36 @@ import java.util.UUID;
 @RestController
 public class AccountChargeController {
 
-    /** Body of a new charge. {@code when}: DEPOSIT, WITHDRAWAL, MONTHLY, YEARLY, OPENING or MATURITY. */
+    /**
+     * Body of a new charge. {@code when}: DEPOSIT, PREMIUM, TRANSFER_IN, WITHDRAWAL, MONTHLY, YEARLY, OPENING or MATURITY.
+     * No {@code fromPolicyYear} is year 1; no {@code toPolicyYear} is every year after.
+     */
     public record CreateCharge(String name, String description, String when, String amountType, BigDecimal amount,
-                               String currency) {}
+                               String currency, Integer fromPolicyYear, Integer toPolicyYear) {}
 
     /** The organisation's rule on charges and the minimum balance. */
     public record ChargeSetting(boolean mayGoBelowMinimum) {}
 
     private final AccountChargeApi accountCharges;
+    private final ProductApi productApi;
 
-    public AccountChargeController(AccountChargeApi accountCharges) {
+    public AccountChargeController(AccountChargeApi accountCharges, ProductApi productApi) {
         this.accountCharges = accountCharges;
+        this.productApi = productApi;
+    }
+
+    /**
+     * The Account charges a version takes (V34), in the order chosen: what its policies are charged by unless one is
+     * issued on a choice of its own. Empty for a version charged by rows of its own, or by nothing.
+     */
+    @GetMapping("/products/{productId}/versions/{versionId}/account-charges")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<List<AccountChargeView>> versionCharges(@PathVariable UUID productId,
+                                                                  @PathVariable UUID versionId) {
+        List<UUID> ids = productApi.resolveAccumulationPlan(versionId).accountChargeIds();
+        List<AccountChargeView> found = new java.util.ArrayList<>(accountCharges.resolve(ids));
+        found.sort(java.util.Comparator.comparingInt(c -> ids.indexOf(c.chargeId())));
+        return ResponseEntity.ok(found);
     }
 
     @GetMapping("/account-charges")
@@ -49,7 +69,8 @@ public class AccountChargeController {
     @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
     public ResponseEntity<AccountChargeView> create(@RequestBody CreateCharge body, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.status(HttpStatus.CREATED).body(accountCharges.create(body.name(), body.description(),
-            body.when(), body.amountType(), body.amount(), body.currency(), jwt.getSubject()));
+            body.when(), body.amountType(), body.amount(), body.currency(),
+            body.fromPolicyYear() == null ? 1 : body.fromPolicyYear(), body.toPolicyYear(), jwt.getSubject()));
     }
 
     /** No longer offered on new cases and policies; the policies already on it keep it. */

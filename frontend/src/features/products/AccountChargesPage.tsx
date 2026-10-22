@@ -20,7 +20,7 @@ import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
 import { toApiError, type ApiError } from '@/lib/apiError';
-import { CHARGE_WHEN, PERCENT_OF, chargeSize } from './chargeText';
+import { CHARGE_WHEN, PERCENT_OF, chargeLine } from './chargeText';
 
 const WHENS = Object.keys(CHARGE_WHEN) as ChargeWhen[];
 
@@ -65,7 +65,7 @@ export function AccountChargesPage() {
 
   const header = (
     <PageHeader title="Account charges"
-      description="Charges for savings accounts. Choose them on a savings case or when issuing its policy; a policy with none chosen keeps its product's own charges." />
+      description="Charges for savings accounts. A product picks its charges here; a policy can be given its own." />
   );
   if (error) return <>{header}<div className="px-4 pt-4 sm:px-6"><ErrorPanel error={error} onRetry={() => setReload((n) => n + 1)} /></div></>;
   if (!charges || belowMinimum === null) return <LoadingBlock label="Loading charges" />;
@@ -95,7 +95,7 @@ export function AccountChargesPage() {
 
         <Panel title="Charges">
           {charges.length === 0 ? (
-            <EmptyState title="No charges yet" description="Savings policies are charged by their product's own charges." />
+            <EmptyState title="No charges yet" description="Create one, then pick it on a product." />
           ) : (
             <ul className="divide-y divide-border">
               {charges.map((c) => (
@@ -104,7 +104,7 @@ export function AccountChargesPage() {
                     <span className="block text-sm font-medium">
                       {c.name}{!c.active && <span className="ml-2 text-xs font-normal text-muted-foreground">(withdrawn)</span>}
                     </span>
-                    <span className="block text-xs text-muted-foreground">{CHARGE_WHEN[c.when]} · {chargeSize(c)}</span>
+                    <span className="block text-xs text-muted-foreground">{chargeLine(c)}</span>
                     {c.description && <span className="block text-xs text-subtle-foreground">{c.description}</span>}
                   </span>
                   {canEdit && (c.active ? (
@@ -124,27 +124,38 @@ export function AccountChargesPage() {
   );
 }
 
-function NewCharge({ onCreated }: { onCreated: () => void }) {
+/**
+ * A new charge, here and on a product version's Charges step (2026-10-22). Plain buttons, never a submit: on the version
+ * step it sits inside the publish form.
+ */
+export function NewCharge({ onCreated, onCancel }: {
+  onCreated: (created: AccountChargeView | null) => void; onCancel?: () => void;
+}) {
   const [name, setName] = useState('');
-  const [when, setWhen] = useState<ChargeWhen>('DEPOSIT');
+  const [when, setWhen] = useState<ChargeWhen>('PREMIUM');
   const [amountType, setAmountType] = useState<ChargeAmountType>('PERCENT');
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState('TZS');
+  const [fromYear, setFromYear] = useState('1');
+  const [toYear, setToYear] = useState('');
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const value = Number(amount);
+  const from = Number(fromYear);
+  const to = toYear.trim() === '' ? null : Number(toYear);
+  const yearsValid = Number.isInteger(from) && from >= 1 && (to === null || (Number.isInteger(to) && to >= from));
   const valid = name.trim() !== '' && amount.trim() !== '' && value > 0 && (amountType === 'FLAT' || value <= 100)
-    && currency.trim().length === 3;
+    && currency.trim().length === 3 && yearsValid;
 
   async function save() {
     setSaving(true);
     setError(null);
     try {
-      await createAccountCharge({ name: name.trim(), description: description.trim() || null, when, amountType, amount: value,
-        currency: currency.trim().toUpperCase() });
-      setName(''); setAmount(''); setDescription('');
-      onCreated();
+      const created = await createAccountCharge({ name: name.trim(), description: description.trim() || null, when,
+        amountType, amount: value, currency: currency.trim().toUpperCase(), fromPolicyYear: from, toPolicyYear: to });
+      setName(''); setAmount(''); setDescription(''); setFromYear('1'); setToYear('');
+      onCreated(created);
     } catch (e) {
       setError(toApiError(e));
     } finally {
@@ -174,6 +185,13 @@ function NewCharge({ onCreated }: { onCreated: () => void }) {
             hint={amountType === 'PERCENT' ? `Percent ${PERCENT_OF[when]}` : `In ${currency || 'the currency below'}`}>
             <Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </FormField>
+          <FormField label="From policy year">
+            <Input inputMode="numeric" value={fromYear} onChange={(e) => setFromYear(e.target.value)} />
+          </FormField>
+          <FormField label="To policy year" hint="Blank: every year after"
+            error={!yearsValid && toYear.trim() !== '' ? 'Ends before it starts' : undefined}>
+            <Input inputMode="numeric" value={toYear} onChange={(e) => setToYear(e.target.value)} />
+          </FormField>
           <FormField label="Currency">
             <Input value={currency} maxLength={3} onChange={(e) => setCurrency(e.target.value)} />
           </FormField>
@@ -182,7 +200,12 @@ function NewCharge({ onCreated }: { onCreated: () => void }) {
           </FormField>
         </div>
         {error && <InlineError error={error} lead="The charge was not created" />}
-        <Button variant="primary" disabled={!valid} pending={saving} onClick={() => void save()}>Create charge</Button>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="primary" disabled={!valid} pending={saving} onClick={() => void save()}>
+            Create charge
+          </Button>
+          {onCancel && <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>}
+        </div>
       </div>
     </Panel>
   );

@@ -14,6 +14,8 @@ import { selectVersionRating, useProductStore } from '@/store/productStore';
 import { RatingBasis } from './RatingBasis';
 import { funeralSummary, pricedOtherwise } from './versionText';
 import { AnnuityTermsDetail, FuneralTermsDetail, UnitLinkedTermsDetail } from './VersionTerms';
+import { chargeLine } from './chargeText';
+import { useVersionCharges } from './useVersionCharges';
 
 /**
  * Every published version of a product (2026-10-08): one version is shown whole; several are a list, newest first,
@@ -124,6 +126,8 @@ function VersionDetails({ productId, category, version }: {
   version: ProductVersionSummaryView;
 }) {
   const versionId = version.productVersionId;
+  // The Account charges a savings version takes (V34); none for every other kind.
+  const charges = useVersionCharges(productId, versionId);
   const rating = useProductStore(selectVersionRating(versionId));
   const loadRating = useProductStore((s) => s.loadRating);
   useEffect(() => {
@@ -147,6 +151,10 @@ function VersionDetails({ productId, category, version }: {
             value={rating.data ? String((rating.data.baseRates ?? []).length) : rating.status === 'error' ? '—' : 'Loading…'}
             {...(rating.data && (rating.data.baseRates ?? []).length === 0
               ? { note: 'No cells means unpriced — no premium can be quoted.' } : {})} />
+        )}
+        {charges && charges.length > 0 && (
+          <Field label="Account charges" value={charges.map((c) => c.name).join(', ')}
+            note={charges.map((c) => `${c.name}: ${chargeLine(c)}`).join(' · ')} />
         )}
       </dl>
       {category === 'FUNERAL' && <FuneralTerms productId={productId} versionId={versionId} />}

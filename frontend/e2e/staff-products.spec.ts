@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { dmy } from './dates';
+import { fillBasics, publishVersion, step } from './publishForm';
 
 /**
  * Products domain e2e coverage against the real backend.
@@ -50,55 +50,46 @@ test.describe('staff products', () => {
     // a DRAFT product -- this IS the assertion that creation worked.
     await expect(page.getByText('DRAFT')).toBeVisible();
 
-    const ratingSection = page.locator('p', { hasText: 'Rating table — must cover' }).locator('..');
-
     let versionsRequestFired = false;
     page.on('request', (req) => {
       if (req.method() === 'POST' && req.url().includes('/versions')) versionsRequestFired = true;
     });
 
-    // Remove the pre-filled SUM_ASSURED_BAND row, leaving only AGE. Fill in the
-    // remaining row's required band so the ONLY failure is the coverage rule
-    // itself (ProductApiImpl.publishVersion: coveredFactorTypes must contain
-    // both AGE and SUM_ASSURED_BAND), mirrored client-side in publishVersionSchema.
-    await ratingSection.getByRole('button', { name: 'Remove rating factor' }).last().click();
-    // Selected by accessible name, like the from/to fields below. The band placeholder is
-    // now shaped per factor type -- an AGE example on a SUM_ASSURED_BAND row was suggesting
-    // a band that would resolve against nothing -- so a placeholder selector would break the
-    // moment the row's type changes, which is exactly what this test does further down.
-    await ratingSection.getByLabel('Rating factor 1 band').fill('18-30');
-    // AGE is rated by range now: the band text is a label, these two are what the platform
-    // resolves against. Publishing without them is a real 422.
-    await ratingSection.getByLabel('Rating factor 1 from age').fill('18');
-    await ratingSection.getByLabel('Rating factor 1 to age').fill('30');
-    await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
     // The TIRA filing that authorises this version -- required as of V12.
-    await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
-    await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
+    await fillBasics(page, 'TIRA/E2E/0001');
     // Required on an individual product as of product step 2 -- PayoutPlanValidator refuses a
     // version without it, so every publish in this file fills it.
+    await step(page, 'What it pays');
     await page.getByLabel('Free-look days').fill('15');
 
-    await page.getByRole('button', { name: 'Publish version' }).click();
-    await expect(
-      page.getByText('Rating table must cover at least AGE and SUM_ASSURED_BAND'),
-    ).toBeVisible();
+    // The AGE and SUM_ASSURED_BAND rows the server requires come filled in as neutral (x1).
+    // Removing the SUM_ASSURED_BAND one leaves the ONLY failure the coverage rule itself
+    // (ProductApiImpl.publishVersion), mirrored client-side in publishVersionSchema.
+    await step(page, 'Pricing');
+    const adjustments = page.locator('section', { has: page.getByRole('heading', { name: 'Adjustments' }) });
+    await expect(adjustments.getByLabel('Rating factor 1 type')).toHaveValue('AGE');
+    await expect(adjustments.getByLabel('Rating factor 2 type')).toHaveValue('SUM_ASSURED_BAND');
+    await adjustments.getByRole('button', { name: 'Remove rating factor' }).last().click();
+
+    await publishVersion(page);
+    await expect(page.getByText('Rating table must cover at least AGE and SUM_ASSURED_BAND').first()).toBeVisible();
     expect(versionsRequestFired).toBe(false);
 
-    // Fix it: add SUM_ASSURED_BAND back, then submit for real.
-    await ratingSection.getByRole('button', { name: 'Add rating factor' }).click();
-    await ratingSection.locator('select').nth(1).selectOption('SUM_ASSURED_BAND');
-    await ratingSection.getByLabel('Rating factor 2 band').fill('1000000-5000000');
+    // Fixed from the problem's own link: SUM_ASSURED_BAND back, then submit for real.
+    await page.getByRole('button', { name: 'Go to Pricing' }).first().click();
+    await adjustments.getByRole('button', { name: 'Add rating factor' }).click();
+    await adjustments.getByLabel('Rating factor 2 type').selectOption('SUM_ASSURED_BAND');
+    await adjustments.getByLabel('Rating factor 2 band').fill('1000000-5000000');
     // A sum assured is rated by RANGE as of product V9, exactly as an age is: the band text
     // above is a label, and these two are what the platform resolves against. Filled here
     // rather than left neutral because this is the only test on the platform that carries a
     // rating factor over the real wire -- the bounds existed on every layer but the request
     // DTO once, so a publish over HTTP dropped them and stored a row that rated nobody.
-    await ratingSection.getByLabel('Rating factor 2 multiplier').fill('1.25');
-    await ratingSection.getByLabel('Rating factor 2 from sum assured').fill('1000000');
-    await ratingSection.getByLabel('Rating factor 2 to sum assured').fill('5000000');
+    await adjustments.getByLabel('Rating factor 2 multiplier').fill('1.25');
+    await adjustments.getByLabel('Rating factor 2 from sum assured').fill('1000000');
+    await adjustments.getByLabel('Rating factor 2 to sum assured').fill('5000000');
 
-    await page.getByRole('button', { name: 'Publish version' }).click();
+    await publishVersion(page);
     // Publishing retires the currently-active version, so it is confirmed.
     await page.getByRole('button', { name: 'Publish and make active' }).click();
 
@@ -147,34 +138,30 @@ test.describe('staff products', () => {
     await page.getByRole('button', { name: 'Create product' }).click();
     await expect(page.getByText('DRAFT')).toBeVisible();
 
-    // The catalogue does not show it -- correct, and the whole reason the drafts
-    // panel has to exist.
+    // The live catalogue does not show it -- correct, and the whole reason the drafts
+    // view has to exist.
     await page.goto('/staff/products');
     await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible();
-    await expect(page.getByRole('link', { name })).toBeVisible();
-    await expect(page.getByText(/created but not published/)).toBeVisible();
+    await expect(page.getByText(name)).toHaveCount(0);
+    await page.getByRole('button', { name: /Drafts/ }).click();
+    const draftRow = page.getByRole('table', { name: 'Draft products' }).getByRole('row', { name: new RegExp(code) });
+    await expect(draftRow).toBeVisible();
 
-    // Open it from the panel. This is what used to render the not-found state:
+    // Open it from the drafts view. This is what used to render the not-found state:
     // the page resolved products from the ACTIVE list only.
-    await page.getByRole('link', { name }).click();
+    await draftRow.getByRole('link', { name: /Continue setup/ }).click();
     await expect(page).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/);
     await expect(page.getByRole('heading', { name })).toBeVisible();
 
     // Finish the job the draft represents.
     await page.getByRole('button', { name: 'Publish new version' }).click();
-    const ratingSection = page.locator('p', { hasText: 'Rating table — must cover' }).locator('..');
-    await ratingSection.getByLabel('Rating factor 1 band').fill('18-30');
-    await ratingSection.getByLabel('Rating factor 1 from age').fill('18');
-    await ratingSection.getByLabel('Rating factor 1 to age').fill('30');
-    await ratingSection.getByLabel('Rating factor 2 band').fill('1-99999999');
-    await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
     // The TIRA filing that authorises this version -- required as of V12.
-    await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
-    await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
+    await fillBasics(page, 'TIRA/E2E/0001');
     // Required on an individual product as of product step 2 -- PayoutPlanValidator refuses a
     // version without it, so every publish in this file fills it.
+    await step(page, 'What it pays');
     await page.getByLabel('Free-look days').fill('15');
-    await page.getByRole('button', { name: 'Publish version' }).click();
+    await publishVersion(page);
     // Publishing retires the currently-active version, so it is confirmed.
     await page.getByRole('button', { name: 'Publish and make active' }).click();
 
@@ -183,7 +170,8 @@ test.describe('staff products', () => {
     // product left in the drafts panel after publishing would be a lie.
     await page.goto('/staff/products');
     await expect(page.getByText(name)).toBeVisible();
-    await expect(page.getByRole('link', { name })).toHaveCount(0);
+    await page.getByRole('button', { name: /Drafts/ }).click();
+    await expect(page.getByText(code)).toHaveCount(0);
   });
 
   /**
@@ -212,72 +200,51 @@ test.describe('staff products', () => {
     await page.getByRole('button', { name: 'Create product' }).click();
     await expect(page.getByText('DRAFT')).toBeVisible();
 
-    const ratingSection = page.locator('p', { hasText: 'Rating table — must cover' }).locator('..');
+    await fillBasics(page, 'TIRA/E2E/0001');
+    await step(page, 'What it pays');
+    await page.getByLabel('Free-look days').fill('15');
 
-    // One age band, added for both sexes at once, priced for smoker and non-smoker.
-    // Priced BEFORE the rating table is corrected, because that order is what a person
-    // does and it is where the guard has to speak: pricing the table makes the
-    // pre-filled AGE multiplier a double count, and the form has to say so on the row.
-    const rateSection = page.locator('p', { hasText: 'Base rates (optional)' }).locator('..');
-    await rateSection.getByRole('button', { name: 'Add age band' }).click();
-    for (const [row, rates] of [
-      [1, { ns: '0.6200', s: '1.4880' }],
-      [2, { ns: '0.8370', s: '2.0088' }],
+    // One age band, both sexes, priced for smoker and non-smoker: one row of the grid.
+    await step(page, 'Pricing');
+    await page.getByLabel('Ages from').fill('18');
+    await page.getByLabel('to', { exact: true }).fill('30');
+    await page.getByLabel('every').fill('13');
+    await page.getByRole('button', { name: 'Fill bands' }).click();
+    const grid = page.getByRole('table', { name: 'Base rates' });
+    for (const [sex, rates] of [
+      ['female', { ns: '0.6200', s: '1.4880' }],
+      ['male', { ns: '0.8370', s: '2.0088' }],
     ] as const) {
-      await rateSection.getByLabel(`Base rate ${row} from age`).fill('18');
-      await rateSection.getByLabel(`Base rate ${row} to age`).fill('30');
-      await rateSection.getByLabel(`Base rate ${row} non-smoker rate`).fill(rates.ns);
-      await rateSection.getByLabel(`Base rate ${row} smoker rate`).fill(rates.s);
+      await grid.getByLabel(`Ages 18–30, ${sex} non-smoker rate`).fill(rates.ns);
+      await grid.getByLabel(`Ages 18–30, ${sex} smoker rate`).fill(rates.s);
     }
 
-    // The guard, live and without a submit. Before this it existed only in the schema's
-    // object-level refinement, which zod skips once a field on the row has failed -- and
-    // one always has, since the AGE row ships empty. What the user got instead was the
-    // opposite instruction, "an AGE factor needs a from and to age", on a row that has
-    // to be deleted.
-    await expect(
-      ratingSection.getByText(/Age is a key of the base rate table below/),
-    ).toBeVisible();
-    await expect(ratingSection.getByText(/needs a from and to age/)).toHaveCount(0);
-    await expect(
-      page.getByText('Rating table — must cover at least SUM_ASSURED_BAND'),
-    ).toBeVisible();
-
-    // So the pre-filled AGE row goes, leaving SUM_ASSURED_BAND, which stays required
-    // even when priced -- and the guard goes with it.
-    await ratingSection.getByRole('button', { name: 'Remove rating factor' }).first().click();
-    await ratingSection.getByLabel('Rating factor 1 band').fill('1-99999999');
-    await ratingSection.locator('select').first().selectOption('SUM_ASSURED_BAND');
-    await expect(
-      ratingSection.getByText(/Age is a key of the base rate table below/),
-    ).toHaveCount(0);
-
-    await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
-    // The TIRA filing that authorises this version -- required as of V12.
-    await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
-    await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
-    // Required on an individual product as of product step 2 -- PayoutPlanValidator refuses a
-    // version without it, so every publish in this file fills it.
-    await page.getByLabel('Free-look days').fill('15');
+    // Pricing the table makes an AGE multiplier a double count, so the neutral AGE row leaves
+    // on its own, and SUM_ASSURED_BAND, still required when priced, is the one row left.
+    const adjustments = page.locator('section', { has: page.getByRole('heading', { name: 'Adjustments' }) });
+    await expect(adjustments.getByLabel('Rating factor 1 type')).toHaveValue('SUM_ASSURED_BAND');
+    await expect(adjustments.getByLabel('Rating factor 2 type')).toHaveCount(0);
 
     // A priced version must say what ages it sells to, and the form refuses the submit until
     // it does. Asserted before filling them in, because this is the rule that stops a rate
     // table's own span from silently becoming the product's selling range -- which is how a
     // real product came to accept 18-78 while pricing no woman under 56.
-    await page.getByRole('button', { name: 'Publish version' }).click();
-    await expect(page.getByText(/A priced product must say what entry age it sells to/)).toBeVisible();
+    await publishVersion(page);
+    await expect(page.getByText(/A priced product must say what entry age it sells to/).first()).toBeVisible();
     await expect(page).toHaveURL(/\/staff\/products\/new$/);
 
+    await step(page, 'Who can buy');
     await page.getByLabel('Minimum entry age').fill('18');
     await page.getByLabel('Maximum entry age').fill('30');
 
     // What paying in instalments costs. A monthly payer is charged more over a year than an
     // annual one -- the annual payer's premium is investable on day one, twelve collections
     // cost more than one, and monthly business lapses part-paid.
+    await step(page, 'Pricing');
     await page.getByLabel('Monthly loading %').fill('8');
     await page.getByLabel('Quarterly loading %').fill('3');
 
-    await page.getByRole('button', { name: 'Publish version' }).click();
+    await publishVersion(page);
     // Publishing retires the currently-active version, so it is confirmed.
     await page.getByRole('button', { name: 'Publish and make active' }).click();
 

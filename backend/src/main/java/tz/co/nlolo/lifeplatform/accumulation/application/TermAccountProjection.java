@@ -2,11 +2,14 @@ package tz.co.nlolo.lifeplatform.accumulation.application;
 
 import tz.co.nlolo.lifeplatform.product.api.AccumulationChargeRow;
 import tz.co.nlolo.lifeplatform.product.api.AccumulationPlan;
+import tz.co.nlolo.lifeplatform.product.api.AccountChargeView;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Set;
 
 /**
  * What a term account will be worth when it matures, before it exists (2026-10-21) -- and the contribution that gets a
@@ -20,7 +23,8 @@ import java.time.LocalDate;
  * for each month's rounding to the cent.
  *
  * <p><b>A projection, not a promise.</b> It assumes every contribution is paid on its due date; one paid late earns less,
- * and one missed is not made up. Charges chosen on the case (product V32) are not in it -- only the version's own.
+ * and one missed is not made up. Charges chosen on the case (product V32) are not in it -- only the version's own,
+ * its Account charges (V34) or else its rows.
  *
  * <p>Pure: no repository, no clock.
  */
@@ -54,6 +58,17 @@ public final class TermAccountProjection {
 
     public static Projection project(BigDecimal contribution, String frequency, int termMonths, BigDecimal ratePercent,
                                      LocalDate start, AccumulationPlan plan) {
+        return project(contribution, frequency, termMonths, ratePercent, start, plan, List.of());
+    }
+
+    /**
+     * @param catalogue the version's Account charges (V34). When there are any they are the charges, as they are on the
+     *     account: premium and deposit charges on each contribution (and the opening one on the first), monthly charges
+     *     on a whole month, yearly ones in an anniversary's month, and maturity charges off the payout. Else the
+     *     version's own rows.
+     */
+    public static Projection project(BigDecimal contribution, String frequency, int termMonths, BigDecimal ratePercent,
+                                     LocalDate start, AccumulationPlan plan, List<AccountChargeView> catalogue) {
         LocalDate maturity = start.plusMonths(termMonths);
         int step = step(frequency);
         BigDecimal balance = BigDecimal.ZERO;
@@ -65,8 +80,11 @@ public final class TermAccountProjection {
         LocalDate nextDue = start;
         for (LocalDate d = start; !d.isAfter(maturity); d = d.plusDays(1)) {
             if (nextDue != null && d.equals(nextDue) && d.isBefore(maturity)) {
-                BigDecimal allocation = contribution.multiply(charge(plan, start, d).contributionAllocationPercent())
-                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN);
+                BigDecimal allocation = catalogue.isEmpty()
+                    ? contribution.multiply(charge(plan, start, d).contributionAllocationPercent())
+                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN)
+                    : taken(catalogue, PolicyYears.of(start, d),
+                        paid == 0 ? Set.of("DEPOSIT", "PREMIUM", "OPENING") : Set.of("DEPOSIT", "PREMIUM"), contribution);
                 balance = balance.add(contribution).subtract(allocation);
                 paidIn = paidIn.add(contribution);
                 charges = charges.add(allocation);
@@ -83,11 +101,22 @@ public final class TermAccountProjection {
                 accrued = BigDecimal.ZERO;
                 // The month-end's fee, on a whole month of cover; the maturity day closes the account and takes none.
                 if (monthEnd && !start.isAfter(d.withDayOfMonth(1))) {
-                    BigDecimal fee = charge(plan, start, d).monthlyPolicyFee().min(balance.max(BigDecimal.ZERO));
+                    BigDecimal due = catalogue.isEmpty() ? charge(plan, start, d).monthlyPolicyFee()
+                        : taken(catalogue, PolicyYears.of(start, d),
+                            AccumulationApiImpl.anniversaryBetween(start, d.withDayOfMonth(1), d)
+                                ? Set.of("MONTHLY", "YEARLY") : Set.of("MONTHLY"), balance.max(BigDecimal.ZERO));
+                    BigDecimal fee = due.min(balance.max(BigDecimal.ZERO));
                     balance = balance.subtract(fee);
                     charges = charges.add(fee);
                 }
             }
+        }
+        if (!catalogue.isEmpty() && balance.signum() > 0) {
+            // The last policy year's maturity charges, off the payout -- as the account takes them.
+            BigDecimal exit = taken(catalogue, PolicyYears.of(start, maturity.minusDays(1)), Set.of("MATURITY"), balance)
+                .min(balance);
+            balance = balance.subtract(exit);
+            charges = charges.add(exit);
         }
         return new Projection(contribution, paid, paidIn.setScale(2), charges.setScale(2, RoundingMode.HALF_EVEN),
             interest.setScale(2, RoundingMode.HALF_EVEN), balance.setScale(2, RoundingMode.HALF_EVEN), maturity);
@@ -103,10 +132,16 @@ public final class TermAccountProjection {
      */
     public static Projection solve(BigDecimal target, String frequency, int termMonths, BigDecimal ratePercent,
                                    LocalDate start, AccumulationPlan plan) {
+        return solve(target, frequency, termMonths, ratePercent, start, plan, List.of());
+    }
+
+    /** As above, on the version's Account charges when it has any (see the catalogue {@code project}). */
+    public static Projection solve(BigDecimal target, String frequency, int termMonths, BigDecimal ratePercent,
+                                   LocalDate start, AccumulationPlan plan, List<AccountChargeView> catalogue) {
         BigDecimal cent = new BigDecimal("0.01");
         BigDecimal low = BigDecimal.ZERO;     // reaches less than the target
         BigDecimal high = target.max(cent);   // paying the whole target every time reaches it, unless charges eat it
-        Projection reached = project(high, frequency, termMonths, ratePercent, start, plan);
+        Projection reached = project(high, frequency, termMonths, ratePercent, start, plan, catalogue);
         for (int doublings = 0; reached.maturityValue().compareTo(target) < 0; doublings++) {
             if (doublings == 40) {
                 throw new IllegalArgumentException("No contribution reaches " + target.toPlainString()
@@ -114,12 +149,12 @@ public final class TermAccountProjection {
             }
             low = high;
             high = high.multiply(BigDecimal.TWO);
-            reached = project(high, frequency, termMonths, ratePercent, start, plan);
+            reached = project(high, frequency, termMonths, ratePercent, start, plan, catalogue);
         }
         while (high.subtract(low).compareTo(cent) > 0) {
             BigDecimal mid = low.add(high).divide(BigDecimal.TWO, 2, RoundingMode.DOWN);
             if (mid.compareTo(low) <= 0) mid = low.add(cent);
-            Projection p = project(mid, frequency, termMonths, ratePercent, start, plan);
+            Projection p = project(mid, frequency, termMonths, ratePercent, start, plan, catalogue);
             if (p.maturityValue().compareTo(target) >= 0) {
                 high = mid;
                 reached = p;
@@ -128,6 +163,12 @@ public final class TermAccountProjection {
             }
         }
         return reached;
+    }
+
+    /** What the {@code when} charges of {@code policyYear} take on {@code base}, together. */
+    private static BigDecimal taken(List<AccountChargeView> catalogue, int policyYear, Set<String> when, BigDecimal base) {
+        return catalogue.stream().filter(c -> when.contains(c.when()) && c.covers(policyYear)).map(c -> c.on(base))
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private static AccumulationChargeRow charge(AccumulationPlan plan, LocalDate start, LocalDate on) {

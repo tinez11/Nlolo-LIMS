@@ -5,16 +5,21 @@ import tz.co.nlolo.lifeplatform.accumulation.api.EntryType;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyAccountChargeApi;
 import tz.co.nlolo.lifeplatform.product.api.AccountChargeApi;
 import tz.co.nlolo.lifeplatform.product.api.AccountChargeView;
+import tz.co.nlolo.lifeplatform.product.api.AccumulationPlan;
+import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 /**
- * The account charges a savings policy was issued on (2026-10-09, product V32), turned into ledger lines. A policy with
- * none chosen is charged by its product version's own rows, as before -- {@link #chosen} returning empty is that signal.
+ * The Account charges a savings policy is charged by, turned into ledger lines: the ones it was issued on (2026-10-09,
+ * product V32), or else the ones its product version picks (V34, the user, 2026-10-22). A policy with neither is charged by
+ * its version's own rows, as before -- {@link Charges#catalogue()} false is that signal.
  *
  * <p>Every line is booked as a charge: a deposit-time charge as {@code ALLOCATION_CHARGE}, every other as
  * {@code POLICY_FEE}, the two types accounting already posts as fee income (G-06, Dr 2320 / Cr 7310). The charge's own
@@ -23,20 +28,53 @@ import java.util.Set;
 @Component
 public class ChosenCharges {
 
-    private static final Set<String> AT_DEPOSIT = Set.of("DEPOSIT", "OPENING");
+    private static final Set<String> AT_DEPOSIT = Set.of("DEPOSIT", "PREMIUM", "TRANSFER_IN", "OPENING");
 
     private final PolicyAccountChargeApi policyCharges;
     private final AccountChargeApi catalogue;
+    private final ProductApi productApi;
 
-    public ChosenCharges(PolicyAccountChargeApi policyCharges, AccountChargeApi catalogue) {
+    public ChosenCharges(PolicyAccountChargeApi policyCharges, AccountChargeApi catalogue, ProductApi productApi) {
         this.policyCharges = policyCharges;
         this.catalogue = catalogue;
+        this.productApi = productApi;
     }
 
-    /** The policy's chosen charges; empty means its version's own. */
-    public List<AccountChargeView> chosen(String policyNumber) {
-        var ids = policyCharges.accountCharges(policyNumber);
-        return ids.isEmpty() ? List.of() : catalogue.resolve(ids);
+    /**
+     * What a policy is charged by.
+     *
+     * @param catalogue true when Account charges decide it -- the policy's own or its version's -- even if none of them
+     *     falls in a given year; false when its version's own rows do
+     * @param all every one of them, whatever the year
+     */
+    public record Charges(boolean catalogue, List<AccountChargeView> all) {
+
+        /** The ones taken in {@code policyYear}. */
+        public List<AccountChargeView> in(int policyYear) {
+            return all.stream().filter(c -> c.covers(policyYear)).toList();
+        }
+    }
+
+    /** The policy's own charges, or else its version's; neither is {@code catalogue} false. */
+    public Charges of(String policyNumber, UUID productVersionId) {
+        List<UUID> ids = policyCharges.accountCharges(policyNumber);
+        return inOrder(ids.isEmpty() ? productApi.resolveAccumulationPlan(productVersionId).accountChargeIds() : ids);
+    }
+
+    /** A version's own Account charges, before any policy exists -- what a quotation is charged. */
+    public List<AccountChargeView> ofVersion(AccumulationPlan plan) {
+        return inOrder(plan.accountChargeIds()).all();
+    }
+
+    private Charges inOrder(List<UUID> ids) {
+        if (ids.isEmpty()) {
+            return new Charges(false, List.of());
+        }
+        // In the order they were chosen: when there is not room for them all, the first are taken first.
+        List<UUID> order = ids;
+        List<AccountChargeView> found = new ArrayList<>(catalogue.resolve(ids));
+        found.sort(Comparator.comparingInt(c -> order.indexOf(c.chargeId())));
+        return new Charges(true, found);
     }
 
     /** Whether the organisation lets a charge take an account below its product's minimum balance. */

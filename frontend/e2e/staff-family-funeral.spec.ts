@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { asAdmin } from './admin';
 import { dmy, todayIso } from './dates';
+import { fillBasics, publishVersion, step } from './publishForm';
 import { fillPolicyNumberManually } from './guards';
 import { asSeniorOnSameCase, assess } from './underwriting';
 
@@ -86,12 +87,13 @@ test.describe('family funeral cover', () => {
       await admin.getByRole('button', { name: 'Create product' }).click();
       await expect(admin.getByText('DRAFT')).toBeVisible();
 
-      // No rating table on a funeral plan: its premium table is its whole price.
-      await expect(admin.getByText(/Rating table — must cover/)).not.toBeVisible();
-      await admin.getByLabel('Effective date').fill(dmy('2026-01-01'));
-      await admin.getByLabel('TIRA filing reference').fill('TIRA/E2E/FUN');
-      await admin.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
+      await fillBasics(admin, 'TIRA/E2E/FUN');
+      await step(admin, 'What it pays');
       await admin.getByLabel('Free-look days').fill('15');
+
+      // No rating table on a funeral plan: its premium table is its whole price.
+      await step(admin, 'Pricing');
+      await expect(admin.getByRole('heading', { name: 'Adjustments' })).toHaveCount(0);
       await admin.getByLabel('Monthly loading %').fill('5');
 
       await admin.getByRole('button', { name: 'Add plan' }).click();
@@ -108,7 +110,7 @@ test.describe('family funeral cover', () => {
       await admin.getByLabel('When a dependant dies, pay').selectOption('MAIN_MEMBER');
       await admin.getByLabel('When the main member dies').selectOption('POLICY_ENDS');
 
-      await admin.getByRole('button', { name: 'Publish version' }).click();
+      await publishVersion(admin);
       await admin.getByRole('button', { name: 'Publish and make active' }).click();
       await expect(admin).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
     });

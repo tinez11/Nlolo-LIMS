@@ -11,12 +11,16 @@ import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 
-/** An account charge staff choose per savings policy (product V32). Never deleted, only withdrawn from the choice. */
+/**
+ * An account charge (product V32): taken by the product versions that pick it (V34) and by the policies issued on a choice
+ * of their own, over a range of policy years. Never deleted or changed, only withdrawn from the choice.
+ */
 @Entity
 @Table(name = "account_charge", schema = "product")
 public class AccountCharge {
 
-    public static final Set<String> WHEN = Set.of("DEPOSIT", "WITHDRAWAL", "MONTHLY", "YEARLY", "OPENING", "MATURITY");
+    public static final Set<String> WHEN = Set.of("DEPOSIT", "PREMIUM", "TRANSFER_IN", "WITHDRAWAL", "MONTHLY", "YEARLY",
+        "OPENING", "MATURITY");
     private static final BigDecimal HUNDRED = new BigDecimal("100");
 
     @Id
@@ -43,6 +47,13 @@ public class AccountCharge {
     @Column(nullable = false)
     private String currency;
 
+    @Column(name = "from_policy_year", nullable = false)
+    private int fromPolicyYear = 1;
+
+    /** Null: every year from {@code fromPolicyYear} on. */
+    @Column(name = "to_policy_year")
+    private Integer toPolicyYear;
+
     @Column(nullable = false)
     private boolean active = true;
 
@@ -59,12 +70,24 @@ public class AccountCharge {
 
     public AccountCharge(UUID tenantId, String name, String description, String when, String amountType,
                          BigDecimal amount, String currency, String createdBy) {
+        this(tenantId, name, description, when, amountType, amount, currency, 1, null, createdBy);
+    }
+
+    public AccountCharge(UUID tenantId, String name, String description, String when, String amountType,
+                         BigDecimal amount, String currency, int fromPolicyYear, Integer toPolicyYear, String createdBy) {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("Name the charge");
         }
         if (when == null || !WHEN.contains(when)) {
-            throw new IllegalArgumentException("Say when the charge is taken: on each deposit, on each withdrawal, monthly,"
-                + " yearly, once at opening or at maturity");
+            throw new IllegalArgumentException("Say when the charge is taken: on each deposit, each premium, each transfer"
+                + " in, each withdrawal, monthly, yearly, once at opening or at maturity");
+        }
+        if (fromPolicyYear < 1) {
+            throw new IllegalArgumentException("A charge starts in policy year 1 or later");
+        }
+        if (toPolicyYear != null && toPolicyYear < fromPolicyYear) {
+            throw new IllegalArgumentException("A charge cannot end (year " + toPolicyYear + ") before it starts (year "
+                + fromPolicyYear + ")");
         }
         if (!"FLAT".equals(amountType) && !"PERCENT".equals(amountType)) {
             throw new IllegalArgumentException("A charge is a flat amount or a percentage");
@@ -86,6 +109,8 @@ public class AccountCharge {
         this.amountType = amountType;
         this.amount = amount;
         this.currency = currency;
+        this.fromPolicyYear = fromPolicyYear;
+        this.toPolicyYear = toPolicyYear;
         this.createdBy = createdBy;
         this.createdAt = Instant.now();
     }
@@ -100,6 +125,8 @@ public class AccountCharge {
     public String getAmountType() { return amountType; }
     public BigDecimal getAmount() { return amount; }
     public String getCurrency() { return currency; }
+    public int getFromPolicyYear() { return fromPolicyYear; }
+    public Integer getToPolicyYear() { return toPolicyYear; }
     public boolean isActive() { return active; }
     public String getCreatedBy() { return createdBy; }
     public Instant getCreatedAt() { return createdAt; }

@@ -18,8 +18,14 @@ export function listAccountCharges(activeOnly = false): Promise<AccountChargeVie
 
 export function createAccountCharge(charge: {
   name: string; description: string | null; when: ChargeWhen; amountType: ChargeAmountType; amount: number; currency: string;
+  fromPolicyYear?: number; toPolicyYear?: number | null;
 }): Promise<AccountChargeView> {
   return post<AccountChargeView>('/account-charges', charge);
+}
+
+/** The Account charges a product version takes (V34), in order; empty for one on rows of its own, or none. */
+export function getVersionAccountCharges(productId: string, versionId: string): Promise<AccountChargeView[]> {
+  return get<AccountChargeView[]>(`/products/${enc(productId)}/versions/${enc(versionId)}/account-charges`);
 }
 
 export function withdrawAccountCharge(chargeId: string): Promise<AccountChargeView> {

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { asAdmin } from './admin';
 import { dmy } from './dates';
+import { fillBasics, publishVersion, step } from './publishForm';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
 
 /**
@@ -33,17 +34,13 @@ test.describe('a fixed-term deposit', () => {
     await page.getByRole('button', { name: 'Create product' }).click();
     await expect(page.getByText('DRAFT')).toBeVisible();
 
-    const ratingSection = page.locator('p', { hasText: 'Rating table — must cover' }).locator('..');
-    await ratingSection.getByLabel('Rating factor 1 band').fill('18-80');
-    await ratingSection.getByLabel('Rating factor 1 from age').fill('18');
-    await ratingSection.getByLabel('Rating factor 1 to age').fill('80');
-    await ratingSection.getByLabel('Rating factor 2 band').fill('1-999999999');
-    await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
-    await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/FTD');
-    await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
+    // In DEP the form starts on a fixed deposit, whose rating rows are neutral and unseen.
+    await expect(page.getByRole('radio', { name: /Fixed deposit/ })).toBeChecked();
+    await fillBasics(page, 'TIRA/E2E/FTD');
+    await step(page, 'What it pays');
     await page.getByLabel('Free-look days').fill('15');
 
-    await page.getByLabel('Value basis').selectOption('DEPOSIT');
+    await step(page, 'Rates');
     const terms = ['3', '6', '12'];
     for (const [j, months] of terms.entries()) {
       await page.getByRole('button', { name: 'Add a term' }).click();
@@ -61,7 +58,7 @@ test.describe('a fixed-term deposit', () => {
       await page.getByLabel(`Band ${i + 1} starts at`).fill(band[0]!);
       for (let j = 1; j <= 3; j++) await page.getByLabel(`Band ${i + 1} rate for term ${j}`).fill(band[j]!);
     }
-    await page.getByRole('button', { name: 'Publish version' }).click();
+    await publishVersion(page);
     await page.getByRole('button', { name: 'Publish and make active' }).click();
     await expect(page).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 

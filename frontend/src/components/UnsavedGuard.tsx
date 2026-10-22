@@ -1,3 +1,4 @@
+import * as Dialog from '@radix-ui/react-dialog';
 import { useContext, useEffect, useId, useRef } from 'react';
 import { UNSAFE_DataRouterContext, useBlocker } from 'react-router-dom';
 import { Button } from './ui/button';
@@ -9,14 +10,14 @@ import { Button } from './ui/button';
  * was half filled in discarded it without a word. Two ways out are covered:
  *
  * - **In-app navigation** -- a nav link, a breadcrumb, Back -- is held by React Router's
- *   `useBlocker`, and a bar asks "Leave without saving?" with the safe answer focused. A change on
+ *   `useBlocker`, and a popup asks "Leave without saving?" with the safe answer focused. A change on
  *   the SAME page (a tab, a filter in the query string) is not leaving it and is never blocked.
  * - **Closing or reloading the tab** gets the browser's own prompt through `beforeunload`; the
  *   browser words that one, and no page may.
  *
- * Inline in spirit, as DESIGN.md's Confirm Act asks: no backdrop, nothing trapped, the form still
- * on screen above it. It floats only because the click that triggered it may have come from the
- * sidebar, far from the form, and an answer the person cannot see is no answer.
+ * A centred popup over a dimmed page (the user, 2026-10-22, replacing a floating bar): the click
+ * that triggers it may come from the sidebar, far from the form, and the answer has to be the one
+ * thing on screen.
  *
  * `useBlocker` throws outside a data router, and component tests render in a plain MemoryRouter,
  * so the blocking half mounts only when a data router is present. The app has one since C1.
@@ -47,35 +48,37 @@ function LeavePrompt({ when, what }: { when: boolean; what: string }) {
   const titleId = useId();
   const bodyId = useId();
 
-  useEffect(() => {
-    if (blocker.state === 'blocked') keep.current?.focus();
-  }, [blocker.state]);
-
-  if (blocker.state !== 'blocked') return null;
-
   return (
-    <div
-      role="alertdialog"
-      aria-labelledby={titleId}
-      aria-describedby={bodyId}
-      className="fixed inset-x-0 bottom-4 z-50 mx-auto w-[min(36rem,calc(100vw-2rem))] rounded-md border border-border-strong bg-surface p-3 shadow-lg"
-    >
-      <p id={titleId} className="text-sm font-semibold">
-        Leave without saving?
-      </p>
-      <p id={bodyId} className="mt-1 text-xs text-muted-foreground">
-        {what} is not saved, and leaving this page discards it.
-      </p>
-      <div className="mt-3 flex items-center gap-1.5">
-        {/* The safe answer first and focused, so Enter keeps the work. The leaving button
-            carries its own verb, never "OK" (DESIGN.md, Confirm Act). */}
-        <Button ref={keep} type="button" size="sm" variant="primary" onClick={() => blocker.reset?.()}>
-          Keep editing
-        </Button>
-        <Button type="button" size="sm" variant="ghost" onClick={() => blocker.proceed?.()}>
-          Leave
-        </Button>
-      </div>
-    </div>
+    // A full popup over a dimmed page (the user, 2026-10-22): the choice is the only thing on screen until it is made.
+    // Escape and a click outside keep the work, as "Keep editing" does.
+    <Dialog.Root open={blocker.state === 'blocked'} onOpenChange={(open) => { if (!open) blocker.reset?.(); }}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 dark:bg-black/60" />
+        <Dialog.Content
+          role="alertdialog"
+          aria-labelledby={titleId}
+          aria-describedby={bodyId}
+          onOpenAutoFocus={(e) => { e.preventDefault(); keep.current?.focus(); }}
+          className="fixed top-1/2 left-1/2 z-50 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl bg-surface p-6 shadow-card"
+        >
+          <Dialog.Title id={titleId} className="text-title">
+            Leave without saving?
+          </Dialog.Title>
+          <Dialog.Description id={bodyId} className="mt-2 text-sm text-muted-foreground">
+            {what} is not saved, and leaving this page discards it.
+          </Dialog.Description>
+          <div className="mt-6 flex items-center justify-end gap-2">
+            {/* The safe answer focused, so Enter keeps the work. The leaving button carries its own verb, never
+                "OK" (DESIGN.md, Confirm Act). */}
+            <Button type="button" variant="ghost" onClick={() => blocker.proceed?.()}>
+              Leave
+            </Button>
+            <Button ref={keep} type="button" variant="primary" onClick={() => blocker.reset?.()}>
+              Keep editing
+            </Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

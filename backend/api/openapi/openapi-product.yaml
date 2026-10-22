@@ -175,10 +175,12 @@ paths:
               properties:
                 name: { type: string }
                 description: { type: [string, "null"] }
-                when: { type: string, enum: [DEPOSIT, WITHDRAWAL, MONTHLY, YEARLY, OPENING, MATURITY] }
+                when: { type: string, enum: [DEPOSIT, PREMIUM, TRANSFER_IN, WITHDRAWAL, MONTHLY, YEARLY, OPENING, MATURITY] }
                 amountType: { type: string, enum: [FLAT, PERCENT] }
                 amount: { type: number }
                 currency: { type: string }
+                fromPolicyYear: { type: [integer, "null"], minimum: 1, description: "First policy year taken; none is year 1" }
+                toPolicyYear: { type: [integer, "null"], minimum: 1, description: "Last policy year taken; none is every year after" }
       responses:
         '201':
           description: Created
@@ -507,6 +509,28 @@ paths:
               schema: { $ref: '#/components/schemas/TermAccountTerms' }
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /products/{productId}/versions/{versionId}/account-charges:
+    get:
+      summary: The Account charges a version takes, in order
+      description: >-
+        2026-10-22 (V34). What the version's policies are charged by, unless one is issued on a choice of its own.
+        Empty for a version charged by rows of its own, or by nothing.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The version's charges
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AccountCharge' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /products/{productId}/versions/{versionId}/annuity:
     get:
       summary: An annuity version's forms and payment frequencies, for the case form
@@ -710,15 +734,18 @@ components:
     AccountCharge:
       type: object
       additionalProperties: false
-      required: [chargeId, name, description, when, amountType, amount, currency, active, createdBy, createdAt]
+      required: [chargeId, name, description, when, amountType, amount, currency, fromPolicyYear, toPolicyYear, active,
+                 createdBy, createdAt]
       properties:
         chargeId: { type: string, format: uuid }
         name: { type: string }
         description: { type: [string, "null"] }
-        when: { type: string, enum: [DEPOSIT, WITHDRAWAL, MONTHLY, YEARLY, OPENING, MATURITY] }
+        when: { type: string, enum: [DEPOSIT, PREMIUM, TRANSFER_IN, WITHDRAWAL, MONTHLY, YEARLY, OPENING, MATURITY] }
         amountType: { type: string, enum: [FLAT, PERCENT] }
         amount: { type: number }
         currency: { type: string }
+        fromPolicyYear: { type: integer, minimum: 1 }
+        toPolicyYear: { type: [integer, "null"], description: "Null: every year after fromPolicyYear" }
         active: { type: boolean }
         createdBy: { type: string }
         createdAt: { type: string, format: date-time }
@@ -922,6 +949,13 @@ components:
             minimumBalance: { type: number, minimum: 0, description: "A partial withdrawal may not leave less" }
             minRatePercent: { type: [number, "null"], minimum: 0, maximum: 100, description: "A term account's lowest rate, % a year" }
             maxRatePercent: { type: [number, "null"], minimum: 0, maximum: 100, description: "A term account's highest rate, % a year" }
+            accountChargeIds:
+              type: [array, "null"]
+              description: >-
+                The Account charges the version takes (V34, 2026-10-22), in order. Its policies are charged by these
+                unless one is issued on a choice of its own. Given, charges must be empty; refused on a fixed deposit, for
+                a charge no longer offered, and for a flat charge in another currency.
+              items: { type: string, format: uuid }
             charges:
               type: array
               description: >-

@@ -44,6 +44,7 @@ public final class DepositTestMigrations {
         "db-migrations/product/V31__online_listing.sql",
         "db-migrations/product/V32__account_charges.sql",
         "db-migrations/product/V33__term_account_rate_band.sql",
+        "db-migrations/product/V34__version_account_charges.sql",
         "db-migrations/accumulation/V1__create_accumulation_schema.sql",
         "db-migrations/accumulation/V2__request_keys.sql",
         "db-migrations/accumulation/V3__deposit_periods.sql",

@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react';
+import { ArrowRight, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
@@ -10,24 +10,29 @@ import { CountLine, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
+import { portfolioLabel } from '@/lib/ifrs17';
+import { humanizeStatus } from '@/lib/status';
+import { cn } from '@/lib/cn';
 import { isInitialLoad, isEmpty } from '@/store/createResourceSlice';
 import { useProductStore } from '@/store/productStore';
 import { ProductDrawer } from './ProductDrawer';
 import { FilterChip } from '@/components/FilterChip';
 
+type View = 'live' | 'drafts';
+
 /**
- * `GET /products` is a bare unpaged array (catalog browsing), so this gets the
- * no-pager table variant, unlike Policies/Claims. It ALSO only ever returns
- * `status: ACTIVE` products (`ProductApiImpl.listActiveProducts` filters on it
- * server-side) -- a newly created product starts DRAFT and is genuinely
- * invisible here until a version is published, which the page description says
- * plainly rather than letting a staff user discover it as "my product vanished".
+ * Every product, live or still being set up (2026-10-22).
+ *
+ * `GET /products` returns ACTIVE products only, so a product created but never published used to appear in no list but
+ * a warning box above this one -- while its code stayed taken. Drafts are now a view of their own beside the live
+ * catalogue, each with the way back into its setup.
  */
 export function ProductsPage() {
   const canAuthor = canAuthorProducts(readIdentity(useAuth().user?.access_token));
   const [params, setParams] = useSearchParams();
   const [previewing, setPreviewing] = useState<string | null>(null);
 
+  const view: View = canAuthor && params.get('view') === 'drafts' ? 'drafts' : 'live';
   const categoryParam = params.get('category');
   const category: ProductCategory | undefined =
     categoryParam && (PRODUCT_CATEGORIES as readonly string[]).includes(categoryParam)
@@ -36,23 +41,36 @@ export function ProductsPage() {
 
   const list = useProductStore((s) => s.list);
   const loadList = useProductStore((s) => s.loadList);
+  const drafts = useProductStore((s) => s.drafts);
+  const loadDrafts = useProductStore((s) => s.loadDrafts);
 
   useEffect(() => {
     void loadList(category);
   }, [loadList, category]);
+  useEffect(() => {
+    // Drafts are ADMIN-gated server-side, and only an author can finish one.
+    if (canAuthor) void loadDrafts();
+  }, [canAuthor, loadDrafts]);
 
-  function update(next: ProductCategory | undefined) {
+  function update(next: { category?: ProductCategory | undefined; view?: View }) {
     const merged = new URLSearchParams(params);
-    if (next) merged.set('category', next);
-    else merged.delete('category');
+    if ('category' in next) {
+      if (next.category) merged.set('category', next.category);
+      else merged.delete('category');
+    }
+    if (next.view) {
+      if (next.view === 'drafts') merged.set('view', 'drafts');
+      else merged.delete('view');
+    }
     setParams(merged);
   }
 
-  const total = list.data?.length ?? null;
+  const draftRows = (drafts.data ?? []).filter((p) => !category || p.category === category);
+  const total = view === 'drafts' ? draftRows.length : (list.data?.length ?? null);
   const count: Stat = {
-    label: category ? `${category.replace(/_/g, ' ').toLowerCase()} products` : 'active products',
+    label: view === 'drafts' ? 'drafts' : category ? `${humanizeStatus(category).toLowerCase()} products` : 'live products',
     value: total,
-    pending: isInitialLoad(list),
+    pending: view === 'drafts' ? isInitialLoad(drafts) : isInitialLoad(list),
     hint: list.status === 'error' && total === null ? 'could not load' : 'in your tenant',
   };
 
@@ -66,109 +84,141 @@ export function ProductsPage() {
       key: 'productCode',
       header: 'Code',
       secondary: true,
-      render: (p) => <span className="font-mono text-xs">{p.productCode ?? '—'}</span>,
+      render: (p) => <span className="font-mono text-sm whitespace-nowrap text-muted-foreground">{p.productCode ?? '—'}</span>,
     },
     {
       key: 'category',
       header: 'Category',
       secondary: true,
-      render: (p) => <span className="text-muted-foreground">{p.category?.replace(/_/g, ' ')}</span>,
+      render: (p) => <span className="text-muted-foreground">{p.category ? humanizeStatus(p.category) : '—'}</span>,
     },
     {
-      key: 'status',
-      header: 'Status',
-      render: (p) => <StatusBadge kind="product" value={p.status} />,
+      // The portfolio says what a product IS -- a fixed deposit is an "Endowment" by category.
+      key: 'portfolioCode',
+      header: 'Type',
+      secondary: true,
+      render: (p) => <span className="whitespace-nowrap text-muted-foreground">{portfolioLabel(p.portfolioCode)}</span>,
     },
-    {
-      key: 'defaultCurrency',
-      header: 'Currency',
-      align: 'right',
-      render: (p) => p.defaultCurrency ?? '—',
-    },
+    view === 'drafts'
+      ? {
+          key: 'continue',
+          header: '',
+          align: 'right',
+          render: (p) =>
+            p.productId ? (
+              <Link to={p.productId} className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">
+                Continue setup <ArrowRight className="size-3.5" aria-hidden />
+              </Link>
+            ) : null,
+        }
+      : {
+          key: 'status',
+          header: 'Status',
+          render: (p) => <StatusBadge kind="product" value={p.status} />,
+        },
   ];
 
   function renderBody() {
-    if (isInitialLoad(list)) return <TableSkeleton columns={columns.length} />;
-
-    if (list.status === 'error' && list.error && list.data === null) {
-      return <ErrorPanel error={list.error} onRetry={() => void loadList(category)} />;
-    }
-
-    if (isEmpty(list)) {
+    const source = view === 'drafts' ? drafts : list;
+    if (isInitialLoad(source)) return <TableSkeleton columns={columns.length} />;
+    if (source.status === 'error' && source.error && source.data === null) {
       return (
-        <EmptyState
-          title={category ? `No active ${category.toLowerCase().replace(/_/g, ' ')} products` : 'No active products'}
-          description="A product must have a published version before it appears here."
+        <ErrorPanel
+          error={source.error}
+          onRetry={() => void (view === 'drafts' ? loadDrafts() : loadList(category))}
         />
       );
     }
-
-    return (
-      <>
-        {list.status === 'error' && list.error && (
-          <p className="border-b border-border bg-status-warning-bg px-4 py-2 text-xs text-status-warning-fg">
-            Showing older data — could not refresh.
-            {list.error.traceId && <span className="ml-1 font-mono">({list.error.traceId})</span>}
-          </p>
-        )}
-        <DataTable
-          columns={columns}
-          rows={list.data ?? []}
-          rowKey={(p) => p.productId ?? JSON.stringify(p)}
-          onRowActivate={(p) => {
-            if (p.productId) setPreviewing(p.productId);
-          }}
-          isRowSelected={(p) => p.productId === previewing}
-          caption="Products"
+    const rows = view === 'drafts' ? draftRows : (list.data ?? []);
+    if (view === 'drafts' ? rows.length === 0 : isEmpty(list)) {
+      return view === 'drafts' ? (
+        <EmptyState title="No drafts" description="Every product created has been published." />
+      ) : (
+        <EmptyState
+          title={category ? `No live ${humanizeStatus(category).toLowerCase()} products` : 'No live products'}
+          description="A product goes live when its first version is published."
         />
-      </>
+      );
+    }
+    return (
+      <DataTable
+        columns={columns}
+        rows={rows}
+        rowKey={(p) => p.productId ?? JSON.stringify(p)}
+        {...(view === 'live'
+          ? {
+              onRowActivate: (p: ProductSummary) => {
+                if (p.productId) setPreviewing(p.productId);
+              },
+              isRowSelected: (p: ProductSummary) => p.productId === previewing,
+            }
+          : {})}
+        caption={view === 'drafts' ? 'Draft products' : 'Products'}
+      />
     );
   }
+
+  const draftCount = drafts.data?.length ?? 0;
 
   return (
     <>
       <PageHeader
         title="Products"
-        description="Active products in your tenant. A new product needs a published version before it shows up here."
-        /* Authoring is ADMIN-only server-side; offering the button to anyone else would
-           lead them through a whole form to a 403 at the end. The catalogue itself stays
-           readable by every staff member, which is why only the ACTION is gated here. */
+        description="What you sell, and products still being set up."
         actions={
           canAuthor ? (
-          <Button asChild size="sm" variant="primary">
-            <Link to="new">
-              <Plus />
-              New product
-            </Link>
-          </Button>
+            <Button asChild variant="primary">
+              <Link to="new">
+                <Plus />
+                New product
+              </Link>
+            </Button>
           ) : undefined
         }
         count={<CountLine {...count} />}
       />
 
-      <div className="px-6 pb-6">
-        {/*
-          Unfinished authoring, above the catalogue because it is a to-do rather
-          than a reference. Only an ADMIN sees it -- `GET /products/drafts` is
-          ADMIN-gated server-side, and it is the same role that may author a
-          product at all -- and it renders nothing when there is nothing to
-          finish, so it is a panel that appears when it has something to say.
-        */}
-        {canAuthor && <DraftProducts />}
+      <div className="space-y-3 px-6 pb-6">
+        {canAuthor && (
+          <div className="inline-flex gap-1 rounded-xl bg-control p-1" role="group" aria-label="Show">
+            {(['live', 'drafts'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={view === v}
+                onClick={() => update({ view: v })}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors pointer-coarse:min-h-11',
+                  view === v ? 'bg-surface text-foreground shadow-raise' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {v === 'live' ? 'Live' : 'Drafts'}
+                {v === 'drafts' && draftCount > 0 && (
+                  <span className="rounded-full bg-status-warning-bg px-1.5 text-xs text-status-warning-fg">{draftCount}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="rounded-xl border border-border bg-surface shadow-card">
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
-            <FilterChip label="All" active={category === undefined} onClick={() => update(undefined)} />
+            <FilterChip label="All" active={category === undefined} onClick={() => update({ category: undefined })} />
             {PRODUCT_CATEGORIES.map((value) => (
               <FilterChip
                 key={value}
-                label={value.replace(/_/g, ' ')}
+                label={humanizeStatus(value)}
                 active={category === value}
-                onClick={() => update(value)}
+                onClick={() => update({ category: value })}
               />
             ))}
           </div>
-
+          {list.status === 'error' && list.error && list.data !== null && view === 'live' && (
+            <p className="border-b border-border bg-status-warning-bg px-4 py-2 text-xs text-status-warning-fg">
+              Showing older data — could not refresh.
+              {list.error.traceId && <span className="ml-1 font-mono">({list.error.traceId})</span>}
+            </p>
+          )}
           {renderBody()}
         </div>
       </div>
@@ -177,66 +227,3 @@ export function ProductsPage() {
     </>
   );
 }
-
-/**
- * The products created but never published.
- *
- * Authoring is two phases and only the second makes a product ACTIVE, so
- * abandoning the publish step left a DRAFT that appeared in no list on this
- * platform while the database went on holding its product code against
- * `ux_product_code`. The code was burned and the product could be neither seen
- * nor finished -- reported here as "a product with code Education02 already
- * exists but is not on the list", which was exactly right and impossible to act
- * on. `GET /products/drafts` is what makes it reachable; this is what shows it.
- *
- * Each row links to the product's own page, where the publish form is, so the
- * abandoned task can actually be completed rather than merely observed.
- */
-function DraftProducts() {
-  const drafts = useProductStore((s) => s.drafts);
-  const loadDrafts = useProductStore((s) => s.loadDrafts);
-
-  useEffect(() => {
-    void loadDrafts();
-  }, [loadDrafts]);
-
-  // Silent while loading and silent when clean: a permanent empty frame reading
-  // "no drafts" is noise on a page whose subject is the catalogue.
-  if (isInitialLoad(drafts) || isEmpty(drafts)) return null;
-
-  // A 403 here is not worth a panel either -- the button that reaches this is
-  // already ADMIN-gated, so a refusal means the two gates disagree, which is a
-  // logging problem rather than something to put in front of an actuary.
-  if (drafts.data === null || drafts.data.length === 0) return null;
-
-  return (
-    <div className="mb-4 rounded-lg border border-status-warning-fg/30 bg-status-warning-bg px-4 py-3">
-      <p className="text-xs font-medium text-status-warning-fg">
-        {drafts.data.length === 1
-          ? '1 product is created but not published'
-          : `${drafts.data.length} products are created but not published`}
-      </p>
-      <p className="mt-0.5 text-xs text-status-warning-fg">
-        Each one already holds its product code, so the code cannot be reused, and none of
-        them appear in the catalogue below. Open one to publish its first version.
-      </p>
-
-      <ul className="mt-2.5 space-y-1">
-        {drafts.data.map((p) => (
-          <li key={p.productId ?? JSON.stringify(p)} className="text-xs">
-            <Link
-              to={p.productId ?? '.'}
-              className="font-medium text-status-warning-fg underline decoration-status-warning-fg/40 underline-offset-2 hover:decoration-status-warning-fg"
-            >
-              {p.productName ?? '—'}
-            </Link>
-            <span className="ml-2 font-mono text-xs text-status-warning-fg">
-              {p.productCode ?? '—'}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-

@@ -18,6 +18,10 @@ public interface AccountChargeApi {
     AccountChargeView create(String name, String description, String when, String amountType, BigDecimal amount,
                              String currency, String createdBy);
 
+    /** Taken only in policy years {@code fromPolicyYear} to {@code toPolicyYear} (null: every year after). */
+    AccountChargeView create(String name, String description, String when, String amountType, BigDecimal amount,
+                             String currency, int fromPolicyYear, Integer toPolicyYear, String createdBy);
+
     /** Take a charge out of the choice, or put it back. Policies already on it keep it. */
     AccountChargeView setActive(UUID chargeId, boolean active);
 

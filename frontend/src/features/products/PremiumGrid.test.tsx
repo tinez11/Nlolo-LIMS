@@ -8,6 +8,8 @@ import { PublishVersionForm } from './PublishVersionForm';
 describe('PremiumGrid', () => {
   async function planA(user: ReturnType<typeof userEvent.setup>) {
     render(<PublishVersionForm productId="p-1" category="FUNERAL" onPublished={() => {}} />);
+    // The plans and their premium grid are the funeral version's Pricing step (2026-10-22).
+    await user.click(screen.getByRole('button', { name: /^Pricing/ }));
     await user.click(screen.getByRole('button', { name: 'Add plan' }));
     await user.type(screen.getByLabelText('Plan code'), 'A');
     await user.type(screen.getByLabelText('Main member benefit'), '400000');

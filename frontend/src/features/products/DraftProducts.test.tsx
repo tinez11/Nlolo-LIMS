@@ -7,28 +7,17 @@ import { useProductStore } from '@/store/productStore';
 import { ProductsPage } from './ProductsPage';
 
 /**
- * The drafts panel on the products page.
+ * Draft products on the products page -- a view of their own since 2026-10-22.
  *
- * ## What this is defending
- *
- * Authoring a product is two phases -- create the definition, then publish a
- * version -- and only the second flips DRAFT to ACTIVE. `GET /products` returns
- * ACTIVE only, so abandoning the second phase left a product that appeared in no
- * list anywhere on the platform while `ux_product_code` went on holding its
- * code. The code was burned and the product could be neither seen, finished nor
- * removed. It surfaced as a 409 on the create form reading "a product with code
- * Education02 already exists for this tenant" against a catalogue that showed no
- * such product -- true, and impossible to act on.
- *
- * `GET /products/drafts` closes it. These tests hold the three rules that make it
- * safe and quiet: it shows what is unfinished, it stays silent when there is
- * nothing to finish, and a non-ADMIN never sees or requests it.
+ * Authoring is two phases and only the second flips DRAFT to ACTIVE; `GET /products` returns ACTIVE only, so an
+ * abandoned second phase left a product in no list while `ux_product_code` held its code. `GET /products/drafts`
+ * closes that. These hold the rules: drafts are listed with the way back into their setup, they are counted where the
+ * author will see it, an empty view says so, and a non-ADMIN never sees or requests them.
  */
 
 let roles: string[] = [];
 
-// `canAuthorProducts` reads realm_access.roles off the access token, so the
-// identity is stubbed at the auth boundary rather than by forging a JWT.
+// `canAuthorProducts` reads realm_access.roles off the access token, stubbed at the auth boundary.
 vi.mock('react-oidc-context', () => ({
   useAuth: () => ({
     user: roles.length
@@ -57,7 +46,7 @@ const draft = {
 
 const loadDrafts = vi.fn(async () => {});
 
-function renderPage(drafts: ProductSummary[] | null) {
+function renderPage(drafts: ProductSummary[] | null, path = '/staff/products') {
   useProductStore.setState({
     list: success([activeProduct]),
     drafts: drafts === null ? idle() : success(drafts),
@@ -71,11 +60,9 @@ function renderPage(drafts: ProductSummary[] | null) {
     loadRating: vi.fn(async () => {}),
   });
 
-  // Mounted on its real route, not rendered bare: the draft link is RELATIVE
-  // (`to={productId}`), so without the route context it resolves against "/" and
-  // this test would assert a path the app never produces.
+  // On its real route: the "Continue setup" link is RELATIVE, so without the route it would resolve against "/".
   render(
-    <MemoryRouter initialEntries={['/staff/products']}>
+    <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/staff/products" element={<ProductsPage />} />
       </Routes>
@@ -90,50 +77,44 @@ describe('draft products', () => {
     useProductStore.setState({ drafts: idle() });
   });
 
-  it('names an unpublished product, and says its code is held', () => {
+  it('lists an unpublished product with its code and the way back into its setup', () => {
     roles = ['ADMIN'];
-    renderPage([draft]);
+    renderPage([draft], '/staff/products?view=drafts');
 
-    expect(screen.getByText('1 product is created but not published')).toBeInTheDocument();
-    // The name links to the product's own page -- where the publish form is, so the
-    // abandoned task can be finished rather than only observed.
-    expect(screen.getByRole('link', { name: 'Education Plan' })).toHaveAttribute(
+    expect(screen.getByRole('table', { name: 'Draft products' })).toBeInTheDocument();
+    expect(screen.getByText('Education Plan')).toBeInTheDocument();
+    // The code, because "already exists" is the message a reader arrives holding.
+    expect(screen.getByText('Education02')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Continue setup/ })).toHaveAttribute(
       'href',
       '/staff/products/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
     );
-    // The code, because "already exists" is the message a reader arrives holding.
-    expect(screen.getByText('Education02')).toBeInTheDocument();
-    expect(screen.getByText(/already holds its product code/)).toBeInTheDocument();
   });
 
-  it('counts in the plural without pretending one is several', () => {
+  it('counts the drafts on their tab, where the live catalogue is showing', () => {
     roles = ['ADMIN'];
     renderPage([draft, { ...draft, productId: 'cccccccc-cccc-cccc-cccc-cccccccccccc', productCode: 'Edu01' }]);
-    expect(screen.getByText('2 products are created but not published')).toBeInTheDocument();
-  });
-
-  /** A permanent empty frame reading "no drafts" is noise on a catalogue page. */
-  it('renders nothing at all when there is nothing unfinished', () => {
-    roles = ['ADMIN'];
-    renderPage([]);
-
-    expect(screen.queryByText(/created but not published/)).not.toBeInTheDocument();
-    // The catalogue itself is untouched by any of this.
+    expect(screen.getByRole('button', { name: /Drafts/ })).toHaveTextContent('2');
     expect(screen.getByText('Demo Term Life')).toBeInTheDocument();
   });
 
+  it('says so when nothing is unfinished', () => {
+    roles = ['ADMIN'];
+    renderPage([], '/staff/products?view=drafts');
+    expect(screen.getByText('No drafts')).toBeInTheDocument();
+  });
+
   /**
-   * The gate that matters. `GET /products/drafts` is ADMIN-only server-side, so a
-   * non-admin rendering this panel would collect a 403 and park it in the store,
-   * where the products page would then have an error to show for a list nobody
-   * asked for. It must not even be requested.
+   * The gate that matters: `GET /products/drafts` is ADMIN-only server-side, so a non-admin requesting it would park a
+   * 403 in the store for a list nobody asked for. It must not even be requested -- not even from a drafts link.
    */
   it('is neither shown nor requested for a staff member who cannot author', () => {
     roles = ['FINANCE_OFFICER'];
-    renderPage([draft]);
+    renderPage([draft], '/staff/products?view=drafts');
 
-    expect(screen.queryByText(/created but not published/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Drafts/ })).not.toBeInTheDocument();
     expect(screen.queryByText('Education02')).not.toBeInTheDocument();
+    expect(screen.getByText('Demo Term Life')).toBeInTheDocument();
     expect(loadDrafts).not.toHaveBeenCalled();
   });
 });
