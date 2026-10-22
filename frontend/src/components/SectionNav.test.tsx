@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { SectionNav } from './SectionNav';
 
@@ -19,6 +20,23 @@ describe('SectionNav', () => {
       'href',
       '#claim-evidence',
     );
+  });
+
+  // The user, 2026-10-22: whatever was clicked, the bar marked the last section.
+  it('marks the section clicked, even one too short to reach the top', async () => {
+    render(
+      <SectionNav
+        label="Claim sections"
+        sections={[
+          { id: 'reopen', label: 'Reopen' },
+          { id: 'evidence', label: 'Evidence' },
+          { id: 'reinsurance', label: 'Reinsurance' },
+        ]}
+      />,
+    );
+    await userEvent.click(screen.getByRole('link', { name: 'Evidence' }));
+    expect(screen.getByRole('link', { name: 'Evidence' })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('link', { name: 'Reinsurance' })).not.toHaveAttribute('aria-current');
   });
 
   it('marks the first section as current before anything has scrolled', () => {

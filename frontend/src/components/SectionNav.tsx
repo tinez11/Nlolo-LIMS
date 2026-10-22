@@ -45,17 +45,30 @@ export function SectionNav({
   // its scroll listener on every keystroke in a form three panels down.
   const ids = sections.map((section) => section.id).join(' ');
 
+  // The section a reader clicked, kept marked until they scroll by themselves. A short last section can never reach
+  // the top, so without this the "scrolled to the bottom" rule took the mark from the one just clicked.
+  const clicked = useRef<string | null>(null);
+
   useEffect(() => {
     let frame = 0;
+    // The box that actually scrolls: the shell's main panel, not the window (2026-10-22 -- read from the window, the
+    // page never seemed to move and the bar marked the last section whatever was clicked).
+    const scroller = scrollParent(bar.current);
     const measure = () => {
       frame = 0;
+      if (clicked.current) {
+        setCurrent(clicked.current);
+        return;
+      }
+      const view = scroller ? scroller.getBoundingClientRect().top : 0;
+      const scrollTop = scroller ? scroller.scrollTop : window.scrollY;
       const tops = ids
         .split(' ')
         .map((id) => ({ id, node: document.getElementById(id) }))
         .filter((entry): entry is { id: string; node: HTMLElement } => entry.node !== null)
         .map((entry) => ({
           id: entry.id,
-          top: entry.node.getBoundingClientRect().top + window.scrollY,
+          top: entry.node.getBoundingClientRect().top - view + scrollTop,
         }));
       // Nothing measurable yet -- this runs before the panels below have been laid out, and on
       // any frame where a section's element is missing. Keep whatever is marked rather than
@@ -63,21 +76,34 @@ export function SectionNav({
       // that marks none, and a blank bar is what a reader reads as "this control is broken".
       if (tops.length === 0) return;
       const offset = (bar.current?.offsetHeight ?? 0) + pageBarHeight();
-      const atBottom = window.scrollY + window.innerHeight >= document.body.scrollHeight - 2;
-      setCurrent(activeSection(tops, window.scrollY, offset, atBottom));
+      const atBottom = scroller
+        ? scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2
+        : window.scrollY + window.innerHeight >= document.body.scrollHeight - 2;
+      setCurrent(activeSection(tops, scrollTop, offset, atBottom));
     };
     // Coalesced to one measurement per frame: scroll fires far more often than the answer can
     // change, and measuring reads layout, which forces a reflow every time it runs.
     const onScroll = () => {
       if (frame === 0) frame = requestAnimationFrame(measure);
     };
+    // The reader scrolling by hand hands the mark back to the measurement.
+    const release = () => {
+      clicked.current = null;
+    };
+    const target: HTMLElement | Window = scroller ?? window;
     measure();
-    window.addEventListener('scroll', onScroll, { passive: true });
+    target.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll, { passive: true });
+    target.addEventListener('wheel', release, { passive: true });
+    target.addEventListener('touchmove', release, { passive: true });
+    window.addEventListener('keydown', release);
     return () => {
       if (frame !== 0) cancelAnimationFrame(frame);
-      window.removeEventListener('scroll', onScroll);
+      target.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
+      target.removeEventListener('wheel', release);
+      target.removeEventListener('touchmove', release);
+      window.removeEventListener('keydown', release);
     };
   }, [ids]);
 
@@ -99,6 +125,10 @@ export function SectionNav({
           // options of a widget. A screen reader says "current page" on the one you are in,
           // which is what the weight change says to everybody else.
           aria-current={section.id === current ? true : undefined}
+          onClick={() => {
+            clicked.current = section.id;
+            setCurrent(section.id);
+          }}
           className={cn(
             'shrink-0 rounded-md px-2.5 py-1 text-sm transition-colors hover:bg-hover hover:text-foreground active:bg-selected active:duration-0 pointer-coarse:py-2.5',
             section.id === current
@@ -111,6 +141,15 @@ export function SectionNav({
       ))}
     </nav>
   );
+}
+
+/** The nearest ancestor that scrolls vertically, or null when the window does. */
+function scrollParent(node: HTMLElement | null): HTMLElement | null {
+  for (let el = node?.parentElement ?? null; el; el = el.parentElement) {
+    const overflow = getComputedStyle(el).overflowY;
+    if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) return el;
+  }
+  return null;
 }
 
 /** The page bar's height, read from the custom property `PageHeader` publishes. */
