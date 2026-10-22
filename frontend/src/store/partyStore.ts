@@ -7,7 +7,8 @@ import {
   registerIndividual,
   searchParties,
   submitKyc,
-  uploadKycEvidence,
+  uploadClientDocument,
+  type ClientDocumentType,
   type PartyArea,
   type PartySearchParams,
 } from '@/api/party';
@@ -85,7 +86,8 @@ interface PartyState {
   loadParty: (partyId: string) => Promise<void>;
   loadPartyDocuments: (partyId: string) => Promise<void>;
   loadKycDecisions: (partyId: string) => Promise<void>;
-  uploadKycEvidence: (partyId: string, file: File) => Promise<void>;
+  /** Files a client document -- identity evidence unless another type is named (2026-10-22). */
+  uploadKycEvidence: (partyId: string, file: File, type?: ClientDocumentType) => Promise<void>;
   resetUploadKycEvidence: (partyId: string) => void;
   submitKyc: (partyId: string, status: KycStatus, evidenceDocumentRef: string) => Promise<void>;
   resetSubmitKyc: (partyId: string) => void;
@@ -141,12 +143,12 @@ export const usePartyStore = create<PartyState>((set, getState) => ({
       () => listKycDecisions(partyId),
     ),
 
-  uploadKycEvidence: (partyId, file) =>
+  uploadKycEvidence: (partyId, file, type = 'KYC_EVIDENCE') =>
     track(
       `party.uploadKycEvidence.${partyId}`,
       getState().uploadingKycEvidence[partyId] ?? idle<KycEvidenceUploadResponse>(),
       (next) => set((s) => ({ uploadingKycEvidence: { ...s.uploadingKycEvidence, [partyId]: next } })),
-      () => uploadKycEvidence(partyId, file),
+      () => uploadClientDocument(partyId, file, type),
     ),
 
   resetUploadKycEvidence: (partyId) =>

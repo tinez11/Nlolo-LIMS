@@ -114,7 +114,9 @@ test.describe('staff clients register', () => {
 
     await page.getByText(fullName).click();
     await expect(page).toHaveURL(`/staff/parties/${partyId}`);
-    await expect(page.getByRole('heading', { level: 2, name: 'KYC verification' })).toBeVisible();
+    // The record lands on its Overview, KYC first (2026-10-22).
+    await expect(page.getByRole('tab', { name: 'Overview', selected: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'KYC' })).toBeVisible();
   });
 
   /**
@@ -158,7 +160,9 @@ test.describe('staff clients register', () => {
     await expect(page.getByText('· agent')).toBeVisible();
 
     // Verify them first, so the correction below has something to preserve. Same sequence as
-    // staff-party-kyc.spec.ts, which is where this interaction is actually specified.
+    // staff-party-kyc.spec.ts, which is where this interaction is actually specified -- on the KYC & documents tab,
+    // since the record lands on its Overview (2026-10-22).
+    await page.getByRole('tab', { name: 'KYC & documents', exact: true }).click();
     await page.locator('input[type="file"]').setInputFiles({
       name: 'id-scan.png',
       mimeType: 'image/png',
@@ -204,21 +208,21 @@ test.describe('staff clients register', () => {
     // register is present and reachable -- and it proves one thing more than before: that each
     // tab actually opens the panel it names.
     for (const [tab, panel] of [
-      ['KYC', 'KYC verification'],
+      ['KYC & documents', 'KYC & documents'],
       ['Policies', 'Policies'],
       ['Claims', 'Claims'],
       ['Underwriting', 'Underwriting'],
       ['Beneficiary', 'Named as beneficiary'],
-      ['Documents', 'Documents'],
       ['Agent', 'Also an agent'],
     ] as const) {
       await page.getByRole('tab', { name: tab, exact: true }).click();
       await expect(page.getByRole('heading', { name: panel, exact: true })).toBeVisible();
     }
+    // The client's documents live with KYC now (2026-10-22): there is no separate Documents tab.
+    await expect(page.getByRole('tab', { name: 'Documents', exact: true })).toHaveCount(0);
 
-    // Identity stays in the RAIL, not behind a tab -- who the person is has to be on screen
-    // whichever register is open. Asserted after the walk, so its visibility is not an
-    // accident of which tab happens to be showing.
+    // Who the person is: the Overview tab, where the facts have the width to be read (no rail since 2026-10-22).
+    await page.getByRole('tab', { name: 'Overview', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Identity', exact: true })).toBeVisible();
 
     // Identity fields that were stored since the first migration and returned by no
@@ -364,12 +368,17 @@ test.describe('agents my clients', () => {
     // "Your Policies", not "Policies": an agent's policies are scoped to their
     // hierarchy team's book while this register is built on who they REGISTERED, so
     // an empty panel here means "not in your book" rather than "this client has none".
+    // An agent lands on the Overview of their own client too (2026-10-22).
+    await expect(page.getByRole('tab', { name: 'Overview', selected: true })).toBeVisible();
+    await page.getByRole('tab', { name: 'Policies', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Your Policies' })).toBeVisible();
 
-    // Staff-only panels must not render for an agent. `POST /parties/{id}/kyc` is
+    // Staff-only acts must not render for an agent. `POST /parties/{id}/kyc` is
     // staff-only and `GET /agents` is staff-only, so showing either here would be a
     // control that 403s on use.
-    await expect(page.getByRole('heading', { name: 'KYC verification' })).not.toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Also an agent' })).not.toBeVisible();
+    await page.getByRole('tab', { name: 'KYC & documents', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'KYC & documents' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Verify', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: 'Agent', exact: true })).toHaveCount(0);
   });
 });

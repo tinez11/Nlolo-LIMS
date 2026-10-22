@@ -127,13 +127,24 @@ describe('PartyDetailPage', () => {
   });
 
   /**
-   * The rail is the identity, and it is what a restructure is most likely to move by accident:
-   * these are the facts that must stay on screen while somebody works in the other column.
+   * The record lands on its Overview (2026-10-22, the user): who the person is, and where their KYC stands, before
+   * any register. It replaced the pinned rail.
    */
-  it('keeps who the person is in the record rail', () => {
+  it('lands on the overview: who the person is, and their KYC', () => {
     renderAt(`/staff/parties/${PARTY_ID}`);
+    expect(screen.getByRole('tab', { name: 'Overview', selected: true })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'Identity' })).toBeInTheDocument();
     expect(screen.getByText('+255700000001')).toBeInTheDocument();
+    const kyc = screen.getByRole('region', { name: 'KYC' });
+    expect(within(kyc).getByText('Waiting for a decision on this client’s identity.')).toBeInTheDocument();
+    expect(within(kyc).getByRole('link', { name: /Review KYC/ })).toHaveAttribute('href', expect.stringContaining('tab=kyc'));
+  });
+
+  it('lands an agent on the overview of their own client too', () => {
+    renderAt(`/agents/clients/${PARTY_ID}`, 'agents');
+    expect(screen.getByRole('tab', { name: 'Overview', selected: true })).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'KYC' })).getByRole('link', { name: /Send documents/ }))
+      .toBeInTheDocument();
   });
 
   /**
@@ -142,14 +153,16 @@ describe('PartyDetailPage', () => {
    * why the page does not even fetch the agent record in the agents realm.
    */
   it('offers KYC verification to staff', () => {
-    renderAt(`/staff/parties/${PARTY_ID}`, 'staff');
-    expect(screen.getByRole('heading', { level: 2, name: 'KYC verification' })).toBeInTheDocument();
+    renderAt(`/staff/parties/${PARTY_ID}?tab=kyc`, 'staff');
+    expect(screen.getByRole('heading', { level: 2, name: 'KYC & documents' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Verify' })).toBeInTheDocument();
   });
 
   it('offers it to nobody in the agents realm', () => {
-    renderAt(`/agents/clients/${PARTY_ID}`, 'agents');
-    expect(screen.queryByRole('heading', { level: 2, name: 'KYC verification' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { level: 2, name: 'Also an agent' })).not.toBeInTheDocument();
+    renderAt(`/agents/clients/${PARTY_ID}?tab=kyc`, 'agents');
+    expect(screen.getByRole('heading', { level: 2, name: 'KYC & documents' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Verify' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Agent' })).not.toBeInTheDocument();
   });
 
   /**
@@ -158,7 +171,7 @@ describe('PartyDetailPage', () => {
    * subtitle is where the console admits that.
    */
   it('names the register from the reader it is for', () => {
-    renderAt(`/agents/clients/${PARTY_ID}`, 'agents');
+    renderAt(`/agents/clients/${PARTY_ID}?tab=policies`, 'agents');
     expect(screen.getByRole('heading', { level: 2, name: 'Your Policies' })).toBeInTheDocument();
   });
 
@@ -283,8 +296,8 @@ describe('PartyDetailPage', () => {
     withEvidence([evidenceOnRecord()]);
     renderAt(`/agents/clients/${PARTY_ID}?tab=kyc`, 'agents');
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Identity evidence' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Send evidence')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Identity evidence' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Send identity evidence')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Verify' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument();
     // The filed document is listed, and is not a control.
@@ -293,19 +306,43 @@ describe('PartyDetailPage', () => {
   });
 
   /**
-   * The Documents tab was inert text until 2026-10-14 — a file name, a type and a date, with no
-   * way to open any of it, on a console that had never called `GET /documents/{ref}` from
-   * anywhere. Staff can open one now; an agent still cannot, because the endpoint refuses them.
+   * The client's own documents in one place (2026-10-22, the user): identity evidence and signed forms, each saying
+   * where it came from -- the registering agent's uploads by name, anything else from the office. There is no
+   * separate Documents tab any more, and a signed form cannot carry a KYC decision.
    */
-  it('opens a filed document for staff and not for an agent', () => {
-    withEvidence([evidenceOnRecord()]);
+  it('groups what was filed on the client and says who filed each', async () => {
+    usePartyStore.setState({
+      detail: {
+        [PARTY_ID]: {
+          ...RESOURCE,
+          data: party({ createdBy: 'subject-neema', createdByName: 'Neema Junior', registeredByPartyId: 'agent-party' }),
+        },
+      },
+    } as never);
+    vi.mocked(getParty).mockResolvedValue(
+      party({ createdBy: 'subject-neema', createdByName: 'Neema Junior', registeredByPartyId: 'agent-party' }),
+    );
+    withEvidence([
+      evidenceOnRecord({ uploadedBy: 'subject-neema' }),
+      evidenceOnRecord({ documentRef: 'doc-ref-2', documentType: 'SIGNED_FORM', fileName: 'proposal-signed.pdf',
+        contentType: 'application/pdf', uploadedBy: 'subject-office' }),
+    ]);
+    renderAt(`/staff/parties/${PARTY_ID}?tab=kyc`);
 
-    const staff = renderAt(`/staff/parties/${PARTY_ID}?tab=documents`);
-    expect(screen.getByRole('button', { name: 'View amina-nida.png' })).toBeInTheDocument();
-    staff.unmount();
+    expect(screen.queryByRole('tab', { name: 'Documents' })).not.toBeInTheDocument();
+    const evidence = screen.getByRole('region', { name: 'Identity evidence' });
+    expect(within(evidence).getByText(/Sent by Neema Junior, the registering agent/)).toBeInTheDocument();
+    const forms = screen.getByRole('region', { name: 'Signed forms' });
+    expect(within(forms).getByText(/Filed by the office/)).toBeInTheDocument();
 
-    renderAt(`/agents/clients/${PARTY_ID}?tab=documents`, 'agents');
-    expect(screen.queryByRole('button', { name: 'View amina-nida.png' })).not.toBeInTheDocument();
+    await userEvent.click(within(forms).getByRole('button', { name: /proposal-signed\.pdf/ }));
+    expect(screen.getByText('A signed form is not proof of identity. Open identity evidence to decide on KYC.'))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Verify' })).not.toBeInTheDocument();
+
+    // What is being added is said before it is dropped.
+    await userEvent.click(screen.getByRole('radio', { name: 'Signed form' }));
+    expect(screen.getByLabelText('Add signed form')).toBeInTheDocument();
   });
 
   it('withholds the underwriting-facts panel from a corporate', () => {
@@ -318,6 +355,16 @@ describe('PartyDetailPage', () => {
       },
     } as never);
     renderAt(`/staff/parties/${PARTY_ID}`);
-    expect(screen.queryByRole('heading', { level: 2, name: 'Person' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Identity' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 2, name: 'Underwriting facts' })).not.toBeInTheDocument();
+  });
+
+  it('shows an individual the underwriting facts a premium is rated on', () => {
+    usePartyStore.setState({
+      detail: { [PARTY_ID]: { ...RESOURCE, data: party({ sex: 'FEMALE', smokerStatus: 'NON_SMOKER' }) } },
+    } as never);
+    renderAt(`/staff/parties/${PARTY_ID}`);
+    expect(screen.getByRole('heading', { level: 2, name: 'Underwriting facts' })).toBeInTheDocument();
+    expect(screen.getByText('Non-smoker')).toBeInTheDocument();
   });
 });

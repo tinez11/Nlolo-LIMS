@@ -149,6 +149,22 @@ export function uploadKycEvidence(partyId: string, file: File): Promise<KycEvide
   return post<KycEvidenceUploadResponse>(`/parties/${encodeURIComponent(partyId)}/kyc-evidence`, form);
 }
 
+/** What a client's own record holds (2026-10-22): identity evidence, which a KYC decision rests on, and signed forms. */
+export type ClientDocumentType = 'KYC_EVIDENCE' | 'SIGNED_FORM';
+
+/** `POST /parties/{partyId}/documents?type=` -- staff, or the agent who registered the client. */
+export function uploadClientDocument(
+  partyId: string,
+  file: File,
+  type: ClientDocumentType,
+): Promise<KycEvidenceUploadResponse> {
+  const form = new FormData();
+  form.append('file', file);
+  return post<KycEvidenceUploadResponse>(`/parties/${encodeURIComponent(partyId)}/documents`, form, {
+    params: { type },
+  });
+}
+
 /**
  * `GET /parties/{partyId}/kyc-decisions` -- staff only, newest first.
  *

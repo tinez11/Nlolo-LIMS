@@ -239,6 +239,40 @@ paths:
                 items: { $ref: '#/components/schemas/PartyDocumentView' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { description: "No such party in this tenant" }
+    post:
+      summary: File a document on a client, of a named type (staff, or the agent who registered the client)
+      description: >
+        2026-10-22. KYC_EVIDENCE (an ID scan, proof of address) or SIGNED_FORM. Only KYC_EVIDENCE can carry a
+        KYC decision. Same people and rule as kyc-evidence.
+      security:
+        - staffAuth: []
+        - agentsAuth: [agent]
+      parameters:
+        - name: partyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: type
+          in: query
+          required: true
+          schema: { type: string, enum: [KYC_EVIDENCE, SIGNED_FORM] }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Document filed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KycEvidenceUploadResponse' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /parties/{partyId}/kyc-evidence:
     post:
       summary: Upload a KYC evidence file (staff, or the agent who registered the client)
