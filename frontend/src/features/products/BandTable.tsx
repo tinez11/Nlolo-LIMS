@@ -1,5 +1,5 @@
 import { useState, type ClipboardEvent } from 'react';
-import { Plus, X } from 'lucide-react';
+import { FileText, Plus, Table2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { cn } from '@/lib/cn';
@@ -83,23 +83,42 @@ export function BandTable({
   const shown = columns.filter((col) => !col.hidden);
   const grid = { gridTemplateColumns: `${shown.map((col) => (col.kind === 'sex' ? '7rem' : 'minmax(0,1fr)')).join(' ')} 2rem` };
 
+  const firstShown = columns.findIndex((col) => !col.hidden);
+
   return (
-    <div className="space-y-2">
+    <div className="overflow-hidden rounded-lg border border-border">
       {asText ? (
-        <Textarea rows={Math.max(3, rows.length + 1)} className="font-mono text-xs" aria-label={label} value={value}
-          onChange={(e) => onChange(e.target.value)} />
+        <div className="p-2">
+          <Textarea rows={Math.max(4, rows.length + 1)} className="font-mono text-xs" aria-label={label} value={value}
+            onChange={(e) => onChange(e.target.value)} />
+          <p className="px-1 pt-1.5 text-xs text-subtle-foreground">
+            One band a line, {shown.map((col) => col.header.toLowerCase()).join(', ')} -- separated by commas.
+          </p>
+        </div>
       ) : (
-        <div role="table" aria-label={label} className="space-y-1.5">
-          {rows.length > 0 && (
-            <div role="row" className="grid gap-2 px-1 text-xs text-subtle-foreground" style={grid}>
-              {shown.map((col) => (
-                <span key={col.header} role="columnheader" className={col.kind === 'sex' ? undefined : 'text-right'}>{col.header}</span>
-              ))}
-              <span aria-hidden />
+        <div role="table" aria-label={label}>
+          {/* The columns are always named, so an empty table still says what it will hold. */}
+          <div role="row" className="grid gap-2 bg-control px-3 py-2 text-xs font-medium text-muted-foreground" style={grid}>
+            {shown.map((col) => (
+              <span key={col.header} role="columnheader" className={col.kind === 'sex' ? undefined : 'text-right'}>{col.header}</span>
+            ))}
+            <span aria-hidden />
+          </div>
+          {rows.length === 0 && (
+            <div className="flex flex-col items-center gap-3 px-4 py-6 text-center">
+              <p className="text-sm text-muted-foreground">No bands yet.</p>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button type="button" size="sm" variant="secondary" onClick={addRow}>
+                  <Plus className="size-4" /> Add first row
+                </Button>
+                <Input inputSize="sm" className="w-56" aria-label={`Paste ${label.toLowerCase()} from Excel`}
+                  placeholder="or paste rows from Excel here" value=""
+                  onChange={() => undefined} onPaste={(e) => paste(0, firstShown, e)} />
+              </div>
             </div>
           )}
           {rows.map((row, r) => (
-            <div key={r} role="row" className="grid items-center gap-2" style={grid}>
+            <div key={r} role="row" className="grid items-center gap-2 border-t border-border px-3 py-1.5" style={grid}>
               {columns.map((col, c) => {
                 if (col.hidden) return null;
                 const name = `${label} row ${r + 1} ${col.header.toLowerCase()}`;
@@ -124,20 +143,22 @@ export function BandTable({
           ))}
         </div>
       )}
-      {error && <p role="alert" className="text-xs text-status-danger-fg">{error}</p>}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        {!asText && (
-          <Button type="button" size="sm" variant="ghost" className="-ml-2"
-            onClick={addRow}>
+      {error && <p role="alert" className="border-t border-border px-3 py-2 text-xs text-status-danger-fg">{error}</p>}
+      <div className="flex flex-wrap items-center gap-2 border-t border-border bg-control/50 px-2 py-1.5">
+        {!asText && rows.length > 0 && (
+          <Button type="button" size="sm" variant="ghost" onClick={addRow}>
             <Plus className="size-4" /> Add row
           </Button>
         )}
-        <button type="button" className={cn('text-xs text-muted-foreground underline-offset-2 hover:underline', asText && '-ml-0')}
+        <Button type="button" size="sm" variant="ghost"
           aria-label={asText ? `Edit ${label.toLowerCase()} as a table` : `Edit ${label.toLowerCase()} as text`}
           onClick={() => setAsText(!asText)}>
+          {asText ? <Table2 className="size-4" /> : <FileText className="size-4" />}
           {asText ? 'Edit as a table' : 'Edit as text'}
-        </button>
-        {!asText && <span className="text-xs text-subtle-foreground">Paste from Excel into any box.</span>}
+        </Button>
+        {!asText && rows.length > 0 && (
+          <span className={cn('ml-auto pr-1 text-xs text-subtle-foreground')}>Paste from Excel into any box.</span>
+        )}
       </div>
     </div>
   );

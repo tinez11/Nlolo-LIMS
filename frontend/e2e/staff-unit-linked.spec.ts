@@ -106,7 +106,7 @@ test.describe('unit-linked', () => {
       await admin.getByLabel(`${equity} · E2E ${equity}`).check();
       await admin.getByLabel(`${cash} · E2E ${cash}`).check();
       // The allocation bands as a table (2026-10-22): a row per band, the next starting where the last ended.
-      await admin.getByRole('button', { name: 'Add row' }).first().click();
+      await admin.getByRole('button', { name: 'Add first row' }).first().click();
       await admin.getByLabel('Allocation bands row 1 to year').fill('2');
       await admin.getByLabel('Allocation bands row 1 allocated %').fill('90');
       await admin.getByRole('button', { name: 'Add row' }).first().click();

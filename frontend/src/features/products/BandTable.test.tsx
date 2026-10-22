@@ -34,11 +34,11 @@ describe('BandTable (the user, 2026-10-22: bands as a table, not lines of commas
 
   it('adds a row that starts the year after the last one ends, and keeps a blank row while it is filled', async () => {
     render(<Harness initial={'1,3,10'} />);
-    await userEvent.click(screen.getByRole('button', { name: /Add row/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Add (first )?row/ }));
     expect(screen.getByLabelText('Surrender charge bands row 2 from year')).toHaveValue('4');
 
     render(<Harness initial="" first="1" />);
-    await userEvent.click(screen.getAllByRole('button', { name: /Add row/ })[1]!);
+    await userEvent.click(screen.getAllByRole('button', { name: /Add (first )?row/ })[1]!);
     expect(screen.getAllByLabelText('Surrender charge bands row 1 from year')[1]).toHaveValue('1');
   });
 
@@ -57,11 +57,21 @@ describe('BandTable (the user, 2026-10-22: bands as a table, not lines of commas
     render(<Harness initial="" columns={columns} />);
     expect(screen.queryByText('Sex')).not.toBeInTheDocument();
     // An empty table offers Add row; then a three-column block lands in the three columns shown.
-    fireEvent.click(screen.getByRole('button', { name: /Add row/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Add (first )?row/ }));
     fireEvent.paste(screen.getByLabelText('Surrender charge bands row 1 age from'), {
       clipboardData: { getData: () => '18\t39\t1.2\n40\t\t4.5' },
     });
     expect(written()).toBe('18,39,,1.2\n40,,,4.5');
+  });
+
+  it('names its columns and offers a first row or a paste from Excel when empty', () => {
+    render(<Harness initial="" />);
+    expect(screen.getByRole('columnheader', { name: 'Charge %' })).toBeInTheDocument();
+    expect(screen.getByText('No bands yet.')).toBeInTheDocument();
+    fireEvent.paste(screen.getByLabelText('Paste surrender charge bands from Excel'), {
+      clipboardData: { getData: () => '1\t5\t5\n6\t\t0' },
+    });
+    expect(written()).toBe('1,5,5\n6,,0');
   });
 
   it('edits the same value as text for whoever prefers lines', async () => {
