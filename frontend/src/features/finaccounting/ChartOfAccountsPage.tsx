@@ -369,7 +369,7 @@ export function ChartOfAccountsPage() {
           nobody can reconcile against anything.
         */}
         {trialBalance.data && (
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-border bg-surface px-4 py-2.5 text-xs">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl border border-border bg-surface shadow-card px-4 py-2.5 text-xs">
             <span className="font-medium">Trial balance</span>
             <span className="text-muted-foreground">
               inception to date
@@ -396,7 +396,7 @@ export function ChartOfAccountsPage() {
 
         {creatingOpen && <CreateAccountForm onDone={() => setCreatingOpen(false)} />}
 
-        <div className="rounded-lg border border-border bg-surface">
+        <div className="rounded-xl border border-border bg-surface shadow-card">
           {/* The toolbar belongs to the register it drives, so it sits inside the
               panel as a ruled strip -- the same shape as every other list screen's
               filter bar. It used to float above the panel as a bare row, which is

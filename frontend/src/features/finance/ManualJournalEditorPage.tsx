@@ -132,7 +132,7 @@ function Editor({ id, initial }: { id?: string; initial: ManualJournalValues }) 
           </FormField>
         </div>
 
-        <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Lines">
+        <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Lines">
           <p className="text-xs font-medium">Lines</p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm" aria-label="Journal lines">

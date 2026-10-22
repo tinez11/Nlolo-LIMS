@@ -101,7 +101,7 @@ export function PaymentRunsPage() {
         count={<CountLine {...count} />}
       />
       <div className="px-6 pb-6">
-        <div className="rounded-lg border border-border bg-surface">{renderBody()}</div>
+        <div className="rounded-xl border border-border bg-surface shadow-card">{renderBody()}</div>
       </div>
     </>
   );

@@ -1,5 +1,4 @@
 import { Panel } from '@/components/Panel';
-import { ErrorPanel } from '@/components/states';
 import { toApiError } from '@/lib/apiError';
 import { formatMonths } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
@@ -13,7 +12,7 @@ import { InlineError } from '@/components/InlineError';
 import { FUNERAL_ROLE_LABELS, type FuneralRoleName } from '@/features/products/funeralSchema';
 import { pricingBasis, type PricingBasis, type ProspectInputs } from './pricingBasis';
 import { quotationRequest } from './quotationRequest';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { QuoteState } from './pricingBasis';
 
 /** Tells a listening screen where the server's answer stands, each time it moves. */
@@ -75,6 +74,39 @@ function Row({
 }
 
 
+/**
+ * The one figure a quotation is for, on the accent band (2026-10-22): the premium a life pays, what a deposit is worth
+ * at maturity, what a family pays each time. Its row is dropped from the list below rather than repeated, so the figure
+ * appears once on the panel. Set in the body face with tabular figures, as every number in the console is.
+ */
+function Headline({
+  label,
+  value,
+  suffix,
+  caption,
+  valueLabel,
+}: {
+  label: string;
+  value: string;
+  suffix?: string | undefined;
+  caption?: string | undefined;
+  /** An accessible name for the figure alone, where a test or a reader finds it by what it is. */
+  valueLabel?: string | undefined;
+}) {
+  return (
+    <div className="hero-scope mx-4 mb-2 rounded-xl bg-hero px-5 py-4">
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <p className="mt-1 flex flex-wrap items-baseline gap-x-2">
+        <span className="text-display tabular-nums" aria-label={valueLabel}>
+          {value}
+        </span>
+        {suffix && <span className="text-sm text-muted-foreground">{suffix}</span>}
+      </p>
+      {caption && <p className="mt-1 text-xs text-subtle-foreground">{caption}</p>}
+    </div>
+  );
+}
+
 /** What prices this one, named so a staff member can go and look at it. */
 const OWN_SECTION_BY_PORTFOLIO: Record<string, string> = {
   IANN: 'The Annuity fields above price this purchase: the form chosen, the annuitant’s age and the version’s annuity rate decide the income.',
@@ -94,7 +126,13 @@ export function QuotationPreview({
   prospect,
   onQuoteState,
   termAccount,
+  forCustomer = false,
 }: {
+  /**
+   * Shown with a customer looking on (the agents' calculator): how the premium was derived -- age band, rate per mille,
+   * factors -- folds away behind its heading. On a staff form it stays open, because an underwriter reads it.
+   */
+  forCustomer?: boolean | undefined;
   /**
    * A term account's own inputs (2026-10-21): the rate the case names, and what the customer wants at maturity. With a
    * target the panel shows the contribution that reaches it, and `onUseContribution` puts that figure in the form.
@@ -128,6 +166,16 @@ export function QuotationPreview({
     | undefined;
 }) {
   const basis: PricingBasis = pricingBasis(portfolioCode);
+  // Where the answer stands, kept here as well as told to the screen: the PDF is offered only on a priced quotation
+  // (2026-10-22). It used to be offered on a refused one too, under "the figures above" when there were none.
+  const [quoteState, setQuoteState] = useState<QuoteState>('incomplete');
+  const report = useCallback(
+    (state: QuoteState) => {
+      setQuoteState(state);
+      onQuoteState?.(state);
+    },
+    [onQuoteState],
+  );
 
   return (
     <Panel
@@ -136,8 +184,8 @@ export function QuotationPreview({
       // small lie a customer notices. Every basis ends on the same promise -- looking creates nothing.
       subtitle={
         basis === 'SAVINGS'
-          ? 'What this money would earn on the product above. Nothing is created by looking at it.'
-          : 'What this life would be charged on the product above. Nothing is created by looking at it.'
+          ? 'What this money would earn on the chosen product. Nothing is created by looking at it.'
+          : 'What this life would be charged on the chosen product. Nothing is created by looking at it.'
       }
     >
       {basis === 'PREMIUM' && (
@@ -145,13 +193,15 @@ export function QuotationPreview({
           inputs={inputs}
           premiumPayingTermMonths={premiumPayingTermMonths}
           commencementDate={commencementDate}
-          report={onQuoteState}
+          report={report}
+          derivationOpen={!forCustomer}
+          echoInputs={!forCustomer}
         />
       )}
 
       {basis === 'SAVINGS' && (
         <SavingsQuotation
-          report={onQuoteState}
+          report={report}
           productId={inputs.productId}
           productVersionId={productVersionId}
           amount={inputs.sumAssuredAmount}
@@ -164,7 +214,7 @@ export function QuotationPreview({
 
       {basis === 'FUNERAL' && (
         <FuneralQuotation
-          report={onQuoteState}
+          report={report}
           inputs={{
             productId: inputs.productId,
             productVersionId,
@@ -207,7 +257,7 @@ export function QuotationPreview({
           });
           return (
             <DownloadQuotationButton
-              download={request ? () => downloadQuotation(request) : null}
+              download={request && quoteState === 'quoted' ? () => downloadQuotation(request) : null}
               fileName={`quotation-${productVersionId.slice(0, 8)}.pdf`}
               {...(!applicantPartyId && prospect
                 ? { description: 'The figures above, for the prospect to take away and study.' }
@@ -238,11 +288,20 @@ function PremiumQuotation({
   premiumPayingTermMonths,
   commencementDate,
   report,
+  derivationOpen,
+  echoInputs,
 }: {
   inputs: QuotationInputs;
   premiumPayingTermMonths: string;
   commencementDate: string;
   report?: ((state: QuoteState) => void) | undefined;
+  derivationOpen: boolean;
+  /**
+   * The rows that only say back what the form says -- coverage term, premium-paying term, frequency, commencement. Kept
+   * on a staff form, where the panel is read on its own; left out beside the calculator's inputs, where they are on
+   * screen already and pushed the agent's next step below the fold.
+   */
+  echoInputs: boolean;
 }) {
   const quotation = useQuotation(inputs);
   useReport(quotation.state, report);
@@ -251,7 +310,7 @@ function PremiumQuotation({
     <>
       {quotation.state === 'incomplete' && (
         <p className="px-4 pb-4 text-xs text-muted-foreground">
-          A quotation needs {quotation.missing.join(', ')}. Fill those in above and it appears here.
+          A quotation needs {quotation.missing.join(', ')}. Fill those in and it appears here.
         </p>
       )}
 
@@ -259,9 +318,11 @@ function PremiumQuotation({
         <p className="px-4 pb-4 text-xs text-muted-foreground">Pricing…</p>
       )}
 
+      {/* The inline strip every other refusal on this panel uses -- the funeral one always did -- rather than the
+          full-page error block, whose heading is the HTTP status ("Unprocessable Entity") in front of a customer. */}
       {quotation.state === 'refused' && (
         <div className="px-4 pb-4">
-          <ErrorPanel error={toApiError(quotation.error)} />
+          <InlineError sticky error={toApiError(quotation.error)} lead="Not priced" />
           <p className="pt-2 text-xs text-muted-foreground">
             This product cannot price this person as entered; the message above says why. Check the date of birth,
             sex and smoker status first. If they are right, the product is not priced for this person.
@@ -270,17 +331,23 @@ function PremiumQuotation({
       )}
 
       {quotation.state === 'quoted' && (
+        <>
+        {/* The ONE note kept: the frequency belongs to the premium figure, because the number means nothing
+            without it. Every other row had a note explaining what its label already said. */}
+        <Headline
+          label="Premium"
+          value={money(quotation.quote.instalmentAmount, quotation.quote.currency)}
+          suffix={inputs.frequency ? PREMIUM_FREQUENCY_LABELS[inputs.frequency].toLowerCase() : undefined}
+          caption={
+            inputs.policyTermMonths
+              ? `For ${money(Number(inputs.sumAssuredAmount), inputs.sumAssuredCurrency || 'TZS')} of cover over ${formatMonths(Number(inputs.policyTermMonths))}`
+              : `For ${money(Number(inputs.sumAssuredAmount), inputs.sumAssuredCurrency || 'TZS')} of cover`
+          }
+        />
         <div className="divide-y divide-border">
           <Row
             label="Sum assured"
             value={money(Number(inputs.sumAssuredAmount), inputs.sumAssuredCurrency || 'TZS')}
-          />
-          {/* The ONE note kept: the frequency belongs to the premium figure, because the number means nothing
-              without it. Every other row had a note explaining what its label already said. */}
-          <Row
-            label="Premium"
-            value={money(quotation.quote.instalmentAmount, quotation.quote.currency)}
-            suffix={inputs.frequency ? PREMIUM_FREQUENCY_LABELS[inputs.frequency].toLowerCase() : undefined}
           />
           {/* The server's own annual figure -- never an instalment multiplied here. */}
           <Row
@@ -307,29 +374,36 @@ function PremiumQuotation({
             }
           />
 
-          <Row
-            label="Coverage term"
-            value={inputs.policyTermMonths ? formatMonths(Number(inputs.policyTermMonths)) : 'None stated'}
-          />
-          <Row
-            label="Premium-paying term"
-            value={
-              premiumPayingTermMonths
-                ? formatMonths(Number(premiumPayingTermMonths))
-                : inputs.policyTermMonths
-                  ? 'The whole term'
-                  : 'None stated'
-            }
-          />
-          <Row
-            label="Payment frequency"
-            value={inputs.frequency ? PREMIUM_FREQUENCY_LABELS[inputs.frequency] : '—'}
-          />
-          {commencementDate && <Row label="Proposed commencement" value={commencementDate} />}
+          {echoInputs && (
+            <>
+              <Row
+                label="Coverage term"
+                value={inputs.policyTermMonths ? formatMonths(Number(inputs.policyTermMonths)) : 'None stated'}
+              />
+              <Row
+                label="Premium-paying term"
+                value={
+                  premiumPayingTermMonths
+                    ? formatMonths(Number(premiumPayingTermMonths))
+                    : inputs.policyTermMonths
+                      ? 'The whole term'
+                      : 'None stated'
+                }
+              />
+              <Row
+                label="Payment frequency"
+                value={inputs.frequency ? PREMIUM_FREQUENCY_LABELS[inputs.frequency] : '—'}
+              />
+              {commencementDate && <Row label="Proposed commencement" value={commencementDate} />}
+            </>
+          )}
 
-          {/* The derivation, so an underwriter can see WHY the premium is what it is rather than trusting it. */}
-          <div className="px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">How it was priced</p>
+          {/* The derivation, so an underwriter can see WHY the premium is what it is rather than trusting it. Folded
+              away in front of a customer, who needs the price and not the rate table; one click opens it. */}
+          <details className="group px-4 py-2" open={derivationOpen}>
+            <summary className="cursor-pointer rounded-sm text-xs font-medium text-muted-foreground hover:text-foreground">
+              How it was priced
+            </summary>
             <dl className="pt-1 text-xs text-muted-foreground">
               <div className="flex justify-between gap-4">
                 <dt>Age at entry</dt>
@@ -372,8 +446,9 @@ function PremiumQuotation({
                 Priced as occupation class {DEFAULT_OCCUPATION_CLASS}: the applicant&apos;s record names none.
               </p>
             )}
-          </div>
+          </details>
         </div>
+        </>
       )}
     </>
   );
@@ -399,7 +474,7 @@ function FuneralQuotation({ inputs, report }: {
   if (quotation.state === 'incomplete') {
     return (
       <p className="px-4 pb-4 text-xs text-muted-foreground">
-        A quotation needs {quotation.missing.join(', ')}. Fill those in above and it appears here.
+        A quotation needs {quotation.missing.join(', ')}. Fill those in and it appears here.
       </p>
     );
   }
@@ -416,6 +491,13 @@ function FuneralQuotation({ inputs, report }: {
 
   const quote = quotation.quote;
   return (
+    <>
+    <Headline
+      label={`Each ${quote.frequency.toLowerCase()} payment`}
+      value={tzs(quote.instalment)}
+      valueLabel="Instalment"
+      caption={`${quote.lines.length} ${quote.lines.length === 1 ? 'life' : 'lives'} covered`}
+    />
     <div className="px-4 pb-4">
       <div className="overflow-x-auto rounded-md border border-border">
         <table className="w-full text-sm">
@@ -447,18 +529,11 @@ function FuneralQuotation({ inputs, report }: {
               </td>
               <td className="p-2 text-right whitespace-nowrap">{tzs(quote.totalYearlyPremium)}</td>
             </tr>
-            <tr className="font-medium">
-              <td className="p-2" colSpan={4}>
-                Each {quote.frequency.toLowerCase()} payment
-              </td>
-              <td className="p-2 text-right whitespace-nowrap" aria-label="Instalment">
-                {tzs(quote.instalment)}
-              </td>
-            </tr>
           </tfoot>
         </table>
       </div>
     </div>
+    </>
   );
 }
 
@@ -510,7 +585,7 @@ function SavingsQuotation({
   if (quotation.state === 'incomplete') {
     return (
       <p className="px-4 pb-4 text-xs text-muted-foreground">
-        A quotation needs {quotation.missing.join(', ')}. Fill those in above and it appears here.
+        A quotation needs {quotation.missing.join(', ')}. Fill those in and it appears here.
       </p>
     );
   }
@@ -520,7 +595,7 @@ function SavingsQuotation({
   if (quotation.state === 'refused') {
     return (
       <div className="px-4 pb-4">
-        <ErrorPanel error={toApiError(quotation.error)} />
+        <InlineError sticky error={toApiError(quotation.error)} lead="Not priced" />
       </div>
     );
   }
@@ -531,16 +606,31 @@ function SavingsQuotation({
     return <TermAccountQuotation quote={q} onUseContribution={termAccount?.onUseContribution} />;
   }
 
+  // What the customer came to hear: a deposit's worth on the day it matures, an account's rate. Its row is then left
+  // out below, so the figure is said once.
+  const maturityLeads = deposit && !!q.maturityValue;
+  const rateLeads = !deposit && !!q.ratePercent;
   return (
+    <>
+    {maturityLeads && (
+      <Headline
+        label="Value at maturity"
+        value={formatMoney(q.maturityValue!)}
+        caption={q.maturityDate ? `On ${q.maturityDate}` : undefined}
+      />
+    )}
+    {rateLeads && <Headline label="Interest rate" value={`${q.ratePercent}%`} suffix="a year" />}
     <div className="divide-y divide-border">
       <Row label={deposit ? 'Deposit' : 'Opening balance'} value={formatMoney(q.amount)} />
-      <Row
-        label={deposit ? 'Interest rate' : 'Interest rate'}
-        value={q.ratePercent ? `${q.ratePercent}%` : '—'}
-        // A deposit's rate is for the WHOLE term, not a year: 6% over 6 months is 6%, not 3%. Saying which is the
-        // difference between a correct figure and one a customer will dispute.
-        suffix={q.ratePercent ? (deposit ? 'for the term' : 'a year') : undefined}
-      />
+      {!rateLeads && (
+        <Row
+          label="Interest rate"
+          value={q.ratePercent ? `${q.ratePercent}%` : '—'}
+          // A deposit's rate is for the WHOLE term, not a year: 6% over 6 months is 6%, not 3%. Saying which is the
+          // difference between a correct figure and one a customer will dispute.
+          suffix={q.ratePercent ? (deposit ? 'for the term' : 'a year') : undefined}
+        />
+      )}
       {deposit && (
         <>
           {/* Red only when the amount or term named is actually REFUSED (q.refusal says why, below) -- not merely
@@ -551,11 +641,13 @@ function SavingsQuotation({
             value={q.interest ? formatMoney(q.interest) : 'Not determinable'}
             danger={!q.interest && !!q.refusal}
           />
-          <Row
-            label="Value at maturity"
-            value={q.maturityValue ? formatMoney(q.maturityValue) : 'Not determinable'}
-            danger={!q.maturityValue && !!q.refusal}
-          />
+          {!maturityLeads && (
+            <Row
+              label="Value at maturity"
+              value={q.maturityValue ? formatMoney(q.maturityValue) : 'Not determinable'}
+              danger={!q.maturityValue && !!q.refusal}
+            />
+          )}
           <Row
             label="Term"
             value={termMonths ? formatMonths(Number(termMonths)) : 'Not chosen'}
@@ -586,6 +678,7 @@ function SavingsQuotation({
         </div>
       )}
     </div>
+    </>
   );
 }
 
@@ -620,29 +713,37 @@ function TermAccountQuotation({
     );
   }
   const frequency = t.frequency ? PREMIUM_FREQUENCY_LABELS[t.frequency].toLowerCase() : undefined;
+  // Quoted for a target, the contribution that reaches it is the answer; otherwise, what it pays out.
+  const contributionLeads = !!t.targetAmount && !!q.amount;
+  const payoutLeads = !contributionLeads && !!q.maturityValue;
   return (
+    <>
+    {contributionLeads && (
+      <Headline
+        label="Contribution needed"
+        value={formatMoney(q.amount!)}
+        suffix={frequency}
+        caption={onUseContribution ? 'Filled in as the contribution above.' : undefined}
+      />
+    )}
+    {payoutLeads && (
+      <Headline
+        label="Paid out at maturity"
+        value={formatMoney(q.maturityValue!)}
+        caption={q.maturityDate ? `On ${q.maturityDate}` : undefined}
+      />
+    )}
     <div className="divide-y divide-border">
-      {t.targetAmount && (
-        <div className="space-y-2 px-4 py-3">
-          <Row label="Wanted at maturity" value={formatMoney(t.targetAmount)} />
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="text-sm font-medium">Contribution needed</span>
-            <span className="text-sm font-medium">
-              {q.amount ? formatMoney(q.amount) : '—'}
-              {frequency && <span className="pl-1.5 text-xs text-muted-foreground">{frequency}</span>}
-            </span>
-          </div>
-          {onUseContribution && q.amount && (
-            <p className="text-xs text-muted-foreground">Filled in as the contribution above.</p>
-          )}
-        </div>
-      )}
+      {t.targetAmount && <Row label="Wanted at maturity" value={formatMoney(t.targetAmount)} />}
+      {t.targetAmount && !q.amount && <Row label="Contribution needed" value="—" />}
       {!t.targetAmount && q.amount && <Row label="Contribution" value={formatMoney(q.amount)} suffix={frequency} />}
       <Row label="Interest rate" value={`${q.ratePercent}%`} suffix="a year, fixed for the term" />
       <Row label="Paid in" value={t.paidIn ? formatMoney(t.paidIn) : '—'} suffix={`${t.contributions} payments`} />
       {t.charges && Number(t.charges.amount) > 0 && <Row label="Charges over the term" value={formatMoney(t.charges)} />}
       <Row label="Interest to maturity" value={q.interest ? formatMoney(q.interest) : '—'} />
-      <Row label="Paid out at maturity" value={q.maturityValue ? formatMoney(q.maturityValue) : '—'} />
+      {!payoutLeads && (
+        <Row label="Paid out at maturity" value={q.maturityValue ? formatMoney(q.maturityValue) : '—'} />
+      )}
       {q.termMonths != null && <Row label="Term" value={formatMonths(q.termMonths)} />}
       {q.maturityDate && <Row label="Matures on" value={q.maturityDate} />}
       <div className="px-4 py-2">
@@ -652,5 +753,6 @@ function TermAccountQuotation({
         </p>
       </div>
     </div>
+    </>
   );
 }

@@ -28,7 +28,7 @@ export function ReportSectionTable({ section }: { section: ReportSection }) {
   return (
     <section className="space-y-2">
       <h2 className="text-sm font-semibold">{section.title}</h2>
-      <div className="rounded-lg border border-border bg-surface">
+      <div className="rounded-xl border border-border bg-surface shadow-card">
         {lines.length === 0 ? (
           <p className="px-4 py-6 text-sm text-muted-foreground">No rows for these filters.</p>
         ) : (

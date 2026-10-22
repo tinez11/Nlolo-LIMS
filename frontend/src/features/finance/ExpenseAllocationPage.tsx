@@ -52,7 +52,7 @@ function Allocation({ allocation: a }: { allocation: ExpenseAllocationView }) {
         description={`${ALLOCATION_STATUS_LABEL[a.status] ?? a.status} · total ${money(a.total)} · pool ${money(a.pool)}`}
       />
       <div className="space-y-4 px-6 pb-6">
-        <section className="grid grid-cols-1 gap-2 rounded-lg border border-border bg-surface p-4 text-sm sm:grid-cols-2"
+        <section className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-surface shadow-card p-4 text-sm sm:grid-cols-2"
           aria-label="About this allocation">
           {a.nilReason ? (
             <p><span className="text-muted-foreground">No allocation this month:</span> {a.nilReason}</p>
@@ -91,7 +91,7 @@ function Allocation({ allocation: a }: { allocation: ExpenseAllocationView }) {
         )}
 
         {a.lines.length > 0 && (
-          <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Lines">
+          <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Lines">
             <p className="text-xs font-medium">
               {a.status === 'PREPARED' ? 'The split as it would post now' : 'As posted'} (Dr per group, Cr 8490)
             </p>
@@ -145,7 +145,7 @@ function Decision({ allocation: a }: { allocation: ExpenseAllocationView }) {
   const [reason, setReason] = useState('');
   const busy = acting?.status === 'loading';
   return (
-    <section className="space-y-3 rounded-lg border border-border bg-surface p-4" aria-label="Decision">
+    <section className="space-y-3 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Decision">
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <form className="flex flex-wrap items-center gap-3" aria-label="Approve allocation"
         onSubmit={(e) => {

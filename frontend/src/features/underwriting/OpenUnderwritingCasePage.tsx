@@ -3,7 +3,7 @@ import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
@@ -13,6 +13,7 @@ import { BranchSelect } from '@/components/BranchSelect';
 import { CHANNEL_LABEL } from '@/lib/ifrs17';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
+import { FormLayout } from '@/components/FormLayout';
 import { isSingleLifeProduct, PREMIUM_FREQUENCIES, PREMIUM_FREQUENCY_LABELS } from '@/api/types';
 import { BeneficiaryRow } from '@/features/policies/BeneficiaryRow';
 import { blankBeneficiaryRow } from '@/features/policies/beneficiaryForm';
@@ -55,6 +56,10 @@ import { UnsavedGuard } from '@/components/UnsavedGuard';
  */
 export function OpenUnderwritingCasePage() {
   const navigate = useNavigate();
+  // `?applicant=` -- the client record's "New case" arrives with its client already chosen. A
+  // default, not a lock: the picker shows the name and can still be changed.
+  const [searchParams] = useSearchParams();
+  const presetApplicant = searchParams.get('applicant') ?? '';
 
   const openCase = useUnderwritingStore((s) => s.openCase);
   const resetOpenCase = useUnderwritingStore((s) => s.resetOpenCase);
@@ -84,7 +89,7 @@ export function OpenUnderwritingCasePage() {
   } = useForm<OpenCaseFormInput, unknown, OpenCaseFormValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(openCaseFormSchema),
-    defaultValues: blankOpenCaseForm(),
+    defaultValues: { ...blankOpenCaseForm(), applicantPartyId: presetApplicant },
   });
   const {
     fields: beneficiaryFields,
@@ -291,8 +296,10 @@ export function OpenUnderwritingCasePage() {
         description="Browsable afterward from the Underwriting queue — but a policy later issued from it never re-exposes this case's id."
       />
 
-      <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+      <FormLayout formId="open-case-form" outlineLabel="Underwriting case sections">
+      <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
         <UnsavedGuard when={isDirty && !isSubmitting} what="This underwriting case" />
+        <div data-outline="Applicant and product" className="space-y-4">
         {/* "Applicant" is who proposes; "life assured" is whose mortality is assessed.
             Labelled by what they mean rather than by the column name, which is the
             broader problem this console still has elsewhere. */}
@@ -442,10 +449,11 @@ export function OpenUnderwritingCasePage() {
             </p>
           </FormField>
         )}
+        </div>
 
         {/* Where the business came from. Last and grouped: all three are optional, and the
             risk — who, what product, how much — is what the form is actually for. */}
-        <fieldset className="border-t border-border pt-3">
+        <fieldset data-outline="Source" className="border-t border-border pt-3">
           <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
             Source
           </legend>
@@ -510,8 +518,8 @@ export function OpenUnderwritingCasePage() {
           All optional. A product that does not term genuinely has none, and a proposal taken
           with the nomination blank is routine rather than incomplete.
         */}
-        <fieldset className="space-y-4">
-          <legend className="text-sm font-medium">What the applicant is asking for</legend>
+        <fieldset data-outline="What they are asking for" className="space-y-4 border-t border-border pt-3">
+          <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">What the applicant is asking for</legend>
 
           {isAnnuity && annuityTerms?.error != null && (
             <InlineError sticky error={annuityTerms.error as Parameters<typeof InlineError>[0]['error']} />
@@ -761,6 +769,7 @@ export function OpenUnderwritingCasePage() {
           </Button>
         </div>
       </form>
+      </FormLayout>
     </>
   );
 }

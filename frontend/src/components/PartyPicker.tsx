@@ -125,6 +125,11 @@ export function PartyPicker({ value, onChange, kycStatus, placeholder = 'Search 
       });
     return () => {
       cancelled = true;
+      // A lookup cancelled before it answered never resolved anything, so it must not count as
+      // tried. Without this, StrictMode's mount-unmount-mount cancelled the only request and the
+      // remount skipped as already done: a seeded value (the client page's "New case") showed
+      // the placeholder forever.
+      if (resolvedForValue.current === value) resolvedForValue.current = null;
     };
   }, [value]);
 

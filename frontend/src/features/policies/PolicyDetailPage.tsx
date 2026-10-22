@@ -623,11 +623,13 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     return (
       <Panel title="Policy">
         <div className="space-y-4 px-4 pb-3">
-          <dl className="grid grid-cols-1 gap-x-8 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
+          {/* The figures band (the Tinezz direction): the three numbers a person opens a policy to
+              read, set large on the accent, ahead of every date and party. */}
+          <dl className="hero-scope grid grid-cols-1 gap-x-8 gap-y-4 rounded-xl bg-hero p-5 sm:grid-cols-2 lg:grid-cols-3">
             <Field
               label="Sum assured"
               value={formatMoney(policy.sumAssured)}
-              emphasis
+              stacked
               // On a scheme this figure is not a term of the contract anyone
               // typed -- it is the total of the member schedule, restated
               // whenever somebody joins or leaves. Saying so stops it being
@@ -648,6 +650,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
               // No total here: totals are the backend's to compute (lib/money), and billing
               // publishes none across files. Each invoice below states its own.
               <Field
+                stacked
                 label="Premium"
                 value="Charged per monthly file"
                 // No count any more, and it had to go rather than be moved. It read
@@ -663,6 +666,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             ) : vestedOn !== undefined ? (
               // A vested pension pays no more premiums; the figure on the policy is what it was paying.
               <Field
+                stacked
                 label="Premium"
                 value="Ended at vesting"
                 note={`Was ${formatMoney(policy.premium)} ${policy.premiumFrequency ? PREMIUM_FREQUENCY_SUFFIXES[policy.premiumFrequency] : ''}`
@@ -670,12 +674,13 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
               />
             ) : (
               <Field
+                stacked
                 label="Premium"
                 value={
                   <>
                     {formatMoney(policy.premium)}
                     {policy.premiumFrequency && (
-                      <span className="ml-1 text-xs text-subtle-foreground">
+                      <span className="ml-1.5 font-sans text-sm text-subtle-foreground">
                         {PREMIUM_FREQUENCY_SUFFIXES[policy.premiumFrequency]}
                       </span>
                     )}
@@ -696,7 +701,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 cashValueTerms,
                 vested: annuity != null && annuity.status !== 'ACCUMULATING',
               });
-              return <Field label={line.label} value={line.value} {...(line.note ? { note: line.note } : {})} />;
+              return <Field stacked label={line.label} value={line.value} {...(line.note ? { note: line.note } : {})} />;
             })()}
           </dl>
 

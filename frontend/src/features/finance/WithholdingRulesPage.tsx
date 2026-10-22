@@ -76,7 +76,7 @@ export function WithholdingRulesPage() {
         description="Tax withheld from payouts, by rule. The rule is the law's; a second person approves it."
       />
       <div className="space-y-4 px-6 pb-6">
-        <div className="rounded-lg border border-border bg-surface p-4">{renderList()}</div>
+        <div className="rounded-xl border border-border bg-surface shadow-card p-4">{renderList()}</div>
         <ProposeForm />
       </div>
     </>
@@ -165,7 +165,7 @@ function ProposeForm() {
 
   return (
     <form
-      className="space-y-3 rounded-lg border border-border bg-surface p-4"
+      className="space-y-3 rounded-xl border border-border bg-surface shadow-card p-4"
       onSubmit={form.handleSubmit((v) =>
         void propose(
           {

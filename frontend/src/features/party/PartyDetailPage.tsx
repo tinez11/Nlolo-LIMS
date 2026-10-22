@@ -1,3 +1,4 @@
+import { Plus } from 'lucide-react';
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { cameFrom, type Crumb } from '@/lib/cameFrom';
@@ -240,12 +241,20 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
               theirs to change, and finds out otherwise at the point of saving.
             */}
             {realm === 'staff' && party && (
-              <Link
-                className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-hover"
-                to={`/staff/parties/${partyId}/edit`}
-              >
-                Correct details
-              </Link>
+              <>
+                <Button asChild variant="outline">
+                  <Link to={`/staff/parties/${partyId}/edit`}>Correct details</Link>
+                </Button>
+                {/* A case, not a policy: every policy on this console comes through underwriting,
+                    so the client page starts that case with this client already chosen as the
+                    applicant. Any staff member may open one, as from the queue. */}
+                <Button asChild variant="primary">
+                  <Link to={`/staff/underwriting/new?applicant=${encodeURIComponent(partyId ?? '')}`}>
+                    <Plus />
+                    New case
+                  </Link>
+                </Button>
+              </>
             )}
           </span>
         }

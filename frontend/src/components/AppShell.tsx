@@ -125,7 +125,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
       <aside
         id="sidebar"
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col border-r border-border bg-surface-muted transition-[transform,visibility] duration-200 ease-out',
+          'sidebar-scope fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col bg-surface-muted transition-[transform,visibility] duration-200 ease-out',
           // From `md` up it is an ordinary flex column again and the transform
           // is neutralised, so the desktop scene keeps exactly its old layout.
           'md:visible md:static md:translate-x-0',
@@ -139,17 +139,16 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
       >
         <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-4">
           <div className="flex min-w-0 items-center gap-2.5">
-            {/* A monogram in ink, not a logo: several insurers are tenants of this one
-                console, so the mark belongs to the platform and can carry no tenant's
-                colour. */}
+            {/* A monogram, not a logo: several insurers are tenants of this one console, so
+                the mark belongs to the platform rather than to any one of them. */}
             <span
-              className="grid size-8 shrink-0 place-items-center rounded-md bg-accent text-xs font-semibold text-accent-foreground"
+              className="grid size-9 shrink-0 place-items-center rounded-lg bg-accent font-display text-sm font-semibold text-accent-foreground"
               aria-hidden
             >
               LP
             </span>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">Life Platform</p>
+              <p className="truncate font-display text-sm font-semibold">Life Platform</p>
               <p className="truncate text-xs text-muted-foreground">{config.label} console</p>
             </div>
           </div>
@@ -219,10 +218,12 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
               until now nothing said the list continued.
             */
             backgroundImage: [
-              'linear-gradient(to bottom, var(--color-surface-muted), transparent)',
-              'linear-gradient(to top, var(--color-surface-muted), transparent)',
-              'linear-gradient(to bottom, var(--color-border), transparent)',
-              'linear-gradient(to top, var(--color-border), transparent)',
+              // The raw tokens, not the --color-* aliases: those resolve once at the root, so
+              // inside the navy sidebar island they would paint the page colours.
+              'linear-gradient(to bottom, var(--surface-muted), transparent)',
+              'linear-gradient(to top, var(--surface-muted), transparent)',
+              'linear-gradient(to bottom, oklch(0 0 0 / 35%), transparent)',
+              'linear-gradient(to top, oklch(0 0 0 / 35%), transparent)',
             ].join(', '),
             backgroundPosition: 'top, bottom, top, bottom',
             backgroundSize: '100% 20px, 100% 20px, 100% 8px, 100% 8px',

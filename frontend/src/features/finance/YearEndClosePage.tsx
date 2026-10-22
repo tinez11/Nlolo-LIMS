@@ -47,7 +47,7 @@ function Close({ close: c }: { close: YearEndCloseView }) {
         description={`${CLOSE_STATUS_LABEL[c.status ?? ''] ?? c.status} · ${resultLabel(c.profit)} · dividends ${money(c.dividends)}`}
       />
       <div className="space-y-4 px-6 pb-6">
-        <section className="grid grid-cols-1 gap-2 rounded-lg border border-border bg-surface p-4 text-sm sm:grid-cols-2"
+        <section className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-surface shadow-card p-4 text-sm sm:grid-cols-2"
           aria-label="About this close">
           <p><span className="text-muted-foreground">Prepared:</span> {c.preparedAt ? formatInstant(c.preparedAt) : ''} by {c.preparedBy}</p>
           {c.decidedAt && (
@@ -97,7 +97,7 @@ function Decision({ close: c, id }: { close: YearEndCloseView; id: string }) {
   */
   if (confirming) {
     return (
-      <section className="space-y-3 rounded-lg border border-border bg-surface p-4" aria-label="Decision">
+      <section className="space-y-3 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Decision">
         {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
         <ConfirmAct
           heading={`Post the close of ${c.year}?`}
@@ -125,7 +125,7 @@ function Decision({ close: c, id }: { close: YearEndCloseView; id: string }) {
   }
 
   return (
-    <section className="space-y-3 rounded-lg border border-border bg-surface p-4" aria-label="Decision">
+    <section className="space-y-3 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Decision">
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => setConfirming(true)}>
         Approve and post

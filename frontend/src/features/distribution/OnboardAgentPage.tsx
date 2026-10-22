@@ -8,6 +8,7 @@ import { PartyPicker } from '@/components/PartyPicker';
 import { AgentPicker } from '@/components/AgentPicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
+import { FormLayout } from '@/components/FormLayout';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { useDistributionStore } from '@/store/distributionStore';
 import {
@@ -76,7 +77,8 @@ export function OnboardAgentPage() {
         description="Staff/finance only. The party must already have KYC status VERIFIED."
       />
 
-      <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+      <FormLayout formId="onboard-agent-form" outlineLabel="Agent sections">
+      <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
         <UnsavedGuard when={isDirty && !isSubmitting} what="This agent" />
         <FormField label="Party id" error={errors.partyId?.message}>
           <Controller
@@ -196,6 +198,7 @@ export function OnboardAgentPage() {
           </Button>
         </div>
       </form>
+      </FormLayout>
     </>
   );
 }

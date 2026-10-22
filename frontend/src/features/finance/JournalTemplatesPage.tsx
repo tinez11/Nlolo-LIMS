@@ -47,7 +47,7 @@ export function JournalTemplatesPage() {
 
 function TemplateTable({ label, rows }: { label: string; rows: JournalTemplateView[] }) {
   return (
-    <section className="rounded-lg border border-border bg-surface p-4" aria-label={label}>
+    <section className="rounded-xl border border-border bg-surface shadow-card p-4" aria-label={label}>
       <div className="overflow-x-auto">
         <table className="w-full text-sm" aria-label={label}>
           <caption className="pb-1 text-left text-xs font-medium">{label}</caption>

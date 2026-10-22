@@ -289,16 +289,26 @@ export function QuotationCalculatorPage() {
         description="What a product costs and what it pays, before anybody is registered. Nothing is saved."
       />
 
-      {/* One form in all but element: an edit anywhere on the page clears a refusal shown in the confirmation. */}
-      <div className="max-w-xl space-y-4 px-6 pb-8" data-edit-scope>
-        <div className="inline-flex rounded-md border border-border p-0.5">
+      {/*
+        One form in all but element: an edit anywhere on the page clears a refusal shown in the confirmation.
+
+        Two columns on a desk or a tablet held sideways (2026-10-22): what the customer tells the agent on the left, the
+        quotation on the right, kept in view while they talk -- every change on the left reprices it where both can
+        see. On a phone it is one column, in the order the conversation goes: the person, the plan, the price.
+      */}
+      <div
+        className="grid items-start gap-6 px-6 pb-8 lg:grid-cols-[minmax(0,40rem)_minmax(20rem,26rem)]"
+        data-edit-scope
+      >
+        <div className="min-w-0 space-y-5 rounded-xl border border-border bg-surface p-6 shadow-card">
+        <div className="inline-flex gap-1 rounded-xl bg-control p-1">
           <TypeTab label="New person" active={who === 'PROSPECT'} onClick={() => setWho('PROSPECT')} />
           <TypeTab label="Existing client" active={who === 'CLIENT'} onClick={() => setWho('CLIENT')} />
         </div>
 
         {who === 'PROSPECT' ? (
           <fieldset className="space-y-4">
-            <legend className="text-sm font-medium">The person</legend>
+            <legend className="pb-2 text-eyebrow text-subtle-foreground uppercase">The person</legend>
             <FormField label="Full name">
               <Input placeholder="Amina Hassan" {...person.register('fullName')} />
             </FormField>
@@ -352,8 +362,8 @@ export function QuotationCalculatorPage() {
           </FormField>
         )}
 
-        <fieldset className="space-y-4">
-          <legend className="text-sm font-medium">The plan</legend>
+        <fieldset className="space-y-4 border-t border-border pt-3">
+          <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">The plan</legend>
           <FormField
             label="Product"
             hint="Life, endowment, savings, deposit and funeral products. Annuities, unit-linked and group cover are quoted by the office."
@@ -470,8 +480,13 @@ export function QuotationCalculatorPage() {
             </FormField>
           </div>
         </fieldset>
+        </div>
 
+        {/* The quotation and the one act on it. Sticky beside the inputs, and bounded to the screen so Proceed never
+            slides below it on a short laptop; it scrolls on its own when a long quotation is taller than that. */}
+        <div className="min-w-0 space-y-4 lg:sticky lg:top-[var(--pagebar-h,0px)] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:max-h-[calc(100dvh-var(--pagebar-h,0px)-1rem)] lg:overflow-y-auto lg:pb-1">
         <QuotationPreview
+          forCustomer
           inputs={inputs}
           premiumPayingTermMonths={watch('premiumPayingTermMonths')}
           commencementDate={watch('proposedCommencementDate')}
@@ -495,12 +510,21 @@ export function QuotationCalculatorPage() {
         {/* The customer agrees: the one place on this screen that writes anything, and only after a second click.
             Offered only on a quotation the server has priced -- never on a refusal, or on inputs it was not asked
             about -- and it says why when it is not. */}
+        {/* Pinned to the foot of the column, so on a short screen the next step is in view while the quotation
+            above it scrolls. */}
+        <div className="lg:sticky lg:bottom-0">
         {step === 'quote' ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="primary" disabled={!canProceed} onClick={() => setStep('confirm')}>
+          <div className="space-y-2 rounded-xl border border-border bg-surface p-4 shadow-card">
+            <Button
+              type="button"
+              variant="primary"
+              className="w-full"
+              disabled={!canProceed}
+              onClick={() => setStep('confirm')}
+            >
               {who === 'CLIENT' ? 'Proceed to proposal' : 'Proceed to onboarding'}
             </Button>
-            <span className="text-xs text-muted-foreground">{proceedHint}</span>
+            <p className="text-xs text-muted-foreground">{proceedHint}</p>
           </div>
         ) : (
           <ConfirmAct
@@ -529,8 +553,12 @@ export function QuotationCalculatorPage() {
             {saveError && <InlineError error={saveError} />}
           </ConfirmAct>
         )}
+        </div>
+        </div>
 
-        <WhatHappensNext />
+        <div className="min-w-0 lg:col-start-1">
+          <WhatHappensNext />
+        </div>
       </div>
     </>
   );

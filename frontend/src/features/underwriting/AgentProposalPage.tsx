@@ -18,6 +18,7 @@ import { PREMIUM_FREQUENCIES, PREMIUM_FREQUENCY_LABELS, type UnderwritingCaseVie
 import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
+import { FormLayout } from '@/components/FormLayout';
 import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
 import { ProductName } from '@/components/ProductName';
@@ -90,7 +91,9 @@ export function AgentProposalPage() {
       <PageHeader
         breadcrumb={[{ label: 'Proposals', to: '/agents/proposals' }]}
         title={`Proposal ${view.proposalNumber ?? ''}`}
-        actions={
+        // `status`, beside the title, as on every other record: a state is what the record IS, and
+        // the actions slot is for controls.
+        status={
           view.status === 'DECIDED' ? (
             <StatusBadge kind="underwritingDecision" value={view.decisionOutcome} />
           ) : (
@@ -98,8 +101,9 @@ export function AgentProposalPage() {
           )
         }
       />
-      <div className="max-w-2xl space-y-4 px-6 pb-8">
-        <Panel emphasis title={view.status === 'RETURNED' ? 'What the underwriter asked' : 'Where it is'}>
+      <FormLayout formId="agent-proposal" outlineLabel="Proposal sections" card={false}>
+      <div className="space-y-4">
+        <Panel outline emphasis title={view.status === 'RETURNED' ? 'What the underwriter asked' : 'Where it is'}>
           <div className="space-y-2 px-4 pb-4 text-sm">
             {view.status === 'RETURNED' && (
               <>
@@ -155,6 +159,7 @@ export function AgentProposalPage() {
         )}
         <ProposalHistoryPanel events={history} />
       </div>
+      </FormLayout>
     </>
   );
 }
@@ -218,7 +223,7 @@ function PlanForm({ view, versionId, onSaved }: {
   }
 
   return (
-    <Panel title="The plan" subtitle="Correct the cover, term or payments if the underwriter asked.">
+    <Panel outline title="The plan" subtitle="Correct the cover, term or payments if the underwriter asked.">
       <div className="space-y-4 px-4 pb-4">
         <div className="grid grid-cols-2 gap-3">
           <FormField label={termAccountTerms ? 'Contribution per payment' : 'Sum assured or amount'} error={sumError}>
@@ -297,7 +302,7 @@ function ClientForm({ caseId, partyId, onSaved }: { caseId: string; partyId: str
   // A failed read is said, with a retry -- it used to wait on "Loading" for ever.
   if (party.status === 'error' && !party.data) {
     return (
-      <Panel title="The client">
+      <Panel outline title="The client">
         <div className="px-4 pb-4">
           <ErrorPanel error={party.error ?? toApiError(null)} onRetry={() => void loadParty(partyId)} />
         </div>
@@ -344,6 +349,7 @@ function ClientFormLoaded({ caseId, initial, onSaved }: {
 
   return (
     <Panel
+      outline
       title="The client"
       subtitle="Correct the client's details if the underwriter asked. A changed name or date of birth sends their ID back for verification."
     >
@@ -376,7 +382,7 @@ function ResubmitForm({ caseId, onDone }: { caseId: string; onDone: (v: Underwri
   }
 
   return (
-    <Panel title="Resubmit" subtitle="When everything asked is corrected, send it back to the underwriter.">
+    <Panel outline title="Resubmit" subtitle="When everything asked is corrected, send it back to the underwriter.">
       <form className="space-y-4 px-4 pb-4" onSubmit={(e) => void handleSubmit(resubmit)(e)}>
         <FormField label="Note to the underwriter (optional)">
           <Controller control={control} name="note" render={({ field }) => <Textarea className="min-h-12" {...field} />} />

@@ -89,7 +89,9 @@ export function PageHeader({
       // tabs too: they span the work column only, and without this the record rail slid under the
       // bar with no edge at all -- its text sliced off mid-line beneath the title.
       data-scrolled={scrolled || undefined}
-      className="sticky top-0 z-20 flex flex-wrap items-start justify-between gap-4 border-b border-transparent bg-background px-6 pt-4 pb-3 transition-colors data-[scrolled]:border-border"
+      // Actions sit on the title block's last line (items-end), beside the title rather than up
+      // against the breadcrumb in the corner.
+      className="sticky top-0 z-20 flex flex-wrap items-end justify-between gap-4 border-b border-transparent bg-background px-6 pt-4 pb-3 transition-colors data-[scrolled]:border-border"
     >
       <div className="min-w-0">
         {breadcrumb && breadcrumb.length > 0 && (
@@ -107,7 +109,9 @@ export function PageHeader({
           </nav>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-headline">{title}</h1>
+          {/* One step down on a phone: the bar is sticky, and a 28px title wrapping to two lines
+              held a third of the screen. */}
+          <h1 className="text-display md:text-headline">{title}</h1>
           {status}
         </div>
         {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}

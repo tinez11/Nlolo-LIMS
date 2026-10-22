@@ -37,7 +37,7 @@ export function ReportsCataloguePage() {
     return categories.map((category) => (
       <section key={category} className="space-y-2">
         <h2 className="text-sm font-semibold">{CATEGORY_LABELS[category] ?? category}</h2>
-        <ul className="divide-y divide-border rounded-lg border border-border bg-surface">
+        <ul className="divide-y divide-border rounded-xl border border-border bg-surface shadow-card">
           {reports
             .filter((r) => r.category === category)
             .map((r) => (
@@ -83,7 +83,7 @@ function RebuildPanel() {
   }
 
   return (
-    <section className="space-y-2 rounded-lg border border-border bg-surface p-3">
+    <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-3">
       <h2 className="text-sm font-semibold">Reporting data</h2>
       <p className="text-sm text-muted-foreground">
         Rebuild clears this organisation's reporting data and replays every recorded event. Reports read partial

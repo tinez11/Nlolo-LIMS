@@ -42,7 +42,7 @@ export function PostingRulesPage() {
       return <EmptyState title="No rule matches" description="Search by entry, event, account or description." />;
     }
     return [...byEvent.entries()].map(([event, eventRules]) => (
-      <section key={event} className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label={event}>
+      <section key={event} className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label={event}>
         <p className="font-mono text-xs font-medium">{event}</p>
         {eventRules.map((rule) => (
           <RuleTable key={rule.id} rule={rule} />
@@ -124,7 +124,7 @@ const RATE_LABEL: Record<string, { name: string; none: string }> = {
  */
 function RatesPanel({ settings }: { settings: PostingRulesView['settings'] }) {
   return (
-    <section className="space-y-1 rounded-lg border border-border bg-surface p-4" aria-label="Rates">
+    <section className="space-y-1 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Rates">
       <p className="text-xs font-medium">Rates (set in Accounting policies)</p>
       <ul className="text-sm">
         {settings.map((s) => {

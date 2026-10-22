@@ -93,7 +93,7 @@ export function PeriodsPage() {
             Show
           </Button>
         </form>
-        <div className="rounded-lg border border-border bg-surface p-4">{renderTable()}</div>
+        <div className="rounded-xl border border-border bg-surface shadow-card p-4">{renderTable()}</div>
       </div>
     </>
   );

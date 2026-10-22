@@ -9,6 +9,7 @@ import type { FuneralTermsView } from '@/api/types';
 import { canUnderwriteGroupSchemes, readIdentity } from '@/auth/claims';
 import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
+import { FormLayout } from '@/components/FormLayout';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyPicker } from '@/components/PartyPicker';
@@ -148,7 +149,8 @@ export function ProposeGroupFuneralPage() {
       />
       {!canUnderwrite && <NoAccess what="Proposing a group funeral scheme" who="underwriters" />}
       {canUnderwrite && (
-        <form className="max-w-3xl space-y-4 px-6 pb-8" onSubmit={(e) => { e.preventDefault(); void onSubmit(); }}>
+        <FormLayout formId="group-funeral-form" outlineLabel="Funeral scheme sections">
+        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void onSubmit(); }}>
           {/* Not react-hook-form, so "dirty" is spelt out; and it stands down while the case is
               being opened or once it has been, so the jump to the new case is not held. */}
           <UnsavedGuard
@@ -159,6 +161,7 @@ export function ProposeGroupFuneralPage() {
             }
             what="This scheme proposal"
           />
+          <div data-outline="Association and plan" className="space-y-4">
           <FormField label="Association (the policyholder, who pays)">
             <PartyPicker value={association || null} onChange={(id) => setAssociation(id ?? '')}
               placeholder="Search for the association by name" />
@@ -220,8 +223,9 @@ export function ProposeGroupFuneralPage() {
               .
             </p>
           )}
+          </div>
 
-          <fieldset className="border-t border-border pt-3">
+          <fieldset data-outline="Members and families" className="border-t border-border pt-3">
             <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
               Members and their families
             </legend>
@@ -259,6 +263,7 @@ export function ProposeGroupFuneralPage() {
             </Button>
           </fieldset>
 
+          <div data-outline="Quotation">
           <SchemeQuotation
             productId={productId}
             versionId={versionId}
@@ -268,6 +273,7 @@ export function ProposeGroupFuneralPage() {
             associationPartyId={association}
             currency={currency}
           />
+          </div>
 
           {showProblems && missing.length > 0 && (
             <ul className="list-disc space-y-0.5 pl-5 text-xs text-status-danger-fg" aria-label="Before proposing">
@@ -281,6 +287,7 @@ export function ProposeGroupFuneralPage() {
             <Button asChild type="button" variant="ghost"><Link to="/staff/policies">Cancel</Link></Button>
           </div>
         </form>
+        </FormLayout>
       )}
     </>
   );

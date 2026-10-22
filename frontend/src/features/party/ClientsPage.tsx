@@ -212,12 +212,8 @@ export function ClientsPage({
       header: 'KYC status',
       render: (p) => (p.kycStatus ? <StatusBadge kind="kyc" value={p.kycStatus} /> : '—'),
     },
-    {
-      key: 'partyId',
-      header: 'Party id',
-      secondary: true,
-      render: (p) => <span className="font-mono text-xs">{p.partyId ?? '—'}</span>,
-    },
+    // No party id column (2026-10-22): a 36-character uuid on every row is nothing a person scans
+    // a register by. It is on the record itself, as "Client id", for the rare time it is needed.
   ];
 
   function renderBody() {
@@ -339,7 +335,7 @@ export function ClientsPage({
       />
 
       <div className="px-6 pb-6">
-        <div className="rounded-lg border border-border bg-surface">
+        <div className="rounded-xl border border-border bg-surface shadow-card">
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
             <FilterChip
               label="All"

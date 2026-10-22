@@ -41,7 +41,7 @@ export function ManualJournalsPage() {
       return <EmptyState title="No manual journals" description="Start one from a template or a blank journal." />;
     }
     return (
-      <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+      <div className="overflow-x-auto rounded-xl border border-border bg-surface shadow-card">
         <table className="w-full text-sm" aria-label="Manual journals">
           <thead>
             <tr className="text-left text-xs text-muted-foreground">

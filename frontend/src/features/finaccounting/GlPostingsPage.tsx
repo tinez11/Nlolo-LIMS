@@ -197,7 +197,7 @@ export function GlPostingsPage() {
       />
 
       <div className="px-6 pb-6">
-        <div className="rounded-lg border border-border bg-surface">
+        <div className="rounded-xl border border-border bg-surface shadow-card">
           <form
             className="flex flex-wrap items-end gap-2 border-b border-border px-3 py-2.5"
             onSubmit={applyFilters}

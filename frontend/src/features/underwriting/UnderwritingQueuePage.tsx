@@ -267,7 +267,7 @@ export function UnderwritingQueuePage() {
       />
 
       <div className="px-6 pb-6">
-        <div className="rounded-lg border border-border bg-surface">
+        <div className="rounded-xl border border-border bg-surface shadow-card">
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
             {/* What is waiting, newest arrival first -- a resubmission arrives again -- and what came back from agents. */}
             <FilterChip label="Awaiting decision" active={view === 'arrivals'} onClick={() => update({ view: 'arrivals' })} />

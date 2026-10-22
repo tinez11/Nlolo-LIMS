@@ -111,7 +111,7 @@ export function RegulatoryReturnsPage() {
             }}
           />
         )}
-        <div className="rounded-lg border border-border bg-surface">{renderBody()}</div>
+        <div className="rounded-xl border border-border bg-surface shadow-card">{renderBody()}</div>
       </div>
 
       <RegulatoryReturnDrawer returnId={previewing} onClose={() => setPreviewing(null)} />
@@ -147,7 +147,7 @@ function GenerateReturnForm({ onDone }: { onDone: (returnId?: string) => void })
 
   return (
     <form
-      className="space-y-2 rounded-lg border border-border bg-surface p-3"
+      className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-3"
       onSubmit={(e) => void handleSubmit(onSubmit)(e)}
     >
       <div className="flex items-end gap-2">

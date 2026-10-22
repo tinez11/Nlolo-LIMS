@@ -52,7 +52,7 @@ function Statement({ statement: s }: { statement: ReinsuranceStatementView }) {
         description={`Reinsurance statement · ${STATEMENT_STATUS_LABEL[s.status] ?? s.status}`}
       />
       <div className="space-y-4 px-6 pb-6">
-        <section className="grid grid-cols-1 gap-2 rounded-lg border border-border bg-surface p-4 text-sm sm:grid-cols-2"
+        <section className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-surface shadow-card p-4 text-sm sm:grid-cols-2"
           aria-label="Statement">
           <p><span className="text-muted-foreground">Status:</span> {STATEMENT_STATUS_LABEL[s.status] ?? s.status}</p>
           <p><span className="text-muted-foreground">Prepared:</span> {formatInstant(s.preparedAt)}{isPreparer ? ' (by you)' : ''}</p>
@@ -89,7 +89,7 @@ function Figures({ statement: s }: { statement: ReinsuranceStatementView }) {
   const [profitCommission, setProfitCommission] = useState(s.profitCommission);
   const [reason, setReason] = useState(s.reason ?? '');
   return (
-    <form className="space-y-3 rounded-lg border border-border bg-surface p-4" aria-label="From the reinsurer's statement"
+    <form className="space-y-3 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="From the reinsurer's statement"
       onSubmit={(e) => {
         e.preventDefault();
         void update(s.statementId, { fundsWithheld: withheld.trim() || '0', profitCommission: profitCommission.trim() || '0',
@@ -117,7 +117,7 @@ function Figures({ statement: s }: { statement: ReinsuranceStatementView }) {
 
 function Items({ statement: s }: { statement: ReinsuranceStatementView }) {
   return (
-    <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Items">
+    <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Items">
       <p className="text-xs font-medium">What it settles</p>
       {s.items.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nothing: no bordereau charged and no recovery recorded this quarter.</p>
@@ -146,7 +146,7 @@ function Items({ statement: s }: { statement: ReinsuranceStatementView }) {
 /** The journal approval posts -- the approver sees exactly what will reach the ledger. */
 function Journal({ statement: s }: { statement: ReinsuranceStatementView }) {
   return (
-    <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Journal preview">
+    <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Journal preview">
       <p className="text-xs font-medium">{s.status === 'APPROVED' ? 'Journal posted' : 'Journal on approval'}</p>
       {s.journal.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nothing to post: every figure is zero.</p>
@@ -181,7 +181,7 @@ function Documents({ statement: s, editable }: { statement: ReinsuranceStatement
   const acting = useReinsuranceStatementsStore((st) => st.acting[`documents.${s.statementId}`]);
   const input = useRef<HTMLInputElement>(null);
   return (
-    <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Documents">
+    <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Documents">
       <p className="text-xs font-medium">The reinsurer's statement</p>
       {s.documentRefs.length === 0 ? (
         <p className="text-sm text-muted-foreground">None yet — a statement needs the reinsurer's to be submitted.</p>
@@ -218,7 +218,7 @@ function Actions({ statement: s, isPreparer, mayDecide }: { statement: Reinsuran
   const busy = acting?.status === 'loading';
 
   return (
-    <section className="space-y-3 rounded-lg border border-border bg-surface p-4" aria-label="Actions">
+    <section className="space-y-3 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Actions">
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <div className="flex flex-wrap items-end gap-2">
         {s.status === 'DRAFT' && isPreparer && (

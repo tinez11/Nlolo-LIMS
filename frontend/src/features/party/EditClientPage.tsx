@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
 import { FormField } from '@/components/FormField';
+import { FormLayout } from '@/components/FormLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
@@ -141,8 +142,9 @@ export function EditClientPage() {
       )}
 
       {party?.partyType === 'INDIVIDUAL' && (
+        <FormLayout formId="edit-client-form" outlineLabel="Client sections">
         <form
-          className="max-w-2xl space-y-4 px-6 pb-8"
+          className="space-y-4"
           onSubmit={(e) => void handleSubmit(saveIndividual)(e)}
         >
           <UnsavedGuard when={isDirty && !isSubmitting} what="These corrections" />
@@ -152,14 +154,16 @@ export function EditClientPage() {
             <InlineError error={saveError} />
           )}
 
-          <Button type="submit" variant="primary" disabled={saving}>
-            {saving ? 'Saving…' : 'Save corrections'}
+          <Button type="submit" variant="primary" pending={saving}>
+            Save corrections
           </Button>
         </form>
+        </FormLayout>
       )}
 
       {party && party.partyType !== 'INDIVIDUAL' && (
-        <form className="max-w-2xl space-y-4 px-6 pb-8" onSubmit={(e) => void saveCorporate(e)}>
+        <FormLayout formId="edit-company-form" outlineLabel="Company sections">
+        <form className="space-y-4" onSubmit={(e) => void saveCorporate(e)}>
           <FormField label="Registered name">
             <Input value={corporateName} onChange={(e) => setCorporateName(e.target.value)} />
           </FormField>
@@ -191,10 +195,11 @@ export function EditClientPage() {
             <InlineError error={saveError} />
           )}
 
-          <Button type="submit" variant="primary" disabled={saving}>
-            {saving ? 'Saving…' : 'Save corrections'}
+          <Button type="submit" variant="primary" pending={saving}>
+            Save corrections
           </Button>
         </form>
+        </FormLayout>
       )}
     </>
   );

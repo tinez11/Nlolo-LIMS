@@ -23,6 +23,7 @@ export function Field({
   value,
   note,
   emphasis = false,
+  stacked = false,
   className,
 }: {
   label: string;
@@ -30,12 +31,28 @@ export function Field({
   note?: string;
   emphasis?: boolean;
   /**
+   * The label above the value rather than across from it, for a headline figure in a figures
+   * band -- the value then takes the Display tier.
+   */
+  stacked?: boolean;
+  /**
    * An escape hatch for spacing only -- a group's first field takes `mt-3` so a long flat list
    * reads as clusters (who / contact / record) instead of one undifferentiated run. Never a rule:
    * the gap between rows is already the system's way of grouping without lined paper.
    */
   className?: string;
 }) {
+  if (stacked) {
+    return (
+      <div className={`flex min-w-0 flex-col gap-1${className ? ` ${className}` : ''}`}>
+        <dt className="text-sm text-muted-foreground">{label}</dt>
+        {/* The body face, as every figure in the console: Sora is for heading words, never for numbers. */}
+        <dd className="min-w-0 text-display">{value}</dd>
+        {note && <dd className="text-xs text-subtle-foreground">{note}</dd>}
+      </div>
+    );
+  }
+
   return (
     // No rule between rows (2026-10-09): a record rail ruled under every field read as lined paper,
     // one line every row. The label/value pairing across the row is carried by the baseline.

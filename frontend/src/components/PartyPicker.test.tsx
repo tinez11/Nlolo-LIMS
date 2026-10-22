@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -171,6 +172,20 @@ describe('PartyPicker', () => {
     await waitFor(() => expect(screen.getByText('Amina Owner')).toBeInTheDocument());
     expect(partyApi.getParty).toHaveBeenCalledWith(aminaOwner.partyId);
     expect(screen.queryByText('Search by name…')).not.toBeInTheDocument();
+  });
+
+  it('still resolves a pre-existing value under StrictMode, whose remount cancels the first lookup', async () => {
+    // The dev build mounts, unmounts and remounts. The first lookup was cancelled and the remount
+    // skipped it as already tried, so a seeded value showed the placeholder for good.
+    vi.spyOn(partyApi, 'getParty').mockResolvedValue(aminaOwner);
+
+    render(
+      <StrictMode>
+        <PartyPicker value={aminaOwner.partyId ?? null} onChange={vi.fn()} />
+      </StrictMode>,
+    );
+
+    await waitFor(() => expect(screen.getByText('Amina Owner')).toBeInTheDocument());
   });
 
   it('a clear button on a populated field calls onChange(null, null) and reverts to the placeholder', async () => {

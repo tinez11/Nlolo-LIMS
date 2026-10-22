@@ -43,7 +43,7 @@ export function UnpostedEventsPage() {
     const resolved = rows.filter((e) => e.resolution != null);
     return (
       <>
-        <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Waiting to post">
+        <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Waiting to post">
           <p className="text-xs font-medium">Waiting to post</p>
           {open.length === 0 ? (
             <EmptyState title="Nothing waiting" description="Every event the ledger received has posted." />
@@ -56,7 +56,7 @@ export function UnpostedEventsPage() {
           )}
         </section>
         {resolved.length > 0 && (
-          <section className="space-y-2 rounded-lg border border-border bg-surface p-4" aria-label="Resolved">
+          <section className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4" aria-label="Resolved">
             <p className="text-xs font-medium">Resolved</p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm" aria-label="Resolved events">

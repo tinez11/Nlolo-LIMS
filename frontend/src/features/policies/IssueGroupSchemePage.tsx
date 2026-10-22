@@ -7,6 +7,7 @@ import { PREMIUM_FREQUENCIES, PREMIUM_FREQUENCY_LABELS } from '@/api/types';
 import { DatePicker } from '@/components/DatePicker';
 import { InlineError } from '@/components/InlineError';
 import { FormField } from '@/components/FormField';
+import { FormLayout } from '@/components/FormLayout';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyPicker } from '@/components/PartyPicker';
 import { NoAccess } from '@/components/states';
@@ -171,8 +172,21 @@ export function IssueGroupSchemePage() {
       )}
 
       {canUnderwrite && (
-      <form className="max-w-2xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+      <FormLayout
+        formId="group-scheme-form"
+        outlineLabel="Scheme proposal sections"
+        aside={
+          <SchemeSoFar
+            members={scheduleRows?.length ?? 0}
+            total={formatMoney({ amount: runningTotal, currencyCode: currency || 'TZS' })}
+            unpriced={unpriced}
+            overLimit={overLimit}
+          />
+        }
+      >
+      <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
         <UnsavedGuard when={isDirty && !isSubmitting} what="This scheme proposal" />
+        <div data-outline="Policyholder and product" className="space-y-4">
         <FormField label="Policyholder (the employer or association)" error={errors.policyholderPartyId?.message}>
           <Controller
             control={control}
@@ -219,9 +233,10 @@ export function IssueGroupSchemePage() {
             </Select>
           )}
         </FormField>
+        </div>
 
         {/* --- How the scheme values anybody ---------------------------------- */}
-        <fieldset className="border-t border-border pt-3">
+        <fieldset data-outline="Benefit basis" className="border-t border-border pt-3">
           <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
             Benefit basis
           </legend>
@@ -333,7 +348,7 @@ export function IssueGroupSchemePage() {
         </fieldset>
 
         {/* --- The opening schedule ------------------------------------------- */}
-        <fieldset className="border-t border-border pt-3">
+        <fieldset data-outline="Opening schedule" className="border-t border-border pt-3">
           <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
             Opening schedule
           </legend>
@@ -456,7 +471,7 @@ export function IssueGroupSchemePage() {
         </fieldset>
 
         {/* --- Premium and term ----------------------------------------------- */}
-        <fieldset className="border-t border-border pt-3">
+        <fieldset data-outline="Premium and term" className="border-t border-border pt-3">
           <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
             Premium and term
           </legend>
@@ -529,8 +544,48 @@ export function IssueGroupSchemePage() {
           </Button>
         </div>
       </form>
+      </FormLayout>
       )}
     </>
+  );
+}
+
+/**
+ * The scheme as the schedule stands, beside the form. The same derived figures as the preview at
+ * the foot of the schedule -- the platform's own estimate, never sent -- kept in view while the
+ * person is up in the basis or down in the premium.
+ */
+function SchemeSoFar({
+  members,
+  total,
+  unpriced,
+  overLimit,
+}: {
+  members: number;
+  total: string;
+  unpriced: number;
+  overLimit: number;
+}) {
+  return (
+    <section aria-label="The scheme so far" className="rounded-xl border border-border bg-surface p-4 shadow-card">
+      <p className="text-eyebrow text-subtle-foreground uppercase">The scheme so far</p>
+      <p className="mt-2 text-xs text-muted-foreground">Total sum insured</p>
+      <p className="text-title">{total}</p>
+      <dl className="mt-3 space-y-1.5 border-t border-border pt-3 text-sm">
+        <div className="flex justify-between gap-3">
+          <dt className="text-muted-foreground">Members</dt>
+          <dd>{members}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-muted-foreground">Not yet priced</dt>
+          <dd>{unpriced}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-muted-foreground">Over the free cover limit</dt>
+          <dd>{overLimit}</dd>
+        </div>
+      </dl>
+    </section>
   );
 }
 

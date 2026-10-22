@@ -215,7 +215,7 @@ export function AgentProposalsPage() {
         count={<CountLine {...count} />}
       />
       <div className="px-6 pb-6">
-        <div className="rounded-lg border border-border bg-surface">
+        <div className="rounded-xl border border-border bg-surface shadow-card">
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
             <FilterChip label="Needs your action" active={needsAction} onClick={() => update({ view: 'needs-action' })} />
             <span className="mx-1 h-4 w-px bg-border" aria-hidden />

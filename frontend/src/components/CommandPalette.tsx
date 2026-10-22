@@ -60,7 +60,7 @@ export function CommandPalette({
         <Dialog.Overlay className="fixed inset-0 z-50 bg-foreground/25" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="fixed top-[15vh] left-1/2 z-50 w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-lg border border-border bg-surface shadow-raise"
+          className="fixed top-[15vh] left-1/2 z-50 w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-surface shadow-card shadow-raise"
         >
           <Dialog.Title className="sr-only">Go to</Dialog.Title>
           <Command label="Go to" loop>

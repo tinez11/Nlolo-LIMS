@@ -156,7 +156,7 @@ export function ProductsPage() {
         */}
         {canAuthor && <DraftProducts />}
 
-        <div className="rounded-lg border border-border bg-surface">
+        <div className="rounded-xl border border-border bg-surface shadow-card">
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
             <FilterChip label="All" active={category === undefined} onClick={() => update(undefined)} />
             {PRODUCT_CATEGORIES.map((value) => (

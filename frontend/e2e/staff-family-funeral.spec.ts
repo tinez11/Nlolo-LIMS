@@ -138,7 +138,8 @@ test.describe('family funeral cover', () => {
     await page.getByLabel('Date of birth').nth(1).fill(dmy(barakaBorn));
     const quote = page.getByRole('table', { name: 'Family quote' });
     await expect(quote).toContainText('TZS 72,000.00', { timeout: 15_000 });
-    await expect(quote.getByLabel('Instalment')).toHaveText('TZS 6,300.00');
+    // The instalment heads the Quotation panel (2026-10-22), above the per-life table rather than in its footer.
+    await expect(page.getByLabel('Instalment')).toHaveText('TZS 6,300.00');
     await page.getByRole('button', { name: 'Open case' }).click();
     await expect(page).toHaveURL(/\/staff\/underwriting\/[0-9a-f-]{36}$/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Funeral plan' })).toBeVisible({ timeout: 15_000 });
