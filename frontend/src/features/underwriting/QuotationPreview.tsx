@@ -126,7 +126,7 @@ function Headline({
         {suffix && <span className="text-sm text-muted-foreground">{suffix}</span>}
       </p>
       {caption && <p className="mt-1 text-xs text-subtle-foreground">{caption}</p>}
-      {sentence && <p className="mt-1.5 text-sm">{sentence}</p>}
+      {sentence && <p className="mt-1 text-sm text-muted-foreground">{sentence}</p>}
       {parts.length > 1 && (
         <div className="mt-4 space-y-2.5 border-t border-white/25 pt-3">
           {/* The bar only where every part is big enough to see; a 2% sliver reads as a broken bar, not a share. */}
@@ -864,11 +864,10 @@ function TermAccountQuotation({
   const years = q.termMonths != null ? formatMonths(q.termMonths) : 'the term';
   // One short line that says only what the big figure does not: the other half of the answer. The breakdown below it
   // carries the amounts, so the line never repeats them (the user, 2026-10-23: "hard to read").
-  const on = q.maturityDate ? ` on ${formatDate(q.maturityDate)}` : '';
   const sentence = !rich || !q.amount || !q.maturityValue
     ? undefined
     : contributionLeads
-      ? `Pays out ${formatMoney(q.maturityValue)}${on}.`
+      ? `Pays out ${formatMoney(q.maturityValue)} at maturity.`
       : `From ${formatMoney(q.amount)}${frequency ? ` ${frequency}` : ''} for ${years}.`;
   const split = rich && t.paidIn && q.interest
     ? [
