@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { quoteFuneral } from '@/api/funeral';
-import type { FuneralQuoteView } from '@/api/types';
+import type { FuneralQuoteRequest, FuneralQuoteView } from '@/api/types';
 import { toApiError, type ApiError } from '@/lib/apiError';
 import type { FuneralRoleName } from '@/features/products/funeralSchema';
 
@@ -40,6 +40,28 @@ export type FuneralQuotation =
  *
  * <p>Nothing here prices anything: every figure on the quote is the server's, from the plan's own premium grid.
  */
+/**
+ * The funeral-quote request for this family on {@code planCode} -- the one the hook sends, exported so the same family
+ * can be priced on the product's other plans side by side (2026-10-23).
+ */
+export function funeralQuoteRequest(inputs: FuneralQuotationInputs, planCode = inputs.planCode): FuneralQuoteRequest {
+  const { frequency, commencement, mainMember, dependants } = inputs;
+  return {
+    planCode,
+    frequency: frequency as 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY',
+    ...(commencement ? { asOf: commencement } : {}),
+    lives: [
+      { role: 'MAIN_MEMBER', name: mainMember?.name ?? '', dateOfBirth: mainMember?.dateOfBirth ?? null },
+      ...dependants.map((d) => ({
+        role: d.role as FuneralRoleName,
+        name: d.fullName,
+        dateOfBirth: d.dateOfBirth || null,
+        student: d.student,
+      })),
+    ],
+  };
+}
+
 export function useFuneralQuotation(inputs: FuneralQuotationInputs): FuneralQuotation {
   const { productId, productVersionId, planCode, frequency, commencement, mainMember, dependants } = inputs;
 
