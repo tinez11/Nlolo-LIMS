@@ -284,6 +284,8 @@ export function QuotationCalculatorPage() {
   const commencement = watch('proposedCommencementDate');
   const annuityFormCode = watch('annuityFormCode');
   const annuityFrequency = watch('annuityFrequency');
+  // Every input an alternative is priced on, so changing any of them -- a term, a date of birth -- re-prices them all.
+  const asked = JSON.stringify([inputs, commencement, annuityFrequency, who, applicantPartyId, funeral?.mainMember]);
   const alternatives: Alternative[] = (() => {
     if (!result) return [];
     const round = (n: number) => Math.max(1000, Math.round(n / 1000) * 1000);
@@ -294,7 +296,7 @@ export function QuotationCalculatorPage() {
       return [0.5, 1, 2].map((f) => {
         const cover = f === 1 ? base : round(base * f);
         return {
-          key: `premium-${cover}`,
+          key: `premium-${asked}-${cover}`,
           label: `Cover of ${formatMoney({ amount: String(cover), currencyCode: currency })}`,
           current: f === 1,
           price: () => quotePremium(productId, premiumQuoteRequest(inputs, String(cover))).then((q) => ({
@@ -313,7 +315,7 @@ export function QuotationCalculatorPage() {
         return [0.75, 1, 1.5].map((f) => {
           const amount = f === 1 ? base : round(base * f);
           return {
-            key: `ta-${amount}-${term}-${q.ratePercent}`,
+            key: `ta-${asked}-${amount}-${term}-${q.ratePercent}`,
             label: `${formatMoney({ amount: String(amount), currencyCode: currency })} ${freq ? PREMIUM_FREQUENCY_LABELS[freq].toLowerCase() : ''}`,
             current: f === 1,
             price: () => quoteProductSavings(productId, productVersionId, {
@@ -334,7 +336,7 @@ export function QuotationCalculatorPage() {
         const terms = q.offeredTermMonths.slice(Math.max(0, Math.min(at - 1, q.offeredTermMonths.length - 3)))
           .slice(0, 3);
         return terms.map((months) => ({
-          key: `dep-${months}-${q.amount!.amount}`,
+          key: `dep-${asked}-${months}-${q.amount!.amount}`,
           label: `For ${formatMonths(months)}`,
           current: months === current,
           price: () => quoteProductSavings(productId, productVersionId, {
@@ -355,7 +357,7 @@ export function QuotationCalculatorPage() {
         commencement, mainMember: funeral.mainMember, dependants: funeral.dependants,
       };
       return plans.map((plan) => ({
-        key: `fun-${plan.planCode}-${JSON.stringify(funeral.dependants)}-${inputs.frequency}`,
+        key: `fun-${asked}-${plan.planCode}-${JSON.stringify(funeral.dependants)}-${inputs.frequency}`,
         label: plan.name || plan.planCode,
         current: plan.planCode === funeral.planCode,
         price: () => quoteFuneral(productId, productVersionId, funeralQuoteRequest(family, plan.planCode)).then((q) => ({
@@ -367,7 +369,7 @@ export function QuotationCalculatorPage() {
     if (result.kind === 'annuity' && annuityRead) {
       const forms = annuityRead.forms.slice(0, 3);
       return forms.map((form) => ({
-        key: `ann-${form.formCode}-${result.purchasePrice}-${annuityFrequency}-${rating.dateOfBirth}`,
+        key: `ann-${asked}-${form.formCode}-${result.purchasePrice}-${annuityFrequency}-${rating.dateOfBirth}`,
         label: form.guaranteeYears ? `Paid for life, at least ${form.guaranteeYears} years` : 'Paid for life',
         current: form.formCode === annuityFormCode,
         price: () => quoteAnnuity({
