@@ -40,6 +40,7 @@ import {
   useCreditLifeStore,
 } from '@/store/creditLifeStore';
 import { selectDetail, selectScheme, usePolicyStore } from '@/store/policyStore';
+import { ProductName } from '@/components/ProductName';
 import { CommissionPanel } from './CommissionPanel';
 import { FreeCoverLimitEditor } from './FreeCoverLimitEditor';
 import { SubmissionsPanel, type SubmissionRow } from './SubmissionsPanel';
@@ -212,7 +213,9 @@ export function CreditLifeSchemePage() {
         }
         description={
           <span className="flex flex-wrap items-center gap-1.5">
-            Credit life ·
+            {policyRecord.data?.productId
+              ? <ProductName productId={policyRecord.data.productId} withCode={false} />
+              : 'Credit life'}{' '}·
             {data?.policyholderPartyId ? (
               <PartyName partyId={data.policyholderPartyId} />
             ) : (

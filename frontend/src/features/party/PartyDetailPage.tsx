@@ -38,6 +38,7 @@ import { Panel } from '@/components/Panel';
 import { RecordTabs, type TabDef } from '@/components/RecordTabs';
 import { DetailLayout } from '@/components/DetailLayout';
 import { PortalAccessPanel } from './PortalAccessPanel';
+import { PolicyProduct } from '@/components/PolicyProduct';
 import { KycDecisionPanel, KycFilingPanel } from './KycPanel';
 import { ClientOverview } from './ClientOverview';
 
@@ -596,17 +597,22 @@ function MoreRow({ hidden, to, label }: { hidden: number; to?: string; label?: s
  */
 const ClientTrail = createContext<Crumb[] | null>(null);
 
-function LinkRow({ to, left, right }: { to: string; left: ReactNode; right: ReactNode }) {
+function LinkRow({ to, left, middle, right }: { to: string; left: ReactNode; middle?: ReactNode; right: ReactNode }) {
   const trail = useContext(ClientTrail);
   return (
     <Link
       to={to}
       relative="path"
       {...(trail ? { state: cameFrom(trail) } : {})}
-      className="flex items-baseline justify-between gap-3 px-4 py-2 text-xs hover:bg-hover"
+      className={middle === undefined
+        ? 'flex items-baseline justify-between gap-3 px-4 py-2 text-xs hover:bg-hover'
+        // Three columns when a row has something to say between its name and its state -- a policy's product
+        // (2026-10-22, the user: in the centre, not under the number).
+        : 'grid grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)] items-center gap-3 px-4 py-2 text-xs hover:bg-hover'}
     >
       <span className="min-w-0 truncate">{left}</span>
-      <span className="shrink-0 text-muted-foreground">{right}</span>
+      {middle !== undefined && <span className="min-w-0 truncate text-center">{middle}</span>}
+      <span className={middle === undefined ? 'shrink-0 text-muted-foreground' : 'justify-self-end text-muted-foreground'}>{right}</span>
     </Link>
   );
 }
@@ -636,6 +642,7 @@ function PolicyList({
                 key={p.policyNumber}
                 to={`../../policies/${p.policyNumber}`}
                 left={<span className="font-mono">{p.policyNumber}</span>}
+                middle={<PolicyProduct policy={p} />}
                 right={p.status ? <StatusBadge kind="policy" value={p.status} /> : '—'}
               />
             ))}
@@ -711,6 +718,7 @@ function SchemeList({
                 // Straight to the schedule, not to the policy record that owns it.
                 to={`../../group-schemes/${encodeURIComponent(scheme.policyNumber ?? '')}`}
                 left={<span className="font-mono">{scheme.policyNumber}</span>}
+                middle={<PolicyProduct policy={scheme} />}
                 right={
                   <>
                     {scheme.policyNumber === soleNumber && total !== null && (
@@ -819,6 +827,7 @@ function CreditLifeRows({
             key={scheme.policyNumber}
             to={`../../credit-life-schemes/${encodeURIComponent(scheme.policyNumber ?? '')}`}
             left={<span className="font-mono">{scheme.policyNumber}</span>}
+                middle={<PolicyProduct policy={scheme} />}
             right={
               <>
                 {onCover !== null && (
@@ -849,6 +858,7 @@ function NotSchemeRows({ policies }: { policies: PolicyView[] }) {
           key={p.policyNumber}
           to={`../../policies/${encodeURIComponent(p.policyNumber ?? '')}`}
           left={<span className="font-mono">{p.policyNumber}</span>}
+                middle={<PolicyProduct policy={p} />}
           right={
             <span className="text-status-warning-fg">
               Group product issued as a single-life policy — covers no members

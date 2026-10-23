@@ -345,6 +345,24 @@ describe('PartyDetailPage', () => {
     expect(screen.getByLabelText('Add signed form')).toBeInTheDocument();
   });
 
+  // The user, 2026-10-22: a list of policy numbers did not say which policy is which product.
+  it('says what product each policy was sold as', () => {
+    useClientRecordStore.setState({
+      policies: {
+        [PARTY_ID]: {
+          ...RESOURCE,
+          data: {
+            page: { page: 0, pageSize: 20, totalElements: 1 },
+            items: [{ policyNumber: 'POL-FUN-1', status: 'ACTIVE', productCategory: 'FUNERAL' }],
+          },
+        },
+      },
+    } as never);
+    renderAt(`/staff/parties/${PARTY_ID}?tab=policies`);
+    const row = screen.getByRole('link', { name: /POL-FUN-1/ });
+    expect(within(row).getByText('Funeral')).toBeInTheDocument();
+  });
+
   it('withholds the underwriting-facts panel from a corporate', () => {
     usePartyStore.setState({
       detail: {

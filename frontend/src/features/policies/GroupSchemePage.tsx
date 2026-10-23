@@ -25,7 +25,9 @@ import {
   selectMembers,
   selectScheme,
   usePolicyStore,
+  selectDetail,
 } from '@/store/policyStore';
+import { PolicyProduct } from '@/components/PolicyProduct';
 import {
   blankMemberForm,
   memberFormSchema,
@@ -73,11 +75,15 @@ export function GroupSchemePage() {
   const members = usePolicyStore(selectMembers(policyNumber));
   const loadScheme = usePolicyStore((s) => s.loadScheme);
   const loadMembers = usePolicyStore((s) => s.loadMembers);
+  // The policy behind the scheme, for the product it was sold as -- the scheme view does not carry it.
+  const policyRecord = usePolicyStore(selectDetail(policyNumber));
+  const loadDetail = usePolicyStore((s) => s.loadDetail);
 
   useEffect(() => {
     if (!policyNumber) return;
     void loadScheme(policyNumber);
-  }, [policyNumber, loadScheme]);
+    void loadDetail(policyNumber);
+  }, [policyNumber, loadScheme, loadDetail]);
 
   useEffect(() => {
     if (!policyNumber) return;
@@ -192,6 +198,12 @@ export function GroupSchemePage() {
               <Link to={`/staff/parties/${data.policyholderPartyId}`} className="underline">
                 <PartyName partyId={data.policyholderPartyId} />
               </Link>
+              {policyRecord.data && (
+                <>
+                  {' · '}
+                  <PolicyProduct policy={policyRecord.data} className="text-sm" />
+                </>
+              )}
             </>
           ) : (
             'Group scheme'

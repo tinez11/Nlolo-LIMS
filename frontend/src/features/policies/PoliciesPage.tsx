@@ -21,6 +21,7 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { usePolicyStore } from '@/store/policyStore';
 import { PolicyDrawer } from './PolicyDrawer';
 import { FilterChip } from '@/components/FilterChip';
+import { PolicyProduct } from '@/components/PolicyProduct';
 
 /**
  * `GET /policies` is one of only four paged endpoints, so this screen gets the
@@ -129,7 +130,13 @@ export function PoliciesPage({
     {
       key: 'policyNumber',
       header: 'Policy number',
-      render: (p) => <span className="font-medium">{p.policyNumber ?? '—'}</span>,
+      render: (p) => <span className="font-medium whitespace-nowrap">{p.policyNumber ?? '—'}</span>,
+    },
+    {
+      // What it was sold as (2026-10-22, the user): the product's name and kind, individual or group alike.
+      key: 'product',
+      header: 'Product',
+      render: (p) => <PolicyProduct policy={p} />,
     },
     {
       key: 'status',
@@ -162,7 +169,7 @@ export function PoliciesPage({
       key: 'issueDate',
       header: 'Issued',
       secondary: true,
-      render: (p) => <span className="text-muted-foreground">{formatDate(p.issueDate)}</span>,
+      render: (p) => <span className="whitespace-nowrap text-muted-foreground">{formatDate(p.issueDate)}</span>,
     },
   ];
 
