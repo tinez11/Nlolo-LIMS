@@ -118,7 +118,7 @@ public class FinanceDashboard {
             Safely.read("arrears at the lapse level",
                 () -> billing.searchArrears(LAPSE_RECOMMENDATION_LEVEL, false, TOTAL_ONLY).getTotalElements()),
             points(monthly, current.getYear()), points(monthly, current.getYear() - 1), current.toString(),
-            aging,
+            aging == null ? List.of() : aging,
             recent == null ? List.of() : recent,
             period.toView(), Money.of(collectedNow, WORKING_CURRENCY), Money.of(collectedBefore, WORKING_CURRENCY),
             DashboardPeriod.changePercent(collectedNow, collectedBefore), series, compareSeries,
@@ -143,19 +143,21 @@ public class FinanceDashboard {
         List<CategoryAmount> rows = reporting.premiumCollectionsByCategory(period.from(), period.to()).stream()
             .filter(c -> WORKING_CURRENCY.equals(c.currency()))
             .toList();
-        BigDecimal whole = rows.stream().map(CategoryAmount::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        return rows.stream()
-            .map(c -> new Share(c.category(), Money.of(c.amount(), WORKING_CURRENCY), null,
-                DashboardPeriod.percentOf(c.amount(), whole)))
-            .toList();
+        return DashboardPeriod.shares(rows.stream()
+            .map(c -> new DashboardPeriod.Slice(c.category(), c.amount())).toList(),
+            v -> Money.of(v, WORKING_CURRENCY), null);
     }
 
-    /** The working currency's bands added together; null when billing could not be read. */
+    /**
+     * The working currency's bands added together; null only when billing could not be read. Nothing owed in the
+     * working currency is zero -- a read that found nothing is an answer.
+     */
     private static BigDecimal outstanding(List<ReceivablesAging> aging) {
+        if (aging == null) return null;
         return aging.stream().filter(a -> WORKING_CURRENCY.equals(a.currency())).findFirst()
             .map(a -> a.buckets().stream().map(b -> new BigDecimal(b.outstanding().amount()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add))
-            .orElse(null);
+            .orElse(BigDecimal.ZERO);
     }
 
     /**
@@ -164,14 +166,14 @@ public class FinanceDashboard {
      * <p>Translated into the dashboard's own shape rather than forwarding billing's: the amount becomes {@link Money}
      * like every other figure on this view, and an empty band keeps its zero rather than disappearing.
      */
+    /** Null when billing could not be read; empty when it was read and nothing is owed. */
     private List<ReceivablesAging> receivables(LocalDate today) {
-        List<ReceivablesAging> aged = Safely.read("receivables aging", () ->
+        return Safely.read("receivables aging", () ->
             billing.receivablesAging(today).stream()
                 .map(a -> new ReceivablesAging(a.currency(), a.buckets().stream()
                     .map(b -> new ReceivablesAging.Bucket(b.name(), b.cases(), Money.of(b.outstanding(), a.currency())))
                     .toList()))
                 .toList());
-        return aged == null ? List.of() : aged;
     }
 
     /** A change between two report values -- the only arithmetic here, and it is a difference of two report numbers. */

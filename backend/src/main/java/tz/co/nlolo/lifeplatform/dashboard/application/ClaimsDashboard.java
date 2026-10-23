@@ -10,7 +10,6 @@ import tz.co.nlolo.lifeplatform.dashboard.api.ClaimsDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.ClaimsDashboardView.QueuedClaim;
 import tz.co.nlolo.lifeplatform.dashboard.api.ClaimsDashboardView.SettlementMonth;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimMonth;
-import tz.co.nlolo.lifeplatform.claims.api.SettlementByType;
 import tz.co.nlolo.lifeplatform.dashboard.api.CountPoint;
 import tz.co.nlolo.lifeplatform.dashboard.api.DaysPoint;
 import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView.MonthPoint;
@@ -91,9 +90,9 @@ public class ClaimsDashboard {
         List<Share> byType = Safely.read("benefits paid by type", () -> {
             var rows = claims.settlementsByType(period.from(), period.to()).stream()
                 .filter(s -> WORKING_CURRENCY.equals(s.currency())).toList();
-            BigDecimal whole = rows.stream().map(SettlementByType::totalApproved).reduce(BigDecimal.ZERO, BigDecimal::add);
-            return rows.stream().map(s -> new Share(s.claimType(), Money.of(s.totalApproved(), WORKING_CURRENCY),
-                s.claims(), DashboardPeriod.percentOf(s.totalApproved(), whole))).toList();
+            return DashboardPeriod.shares(rows.stream()
+                    .map(s -> new DashboardPeriod.Slice(s.claimType(), s.totalApproved())).toList(),
+                v -> Money.of(v, WORKING_CURRENCY), null);
         });
         Map<YearMonth, ClaimMonth> settledByMonth = Safely.read("settlement turnaround", () ->
             claims.settlementTurnaroundByMonth(period.from(), period.to()).stream()

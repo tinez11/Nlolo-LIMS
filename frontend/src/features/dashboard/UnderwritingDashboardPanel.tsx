@@ -13,6 +13,7 @@ import { ProductName } from '@/components/ProductName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { countValue } from '@/lib/counts';
+import { humanizeStatus } from '@/lib/status';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectUnderwriting, useDashboardStore } from '@/store/dashboardStore';
@@ -156,7 +157,7 @@ export function UnderwritingDashboardPanel({ range }: PanelProps) {
                 <p className="text-xs text-muted-foreground">Nothing was decided in these months.</p>
               ) : (
                 <Donut
-                  parts={donutParts(view.outcomeTotals, (k) => OUTCOME_LABEL[k] ?? k)}
+                  parts={donutParts(view.outcomeTotals, (k) => OUTCOME_LABEL[k] ?? humanizeStatus(k))}
                   total={countValue(view.decided) ?? ''}
                   totalLabel="decided"
                   description={`How the ${countValue(view.decided)} cases decided in ${span} ended.`}

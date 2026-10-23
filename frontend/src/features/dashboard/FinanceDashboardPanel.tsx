@@ -179,6 +179,9 @@ export function FinanceDashboardPanel({ range }: PanelProps) {
                     };
                   })}
                 />
+              ) : v.outstanding ? (
+                // Read, and nothing is owed in TZS: the answer a reader came for, not a failure.
+                <p className="text-sm text-muted-foreground">Nothing is owed. Every invoice raised has been paid.</p>
               ) : (
                 <p className="text-xs text-muted-foreground">Billing could not be read.</p>
               )}

@@ -1,6 +1,7 @@
 import { useId, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { cn } from '@/lib/cn';
 import { ChartTip } from './ChartTip';
+import { useChartWidth } from './useChartWidth';
 import { axisLabel, FILL, labelEvery, niceMax, STROKE, ticks, type ChartColor } from './chartScale';
 
 export interface Category {
@@ -22,7 +23,6 @@ export interface TrendSeries {
   points: { key: string; value: number | null; display: string }[];
 }
 
-const W = 640;
 const L = 46;
 const R = 12;
 const T = 12;
@@ -50,6 +50,8 @@ export function TrendChart({
   const H = height;
   const gradient = useId();
   const box = useRef<SVGSVGElement>(null);
+  // Laid out at the width it is shown, so 12px labels stay 12px in a half-width card.
+  const [wrap, W] = useChartWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
 
   const values = series.flatMap((s) => s.points.map((p) => p.value ?? 0));
@@ -97,7 +99,7 @@ export function TrendChart({
   const hovered = hover === null ? null : categories[hover];
 
   return (
-    <div className="relative">
+    <div className="relative" ref={wrap}>
       <svg
         ref={box}
         viewBox={`0 0 ${W} ${H}`}

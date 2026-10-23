@@ -1,6 +1,7 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { cn } from '@/lib/cn';
 import { ChartTip } from './ChartTip';
+import { useChartWidth } from './useChartWidth';
 import { axisLabel, FILL, labelEvery, niceMax, STROKE, ticks, type ChartColor } from './chartScale';
 import type { Category } from './TrendChart';
 
@@ -11,7 +12,6 @@ export interface ColumnSeries {
   points: { key: string; value: number; display: string }[];
 }
 
-const W = 640;
 const L = 46;
 const R = 8;
 const T = 10;
@@ -42,6 +42,8 @@ export function ColumnChart({
 }) {
   const H = height;
   const box = useRef<SVGSVGElement>(null);
+  // Laid out at the width it is shown, so 12px labels stay 12px in a half-width card.
+  const [wrap, W] = useChartWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   const n = categories.length;
   const valueOf = (s: ColumnSeries, key: string) => s.points.find((p) => p.key === key);
@@ -67,7 +69,7 @@ export function ColumnChart({
   };
 
   return (
-    <div className="relative">
+    <div className="relative" ref={wrap}>
       <svg
         ref={box}
         viewBox={`0 0 ${W} ${H}`}
@@ -111,7 +113,9 @@ export function ColumnChart({
                   <path
                     key={s.label}
                     d={d}
-                    className={cn(partial ? cn('fill-surface', STROKE[s.color]) : FILL[s.color], 'chart-grow')}
+                    // The month in progress: the same colour, lighter, with its edge drawn -- to date, not complete.
+                    className={cn(FILL[s.color], partial && STROKE[s.color], 'chart-grow')}
+                    fillOpacity={partial ? 0.35 : undefined}
                     strokeWidth={partial ? 1.5 : 0}
                     style={{ animationDelay: `${i * 22}ms` }}
                     {...(partial ? { 'data-partial': 'true' } : {})}

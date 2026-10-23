@@ -92,6 +92,20 @@ class RangedDashboardsTest {
         assertThat(DashboardPeriod.average(BigDecimal.TEN, 0)).isNull();
     }
 
+    @Test
+    void foldsEverySliceFromTheFifthIntoOtherSoTheRingStillAddsUp() {
+        List<DashboardPeriod.Slice> seven = List.of(
+            new DashboardPeriod.Slice("A", new BigDecimal("50")), new DashboardPeriod.Slice("B", new BigDecimal("20")),
+            new DashboardPeriod.Slice("C", new BigDecimal("10")), new DashboardPeriod.Slice("D", new BigDecimal("8")),
+            new DashboardPeriod.Slice("E", new BigDecimal("6")), new DashboardPeriod.Slice("F", new BigDecimal("4")),
+            new DashboardPeriod.Slice("G", new BigDecimal("2")), new DashboardPeriod.Slice("H", BigDecimal.ZERO));
+
+        var shares = DashboardPeriod.shares(seven, null, BigDecimal::longValueExact);
+
+        assertThat(shares).extracting(s -> s.key() + " " + s.count() + " " + s.percent())
+            .containsExactly("A 50 50.0", "B 20 20.0", "C 10 10.0", "D 8 8.0", "OTHER 12 12.0");
+    }
+
     // ---- finance ----
 
     @Test

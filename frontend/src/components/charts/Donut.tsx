@@ -41,8 +41,11 @@ export function Donut({ parts, total, totalLabel, description }: {
   const starts = parts.map((_, i) => parts.slice(0, i).reduce((a, p) => a + (C * Math.max(0, p.value)) / sum, 0));
 
   return (
-    <div className="grid grid-cols-1 items-center gap-5 sm:grid-cols-[minmax(8rem,10.5rem)_minmax(0,1fr)]">
-      <svg viewBox={`0 0 ${S} ${S}`} className="mx-auto block h-auto w-full max-w-44" role="img" aria-label={description}>
+    // Ring beside its list only where the card is wide enough for both; in a narrow card the list goes underneath,
+    // so a name, its share and its amount never fight for one cramped column.
+    <div className="@container">
+    <div className="grid grid-cols-1 items-center gap-5 @md:grid-cols-[minmax(8rem,10.5rem)_minmax(0,1fr)]">
+      <svg viewBox={`0 0 ${S} ${S}`} className="mx-auto block h-auto w-full max-w-40" role="img" aria-label={description}>
         <circle cx={S / 2} cy={S / 2} r={RADIUS} fill="none" className="stroke-control" strokeWidth={STROKE_WIDTH} />
         {parts.map((p, i) => {
           const length = Math.max(0, (C * p.value) / sum - gap);
@@ -73,22 +76,24 @@ export function Donut({ parts, total, totalLabel, description }: {
       </svg>
       <ul className="min-w-0 space-y-1.5">
         {parts.map((p) => (
+          // Two lines, so a long name and a long amount never squeeze each other out of a narrow card.
           <li
             key={p.key}
             className={cn(
-              'grid grid-cols-[0.75rem_minmax(0,1fr)_auto_2.75rem] items-center gap-2 rounded-md px-1.5 py-1 text-sm transition-colors',
+              'grid grid-cols-[0.75rem_minmax(0,1fr)_auto] items-baseline gap-x-2 rounded-md px-1.5 py-1 text-sm transition-colors',
               active === p.key && 'bg-hover',
             )}
             onMouseEnter={() => setActive(p.key)}
             onMouseLeave={() => setActive(null)}
           >
             <Swatch color={p.color} />
-            <span className="truncate">{p.label}</span>
-            <span className="font-semibold tabular-nums">{p.display}</span>
+            <span className="min-w-0">{p.label}</span>
             <span className="text-right text-muted-foreground tabular-nums">{p.percent === null ? '' : `${p.percent}%`}</span>
+            <span className="col-start-2 col-end-4 font-semibold whitespace-nowrap tabular-nums">{p.display}</span>
           </li>
         ))}
       </ul>
+    </div>
     </div>
   );
 }

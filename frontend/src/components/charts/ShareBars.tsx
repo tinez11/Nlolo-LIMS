@@ -24,7 +24,7 @@ export function ShareBars({ bars, label }: { bars: ShareBar[]; label: string }) 
       {bars.map((b, i) => (
         <li key={b.key} className="grid grid-cols-[minmax(6rem,32%)_minmax(0,1fr)_auto] items-center gap-3 text-sm">
           <span className="min-w-0">
-            <span className="block truncate">{b.label}</span>
+            <span className="block">{b.label}</span>
             {b.note && <span className="block text-xs text-muted-foreground">{b.note}</span>}
           </span>
           <span className="h-5 overflow-hidden rounded-md bg-control" aria-hidden>

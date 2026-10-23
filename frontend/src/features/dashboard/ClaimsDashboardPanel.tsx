@@ -11,6 +11,7 @@ import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { countValue } from '@/lib/counts';
+import { humanizeStatus } from '@/lib/status';
 import { formatDate } from '@/lib/dates';
 import { formatMoney, formatMoneyCompact } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
@@ -129,7 +130,7 @@ export function ClaimsDashboardPanel({ range }: PanelProps) {
                 <p className="text-xs text-muted-foreground">No claim was settled in these months.</p>
               ) : (
                 <Donut
-                  parts={donutParts(view.paidByType, (k) => CLAIM_TYPE[k] ?? k)}
+                  parts={donutParts(view.paidByType, (k) => CLAIM_TYPE[k] ?? humanizeStatus(k))}
                   total={formatMoneyCompact(view.paid).replace(/^TZS /, '')}
                   totalLabel="TZS paid"
                   description={`Benefits paid by claim type, ${span}.`}

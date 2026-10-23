@@ -130,9 +130,9 @@ public class AgentDashboard {
             : range.compareMonths().stream().mapToLong(m -> issued.getOrDefault(m, 0L)).sum();
         List<Share> byProduct = team == null ? List.of() : Safely.read("my book by product", () -> {
             List<CategoryCount> rows = reporting.policiesInForceByCategory(today, team);
-            BigDecimal whole = BigDecimal.valueOf(rows.stream().mapToLong(CategoryCount::count).sum());
-            return rows.stream().map(c -> new Share(c.category(), null, c.count(),
-                DashboardPeriod.percentOf(BigDecimal.valueOf(c.count()), whole))).toList();
+            return DashboardPeriod.shares(rows.stream()
+                    .map(c -> new DashboardPeriod.Slice(c.category(), BigDecimal.valueOf(c.count()))).toList(),
+                null, BigDecimal::longValueExact);
         });
 
         return new AgentDashboardView(clients, awaitingKyc, rejected, book, applications, period,

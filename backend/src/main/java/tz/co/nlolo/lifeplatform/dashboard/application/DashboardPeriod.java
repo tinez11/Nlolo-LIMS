@@ -103,6 +103,35 @@ public record DashboardPeriod(YearMonth from, YearMonth to, YearMonth current) {
         return part.multiply(BigDecimal.valueOf(100)).divide(whole, 1, RoundingMode.HALF_UP).toPlainString();
     }
 
+    /** One piece of a whole before it becomes a {@link Share}: a key and its figure. */
+    record Slice(String key, BigDecimal value) {}
+
+    /** The most slices a chart shows: five colours, so the fifth onwards fold into OTHER. */
+    static final int MAX_SLICES = 5;
+
+    /**
+     * Slices as shares of their own whole, largest first, at most {@link #MAX_SLICES}: past that the smallest are
+     * added into one OTHER slice HERE, so the console never adds and the ring still adds up to the whole.
+     *
+     * @param amount the slice's figure as money, or null when the slices are counts
+     * @param count the slice's figure as a count, or null when they are money
+     */
+    static List<tz.co.nlolo.lifeplatform.dashboard.api.Share> shares(List<Slice> slices,
+            Function<BigDecimal, tz.co.nlolo.lifeplatform.dashboard.api.Money> amount, Function<BigDecimal, Long> count) {
+        List<Slice> sorted = slices.stream().filter(s -> s.value() != null && s.value().signum() > 0)
+            .sorted(java.util.Comparator.comparing(Slice::value).reversed()).toList();
+        BigDecimal whole = sorted.stream().map(Slice::value).reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<Slice> kept = new ArrayList<>(sorted);
+        if (sorted.size() > MAX_SLICES) {
+            kept = new ArrayList<>(sorted.subList(0, MAX_SLICES - 1));
+            kept.add(new Slice("OTHER", sorted.subList(MAX_SLICES - 1, sorted.size()).stream().map(Slice::value)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)));
+        }
+        return kept.stream().map(s -> new tz.co.nlolo.lifeplatform.dashboard.api.Share(s.key(),
+            amount == null ? null : amount.apply(s.value()), count == null ? null : count.apply(s.value()),
+            percentOf(s.value(), whole))).toList();
+    }
+
     /** Summed days over a count, one decimal place; null for no cases. */
     static String average(BigDecimal totalDays, long cases) {
         if (totalDays == null || cases == 0) {
