@@ -104,6 +104,18 @@
   --status-danger-bg: oklch(0.95 0.035 22);
   --status-danger-fg: oklch(0.48 0.17 25);
 
+  /*
+    Chart series (2026-10-23, the user: navy and grey charts read as "not good colour-wise"). Five hues anchored on
+    the brand teal, taken in this order and never cycled, validated as a set: lightness band, chroma floor,
+    colour-blind separation between neighbours and 3:1 against the surface all pass. A series is an identity, never
+    a state -- the status hues stay for states. Dark mode has its own steps, validated on the dark surface.
+  */
+  --chart-1: #00907f;
+  --chart-2: #3060b5;
+  --chart-3: #bf7b1a;
+  --chart-4: #8058c4;
+  --chart-5: #cc4e3c;
+
   /* 10px controls; cards take the xl step. */
   --radius: 0.625rem;
 }
@@ -187,6 +199,11 @@
   --control-hover: oklch(0.31 0.035 228);
   --control-press: oklch(0.34 0.035 228);
   --raise: 0 0 0 1px oklch(1 0 0 / 6%);
+  --chart-1: #1fa090;
+  --chart-2: #5a88d8;
+  --chart-3: #be862a;
+  --chart-4: #9d80de;
+  --chart-5: #d9654f;
 }
 
 .dark .sidebar-scope {
@@ -244,6 +261,11 @@
   --color-status-warning-fg: var(--status-warning-fg);
   --color-status-danger-bg: var(--status-danger-bg);
   --color-status-danger-fg: var(--status-danger-fg);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
 
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
@@ -451,6 +473,56 @@
 .font-mono {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
+}
+
+/*
+  Chart entrances (2026-10-23). One authored moment per chart -- columns rise, lines draw, rings sweep -- about half a
+  second, an exponential ease-out, transform and opacity only so nothing re-lays out. Each ends where the mark rests,
+  so a chart that never animates (reduced motion, a print, a screenshot) is already complete.
+*/
+@keyframes chart-grow {
+  from { transform: scaleY(0.02); }
+}
+@keyframes chart-grow-x {
+  from { transform: scaleX(0.02); }
+}
+@keyframes chart-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes chart-fade {
+  from { opacity: 0; }
+}
+@keyframes chart-sweep {
+  from { stroke-dasharray: 0 1000; }
+}
+.chart-grow {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: chart-grow 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.chart-grow-x {
+  transform-origin: 0 50%;
+  animation: chart-grow-x 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.chart-draw {
+  stroke-dasharray: 1;
+  animation: chart-draw 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.chart-fade {
+  animation: chart-fade 600ms ease-out both;
+}
+.chart-sweep {
+  animation: chart-sweep 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chart-grow,
+  .chart-grow-x,
+  .chart-draw,
+  .chart-fade,
+  .chart-sweep {
+    animation: none;
+  }
 }
 
 /* A section FormOutline jumps to lands below the sticky page bar, not behind it. */

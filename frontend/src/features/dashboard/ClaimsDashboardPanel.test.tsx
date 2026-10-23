@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getClaimsDashboard } from '@/api/dashboard';
 import { useDashboardStore } from '@/store/dashboardStore';
@@ -10,6 +10,8 @@ vi.mock('@/components/PartyName', () => ({
   PartyName: ({ partyId }: { partyId: string }) => <span>{partyId}</span>,
 }));
 
+const TZS = (amount: string) => ({ amount, currencyCode: 'TZS' });
+const RANGE = { from: '2026-07', to: '2026-09' };
 const VIEW = {
   registered: 17,
   underAssessment: 9,
@@ -29,14 +31,28 @@ const VIEW = {
     },
   ],
   openDocumentRequests: 11,
-  settlements: [
-    { month: '2026-09', currency: 'TZS', claims: 9, totalApproved: { amount: '41000000.00', currencyCode: 'TZS' } },
-  ],
-  settlementSeries: [
-    { month: '2026-08', currency: 'TZS', claims: 3, totalApproved: { amount: '12000000.00', currencyCode: 'TZS' } },
-    { month: '2026-09', currency: 'TZS', claims: 9, totalApproved: { amount: '41000000.00', currencyCode: 'TZS' } },
-  ],
+  settlements: [],
+  settlementSeries: [],
   recentActivity: [],
+  period: { from: '2026-07', to: '2026-09', compareFrom: '2025-07', compareTo: '2025-09', currentMonth: '2026-10' },
+  paid: TZS('75000000.00'),
+  paidBefore: TZS('50000000.00'),
+  paidChangePercent: '50.0',
+  paidSeries: [
+    { month: '2026-07', amount: TZS('0.00') },
+    { month: '2026-08', amount: TZS('75000000.00') },
+    { month: '2026-09', amount: TZS('0.00') },
+  ],
+  paidByType: [
+    { key: 'DEATH', amount: TZS('60000000.00'), count: 2, percent: '80.0' },
+    { key: 'MATURITY', amount: TZS('15000000.00'), count: 1, percent: '20.0' },
+  ],
+  settledInPeriod: 3,
+  registeredInPeriod: 5,
+  registeredSeries: [{ month: '2026-07', count: 4 }, { month: '2026-08', count: 0 }, { month: '2026-09', count: 1 }],
+  settledSeries: [{ month: '2026-07', count: 0 }, { month: '2026-08', count: 3 }, { month: '2026-09', count: 0 }],
+  averageDaysToSettle: '10.0',
+  turnaroundSeries: [],
 };
 
 beforeEach(() => {
@@ -45,44 +61,48 @@ beforeEach(() => {
 });
 
 describe('ClaimsDashboardPanel', () => {
-  it('links every stage to the claims list filtered to it', async () => {
-    renderScreen(<ClaimsDashboardPanel />);
+  it("opens the manager's own queue and reads the range", async () => {
+    renderScreen(<ClaimsDashboardPanel range={RANGE} />);
 
-    expect(await screen.findByRole('link', { name: /^6 Awaiting settlement decision/ })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: /^6 Awaiting your decision/ })).toHaveAttribute(
       'href',
       '/staff/claims?status=SETTLEMENT_REQUESTED',
     );
-    expect(screen.getByRole('link', { name: /^17 Awaiting assessment/ })).toHaveAttribute(
-      'href',
-      '/staff/claims?status=REGISTERED',
-    );
-    expect(screen.getByRole('link', { name: /^4 Approved, not yet paid/ })).toHaveAttribute(
+    expect(getClaimsDashboard).toHaveBeenCalledWith(RANGE);
+  });
+
+  it("shows what was paid over the range, and the server's days to settle", async () => {
+    renderScreen(<ClaimsDashboardPanel range={RANGE} />);
+
+    const tile = await screen.findByRole('link', { name: /Benefits paid/ });
+    expect(within(tile).getByText('TZS 75M')).toBeInTheDocument();
+    expect(tile.querySelector('[data-delta="good"]')).toHaveTextContent('50.0%');
+    expect(screen.getByText('10.0 days')).toBeInTheDocument();
+  });
+
+  it('names what was paid by cause, with its share', async () => {
+    renderScreen(<ClaimsDashboardPanel range={RANGE} />);
+
+    expect(await screen.findByText('80.0%')).toBeInTheDocument();
+    expect(screen.getByText('Maturity')).toBeInTheDocument();
+  });
+
+  it('draws every open stage, linking those with claims to their list', async () => {
+    renderScreen(<ClaimsDashboardPanel range={RANGE} />);
+
+    const stages = await screen.findByRole('list', { name: 'Open claims by stage' });
+    expect(within(stages).getByText('Reopened')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Approved, payout not made' })).toHaveAttribute(
       'href',
       '/staff/claims?status=APPROVED',
     );
-    // All time: the card must say so, because there is no date filter to make it "this month".
-    expect(screen.getByRole('link', { name: /^128 Settled, all time/ })).toBeInTheDocument();
   });
 
   /** A manager's queue is titled as the settlement decisions it is. */
   it('titles the queue by whose work it is', async () => {
-    renderScreen(<ClaimsDashboardPanel />);
+    renderScreen(<ClaimsDashboardPanel range={RANGE} />);
 
-    expect(
-      await screen.findByRole('heading', { name: 'Awaiting your settlement decision' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Awaiting your settlement decision' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open claim-1' })).toHaveAttribute('href', '/staff/claims/claim-1');
   });
-  /** Phase 2: benefits paid last month, and the desk-wide wait on documents. */
-  it("shows last month benefits paid and the open document requests", async () => {
-    renderScreen(<ClaimsDashboardPanel />);
-
-    // The amount appears twice over -- on the card, and in the chart's tooltip for the same month -- which is the
-    // point: a chart is never the only way to read a figure.
-    expect(await screen.findByText(/Benefits paid, September/)).toBeInTheDocument();
-    expect(screen.getAllByText(/TZS 41,000,000.00/).length).toBeGreaterThan(1);
-    expect(screen.getByText(/9 claims settled/)).toBeInTheDocument();
-    expect(screen.getByText(/Waiting on a document/)).toBeInTheDocument();
-  });
-
 });

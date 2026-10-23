@@ -1,26 +1,26 @@
+import { Banknote, CalendarClock, FileText, Inbox } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { KpiRow, type Kpi } from '@/components/KpiCard';
+import { Legend } from '@/components/charts/ChartTip';
+import { ColumnChart } from '@/components/charts/ColumnChart';
+import { Donut } from '@/components/charts/Donut';
+import { ShareBars } from '@/components/charts/ShareBars';
+import { TrendChart } from '@/components/charts/TrendChart';
 import { Panel } from '@/components/Panel';
 import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { countValue } from '@/lib/counts';
 import { formatDate } from '@/lib/dates';
-import { formatMoney } from '@/lib/money';
+import { formatMoney, formatMoneyCompact } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectClaims, useDashboardStore } from '@/store/dashboardStore';
 import { ActivityFeed } from './ActivityFeed';
-import { BenefitsPaidChart } from './BenefitsPaidChart';
+import type { PanelProps } from './DashboardPage';
 import { DashboardRail } from './DashboardRail';
-
-const MONTH_NAME = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
-/** "2026-09" -> "September". The month is the server's; this only names it. */
-const monthName = (yyyymm: string) => MONTH_NAME[Number(yyyymm.slice(5, 7)) - 1] ?? yyyymm;
+import { describeRange } from './range';
+import { countPoints, donutParts, monthCategories, moneyPoints, trendOf, versus } from './series';
+import { StatRow, type Stat } from './StatTile';
 
 const CLAIM_TYPE: Record<string, string> = {
   DEATH: 'Death',
@@ -29,70 +29,156 @@ const CLAIM_TYPE: Record<string, string> = {
   MATURITY: 'Maturity',
 };
 
-/** The claims dashboard (2026-10-14). Every stage is a count of one status; the queue is the reader's own work. */
-export function ClaimsDashboardPanel() {
+/**
+ * The claims dashboard (2026-10-14; ranged and charted 2026-10-23). Stages are a count of one status, now; what was
+ * paid and how long it took are over the range, the server's own totals and averages. The queue is the reader's work.
+ */
+export function ClaimsDashboardPanel({ range }: PanelProps) {
   const resource = useDashboardStore(selectClaims);
   const load = useDashboardStore((s) => s.load);
+  const { from, to } = range;
 
   useEffect(() => {
-    void load('claims');
-  }, [load]);
+    void load('claims', { from, to });
+  }, [load, from, to]);
 
   if (isInitialLoad(resource)) return <LoadingBlock label="Counting claims" />;
   if (resource.status === 'error' && resource.error && resource.data === null) {
-    return <ErrorPanel error={resource.error} onRetry={() => void load('claims')} />;
+    return <ErrorPanel error={resource.error} onRetry={() => void load('claims', { from, to })} />;
   }
   const view = resource.data;
   if (!view) return null;
 
+  const p = view.period;
+  const span = describeRange(p.from, p.to);
   const manager = view.queueStatus === 'SETTLEMENT_REQUESTED';
-  const to = (status: string) => `/staff/claims?status=${status}`;
-  const kpis: Kpi[] = [
+  const list = (status: string) => `/staff/claims?status=${status}`;
+  const paid = moneyPoints(view.paidSeries);
+  const categories = monthCategories(view.paidSeries.map((m) => m.month));
+
+  const stats: Stat[] = [
     {
-      label: 'Awaiting settlement decision',
-      value: countValue(view.settlementRequested),
-      hint: 'assessed, recommended',
-      to: to('SETTLEMENT_REQUESTED'),
+      label: manager ? 'Awaiting your decision' : 'Awaiting assessment',
+      icon: Inbox,
+      color: 'chart-2',
+      value: countValue(manager ? view.settlementRequested : view.registered),
+      hint: manager ? 'assessed and recommended' : 'registered, not yet assessed',
+      to: list(manager ? 'SETTLEMENT_REQUESTED' : 'REGISTERED'),
     },
     {
-      label: 'Awaiting assessment',
-      value: countValue(view.registered),
-      hint: 'registered, not yet assessed',
-      to: to('REGISTERED'),
+      label: 'Registered',
+      icon: FileText,
+      color: 'chart-3',
+      value: countValue(view.registeredInPeriod),
+      hint: span,
+      trend: view.registeredSeries.map((c) => c.count),
     },
     {
-      label: 'Approved, not yet paid',
-      value: countValue(view.approved),
-      hint: 'payout not made',
-      to: to('APPROVED'),
+      label: 'Benefits paid',
+      icon: Banknote,
+      color: 'chart-1',
+      value: view.paid ? formatMoneyCompact(view.paid) : null,
+      full: formatMoney(view.paid),
+      change: view.paidChangePercent,
+      versus: versus(p),
+      hint: span,
+      trend: trendOf(paid),
+      to: list('SETTLED'),
     },
-    { label: 'Settled, all time', value: countValue(view.settled), hint: 'all time', to: to('SETTLED') },
     {
-      label: 'Waiting on a document',
-      value: countValue(view.openDocumentRequests),
-      hint: 'requests nobody has answered',
+      label: 'Days to settle',
+      icon: CalendarClock,
+      color: 'chart-4',
+      value: view.averageDaysToSettle === null ? null : `${view.averageDaysToSettle} days`,
+      hint: `registration to payment, ${span}`,
     },
-    // Last month's benefits, one card per currency. The month is the VIEW's, never the browser's clock.
-    ...view.settlements.map((s) => ({
-      label: `Benefits paid, ${monthName(s.month)}`,
-      value: s.totalApproved ? formatMoney(s.totalApproved) : null,
-      hint: `${countValue(s.claims)} ${s.claims === 1 ? 'claim' : 'claims'} settled`,
-    })),
+  ];
+
+  const stages = [
+    { status: 'REGISTERED', label: 'Registered, awaiting an assessor', n: view.registered, color: 'chart-2' as const },
+    { status: 'UNDER_ASSESSMENT', label: 'Under assessment', n: view.underAssessment, color: 'chart-3' as const },
+    { status: 'SETTLEMENT_REQUESTED', label: 'Awaiting a settlement decision', n: view.settlementRequested, color: 'chart-4' as const },
+    { status: 'APPROVED', label: 'Approved, payout not made', n: view.approved, color: 'chart-1' as const },
+    { status: 'REOPENED', label: 'Reopened', n: view.reopened, color: 'chart-5' as const },
   ];
   const next = view.queue[0];
-  const stages: [string, number | null, string][] = [
-    ['registered, awaiting an assessor', view.registered, 'REGISTERED'],
-    ['under assessment', view.underAssessment, 'UNDER_ASSESSMENT'],
-    ['awaiting a settlement decision', view.settlementRequested, 'SETTLEMENT_REQUESTED'],
-    ['approved, payout not made', view.approved, 'APPROVED'],
-    ['reopened', view.reopened, 'REOPENED'],
-  ];
 
   return (
     <div className="space-y-5">
-      <KpiRow kpis={kpis} />
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="space-y-5">
+      <StatRow stats={stats} />
+      <div className="grid gap-5 xl:grid-cols-12">
+        <div className="xl:col-span-8">
+          <Panel
+            title="Benefits paid"
+            subtitle={`${span}, approved amounts of claims settled each month, TZS`}
+            actions={<Link to={list('SETTLED')} className="text-xs text-muted-foreground hover:text-foreground hover:underline">Open settled claims</Link>}
+          >
+            <div className="px-4 pb-4">
+              <TrendChart
+                categories={categories}
+                series={[{ label: 'Paid', color: 'chart-1', area: true, points: paid }]}
+                description={`Benefits paid by month, ${span}. Total ${formatMoney(view.paid)}.`}
+              />
+            </div>
+          </Panel>
+        </div>
+        <div className="xl:col-span-4">
+          <Panel title="Paid by cause" subtitle={span}>
+            <div className="px-4 pb-4">
+              {view.paidByType.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No claim was settled in these months.</p>
+              ) : (
+                <Donut
+                  parts={donutParts(view.paidByType, (k) => CLAIM_TYPE[k] ?? k)}
+                  total={formatMoneyCompact(view.paid).replace(/^TZS /, '')}
+                  totalLabel="TZS paid"
+                  description={`Benefits paid by claim type, ${span}.`}
+                />
+              )}
+            </div>
+          </Panel>
+        </div>
+        <div className="xl:col-span-6">
+          <Panel title="Registered and settled" subtitle={`${span}, claims by month`}>
+            <div className="space-y-3 px-4 pb-4">
+              <Legend items={[{ label: 'Registered', color: 'chart-2' }, { label: 'Settled', color: 'chart-1' }]} />
+              <ColumnChart
+                height={210}
+                categories={categories}
+                partialKey={p.to === p.currentMonth ? p.currentMonth : undefined}
+                series={[
+                  { label: 'Registered', color: 'chart-2', points: countPoints(view.registeredSeries).map((c) => ({ ...c, value: c.value ?? 0 })) },
+                  { label: 'Settled', color: 'chart-1', points: countPoints(view.settledSeries).map((c) => ({ ...c, value: c.value ?? 0 })) },
+                ]}
+                description={`Claims registered and settled by month, ${span}: ${countValue(view.registeredInPeriod) ?? 'none'} registered, ${countValue(view.settledInPeriod) ?? 'none'} settled.`}
+              />
+            </div>
+          </Panel>
+        </div>
+        <div className="xl:col-span-6">
+          <Panel title="Where open claims are" subtitle="As at now. Each opens its list.">
+            <div className="px-4 pb-4">
+              <ShareBars
+                label="Open claims by stage"
+                bars={stages.map((s) => ({
+                  key: s.status,
+                  label: s.label,
+                  value: s.n ?? 0,
+                  display: countValue(s.n) ?? '—',
+                  color: s.color,
+                }))}
+              />
+              <div className="mt-3 flex flex-wrap gap-2">
+                {stages.filter((s) => s.n).map((s) => (
+                  <Link key={s.status} to={list(s.status)} className="rounded-md bg-control px-2.5 py-1 text-xs font-medium hover:bg-control-hover">
+                    {s.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </Panel>
+        </div>
+        <div className="xl:col-span-7">
           <Panel
             emphasis
             title={manager ? 'Awaiting your settlement decision' : 'Awaiting assessment'}
@@ -152,75 +238,36 @@ export function ClaimsDashboardPanel() {
               </div>
             )}
           </Panel>
-          <Panel title="Where claims are" subtitle="Every open claim, by its stage.">
-            <ul className="divide-y divide-border">
-              {stages.map(([text, n, status]) => (
-                <li key={status} className="flex items-center gap-4 px-4 py-2.5">
-                  <span className="w-12 shrink-0 text-right text-title">{countValue(n) ?? '—'}</span>
-                  <span className="min-w-0 flex-1 text-sm">{text}</span>
-                  {n !== null && (
-                    <Link
-                      to={to(status)}
-                      className="rounded-md px-2 py-1 text-sm font-medium hover:bg-hover"
-                      aria-label={`Open the ${text} list`}
-                    >
-                      Open
-                    </Link>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </Panel>
-          <Panel
-            title="Benefits paid"
-            subtitle="Approved amounts of claims settled each month, in TZS."
-            actions={
-              <Link
-                to="/staff/claims?status=SETTLED"
-                className="text-xs text-muted-foreground hover:text-foreground hover:underline"
-              >
-                Open settled claims
-              </Link>
-            }
-          >
-            <BenefitsPaidChart
-              settlements={view.settlementSeries}
-              months={[...new Set(view.settlementSeries.map((s) => s.month))]}
-            />
-          </Panel>
+        </div>
+        <div className="xl:col-span-5">
+          <DashboardRail
+            alerts={[
+              ...(view.approved
+                ? [{ tone: 'warning' as const, text: <><b>{countValue(view.approved)} approved claims</b> have not been paid.</> }]
+                : []),
+              ...(view.openDocumentRequests
+                ? [{ tone: 'calm' as const, text: <><b>{countValue(view.openDocumentRequests)} document requests</b> are still unanswered.</> }]
+                : []),
+            ]}
+            actions={[
+              { label: 'Register a claim', description: 'Identify the claimant, then the policy', to: '/staff/claims/new' },
+              ...(next
+                ? [
+                    {
+                      label: manager ? 'Decide the next settlement' : 'Assess the next claim',
+                      description: 'The one that has waited longest',
+                      to: `/staff/claims/${next.claimId}`,
+                    },
+                  ]
+                : []),
+              { label: 'Approved, not yet paid', description: 'Payouts still to make', to: list('APPROVED') },
+            ]}
+            absent={[]}
+          />
+        </div>
+        <div className="xl:col-span-12">
           <ActivityFeed items={view.recentActivity} />
         </div>
-        <DashboardRail
-          alerts={
-            view.approved
-              ? [
-                  {
-                    tone: 'warning',
-                    text: (
-                      <>
-                        <b>{countValue(view.approved)} approved claims</b> have not been paid.
-                      </>
-                    ),
-                  },
-                ]
-              : []
-          }
-          actions={[
-            { label: 'Register a claim', description: 'Identify the claimant, then the policy', to: '/staff/claims/new' },
-            ...(next
-              ? [
-                  {
-                    label: manager ? 'Decide the next settlement' : 'Assess the next claim',
-                    description: 'The one that has waited longest',
-                    to: `/staff/claims/${next.claimId}`,
-                  },
-                ]
-              : []),
-            { label: 'Unassessed claims', description: 'Registered, no assessor yet', to: '/staff/claims?status=REGISTERED' },
-            { label: 'Approved, not yet paid', description: 'Payouts still to make', to: '/staff/claims?status=APPROVED' },
-          ]}
-          absent={['SLA deadlines on claims', 'Assigning a claim to an assessor']}
-        />
       </div>
     </div>
   );

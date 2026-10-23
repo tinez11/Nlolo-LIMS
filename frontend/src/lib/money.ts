@@ -111,6 +111,18 @@ export function subtractAmounts(a: string, b: string): string | null {
  * A malformed amount is passed through verbatim so a backend defect is visible on
  * screen instead of crashing the table or being coerced into a plausible number.
  */
+const COMPACT = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
+
+/**
+ * A large amount at a glance, e.g. `TZS 1.9B` -- for a dashboard figure, where the whole amount sits one hover away.
+ * Display only: the number is the server's, shortened, never added to or compared with anything.
+ */
+export function formatMoneyCompact(money: Money | null | undefined): string {
+  if (!money) return NO_VALUE;
+  if (!isValidAmount(money.amount)) return `${money.currencyCode} ${money.amount}`;
+  return `${money.currencyCode} ${COMPACT.format(Number(money.amount))}`;
+}
+
 export function formatMoney(money: Money | null | undefined): string {
   if (!money) return NO_VALUE;
   const { amount, currencyCode } = money;

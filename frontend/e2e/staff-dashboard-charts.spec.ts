@@ -17,11 +17,18 @@ test.describe('staff dashboard charts, as finance', () => {
     await page.goto('/staff/dashboard?dashboard=finance');
 
     await expect(page.getByRole('img', { name: /Premiums collected by month/ })).toBeVisible();
-    // Either the chart or its empty line, as the underwriting test below allows: with nothing overdue in the dev
-    // database the panel correctly says so, and requiring bars made this fail on the data rather than the screen.
-    const aging = page.getByRole('img', { name: /Receivables by age/ });
-    const nothingOwed = page.getByText('Nothing is owed.');
-    await expect(aging.or(nothingOwed)).toBeVisible();
+    // Every age band is drawn, even at zero, so the list is there whatever the dev database owes.
+    await expect(page.getByRole('list', { name: 'Owed by how overdue' })).toBeVisible();
+  });
+
+  test('a range button re-reads the dashboard for those months', async ({ page }) => {
+    await page.goto('/staff/dashboard?dashboard=finance');
+    await expect(page.getByRole('img', { name: /Premiums collected by month/ })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Last 12 months' }).click();
+    await expect(page).toHaveURL(/from=\d{4}-\d{2}&to=\d{4}-\d{2}/);
+    await expect(page.getByRole('button', { name: 'Last 12 months' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('img', { name: /Premiums collected by month, \w{3} \d{4} to \w{3} \d{4}/ })).toBeVisible();
   });
 });
 
@@ -29,10 +36,7 @@ test.describe('staff dashboard charts', () => {
   test('the underwriting dashboard draws its decisions', async ({ page }) => {
     await page.goto('/staff/dashboard?dashboard=underwriting');
 
-    // Either the chart or its empty line, depending on whether the dev database has decided anything in the window.
-    // Both are correct; what would be wrong is neither.
-    const chart = page.getByRole('img', { name: /Underwriting decisions by month/ });
-    const empty = page.getByText('No decisions in this period.');
-    await expect(chart.or(empty)).toBeVisible();
+    // Every month of the range is drawn, at zero where nothing was decided, so the chart is always there.
+    await expect(page.getByRole('img', { name: /Underwriting decisions by month/ })).toBeVisible();
   });
 });

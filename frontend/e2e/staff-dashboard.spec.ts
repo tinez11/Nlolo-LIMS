@@ -9,7 +9,7 @@ test.describe('staff dashboard', () => {
     await page.goto('/staff');
     await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
 
-    const openCases = page.getByRole('link', { name: /Open cases, awaiting first review/ });
+    const openCases = page.getByRole('link', { name: /Open cases\. Open the list/ });
     await expect(openCases).toBeVisible();
     await openCases.click();
     await expect(page).toHaveURL(/\/staff\/underwriting\?status=OPEN/);
