@@ -2,7 +2,10 @@ package tz.co.nlolo.lifeplatform.reporting.application;
 
 import org.springframework.stereotype.Service;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.reporting.api.CategoryAmount;
+import tz.co.nlolo.lifeplatform.reporting.api.CategoryCount;
 import tz.co.nlolo.lifeplatform.reporting.api.MonthlyAmount;
+import tz.co.nlolo.lifeplatform.reporting.api.MonthlyCount;
 import tz.co.nlolo.lifeplatform.reporting.api.RebuildStatusView;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportDefinitionView;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportFilter;
@@ -15,11 +18,14 @@ import tz.co.nlolo.lifeplatform.reporting.infrastructure.ReportQueries;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 /** Not @Transactional on purpose: a report is several independent reads, and a label lookup that fails in
  * another module must not abort the transaction the report's own queries run in. */
@@ -52,6 +58,21 @@ public class ReportingApiImpl implements ReportingApi {
     @Override
     public List<MonthlyAmount> monthlyPremiumCollections(YearMonth from, YearMonth to) {
         return queries.monthlyCollections(TenantContext.get(), from.atDay(1), to.atEndOfMonth());
+    }
+
+    @Override
+    public List<CategoryAmount> premiumCollectionsByCategory(YearMonth from, YearMonth to) {
+        return queries.collectionsByCategory(TenantContext.get(), from.atDay(1), to.atEndOfMonth());
+    }
+
+    @Override
+    public List<MonthlyCount> policiesIssuedByMonth(YearMonth from, YearMonth to, Set<UUID> agentIds) {
+        return queries.issuedByMonth(TenantContext.get(), from.atDay(1), to.atEndOfMonth(), agentIds);
+    }
+
+    @Override
+    public List<CategoryCount> policiesInForceByCategory(LocalDate asOf, Set<UUID> agentIds) {
+        return queries.inForceByCategory(TenantContext.get(), asOf, agentIds);
     }
 
     @Override

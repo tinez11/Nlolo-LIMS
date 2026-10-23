@@ -1058,6 +1058,24 @@ class UnderwritingApiIntegrationTest {
             .sorted().toList());
     }
 
+    /**
+     * Every outcome together, the days ADDED rather than averaged (2026-10-23), so a dashboard can average a quarter
+     * exactly instead of averaging three rounded monthly averages.
+     */
+    @Test
+    void addsTurnaroundDaysPerMonthAcrossOutcomes() {
+        UUID fast = openCaseCreatedAt(Instant.parse("2026-05-01T08:00:00Z"));
+        decideAt(fast, DecisionOutcome.ACCEPT, Instant.parse("2026-05-03T08:00:00Z"));
+        UUID other = openCaseCreatedAt(Instant.parse("2026-05-02T08:00:00Z"));
+        decideAt(other, DecisionOutcome.DECLINED, Instant.parse("2026-05-07T08:00:00Z"));
+
+        var months = underwritingApi.decisionTurnaroundByMonth(YearMonth.of(2026, 5), YearMonth.of(2026, 5));
+
+        assertEquals(1, months.size());
+        assertEquals(2, months.get(0).cases());
+        assertEquals(0, new BigDecimal("7").compareTo(months.get(0).totalDays().setScale(0, java.math.RoundingMode.HALF_UP)));
+    }
+
     /** A month nobody decided anything in is ABSENT, not a zero: zero decisions and no data look different. */
     @Test
     void leavesOutAMonthWithNoDecisions() {

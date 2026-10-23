@@ -486,6 +486,40 @@ public class ClaimsApiImpl implements ClaimsApi {
     }
 
     @Override
+    public List<tz.co.nlolo.lifeplatform.claims.api.SettlementByType> settlementsByType(java.time.YearMonth from,
+                                                                                       java.time.YearMonth to) {
+        return claimRepository.settlementsByType(TenantContext.get(), civilStart(from), civilStart(to.plusMonths(1)))
+            .stream()
+            .map(row -> new tz.co.nlolo.lifeplatform.claims.api.SettlementByType((String) row[0], (String) row[1],
+                ((Number) row[2]).longValue(), (BigDecimal) row[3]))
+            .toList();
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.claims.api.ClaimMonth> settlementTurnaroundByMonth(java.time.YearMonth from,
+                                                                                           java.time.YearMonth to) {
+        return claimRepository.settlementTurnaroundByMonth(TenantContext.get(), civilStart(from),
+                civilStart(to.plusMonths(1))).stream()
+            .map(row -> new tz.co.nlolo.lifeplatform.claims.api.ClaimMonth(java.time.YearMonth.parse((String) row[0]),
+                ((Number) row[1]).longValue(), (BigDecimal) row[2]))
+            .toList();
+    }
+
+    @Override
+    public List<tz.co.nlolo.lifeplatform.claims.api.ClaimMonth> registrationsByMonth(java.time.YearMonth from,
+                                                                                    java.time.YearMonth to) {
+        return claimRepository.registrationsByMonth(TenantContext.get(), civilStart(from), civilStart(to.plusMonths(1)))
+            .stream()
+            .map(row -> new tz.co.nlolo.lifeplatform.claims.api.ClaimMonth(java.time.YearMonth.parse((String) row[0]),
+                ((Number) row[1]).longValue(), null))
+            .toList();
+    }
+
+    private static Instant civilStart(java.time.YearMonth month) {
+        return month.atDay(1).atStartOfDay(CIVIL).toInstant();
+    }
+
+    @Override
     public long countOpenDocumentRequests() {
         return claimDocumentRequestRepository.countByTenantIdAndStatus(TenantContext.get(),
             ClaimDocumentRequest.Status.OPEN.name());

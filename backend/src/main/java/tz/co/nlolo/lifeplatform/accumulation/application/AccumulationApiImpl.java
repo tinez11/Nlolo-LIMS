@@ -1314,7 +1314,7 @@ public class AccumulationApiImpl implements AccumulationApi {
         if (refusal != null) {
             return new SavingsQuoteView(SavingsQuoteView.Kind.TERM_ACCOUNT, amount, ratePercent, List.of(), termMonths,
                 null, null, termMonths == null ? null : on.plusMonths(termMonths), plan.minimumBalance(), null, refusal,
-                new SavingsQuoteView.TermAccountQuote(freq, 0, null, null, targetAmount, min, max));
+                new SavingsQuoteView.TermAccountQuote(freq, 0, null, null, targetAmount, min, max, List.of()));
         }
         boolean solving = amount == null || amount.signum() <= 0;
         TermAccountProjection.Projection p = solving
@@ -1323,7 +1323,9 @@ public class AccumulationApiImpl implements AccumulationApi {
         return new SavingsQuoteView(SavingsQuoteView.Kind.TERM_ACCOUNT, p.contribution(), ratePercent, List.of(), termMonths,
             p.interest(), p.maturityValue(), p.maturityDate(), plan.minimumBalance(), null, null,
             new SavingsQuoteView.TermAccountQuote(freq, p.contributions(), p.paidIn(), p.charges(),
-                solving ? targetAmount : null, min, max));
+                solving ? targetAmount : null, min, max,
+                p.schedule().stream().map(s -> new SavingsQuoteView.SchedulePoint(s.month(), s.date(), s.paidIn(),
+                    s.charges(), s.interest(), s.value())).toList()));
     }
 
     /** A rate may not rewrite interest a customer has already been credited. */

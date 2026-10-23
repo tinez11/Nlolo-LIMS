@@ -2,8 +2,11 @@ package tz.co.nlolo.lifeplatform.reporting.infrastructure;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import tz.co.nlolo.lifeplatform.reporting.api.CategoryAmount;
+import tz.co.nlolo.lifeplatform.reporting.api.CategoryCount;
 import tz.co.nlolo.lifeplatform.reporting.api.GroupBy;
 import tz.co.nlolo.lifeplatform.reporting.api.MonthlyAmount;
+import tz.co.nlolo.lifeplatform.reporting.api.MonthlyCount;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportFilter;
 import tz.co.nlolo.lifeplatform.reporting.domain.PolicyStatus;
 
@@ -15,6 +18,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static tz.co.nlolo.lifeplatform.reporting.infrastructure.ReportSql.ANNUALISED_AT_SALE;
@@ -221,6 +225,51 @@ public class ReportQueries {
             (rs, i) -> new MonthlyAmount(YearMonth.parse(rs.getString("month")), rs.getString("currency").trim(),
                 rs.getBigDecimal("amount")),
             tenantId, from, to);
+    }
+
+    /** {@link #monthlyCollections}' rows over the whole span, per product category and currency. */
+    public List<CategoryAmount> collectionsByCategory(UUID tenantId, LocalDate from, LocalDate to) {
+        return jdbc.query("SELECT COALESCE(p.product_category, 'UNKNOWN') AS category, r.currency, SUM(r.amount) AS amount"
+                + " FROM reporting.report_collection r"
+                + " LEFT JOIN reporting.report_policy p ON p.tenant_id = r.tenant_id AND p.policy_number = r.policy_number"
+                + " WHERE r.tenant_id = ? AND r.collected_on BETWEEN ? AND ?"
+                + " GROUP BY category, r.currency ORDER BY amount DESC, category",
+            (rs, i) -> new CategoryAmount(rs.getString("category"), rs.getString("currency").trim(),
+                rs.getBigDecimal("amount")),
+            tenantId, from, to);
+    }
+
+    /** Policies by issue month. {@code agentIds} null is every agent and none; an empty set matches nothing. */
+    public List<MonthlyCount> issuedByMonth(UUID tenantId, LocalDate from, LocalDate to, Set<UUID> agentIds) {
+        if (agentIds != null && agentIds.isEmpty()) return List.of();
+        List<Object> args = new ArrayList<>(List.of(tenantId, from, to));
+        StringBuilder sql = new StringBuilder("SELECT to_char(p.issue_date, 'YYYY-MM') AS month, COUNT(*) AS n"
+            + " FROM reporting.report_policy p WHERE p.tenant_id = ? AND p.issue_date BETWEEN ? AND ?");
+        appendAgents(sql, args, agentIds);
+        sql.append(" GROUP BY month ORDER BY month");
+        return jdbc.query(sql.toString(), (rs, i) -> new MonthlyCount(YearMonth.parse(rs.getString("month")),
+            rs.getLong("n")), args.toArray());
+    }
+
+    /** Policies in force on {@code asOf} per product category, scoped as {@link #issuedByMonth} is. */
+    public List<CategoryCount> inForceByCategory(UUID tenantId, LocalDate asOf, Set<UUID> agentIds) {
+        if (agentIds != null && agentIds.isEmpty()) return List.of();
+        List<Object> args = new ArrayList<>(List.of(tenantId, asOf, tenantId));
+        StringBuilder sql = new StringBuilder("WITH " + LAST_CHANGE_CTE
+            + " SELECT COALESCE(p.product_category, 'UNKNOWN') AS category, COUNT(*) AS n"
+            + " FROM reporting.report_policy p JOIN last_change l ON l.policy_number = p.policy_number"
+            + " WHERE p.tenant_id = ? AND l.to_status IN " + IN_FORCE_STATUSES);
+        appendAgents(sql, args, agentIds);
+        sql.append(" GROUP BY category ORDER BY n DESC, category");
+        return jdbc.query(sql.toString(), (rs, i) -> new CategoryCount(rs.getString("category"), rs.getLong("n")),
+            args.toArray());
+    }
+
+    private static void appendAgents(StringBuilder sql, List<Object> args, Set<UUID> agentIds) {
+        if (agentIds == null) return;
+        sql.append(" AND p.agent_id IN (").append(String.join(",", java.util.Collections.nCopies(agentIds.size(), "?")))
+            .append(")");
+        args.addAll(agentIds);
     }
 
     public List<TopPolicyRow> topPolicies(UUID tenantId, LocalDate from, LocalDate to, ReportFilter f, int limit) {

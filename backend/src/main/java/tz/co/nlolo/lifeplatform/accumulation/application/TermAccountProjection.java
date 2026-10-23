@@ -42,7 +42,22 @@ public final class TermAccountProjection {
      * @param maturityValue paid out on the maturity date
      */
     public record Projection(BigDecimal contribution, int contributions, BigDecimal paidIn, BigDecimal charges,
-                             BigDecimal interest, BigDecimal maturityValue, LocalDate maturityDate) {}
+                             BigDecimal interest, BigDecimal maturityValue, LocalDate maturityDate,
+                             List<Point> schedule) {}
+
+    /**
+     * Where the account stands {@code month} months in (2026-10-23, the quotation's growth chart) -- every year end, or
+     * every month end on a term of two years or less, and the maturity day last. Taken from THIS projection's own
+     * running figures, before that day's contribution lands, so the chart and the totals are one calculation.
+     *
+     * @param value the balance with the interest earned but not yet posted, to the cent
+     * @param interest every cent of interest earned so far, posted or not
+     */
+    public record Point(int month, LocalDate date, BigDecimal paidIn, BigDecimal charges, BigDecimal interest,
+                        BigDecimal value) {}
+
+    /** A month-by-month schedule up to this many months; year by year beyond it. */
+    static final int MONTHLY_SCHEDULE_UP_TO = 24;
 
     /** Months between payments; 0 for SINGLE, paid once at the start. */
     static int step(String frequency) {
@@ -78,7 +93,17 @@ public final class TermAccountProjection {
         BigDecimal interest = BigDecimal.ZERO;
         int paid = 0;
         LocalDate nextDue = start;
+        int every = termMonths <= MONTHLY_SCHEDULE_UP_TO ? 1 : 12;
+        List<Point> schedule = new java.util.ArrayList<>();
+        int nextPoint = every;
         for (LocalDate d = start; !d.isAfter(maturity); d = d.plusDays(1)) {
+            if (nextPoint < termMonths && d.equals(start.plusMonths(nextPoint))) {
+                BigDecimal unposted = accrued.setScale(2, RoundingMode.HALF_EVEN);
+                schedule.add(new Point(nextPoint, d, paidIn.setScale(2), charges.setScale(2, RoundingMode.HALF_EVEN),
+                    interest.add(unposted).setScale(2, RoundingMode.HALF_EVEN),
+                    balance.add(unposted).setScale(2, RoundingMode.HALF_EVEN)));
+                nextPoint += every;
+            }
             if (nextDue != null && d.equals(nextDue) && d.isBefore(maturity)) {
                 BigDecimal allocation = catalogue.isEmpty()
                     ? contribution.multiply(charge(plan, start, d).contributionAllocationPercent())
@@ -118,8 +143,11 @@ public final class TermAccountProjection {
             balance = balance.subtract(exit);
             charges = charges.add(exit);
         }
+        schedule.add(new Point(termMonths, maturity, paidIn.setScale(2), charges.setScale(2, RoundingMode.HALF_EVEN),
+            interest.setScale(2, RoundingMode.HALF_EVEN), balance.setScale(2, RoundingMode.HALF_EVEN)));
         return new Projection(contribution, paid, paidIn.setScale(2), charges.setScale(2, RoundingMode.HALF_EVEN),
-            interest.setScale(2, RoundingMode.HALF_EVEN), balance.setScale(2, RoundingMode.HALF_EVEN), maturity);
+            interest.setScale(2, RoundingMode.HALF_EVEN), balance.setScale(2, RoundingMode.HALF_EVEN), maturity,
+            List.copyOf(schedule));
     }
 
     /**

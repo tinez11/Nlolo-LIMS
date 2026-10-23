@@ -103,6 +103,47 @@ public interface ClaimRepository extends JpaRepository<Claim, UUID> {
     List<Object[]> settlementsByMonth(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
                                        @Param("to") Instant to);
 
+    /** Settled claims over a span, per type and currency (2026-10-23). Currency-less rows excluded, as above. */
+    @Query(value = """
+        SELECT c.claim_type, c.approved_currency, COUNT(*) AS claims, SUM(c.approved_amount) AS total_approved
+          FROM claims.claim c
+         WHERE c.tenant_id = :tenantId
+           AND c.settled_at IS NOT NULL
+           AND c.approved_currency IS NOT NULL
+           AND c.settled_at >= :from AND c.settled_at < :to
+         GROUP BY c.claim_type, c.approved_currency
+         ORDER BY total_approved DESC, c.claim_type
+        """, nativeQuery = true)
+    List<Object[]> settlementsByType(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
+                                      @Param("to") Instant to);
+
+    /** Settled claims per civil month with their summed days from registration, unrounded (2026-10-23). */
+    @Query(value = """
+        SELECT to_char(c.settled_at AT TIME ZONE 'Africa/Dar_es_Salaam', 'YYYY-MM') AS month,
+               COUNT(*) AS claims,
+               SUM(EXTRACT(EPOCH FROM (c.settled_at - c.created_at)) / 86400.0)::numeric AS total_days
+          FROM claims.claim c
+         WHERE c.tenant_id = :tenantId
+           AND c.settled_at IS NOT NULL
+           AND c.settled_at >= :from AND c.settled_at < :to
+         GROUP BY month
+         ORDER BY month
+        """, nativeQuery = true)
+    List<Object[]> settlementTurnaroundByMonth(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
+                                                @Param("to") Instant to);
+
+    /** Claims registered per civil month (2026-10-23). */
+    @Query(value = """
+        SELECT to_char(c.created_at AT TIME ZONE 'Africa/Dar_es_Salaam', 'YYYY-MM') AS month, COUNT(*) AS claims
+          FROM claims.claim c
+         WHERE c.tenant_id = :tenantId
+           AND c.created_at >= :from AND c.created_at < :to
+         GROUP BY month
+         ORDER BY month
+        """, nativeQuery = true)
+    List<Object[]> registrationsByMonth(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
+                                         @Param("to") Instant to);
+
     /** Backs claims/V3's partial unique index on (tenant_id, registration_idempotency_key) --
      * ClaimsApiImpl.registerClaim re-queries this on a caught unique-constraint violation to
      * return the EXISTING claim instead of erroring on a repeated registration attempt. */

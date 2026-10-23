@@ -100,6 +100,26 @@ class AnnuityContractTest {
             // 50,000,000 x 75 x 0.98 / 12,000 = 306,250.00
             .andExpect(jsonPath("$.instalment.amount").value("306250.00"))
             .andExpect(jsonPath("$.annualIncome.amount").value("3750000.00"))
+            // The chart's schedule: to age 100, and 14 years of 3,750,000 is the first to pass 50,000,000.
+            .andExpect(jsonPath("$.schedule.length()").value(39))
+            .andExpect(jsonPath("$.schedule[0].age").value(62))
+            .andExpect(jsonPath("$.schedule[1].received.amount").value("7500000.00"))
+            .andExpect(jsonPath("$.breakEvenYear").value(14))
+            .andExpect(jsonPath("$.purchasePrice.amount").value("50000000.00"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    /** A prospect who is not a client yet is priced from a stated date of birth and sex (2026-10-23). */
+    @Test
+    void aProspectIsQuotedFromAStatedDateOfBirthAndSex() throws Exception {
+        var product = fixtures.publish(TENANT, AnnuityTestFixtures.everyForm());
+        String born = TODAY.minusYears(61).minusDays(30).toString();
+        mockMvc.perform(post("/annuity-quotes").with(as("ROLE_REALM_AGENTS", "any-agent")).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"productVersionId\":\"" + product.versionId() + "\",\"formCode\":\"LIFE-BS\",\"frequency\":\"MONTHLY\","
+                    + "\"purchasePrice\":50000000,\"annuitantDateOfBirth\":\"" + born + "\",\"annuitantSex\":\"MALE\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.annuitantAge").value(61))
+            .andExpect(jsonPath("$.instalment.amount").value("306250.00"))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 

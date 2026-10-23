@@ -84,6 +84,15 @@ public interface ClaimsApi {
      */
     List<SettlementMonth> settlementsByMonth(YearMonth from, YearMonth to);
 
+    /** Claims settled {@code from} through {@code to}, per claim type and currency, largest first. */
+    List<SettlementByType> settlementsByType(YearMonth from, YearMonth to);
+
+    /** Claims settled per month with the days they took, every currency together. A month with none is absent. */
+    List<ClaimMonth> settlementTurnaroundByMonth(YearMonth from, YearMonth to);
+
+    /** Claims registered per month. A month with none is absent. */
+    List<ClaimMonth> registrationsByMonth(YearMonth from, YearMonth to);
+
     /** How many document requests are still outstanding across every claim in the tenant. */
     long countOpenDocumentRequests();
 

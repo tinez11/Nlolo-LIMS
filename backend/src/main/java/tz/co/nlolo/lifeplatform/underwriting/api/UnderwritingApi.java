@@ -234,6 +234,9 @@ public interface UnderwritingApi {
      */
     List<DecisionMonth> decisionsByMonth(YearMonth from, YearMonth to);
 
+    /** Decisions per month, every outcome together, with their summed days. A month with none is absent. */
+    List<DecisionTurnaround> decisionTurnaroundByMonth(YearMonth from, YearMonth to);
+
     /**
      * Decided cases no policy has been issued from yet -- what manual issuance may pick (2026-10-08). Declined
      * cases included (an underwriting override issues against one); members' evidence cases excluded.

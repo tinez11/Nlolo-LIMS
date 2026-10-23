@@ -889,6 +889,24 @@ components:
                   oneOf: [{ $ref: 'openapi-common.yaml#/components/schemas/Money' }, { type: "null" }]
                 minRatePercent: { type: string }
                 maxRatePercent: { type: string }
+                schedule:
+                  description: >-
+                    Where the account stands at each year end (each month end on a term of two years or less) and
+                    on the maturity day, last -- cumulative figures from the projection's own running totals, so a
+                    chart drawn from them agrees with the totals above. Empty when nothing priced.
+                  type: array
+                  items:
+                    type: object
+                    required: [month, date, paidIn, charges, interest, value]
+                    properties:
+                      month: { type: integer, minimum: 1, description: Months into the term. }
+                      date: { type: string, format: date }
+                      paidIn: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+                      charges: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+                      interest: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+                      value:
+                        description: The balance with interest earned but not yet posted.
+                        $ref: 'openapi-common.yaml#/components/schemas/Money'
     ClosingQuote:
       type: object
       required: [policyNumber, asOf, balance, interestToDate, value]

@@ -12,6 +12,9 @@ servers:
 paths:
   /dashboards/underwriting:
     get:
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
       summary: The underwriter's dashboard (UNDERWRITER)
       security:
         - staffAuth: []
@@ -24,6 +27,9 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
   /dashboards/claims:
     get:
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
       summary: The claims dashboard (CLAIMS_ASSESSOR or CLAIMS_MANAGER)
       description: The queue is the settlement decisions for a manager and the unassessed claims for an assessor.
       security:
@@ -37,6 +43,9 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
   /dashboards/finance:
     get:
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
       summary: The finance dashboard (FINANCE_OFFICER or ADMIN)
       description: >
         Premiums for the last complete month with its change against the month before; the balance sheet through the
@@ -53,6 +62,9 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
   /dashboards/agent:
     get:
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
       summary: The agent's dashboard (agents realm, scoped to the token)
       security:
         - agentsAuth: [agent]
@@ -64,6 +76,21 @@ paths:
               schema: { $ref: '#/components/schemas/AgentDashboardView' }
         '403': { $ref: '#/components/responses/Problem' }
 components:
+  parameters:
+    From:
+      name: from
+      in: query
+      required: false
+      description: First month of the range, inclusive. Defaults to January of the current year.
+      schema: { $ref: '#/components/schemas/Month' }
+    To:
+      name: to
+      in: query
+      required: false
+      description: >-
+        Last month of the range, inclusive, never after the current month. Defaults to the current month. A range
+        that runs backwards, ends in the future or covers more than 36 months is a 400.
+      schema: { $ref: '#/components/schemas/Month' }
   responses:
     Problem:
       description: An error, as RFC 7807 problem details
@@ -80,11 +107,59 @@ components:
     Count:
       type: [integer, 'null']
       minimum: 0
+    Period:
+      description: >-
+        The months the ranged figures cover and the months they are compared with -- the same months a year
+        earlier, so a season is compared with itself. When to is the current month its figures are to date.
+      type: object
+      additionalProperties: false
+      required: [from, to, compareFrom, compareTo, currentMonth]
+      properties:
+        from: { $ref: '#/components/schemas/Month' }
+        to: { $ref: '#/components/schemas/Month' }
+        compareFrom: { $ref: '#/components/schemas/Month' }
+        compareTo: { $ref: '#/components/schemas/Month' }
+        currentMonth: { $ref: '#/components/schemas/Month' }
+    Percent:
+      type: [string, 'null']
+      pattern: '^-?\d+(\.\d)?$'
+    Days:
+      type: [string, 'null']
+      pattern: '^\d+(\.\d)?$'
+    CountPoint:
+      description: How many in one month. Every month of a ranged series is present; zero means none.
+      type: object
+      additionalProperties: false
+      required: [month, count]
+      properties:
+        month: { $ref: '#/components/schemas/Month' }
+        count: { type: integer, format: int64, minimum: 0 }
+    DaysPoint:
+      description: A month's mean calendar days, one decimal place; null in a month where nothing happened.
+      type: object
+      additionalProperties: false
+      required: [month, averageDays]
+      properties:
+        month: { $ref: '#/components/schemas/Month' }
+        averageDays: { $ref: '#/components/schemas/Days' }
+    Share:
+      description: >-
+        One slice of a whole, its percent worked out on the server against the same list, so the console never
+        divides. amount or count carries the figure the slice is measured in.
+      type: object
+      additionalProperties: false
+      required: [key, amount, count, percent]
+      properties:
+        key: { type: string }
+        amount: { $ref: '#/components/schemas/Money' }
+        count: { $ref: '#/components/schemas/Count' }
+        percent: { $ref: '#/components/schemas/Percent' }
     UnderwritingDashboardView:
       type: object
       additionalProperties: false
       required: [openCases, casesInReview, casesAwaitingIssue, casesReferred, decisions, decisionSeries, queue,
-                 recentActivity]
+                 recentActivity, period, decided, decidedBefore, decidedChangePercent, acceptanceRate, averageDays,
+                 outcomeTotals, outcomeSeries, turnaroundSeries]
       properties:
         openCases: { $ref: '#/components/schemas/Count' }
         casesInReview: { $ref: '#/components/schemas/Count' }
@@ -121,6 +196,26 @@ components:
               sumAssured: { $ref: '#/components/schemas/Money' }
               status: { type: string, enum: [OPEN, IN_REVIEW, DECIDED, RETURNED] }
         recentActivity: { type: array, items: { $ref: '#/components/schemas/ActivityItem' } }
+        period: { $ref: '#/components/schemas/Period' }
+        decided: { $ref: '#/components/schemas/Count' }
+        decidedBefore: { $ref: '#/components/schemas/Count' }
+        decidedChangePercent: { $ref: '#/components/schemas/Percent' }
+        acceptanceRate: { $ref: '#/components/schemas/Percent' }
+        averageDays: { $ref: '#/components/schemas/Days' }
+        outcomeTotals: { type: array, items: { $ref: '#/components/schemas/Share' } }
+        outcomeSeries:
+          description: Every month of the period. accepted is ACCEPT plus LOADED, grouped on the server.
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [month, accepted, postponed, declined]
+            properties:
+              month: { $ref: '#/components/schemas/Month' }
+              accepted: { type: integer, format: int64, minimum: 0 }
+              postponed: { type: integer, format: int64, minimum: 0 }
+              declined: { type: integer, format: int64, minimum: 0 }
+        turnaroundSeries: { type: array, items: { $ref: '#/components/schemas/DaysPoint' } }
     ClaimStatus:
       type: string
       enum: [REGISTERED, UNDER_ASSESSMENT, APPROVED, REJECTED, SETTLEMENT_REQUESTED, SETTLED, REOPENED]
@@ -128,7 +223,9 @@ components:
       type: object
       additionalProperties: false
       required: [registered, underAssessment, settlementRequested, approved, reopened, settled,
-                 openDocumentRequests, settlements, settlementSeries, queueStatus, queue, recentActivity]
+                 openDocumentRequests, settlements, settlementSeries, queueStatus, queue, recentActivity, period,
+                 paid, paidBefore, paidChangePercent, paidSeries, paidByType, settledInPeriod, registeredInPeriod,
+                 registeredSeries, settledSeries, averageDaysToSettle, turnaroundSeries]
       properties:
         registered: { $ref: '#/components/schemas/Count' }
         underAssessment: { $ref: '#/components/schemas/Count' }
@@ -169,6 +266,18 @@ components:
               dateOfEvent: { type: [string, 'null'], format: date }
               status: { $ref: '#/components/schemas/ClaimStatus' }
         recentActivity: { type: array, items: { $ref: '#/components/schemas/ActivityItem' } }
+        period: { $ref: '#/components/schemas/Period' }
+        paid: { $ref: '#/components/schemas/Money' }
+        paidBefore: { $ref: '#/components/schemas/Money' }
+        paidChangePercent: { $ref: '#/components/schemas/Percent' }
+        paidSeries: { type: array, items: { $ref: '#/components/schemas/MonthPoint' } }
+        paidByType: { type: array, items: { $ref: '#/components/schemas/Share' } }
+        settledInPeriod: { $ref: '#/components/schemas/Count' }
+        registeredInPeriod: { $ref: '#/components/schemas/Count' }
+        registeredSeries: { type: array, items: { $ref: '#/components/schemas/CountPoint' } }
+        settledSeries: { type: array, items: { $ref: '#/components/schemas/CountPoint' } }
+        averageDaysToSettle: { $ref: '#/components/schemas/Days' }
+        turnaroundSeries: { type: array, items: { $ref: '#/components/schemas/DaysPoint' } }
     ActivityItem:
       type: object
       additionalProperties: false
@@ -256,7 +365,9 @@ components:
       required: [premiumsMonth, premiumsCollected, premiumsChangePercent, balanceSheetMonth, totalAssets,
                  totalLiabilities, resultFrom, resultTo, netResult, journalsAwaitingApproval, receiptsOverdue,
                  transfersAwaiting, arrearsAtLapse, premiumsThisYear, premiumsLastYear, currentMonth,
-                 receivables, recentActivity]
+                 receivables, recentActivity, period, collected, collectedBefore, collectedChangePercent,
+                 collectedSeries, collectedCompareSeries, collectedByProductLine, newPolicies, newPoliciesBefore,
+                 newPoliciesChangePercent, newPoliciesSeries, outstanding]
       properties:
         premiumsMonth: { $ref: '#/components/schemas/Month' }
         premiumsCollected: { $ref: '#/components/schemas/Money' }
@@ -281,11 +392,24 @@ components:
           type: array
           items: { $ref: '#/components/schemas/ReceivablesAging' }
         recentActivity: { type: array, items: { $ref: '#/components/schemas/ActivityItem' } }
+        period: { $ref: '#/components/schemas/Period' }
+        collected: { $ref: '#/components/schemas/Money' }
+        collectedBefore: { $ref: '#/components/schemas/Money' }
+        collectedChangePercent: { $ref: '#/components/schemas/Percent' }
+        collectedSeries: { type: array, items: { $ref: '#/components/schemas/MonthPoint' } }
+        collectedCompareSeries: { type: array, items: { $ref: '#/components/schemas/MonthPoint' } }
+        collectedByProductLine: { type: array, items: { $ref: '#/components/schemas/Share' } }
+        newPolicies: { $ref: '#/components/schemas/Count' }
+        newPoliciesBefore: { $ref: '#/components/schemas/Count' }
+        newPoliciesChangePercent: { $ref: '#/components/schemas/Percent' }
+        newPoliciesSeries: { type: array, items: { $ref: '#/components/schemas/CountPoint' } }
+        outstanding: { $ref: '#/components/schemas/Money' }
     AgentDashboardView:
       type: object
       additionalProperties: false
       required: [clients, clientsAwaitingKyc, clientsKycRejected, policiesInBook, applicationsInUnderwriting,
-                 commissionPeriod, commissionEarned, commissionStatus, awaitingKyc]
+                 commissionPeriod, commissionEarned, commissionStatus, awaitingKyc, period, commissionInPeriod,
+                 commissionSeries, sold, soldBefore, soldChangePercent, soldSeries, bookByProduct]
       properties:
         clients: { $ref: '#/components/schemas/Count' }
         clientsAwaitingKyc: { $ref: '#/components/schemas/Count' }
@@ -310,3 +434,21 @@ components:
               partyId: { type: string, format: uuid }
               displayName: { type: string }
               kycStatus: { type: string, enum: [PENDING, VERIFIED, REJECTED] }
+        period: { $ref: '#/components/schemas/Period' }
+        commissionInPeriod: { $ref: '#/components/schemas/Money' }
+        commissionSeries:
+          description: Every month of the period, what was paid and what is still to be paid; zero with no statement.
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [month, paid, pending]
+            properties:
+              month: { $ref: '#/components/schemas/Month' }
+              paid: { $ref: '#/components/schemas/Money' }
+              pending: { $ref: '#/components/schemas/Money' }
+        sold: { $ref: '#/components/schemas/Count' }
+        soldBefore: { $ref: '#/components/schemas/Count' }
+        soldChangePercent: { $ref: '#/components/schemas/Percent' }
+        soldSeries: { type: array, items: { $ref: '#/components/schemas/CountPoint' } }
+        bookByProduct: { type: array, items: { $ref: '#/components/schemas/Share' } }

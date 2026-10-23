@@ -124,4 +124,19 @@ public interface UnderwritingCaseRepository extends JpaRepository<UnderwritingCa
         """, nativeQuery = true)
     List<Object[]> decisionsByMonth(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
                                      @Param("to") Instant to);
+
+    /** Decisions per civil month, every outcome, with the summed days unrounded (2026-10-23). */
+    @Query(value = """
+        SELECT to_char(c.decision_decided_at AT TIME ZONE 'Africa/Dar_es_Salaam', 'YYYY-MM') AS month,
+               COUNT(*) AS cases,
+               SUM(EXTRACT(EPOCH FROM (c.decision_decided_at - c.created_at)) / 86400.0)::numeric AS total_days
+          FROM underwriting.underwriting_case c
+         WHERE c.tenant_id = :tenantId
+           AND c.decision_decided_at IS NOT NULL
+           AND c.decision_decided_at >= :from AND c.decision_decided_at < :to
+         GROUP BY month
+         ORDER BY month
+        """, nativeQuery = true)
+    List<Object[]> decisionTurnaroundByMonth(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
+                                              @Param("to") Instant to);
 }

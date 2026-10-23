@@ -16,6 +16,7 @@ import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.reporting.ReportingTestEvents.Sale;
+import tz.co.nlolo.lifeplatform.reporting.api.CategoryAmount;
 import tz.co.nlolo.lifeplatform.reporting.api.GroupBy;
 import tz.co.nlolo.lifeplatform.reporting.api.MonthlyAmount;
 import tz.co.nlolo.lifeplatform.reporting.api.ReportColumn;
@@ -32,6 +33,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -260,6 +262,43 @@ class ReportQueriesIntegrationTest {
             .containsExactly("2026-01 " + currency + " 14000.00", "2026-02 " + currency + " 10000.00");
         assertThat(months.stream().map(MonthlyAmount::amount).reduce(BigDecimal.ZERO, BigDecimal::add).toPlainString())
             .isEqualTo(report.sections().get(0).totals().get("amount"));
+    }
+
+    /**
+     * The ranged dashboards' three reads (2026-10-23). The product lines of a span add up to the same span's monthly
+     * total, and the agent scope is a filter: null is everyone, an empty team is nobody -- never everybody.
+     */
+    @Test
+    void collectionsByCategoryIssuesByMonthAndTheBookByCategoryForATeam() {
+        UUID mine = UUID.randomUUID();
+        UUID theirs = UUID.randomUUID();
+        events.sell(tenant, Sale.of("C-1", product, d("2026-01-02")).agent(mine));
+        events.sell(tenant, Sale.of("C-2", product, d("2026-02-03")).agent(mine).scheme(5));
+        events.sell(tenant, Sale.of("C-3", product, d("2026-02-10")).agent(theirs));
+        events.collect(tenant, "C-1", "10000.00", d("2026-01-05"), true);
+        events.collect(tenant, "C-2", "30000.00", d("2026-02-05"), true);
+        events.collect(tenant, "C-3", "5000.00", d("2026-02-12"), true);
+        events.lapse(tenant, "C-3", d("2026-03-01"));
+
+        List<CategoryAmount> lines = reportingApi.premiumCollectionsByCategory(YearMonth.of(2026, 1), YearMonth.of(2026, 2));
+        assertThat(lines).extracting(c -> c.category() + " " + c.amount().toPlainString())
+            .containsExactly("GROUP_LIFE 30000.00", "TERM_LIFE 15000.00");
+        BigDecimal monthly = reportingApi.monthlyPremiumCollections(YearMonth.of(2026, 1), YearMonth.of(2026, 2)).stream()
+            .map(MonthlyAmount::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(lines.stream().map(CategoryAmount::amount).reduce(BigDecimal.ZERO, BigDecimal::add)).isEqualByComparingTo(monthly);
+
+        assertThat(reportingApi.policiesIssuedByMonth(YearMonth.of(2026, 1), YearMonth.of(2026, 3), null))
+            .extracting(m -> m.month() + " " + m.count()).containsExactly("2026-01 1", "2026-02 2");
+        assertThat(reportingApi.policiesIssuedByMonth(YearMonth.of(2026, 1), YearMonth.of(2026, 3), Set.of(mine)))
+            .extracting(m -> m.month() + " " + m.count()).containsExactly("2026-01 1", "2026-02 1");
+        assertThat(reportingApi.policiesIssuedByMonth(YearMonth.of(2026, 1), YearMonth.of(2026, 3), Set.of())).isEmpty();
+
+        // C-3 lapsed in March: in force for nobody on 31 March, and never in my book.
+        assertThat(reportingApi.policiesInForceByCategory(d("2026-03-31"), null))
+            .extracting(c -> c.category() + " " + c.count()).containsExactlyInAnyOrder("GROUP_LIFE 1", "TERM_LIFE 1");
+        assertThat(reportingApi.policiesInForceByCategory(d("2026-02-28"), Set.of(theirs)))
+            .extracting(c -> c.category() + " " + c.count()).containsExactly("TERM_LIFE 1");
+        assertThat(reportingApi.policiesInForceByCategory(d("2026-03-31"), Set.of())).isEmpty();
     }
 
     // ---- clients -----------------------------------------------------------------------------------------

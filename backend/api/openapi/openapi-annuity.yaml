@@ -157,11 +157,40 @@ components:
         purchasePrice: { type: [number, "null"], exclusiveMinimum: 0 }
         annuitantPartyId: { type: [string, "null"], format: uuid }
         jointLifePartyId: { type: [string, "null"], format: uuid }
+        annuitantDateOfBirth:
+          description: >-
+            A prospect who is not a client yet (2026-10-23): the date of birth as stated, used when
+            annuitantPartyId is absent. No client scope applies, since no record is read.
+          type: [string, "null"]
+          format: date
+        annuitantSex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+        jointDateOfBirth: { type: [string, "null"], format: date }
+        jointSex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
     AnnuityQuote:
       type: object
       additionalProperties: false
-      required: [formCode, frequency, paymentsPerYear, timing, instalment, annualIncome, annuitantAge, annualRatePerMille, factor]
+      required: [formCode, frequency, paymentsPerYear, timing, instalment, annualIncome, annuitantAge, annualRatePerMille, factor,
+                 schedule]
       properties:
+        purchasePrice:
+          oneOf: [{ $ref: 'openapi-common.yaml#/components/schemas/Money' }, { type: "null" }]
+        schedule:
+          description: >-
+            Income received by the end of each year from the first payment while the annuitant lives -- the
+            priced annual income every year, to age 100 or for forty years, whichever is first. Empty without a
+            purchase price.
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [year, age, received]
+            properties:
+              year: { type: integer, minimum: 1 }
+              age: { type: integer }
+              received: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        breakEvenYear:
+          description: The first year by whose end the income received is at least the purchase price.
+          type: [integer, "null"]
         formCode: { type: string }
         frequency: { type: string, enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL] }
         paymentsPerYear: { type: integer }

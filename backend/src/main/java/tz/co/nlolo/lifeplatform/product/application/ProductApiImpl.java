@@ -711,6 +711,15 @@ public class ProductApiImpl implements ProductApi {
                     .setScale(2, java.math.RoundingMode.HALF_UP);
             }
         }
+        List<ProductApi.PaidByYear> paidByYear = new java.util.ArrayList<>();
+        if (totalOverTerm != null) {
+            int years = (input.policyTermMonths() + 11) / 12;
+            for (int year = 1; year <= years; year++) {
+                int count = Math.min(year * instalments, instalmentsOverTerm);
+                paidByYear.add(new ProductApi.PaidByYear(year, count,
+                    instalment.multiply(BigDecimal.valueOf(count)).setScale(2, java.math.RoundingMode.HALF_UP)));
+            }
+        }
 
         return new PremiumQuoteView(versionId, input.sumAssuredCurrency(),
             ageAtEntry, cell.getAgeFrom(), cell.getAgeTo(), cell.getRatePerMille(),
@@ -719,7 +728,7 @@ public class ProductApiImpl implements ProductApi {
             loading.percentFor(input.frequency()),
             loadedAnnual.setScale(2, java.math.RoundingMode.HALF_UP),
             input.frequency(), instalments, instalment,
-            totalOverTerm, instalmentsOverTerm);
+            totalOverTerm, instalmentsOverTerm, paidByYear);
     }
 
     @Override
