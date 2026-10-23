@@ -137,7 +137,8 @@ export function QuotationPreview({
    * A term account's own inputs (2026-10-21): the rate the case names, and what the customer wants at maturity. With a
    * target the panel shows the contribution that reaches it, and `onUseContribution` puts that figure in the form.
    */
-  termAccount?: { ratePercent: string; targetAmount: string; onUseContribution?: ((amount: string) => void) | undefined } | undefined;
+  termAccount?: { ratePercent: string; targetAmount: string; onUseContribution?: ((amount: string) => void) | undefined;
+    onUseMaturity?: ((amount: string) => void) | undefined } | undefined;
   /**
    * Told where the server's answer stands (2026-10-20), for a screen that acts on it -- the agents' calculator offers
    * "Proceed" only once the server has priced what the customer would agree to, never on a refusal.
@@ -563,7 +564,8 @@ function SavingsQuotation({
   commencementDate: string;
   report?: ((state: QuoteState) => void) | undefined;
   termAccount?:
-    | { ratePercent: string; frequency: string; targetAmount: string; onUseContribution?: ((amount: string) => void) | undefined }
+    | { ratePercent: string; frequency: string; targetAmount: string; onUseContribution?: ((amount: string) => void) | undefined;
+        onUseMaturity?: ((amount: string) => void) | undefined }
     | undefined;
 }) {
   const quotation = useSavingsQuotation({
@@ -603,7 +605,7 @@ function SavingsQuotation({
   const q = quotation.quote;
   const deposit = q.kind === 'DEPOSIT';
   if (q.kind === 'TERM_ACCOUNT') {
-    return <TermAccountQuotation quote={q} onUseContribution={termAccount?.onUseContribution} />;
+    return <TermAccountQuotation quote={q} onUseContribution={termAccount?.onUseContribution} onUseMaturity={termAccount?.onUseMaturity} />;
   }
 
   // What the customer came to hear: a deposit's worth on the day it matures, an account's rate. Its row is then left
@@ -690,16 +692,23 @@ function SavingsQuotation({
 function TermAccountQuotation({
   quote: q,
   onUseContribution,
+  onUseMaturity,
 }: {
   quote: SavingsQuoteView;
   onUseContribution?: ((amount: string) => void) | undefined;
+  onUseMaturity?: ((amount: string) => void) | undefined;
 }) {
   const t = q.termAccount;
-  // Quoted for a target, the contribution IS the answer: it goes straight into the form, never typed (2026-10-21).
+  // Either way round (the user, 2026-10-22): quoted for a target, the contribution that reaches it goes into the form;
+  // quoted for a contribution, what it pays at maturity does.
   const solved = t?.targetAmount && !q.refusal ? q.amount?.amount : undefined;
+  const projected = t && !t.targetAmount && !q.refusal ? q.maturityValue?.amount : undefined;
   useEffect(() => {
     if (solved) onUseContribution?.(solved);
   }, [solved, onUseContribution]);
+  useEffect(() => {
+    if (projected) onUseMaturity?.(projected);
+  }, [projected, onUseMaturity]);
   if (q.refusal || !t) {
     return (
       <div className="px-4 pb-4">
