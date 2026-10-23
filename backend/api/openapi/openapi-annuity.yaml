@@ -173,7 +173,8 @@ components:
                  schedule]
       properties:
         purchasePrice:
-          oneOf: [{ $ref: 'openapi-common.yaml#/components/schemas/Money' }, { type: "null" }]
+          # anyOf, not oneOf: the validator matched a real amount against both branches and refused it.
+          anyOf: [{ $ref: 'openapi-common.yaml#/components/schemas/Money' }, { type: "null" }]
         schedule:
           description: >-
             Income received by the end of each year from the first payment while the annuitant lives -- the
