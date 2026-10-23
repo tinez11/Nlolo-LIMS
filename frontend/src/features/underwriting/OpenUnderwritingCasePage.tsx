@@ -259,18 +259,21 @@ export function OpenUnderwritingCasePage() {
     setValue('termAccountMinRate', termAccountTerms?.minRatePercent != null ? String(termAccountTerms.minRatePercent) : '');
     setValue('termAccountMaxRate', termAccountTerms?.maxRatePercent != null ? String(termAccountTerms.maxRatePercent) : '');
   }, [isTermAccount, termAccountTerms, setValue]);
-  // What the customer wants at maturity: not part of the case, but required -- the contribution is only ever worked back
-  // from it (the user, 2026-10-22).
+  // A term account is worked either way round (the user, 2026-10-22): type what is wanted at maturity and the
+  // contribution is worked out, or type the contribution and what it pays at maturity is. Whichever was typed last
+  // leads; the other is filled from the quotation. The amount at maturity is not part of the case.
   const [termAccountTarget, setTermAccountTarget] = useState('');
+  const [leads, setLeads] = useState<'target' | 'contribution'>('target');
   const [targetError, setTargetError] = useState<string | null>(null);
-  // The contribution the server works out for that target, written into the form as it arrives. Stable, so the
-  // quotation's effect runs once per answer rather than on every render.
+  // The answers, written in as they arrive. Stable, so the quotation's effects run once per answer.
   const fillSolvedContribution = useCallback((amount: string) => {
     if (getValues('sumAssuredAmount') !== amount) {
       setValue('sumAssuredAmount', amount, { shouldValidate: true, shouldDirty: true });
     }
   }, [getValues, setValue]);
+  const fillProjectedMaturity = useCallback((amount: string) => setTermAccountTarget(amount), []);
   const targetSet = isTermAccount && termAccountTarget.trim() !== '';
+  const contributionSet = isTermAccount && (watch('sumAssuredAmount') ?? '').trim() !== '';
   const mainMemberParty = (lifeAssuredPartyId ? lifeAssured.data : applicant.data) ?? null;
   const mainMember = mainMemberParty
     ? { name: mainMemberParty.displayName ?? 'Main member', dateOfBirth: mainMemberParty.dateOfBirth ?? null }
@@ -302,9 +305,9 @@ export function OpenUnderwritingCasePage() {
       <form
         className="space-y-4"
         onSubmit={(e) => {
-          if (isTermAccount && !targetSet) {
+          if (isTermAccount && !targetSet && !contributionSet) {
             e.preventDefault();
-            setTargetError('Enter what the customer wants at maturity');
+            setTargetError('Enter what the customer wants at maturity, or the contribution');
             return;
           }
           void handleSubmit(onSubmit)(e);
@@ -385,17 +388,24 @@ export function OpenUnderwritingCasePage() {
           )}
         </FormField>
 
-        {/* A term account starts from what the customer wants at maturity; the contribution follows from it. */}
+        {/* A term account: what is wanted at maturity, or the contribution -- either one, and the other follows. */}
         {isTermAccount && (
-          <FormField label="Wanted at maturity" error={targetError ?? undefined}>
+          <FormField
+            label="Wanted at maturity"
+            error={targetError ?? undefined}
+            hint={leads === 'contribution' && targetSet
+              ? 'Worked out from the contribution: what it pays at maturity.'
+              : 'Or type the contribution below, and this fills itself.'}
+          >
             <Input
               inputMode="decimal"
               placeholder="5000000"
               value={termAccountTarget}
               onChange={(e) => {
                 setTermAccountTarget(e.target.value);
+                setLeads('target');
                 setTargetError(null);
-                // No target, no contribution: one is only ever worked out from the other.
+                // Typed away to nothing, the contribution it worked out goes with it.
                 if (e.target.value.trim() === '') setValue('sumAssuredAmount', '');
               }}
             />
@@ -406,16 +416,26 @@ export function OpenUnderwritingCasePage() {
           <FormField
             label={isDeferredAnnuity || isTermAccount ? 'Contribution per payment' : isAnnuity ? 'Purchase price'
               : isFuneral ? "Sum assured (the main member's benefit on the plan)" : 'Sum assured'}
-            // Nothing to correct by hand in a worked-out contribution: what is missing is what it is worked out from.
-            error={isTermAccount
+            // A worked-out contribution has nothing to correct by hand: what is missing is what it is worked out from.
+            error={isTermAccount && leads === 'target'
               ? (errors.sumAssuredAmount && targetSet ? 'Not worked out yet: choose the rate, term and how often it is paid' : undefined)
               : errors.sumAssuredAmount?.message}
-            hint={isTermAccount ? 'Worked out from the amount wanted at maturity, at the rate, term and frequency below.' : undefined}
+            hint={isTermAccount && leads === 'target' && contributionSet
+              ? 'Worked out from the amount wanted at maturity.'
+              : undefined}
           >
             <Input
-              placeholder={isTermAccount ? '' : '1500000.00'}
-              readOnly={isFuneral || isTermAccount}
-              {...register('sumAssuredAmount')}
+              placeholder="1500000.00"
+              readOnly={isFuneral}
+              {...register('sumAssuredAmount', {
+                onChange: (e: { target: { value: string } }) => {
+                  if (!isTermAccount) return;
+                  setLeads('contribution');
+                  setTargetError(null);
+                  // Typed away to nothing, what it worked out at maturity goes with it.
+                  if (e.target.value.trim() === '') setTermAccountTarget('');
+                },
+              })}
             />
           </FormField>
           <FormField label="Currency" error={errors.sumAssuredCurrency?.message}>
@@ -765,8 +785,10 @@ export function OpenUnderwritingCasePage() {
             isTermAccount
               ? {
                   ratePercent: watch('proposedRatePercent'),
-                  targetAmount: termAccountTarget,
+                  // Sent only while it leads: otherwise the contribution is quoted and this is its answer.
+                  targetAmount: leads === 'target' ? termAccountTarget : '',
                   onUseContribution: fillSolvedContribution,
+                  onUseMaturity: leads === 'contribution' ? fillProjectedMaturity : undefined,
                 }
               : undefined
           }

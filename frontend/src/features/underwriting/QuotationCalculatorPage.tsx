@@ -96,11 +96,15 @@ export function QuotationCalculatorPage() {
   // want at maturity instead of a contribution.
   const termAccountTerms = useTermAccountTerms(productId, productVersionId, selectedProduct?.portfolioCode);
   const isTermAccount = termAccountTerms !== null;
+  // Either way round (the user, 2026-10-22): type what is wanted at maturity and the contribution is worked out, or the
+  // contribution and what it pays at maturity is. Whichever was typed last leads; the other is filled from the quote.
   const [termAccountTarget, setTermAccountTarget] = useState('');
-  // The contribution the server works out for that target, written in as it arrives; stable, so it runs once per answer.
+  const [leads, setLeads] = useState<'target' | 'contribution'>('target');
+  // The answers, written in as they arrive; stable, so each runs once per answer.
   const fillSolvedContribution = useCallback((amount: string) => {
     if (getValues('sumAssuredAmount') !== amount) setValue('sumAssuredAmount', amount, { shouldDirty: true });
   }, [getValues, setValue]);
+  const fillProjectedMaturity = useCallback((amount: string) => setTermAccountTarget(amount), []);
 
   useEffect(() => {
     if (snapshot.data?.productVersionId) setValue('productVersionId', snapshot.data.productVersionId);
@@ -404,17 +408,23 @@ export function QuotationCalculatorPage() {
               errors={errors} setValue={setValue} />
           )}
 
-          {/* A term account starts from what the customer wants at maturity, at a rate; the contribution follows. */}
+          {/* A term account: what is wanted at maturity, or the contribution -- either one, and the other follows. */}
           {isTermAccount && termAccountTerms && (
             <div className="grid grid-cols-2 gap-4">
-              <FormField label="Wanted at maturity">
+              <FormField
+                label="Wanted at maturity"
+                hint={leads === 'contribution' && termAccountTarget.trim() !== ''
+                  ? 'Worked out from the contribution: what it pays at maturity.'
+                  : 'Or type the contribution below, and this fills itself.'}
+              >
                 <Input
                   inputMode="decimal"
                   placeholder="5000000"
                   value={termAccountTarget}
                   onChange={(e) => {
                     setTermAccountTarget(e.target.value);
-                    // No target, no contribution: one is only ever worked out from the other.
+                    setLeads('target');
+                    // Typed away to nothing, the contribution it worked out goes with it.
                     if (e.target.value.trim() === '') setValue('sumAssuredAmount', '');
                   }}
                 />
@@ -433,10 +443,19 @@ export function QuotationCalculatorPage() {
               label={isFuneral ? "Sum assured (the main member's benefit on the plan)"
                 : isTermAccount ? 'Contribution per payment' : 'Sum assured or amount'}
               error={amountError}
-              hint={isTermAccount ? 'Worked out from the amount wanted at maturity, at the rate, term and frequency.' : undefined}
+              hint={isTermAccount && leads === 'target' && (watch('sumAssuredAmount') ?? '').trim() !== ''
+                ? 'Worked out from the amount wanted at maturity.'
+                : undefined}
             >
-              <Input placeholder={isTermAccount ? '' : '1500000.00'} readOnly={isFuneral || isTermAccount}
-                {...register('sumAssuredAmount')} />
+              <Input placeholder="1500000.00" readOnly={isFuneral}
+                {...register('sumAssuredAmount', {
+                  onChange: (e: { target: { value: string } }) => {
+                    if (!isTermAccount) return;
+                    setLeads('contribution');
+                    // Typed away to nothing, what it worked out at maturity goes with it.
+                    if (e.target.value.trim() === '') setTermAccountTarget('');
+                  },
+                })} />
             </FormField>
             <FormField label="Currency">
               <Input className="w-20 uppercase" {...register('sumAssuredCurrency')} />
@@ -506,8 +525,10 @@ export function QuotationCalculatorPage() {
             isTermAccount
               ? {
                   ratePercent: watch('proposedRatePercent'),
-                  targetAmount: termAccountTarget,
+                  // Sent only while it leads: otherwise the contribution is quoted and this is its answer.
+                  targetAmount: leads === 'target' ? termAccountTarget : '',
                   onUseContribution: fillSolvedContribution,
+                  onUseMaturity: leads === 'contribution' ? fillProjectedMaturity : undefined,
                 }
               : undefined
           }
