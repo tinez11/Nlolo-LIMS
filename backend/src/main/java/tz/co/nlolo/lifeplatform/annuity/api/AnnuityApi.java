@@ -25,6 +25,14 @@ public interface AnnuityApi {
                        UUID annuitantPartyId, UUID jointLifePartyId);
 
     /**
+     * The same price for a prospect who is not a client yet (2026-10-23, the quotation calculator): the lives are a
+     * date of birth and a sex as the customer states them, priced by the same grid. Nothing is stored.
+     */
+    AnnuityPrice quoteProspect(UUID productVersionId, String formCode, String frequency, BigDecimal purchasePrice,
+                               java.time.LocalDate annuitantDateOfBirth, String annuitantSex,
+                               java.time.LocalDate jointDateOfBirth, String jointSex);
+
+    /**
      * What a death claim may pay (Task 6): the capital refund on the last death of a capital-protected
      * annuity, net of any overpayment; zero otherwise.
      *

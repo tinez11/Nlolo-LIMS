@@ -1280,6 +1280,18 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     }
 
     @Override
+    public List<tz.co.nlolo.lifeplatform.underwriting.api.DecisionTurnaround> decisionTurnaroundByMonth(
+            java.time.YearMonth from, java.time.YearMonth to) {
+        java.time.Instant start = from.atDay(1).atStartOfDay(CIVIL).toInstant();
+        java.time.Instant end = to.plusMonths(1).atDay(1).atStartOfDay(CIVIL).toInstant();
+        return underwritingCaseRepository.decisionTurnaroundByMonth(TenantContext.get(), start, end).stream()
+            .map(row -> new tz.co.nlolo.lifeplatform.underwriting.api.DecisionTurnaround(
+                java.time.YearMonth.parse((String) row[0]), ((Number) row[1]).longValue(),
+                (java.math.BigDecimal) row[2]))
+            .toList();
+    }
+
+    @Override
     public Page<UnderwritingCaseView> listCasesAwaitingIssue(String proposalNumber, Pageable pageable) {
         UUID tenantId = TenantContext.get();
         String q = proposalNumber == null ? "" : proposalNumber.trim().toLowerCase(java.util.Locale.ROOT);

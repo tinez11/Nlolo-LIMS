@@ -1405,6 +1405,18 @@ components:
         instalmentsOverTerm:
           description: How many charges that total is made of; null exactly when totalOverTerm is.
           type: [integer, 'null']
+        paidByYear:
+          description: >-
+            What has been paid by the end of each policy year of the term, on the same terms as totalOverTerm:
+            empty exactly when it is null, and the last entry equals it. A part last year is its own entry.
+          type: array
+          items:
+            type: object
+            required: [year, instalments, paid]
+            properties:
+              year: { type: integer, minimum: 1 }
+              instalments: { type: integer, minimum: 0 }
+              paid: { type: number }
     AnnuityTerms:
       description: An annuity version's forms and payment frequencies (product step 5), without rate rows.
       type: object

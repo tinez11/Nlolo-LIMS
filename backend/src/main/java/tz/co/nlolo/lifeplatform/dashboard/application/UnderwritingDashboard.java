@@ -4,8 +4,13 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import tz.co.nlolo.lifeplatform.dashboard.api.ActivityItem;
+import tz.co.nlolo.lifeplatform.dashboard.api.DaysPoint;
 import tz.co.nlolo.lifeplatform.dashboard.api.Money;
+import tz.co.nlolo.lifeplatform.dashboard.api.Share;
 import tz.co.nlolo.lifeplatform.dashboard.api.UnderwritingDashboardView;
+import tz.co.nlolo.lifeplatform.dashboard.api.UnderwritingDashboardView.OutcomeSeriesPoint;
+import tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome;
+import tz.co.nlolo.lifeplatform.underwriting.api.DecisionTurnaround;
 import tz.co.nlolo.lifeplatform.dashboard.api.UnderwritingDashboardView.DecisionMonth;
 import tz.co.nlolo.lifeplatform.dashboard.api.UnderwritingDashboardView.DecisionSeriesPoint;
 import tz.co.nlolo.lifeplatform.dashboard.api.UnderwritingDashboardView.QueuedCase;
@@ -14,9 +19,14 @@ import tz.co.nlolo.lifeplatform.underwriting.api.ReferralStatus;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseStatus;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 @Service
 public class UnderwritingDashboard {
@@ -37,6 +47,11 @@ public class UnderwritingDashboard {
      *     because a second Clock bean breaks Modulith and a composer that knew the date could not be tested on one
      */
     public UnderwritingDashboardView build(LocalDate today) {
+        return build(DashboardPeriod.of(null, null, today), today);
+    }
+
+    /** @param period the months the ranged figures cover (2026-10-23); counts and the queue stay "now" */
+    public UnderwritingDashboardView build(DashboardPeriod period, LocalDate today) {
         Long open = Safely.read("open cases",
             () -> underwriting.listCases(UnderwritingCaseStatus.OPEN, null, null, TOTAL_ONLY).getTotalElements());
         Long inReview = Safely.read("cases in review",
@@ -76,9 +91,67 @@ public class UnderwritingDashboard {
 
         List<ActivityItem> recent = Safely.read("recent activity", () -> activity.latest("underwriting."));
 
+        // ---- the ranged figures (2026-10-23): one read each for the period and its comparison months ----
+        List<tz.co.nlolo.lifeplatform.underwriting.api.DecisionMonth> inPeriod = Safely.read("decisions in the period",
+            () -> underwriting.decisionsByMonth(period.from(), period.to()));
+        Long decidedBefore = Safely.read("decisions a year earlier",
+            () -> underwriting.decisionsByMonth(period.compareFrom(), period.compareTo()).stream()
+                .mapToLong(tz.co.nlolo.lifeplatform.underwriting.api.DecisionMonth::cases).sum());
+        Map<YearMonth, DecisionTurnaround> days = Safely.read("decision turnaround", () ->
+            underwriting.decisionTurnaroundByMonth(period.from(), period.to()).stream()
+                .collect(Collectors.toMap(DecisionTurnaround::month, d -> d)));
+
+        Long decided = null;
+        String acceptance = null;
+        List<Share> totals = List.of();
+        List<OutcomeSeriesPoint> outcomes = List.of();
+        if (inPeriod != null) {
+            Map<DecisionOutcome, Long> byOutcome = new EnumMap<>(DecisionOutcome.class);
+            Map<YearMonth, long[]> byMonth = new TreeMap<>();
+            for (var row : inPeriod) {
+                byOutcome.merge(row.outcome(), row.cases(), Long::sum);
+                long[] m = byMonth.computeIfAbsent(row.month(), k -> new long[3]);
+                switch (row.outcome()) {
+                    case ACCEPT, LOADED -> m[0] += row.cases();
+                    case POSTPONED -> m[1] += row.cases();
+                    case DECLINED -> m[2] += row.cases();
+                }
+            }
+            decided = byOutcome.values().stream().mapToLong(Long::longValue).sum();
+            BigDecimal whole = BigDecimal.valueOf(decided);
+            long accepted = byOutcome.getOrDefault(DecisionOutcome.ACCEPT, 0L) + byOutcome.getOrDefault(DecisionOutcome.LOADED, 0L);
+            acceptance = DashboardPeriod.percentOf(BigDecimal.valueOf(accepted), whole);
+            totals = byOutcome.entrySet().stream()
+                .filter(e -> e.getValue() > 0)
+                .sorted(Map.Entry.<DecisionOutcome, Long>comparingByValue().reversed())
+                .map(e -> new Share(e.getKey().name(), null, e.getValue(),
+                    DashboardPeriod.percentOf(BigDecimal.valueOf(e.getValue()), whole)))
+                .toList();
+            outcomes = period.months().stream().map(mo -> {
+                long[] m = byMonth.getOrDefault(mo, new long[3]);
+                return new OutcomeSeriesPoint(mo.toString(), m[0], m[1], m[2]);
+            }).toList();
+        }
+        String averageDays = null;
+        List<DaysPoint> turnaround = List.of();
+        if (days != null) {
+            BigDecimal allDays = days.values().stream().map(DecisionTurnaround::totalDays).reduce(BigDecimal.ZERO, BigDecimal::add);
+            long allCases = days.values().stream().mapToLong(DecisionTurnaround::cases).sum();
+            averageDays = DashboardPeriod.average(allDays, allCases);
+            turnaround = period.months().stream().map(mo -> {
+                DecisionTurnaround d = days.get(mo);
+                return new DaysPoint(mo.toString(), d == null ? null : DashboardPeriod.average(d.totalDays(), d.cases()));
+            }).toList();
+        }
+        Long decidedNow = decided;
+
         return new UnderwritingDashboardView(open, inReview, awaitingIssue, referred, decisions, decisionSeries,
             queue == null ? List.of() : queue,
-            recent == null ? List.of() : recent);
+            recent == null ? List.of() : recent,
+            period.toView(), decidedNow, decidedBefore,
+            decidedNow == null || decidedBefore == null ? null
+                : DashboardPeriod.changePercent(BigDecimal.valueOf(decidedNow), BigDecimal.valueOf(decidedBefore)),
+            acceptance, averageDays, totals, outcomes, turnaround);
     }
 
     /**

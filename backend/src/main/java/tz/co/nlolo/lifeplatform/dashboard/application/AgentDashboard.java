@@ -5,9 +5,20 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import tz.co.nlolo.lifeplatform.dashboard.api.AgentDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.AgentDashboardView.ClientAwaitingKyc;
+import tz.co.nlolo.lifeplatform.dashboard.api.AgentDashboardView.CommissionPoint;
+import tz.co.nlolo.lifeplatform.dashboard.api.CountPoint;
 import tz.co.nlolo.lifeplatform.dashboard.api.Money;
+import tz.co.nlolo.lifeplatform.dashboard.api.Share;
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionStatementView;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
+import tz.co.nlolo.lifeplatform.distribution.api.StatementStatus;
+import tz.co.nlolo.lifeplatform.reporting.api.CategoryCount;
+import tz.co.nlolo.lifeplatform.reporting.api.MonthlyCount;
+import tz.co.nlolo.lifeplatform.reporting.api.ReportingApi;
+
+import java.math.BigDecimal;
+import java.util.Map;
+import java.util.stream.Collectors;
 import tz.co.nlolo.lifeplatform.party.api.KycStatus;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
@@ -31,10 +42,12 @@ public class AgentDashboard {
     private final PolicyApi policies;
     private final DistributionApi distribution;
     private final UnderwritingApi underwriting;
+    private final ReportingApi reporting;
 
     public AgentDashboard(PartyApi parties, PolicyApi policies, DistributionApi distribution,
-                          UnderwritingApi underwriting) {
+                          UnderwritingApi underwriting, ReportingApi reporting) {
         this.underwriting = underwriting;
+        this.reporting = reporting;
         this.parties = parties;
         this.policies = policies;
         this.distribution = distribution;
@@ -46,6 +59,11 @@ public class AgentDashboard {
      * @param today the civil date in Africa/Dar_es_Salaam
      */
     public AgentDashboardView build(String subject, UUID partyId, LocalDate today) {
+        return build(subject, partyId, DashboardPeriod.of(null, null, today), today);
+    }
+
+    /** @param period the months the ranged figures cover (2026-10-23); client counts and the book stay "now" */
+    public AgentDashboardView build(String subject, UUID partyId, DashboardPeriod range, LocalDate today) {
         Long clients = Safely.read("my clients",
             () -> parties.searchParties(null, subject, null, null, TOTAL_ONLY).getTotalElements());
         Long awaitingKyc = Safely.read("clients awaiting KYC",
@@ -80,9 +98,52 @@ public class AgentDashboard {
             .flatMap(agentId -> distribution.listStatements(agentId, period).stream().findFirst())
             .orElse(null));
 
+        // ---- the ranged figures (2026-10-23), scoped as the agent's own screens are ----
+        Set<UUID> team = Safely.read("my team", () -> Set.copyOf(distribution.resolveAgentTeam(partyId)));
+        List<CommissionStatementView> statements = Safely.read("commission statements", () -> distribution
+            .agentIdForParty(partyId)
+            .map(agentId -> range.months().stream()
+                .flatMap(m -> distribution.listStatements(agentId, m.toString()).stream())
+                .toList())
+            .orElse(List.of()));
+        String currency = statements == null ? null : statements.stream().map(CommissionStatementView::totalCurrency)
+            .filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        List<CommissionPoint> commission = statements == null || currency == null ? List.of()
+            : range.months().stream().map(m -> {
+                BigDecimal paid = BigDecimal.ZERO;
+                BigDecimal pending = BigDecimal.ZERO;
+                for (CommissionStatementView s : statements) {
+                    if (!m.toString().equals(s.period()) || !currency.equals(s.totalCurrency()) || s.totalAmount() == null) continue;
+                    if (s.status() == StatementStatus.PAID) paid = paid.add(s.totalAmount());
+                    else pending = pending.add(s.totalAmount());
+                }
+                return new CommissionPoint(m.toString(), Money.of(paid, currency), Money.of(pending, currency));
+            }).toList();
+        BigDecimal commissionTotal = statements == null || currency == null ? null : statements.stream()
+            .filter(s -> currency.equals(s.totalCurrency()) && s.totalAmount() != null)
+            .map(CommissionStatementView::totalAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        Map<YearMonth, Long> issued = team == null ? null : Safely.read("policies sold", () ->
+            reporting.policiesIssuedByMonth(range.compareFrom(), range.to(), team).stream()
+                .collect(Collectors.toMap(MonthlyCount::month, MonthlyCount::count)));
+        Long sold = issued == null ? null : range.months().stream().mapToLong(m -> issued.getOrDefault(m, 0L)).sum();
+        Long soldBefore = issued == null ? null
+            : range.compareMonths().stream().mapToLong(m -> issued.getOrDefault(m, 0L)).sum();
+        List<Share> byProduct = team == null ? List.of() : Safely.read("my book by product", () -> {
+            List<CategoryCount> rows = reporting.policiesInForceByCategory(today, team);
+            return DashboardPeriod.shares(rows.stream()
+                    .map(c -> new DashboardPeriod.Slice(c.category(), BigDecimal.valueOf(c.count()))).toList(),
+                null, BigDecimal::longValueExact);
+        });
+
         return new AgentDashboardView(clients, awaitingKyc, rejected, book, applications, period,
             statement == null ? null : Money.of(statement.totalAmount(), statement.totalCurrency()),
             statement == null || statement.status() == null ? null : statement.status().name(),
-            queue == null ? List.of() : queue);
+            queue == null ? List.of() : queue,
+            range.toView(), Money.of(commissionTotal, currency), commission,
+            sold, soldBefore,
+            sold == null ? null : DashboardPeriod.changePercent(BigDecimal.valueOf(sold), BigDecimal.valueOf(soldBefore)),
+            issued == null ? List.of()
+                : range.months().stream().map(m -> new CountPoint(m.toString(), issued.getOrDefault(m, 0L))).toList(),
+            byProduct == null ? List.of() : byProduct);
     }
 }

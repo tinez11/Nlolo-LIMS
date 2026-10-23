@@ -22,15 +22,23 @@ public record SavingsQuoteResponse(String kind, MoneyResponse amount, String rat
 
     /** A term account's projection (2026-10-21); null on a deposit or an ordinary account. */
     public record TermAccount(String frequency, int contributions, MoneyResponse paidIn, MoneyResponse charges,
-                              MoneyResponse targetAmount, String minRatePercent, String maxRatePercent) {
+                              MoneyResponse targetAmount, String minRatePercent, String maxRatePercent,
+                              List<SchedulePoint> schedule) {
         static TermAccount from(SavingsQuoteView.TermAccountQuote t, String currency) {
             return t == null ? null : new TermAccount(t.frequency(), t.contributions(),
                 t.paidIn() == null ? null : MoneyResponse.of(t.paidIn(), currency),
                 t.charges() == null ? null : MoneyResponse.of(t.charges(), currency),
                 t.targetAmount() == null ? null : MoneyResponse.of(t.targetAmount(), currency),
-                t.minRatePercent().stripTrailingZeros().toPlainString(), t.maxRatePercent().stripTrailingZeros().toPlainString());
+                t.minRatePercent().stripTrailingZeros().toPlainString(), t.maxRatePercent().stripTrailingZeros().toPlainString(),
+                t.schedule().stream().map(s -> new SchedulePoint(s.month(), s.date().toString(),
+                    MoneyResponse.of(s.paidIn(), currency), MoneyResponse.of(s.charges(), currency),
+                    MoneyResponse.of(s.interest(), currency), MoneyResponse.of(s.value(), currency))).toList());
         }
     }
+
+    /** Where the account stands {@code month} months into the term; the last point is the maturity day (2026-10-23). */
+    public record SchedulePoint(int month, String date, MoneyResponse paidIn, MoneyResponse charges,
+                                MoneyResponse interest, MoneyResponse value) {}
 
     static SavingsQuoteResponse from(SavingsQuoteView v, String currency) {
         return new SavingsQuoteResponse(

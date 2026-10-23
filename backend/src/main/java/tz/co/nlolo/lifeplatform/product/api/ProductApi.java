@@ -161,7 +161,21 @@ public interface ProductApi {
                              * would each make it a projection rather than a total, and none of them exists on
                              * this platform yet -- when one does, this field is where that has to be faced.
                              */
-                            BigDecimal totalOverTerm, Integer instalmentsOverTerm) {}
+                            BigDecimal totalOverTerm, Integer instalmentsOverTerm,
+                            /**
+                             * What has been paid by the end of each policy year of the term (2026-10-23, the
+                             * quotation's "cover against what is paid" chart), on the same terms as
+                             * {@code totalOverTerm}: empty exactly when that total is null, and its last entry
+                             * equals it. A part last year is its own entry.
+                             */
+                            List<PaidByYear> paidByYear) {
+        public PremiumQuoteView {
+            paidByYear = paidByYear == null ? List.of() : List.copyOf(paidByYear);
+        }
+    }
+
+    /** Premiums paid by the end of policy year {@code year} -- or by the term's end, for a part last year. */
+    record PaidByYear(int year, int instalments, BigDecimal paid) {}
 
     /** Takes the category's default portfolio ({@link PortfolioCode#defaultFor}). */
     ProductSummaryView createProduct(String productCode, String productName, ProductCategory category, String defaultCurrency, String createdBy);

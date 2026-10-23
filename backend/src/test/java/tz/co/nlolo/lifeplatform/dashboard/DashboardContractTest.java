@@ -20,8 +20,12 @@ import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.dashboard.api.ActivityItem;
 import tz.co.nlolo.lifeplatform.dashboard.api.AgentDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.ClaimsDashboardView;
+import tz.co.nlolo.lifeplatform.dashboard.api.CountPoint;
+import tz.co.nlolo.lifeplatform.dashboard.api.DaysPoint;
 import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.Money;
+import tz.co.nlolo.lifeplatform.dashboard.api.Period;
+import tz.co.nlolo.lifeplatform.dashboard.api.Share;
 import tz.co.nlolo.lifeplatform.dashboard.api.UnderwritingDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.application.AgentDashboard;
 import tz.co.nlolo.lifeplatform.dashboard.application.ClaimsDashboard;
@@ -88,7 +92,7 @@ class DashboardContractTest {
 
     @Test
     void anUnderwriterReadsTheUnderwritingDashboard() throws Exception {
-        when(underwriting.build(org.mockito.ArgumentMatchers.any())).thenReturn(new UnderwritingDashboardView(238L, 41L, null, 3L,
+        when(underwriting.build(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(new UnderwritingDashboardView(238L, 41L, null, 3L,
             List.of(new UnderwritingDashboardView.DecisionMonth("2026-09", "ACCEPT", 42, "3.4")),
             List.of(new UnderwritingDashboardView.DecisionSeriesPoint("2026-09", 47, 7)),
             List.of(
@@ -96,7 +100,11 @@ class DashboardContractTest {
                 new Money("25000000.00", "TZS"), "OPEN")),
             List.of(new ActivityItem("underwriting.UnderwritingDecisionMade",
                 java.time.Instant.parse("2026-10-14T08:00:00Z"),
-                java.util.Map.of("caseId", UUID.randomUUID().toString(), "outcome", "ACCEPTED"), null))));
+                java.util.Map.of("caseId", UUID.randomUUID().toString(), "outcome", "ACCEPTED"), null)),
+            new Period("2026-01", "2026-10", "2025-01", "2025-10", "2026-10"), 412L, 380L, "8.4", "87.1", "3.4",
+            List.of(new Share("ACCEPT", null, 359L, "87.1"), new Share("DECLINED", null, 53L, "12.9")),
+            List.of(new UnderwritingDashboardView.OutcomeSeriesPoint("2026-09", 40, 2, 7)),
+            List.of(new DaysPoint("2026-09", "3.4"), new DaysPoint("2026-10", null))));
 
         mockMvc.perform(get("/dashboards/underwriting").with(staff("UNDERWRITER")))
             .andExpect(status().isOk())
@@ -115,14 +123,19 @@ class DashboardContractTest {
 
     @Test
     void aClaimsManagerReadsTheClaimsDashboardWithTheSettlementQueue() throws Exception {
-        when(claims.build(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any())).thenReturn(
+        when(claims.build(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(
             new ClaimsDashboardView(17L, 9L, 6L, 4L, 2L, 128L, 11L,
             List.of(new ClaimsDashboardView.SettlementMonth("2026-09", "TZS", 9, new Money("41000000.00", "TZS"))),
             List.of(new ClaimsDashboardView.SettlementMonth("2026-08", "TZS", 3, new Money("12000000.00", "TZS")),
                 new ClaimsDashboardView.SettlementMonth("2026-09", "TZS", 9, new Money("41000000.00", "TZS"))),
             "SETTLEMENT_REQUESTED",
             List.of(new ClaimsDashboardView.QueuedClaim(UUID.randomUUID(), "POL-00A4B7A1", UUID.randomUUID(), "DEATH",
-                LocalDate.of(2026, 9, 29), "SETTLEMENT_REQUESTED")), List.of()));
+                LocalDate.of(2026, 9, 29), "SETTLEMENT_REQUESTED")), List.of(),
+            new Period("2026-01", "2026-10", "2025-01", "2025-10", "2026-10"), new Money("120000000.00", "TZS"), null, null,
+            List.of(new FinanceDashboardView.MonthPoint("2026-09", new Money("41000000.00", "TZS"))),
+            List.of(new Share("DEATH", new Money("90000000.00", "TZS"), 6L, "75.0")),
+            31L, 44L, List.of(new CountPoint("2026-09", 9)), List.of(new CountPoint("2026-09", 7)),
+            "9.2", List.of(new DaysPoint("2026-09", "9.2"))));
 
         mockMvc.perform(get("/dashboards/claims").with(staff("CLAIMS_MANAGER")))
             .andExpect(status().isOk())
@@ -132,8 +145,9 @@ class DashboardContractTest {
 
     @Test
     void anAssessorGetsTheAssessorsQueue() throws Exception {
-        when(claims.build(org.mockito.ArgumentMatchers.eq(false), org.mockito.ArgumentMatchers.any())).thenReturn(
-            new ClaimsDashboardView(17L, 9L, 6L, 4L, 2L, 128L, 11L, List.of(), List.of(), "REGISTERED", List.of(), List.of()));
+        when(claims.build(org.mockito.ArgumentMatchers.eq(false), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(
+            new ClaimsDashboardView(17L, 9L, 6L, 4L, 2L, 128L, 11L, List.of(), List.of(), "REGISTERED", List.of(), List.of(),
+                new Period("2026-01", "2026-10", "2025-01", "2025-10", "2026-10"), null, null, null, List.of(), List.of(), null, null, List.of(), List.of(), null, List.of()));
 
         mockMvc.perform(get("/dashboards/claims").with(staff("CLAIMS_ASSESSOR")))
             .andExpect(status().isOk())
@@ -147,7 +161,7 @@ class DashboardContractTest {
 
     @Test
     void aFinanceOfficerReadsTheFinanceDashboard() throws Exception {
-        when(finance.build(org.mockito.ArgumentMatchers.any())).thenReturn(new FinanceDashboardView(
+        when(finance.build(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(new FinanceDashboardView(
             "2026-09", new Money("50204310.00", "TZS"), "2.2", "2026-10", new Money("742580120.00", "TZS"),
             new Money("512340210.00", "TZS"), "2026-01", "2026-10", new Money("-1200.00", "TZS"),
             4L, 7L, 3L, null,
@@ -159,13 +173,28 @@ class DashboardContractTest {
                 new FinanceDashboardView.ReceivablesAging.Bucket("D31_60", 0, new Money("0.00", "TZS")),
                 new FinanceDashboardView.ReceivablesAging.Bucket("D61_90", 0, new Money("0.00", "TZS")),
                 new FinanceDashboardView.ReceivablesAging.Bucket("OVER_90", 2, new Money("400000.00", "TZS"))))),
-            List.of()));
+            List.of(),
+            new Period("2026-01", "2026-10", "2025-01", "2025-10", "2026-10"), new Money("482000000.00", "TZS"), new Money("431000000.00", "TZS"), "11.8",
+            List.of(new FinanceDashboardView.MonthPoint("2026-09", new Money("50204310.00", "TZS"))), List.of(),
+            List.of(new Share("TERM_LIFE", new Money("300000000.00", "TZS"), null, "62.2")),
+            410L, 376L, "9.0", List.of(new CountPoint("2026-09", 41)), new Money("500000.00", "TZS")));
 
         mockMvc.perform(get("/dashboards/finance").with(staff("FINANCE_OFFICER")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.premiumsCollected.amount").value("50204310.00"))
             .andExpect(jsonPath("$.arrearsAtLapse").isEmpty())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void aRangeIsPassedThroughAndABadOneIsRefused() throws Exception {
+        mockMvc.perform(get("/dashboards/finance").param("from", "2026-03").param("to", "2026-01")
+                .with(staff("FINANCE_OFFICER")))
+            .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/dashboards/finance").param("from", "2026-13").with(staff("FINANCE_OFFICER")))
+            .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/dashboards/finance").param("to", "2999-01").with(staff("FINANCE_OFFICER")))
+            .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -187,9 +216,14 @@ class DashboardContractTest {
     void anAgentReadsTheirOwnDashboard() throws Exception {
         UUID party = UUID.randomUUID();
         when(agent.build(org.mockito.ArgumentMatchers.eq("agent-subject"), org.mockito.ArgumentMatchers.eq(party),
-            org.mockito.ArgumentMatchers.any())).thenReturn(new AgentDashboardView(309L, 23L, 1L, 412L, 5L, "2026-09",
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(new AgentDashboardView(309L, 23L, 1L, 412L, 5L, "2026-09",
                 new Money("1284500.00", "TZS"), null,
-                List.of(new AgentDashboardView.ClientAwaitingKyc(UUID.randomUUID(), "Amina Hassan", "PENDING"))));
+                List.of(new AgentDashboardView.ClientAwaitingKyc(UUID.randomUUID(), "Amina Hassan", "PENDING")),
+                new Period("2026-01", "2026-10", "2025-01", "2025-10", "2026-10"), new Money("9800000.00", "TZS"),
+                List.of(new AgentDashboardView.CommissionPoint("2026-09", new Money("1284500.00", "TZS"),
+                    new Money("0.00", "TZS"))),
+                38L, 30L, "26.7", List.of(new CountPoint("2026-09", 4)),
+                List.of(new Share("TERM_LIFE", null, 64L, "37.2"))));
 
         mockMvc.perform(get("/dashboards/agent").with(agentToken(party.toString())))
             .andExpect(status().isOk())

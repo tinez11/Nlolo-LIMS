@@ -253,12 +253,13 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
     expect(screen.getByRole('button', { name: 'Confirm and start onboarding' })).toBeEnabled();
   });
 
-  it('offers only the products it can quote, and says who quotes the rest', async () => {
+  // Annuities joined on 2026-10-23: the income a purchase price buys, quoted for a client or a prospect.
+  it('offers the products it can quote, annuities among them, and says who quotes the rest', async () => {
     renderScreen(<QuotationCalculatorPage />, { route: '/agents/quotation' });
 
     expect(await screen.findByRole('option', { name: 'Prospect Endowment (END1)' })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: 'Immediate Annuity (ANN1)' })).not.toBeInTheDocument();
-    expect(screen.getByText(/Annuities, unit-linked and group cover are quoted by the office/)).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Immediate Annuity (ANN1)' })).toBeInTheDocument();
+    expect(screen.getByText(/Unit-linked and group cover are quoted by the office/)).toBeInTheDocument();
   });
 
   // 2026-10-21: a MONTHLY deposit used to pass the calculator and fail only at submission, after the agent had

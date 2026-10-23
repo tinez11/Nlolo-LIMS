@@ -1,27 +1,29 @@
+import { CheckCircle2, Clock3, FolderOpen, Percent } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getArrivals } from '@/api/proposalAmendments';
-import { KpiRow, type Kpi } from '@/components/KpiCard';
+import { Legend } from '@/components/charts/ChartTip';
+import { ColumnChart } from '@/components/charts/ColumnChart';
+import { Donut } from '@/components/charts/Donut';
+import { ShareBars } from '@/components/charts/ShareBars';
+import { TrendChart } from '@/components/charts/TrendChart';
 import { Panel } from '@/components/Panel';
 import { PartyName } from '@/components/PartyName';
 import { ProductName } from '@/components/ProductName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { countValue } from '@/lib/counts';
+import { humanizeStatus } from '@/lib/status';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectUnderwriting, useDashboardStore } from '@/store/dashboardStore';
 import { ActivityFeed } from './ActivityFeed';
+import type { PanelProps } from './DashboardPage';
 import { DashboardRail } from './DashboardRail';
-import { DecisionsChart } from './DecisionsChart';
-
-const MONTH_NAME = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
-/** "2026-09" -> "September". The month is the server's; this only names it. */
-const monthName = (yyyymm: string) => MONTH_NAME[Number(yyyymm.slice(5, 7)) - 1] ?? yyyymm;
+import { describeRange } from './range';
+import { lastDayOf } from './reportLinks';
+import { dayPoints, donutParts, monthCategories, trendOf, versus } from './series';
+import { StatRow, type Stat } from './StatTile';
 
 /** The decision panel's own words for each outcome. An outcome not listed shows its literal. */
 const OUTCOME_LABEL: Record<string, string> = {
@@ -31,33 +33,26 @@ const OUTCOME_LABEL: Record<string, string> = {
   POSTPONED: 'Postponed',
 };
 
-/** The last day of a "YYYY-MM" month, as "YYYY-MM-DD". Calendar arithmetic, not money. */
-function lastDayOf(yyyymm: string): string {
-  const [y, m] = yyyymm.split('-').map(Number) as [number, number];
-  const day = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  return `${yyyymm}-${String(day).padStart(2, '0')}`;
-}
-
-/** The case list filtered to exactly what the card counted: this outcome, decided inside this month. */
-function decidedLink(outcome: string, month: string): string {
-  const params = new URLSearchParams({
-    outcome,
-    decidedFrom: `${month}-01`,
-    decidedTo: lastDayOf(month),
-  });
+/** The case list filtered to exactly what a figure counted: decided inside these months. */
+function decidedLink(from: string, to: string, outcome?: string): string {
+  const params = new URLSearchParams({ decidedFrom: `${from}-01`, decidedTo: lastDayOf(to) });
+  if (outcome) params.set('outcome', outcome);
   return `/staff/underwriting?${params.toString()}`;
 }
 
-/** The underwriter's dashboard (2026-10-14). Counts link to their queue; "awaiting issue" has no list that shows exactly it. */
-export function UnderwritingDashboardPanel() {
+/**
+ * The underwriter's dashboard (2026-10-14; ranged and charted 2026-10-23). Counts link to their queue; every total,
+ * rate and average over the range is the server's.
+ */
+export function UnderwritingDashboardPanel({ range }: PanelProps) {
   const resource = useDashboardStore(selectUnderwriting);
   const load = useDashboardStore((s) => s.load);
+  const { from, to } = range;
 
   useEffect(() => {
-    void load('underwriting');
-  }, [load]);
+    void load('underwriting', { from, to });
+  }, [load, from, to]);
 
-  // Proposals agents corrected and sent back (2026-10-20). Null -- "Not available" -- if it cannot be read, never 0.
   const [backFromAgents, setBackFromAgents] = useState<number | null>(null);
   useEffect(() => {
     let live = true;
@@ -70,60 +65,136 @@ export function UnderwritingDashboardPanel() {
 
   if (isInitialLoad(resource)) return <LoadingBlock label="Counting cases" />;
   if (resource.status === 'error' && resource.error && resource.data === null) {
-    return <ErrorPanel error={resource.error} onRetry={() => void load('underwriting')} />;
+    return <ErrorPanel error={resource.error} onRetry={() => void load('underwriting', { from, to })} />;
   }
   const view = resource.data;
   if (!view) return null;
 
-  const kpis: Kpi[] = [
+  const p = view.period;
+  const span = describeRange(p.from, p.to);
+  const days = dayPoints(view.turnaroundSeries);
+  const stats: Stat[] = [
     {
       label: 'Open cases',
+      icon: FolderOpen,
+      color: 'chart-2',
       value: countValue(view.openCases),
-      hint: 'awaiting first review',
+      hint: 'waiting for a first review',
       to: '/staff/underwriting?status=OPEN',
     },
     {
-      label: 'Back from agents',
-      value: countValue(backFromAgents),
-      hint: 'corrected and resubmitted',
-      to: '/staff/underwriting?view=returned',
+      label: 'Decided',
+      icon: CheckCircle2,
+      color: 'chart-1',
+      value: countValue(view.decided),
+      change: view.decidedChangePercent,
+      versus: versus(p),
+      hint: span,
+      trend: view.outcomeSeries.map((m) => m.accepted),
+      to: decidedLink(p.from, p.to),
     },
     {
-      label: 'In review',
-      value: countValue(view.casesInReview),
-      hint: 'assessed, not yet decided',
-      to: '/staff/underwriting?status=IN_REVIEW',
+      label: 'Days to decide',
+      icon: Clock3,
+      color: 'chart-3',
+      value: view.averageDays === null ? null : `${view.averageDays} days`,
+      hint: `on average, ${span}`,
+      trend: trendOf(days),
     },
     {
-      label: 'Accepted, awaiting issue',
-      value: countValue(view.casesAwaitingIssue),
-      hint: 'decided, no policy yet',
-    },
-    {
-      label: 'Waiting on a senior',
-      value: countValue(view.casesReferred),
-      hint: 'referred, still open',
-      to: '/staff/underwriting?referral=REFERRED_TO_SENIOR',
+      label: 'Accepted',
+      icon: Percent,
+      color: 'chart-4',
+      value: view.acceptanceRate === null ? null : `${view.acceptanceRate}%`,
+      hint: `of cases decided, ${span}`,
     },
   ];
 
-  // Last month's decisions, one card per outcome. The month comes from the VIEW's own YYYY-MM, never from the
-  // browser's clock: the server decided which month is the last complete one, and a panel that recomputed it
-  // would disagree with the figures beside it on the first day of a month.
-  const decisionCards: Kpi[] = view.decisions.map((d) => ({
-    label: `${OUTCOME_LABEL[d.outcome] ?? d.outcome}, ${monthName(d.month)}`,
-    value: countValue(d.cases),
-    hint: d.averageDays === null ? 'last complete month' : `${d.averageDays} days on average`,
-    to: decidedLink(d.outcome, d.month),
-  }));
+  const queueStages = [
+    { key: 'open', label: 'Open, not yet reviewed', n: view.openCases, color: 'chart-2' as const },
+    { key: 'review', label: 'In review', n: view.casesInReview, color: 'chart-1' as const },
+    { key: 'senior', label: 'Waiting on a senior', n: view.casesReferred, color: 'chart-4' as const },
+    { key: 'back', label: 'Back from agents', n: backFromAgents, color: 'chart-3' as const },
+    { key: 'issue', label: 'Accepted, awaiting issue', n: view.casesAwaitingIssue, color: 'chart-5' as const },
+  ];
   const next = view.queue[0];
+  const categories = monthCategories(view.outcomeSeries.map((m) => m.month));
 
   return (
     <div className="space-y-5">
-      <KpiRow kpis={kpis} />
-      {decisionCards.length > 0 && <KpiRow kpis={decisionCards} />}
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="space-y-5">
+      <StatRow stats={stats} />
+      <div className="grid gap-5 xl:grid-cols-12">
+        <div className="xl:col-span-8">
+          <Panel
+            title="Decisions"
+            subtitle={`${span}, by month`}
+            actions={<Link to={decidedLink(p.from, p.to)} className="text-xs text-muted-foreground hover:text-foreground hover:underline">Open the cases</Link>}
+          >
+            <div className="space-y-3 px-4 pb-4">
+              <Legend items={[
+                { label: 'Accepted', color: 'chart-1' },
+                { label: 'Postponed', color: 'chart-3' },
+                { label: 'Declined', color: 'chart-5' },
+              ]} />
+              <ColumnChart
+                stacked
+                categories={categories}
+                partialKey={p.to === p.currentMonth ? p.currentMonth : undefined}
+                series={[
+                  { label: 'Accepted', color: 'chart-1', points: view.outcomeSeries.map((m) => ({ key: m.month, value: m.accepted, display: countValue(m.accepted) ?? '0' })) },
+                  { label: 'Postponed', color: 'chart-3', points: view.outcomeSeries.map((m) => ({ key: m.month, value: m.postponed, display: countValue(m.postponed) ?? '0' })) },
+                  { label: 'Declined', color: 'chart-5', points: view.outcomeSeries.map((m) => ({ key: m.month, value: m.declined, display: countValue(m.declined) ?? '0' })) },
+                ]}
+                description={`Underwriting decisions by month, ${span}: accepted, postponed and declined. ${countValue(view.decided) ?? 'None'} decided.`}
+              />
+            </div>
+          </Panel>
+        </div>
+        <div className="xl:col-span-4">
+          <Panel title="How cases ended" subtitle={span}>
+            <div className="px-4 pb-4">
+              {view.outcomeTotals.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nothing was decided in these months.</p>
+              ) : (
+                <Donut
+                  parts={donutParts(view.outcomeTotals, (k) => OUTCOME_LABEL[k] ?? humanizeStatus(k))}
+                  total={countValue(view.decided) ?? ''}
+                  totalLabel="decided"
+                  description={`How the ${countValue(view.decided)} cases decided in ${span} ended.`}
+                />
+              )}
+            </div>
+          </Panel>
+        </div>
+        <div className="xl:col-span-7">
+          <Panel title="Days to decide" subtitle="Average calendar days from opening to decision, by month">
+            <div className="px-4 pb-4">
+              <TrendChart
+                height={200}
+                categories={categories}
+                series={[{ label: 'Average days', color: 'chart-2', area: true, points: days }]}
+                description={`Average days to decide by month, ${span}. Over the range: ${view.averageDays ?? 'no decisions'} days.`}
+              />
+            </div>
+          </Panel>
+        </div>
+        <div className="xl:col-span-5">
+          <Panel title="Where open cases are" subtitle="As at now">
+            <div className="px-4 pb-4">
+              <ShareBars
+                label="Open cases by stage"
+                bars={queueStages.map((s) => ({
+                  key: s.key,
+                  label: s.label,
+                  value: s.n ?? 0,
+                  display: countValue(s.n) ?? '—',
+                  color: s.color,
+                }))}
+              />
+            </div>
+          </Panel>
+        </div>
+        <div className="xl:col-span-7">
           <Panel emphasis title="Next in your queue" subtitle="Open cases that have waited longest, oldest first.">
             {view.queue.length === 0 ? (
               <p className="px-4 pb-4 text-xs text-muted-foreground">No open cases.</p>
@@ -170,57 +241,44 @@ export function UnderwritingDashboardPanel() {
               </div>
             )}
           </Panel>
-          <Panel
-            title="Decisions"
-            subtitle="By month, accepted against declined. Postponements are not shown."
-            actions={
-              <Link
-                to="/staff/underwriting?status=DECIDED"
-                className="text-xs text-muted-foreground hover:text-foreground hover:underline"
-              >
-                Open the queue
-              </Link>
+        </div>
+        <div className="xl:col-span-5">
+          <DashboardRail
+            alerts={
+              view.casesAwaitingIssue
+                ? [
+                    {
+                      tone: 'warning',
+                      text: (
+                        <>
+                          <b>{countValue(view.casesAwaitingIssue)} accepted cases</b> have no policy yet. Issuing is the
+                          next step.
+                        </>
+                      ),
+                    },
+                  ]
+                : []
             }
-          >
-            <DecisionsChart series={view.decisionSeries} months={view.decisionSeries.map((p) => p.month)} />
-          </Panel>
+            actions={[
+              ...(next
+                ? [
+                    {
+                      label: 'Review the next case',
+                      description: 'The open case that has waited longest',
+                      to: `/staff/underwriting/${next.caseId}`,
+                    },
+                  ]
+                : []),
+              { label: 'Open a case', description: 'For a registered client', to: '/staff/underwriting/new' },
+              { label: 'Issue a policy', description: 'From an accepted case', to: '/staff/policies/new' },
+              { label: 'All open cases', description: 'The full queue', to: '/staff/underwriting?status=OPEN' },
+            ]}
+            absent={[]}
+          />
+        </div>
+        <div className="xl:col-span-12">
           <ActivityFeed items={view.recentActivity} />
         </div>
-        <DashboardRail
-          alerts={
-            view.casesAwaitingIssue
-              ? [
-                  {
-                    tone: 'warning',
-                    text: (
-                      <>
-                        <b>{countValue(view.casesAwaitingIssue)} accepted cases</b> have no policy yet. Issuing is the
-                        next step.
-                      </>
-                    ),
-                  },
-                ]
-              : []
-          }
-          actions={[
-            ...(next
-              ? [
-                  {
-                    label: 'Review the next case',
-                    description: 'The open case that has waited longest',
-                    to: `/staff/underwriting/${next.caseId}`,
-                  },
-                ]
-              : []),
-            { label: 'Open a case', description: 'For a registered client', to: '/staff/underwriting/new' },
-            { label: 'Issue a policy', description: 'From an accepted case', to: '/staff/policies/new' },
-            { label: 'All open cases', description: 'The full queue', to: '/staff/underwriting?status=OPEN' },
-          ]}
-          absent={[
-            'SLA deadlines on cases',
-            'A risk-level field to filter by',
-          ]}
-        />
       </div>
     </div>
   );

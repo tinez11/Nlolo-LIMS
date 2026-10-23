@@ -8,11 +8,24 @@ import java.util.UUID;
  *
  * @param queue the open cases that have waited longest, oldest first -- empty when the count could not be read
  * @param recentActivity this module's latest events, newest first -- what happened, never who; empty when unreadable
+ * @param period the months the ranged figures below cover (2026-10-23)
+ * @param decided cases decided in the period, every outcome
+ * @param acceptanceRate ACCEPT plus LOADED as a percent of {@code decided}, one decimal place
+ * @param averageDays mean calendar days from opening to decision over the period, one decimal place
+ * @param outcomeTotals the period's decisions per outcome, with each one's share
+ * @param outcomeSeries every month of the period, accepted (ACCEPT plus LOADED), postponed and declined
+ * @param turnaroundSeries every month of the period, its mean days; null in a month nothing was decided
  */
 public record UnderwritingDashboardView(Long openCases, Long casesInReview, Long casesAwaitingIssue,
                                         Long casesReferred, List<DecisionMonth> decisions,
                                         List<DecisionSeriesPoint> decisionSeries,
-                                        List<QueuedCase> queue, List<ActivityItem> recentActivity) {
+                                        List<QueuedCase> queue, List<ActivityItem> recentActivity,
+                                        Period period, Long decided, Long decidedBefore, String decidedChangePercent,
+                                        String acceptanceRate, String averageDays, List<Share> outcomeTotals,
+                                        List<OutcomeSeriesPoint> outcomeSeries, List<DaysPoint> turnaroundSeries) {
+
+    /** One month of the ranged decisions chart. Grouped on the server, as {@link DecisionSeriesPoint} is. */
+    public record OutcomeSeriesPoint(String month, long accepted, long postponed, long declined) {}
 
     /** A case as the queue panel shows it. Names are resolved by the console from the ids, as the queue page does. */
     public record QueuedCase(UUID caseId, UUID applicantPartyId, UUID lifeAssuredPartyId, UUID productId,

@@ -9,7 +9,16 @@ import tz.co.nlolo.lifeplatform.dashboard.api.ActivityItem;
 import tz.co.nlolo.lifeplatform.dashboard.api.ClaimsDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.ClaimsDashboardView.QueuedClaim;
 import tz.co.nlolo.lifeplatform.dashboard.api.ClaimsDashboardView.SettlementMonth;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimMonth;
+import tz.co.nlolo.lifeplatform.dashboard.api.CountPoint;
+import tz.co.nlolo.lifeplatform.dashboard.api.DaysPoint;
+import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView.MonthPoint;
 import tz.co.nlolo.lifeplatform.dashboard.api.Money;
+import tz.co.nlolo.lifeplatform.dashboard.api.Share;
+
+import java.math.BigDecimal;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -34,6 +43,11 @@ public class ClaimsDashboard {
      * @param today the civil day in Africa/Dar_es_Salaam, supplied by the controller
      */
     public ClaimsDashboardView build(boolean manager, LocalDate today) {
+        return build(manager, DashboardPeriod.of(null, null, today), today);
+    }
+
+    /** @param period the months the ranged figures cover (2026-10-23); counts by status and the queue stay "now" */
+    public ClaimsDashboardView build(boolean manager, DashboardPeriod period, LocalDate today) {
         ClaimStatus queueStatus = manager ? ClaimStatus.SETTLEMENT_REQUESTED : ClaimStatus.REGISTERED;
         List<QueuedClaim> queue = Safely.read("the " + queueStatus + " queue", () -> claims.searchClaims(
                 queueStatus, null, null, null, PageRequest.of(0, QUEUE_SIZE, Sort.by(Sort.Direction.ASC, "createdAt")))
@@ -62,12 +76,67 @@ public class ClaimsDashboard {
 
         List<ActivityItem> recent = Safely.read("recent activity", () -> activity.latest("claims."));
 
+        // ---- the ranged figures (2026-10-23). Money in the working currency only, never added across currencies ----
+        Map<YearMonth, BigDecimal> paidByMonth = Safely.read("benefits paid", () ->
+            claims.settlementsByMonth(period.compareFrom(), period.to()).stream()
+                .filter(s -> WORKING_CURRENCY.equals(s.currency()))
+                .collect(Collectors.toMap(tz.co.nlolo.lifeplatform.claims.api.SettlementMonth::month,
+                    tz.co.nlolo.lifeplatform.claims.api.SettlementMonth::totalApproved, BigDecimal::add)));
+        BigDecimal paidNow = paidByMonth == null ? null : sum(period.months(), paidByMonth);
+        BigDecimal paidBefore = paidByMonth == null ? null : sum(period.compareMonths(), paidByMonth);
+        List<MonthPoint> paidSeries = paidByMonth == null ? List.of() : period.months().stream()
+            .map(m -> new MonthPoint(m.toString(), Money.of(paidByMonth.getOrDefault(m, BigDecimal.ZERO), WORKING_CURRENCY)))
+            .toList();
+        List<Share> byType = Safely.read("benefits paid by type", () -> {
+            var rows = claims.settlementsByType(period.from(), period.to()).stream()
+                .filter(s -> WORKING_CURRENCY.equals(s.currency())).toList();
+            return DashboardPeriod.shares(rows.stream()
+                    .map(s -> new DashboardPeriod.Slice(s.claimType(), s.totalApproved())).toList(),
+                v -> Money.of(v, WORKING_CURRENCY), null);
+        });
+        Map<YearMonth, ClaimMonth> settledByMonth = Safely.read("settlement turnaround", () ->
+            claims.settlementTurnaroundByMonth(period.from(), period.to()).stream()
+                .collect(Collectors.toMap(ClaimMonth::month, c -> c)));
+        Map<YearMonth, ClaimMonth> registeredByMonth = Safely.read("claims registered", () ->
+            claims.registrationsByMonth(period.from(), period.to()).stream()
+                .collect(Collectors.toMap(ClaimMonth::month, c -> c)));
+        Long settledNow = settledByMonth == null ? null
+            : settledByMonth.values().stream().mapToLong(ClaimMonth::claims).sum();
+        Long registeredNow = registeredByMonth == null ? null
+            : registeredByMonth.values().stream().mapToLong(ClaimMonth::claims).sum();
+        String averageDays = settledByMonth == null ? null : DashboardPeriod.average(
+            settledByMonth.values().stream().map(ClaimMonth::totalDays).reduce(BigDecimal.ZERO, BigDecimal::add),
+            settledNow);
+
         return new ClaimsDashboardView(count(ClaimStatus.REGISTERED), count(ClaimStatus.UNDER_ASSESSMENT),
             count(ClaimStatus.SETTLEMENT_REQUESTED), count(ClaimStatus.APPROVED), count(ClaimStatus.REOPENED),
             count(ClaimStatus.SETTLED), openRequests,
             settlements, settlementSeries,
             queueStatus.name(), queue == null ? List.of() : queue,
-            recent == null ? List.of() : recent);
+            recent == null ? List.of() : recent,
+            period.toView(), Money.of(paidNow, WORKING_CURRENCY), Money.of(paidBefore, WORKING_CURRENCY),
+            DashboardPeriod.changePercent(paidNow, paidBefore), paidSeries, byType == null ? List.of() : byType,
+            settledNow, registeredNow,
+            counts(period, registeredByMonth), counts(period, settledByMonth),
+            averageDays,
+            settledByMonth == null ? List.of() : period.months().stream().map(m -> {
+                ClaimMonth c = settledByMonth.get(m);
+                return new DaysPoint(m.toString(), c == null ? null : DashboardPeriod.average(c.totalDays(), c.claims()));
+            }).toList());
+    }
+
+    /** PRODUCT.md: "Working currency is TZS." */
+    static final String WORKING_CURRENCY = "TZS";
+
+    private static BigDecimal sum(List<YearMonth> months, Map<YearMonth, BigDecimal> byMonth) {
+        return months.stream().map(m -> byMonth.getOrDefault(m, BigDecimal.ZERO)).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private static List<CountPoint> counts(DashboardPeriod period, Map<YearMonth, ClaimMonth> byMonth) {
+        if (byMonth == null) return List.of();
+        return period.months().stream()
+            .map(m -> new CountPoint(m.toString(), byMonth.containsKey(m) ? byMonth.get(m).claims() : 0L))
+            .toList();
     }
 
     private Long count(ClaimStatus status) {

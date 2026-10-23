@@ -298,9 +298,19 @@ yet decided.
 ### Named Rules
 
 **The Two Meanings Rule.** Teal means *act here* or *this is the answer*, and nothing
-else. It never marks a status (the six buckets do that), never brands a section, never
-colours a chart series, and never fills a decorative surface. A screen with no action
-and no headline figure has almost no teal on it, and that is correct.
+else. It never marks a status (the six buckets do that), never brands a section, and
+never fills a decorative surface. A screen with no action and no headline figure has
+almost no teal on it, and that is correct. The one exception is the chart palette's first
+series (below), a deeper teal-green that is a data colour, not the accent.
+
+**The Chart Palette Rule (2026-10-23, the user).** Navy-and-grey charts read as "not good
+colour-wise"; charts now take five series colours, `--chart-1` to `--chart-5`, in that order
+and never cycled: a deep teal-green, blue, amber, violet, coral. The set was validated as one
+(lightness band, chroma floor, colour-blind separation between neighbours, 3:1 on the
+surface), light and dark each with its own steps. A series is an identity, never a state;
+every series is named in a legend or a list beside the chart, so no reading rests on colour
+alone. A dashboard figure's change is green when it is good news and red when it is bad,
+with an arrow and the words "up" or "down" -- the Stamp Rule still holds for statuses.
 
 **The Six Buckets Rule.** Six status buckets are the complete status vocabulary. A new
 backend enum maps onto an existing one; one that fits none is a product conversation.
@@ -539,10 +549,15 @@ party id lives on the record as "Client id".
 
 ### Dashboard and KPI cards
 
-`KpiCard`: a card that is a `@container`, Label caption, Figure-tier value that never
-wraps, Micro hint, optional ink-only delta; a link to exactly the list it counted, or
-not a link. Charts: series are navy ink and Rule Strong grey, never teal and never a
-status hue; every point a report returned; the month in progress an outline.
+`StatTile` (the dashboards, 2026-10-23): an icon chip tinted in the figure's own series
+colour, Label caption, Figure-tier value that never wraps, the change against the same
+months a year earlier as a green or red pill with an arrow, and a sparkline of the range; a
+link to exactly the list it counted, or not a link. A range picker sits once above the tabs
+(this month, the quarter, the year to date, the last twelve months, custom months), in the URL.
+Charts (`components/charts`, in-house SVG, no library): trend lines, columns (grouped or
+stacked), rings with their list beside them, and labelled share bars; series in the chart
+palette, never a status hue; every point the server's; the month in progress an outline; a
+hover or arrow-key crosshair; one half-second entrance, none under reduced motion.
 
 ### Navigation (the sidebar island)
 
@@ -601,11 +616,11 @@ popovers growing from their trigger, a spinner, a skeleton pulse. Under
 
 ### Don't:
 
-- **Don't** use teal for a status, a section, a chart series or decoration. It means *act here* or *this is the answer*.
+- **Don't** use the accent teal for a status, a section or decoration. It means *act here* or *this is the answer*; a chart series takes the chart palette.
 - **Don't** put a shadow on a box inside a card, or a gradient anywhere but the figures band.
 - **Don't** set a number in Sora, or any text below 12px.
 - **Don't** hard-code a colour in a component; the hashed avatar hue is the only exception.
-- **Don't** add a seventh status bucket, or colour a delta green or red.
+- **Don't** add a seventh status bucket, or colour a delta without its arrow and words.
 - **Don't** sum, average or difference in the browser to make a figure look complete.
 - **Don't** put a mutating action in the slide-over or the record rail.
 - **Don't** emphasise more than one panel, or emphasise with a tint.

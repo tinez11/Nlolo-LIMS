@@ -48,6 +48,23 @@ export const DEFAULT_OCCUPATION_CLASS = 'STANDARD';
  * <p>A 422 is an ORDINARY state, not a broken screen: a version with no base-rate cell for this age, sex and
  * smoker status cannot price this life, and saying so is the honest answer.
  */
+/**
+ * The premium-quote request for these inputs -- the one the hook sends, exported so an alternative (more cover, less
+ * cover) is asked in exactly the same words with only the amount changed (2026-10-23).
+ */
+export function premiumQuoteRequest(inputs: QuotationInputs, sumAssuredAmount = inputs.sumAssuredAmount): PremiumQuoteRequest {
+  return {
+    sumAssuredAmount: Number(sumAssuredAmount),
+    sumAssuredCurrency: inputs.sumAssuredCurrency || 'TZS',
+    dateOfBirth: inputs.dateOfBirth as string,
+    sex: inputs.sex as PremiumQuoteRequest['sex'],
+    smokerStatus: inputs.smokerStatus ?? 'UNKNOWN',
+    occupationClass: inputs.occupationClass || DEFAULT_OCCUPATION_CLASS,
+    frequency: inputs.frequency as PremiumQuoteRequest['frequency'],
+    ...(inputs.policyTermMonths ? { policyTermMonths: Number(inputs.policyTermMonths) } : {}),
+  };
+}
+
 export function useQuotation(inputs: QuotationInputs): Quotation {
   const {
     productId,

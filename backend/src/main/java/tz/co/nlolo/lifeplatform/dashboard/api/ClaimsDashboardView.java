@@ -16,7 +16,12 @@ public record ClaimsDashboardView(Long registered, Long underAssessment, Long se
                                   List<SettlementMonth> settlements,
                                   List<SettlementMonth> settlementSeries,
                                   String queueStatus, List<QueuedClaim> queue,
-                                  List<ActivityItem> recentActivity) {
+                                  List<ActivityItem> recentActivity,
+                                  Period period, Money paid, Money paidBefore, String paidChangePercent,
+                                  List<FinanceDashboardView.MonthPoint> paidSeries, List<Share> paidByType,
+                                  Long settledInPeriod, Long registeredInPeriod,
+                                  List<CountPoint> registeredSeries, List<CountPoint> settledSeries,
+                                  String averageDaysToSettle, List<DaysPoint> turnaroundSeries) {
 
     public record QueuedClaim(UUID claimId, String policyNumber, UUID claimantPartyId, String claimType,
                               LocalDate dateOfEvent, String status) {}

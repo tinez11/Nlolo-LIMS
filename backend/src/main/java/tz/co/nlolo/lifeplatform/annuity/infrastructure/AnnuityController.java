@@ -32,17 +32,30 @@ public class AnnuityController {
         this.partyApi = partyApi;
     }
 
+    /**
+     * The lives are either party ids (a client's recorded date of birth and sex) or, for a prospect who is not a
+     * client yet, a date of birth and a sex as stated (2026-10-23). Never both for the same life.
+     */
     public record QuoteRequest(UUID productVersionId, String formCode, String frequency, BigDecimal purchasePrice,
-                               UUID annuitantPartyId, UUID jointLifePartyId) {}
+                               UUID annuitantPartyId, UUID jointLifePartyId,
+                               java.time.LocalDate annuitantDateOfBirth, String annuitantSex,
+                               java.time.LocalDate jointDateOfBirth, String jointSex) {}
 
     /** Prices without storing anything. Refusals are 422 ANNUITY_NOT_PRICEABLE, in the pricer's words. */
     @PostMapping("/annuity-quotes")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public AnnuityQuoteResponse quote(@RequestBody QuoteRequest r, @AuthenticationPrincipal Jwt jwt,
                                       Authentication authentication) {
-        if (r.productVersionId() == null || r.annuitantPartyId() == null) {
+        boolean prospect = r.annuitantPartyId() == null && r.annuitantDateOfBirth() != null;
+        if (r.productVersionId() == null || (r.annuitantPartyId() == null && !prospect)) {
             throw new tz.co.nlolo.lifeplatform.product.api.AnnuityPricingRefusedException(
                 "A quote needs the product version and the annuitant");
+        }
+        if (prospect) {
+            // A stated date of birth reveals nobody's record, so there is no client scope to check.
+            AnnuityPrice price = api.quoteProspect(r.productVersionId(), r.formCode(), r.frequency(), r.purchasePrice(),
+                r.annuitantDateOfBirth(), r.annuitantSex(), r.jointDateOfBirth(), r.jointSex());
+            return AnnuityQuoteResponse.from(price, r.purchasePrice(), "TZS");
         }
         // A quote answers with the annuitant's age and rated sex, so an agent may quote only the
         // lives of clients they registered -- the scope GET /parties and the case list apply.
@@ -57,7 +70,7 @@ public class AnnuityController {
         }
         AnnuityPrice price = api.quote(r.productVersionId(), r.formCode(), r.frequency(), r.purchasePrice(),
             r.annuitantPartyId(), r.jointLifePartyId());
-        return AnnuityQuoteResponse.from(price, "TZS");
+        return AnnuityQuoteResponse.from(price, r.purchasePrice(), "TZS");
     }
 
     /** Any staff member may read, as with an account or a bonus history. 404 NOT_AN_ANNUITY otherwise. */

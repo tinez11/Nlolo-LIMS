@@ -58,9 +58,20 @@ public record SavingsQuoteView(Kind kind, BigDecimal amount, BigDecimal ratePerc
      * @param targetAmount the figure the contribution was solved for; null when the contribution was named
      * @param minRatePercent the version's band
      * @param maxRatePercent the version's band
+     * @param schedule where the account stands at each year end (each month end on a term of two years or less) and
+     *     at maturity, from the projection's own running figures (2026-10-23); empty when nothing priced
      */
     public record TermAccountQuote(String frequency, int contributions, BigDecimal paidIn, BigDecimal charges,
-                                   BigDecimal targetAmount, BigDecimal minRatePercent, BigDecimal maxRatePercent) {}
+                                   BigDecimal targetAmount, BigDecimal minRatePercent, BigDecimal maxRatePercent,
+                                   List<SchedulePoint> schedule) {
+        public TermAccountQuote {
+            schedule = schedule == null ? List.of() : List.copyOf(schedule);
+        }
+    }
+
+    /** One point of a term account's schedule: cumulative figures {@code month} months into the term. */
+    public record SchedulePoint(int month, LocalDate date, BigDecimal paidIn, BigDecimal charges, BigDecimal interest,
+                                BigDecimal value) {}
 
     public SavingsQuoteView {
         offeredTermMonths = offeredTermMonths != null ? List.copyOf(offeredTermMonths) : List.of();

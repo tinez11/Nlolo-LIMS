@@ -42,7 +42,9 @@ class AgentDashboardTest {
     private final PolicyApi policies = mock(PolicyApi.class);
     private final DistributionApi distribution = mock(DistributionApi.class);
     private final UnderwritingApi underwriting = mock(UnderwritingApi.class);
-    private final AgentDashboard dashboard = new AgentDashboard(parties, policies, distribution, underwriting);
+    private final tz.co.nlolo.lifeplatform.reporting.api.ReportingApi reporting =
+        mock(tz.co.nlolo.lifeplatform.reporting.api.ReportingApi.class);
+    private final AgentDashboard dashboard = new AgentDashboard(parties, policies, distribution, underwriting, reporting);
 
     private static <T> PageImpl<T> total(long n) {
         return new PageImpl<>(List.of(), PageRequest.of(0, 1), n);

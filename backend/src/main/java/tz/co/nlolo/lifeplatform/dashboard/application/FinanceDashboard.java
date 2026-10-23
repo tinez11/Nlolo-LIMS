@@ -7,7 +7,11 @@ import tz.co.nlolo.lifeplatform.dashboard.api.ActivityItem;
 import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView.ReceivablesAging;
 import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView.MonthPoint;
+import tz.co.nlolo.lifeplatform.dashboard.api.CountPoint;
 import tz.co.nlolo.lifeplatform.dashboard.api.Money;
+import tz.co.nlolo.lifeplatform.dashboard.api.Share;
+import tz.co.nlolo.lifeplatform.reporting.api.CategoryAmount;
+import tz.co.nlolo.lifeplatform.reporting.api.MonthlyCount;
 import tz.co.nlolo.lifeplatform.finaccounting.api.ManualJournalApi;
 import tz.co.nlolo.lifeplatform.payment.api.PaymentApi;
 import tz.co.nlolo.lifeplatform.reporting.api.MonthlyAmount;
@@ -54,12 +58,22 @@ public class FinanceDashboard {
 
     /** @param today the civil date in Africa/Dar_es_Salaam, supplied by the caller */
     public FinanceDashboardView build(LocalDate today) {
+        return build(DashboardPeriod.of(null, null, today), today);
+    }
+
+    /**
+     * @param period the months the ranged figures cover (2026-10-23); the cards that were always "last complete
+     *     month" and "as at today" keep their meaning whatever the range
+     */
+    public FinanceDashboardView build(DashboardPeriod period, LocalDate today) {
         YearMonth current = YearMonth.from(today);
         YearMonth lastComplete = current.minusMonths(1);
         YearMonth beforeThat = lastComplete.minusMonths(1);
+        YearMonth readFrom = period.compareFrom().isBefore(YearMonth.of(current.getYear() - 1, 1))
+            ? period.compareFrom() : YearMonth.of(current.getYear() - 1, 1);
 
         Map<YearMonth, BigDecimal> monthly = Safely.read("monthly premium collections",
-            () -> reporting.monthlyPremiumCollections(YearMonth.of(current.getYear() - 1, 1), current).stream()
+            () -> reporting.monthlyPremiumCollections(readFrom, current).stream()
                 .filter(m -> WORKING_CURRENCY.equals(m.currency()))
                 .collect(Collectors.toMap(MonthlyAmount::month, MonthlyAmount::amount, BigDecimal::add)));
 
@@ -73,6 +87,22 @@ public class FinanceDashboard {
 
         List<ActivityItem> recent = Safely.read("recent activity",
             () -> activity.latest("billing.", "payment.", "finaccounting."));
+
+        // ---- the ranged figures (2026-10-23) ----
+        List<MonthPoint> series = monthly == null ? List.of() : series(period.months(), monthly);
+        List<MonthPoint> compareSeries = monthly == null ? List.of() : series(period.compareMonths(), monthly);
+        BigDecimal collectedNow = monthly == null ? null : total(period.months(), monthly);
+        BigDecimal collectedBefore = monthly == null ? null : total(period.compareMonths(), monthly);
+        List<Share> byLine = Safely.read("collections by product line", () -> productLines(period));
+        Map<YearMonth, Long> issued = Safely.read("policies issued", () ->
+            reporting.policiesIssuedByMonth(period.compareFrom(), period.to(), null).stream()
+                .collect(Collectors.toMap(MonthlyCount::month, MonthlyCount::count)));
+        Long newNow = issued == null ? null : period.months().stream().mapToLong(m -> issued.getOrDefault(m, 0L)).sum();
+        Long newBefore = issued == null ? null
+            : period.compareMonths().stream().mapToLong(m -> issued.getOrDefault(m, 0L)).sum();
+        List<CountPoint> issuedSeries = issued == null ? List.of()
+            : period.months().stream().map(m -> new CountPoint(m.toString(), issued.getOrDefault(m, 0L))).toList();
+        List<ReceivablesAging> aging = receivables(today);
 
         return new FinanceDashboardView(
             lastComplete.toString(), Money.of(collected, WORKING_CURRENCY), changePercent(collected, previous),
@@ -88,8 +118,46 @@ public class FinanceDashboard {
             Safely.read("arrears at the lapse level",
                 () -> billing.searchArrears(LAPSE_RECOMMENDATION_LEVEL, false, TOTAL_ONLY).getTotalElements()),
             points(monthly, current.getYear()), points(monthly, current.getYear() - 1), current.toString(),
-            receivables(today),
-            recent == null ? List.of() : recent);
+            aging == null ? List.of() : aging,
+            recent == null ? List.of() : recent,
+            period.toView(), Money.of(collectedNow, WORKING_CURRENCY), Money.of(collectedBefore, WORKING_CURRENCY),
+            DashboardPeriod.changePercent(collectedNow, collectedBefore), series, compareSeries,
+            byLine == null ? List.of() : byLine,
+            newNow, newBefore,
+            newNow == null ? null : DashboardPeriod.changePercent(BigDecimal.valueOf(newNow), BigDecimal.valueOf(newBefore)),
+            issuedSeries, Money.of(outstanding(aging), WORKING_CURRENCY));
+    }
+
+    private static List<MonthPoint> series(List<YearMonth> months, Map<YearMonth, BigDecimal> monthly) {
+        return months.stream()
+            .map(m -> new MonthPoint(m.toString(), Money.of(monthly.getOrDefault(m, BigDecimal.ZERO), WORKING_CURRENCY)))
+            .toList();
+    }
+
+    private static BigDecimal total(List<YearMonth> months, Map<YearMonth, BigDecimal> monthly) {
+        return months.stream().map(m -> monthly.getOrDefault(m, BigDecimal.ZERO)).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /** The working currency's collections per product category, each with its share of their own total. */
+    private List<Share> productLines(DashboardPeriod period) {
+        List<CategoryAmount> rows = reporting.premiumCollectionsByCategory(period.from(), period.to()).stream()
+            .filter(c -> WORKING_CURRENCY.equals(c.currency()))
+            .toList();
+        return DashboardPeriod.shares(rows.stream()
+            .map(c -> new DashboardPeriod.Slice(c.category(), c.amount())).toList(),
+            v -> Money.of(v, WORKING_CURRENCY), null);
+    }
+
+    /**
+     * The working currency's bands added together; null only when billing could not be read. Nothing owed in the
+     * working currency is zero -- a read that found nothing is an answer.
+     */
+    private static BigDecimal outstanding(List<ReceivablesAging> aging) {
+        if (aging == null) return null;
+        return aging.stream().filter(a -> WORKING_CURRENCY.equals(a.currency())).findFirst()
+            .map(a -> a.buckets().stream().map(b -> new BigDecimal(b.outstanding().amount()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add))
+            .orElse(BigDecimal.ZERO);
     }
 
     /**
@@ -98,14 +166,14 @@ public class FinanceDashboard {
      * <p>Translated into the dashboard's own shape rather than forwarding billing's: the amount becomes {@link Money}
      * like every other figure on this view, and an empty band keeps its zero rather than disappearing.
      */
+    /** Null when billing could not be read; empty when it was read and nothing is owed. */
     private List<ReceivablesAging> receivables(LocalDate today) {
-        List<ReceivablesAging> aged = Safely.read("receivables aging", () ->
+        return Safely.read("receivables aging", () ->
             billing.receivablesAging(today).stream()
                 .map(a -> new ReceivablesAging(a.currency(), a.buckets().stream()
                     .map(b -> new ReceivablesAging.Bucket(b.name(), b.cases(), Money.of(b.outstanding(), a.currency())))
                     .toList()))
                 .toList());
-        return aged == null ? List.of() : aged;
     }
 
     /** A change between two report values -- the only arithmetic here, and it is a difference of two report numbers. */

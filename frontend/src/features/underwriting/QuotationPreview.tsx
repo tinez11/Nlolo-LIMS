@@ -1,7 +1,11 @@
 import { Panel } from '@/components/Panel';
 import { toApiError } from '@/lib/apiError';
-import { formatMonths } from '@/lib/dates';
-import { formatMoney } from '@/lib/money';
+import { cn } from '@/lib/cn';
+import { formatDate, formatMonths } from '@/lib/dates';
+import { formatMoney, type Money } from '@/lib/money';
+import { quoteAnnuity } from '@/api/annuity';
+import type { AnnuityQuoteView } from '@/api/types';
+import type { QuoteResult } from './quoteResult';
 import { PREMIUM_FREQUENCY_LABELS, type SavingsQuoteView } from '@/api/types';
 import { DEFAULT_OCCUPATION_CLASS, useQuotation, type QuotationInputs } from './useQuotation';
 import { useSavingsQuotation } from './useSavingsQuotation';
@@ -12,7 +16,7 @@ import { InlineError } from '@/components/InlineError';
 import { FUNERAL_ROLE_LABELS, type FuneralRoleName } from '@/features/products/funeralSchema';
 import { pricingBasis, type PricingBasis, type ProspectInputs } from './pricingBasis';
 import { quotationRequest } from './quotationRequest';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { QuoteState } from './pricingBasis';
 
 /** Tells a listening screen where the server's answer stands, each time it moves. */
@@ -20,6 +24,13 @@ function useReport(state: QuoteState, report: ((state: QuoteState) => void) | un
   useEffect(() => {
     report?.(state);
   }, [state, report]);
+}
+
+/** Hands the server's answer up, or null while there is none -- once per answer, not once per render. */
+function useResult(result: QuoteResult | null, onResult: ((r: QuoteResult | null) => void) | undefined) {
+  useEffect(() => {
+    onResult?.(result);
+  }, [result, onResult]);
 }
 
 /**
@@ -85,6 +96,8 @@ function Headline({
   suffix,
   caption,
   valueLabel,
+  sentence,
+  split,
 }: {
   label: string;
   value: string;
@@ -92,7 +105,17 @@ function Headline({
   caption?: string | undefined;
   /** An accessible name for the figure alone, where a test or a reader finds it by what it is. */
   valueLabel?: string | undefined;
+  /** The answer in one plain sentence, for a customer looking on (2026-10-23). */
+  sentence?: string | undefined;
+  /**
+   * What the figure is made of, as one bar with each part named and its amount beside it (2026-10-23). The parts are
+   * the server's figures; the bar only gives each its share of the width.
+   */
+  split?: { label: string; amount: Money; tone: 'paper' | 'teal' | 'amber' }[] | undefined;
 }) {
+  const parts = (split ?? []).filter((p) => Number(p.amount.amount) > 0);
+  const whole = parts.reduce((a, p) => a + Number(p.amount.amount), 0) || 1;
+  const TONE = { paper: 'bg-white', teal: 'bg-status-active-bg', amber: 'bg-chart-3' } as const;
   return (
     <div className="hero-scope mx-4 mb-2 rounded-xl bg-hero px-5 py-4">
       <p className="text-sm text-muted-foreground">{label}</p>
@@ -103,6 +126,34 @@ function Headline({
         {suffix && <span className="text-sm text-muted-foreground">{suffix}</span>}
       </p>
       {caption && <p className="mt-1 text-xs text-subtle-foreground">{caption}</p>}
+      {sentence && <p className="mt-1 text-sm text-muted-foreground">{sentence}</p>}
+      {parts.length > 1 && (
+        <div className="mt-4 space-y-2.5 border-t border-white/25 pt-3">
+          {/* The bar only where every part is big enough to see; a 2% sliver reads as a broken bar, not a share. */}
+          {parts.every((p) => Number(p.amount.amount) / whole >= 0.04) && (
+          <div className="flex h-2.5 gap-0.5 overflow-hidden rounded-full" aria-hidden>
+            {parts.map((p, i) => (
+              <span
+                key={p.label}
+                className={cn('chart-grow-x block h-full', TONE[p.tone])}
+                style={{ flexGrow: Number(p.amount.amount) / whole, animationDelay: `${i * 80}ms` }}
+              />
+            ))}
+          </div>
+          )}
+          <dl className="flex flex-wrap gap-x-6 gap-y-1.5 text-xs text-muted-foreground">
+            {parts.map((p) => (
+              <div key={p.label}>
+                <dt className="flex items-center gap-1.5">
+                  <i aria-hidden className={cn('inline-block size-2 rounded-sm', TONE[p.tone])} />
+                  {p.label}
+                </dt>
+                <dd className="text-sm font-bold text-foreground tabular-nums">{formatMoney(p.amount)}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
     </div>
   );
 }
@@ -127,7 +178,25 @@ export function QuotationPreview({
   onQuoteState,
   termAccount,
   forCustomer = false,
+  onResult,
+  annuity,
 }: {
+  /**
+   * Handed the server's answer as it arrives, or null while there is none (2026-10-23), so the calculator can draw it
+   * over time and price alternatives beside it.
+   */
+  onResult?: ((result: QuoteResult | null) => void) | undefined;
+  /**
+   * An immediate annuity, quoted here on the calculator (2026-10-23): the form, how often it pays, and the annuitant --
+   * a client's id, or a prospect's date of birth and sex. The purchase price is the form's amount.
+   */
+  annuity?: {
+    formCode: string;
+    frequency: string;
+    annuitantPartyId: string;
+    dateOfBirth: string | null;
+    sex: string | null;
+  } | undefined;
   /**
    * Shown with a customer looking on (the agents' calculator): how the premium was derived -- age band, rate per mille,
    * factors -- folds away behind its heading. On a staff form it stays open, because an underwriter reads it.
@@ -197,6 +266,8 @@ export function QuotationPreview({
           report={report}
           derivationOpen={!forCustomer}
           echoInputs={!forCustomer}
+          rich={forCustomer}
+          onResult={onResult}
         />
       )}
 
@@ -210,6 +281,8 @@ export function QuotationPreview({
           termMonths={inputs.policyTermMonths}
           commencementDate={commencementDate}
           termAccount={termAccount ? { ...termAccount, frequency: inputs.frequency ?? '' } : undefined}
+          rich={forCustomer}
+          onResult={onResult}
         />
       )}
 
@@ -225,10 +298,22 @@ export function QuotationPreview({
             mainMember: funeral?.mainMember ?? null,
             dependants: funeral?.dependants ?? [],
           }}
+          rich={forCustomer}
+          onResult={onResult}
         />
       )}
 
-      {basis === 'OWN_SECTION' && (
+      {basis === 'OWN_SECTION' && portfolioCode === 'IANN' && annuity && (
+        <AnnuityQuotation
+          report={report}
+          onResult={onResult}
+          productVersionId={productVersionId}
+          purchasePrice={inputs.sumAssuredAmount}
+          annuity={annuity}
+        />
+      )}
+
+      {basis === 'OWN_SECTION' && !(portfolioCode === 'IANN' && annuity) && (
         <p className="px-4 pb-4 text-xs text-muted-foreground">
           {(portfolioCode && OWN_SECTION_BY_PORTFOLIO[portfolioCode]) ??
             'This product is priced by its own fields above on this form.'}
@@ -291,11 +376,15 @@ function PremiumQuotation({
   report,
   derivationOpen,
   echoInputs,
+  rich = false,
+  onResult,
 }: {
   inputs: QuotationInputs;
   premiumPayingTermMonths: string;
   commencementDate: string;
   report?: ((state: QuoteState) => void) | undefined;
+  rich?: boolean | undefined;
+  onResult?: ((result: QuoteResult | null) => void) | undefined;
   derivationOpen: boolean;
   /**
    * The rows that only say back what the form says -- coverage term, premium-paying term, frequency, commencement. Kept
@@ -306,6 +395,21 @@ function PremiumQuotation({
 }) {
   const quotation = useQuotation(inputs);
   useReport(quotation.state, report);
+  const quote = quotation.state === 'quoted' ? quotation.quote : null;
+  const result = useMemo<QuoteResult | null>(
+    () => (quote
+      ? {
+          kind: 'premium',
+          quote,
+          sumAssured: inputs.sumAssuredAmount,
+          currency: inputs.sumAssuredCurrency || 'TZS',
+          termMonths: inputs.policyTermMonths ? Number(inputs.policyTermMonths) : null,
+        }
+      : null),
+    [quote, inputs.sumAssuredAmount, inputs.sumAssuredCurrency, inputs.policyTermMonths],
+  );
+  useResult(result, onResult);
+  const cover = money(Number(inputs.sumAssuredAmount), inputs.sumAssuredCurrency || 'TZS');
 
   return (
     <>
@@ -341,9 +445,14 @@ function PremiumQuotation({
           suffix={inputs.frequency ? PREMIUM_FREQUENCY_LABELS[inputs.frequency].toLowerCase() : undefined}
           caption={
             inputs.policyTermMonths
-              ? `For ${money(Number(inputs.sumAssuredAmount), inputs.sumAssuredCurrency || 'TZS')} of cover over ${formatMonths(Number(inputs.policyTermMonths))}`
-              : `For ${money(Number(inputs.sumAssuredAmount), inputs.sumAssuredCurrency || 'TZS')} of cover`
+              ? `For ${cover} of cover over ${formatMonths(Number(inputs.policyTermMonths))}`
+              : `For ${cover} of cover`
           }
+          sentence={rich
+            ? inputs.policyTermMonths
+              ? `Pays ${cover} to the family if the life insured dies within ${formatMonths(Number(inputs.policyTermMonths))}.`
+              : `Pays ${cover} to the family when the life insured dies.`
+            : undefined}
         />
         <div className="divide-y divide-border">
           <Row
@@ -465,12 +574,17 @@ function PremiumQuotation({
  * <p>A line per life, because a funeral premium IS per life: the plan's grid prices each role and age separately,
  * and a family total with no lines behind it cannot be checked.
  */
-function FuneralQuotation({ inputs, report }: {
+function FuneralQuotation({ inputs, report, rich = false, onResult }: {
   inputs: FuneralQuotationInputs;
   report?: ((state: QuoteState) => void) | undefined;
+  rich?: boolean | undefined;
+  onResult?: ((result: QuoteResult | null) => void) | undefined;
 }) {
   const quotation = useFuneralQuotation(inputs);
   useReport(quotation.state, report);
+  const answered = quotation.state === 'quoted' ? quotation.quote : null;
+  const result = useMemo<QuoteResult | null>(() => (answered ? { kind: 'funeral', quote: answered } : null), [answered]);
+  useResult(result, onResult);
 
   if (quotation.state === 'incomplete') {
     return (
@@ -498,6 +612,9 @@ function FuneralQuotation({ inputs, report }: {
       value={tzs(quote.instalment)}
       valueLabel="Instalment"
       caption={`${quote.lines.length} ${quote.lines.length === 1 ? 'life' : 'lives'} covered`}
+      sentence={rich
+        ? `Covers ${quote.lines.length === 1 ? 'one person' : `${quote.lines.length} people`}: each is paid out on their death, up to the cover shown for them.`
+        : undefined}
     />
     <div className="px-4 pb-4">
       <div className="overflow-x-auto rounded-md border border-border">
@@ -555,6 +672,8 @@ function SavingsQuotation({
   commencementDate,
   report,
   termAccount,
+  rich = false,
+  onResult,
 }: {
   productId: string;
   productVersionId: string;
@@ -563,6 +682,8 @@ function SavingsQuotation({
   termMonths: string;
   commencementDate: string;
   report?: ((state: QuoteState) => void) | undefined;
+  rich?: boolean | undefined;
+  onResult?: ((result: QuoteResult | null) => void) | undefined;
   termAccount?:
     | { ratePercent: string; frequency: string; targetAmount: string; onUseContribution?: ((amount: string) => void) | undefined;
         onUseMaturity?: ((amount: string) => void) | undefined }
@@ -583,6 +704,9 @@ function SavingsQuotation({
     quotation.state === 'quoted' && quotation.quote.refusal ? 'refused' : quotation.state,
     report,
   );
+  const answered = quotation.state === 'quoted' && !quotation.quote.refusal ? quotation.quote : null;
+  const result = useMemo<QuoteResult | null>(() => (answered ? { kind: 'savings', quote: answered } : null), [answered]);
+  useResult(result, onResult);
 
   if (quotation.state === 'incomplete') {
     return (
@@ -605,7 +729,7 @@ function SavingsQuotation({
   const q = quotation.quote;
   const deposit = q.kind === 'DEPOSIT';
   if (q.kind === 'TERM_ACCOUNT') {
-    return <TermAccountQuotation quote={q} onUseContribution={termAccount?.onUseContribution} onUseMaturity={termAccount?.onUseMaturity} />;
+    return <TermAccountQuotation quote={q} rich={rich} onUseContribution={termAccount?.onUseContribution} onUseMaturity={termAccount?.onUseMaturity} />;
   }
 
   // What the customer came to hear: a deposit's worth on the day it matures, an account's rate. Its row is then left
@@ -619,6 +743,15 @@ function SavingsQuotation({
         label="Value at maturity"
         value={formatMoney(q.maturityValue!)}
         caption={q.maturityDate ? `On ${q.maturityDate}` : undefined}
+        sentence={rich && q.amount && q.interest
+          ? `A deposit of ${formatMoney(q.amount)} earns ${formatMoney(q.interest)} over the term.`
+          : undefined}
+        split={rich && q.amount && q.interest
+          ? [
+              { label: 'Deposit', amount: q.amount, tone: 'paper' },
+              { label: 'Interest', amount: q.interest, tone: 'teal' },
+            ]
+          : undefined}
       />
     )}
     {rateLeads && <Headline label="Interest rate" value={`${q.ratePercent}%`} suffix="a year" />}
@@ -693,8 +826,10 @@ function TermAccountQuotation({
   quote: q,
   onUseContribution,
   onUseMaturity,
+  rich = false,
 }: {
   quote: SavingsQuoteView;
+  rich?: boolean | undefined;
   onUseContribution?: ((amount: string) => void) | undefined;
   onUseMaturity?: ((amount: string) => void) | undefined;
 }) {
@@ -725,6 +860,22 @@ function TermAccountQuotation({
   // Quoted for a target, the contribution that reaches it is the answer; otherwise, what it pays out.
   const contributionLeads = !!t.targetAmount && !!q.amount;
   const payoutLeads = !contributionLeads && !!q.maturityValue;
+  // For a customer: the answer in a sentence, and what the payout is made of -- the server's three totals.
+  const years = q.termMonths != null ? formatMonths(q.termMonths) : 'the term';
+  // One short line that says only what the big figure does not: the other half of the answer. The breakdown below it
+  // carries the amounts, so the line never repeats them (the user, 2026-10-23: "hard to read").
+  const sentence = !rich || !q.amount || !q.maturityValue
+    ? undefined
+    : contributionLeads
+      ? `Pays out ${formatMoney(q.maturityValue)} at maturity.`
+      : `From ${formatMoney(q.amount)}${frequency ? ` ${frequency}` : ''} for ${years}.`;
+  const split = rich && t.paidIn && q.interest
+    ? [
+        { label: 'Paid in', amount: t.paidIn, tone: 'paper' as const },
+        { label: 'Interest earned', amount: q.interest, tone: 'teal' as const },
+        ...(t.charges && Number(t.charges.amount) > 0 ? [{ label: 'Charges', amount: t.charges, tone: 'amber' as const }] : []),
+      ]
+    : undefined;
   return (
     <>
     {contributionLeads && (
@@ -732,14 +883,18 @@ function TermAccountQuotation({
         label="Contribution needed"
         value={formatMoney(q.amount!)}
         suffix={frequency}
-        caption={onUseContribution ? 'Filled in as the contribution above.' : undefined}
+        caption={onUseContribution && !rich ? 'Filled in as the contribution above.' : undefined}
+        sentence={sentence}
+        split={split}
       />
     )}
     {payoutLeads && (
       <Headline
         label="Paid out at maturity"
         value={formatMoney(q.maturityValue!)}
-        caption={q.maturityDate ? `On ${q.maturityDate}` : undefined}
+        caption={q.maturityDate && !rich ? `On ${q.maturityDate}` : undefined}
+        sentence={sentence}
+        split={split}
       />
     )}
     <div className="divide-y divide-border">
@@ -754,7 +909,7 @@ function TermAccountQuotation({
         <Row label="Paid out at maturity" value={q.maturityValue ? formatMoney(q.maturityValue) : '—'} />
       )}
       {q.termMonths != null && <Row label="Term" value={formatMonths(q.termMonths)} />}
-      {q.maturityDate && <Row label="Matures on" value={q.maturityDate} />}
+      {q.maturityDate && <Row label="Matures on" value={formatDate(q.maturityDate)} />}
       <div className="px-4 py-2">
         <p className="text-xs text-muted-foreground">
           Nothing can be withdrawn or surrendered before it matures; then the whole balance is paid out. The figure at
@@ -762,6 +917,118 @@ function TermAccountQuotation({
         </p>
       </div>
     </div>
+    </>
+  );
+}
+
+const ANNUITY_FREQUENCY: Record<string, string> = {
+  MONTHLY: 'a month',
+  QUARTERLY: 'a quarter',
+  SEMI_ANNUAL: 'every six months',
+  ANNUAL: 'a year',
+};
+
+/**
+ * An immediate annuity on the calculator (2026-10-23): the income a purchase price buys, priced by the version's own
+ * grid for a client's recorded age and sex, or a prospect's as stated. A quote, not a promise -- the income is locked
+ * at the rate in force the day the price is paid.
+ */
+function AnnuityQuotation({ productVersionId, purchasePrice, annuity, report, onResult }: {
+  productVersionId: string;
+  purchasePrice: string;
+  annuity: { formCode: string; frequency: string; annuitantPartyId: string; dateOfBirth: string | null; sex: string | null };
+  report?: ((state: QuoteState) => void) | undefined;
+  onResult?: ((result: QuoteResult | null) => void) | undefined;
+}) {
+  const price = Number(purchasePrice);
+  const missing: string[] = [];
+  if (!(price > 0)) missing.push('a purchase price in digits');
+  if (!annuity.formCode) missing.push('an annuity form');
+  if (!annuity.frequency) missing.push('how often the income is paid');
+  if (!annuity.annuitantPartyId && !annuity.dateOfBirth) missing.push("the annuitant's date of birth");
+  const key = missing.length === 0
+    ? [productVersionId, annuity.formCode, annuity.frequency, purchasePrice, annuity.annuitantPartyId,
+        annuity.dateOfBirth ?? '', annuity.sex ?? ''].join('|')
+    : '';
+
+  const [loaded, setLoaded] = useState<{ key: string; quote?: AnnuityQuoteView; error?: unknown } | null>(null);
+  useEffect(() => {
+    if (!key) return undefined;
+    let live = true;
+    // Debounced: the price is typed a digit at a time, and each keystroke is not a question.
+    const timer = setTimeout(() => {
+      quoteAnnuity({
+        productVersionId,
+        formCode: annuity.formCode,
+        frequency: annuity.frequency as AnnuityQuoteView['frequency'],
+        purchasePrice: price,
+        ...(annuity.annuitantPartyId
+          ? { annuitantPartyId: annuity.annuitantPartyId }
+          : { annuitantDateOfBirth: annuity.dateOfBirth, annuitantSex: (annuity.sex || null) as 'FEMALE' | 'MALE' | null }),
+      }).then(
+        (quote) => live && setLoaded({ key, quote }),
+        (error: unknown) => live && setLoaded({ key, error }),
+      );
+    }, 400);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+    // key carries every input the quote depends on
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  const current = loaded && loaded.key === key ? loaded : null;
+  const state: QuoteState = !key ? 'incomplete' : !current ? 'loading' : current.error !== undefined ? 'refused' : 'quoted';
+  useReport(state, report);
+  const answered = state === 'quoted' ? current?.quote ?? null : null;
+  const result = useMemo<QuoteResult | null>(
+    () => (answered ? { kind: 'annuity', quote: answered, purchasePrice } : null),
+    [answered, purchasePrice],
+  );
+  useResult(result, onResult);
+
+  if (state === 'incomplete') {
+    return (
+      <p className="px-4 pb-4 text-xs text-muted-foreground">
+        A quotation needs {missing.join(', ')}. Fill those in and it appears here.
+      </p>
+    );
+  }
+  if (state === 'loading') return <p className="px-4 pb-4 text-xs text-muted-foreground">Pricing…</p>;
+  if (state === 'refused' || !answered) {
+    return (
+      <div className="px-4 pb-4">
+        <InlineError sticky error={toApiError(current?.error)} lead="Not priced" />
+      </div>
+    );
+  }
+  const q = answered;
+  const every = ANNUITY_FREQUENCY[q.frequency] ?? q.frequency.toLowerCase();
+  const breakEven = q.schedule.find((s) => s.year === q.breakEvenYear);
+  return (
+    <>
+      <Headline
+        label="Income paid"
+        value={formatMoney(q.instalment)}
+        suffix={every}
+        caption={`For life, from age ${q.annuitantAge}`}
+        sentence={`A purchase price of ${formatMoney(q.purchasePrice ?? { amount: purchasePrice, currencyCode: 'TZS' })} pays `
+          + `${formatMoney(q.instalment)} ${every} for as long as the annuitant lives: ${formatMoney(q.annualIncome)} a year.`
+          + (breakEven ? ` By age ${breakEven.age} it has paid back more than its price.` : '')}
+      />
+      <div className="divide-y divide-border">
+        <Row label="Purchase price" value={formatMoney(q.purchasePrice ?? { amount: purchasePrice, currencyCode: 'TZS' })} />
+        <Row label="Income a year" value={formatMoney(q.annualIncome)} />
+        <Row label="Rate" value={`${q.annualRatePerMille} per 1,000`} suffix={`age ${q.annuitantAge}${q.rateSex ? `, ${q.rateSex.toLowerCase()}` : ''}`} />
+        {breakEven && <Row label="Paid back by" value={`Year ${breakEven.year}`} suffix={`age ${breakEven.age}`} />}
+        <div className="px-4 py-2">
+          <p className="text-xs text-muted-foreground">
+            The income is locked at the rate in force on the day the price is paid. It cannot be surrendered once the
+            free-look period has passed.
+          </p>
+        </div>
+      </div>
     </>
   );
 }

@@ -8,6 +8,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import tz.co.nlolo.lifeplatform.dashboard.api.AgentDashboardView;
@@ -16,6 +17,7 @@ import tz.co.nlolo.lifeplatform.dashboard.api.FinanceDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.UnderwritingDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.application.AgentDashboard;
 import tz.co.nlolo.lifeplatform.dashboard.application.ClaimsDashboard;
+import tz.co.nlolo.lifeplatform.dashboard.application.DashboardPeriod;
 import tz.co.nlolo.lifeplatform.dashboard.application.FinanceDashboard;
 import tz.co.nlolo.lifeplatform.dashboard.application.UnderwritingDashboard;
 
@@ -48,8 +50,10 @@ public class DashboardController {
 
     @GetMapping("/dashboards/underwriting")
     @PreAuthorize("hasRole('UNDERWRITER')")
-    public ResponseEntity<UnderwritingDashboardView> underwriting() {
-        return ResponseEntity.ok(underwriting.build(LocalDate.now(CIVIL)));
+    public ResponseEntity<UnderwritingDashboardView> underwriting(@RequestParam(required = false) String from,
+                                                                  @RequestParam(required = false) String to) {
+        LocalDate today = LocalDate.now(CIVIL);
+        return ResponseEntity.ok(underwriting.build(DashboardPeriod.of(from, to, today), today));
     }
 
     /**
@@ -58,17 +62,22 @@ public class DashboardController {
      */
     @GetMapping("/dashboards/claims")
     @PreAuthorize("hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER')")
-    public ResponseEntity<ClaimsDashboardView> claims(Authentication authentication) {
+    public ResponseEntity<ClaimsDashboardView> claims(Authentication authentication,
+                                                      @RequestParam(required = false) String from,
+                                                      @RequestParam(required = false) String to) {
         boolean manager = authentication.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority).anyMatch("ROLE_CLAIMS_MANAGER"::equals);
-        return ResponseEntity.ok(claims.build(manager, LocalDate.now(CIVIL)));
+        LocalDate today = LocalDate.now(CIVIL);
+        return ResponseEntity.ok(claims.build(manager, DashboardPeriod.of(from, to, today), today));
     }
 
     /** The same expression as every finance endpoint (39 of them) and the reports. */
     @GetMapping("/dashboards/finance")
     @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
-    public ResponseEntity<FinanceDashboardView> finance() {
-        return ResponseEntity.ok(finance.build(LocalDate.now(CIVIL)));
+    public ResponseEntity<FinanceDashboardView> finance(@RequestParam(required = false) String from,
+                                                        @RequestParam(required = false) String to) {
+        LocalDate today = LocalDate.now(CIVIL);
+        return ResponseEntity.ok(finance.build(DashboardPeriod.of(from, to, today), today));
     }
 
     /**
@@ -78,11 +87,15 @@ public class DashboardController {
      */
     @GetMapping("/dashboards/agent")
     @PreAuthorize("hasRole('REALM_AGENTS')")
-    public ResponseEntity<AgentDashboardView> agent(@AuthenticationPrincipal Jwt jwt) {
+    public ResponseEntity<AgentDashboardView> agent(@AuthenticationPrincipal Jwt jwt,
+                                                    @RequestParam(required = false) String from,
+                                                    @RequestParam(required = false) String to) {
         String partyId = jwt.getClaimAsString("party_id");
         if (partyId == null) {
             throw new AccessDeniedException("Agent token carries no party_id claim");
         }
-        return ResponseEntity.ok(agent.build(jwt.getSubject(), UUID.fromString(partyId), LocalDate.now(CIVIL)));
+        LocalDate today = LocalDate.now(CIVIL);
+        return ResponseEntity.ok(agent.build(jwt.getSubject(), UUID.fromString(partyId),
+            DashboardPeriod.of(from, to, today), today));
     }
 }

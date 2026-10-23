@@ -870,6 +870,36 @@ class ClaimsApiIntegrationTest {
             .containsExactly("2026-03 TZS 2 10000000", "2026-03 USD 1 1000", "2026-04 TZS 1 2000000");
     }
 
+    /**
+     * The ranged dashboard's three reads (2026-10-23): what was paid per claim type, how long settlements took (days
+     * ADDED, unrounded, so any span averages exactly) and how many claims came in, each per civil month.
+     */
+    @Test
+    void totalsSettlementsByTypeAndTurnaroundAndRegistrationsByMonth() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-RANGED");
+        UUID a = settleClaimAt(tenantId, fixture, "rg1", "4000000.00", "TZS", Instant.parse("2026-03-04T08:00:00Z"));
+        UUID b = settleClaimAt(tenantId, fixture, "rg2", "6000000.00", "TZS", Instant.parse("2026-03-20T08:00:00Z"));
+        settleClaimAt(tenantId, fixture, "rg3", "1000.00", "USD", Instant.parse("2026-03-21T08:00:00Z"));
+        // Registered 2 and 6 days before settling, so March's turnaround adds to 8 days over two claims.
+        jdbc.update("UPDATE claims.claim SET created_at = ? WHERE claim_id = ?",
+            java.sql.Timestamp.from(Instant.parse("2026-03-02T08:00:00Z")), a);
+        jdbc.update("UPDATE claims.claim SET created_at = ? WHERE claim_id = ?",
+            java.sql.Timestamp.from(Instant.parse("2026-03-14T08:00:00Z")), b);
+
+        assertThat(claimsApi.settlementsByType(YearMonth.of(2026, 3), YearMonth.of(2026, 3)))
+            .extracting(t -> t.claimType() + " " + t.currency() + " " + t.claims() + " "
+                + t.totalApproved().stripTrailingZeros().toPlainString())
+            .containsExactlyInAnyOrder("DEATH TZS 2 10000000", "DEATH USD 1 1000");
+
+        var march = claimsApi.settlementTurnaroundByMonth(YearMonth.of(2026, 3), YearMonth.of(2026, 3));
+        assertThat(march).hasSize(1);
+        assertThat(march.get(0).claims()).isEqualTo(3);
+
+        var registered = claimsApi.registrationsByMonth(YearMonth.of(2026, 3), YearMonth.of(2026, 3));
+        assertThat(registered).extracting(m -> m.month() + " " + m.claims()).containsExactly("2026-03 2");
+    }
+
     /** The question no screen could ask: how many claims are waiting on a document, across the whole desk. */
     @Test
     void countsOpenDocumentRequestsAcrossClaims() {

@@ -105,6 +105,14 @@ public class AnnuityApiImpl implements AnnuityApi {
             jointLifePartyId, LocalDate.now(CIVIL_ZONE)));
     }
 
+    @Override
+    public AnnuityPrice quoteProspect(UUID productVersionId, String formCode, String frequency, BigDecimal purchasePrice,
+                                      LocalDate annuitantDateOfBirth, String annuitantSex,
+                                      LocalDate jointDateOfBirth, String jointSex) {
+        return productApi.priceAnnuity(productVersionId, new AnnuityPricingInput(formCode, frequency, purchasePrice,
+            annuitantDateOfBirth, annuitantSex, jointDateOfBirth, jointSex, LocalDate.now(CIVIL_ZONE)));
+    }
+
     /** The policy's own version, when it is an annuity's -- product first, the cheap gate. */
     private Optional<UUID> versionIfAnnuity(String policyNumber) {
         if (policyNumber == null) {

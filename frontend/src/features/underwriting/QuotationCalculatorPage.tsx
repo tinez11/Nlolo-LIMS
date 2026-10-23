@@ -37,8 +37,19 @@ import {
 import { QuotationPreview } from './QuotationPreview';
 import { useTermAccountTerms } from './useTermAccountTerms';
 import { pricingBasis, quotesHere, type ProspectInputs, type QuoteState } from './pricingBasis';
-import { isAmount, isWholeMonths } from './useQuotation';
+import { isAmount, isWholeMonths, premiumQuoteRequest } from './useQuotation';
 import { quotationRequest } from './quotationRequest';
+import { getAnnuityTerms, quoteAnnuity } from '@/api/annuity';
+import { quoteFuneral } from '@/api/funeral';
+import { quotePremium } from '@/api/products';
+import { quoteProductSavings } from '@/api/accumulation';
+import type { AnnuityQuoteView, AnnuityTermsView } from '@/api/types';
+import { formatMoney } from '@/lib/money';
+import { ChartColumn } from 'lucide-react';
+import { QuotationInsights } from './QuotationInsights';
+import type { QuoteResult } from './quoteResult';
+import type { Alternative } from './useAlternatives';
+import { funeralQuoteRequest } from './useFuneralQuotation';
 
 type Who = 'PROSPECT' | 'CLIENT';
 
@@ -86,8 +97,28 @@ export function QuotationCalculatorPage() {
     if (productId) void loadSnapshot(productId);
   }, [productId, loadSnapshot]);
 
-  const offered = (products.data ?? []).filter((p) => isSingleLifeProduct(p) && quotesHere(p.portfolioCode));
+  // Immediate annuities too (2026-10-23): the income a purchase price buys, for a client or a prospect.
+  const offered = (products.data ?? []).filter(
+    (p) => isSingleLifeProduct(p) && (quotesHere(p.portfolioCode) || p.portfolioCode === 'IANN'),
+  );
   const selectedProduct = offered.find((p) => p.productId === productId);
+  const isAnnuity = selectedProduct?.portfolioCode === 'IANN';
+  const [annuityTerms, setAnnuityTerms] = useState<{ versionId: string; terms: AnnuityTermsView | null } | null>(null);
+  useEffect(() => {
+    if (!isAnnuity || !productId || !productVersionId) return undefined;
+    let live = true;
+    getAnnuityTerms(productId, productVersionId).then(
+      (terms) => { if (live) setAnnuityTerms({ versionId: productVersionId, terms }); },
+      () => { if (live) setAnnuityTerms({ versionId: productVersionId, terms: null }); },
+    );
+    return () => { live = false; };
+  }, [isAnnuity, productId, productVersionId]);
+  const annuityTermsRead = annuityTerms?.versionId === productVersionId ? annuityTerms.terms : null;
+  // Single-life forms only: the calculator asks for one life, and a joint form priced without its second life is a refusal.
+  const annuityRead = annuityTermsRead ? { ...annuityTermsRead, forms: annuityTermsRead.forms.filter((f) => !f.joint) } : null;
+
+  // The server's answer, kept here to be drawn over time below the form and priced against its alternatives.
+  const [result, setResult] = useState<QuoteResult | null>(null);
   // A fixed-term deposit is paid once -- the portfolio UnderwritingApiImpl.refuseAnUnissuableDeposit refuses any
   // other frequency on (2026-10-21). It used to be refused only when the proposal reached the underwriter, after the
   // agent had already onboarded the customer; filtering the choice here means MONTHLY can never be picked at all.
@@ -216,8 +247,9 @@ export function QuotationCalculatorPage() {
     smokerStatus: rating.smokerStatus,
     occupationClass: rating.occupationClass,
   };
-  // Exactly what the PDF is asked for with: the inputs, never the figures on screen.
-  const request = selectedProduct
+  // Exactly what the PDF is asked for with: the inputs, never the figures on screen. An annuity is quoted here but its
+  // proposal is still opened by the office, so there is nothing to save or hand over as a paper yet.
+  const request = selectedProduct && !isAnnuity
     ? quotationRequest(pricingBasis(selectedProduct.portfolioCode), {
         inputs,
         premiumPayingTermMonths: watch('premiumPayingTermMonths'),
@@ -233,6 +265,8 @@ export function QuotationCalculatorPage() {
   const canProceed = request !== null && quoteState === 'quoted';
   const proceedHint = canProceed
     ? 'When the customer agrees to this quotation.'
+    : isAnnuity
+      ? 'An annuity proposal is opened by the office. Share these figures with the customer; the office takes it from there.'
     : !request
       ? who === 'PROSPECT' && !prospect.fullName.trim()
         ? "Enter the person's name, the product and the plan to proceed."
@@ -246,6 +280,117 @@ export function QuotationCalculatorPage() {
         : quoteState === 'refused'
           ? 'This cannot proceed: the quotation above was refused. Change what it names and try again.'
           : 'Complete what the quotation above asks for to proceed.';
+
+  // What else the customer could choose, each priced by the server for this same person (2026-10-23). Less and more
+  // of what they asked for, rounded to a figure a person would say; another plan; another annuity form.
+  const commencement = watch('proposedCommencementDate');
+  const annuityFormCode = watch('annuityFormCode');
+  const annuityFrequency = watch('annuityFrequency');
+  // Every input an alternative is priced on, so changing any of them -- a term, a date of birth -- re-prices them all.
+  const asked = JSON.stringify([inputs, commencement, annuityFrequency, who, applicantPartyId, funeral?.mainMember]);
+  const alternatives: Alternative[] = (() => {
+    if (!result) return [];
+    const round = (n: number) => Math.max(1000, Math.round(n / 1000) * 1000);
+    const currency = watch('sumAssuredCurrency') || 'TZS';
+    if (result.kind === 'premium') {
+      const base = Number(result.sumAssured);
+      const each = PREMIUM_FREQUENCY_LABELS[inputs.frequency as keyof typeof PREMIUM_FREQUENCY_LABELS]?.toLowerCase() ?? '';
+      return [0.5, 1, 2].map((f) => {
+        const cover = f === 1 ? base : round(base * f);
+        return {
+          key: `premium-${asked}-${cover}`,
+          label: `Cover of ${formatMoney({ amount: String(cover), currencyCode: currency })}`,
+          current: f === 1,
+          price: () => quotePremium(productId, premiumQuoteRequest(inputs, String(cover))).then((q) => ({
+            value: formatMoney({ amount: String(q.instalmentAmount), currencyCode: q.currency ?? currency }),
+            note: `${each} premium`,
+          })),
+        };
+      });
+    }
+    if (result.kind === 'savings') {
+      const q = result.quote;
+      const term = q.termMonths ?? (termText ? Number(termText) : undefined);
+      if (q.kind === 'TERM_ACCOUNT' && q.amount && q.termAccount) {
+        const base = Number(q.amount.amount);
+        const freq = q.termAccount.frequency;
+        return [0.75, 1, 1.5].map((f) => {
+          const amount = f === 1 ? base : round(base * f);
+          return {
+            key: `ta-${asked}-${amount}-${term}-${q.ratePercent}`,
+            label: `${formatMoney({ amount: String(amount), currencyCode: currency })} ${freq ? PREMIUM_FREQUENCY_LABELS[freq].toLowerCase() : ''}`,
+            current: f === 1,
+            price: () => quoteProductSavings(productId, productVersionId, {
+              amount, currency, ...(term ? { termMonths: term } : {}),
+              ...(commencement ? { asOf: commencement } : {}),
+              ...(q.ratePercent ? { ratePercent: Number(q.ratePercent) } : {}),
+              ...(freq ? { frequency: freq } : {}),
+            }).then((alt) => {
+              if (!alt.maturityValue) throw new Error('not priced');
+              return { value: formatMoney(alt.maturityValue), note: 'paid out at maturity' };
+            }),
+          };
+        });
+      }
+      if (q.kind === 'DEPOSIT' && q.amount && q.offeredTermMonths.length > 1) {
+        const current = term ?? q.offeredTermMonths[0]!;
+        const at = Math.max(0, q.offeredTermMonths.indexOf(current));
+        const terms = q.offeredTermMonths.slice(Math.max(0, Math.min(at - 1, q.offeredTermMonths.length - 3)))
+          .slice(0, 3);
+        return terms.map((months) => ({
+          key: `dep-${asked}-${months}-${q.amount!.amount}`,
+          label: `For ${formatMonths(months)}`,
+          current: months === current,
+          price: () => quoteProductSavings(productId, productVersionId, {
+            amount: Number(q.amount!.amount), currency, termMonths: months,
+            ...(commencement ? { asOf: commencement } : {}),
+          }).then((alt) => {
+            if (!alt.maturityValue) throw new Error('not priced');
+            return { value: formatMoney(alt.maturityValue), note: 'paid out at maturity' };
+          }),
+        }));
+      }
+      return [];
+    }
+    if (result.kind === 'funeral' && funeral && funeralRead?.terms) {
+      const plans = funeralRead.terms.plans.slice(0, 3);
+      const family = {
+        productId, productVersionId, planCode: funeral.planCode, frequency: inputs.frequency ?? '',
+        commencement, mainMember: funeral.mainMember, dependants: funeral.dependants,
+      };
+      return plans.map((plan) => ({
+        key: `fun-${asked}-${plan.planCode}-${JSON.stringify(funeral.dependants)}-${inputs.frequency}`,
+        label: plan.name || plan.planCode,
+        current: plan.planCode === funeral.planCode,
+        price: () => quoteFuneral(productId, productVersionId, funeralQuoteRequest(family, plan.planCode)).then((q) => ({
+          value: formatMoney({ amount: String(q.instalment), currencyCode: 'TZS' }),
+          note: `${q.frequency.toLowerCase()} for the family`,
+        })),
+      }));
+    }
+    if (result.kind === 'annuity' && annuityRead) {
+      // What a smaller or larger purchase would pay -- the question a retiring customer asks first.
+      const base = Number(result.purchasePrice);
+      return [0.5, 1, 2].map((f) => {
+        const price = f === 1 ? base : round(base * f);
+        return {
+        key: `ann-${asked}-${annuityFormCode}-${price}-${annuityFrequency}-${rating.dateOfBirth}`,
+        label: `A purchase of ${formatMoney({ amount: String(price), currencyCode: currency })}`,
+        current: f === 1,
+        price: () => quoteAnnuity({
+          productVersionId,
+          formCode: annuityFormCode,
+          frequency: annuityFrequency as AnnuityQuoteView['frequency'],
+          purchasePrice: price,
+          ...(who === 'CLIENT'
+            ? { annuitantPartyId: applicantPartyId }
+            : { annuitantDateOfBirth: rating.dateOfBirth ?? null, annuitantSex: (rating.sex || null) as 'FEMALE' | 'MALE' | null }),
+        }).then((q) => ({ value: formatMoney(q.instalment), note: `${q.frequency === 'MONTHLY' ? 'a month' : q.frequency.toLowerCase()}, for life` })),
+        };
+      });
+    }
+    return [];
+  })();
 
   // Proceed, then confirm: nothing is sent until the second click, and Cancel sends nothing at all.
   const navigate = useNavigate();
@@ -369,7 +514,7 @@ export function QuotationCalculatorPage() {
           <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">The plan</legend>
           <FormField
             label="Product"
-            hint="Life, endowment, savings, deposit and funeral products. Annuities, unit-linked and group cover are quoted by the office."
+            hint="Life, endowment, savings, deposit, funeral and annuity products. Unit-linked and group cover are quoted by the office."
           >
             {isInitialLoad(products) ? (
               <p className="text-xs text-muted-foreground">Loading products…</p>
@@ -408,6 +553,40 @@ export function QuotationCalculatorPage() {
               errors={errors} setValue={setValue} />
           )}
 
+          {/* An immediate annuity: the form and how often it pays; the amount below is the purchase price. */}
+          {isAnnuity && annuityTerms && (!annuityRead || annuityRead.forms.length === 0) && (
+            <p role="alert" className="text-xs text-status-danger-fg">
+              This product's current version has no single-life annuity form, so it cannot be quoted here. Ask the office.
+            </p>
+          )}
+          {isAnnuity && annuityRead && annuityRead.forms.length > 0 && (
+            <div className="grid grid-cols-2 gap-4">
+              <FormField label="Annuity form">
+                <Select {...register('annuityFormCode')}>
+                  <option value="">Choose a form</option>
+                  {annuityRead.forms.map((f) => (
+                    <option key={f.formCode} value={f.formCode}>
+                      {f.guaranteeYears ? `For life, at least ${f.guaranteeYears} years` : 'For life'}
+                      {f.joint ? `, joint ${f.survivorPercent}%` : ''}
+                      {Number(f.escalationPercent) > 0 ? `, rising ${f.escalationPercent}% a year` : ''}
+                      {` (${f.formCode})`}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+              <FormField label="Income paid">
+                <Select {...register('annuityFrequency')}>
+                  <option value="">Choose how often</option>
+                  {annuityRead.frequencies.map((f) => (
+                    <option key={f.frequency} value={f.frequency}>
+                      {{ MONTHLY: 'Monthly', QUARTERLY: 'Quarterly', SEMI_ANNUAL: 'Every six months', ANNUAL: 'Annually' }[f.frequency] ?? f.frequency}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+            </div>
+          )}
+
           {/* A term account: what is wanted at maturity, or the contribution -- either one, and the other follows. */}
           {isTermAccount && termAccountTerms && (
             <div className="grid grid-cols-2 gap-4">
@@ -441,7 +620,7 @@ export function QuotationCalculatorPage() {
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <FormField
               label={isFuneral ? "Sum assured (the main member's benefit on the plan)"
-                : isTermAccount ? 'Contribution per payment' : 'Sum assured or amount'}
+                : isTermAccount ? 'Contribution per payment' : isAnnuity ? 'Purchase price' : 'Sum assured or amount'}
               error={amountError}
               hint={isTermAccount && leads === 'target' && (watch('sumAssuredAmount') ?? '').trim() !== ''
                 ? 'Worked out from the amount wanted at maturity.'
@@ -463,7 +642,7 @@ export function QuotationCalculatorPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            {!isFuneral && (
+            {!isFuneral && !isAnnuity && (
               <>
                 <FormField label="Term (months)" hint={termHint} error={termError}>
                   <Input placeholder="120" readOnly={fixedTermMonths != null} {...register('requestedTermMonths')} />
@@ -476,6 +655,7 @@ export function QuotationCalculatorPage() {
                 </FormField>
               </>
             )}
+            {!isAnnuity && (
             <FormField
               label="Premium frequency"
               hint={isDeposit ? 'Paid once — a fixed-term deposit takes no recurring premium.' : undefined}
@@ -494,6 +674,7 @@ export function QuotationCalculatorPage() {
                 ))}
               </Select>
             </FormField>
+            )}
             <FormField label="Cover from" hint="Blank means today.">
               <Controller
                 control={control}
@@ -521,6 +702,16 @@ export function QuotationCalculatorPage() {
           prospect={who === 'PROSPECT' ? prospect : undefined}
           funeral={funeral}
           onQuoteState={setQuoteState}
+          onResult={setResult}
+          annuity={isAnnuity
+            ? {
+                formCode: annuityFormCode,
+                frequency: annuityFrequency,
+                annuitantPartyId: who === 'CLIENT' ? applicantPartyId : '',
+                dateOfBirth: rating.dateOfBirth ?? null,
+                sex: rating.sex ?? null,
+              }
+            : undefined}
           termAccount={
             isTermAccount
               ? {
@@ -539,7 +730,8 @@ export function QuotationCalculatorPage() {
             about -- and it says why when it is not. */}
         {/* Pinned to the foot of the column, so on a short screen the next step is in view while the quotation
             above it scrolls. */}
-        <div className="lg:sticky lg:bottom-0">
+        {/* In the column's flow, not pinned over it: pinned, it covered the quotation's own figures. */}
+        <div>
         {step === 'quote' ? (
           <div className="space-y-2 rounded-xl border border-border bg-surface p-4 shadow-card">
             <Button
@@ -552,6 +744,20 @@ export function QuotationCalculatorPage() {
               {who === 'CLIENT' ? 'Proceed to proposal' : 'Proceed to onboarding'}
             </Button>
             <p className="text-xs text-muted-foreground">{proceedHint}</p>
+            {result && quoteState === 'quoted' && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => document.getElementById('quotation-insights')?.scrollIntoView({
+                  behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+                  block: 'start',
+                })}
+              >
+                <ChartColumn className="size-4" aria-hidden />
+                See it over time, and compare options
+              </Button>
+            )}
           </div>
         ) : (
           <ConfirmAct
@@ -583,9 +789,16 @@ export function QuotationCalculatorPage() {
         </div>
         </div>
 
-        <div className="min-w-0 lg:col-start-1">
-          <WhatHappensNext />
-        </div>
+      </div>
+
+      {/* The quotation over time and its alternatives, at full width once there is an answer to draw (2026-10-23). */}
+      <div className="space-y-5 px-6 pb-8">
+        {result && quoteState === 'quoted' && (
+          <section id="quotation-insights" aria-label="The quotation over time" className="scroll-mt-[calc(var(--pagebar-h,0px)+1rem)]">
+            <QuotationInsights result={result} alternatives={alternatives} />
+          </section>
+        )}
+        <WhatHappensNext />
       </div>
     </>
   );

@@ -15,6 +15,14 @@ import java.util.List;
  * @param premiumsLastYear the same for the previous calendar year
  * @param currentMonth the month in progress, so the console draws it as "to date" rather than as a complete month
  * @param recentActivity this module's latest events, newest first -- what happened, never who; empty when unreadable
+ * @param period the months the ranged figures below cover, and the months they are compared with (2026-10-23)
+ * @param collected premiums collected over the period, TZS
+ * @param collectedBefore the same over the comparison months
+ * @param collectedSeries one point per month of the period, every month present (zero when nothing was collected)
+ * @param collectedCompareSeries the comparison months, in the same order
+ * @param collectedByProductLine the period's collections per product category, largest first, with each one's share
+ * @param newPolicies policies issued in the period
+ * @param outstanding everything owed as at today in TZS, every aging band together
  */
 public record FinanceDashboardView(
     String premiumsMonth, Money premiumsCollected, String premiumsChangePercent,
@@ -23,7 +31,11 @@ public record FinanceDashboardView(
     Long journalsAwaitingApproval, Long receiptsOverdue, Long transfersAwaiting, Long arrearsAtLapse,
     List<MonthPoint> premiumsThisYear, List<MonthPoint> premiumsLastYear, String currentMonth,
     List<ReceivablesAging> receivables,
-    List<ActivityItem> recentActivity) {
+    List<ActivityItem> recentActivity,
+    Period period, Money collected, Money collectedBefore, String collectedChangePercent,
+    List<MonthPoint> collectedSeries, List<MonthPoint> collectedCompareSeries, List<Share> collectedByProductLine,
+    Long newPolicies, Long newPoliciesBefore, String newPoliciesChangePercent, List<CountPoint> newPoliciesSeries,
+    Money outstanding) {
 
     public record MonthPoint(String month, Money amount) {}
 
