@@ -2,7 +2,7 @@ import { useId, useRef, useState, type KeyboardEvent, type MouseEvent } from 're
 import { cn } from '@/lib/cn';
 import { ChartTip } from './ChartTip';
 import { useChartWidth } from './useChartWidth';
-import { axisLabel, FILL, labelEvery, niceMax, STROKE, ticks, type ChartColor } from './chartScale';
+import { axisLabel, FILL, labelEvery, niceMax, showsLabel, STROKE, ticks, type ChartColor } from './chartScale';
 
 export interface Category {
   key: string;
@@ -129,7 +129,7 @@ export function TrendChart({
           </g>
         ))}
         {categories.map((c, i) =>
-          i % every === 0 || i === n - 1 ? (
+          showsLabel(i, n, every) ? (
             <text key={c.key} x={x(i)} y={H - 6} textAnchor="middle" className="fill-muted-foreground text-xs">
               {c.tick}
             </text>

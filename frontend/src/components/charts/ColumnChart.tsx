@@ -2,7 +2,7 @@ import { useRef, useState, type KeyboardEvent } from 'react';
 import { cn } from '@/lib/cn';
 import { ChartTip } from './ChartTip';
 import { useChartWidth } from './useChartWidth';
-import { axisLabel, FILL, labelEvery, niceMax, STROKE, ticks, type ChartColor } from './chartScale';
+import { axisLabel, FILL, labelEvery, niceMax, showsLabel, STROKE, ticks, type ChartColor } from './chartScale';
 import type { Category } from './TrendChart';
 
 export interface ColumnSeries {
@@ -122,7 +122,7 @@ export function ColumnChart({
                   />
                 );
               })}
-              {(i % every === 0 || i === n - 1) && (
+              {(showsLabel(i, n, every)) && (
                 <text x={centre} y={H - 6} textAnchor="middle" className="fill-muted-foreground text-xs">
                   {c.tick}
                 </text>

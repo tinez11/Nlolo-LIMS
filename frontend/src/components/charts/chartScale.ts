@@ -86,3 +86,9 @@ export function monthLong(month: string): string {
 export function labelEvery(count: number): number {
   return count > 12 ? Math.ceil(count / 8) : 1;
 }
+
+/** Whether the label at {@code i} of {@code count} is drawn: every {@code every}th, the last, and none crowding the last. */
+export function showsLabel(i: number, count: number, every: number): boolean {
+  if (i === count - 1) return true;
+  return i % every === 0 && count - 1 - i >= Math.ceil(every / 2);
+}

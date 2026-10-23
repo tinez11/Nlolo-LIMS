@@ -113,7 +113,9 @@ export function QuotationCalculatorPage() {
     );
     return () => { live = false; };
   }, [isAnnuity, productId, productVersionId]);
-  const annuityRead = annuityTerms?.versionId === productVersionId ? annuityTerms.terms : null;
+  const annuityTermsRead = annuityTerms?.versionId === productVersionId ? annuityTerms.terms : null;
+  // Single-life forms only: the calculator asks for one life, and a joint form priced without its second life is a refusal.
+  const annuityRead = annuityTermsRead ? { ...annuityTermsRead, forms: annuityTermsRead.forms.filter((f) => !f.joint) } : null;
 
   // The server's answer, kept here to be drawn over time below the form and priced against its alternatives.
   const [result, setResult] = useState<QuoteResult | null>(null);
@@ -367,21 +369,25 @@ export function QuotationCalculatorPage() {
       }));
     }
     if (result.kind === 'annuity' && annuityRead) {
-      const forms = annuityRead.forms.slice(0, 3);
-      return forms.map((form) => ({
-        key: `ann-${asked}-${form.formCode}-${result.purchasePrice}-${annuityFrequency}-${rating.dateOfBirth}`,
-        label: form.guaranteeYears ? `Paid for life, at least ${form.guaranteeYears} years` : 'Paid for life',
-        current: form.formCode === annuityFormCode,
+      // What a smaller or larger purchase would pay -- the question a retiring customer asks first.
+      const base = Number(result.purchasePrice);
+      return [0.5, 1, 2].map((f) => {
+        const price = f === 1 ? base : round(base * f);
+        return {
+        key: `ann-${asked}-${annuityFormCode}-${price}-${annuityFrequency}-${rating.dateOfBirth}`,
+        label: `A purchase of ${formatMoney({ amount: String(price), currencyCode: currency })}`,
+        current: f === 1,
         price: () => quoteAnnuity({
           productVersionId,
-          formCode: form.formCode,
+          formCode: annuityFormCode,
           frequency: annuityFrequency as AnnuityQuoteView['frequency'],
-          purchasePrice: Number(result.purchasePrice),
+          purchasePrice: price,
           ...(who === 'CLIENT'
             ? { annuitantPartyId: applicantPartyId }
             : { annuitantDateOfBirth: rating.dateOfBirth ?? null, annuitantSex: (rating.sex || null) as 'FEMALE' | 'MALE' | null }),
         }).then((q) => ({ value: formatMoney(q.instalment), note: `${q.frequency === 'MONTHLY' ? 'a month' : q.frequency.toLowerCase()}, for life` })),
-      }));
+        };
+      });
     }
     return [];
   })();
@@ -548,12 +554,12 @@ export function QuotationCalculatorPage() {
           )}
 
           {/* An immediate annuity: the form and how often it pays; the amount below is the purchase price. */}
-          {isAnnuity && annuityTerms && !annuityRead && (
+          {isAnnuity && annuityTerms && (!annuityRead || annuityRead.forms.length === 0) && (
             <p role="alert" className="text-xs text-status-danger-fg">
-              This product&apos;s current version has no annuity forms set up, so it cannot be quoted. Ask the office.
+              This product's current version has no single-life annuity form, so it cannot be quoted here. Ask the office.
             </p>
           )}
-          {isAnnuity && annuityRead && (
+          {isAnnuity && annuityRead && annuityRead.forms.length > 0 && (
             <div className="grid grid-cols-2 gap-4">
               <FormField label="Annuity form">
                 <Select {...register('annuityFormCode')}>
