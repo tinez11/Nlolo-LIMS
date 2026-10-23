@@ -126,10 +126,12 @@ function Headline({
         {suffix && <span className="text-sm text-muted-foreground">{suffix}</span>}
       </p>
       {caption && <p className="mt-1 text-xs text-subtle-foreground">{caption}</p>}
-      {sentence && <p className="mt-2 text-sm">{sentence}</p>}
+      {sentence && <p className="mt-1.5 text-sm">{sentence}</p>}
       {parts.length > 1 && (
-        <div className="mt-3 space-y-2">
-          <div className="flex h-3 gap-0.5 overflow-hidden rounded-full" aria-hidden>
+        <div className="mt-4 space-y-2.5 border-t border-white/25 pt-3">
+          {/* The bar only where every part is big enough to see; a 2% sliver reads as a broken bar, not a share. */}
+          {parts.every((p) => Number(p.amount.amount) / whole >= 0.04) && (
+          <div className="flex h-2.5 gap-0.5 overflow-hidden rounded-full" aria-hidden>
             {parts.map((p, i) => (
               <span
                 key={p.label}
@@ -138,7 +140,8 @@ function Headline({
               />
             ))}
           </div>
-          <dl className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-muted-foreground">
+          )}
+          <dl className="flex flex-wrap gap-x-6 gap-y-1.5 text-xs text-muted-foreground">
             {parts.map((p) => (
               <div key={p.label}>
                 <dt className="flex items-center gap-1.5">
@@ -859,10 +862,14 @@ function TermAccountQuotation({
   const payoutLeads = !contributionLeads && !!q.maturityValue;
   // For a customer: the answer in a sentence, and what the payout is made of -- the server's three totals.
   const years = q.termMonths != null ? formatMonths(q.termMonths) : 'the term';
-  const sentence = rich && q.amount && q.maturityValue && q.interest
-    ? `Paying ${formatMoney(q.amount)}${frequency ? ` ${frequency}` : ''} for ${years} pays out ${formatMoney(q.maturityValue)}`
-      + `${q.maturityDate ? ` on ${formatDate(q.maturityDate)}` : ''}. Interest adds ${formatMoney(q.interest)}.`
-    : undefined;
+  // One short line that says only what the big figure does not: the other half of the answer. The breakdown below it
+  // carries the amounts, so the line never repeats them (the user, 2026-10-23: "hard to read").
+  const on = q.maturityDate ? ` on ${formatDate(q.maturityDate)}` : '';
+  const sentence = !rich || !q.amount || !q.maturityValue
+    ? undefined
+    : contributionLeads
+      ? `Pays out ${formatMoney(q.maturityValue)}${on}.`
+      : `From ${formatMoney(q.amount)}${frequency ? ` ${frequency}` : ''} for ${years}.`;
   const split = rich && t.paidIn && q.interest
     ? [
         { label: 'Paid in', amount: t.paidIn, tone: 'paper' as const },
@@ -877,7 +884,7 @@ function TermAccountQuotation({
         label="Contribution needed"
         value={formatMoney(q.amount!)}
         suffix={frequency}
-        caption={onUseContribution ? 'Filled in as the contribution above.' : undefined}
+        caption={onUseContribution && !rich ? 'Filled in as the contribution above.' : undefined}
         sentence={sentence}
         split={split}
       />
@@ -886,7 +893,7 @@ function TermAccountQuotation({
       <Headline
         label="Paid out at maturity"
         value={formatMoney(q.maturityValue!)}
-        caption={q.maturityDate ? `On ${q.maturityDate}` : undefined}
+        caption={q.maturityDate && !rich ? `On ${q.maturityDate}` : undefined}
         sentence={sentence}
         split={split}
       />
@@ -903,7 +910,7 @@ function TermAccountQuotation({
         <Row label="Paid out at maturity" value={q.maturityValue ? formatMoney(q.maturityValue) : '—'} />
       )}
       {q.termMonths != null && <Row label="Term" value={formatMonths(q.termMonths)} />}
-      {q.maturityDate && <Row label="Matures on" value={q.maturityDate} />}
+      {q.maturityDate && <Row label="Matures on" value={formatDate(q.maturityDate)} />}
       <div className="px-4 py-2">
         <p className="text-xs text-muted-foreground">
           Nothing can be withdrawn or surrendered before it matures; then the whole balance is paid out. The figure at

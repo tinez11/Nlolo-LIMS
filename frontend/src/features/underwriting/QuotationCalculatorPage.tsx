@@ -730,7 +730,8 @@ export function QuotationCalculatorPage() {
             about -- and it says why when it is not. */}
         {/* Pinned to the foot of the column, so on a short screen the next step is in view while the quotation
             above it scrolls. */}
-        <div className="lg:sticky lg:bottom-0">
+        {/* In the column's flow, not pinned over it: pinned, it covered the quotation's own figures. */}
+        <div>
         {step === 'quote' ? (
           <div className="space-y-2 rounded-xl border border-border bg-surface p-4 shadow-card">
             <Button
