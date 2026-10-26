@@ -1,0 +1,56 @@
+openapi: 3.1.0
+info:
+  title: Identity & Access API
+  version: "1.0.0"
+  description: >-
+    Staff users, roles and permissions held by the platform (2026-10-26). Keycloak keeps the login; what a staff
+    member may see and do is decided here, read on every request, so a change applies at once.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /me/access:
+    get:
+      summary: What the signed-in staff member may see and do
+      description: >-
+        The console reads this to draw only what the person can use. The server checks every act regardless. A
+        deactivated person holds no permission. primaryRole is the one role the badge shows under their name.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MyAccess' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+components:
+  securitySchemes:
+    staffAuth:
+      type: openIdConnect
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/staff/.well-known/openid-configuration
+  schemas:
+    RoleRef:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string, example: UNDERWRITER }
+        name: { type: string, example: Underwriter }
+    MyAccess:
+      type: object
+      required: [userId, displayName, active, roles, primaryRole, permissions]
+      properties:
+        userId: { type: string, format: uuid }
+        displayName: { type: [string, "null"] }
+        active: { type: boolean }
+        roles:
+          type: array
+          items: { $ref: '#/components/schemas/RoleRef' }
+        primaryRole:
+          anyOf:
+            - { $ref: '#/components/schemas/RoleRef' }
+            - { type: "null" }
+        permissions:
+          type: array
+          description: Permission codes, e.g. underwriting.decide.
+          items: { type: string }

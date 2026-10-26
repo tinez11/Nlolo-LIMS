@@ -78,6 +78,10 @@ spring:
       connection-timeout: ${SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT_MS:10000}
 
 app:
+  # Staff permissions (2026-10-26): "platform" reads the iam tables, where administrators manage roles; "token" reads
+  # the Keycloak roles on the token through their built-in definitions -- only for tests with no iam schema.
+  access:
+    source: ${APP_ACCESS_SOURCE:platform}
   # Customer portal (2026-10-08): staff invite a client, and the platform creates the client's login in the customers
   # realm through the lifeplatform-admin service account (manage-users there only). The secret is never committed for a
   # real environment; the default is the dev realm's own placeholder.
