@@ -8,6 +8,7 @@ import {
 } from './commission';
 import { selectAgentOfRecord } from './policies';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * Distribution (agents/commissions) e2e coverage against the real backend.
@@ -116,7 +117,7 @@ test.describe('staff distribution', () => {
     await page.goto(`/staff/agents/${agentId}`);
     await expect(page.getByRole('heading', { name: /E2E-LIC-/ })).toBeVisible();
 
-    await page.getByLabel('Product').selectOption({ label: optionLabel });
+    await chooseProduct(page, optionLabel);
     await expect(page.getByText('No plan applies to this agent for this product yet.')).toBeVisible();
     // canManage is false for this identity -- no inline create-plan form.
     await expect(page.getByText('Create a plan for this product')).not.toBeVisible();
@@ -133,7 +134,7 @@ test.describe('staff distribution', () => {
     const { optionLabel } = await asAdmin(browser, createRealActiveProduct);
 
     await financePage.goto(`/staff/agents/${agentId}`);
-    await financePage.getByLabel('Product').selectOption({ label: optionLabel });
+    await chooseProduct(financePage, optionLabel);
     await expect(
       financePage.getByText('No plan applies to this agent for this product yet.'),
     ).toBeVisible();
@@ -155,7 +156,7 @@ test.describe('staff distribution', () => {
     // Reload and reselect from scratch -- proves this is a real Postgres row,
     // not the store's in-memory state surviving a soft navigation.
     await financePage.reload();
-    await financePage.getByLabel('Product').selectOption({ label: optionLabel });
+    await chooseProduct(financePage, optionLabel);
     await expect(financePage.getByText('Active plan', { exact: true })).toBeVisible({ timeout: 15_000 });
 
     await financeContext.close();
@@ -176,7 +177,7 @@ test.describe('staff distribution', () => {
     const { optionLabel } = await asAdmin(browser, createRealActiveProduct);
 
     await financePage.goto(`/staff/agents/${agentId}`);
-    await financePage.getByLabel('Product').selectOption({ label: optionLabel });
+    await chooseProduct(financePage, optionLabel);
     await expect(
       financePage.getByText('No plan applies to this agent for this product yet.'),
     ).toBeVisible();

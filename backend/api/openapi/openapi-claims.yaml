@@ -86,6 +86,14 @@ paths:
           required: false
           description: Free-text, case-insensitive substring match against the claim's policyNumber.
           schema: { type: string }
+        - name: productId
+          in: query
+          description: Only claims on policies sold under this product.
+          schema: { type: string, format: uuid }
+        - name: productCategory
+          in: query
+          description: Only claims on policies sold under a product of this category (a ProductCategory code).
+          schema: { type: string }
         - name: page
           in: query
           required: false

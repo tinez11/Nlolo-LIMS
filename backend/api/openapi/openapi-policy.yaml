@@ -112,6 +112,14 @@ paths:
           in: query
           description: Free-text, case-insensitive substring match against policyNumber.
           schema: { type: string }
+        - name: productId
+          in: query
+          description: Only policies sold under this product.
+          schema: { type: string, format: uuid }
+        - name: productCategory
+          in: query
+          description: Only policies sold under a product of this category (a ProductCategory code).
+          schema: { type: string }
         - name: page
           in: query
           schema: { type: integer, default: 0 }

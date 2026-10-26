@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import { dmy, todayIso } from './dates';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * Issues an in-force policy by hand (MIGRATION basis) against a product chosen by its label, and lands on its
@@ -14,7 +15,7 @@ export async function issuePolicyAgainst(page: Page, productLabel: string, reaso
   const caseId = await caseAwaitingManualIssue(page);
   await page.goto('/staff/policies/new');
   await selectUnderwritingCase(page, caseId);
-  await page.getByLabel('Product').selectOption({ label: productLabel });
+  await chooseProduct(page, productLabel);
   await expect(page.getByText('Resolving product version…')).not.toBeVisible();
   await page.getByLabel('Sum assured').fill('2000000.00');
   await page.getByLabel('Premium', { exact: true }).fill('800.00');

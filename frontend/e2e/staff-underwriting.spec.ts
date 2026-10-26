@@ -2,6 +2,7 @@ import { expect, request as apiRequest, test, type Browser, type Page } from '@p
 import { staffToken } from './creditLife';
 import { dmy, todayIso } from './dates';
 import { asSeniorOnSameCase, decideAsSenior } from './underwriting';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * Underwriting domain e2e coverage against the real backend.
@@ -47,8 +48,9 @@ test.describe('staff underwriting', () => {
   });
 
   test('the real seeded product populates the picker', async ({ page }) => {
-    const select = page.getByLabel('Product');
-    await expect(select.locator('option', { hasText: 'Demo Term Life' })).toHaveCount(1);
+    // Category first: the seeded term product sits under Term life, with its description or the lack of one.
+    await page.getByRole('group', { name: 'Product category' }).getByRole('button', { name: /^Term life/ }).click();
+    await expect(page.getByRole('button', { name: 'Demo Term Life (DEMO-TERM-01)', exact: true })).toHaveCount(1);
   });
 
   /*
@@ -168,7 +170,7 @@ test.describe('staff underwriting', () => {
     await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
     await page.getByPlaceholder('Type a name to search').fill('Amina');
     await page.getByRole('option', { name: 'Amina Owner' }).click();
-    await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
+    await chooseProduct(page, 'Demo Term Life (DEMO-TERM-01)');
     await expect(page.getByText('Resolving product version…')).not.toBeVisible();
     // Deliberately an odd figure. Amina carries many policies from other specs, and this is
     // what identifies the one THIS test caused -- the policy number is server-generated, and
@@ -452,7 +454,7 @@ async function openCaseForAmina(page: Page) {
   await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
   await page.getByPlaceholder('Type a name to search').fill('Amina');
   await page.getByRole('option', { name: 'Amina Owner' }).click();
-  await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
+  await chooseProduct(page, 'Demo Term Life (DEMO-TERM-01)');
   await expect(page.getByText('Resolving product version…')).not.toBeVisible();
   await page.getByLabel('Sum assured').fill('1500000.00');
   await page.getByRole('button', { name: 'Open case' }).click();

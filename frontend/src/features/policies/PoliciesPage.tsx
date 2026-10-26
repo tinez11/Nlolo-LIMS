@@ -22,6 +22,8 @@ import { usePolicyStore } from '@/store/policyStore';
 import { PolicyDrawer } from './PolicyDrawer';
 import { FilterChip } from '@/components/FilterChip';
 import { PolicyProduct } from '@/components/PolicyProduct';
+import { ProductFilter } from '@/components/ProductFilter';
+import { useProductStore } from '@/store/productStore';
 
 /**
  * `GET /policies` is one of only four paged endpoints, so this screen gets the
@@ -54,6 +56,13 @@ export function PoliciesPage({
   // somewhere real to send the reader. Not exposed as a control on this page: nobody
   // types a party UUID, they arrive here holding one.
   const policyholderPartyId = params.get('policyholderPartyId') ?? '';
+  const productCategory = params.get('productCategory') ?? '';
+  const productId = params.get('productId') ?? '';
+  const products = useProductStore((s) => s.list);
+  const loadProducts = useProductStore((s) => s.loadList);
+  useEffect(() => {
+    if (products.data === null) void loadProducts();
+  }, [products.data, loadProducts]);
   const page = Math.max(0, Number(params.get('page') ?? '0') || 0);
 
   const list = usePolicyStore((s) => s.list);
@@ -64,10 +73,12 @@ export function PoliciesPage({
       ...(status ? { status } : {}),
       ...(qParam ? { q: qParam } : {}),
       ...(policyholderPartyId ? { policyholderPartyId } : {}),
+      ...(productCategory ? { productCategory } : {}),
+      ...(productId ? { productId } : {}),
       page,
       pageSize: DEFAULT_PAGE_SIZE,
     });
-  }, [loadList, status, qParam, policyholderPartyId, page]);
+  }, [loadList, status, qParam, policyholderPartyId, productCategory, productId, page]);
 
   // Keeps the input in sync if the URL changes from outside this input (back
   // button, a status-chip click that also clears q via `update` below).
@@ -85,8 +96,20 @@ export function PoliciesPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qInput]);
 
-  function update(next: { status?: PolicyStatus | undefined; q?: string | undefined; page?: number }) {
+  function update(next: {
+    status?: PolicyStatus | undefined;
+    q?: string | undefined;
+    product?: { category: string; productId: string };
+    page?: number;
+  }) {
     const merged = new URLSearchParams(params);
+    if (next.product) {
+      for (const [key, value] of [['productCategory', next.product.category], ['productId', next.product.productId]] as const) {
+        if (value) merged.set(key, value);
+        else merged.delete(key);
+      }
+      merged.delete('page');
+    }
     if ('status' in next) {
       if (next.status) merged.set('status', next.status);
       else merged.delete('status');
@@ -121,7 +144,7 @@ export function PoliciesPage({
     hint:
       list.status === 'error' && total === null
         ? 'could not load'
-        : status
+        : status || productCategory || productId
           ? 'matching this filter'
           : 'in this tenant',
   };
@@ -195,6 +218,19 @@ export function PoliciesPage({
 
     const rows = list.data?.items ?? [];
     if (rows.length === 0 && list.status === 'success') {
+      if (!status && (productCategory || productId)) {
+        return (
+          <EmptyState
+            title="No policies under this product"
+            description="Nothing in this tenant was sold under the product or category chosen above."
+            action={
+              <Button size="sm" onClick={() => update({ product: { category: '', productId: '' } })}>
+                Clear filter
+              </Button>
+            }
+          />
+        );
+      }
       return (
         <EmptyState
           title={status ? `No ${status.toLowerCase()} policies` : 'No policies yet'}
@@ -296,6 +332,16 @@ export function PoliciesPage({
                 className="pl-7 pr-2.5"
               />
             </div>
+          </div>
+          {/* Category, then product (2026-10-26): its own row, so the status chips keep theirs. */}
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2">
+            <ProductFilter
+              compact
+              products={products.data ?? []}
+              category={productCategory}
+              productId={productId}
+              onChange={(product) => update({ product })}
+            />
           </div>
 
           {renderBody()}

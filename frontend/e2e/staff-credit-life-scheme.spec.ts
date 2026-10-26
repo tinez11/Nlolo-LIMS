@@ -8,6 +8,7 @@ import {
   staffToken,
 } from './creditLife';
 import { dmy } from './dates';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * A lender's month on a credit-life scheme, in a browser, against the real stack.
@@ -262,7 +263,7 @@ test.describe('staff credit-life scheme', () => {
 
     // Only CREDIT_LIFE products are offered. A term-life product here would be a 409 after the
     // form, which is the version of this that wastes somebody's afternoon.
-    await page.getByLabel('Product').selectOption({ label: fixtures.productLabel });
+    await chooseProduct(page, fixtures.productLabel);
 
     await page.getByLabel('Premium rate (% of each loan)').fill('0.5');
     await page.getByLabel('Free cover limit (optional)').fill('600000000.00');

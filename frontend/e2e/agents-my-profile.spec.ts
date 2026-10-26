@@ -1,6 +1,7 @@
 import { expect, test } from './agentSession';
 import { dmy } from './dates';
 import { registerIndividualAsAgent } from './clients';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * Agents-realm e2e coverage against the real backend, as `agent.senior`
@@ -24,7 +25,7 @@ test.describe('agents my profile', () => {
     // Commission plan panel: selecting a product drives a real
     // GET /agents/{agentId}/commission-plan?productId=... round trip.
     await expect(page.getByText('Commission plan')).toBeVisible();
-    await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
+    await chooseProduct(page, 'Demo Term Life (DEMO-TERM-01)');
     await expect(page.getByText('Resolving plan')).not.toBeVisible({ timeout: 15_000 });
 
     // No "create plan" / "request payout" affordance anywhere -- those are

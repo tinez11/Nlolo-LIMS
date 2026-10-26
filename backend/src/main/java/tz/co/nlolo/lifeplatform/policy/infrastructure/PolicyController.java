@@ -188,6 +188,8 @@ public class PolicyController {
             @RequestParam(required = false) UUID relatedPartyId,
             @RequestParam(required = false) PolicyStatus status,
             @RequestParam(required = false) String q,
+            @RequestParam(required = false) UUID productId,
+            @RequestParam(required = false) String productCategory,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int pageSize,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
@@ -214,7 +216,7 @@ public class PolicyController {
         // issuance off a batch of underwriting decisions produces routinely -- can then swap
         // places between page 1 and page 2, showing one twice and hiding the other entirely.
         Page<PolicyView> result = policyApi.searchPolicies(effectivePolicyholderPartyId, effectiveRelatedPartyId,
-            status, agentOfRecordIds, q,
+            status, agentOfRecordIds, q, productId, productCategory,
             PageRequest.of(page, Math.min(pageSize, 100),
                 Sort.by(Sort.Order.desc("createdAt"), Sort.Order.asc("policyNumber"))));
         return ResponseEntity.ok(PolicySearchResponse.from(result));

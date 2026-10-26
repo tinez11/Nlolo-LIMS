@@ -10,6 +10,7 @@ import { FormField } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyPicker } from '@/components/PartyPicker';
+import { ProductChooser } from '@/components/ProductChooser';
 import { NoAccess } from '@/components/states';
 import { canUnderwriteGroupSchemes, readIdentity } from '@/auth/claims';
 import { useAuth } from 'react-oidc-context';
@@ -221,16 +222,13 @@ export function IssueGroupSchemePage() {
               before setting up a scheme.
             </p>
           ) : (
-            <Select
-              {...register('productId')}
-            >
-              <option value="">Select a group product</option>
-              {groupProducts.map((p) => (
-                <option key={p.productId} value={p.productId}>
-                  {p.productName} ({p.productCode})
-                </option>
-              ))}
-            </Select>
+            <Controller
+              control={control}
+              name="productId"
+              render={({ field }) => (
+                <ProductChooser products={groupProducts} value={field.value} onChange={(id) => field.onChange(id)} />
+              )}
+            />
           )}
         </FormField>
         </div>

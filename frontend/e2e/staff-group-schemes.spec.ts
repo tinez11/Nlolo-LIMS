@@ -4,6 +4,7 @@ import { dmy, todayIso } from './dates';
 import { asAdmin } from './admin';
 import { fillPolicyNumberManually } from './guards';
 import { acceptProposedScheme, createGroupProduct, pickParty } from './groupSchemes';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * Group business, end to end against the real stack.
@@ -44,7 +45,7 @@ test.describe('staff group schemes', () => {
     await expect(page.getByRole('heading', { name: 'Propose a group scheme' })).toBeVisible();
 
     await pickParty(page, 'Search for the employer by name', 'Amina', 'Amina Owner');
-    await page.getByLabel('Product').selectOption({ label: productLabel });
+    await chooseProduct(page, productLabel);
 
     await page.getByLabel('Benefit per member').fill(FLAT_BENEFIT);
 
@@ -199,7 +200,7 @@ test.describe('staff group schemes', () => {
 
     await page.goto('/staff/group-schemes/new');
     await pickParty(page, 'Search for the employer by name', 'Amina', 'Amina Owner');
-    await page.getByLabel('Product').selectOption({ label: productLabel });
+    await chooseProduct(page, productLabel);
 
     // 4x salary against a 100,000,000 limit. A member on 30,000,000 is worth
     // 120,000,000 and is therefore 20,000,000 over it.
@@ -258,7 +259,7 @@ test.describe('staff group schemes', () => {
 
     await page.goto('/staff/group-schemes/new');
     await pickParty(page, 'Search for the employer by name', 'Amina', 'Amina Owner');
-    await page.getByLabel('Product').selectOption({ label: productLabel });
+    await chooseProduct(page, productLabel);
     await page.getByLabel('Benefit per member').fill(FLAT_BENEFIT);
     await pickParty(page, 'Search employees by name', 'Amina', 'Amina Owner');
     await page.getByRole('button', { name: 'Add member' }).click();

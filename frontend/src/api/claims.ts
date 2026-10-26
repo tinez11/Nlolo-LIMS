@@ -25,6 +25,9 @@ export interface ClaimSearchParams {
   status?: ClaimStatus;
   claimantPartyId?: string;
   q?: string;
+  /** Only claims on policies sold under this product, or under a product of this category (2026-10-26). */
+  productId?: string;
+  productCategory?: string;
   page?: number;
   pageSize?: number;
 }
@@ -42,6 +45,8 @@ export async function searchClaims(params: ClaimSearchParams = {}): Promise<Page
       ...(params.status ? { status: params.status } : {}),
       ...(params.claimantPartyId ? { claimantPartyId: params.claimantPartyId } : {}),
       ...(params.q ? { q: params.q } : {}),
+      ...(params.productId ? { productId: params.productId } : {}),
+      ...(params.productCategory ? { productCategory: params.productCategory } : {}),
       page,
       pageSize,
     },

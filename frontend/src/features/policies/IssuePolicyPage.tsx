@@ -14,6 +14,7 @@ import {
 import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
+import { ProductChooser } from '@/components/ProductChooser';
 import { PartyName } from '@/components/PartyName';
 import { AgentPicker } from '@/components/AgentPicker';
 import { UnderwritingCasePicker } from '@/components/UnderwritingCasePicker';
@@ -388,16 +389,18 @@ export function IssuePolicyPage() {
           ) : products.status === 'error' ? (
             <p className="text-xs text-status-danger-fg">Could not load products.</p>
           ) : (
-            <Select
-              {...register('productId')}
-            >
-              <option value="">Select a product</option>
-              {(products.data ?? []).filter(isSingleLifeProduct).map((p) => (
-                <option key={p.productId} value={p.productId}>
-                  {p.productName} ({p.productCode})
-                </option>
-              ))}
-            </Select>
+            <Controller
+              control={control}
+              name="productId"
+              render={({ field }) => (
+                <ProductChooser
+                  products={products.data ?? []}
+                  allow={isSingleLifeProduct}
+                  value={field.value}
+                  onChange={(id) => field.onChange(id)}
+                />
+              )}
+            />
           )}
           {productId && isInitialLoad(snapshot) && (
             <p className="mt-1 text-xs text-muted-foreground">Resolving product version…</p>

@@ -237,6 +237,19 @@ public interface ProductApi {
     /** Offer it online or not, and say what it is. Refused (422) when offered with nothing said about it. */
     OnlineListingView describeOnline(UUID productId, boolean available, String summary, List<String> benefits);
 
+    /**
+     * What the product is, for staff choosing it (V35, 2026-10-26). Optional: blank clears it. Draft or active alike --
+     * describing a product changes no price and no term.
+     */
+    ProductSummaryView describeProduct(UUID productId, String description);
+
+    /**
+     * The description a version was just published with: kept on the newest version as its history and made the
+     * product's own. {@code null} means the publisher wrote nothing -- the version then keeps the product's current
+     * description, which is unchanged. Blank clears the product's.
+     */
+    void describeNewestVersion(UUID productId, String description);
+
     /** The published products offered online, by name -- what a customer may browse, quote and ask for. */
     List<OnlineListingView> listOnlineProducts();
 

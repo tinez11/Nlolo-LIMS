@@ -5,6 +5,7 @@ import type { ChartOfAccountView } from '@/api/types';
 import type { ReportDefinition } from '@/api/reporting';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ProductFilter } from '@/components/ProductFilter';
 import { validateFilters, type ReportFilterState } from './reportParams';
 
 const GROUP_LABELS: Record<string, string> = {
@@ -36,9 +37,8 @@ export function ReportFilterBar({
   // narrowed to a product -- the products report's per-policy register least of all.
   const loadProducts = useProductStore((s) => s.loadList);
   const productList = useProductStore((s) => s.list);
-  const products = [...(productList.data ?? [])].sort((a, b) =>
-    (a.productName ?? '').localeCompare(b.productName ?? ''),
-  );
+  const products = productList.data ?? [];
+  const [category, setCategory] = useState('');
   useEffect(() => {
     void loadProducts();
   }, [loadProducts]);
@@ -117,20 +117,17 @@ export function ReportFilterBar({
             </select>
           </label>
         )}
-        {/* The label names the select without wrapping it. A wrapping label takes its accessible name from
-            everything inside it, options included -- so with hundreds of product names this select answered to
-            "To" and stole the period filter's label. */}
-        <div className="flex flex-col gap-1 text-xs">
-          <label htmlFor="report-productId">Product</label>
-          <select id="report-productId" value={state.productId} onChange={set('productId')} className={SELECT}>
-            <option value="">All products</option>
-            {products.map((p) => (
-              <option key={p.productId} value={p.productId}>
-                {p.productName}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Category first, then product (2026-10-26). The category only narrows the product list here -- a
+            report's query takes a product, not a category. */}
+        <ProductFilter
+          products={products}
+          category={category}
+          productId={state.productId}
+          onChange={(next) => {
+            setCategory(next.category);
+            setState((s) => ({ ...s, productId: next.productId }));
+          }}
+        />
         <label className="flex flex-col gap-1 text-xs" htmlFor="report-clientType">
           Client type
           <select id="report-clientType" value={state.clientType} onChange={set('clientType')} className={SELECT}>

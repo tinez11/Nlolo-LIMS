@@ -2,6 +2,7 @@ import { expect, type Browser, type Page } from '@playwright/test';
 import { asAdmin } from './admin';
 import { fillBasics, publishVersion } from './publishForm';
 import { decideAsSenior } from './underwriting';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * Building a real GROUP_LIFE scheme through the console, for any spec that needs one.
@@ -149,7 +150,7 @@ export async function issueGroupScheme(page: Page, browser: Browser): Promise<st
   await expect(page.getByRole('heading', { name: 'Propose a group scheme' })).toBeVisible();
 
   await pickParty(page, 'Search for the employer by name', 'Amina', 'Amina Owner');
-  await page.getByLabel('Product').selectOption({ label: productLabel });
+  await chooseProduct(page, productLabel);
   await page.getByLabel('Benefit per member').fill(FLAT_BENEFIT);
 
   // Two lives on the opening schedule. The form starts with exactly one row, because a

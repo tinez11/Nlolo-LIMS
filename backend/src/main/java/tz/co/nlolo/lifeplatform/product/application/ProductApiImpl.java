@@ -197,7 +197,8 @@ public class ProductApiImpl implements ProductApi {
         return productVersionRepository.findByTenantIdAndProductIdOrderByCreatedAtDesc(tenantId, productId).stream()
             .map(v -> new ProductVersionSummaryView(v.getProductVersionId(), v.getEffectiveDate(), v.getRetirementDate(),
                 v.getProductVersionId().equals(current), v.getCreatedAt(), v.getCreatedBy(), v.getGracePeriodDays(),
-                v.getExpectedProfitabilityBucket(), v.getMeasurementModelOverride(), v.getSurvivalInvestmentComponentPercent()))
+                v.getExpectedProfitabilityBucket(), v.getMeasurementModelOverride(), v.getSurvivalInvestmentComponentPercent(),
+                v.getDescription()))
             .toList();
     }
 
@@ -1706,6 +1707,35 @@ public class ProductApiImpl implements ProductApi {
     private ProductSummaryView toSummaryView(ProductDefinition p) {
         return new ProductSummaryView(p.getProductId(), p.getProductCode(), p.getProductName(),
             ProductCategory.valueOf(p.getCategory()), ProductStatus.valueOf(p.getStatus()), p.getDefaultCurrency(),
-            PortfolioCode.valueOf(p.getPortfolioCode()));
+            PortfolioCode.valueOf(p.getPortfolioCode()), p.getDescription());
+    }
+
+    @Override
+    @Transactional
+    public ProductSummaryView describeProduct(UUID productId, String description) {
+        UUID tenantId = TenantContext.get();
+        ProductDefinition product = productDefinitionRepository.findById(productId)
+            .filter(p -> p.getTenantId().equals(tenantId))
+            .orElseThrow(() -> new ProductNotFoundException(productId));
+        product.describe(description);
+        return toSummaryView(productDefinitionRepository.save(product));
+    }
+
+    @Override
+    @Transactional
+    public void describeNewestVersion(UUID productId, String description) {
+        UUID tenantId = TenantContext.get();
+        ProductDefinition product = productDefinitionRepository.findById(productId)
+            .filter(p -> p.getTenantId().equals(tenantId))
+            .orElseThrow(() -> new ProductNotFoundException(productId));
+        if (description != null) {
+            product.describe(description);
+            productDefinitionRepository.save(product);
+        }
+        productVersionRepository.findByTenantIdAndProductIdOrderByCreatedAtDesc(tenantId, productId).stream().findFirst()
+            .ifPresent(v -> {
+                v.recordDescription(product.getDescription());
+                productVersionRepository.save(v);
+            });
     }
 }

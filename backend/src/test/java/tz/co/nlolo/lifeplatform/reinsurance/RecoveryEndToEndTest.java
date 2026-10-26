@@ -151,6 +151,7 @@ class RecoveryEndToEndTest {
             "db-migrations/product/V32__account_charges.sql",
             "db-migrations/product/V33__term_account_rate_band.sql",
             "db-migrations/product/V34__version_account_charges.sql",
+            "db-migrations/product/V35__product_description.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",

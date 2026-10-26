@@ -121,6 +121,7 @@ class AgentBookOfBusinessScopingTest {
             "db-migrations/product/V32__account_charges.sql",
             "db-migrations/product/V33__term_account_rate_band.sql",
             "db-migrations/product/V34__version_account_charges.sql",
+            "db-migrations/product/V35__product_description.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -392,6 +393,50 @@ class AgentBookOfBusinessScopingTest {
     }
 
     // ============================================================================================
+    // GET /policies and /claims -- the product chooser's filters (2026-10-26)
+    // ============================================================================================
+
+    @Test
+    void searchPoliciesNarrowsToOneProductOrOneCategory() throws Exception {
+        Book book = buildBook("PROD-POL");
+        Fixture other = buildProductFixture(book.tenantId(), "BOOK-PROD-POL-B");
+        String otherPolicy = issuePolicy(book.tenantId(), other, null);
+
+        mockMvc.perform(get("/policies").param("productId", other.productId().toString())
+                .with(staffOf(book.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].policyNumber").value(otherPolicy));
+        mockMvc.perform(get("/policies").param("productCategory", "TERM_LIFE").with(staffOf(book.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(4));
+        mockMvc.perform(get("/policies").param("productCategory", "WHOLE_LIFE").with(staffOf(book.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(0));
+    }
+
+    @Test
+    void searchClaimsByProductStaysInsideAnAgentsOwnBook() throws Exception {
+        Book book = buildBook("PROD-CLAIM");
+        Fixture other = buildProductFixture(book.tenantId(), "BOOK-PROD-CLAIM-B");
+        String otherPolicy = issuePolicy(book.tenantId(), other, book.subordinate().agentId());
+        UUID otherClaim = registerDeathClaim(book.tenantId(), other.applicantId(), otherPolicy);
+
+        mockMvc.perform(get("/claims").param("productId", other.productId().toString())
+                .with(staffOf(book.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].claimId").value(otherClaim.toString()));
+        // The category takes in both products' claims, but an agent still sees only its own team's two.
+        mockMvc.perform(get("/claims").param("productCategory", "TERM_LIFE")
+                .with(agentOf(book.tenantId(), book.supervisor().partyId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(2));
+        mockMvc.perform(get("/claims").param("productCategory", "WHOLE_LIFE").with(staffOf(book.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(0));
+    }
+
     // GET /claims -- search scoping (joins through policy, claims has no agentOfRecordId itself)
     // ============================================================================================
 

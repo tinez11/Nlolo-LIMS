@@ -14,4 +14,6 @@ public record CreateProductRequest(
     @NotNull ProductCategory category,
     /** The IFRS 17 portfolio (spec §6) -- required for every new product. */
     @NotNull PortfolioCode portfolioCode,
-    @NotBlank String defaultCurrency) {}
+    @NotBlank String defaultCurrency,
+    /** V35, optional: what the product is, for staff choosing it. */
+    @jakarta.validation.constraints.Size(max = 2000) String description) {}

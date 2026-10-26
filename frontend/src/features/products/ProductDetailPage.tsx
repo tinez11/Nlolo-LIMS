@@ -16,6 +16,7 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { useProductStore } from '@/store/productStore';
 import { DraftPortfolioField } from './DraftPortfolioField';
 import { OnlineListingPanel } from './OnlineListingPanel';
+import { ProductDescriptionField } from './ProductDescriptionField';
 import { ProductVersionsPanel } from './ProductVersionsPanel';
 import { PublishVersionForm } from './PublishVersionForm';
 import { Panel } from '@/components/Panel';
@@ -131,7 +132,8 @@ export function ProductDetailPage() {
                   category={product.category ?? 'TERM_LIFE'}
                   portfolioCode={product.portfolioCode}
                   draft={product.status === 'DRAFT'}
-                  onPublished={() => { setPublishOpen(false); setPublished((n) => n + 1); }}
+                  description={product.description}
+                  onPublished={() => { setPublishOpen(false); setPublished((n) => n + 1); void loadList(); }}
                 />
               </div>
             ) : (
@@ -163,6 +165,8 @@ export function ProductDetailPage() {
     return (
       <>
         <Panel title="Product">
+          <ProductDescriptionField productId={productId} description={product.description} canEdit={canAuthor}
+            onChanged={() => void (product.status === 'DRAFT' ? loadDrafts() : loadList())} />
           <dl className="px-4 pb-2">
             <Field label="Category" value={product.category?.replace(/_/g, ' ') ?? '—'} />
             <Field label="Default currency" value={product.defaultCurrency ?? '—'} />

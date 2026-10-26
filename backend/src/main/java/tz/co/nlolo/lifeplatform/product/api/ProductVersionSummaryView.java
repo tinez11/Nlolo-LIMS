@@ -11,8 +11,9 @@ import java.util.UUID;
  *
  * @param current the version a sale today is priced on -- what the active snapshot resolves
  * @param publishedAt when it was published; publishedBy who published it
+ * @param description what the product was described as when this version was published (V35); null when nothing was
  */
 public record ProductVersionSummaryView(UUID productVersionId, LocalDate effectiveDate, LocalDate retirementDate,
                                         boolean current, Instant publishedAt, String publishedBy, int gracePeriodDays,
                                         String expectedProfitabilityBucket, String measurementModelOverride,
-                                        java.math.BigDecimal survivalInvestmentComponentPercent) {}
+                                        java.math.BigDecimal survivalInvestmentComponentPercent, String description) {}

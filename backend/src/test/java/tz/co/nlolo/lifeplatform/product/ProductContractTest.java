@@ -87,6 +87,7 @@ class ProductContractTest {
             "db-migrations/product/V32__account_charges.sql",
             "db-migrations/product/V33__term_account_rate_band.sql",
             "db-migrations/product/V34__version_account_charges.sql",
+            "db-migrations/product/V35__product_description.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -115,6 +116,58 @@ class ProductContractTest {
                     {"productCode":"CONTRACT-01","productName":"Contract Term Life","category":"TERM_LIFE","portfolioCode":"TERM","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    /**
+     * The description staff read when choosing a product (V35): written at creation, replaced by a version that
+     * brings its own, kept by one that does not, and remembered per version.
+     */
+    @Test
+    void aProductsDescriptionIsWrittenAtCreationAndByEachVersionThatBringsOne() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+            .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
+        MvcResult created = mockMvc.perform(post("/products").with(admin)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"DESC-01","productName":"Described Term","category":"TERM_LIFE","portfolioCode":"TERM",
+                     "defaultCurrency":"TZS","description":"  Pure cover for a fixed term.  "}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.description").value("Pure cover for a fixed term."))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andReturn();
+        UUID productId = objectMapper.readValue(created.getResponse().getContentAsString(), ProductSummaryView.class)
+            .productId();
+
+        String version = """
+            {"ifrsMeasurementModel":"PAA","effectiveDate":"%s",
+             "payoutTerms":{"freeLookDays":15},"tiraFiling":{"reference":"TIRA/DESC/0001","approvalDate":"2026-01-15"},
+             "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+             "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]%s}
+            """;
+        mockMvc.perform(post("/products/" + productId + "/versions").with(admin)
+                .contentType(MediaType.APPLICATION_JSON).content(version.formatted("2026-01-01", "")))
+            .andExpect(status().isCreated());
+        mockMvc.perform(post("/products/" + productId + "/versions").with(admin)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(version.formatted("2026-02-01", ",\"description\":\"Cover for 5 to 20 years.\"")))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/products/" + productId).with(admin))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.description").value("Cover for 5 to 20 years."));
+        mockMvc.perform(get("/products/" + productId + "/versions").with(admin))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].description").value("Cover for 5 to 20 years."))
+            .andExpect(jsonPath("$[1].description").value("Pure cover for a fixed term."))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        mockMvc.perform(put("/products/" + productId + "/description").with(admin)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"description\":\"   \"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.description").doesNotExist())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 

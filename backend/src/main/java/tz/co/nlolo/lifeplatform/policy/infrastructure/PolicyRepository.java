@@ -77,14 +77,27 @@ public interface PolicyRepository extends JpaRepository<Policy, String> {
         + "                AND b.active = true)) "
         + "AND (:status IS NULL OR p.status = :status) "
         + "AND (:agentOfRecordIds IS NULL OR p.agentOfRecordId IN :agentOfRecordIds) "
+        + "AND (:productId IS NULL OR p.productId = :productId) "
+        + "AND (:productCategory IS NULL OR p.productCategory = :productCategory) "
         + "AND (:q IS NULL OR LOWER(p.policyNumber) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%')))")
     Page<Policy> search(@Param("tenantId") UUID tenantId,
                          @Param("policyholderPartyId") UUID policyholderPartyId,
                          @Param("relatedPartyId") UUID relatedPartyId,
                          @Param("status") String status,
                          @Param("agentOfRecordIds") Collection<UUID> agentOfRecordIds,
+                         @Param("productId") UUID productId,
+                         @Param("productCategory") String productCategory,
                          @Param("q") String q,
                          Pageable pageable);
+
+    /** Backs {@code claims}' product filter: claims carries no product of its own, so it filters
+     *  on the numbers of the policies sold under that product or category. */
+    @Query("SELECT p.policyNumber FROM Policy p WHERE p.tenantId = :tenantId "
+        + "AND (:productId IS NULL OR p.productId = :productId) "
+        + "AND (:productCategory IS NULL OR p.productCategory = :productCategory)")
+    List<String> findPolicyNumbersByProduct(@Param("tenantId") UUID tenantId,
+                                            @Param("productId") UUID productId,
+                                            @Param("productCategory") String productCategory);
 
     /** Backs {@code claims}' own agent-team scoping (claims has no agentOfRecordId of its own --
      *  it joins through the policy it was filed against). A bare list, not paginated: this feeds

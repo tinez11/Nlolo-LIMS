@@ -252,6 +252,31 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/AccountChargeSetting' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /products/{productId}/description:
+    put:
+      summary: Describe the product for staff choosing it (ADMIN)
+      description: Optional; a blank description clears it. Changes no price and no term, so a draft or an active product alike.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description: { type: [string, "null"], maxLength: 2000 }
+      responses:
+        '200':
+          description: The product, described
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductSummary' }
   /products/{productId}/online-listing:
     get:
       summary: How the customer portal offers the product (staff)
@@ -773,9 +798,10 @@ components:
       type: object
       additionalProperties: false
       required: [productVersionId, effectiveDate, retirementDate, current, publishedAt, publishedBy, gracePeriodDays,
-                 expectedProfitabilityBucket, measurementModelOverride, survivalInvestmentComponentPercent]
+                 expectedProfitabilityBucket, measurementModelOverride, survivalInvestmentComponentPercent, description]
       properties:
         survivalInvestmentComponentPercent: { type: [number, "null"], description: "IFRS 17 I3b: the investment share (%) of a survival or income instalment" }
+        description: { type: [string, "null"], description: "What the product was described as when this version was published (V35)" }
         productVersionId: { type: string, format: uuid }
         effectiveDate: { type: string, format: date }
         retirementDate: { type: [string, "null"], format: date }
@@ -795,6 +821,11 @@ components:
         status: { type: string, enum: [DRAFT, ACTIVE, RETIRED] }
         defaultCurrency: { type: string, example: TZS }
         portfolioCode: { $ref: '#/components/schemas/PortfolioCode' }
+        description:
+          description: >-
+            What the product is, for staff choosing it (V35): the latest written, on the product or its newest version.
+            Null when nobody has written one. Separate from the customer portal's online summary.
+          type: [string, "null"]
     PortfolioCode:
       type: string
       description: >-
@@ -817,6 +848,7 @@ components:
         category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE, FUNERAL] }
         portfolioCode: { $ref: '#/components/schemas/PortfolioCode' }
         defaultCurrency: { type: string, example: TZS }
+        description: { type: [string, "null"], maxLength: 2000, description: "Optional: what the product is, for staff choosing it" }
     EligibilityBounds:
       description: >-
         What this version will accept. Every bound optional -- an unbounded dimension is a real
@@ -867,6 +899,12 @@ components:
           type: [number, "null"]
           minimum: 0
           maximum: 100
+        description:
+          description: >-
+            Optional (V35): what the product is, as of this version. Becomes the product's description and is kept on the
+            version as its history. Omitted keeps the product's current description; blank clears it.
+          type: [string, "null"]
+          maxLength: 2000
         effectiveDate: { type: string, format: date }
         retirementDate: { type: [string, "null"], format: date }
         eligibility: { $ref: '#/components/schemas/EligibilityBounds' }

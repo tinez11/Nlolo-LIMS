@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { dmy, todayIso } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
 import { asSeniorOnSameCase } from './underwriting';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * A pension through the real stack (product step 5 D2): a deferred annuity published with its
@@ -86,7 +87,7 @@ test.describe('a pension (deferred annuity)', () => {
     await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
     await page.getByPlaceholder('Type a name to search').fill('Amina');
     await page.getByRole('option', { name: 'Amina Owner' }).click();
-    await page.getByLabel('Product').selectOption({ label: `${name} (${code})` });
+    await chooseProduct(page, `${name} (${code})`);
     await expect(page.getByText('Resolving product version…')).not.toBeVisible();
     await page.getByLabel('Contribution per payment').fill(`${contribution}.00`);
     await page.getByLabel('Retirement age').fill('60');

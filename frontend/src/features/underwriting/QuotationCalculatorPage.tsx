@@ -12,6 +12,7 @@ import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { PartyPicker } from '@/components/PartyPicker';
+import { ProductChooser } from '@/components/ProductChooser';
 import { Input, Select } from '@/components/ui/input';
 import { isSingleLifeProduct, PREMIUM_FREQUENCIES, PREMIUM_FREQUENCY_LABELS } from '@/api/types';
 import type { FuneralTermsView } from '@/api/types';
@@ -521,14 +522,17 @@ export function QuotationCalculatorPage() {
             ) : products.status === 'error' ? (
               <p className="text-xs text-status-danger-fg">Could not load products.</p>
             ) : (
-              <Select {...register('productId')}>
-                <option value="">Select a product</option>
-                {offered.map((product) => (
-                  <option key={product.productId} value={product.productId}>
-                    {product.productName} ({product.productCode})
-                  </option>
-                ))}
-              </Select>
+              <Controller
+                control={control}
+                name="productId"
+                render={({ field }) => (
+                  <ProductChooser
+                    products={offered}
+                    value={field.value}
+                    onChange={(id) => field.onChange(id)}
+                  />
+                )}
+              />
             )}
             {productId && isInitialLoad(snapshot) && (
               <p className="mt-1 text-xs text-muted-foreground">Resolving product version…</p>
