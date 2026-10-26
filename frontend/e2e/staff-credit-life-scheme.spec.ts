@@ -59,8 +59,11 @@ test.describe('staff credit-life scheme', () => {
     await expect(panel.getByText('Group members')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Group schemes' })).toHaveCount(0);
 
-    // Registered over the API as staff.admin, so the record names them rather than a login id.
+    // Registered over the API as staff.admin, so the record names them rather than a login id -- on the Overview
+    // tab, where "Registered by" has lived since the client page was restructured (2026-10-22).
+    await page.getByRole('tab', { name: 'Overview', exact: true }).click();
     await expect(page.getByText('Asha Admin')).toBeVisible();
+    await page.getByRole('tab', { name: 'Policies', exact: true }).click();
 
     // The row goes to the credit-life scheme's own page, where the borrowers are.
     await panel.getByText(policyNumber).click();
