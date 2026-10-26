@@ -40,7 +40,7 @@ public class ClaimDocumentRequestController {
     }
 
     @GetMapping("/claims/{claimId}/document-requests")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('claims.view')")
     public ResponseEntity<List<ClaimJourneyApi.DocumentRequest>> list(@PathVariable UUID claimId,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ClaimView claim = claimsApi.getClaim(claimId);
@@ -50,7 +50,7 @@ public class ClaimDocumentRequestController {
     }
 
     @PostMapping("/claims/{claimId}/document-requests")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER'))")
+    @PreAuthorize("@access.canAny('claims.assess', 'claims.settle')")
     public ResponseEntity<ClaimJourneyApi.DocumentRequest> request(@PathVariable UUID claimId,
             @RequestBody RequestDocument body, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.status(HttpStatus.CREATED).body(journeyApi.requestDocument(claimId, body.document(),
@@ -58,7 +58,7 @@ public class ClaimDocumentRequestController {
     }
 
     @PostMapping("/claims/{claimId}/document-requests/{requestId}/withdrawal")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER'))")
+    @PreAuthorize("@access.canAny('claims.assess', 'claims.settle')")
     public ResponseEntity<ClaimJourneyApi.DocumentRequest> withdraw(@PathVariable UUID claimId,
                                                                     @PathVariable UUID requestId) {
         return ResponseEntity.ok(journeyApi.withdraw(claimId, requestId));

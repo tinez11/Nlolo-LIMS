@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { readIdentity } from '@/auth/claims';
+import { grantRoles } from '@/test/access';
 import { dashboardsFor } from './dashboards';
 
-const as = (...roles: string[]) => ({ roles }) as unknown as ReturnType<typeof readIdentity>;
+/** Signs in holding these built-in roles; dashboards follow permissions now (2026-10-26), not the token. */
+const as = (...roles: string[]) => {
+  grantRoles(...roles.filter((r) => !r.startsWith('REALM_')));
+  return { roles } as unknown as ReturnType<typeof readIdentity>;
+};
 
 /**
- * Each tab mirrors its endpoint's own @PreAuthorize exactly. A tab the endpoint refuses would be a 403 dressed as a
+ * Each tab mirrors its endpoint's own permission exactly. A tab the endpoint refuses would be a 403 dressed as a
  * page; a tab missing for a role the endpoint admits would hide a dashboard somebody is entitled to.
  */
 describe('dashboardsFor', () => {

@@ -1,3 +1,4 @@
+import { can } from '@/auth/access';
 import { CheckCircle2, Clock3, FolderOpen, Percent } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -269,8 +270,12 @@ export function UnderwritingDashboardPanel({ range }: PanelProps) {
                     },
                   ]
                 : []),
-              { label: 'Open a case', description: 'For a registered client', to: '/staff/underwriting/new' },
-              { label: 'Issue a policy', description: 'From an accepted case', to: '/staff/policies/new' },
+              ...(can('underwriting.propose')
+                ? [{ label: 'Open a case', description: 'For a registered client', to: '/staff/underwriting/new' }]
+                : []),
+              ...(can('policies.issue')
+                ? [{ label: 'Issue a policy', description: 'From an accepted case', to: '/staff/policies/new' }]
+                : []),
               { label: 'All open cases', description: 'The full queue', to: '/staff/underwriting?status=OPEN' },
             ]}
             absent={[]}

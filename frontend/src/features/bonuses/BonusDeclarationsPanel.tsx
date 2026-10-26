@@ -1,9 +1,10 @@
+import { can } from '@/auth/access';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { useAuth } from 'react-oidc-context';
 import type { BonusDeclarationView } from '@/api/types';
-import { canAuthorProducts, readIdentity } from '@/auth/claims';
+import { readIdentity } from '@/auth/claims';
 import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
 import { GatePanel } from '@/components/GatePanel';
@@ -32,7 +33,7 @@ export function BonusDeclarationsPanel({ productId }: { productId: string }) {
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const viewerSubject = identity?.subject ?? undefined;
-  const canPropose = identity ? canAuthorProducts(identity) : false;
+  const canPropose = can('products.declare');
 
   const declarations = useBonusStore((s) => s.declarations[productId]);
   const loadDeclarations = useBonusStore((s) => s.loadDeclarations);

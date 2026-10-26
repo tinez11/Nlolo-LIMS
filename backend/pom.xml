@@ -225,6 +225,9 @@
         <configuration>
           <systemPropertyVariables>
             <spring.test.context.cache.maxSize>3</spring.test.context.cache.maxSize>
+            <!-- Staff permissions read from the token's roles (iam AccessService): tests sign requests with synthetic
+                 roles and most apply no iam schema. AccessIntegrationTest opts back into the platform source. -->
+            <app.access.source>token</app.access.source>
           </systemPropertyVariables>
         </configuration>
       </plugin>

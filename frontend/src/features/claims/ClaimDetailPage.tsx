@@ -1,8 +1,9 @@
+import { can } from '@/auth/access';
 import { Fragment, useEffect } from 'react';
 import { useBreadcrumb } from '@/lib/cameFrom';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
-import { canSeeFinance, readIdentity, staffRoles } from '@/auth/claims';
+import { readIdentity, staffRoles } from '@/auth/claims';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyName } from '@/components/PartyName';
@@ -43,7 +44,7 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const roles = staffRoles(identity);
-  const canSeeReinsurance = canSeeFinance(identity);
+  const canSeeReinsurance = can('reinsurance.view');
 
   const detail = useClaimStore(selectClaimDetail(claimId));
   const loadDetail = useClaimStore((s) => s.loadDetail);

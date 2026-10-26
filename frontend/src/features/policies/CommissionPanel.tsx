@@ -1,9 +1,8 @@
+import { can } from '@/auth/access';
 import { useEffect, useState } from 'react';
-import { useAuth } from 'react-oidc-context';
 import { getAgent, getApplicablePlan, listAgents, listPolicyAccruals, onboardAgent, setCommissionRate } from '@/api/distribution';
 import { changeSchemeAgentOfRecord, getPolicy } from '@/api/policies';
 import type { AgentView, CommissionAccrualView, CommissionPlanView, PolicyView } from '@/api/types';
-import { canSeeFinance, readIdentity } from '@/auth/claims';
 import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
 import { PartyName } from '@/components/PartyName';
@@ -37,8 +36,7 @@ interface Loaded {
  * than on the product. Every change here is forward only: nothing already earned moves.
  */
 export function CommissionPanel({ policyNumber }: { policyNumber: string }) {
-  const auth = useAuth();
-  const isFinance = canSeeFinance(readIdentity(auth.user?.access_token));
+  const isFinance = can('agents.view');
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [reload, setReload] = useState(0);
 

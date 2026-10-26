@@ -41,8 +41,6 @@ import java.util.UUID;
 @RestController
 public class EngineController {
 
-    private static final String FINANCE = "hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))";
-    private static final String APPROVER = "hasRole('REALM_STAFF') and hasRole('FINANCE_APPROVER')";
     private static final MediaType XLSX = MediaType.parseMediaType(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
@@ -69,26 +67,26 @@ public class EngineController {
 
     @PostMapping("/ifrs17/periods/{period}/extracts")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ifrs17.manage')")
     public EngineExtractView createExtract(@PathVariable String period, @AuthenticationPrincipal Jwt jwt) {
         return extracts.create(period, jwt.getSubject());
     }
 
     @GetMapping("/ifrs17/periods/{period}/extracts")
-    @PreAuthorize(FINANCE + " or " + APPROVER)
+    @PreAuthorize("@access.can('ifrs17.view')")
     public List<EngineExtractView> listExtracts(@PathVariable String period) {
         return extracts.list(period);
     }
 
     @GetMapping("/ifrs17/extracts/{id}")
-    @PreAuthorize(FINANCE + " or " + APPROVER)
+    @PreAuthorize("@access.can('ifrs17.view')")
     public EngineExtractView getExtract(@PathVariable UUID id) {
         return extracts.get(id);
     }
 
     /** {@code format} xlsx (the workbook) or csv (one {@code sheet}: cash-flows, balances or policies). */
     @GetMapping("/ifrs17/extracts/{id}/download")
-    @PreAuthorize(FINANCE + " or " + APPROVER)
+    @PreAuthorize("@access.can('ifrs17.view')")
     public ResponseEntity<byte[]> download(@PathVariable UUID id, @RequestParam(defaultValue = "xlsx") String format,
                                            @RequestParam(required = false) String sheet) {
         EngineExtractView view = extracts.get(id);
@@ -100,7 +98,7 @@ public class EngineController {
     }
 
     @GetMapping("/ifrs17/results-template")
-    @PreAuthorize(FINANCE + " or " + APPROVER)
+    @PreAuthorize("@access.can('ifrs17.view')")
     public ResponseEntity<byte[]> template() {
         return file(EngineResultsTemplate.blank(), XLSX, "ifrs17-engine-results-template.xlsx");
     }
@@ -109,7 +107,7 @@ public class EngineController {
 
     @PostMapping(value = "/ifrs17/engine-runs", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ifrs17.manage')")
     public EngineRunView upload(@RequestPart("file") MultipartFile file, @AuthenticationPrincipal Jwt jwt) {
         try {
             return runs.upload(file.getBytes(), file.getOriginalFilename(), jwt.getSubject());
@@ -119,21 +117,21 @@ public class EngineController {
     }
 
     @GetMapping("/ifrs17/engine-runs")
-    @PreAuthorize(FINANCE + " or " + APPROVER)
+    @PreAuthorize("@access.can('ifrs17.view')")
     public List<EngineRunView> listRuns(@RequestParam(required = false) String period,
                                         @RequestParam(required = false) String status) {
         return runs.list(period, status);
     }
 
     @GetMapping("/ifrs17/engine-runs/{id}")
-    @PreAuthorize(FINANCE + " or " + APPROVER)
+    @PreAuthorize("@access.can('ifrs17.view')")
     public EngineRunView getRun(@PathVariable UUID id) {
         return runs.get(id);
     }
 
     /** The decider is checked before the report is stored, so a refusal leaves no orphan in the document store. */
     @PostMapping(value = "/ifrs17/engine-runs/{id}/approval", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize(APPROVER)
+    @PreAuthorize("@access.can('ifrs17.approve')")
     public EngineRunView approve(@PathVariable UUID id, @RequestParam("signOffReference") String signOffReference,
                                  @RequestPart("report") MultipartFile report, @AuthenticationPrincipal Jwt jwt) {
         runs.requireDecidable(id, jwt.getSubject());
@@ -154,7 +152,7 @@ public class EngineController {
     }
 
     @PostMapping("/ifrs17/engine-runs/{id}/rejection")
-    @PreAuthorize(APPROVER)
+    @PreAuthorize("@access.can('ifrs17.approve')")
     public EngineRunView reject(@PathVariable UUID id, @RequestBody(required = false) RejectionRequest body,
                                 @AuthenticationPrincipal Jwt jwt) {
         return runs.reject(id, body == null ? null : body.reason(), jwt.getSubject());
@@ -163,14 +161,14 @@ public class EngineController {
     // ---- the reconciliation's exceptions ----
 
     @PostMapping("/ifrs17/engine-runs/{id}/exceptions/{group}/{figure}/explanation")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ifrs17.manage')")
     public EngineRunView explain(@PathVariable UUID id, @PathVariable String group, @PathVariable String figure,
                                  @RequestBody ExplanationRequest body, @AuthenticationPrincipal Jwt jwt) {
         return runs.explain(id, group, figure, body == null ? null : body.text(), jwt.getSubject());
     }
 
     @PostMapping("/ifrs17/engine-runs/{id}/exceptions/{group}/{figure}/acceptance")
-    @PreAuthorize(APPROVER)
+    @PreAuthorize("@access.can('ifrs17.approve')")
     public EngineRunView accept(@PathVariable UUID id, @PathVariable String group, @PathVariable String figure,
                                 @AuthenticationPrincipal Jwt jwt) {
         return runs.accept(id, group, figure, jwt.getSubject());

@@ -23,7 +23,6 @@ import java.util.UUID;
 @RestController
 public class PostingQueueController {
 
-    private static final String FINANCE = "hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))";
 
     public record DismissRequest(String reason) {}
 
@@ -34,25 +33,25 @@ public class PostingQueueController {
     }
 
     @GetMapping("/finance/posting-rules")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.view')")
     public PostingRulesView rules() {
         return api.postingRules();
     }
 
     @GetMapping("/finance/unposted-events")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.view')")
     public List<UnpostedEventView> list(@RequestParam(defaultValue = "false") boolean openOnly) {
         return api.unpostedEvents(openOnly);
     }
 
     @PostMapping("/finance/unposted-events/{id}/retry")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public UnpostedEventView retry(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
         return api.retryUnpostedEvent(id, jwt.getSubject());
     }
 
     @PostMapping("/finance/unposted-events/{id}/dismissal")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public UnpostedEventView dismiss(@PathVariable UUID id, @RequestBody(required = false) DismissRequest body,
                                      @AuthenticationPrincipal Jwt jwt) {
         return api.dismissUnpostedEvent(id, body == null ? null : body.reason(), jwt.getSubject());

@@ -247,6 +247,15 @@ class BillingContractTest {
         return new Fixture(tenantId, policyNumber, applicantId);
     }
 
+/**
+     * A staff member holding a role, but not the permission this endpoint needs (2026-10-26). A bare staff token
+     * names no role and so, in the tests' token mode, holds every permission -- it cannot show a refusal any more.
+     */
+    private static RequestPostProcessor staffWithoutPermission(UUID tenantId) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
+            .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
+    }
+
     private static RequestPostProcessor staffOf(UUID tenantId) {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
             .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
@@ -386,7 +395,7 @@ class BillingContractTest {
     void theArrearsQueueRefusesStaffWithoutTheFinanceRole() throws Exception {
         UUID tenantId = UUID.randomUUID();
 
-        mockMvc.perform(get("/arrears").with(staffOf(tenantId)))
+        mockMvc.perform(get("/arrears").with(staffWithoutPermission(tenantId)))
             .andExpect(status().isForbidden());
 
         mockMvc.perform(get("/arrears").with(agentOf(tenantId)))
@@ -542,7 +551,7 @@ class BillingContractTest {
         mockMvc.perform(get("/field-receipts").with(agentOf(tenantId)))
             .andExpect(status().isForbidden());
 
-        mockMvc.perform(get("/field-receipts").with(staffOf(tenantId)))
+        mockMvc.perform(get("/field-receipts").with(staffWithoutPermission(tenantId)))
             .andExpect(status().isForbidden());
     }
 

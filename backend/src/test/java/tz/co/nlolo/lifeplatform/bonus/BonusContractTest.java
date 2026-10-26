@@ -169,7 +169,7 @@ class BonusContractTest {
     @Test
     void aPolicysBonusesAreReadToSpecWithTheEntryAndWhyItAttached() throws Exception {
         var issued = withOneBonus();
-        mockMvc.perform(get("/policies/" + issued.policyNumber() + "/bonuses").with(staff("UNDERWRITER", "reader")))
+        mockMvc.perform(get("/policies/" + issued.policyNumber() + "/bonuses").with(staff("CUSTOMER_SERVICE_REP", "reader")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.attachedTotal.amount").value("30000.00"))
             .andExpect(jsonPath("$.entries[0].type").value("REVERSIONARY"))
@@ -184,11 +184,11 @@ class BonusContractTest {
     @Test
     void anOrdinaryPolicyHasNoBonusesAndSaysSoWithA404() throws Exception {
         var issued = fixtures.issue(TENANT, BonusPlan.none(), CashValuePlan.none());
-        mockMvc.perform(get("/policies/" + issued.policyNumber() + "/bonuses").with(staff("UNDERWRITER", "reader")))
+        mockMvc.perform(get("/policies/" + issued.policyNumber() + "/bonuses").with(staff("CUSTOMER_SERVICE_REP", "reader")))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("NOT_WITH_PROFITS"))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
-        mockMvc.perform(get("/policies/" + issued.policyNumber() + "/bonuses/value").with(staff("UNDERWRITER", "reader")))
+        mockMvc.perform(get("/policies/" + issued.policyNumber() + "/bonuses/value").with(staff("CUSTOMER_SERVICE_REP", "reader")))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("NOT_WITH_PROFITS"))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
@@ -199,7 +199,7 @@ class BonusContractTest {
         var issued = withOneBonus();
         // attached 30,000; interim (1,000,000 + 30,000) x 3% x 5/12 = 12,875.00; terminal 50% x 30,000 = 15,000.
         mockMvc.perform(get("/policies/" + issued.policyNumber() + "/bonuses/value")
-                .param("asOf", TODAY.plusMonths(5).toString()).with(staff("UNDERWRITER", "reader")))
+                .param("asOf", TODAY.plusMonths(5).toString()).with(staff("CUSTOMER_SERVICE_REP", "reader")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.attached.amount").value("30000.00"))
             .andExpect(jsonPath("$.interim.amount").value("12875.00"))

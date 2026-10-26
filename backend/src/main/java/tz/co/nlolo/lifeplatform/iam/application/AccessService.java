@@ -32,7 +32,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *       time it is resolved, and a staff member the first time they are seen -- with the Keycloak roles their token
  *       carries, imported once. From then on the platform is the authority: Keycloak role changes are not read again.
  *   <li>{@code token}: the token's Keycloak roles, each read through its built-in definition. For tests that sign
- *       requests with synthetic roles and no {@code iam} schema, so they keep proving what a role may do.
+ *       requests with synthetic roles and no {@code iam} schema, so they keep proving what a role may do. A staff
+ *       token naming no built-in role at all holds every permission here: it is how the tests written before
+ *       2026-10-26 say "any staff member", and what they prove is the act, not the gate.
  * </ul>
  *
  * <p>Read on every checked request, so it is cached -- briefly, and dropped for a person the moment anything about
@@ -92,6 +94,9 @@ public class AccessService implements AccessApi {
                 d.permissions().forEach(p -> permissions.add(p.code()));
             }
         }
+        if (roles.isEmpty()) {
+            for (Permission p : Permission.values()) permissions.add(p.code());
+        }
         return new AccessView(identity.userId(), identity.displayName(), true, roles,
             roles.isEmpty() ? null : roles.get(0), permissions);
     }
@@ -107,6 +112,9 @@ public class AccessService implements AccessApi {
             user = jdbc.queryForList(
                 "SELECT display_name, active FROM iam.staff_user WHERE tenant_id = :tenant AND user_id = :user", p);
         }
+        // When they were last here, for the Users screen -- at most once every five minutes, it is not an audit trail.
+        jdbc.update("UPDATE iam.staff_user SET last_seen_at = now() WHERE tenant_id = :tenant AND user_id = :user "
+            + "AND (last_seen_at IS NULL OR last_seen_at < now() - interval '5 minutes')", p);
         boolean active = Boolean.TRUE.equals(user.get(0).get("active"));
         String displayName = (String) user.get(0).get("display_name");
 
@@ -129,6 +137,11 @@ public class AccessService implements AccessApi {
         return new AccessView(identity.userId(), displayName != null ? displayName : identity.displayName(), active,
             List.copyOf(roles), active && !roles.isEmpty() ? roles.get(0) : null,
             active ? permissions : Set.of());
+    }
+
+    /** For the Roles screen, which may be the first thing a new tenant's administrator opens. */
+    public void seedBuiltInRolesFor(UUID tenantId) {
+        seedBuiltInRoles(tenantId);
     }
 
     /** The eight built-in roles, once per tenant. A concurrent first request inserts nothing twice. */

@@ -45,7 +45,7 @@ public class PolicyController {
 
     /** The account charges a savings policy is charged by (2026-10-09); empty for its product version's own. Staff. */
     @GetMapping("/policies/{policyNumber}/account-charges")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('policies.view')")
     public ResponseEntity<List<tz.co.nlolo.lifeplatform.product.api.AccountChargeView>> accountCharges(
             @PathVariable String policyNumber) {
         policyApi.getPolicy(policyNumber);
@@ -81,7 +81,7 @@ public class PolicyController {
      * reasonable thing to show them, but it is not this screen and has not been designed.
      */
     @GetMapping("/beneficiaries")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('policies.view')")
     public ResponseEntity<List<BeneficiaryOfResponseDto>> beneficiaryOf(
             @RequestParam UUID partyId, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         if (isAgent(authentication) && !partyApi.isRegisteredBy(partyId, jwt.getSubject())) {
@@ -92,7 +92,7 @@ public class PolicyController {
     }
 
     @PostMapping("/policies/manual-issue")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('policies.issue')")
     // One transaction with the account charges chosen here, so a refused charge issues nothing (2026-10-09).
     @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<PolicyResponseDto> manualIssue(@Valid @RequestBody ManualIssueRequestDto request, @AuthenticationPrincipal Jwt jwt) {
@@ -137,7 +137,7 @@ public class PolicyController {
     }
 
     @GetMapping("/policies/{policyNumber}")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('policies.view')")
     public ResponseEntity<PolicyResponseDto> getPolicy(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         // Object-level authorization (docs/04-api-contracts.md §3), same idiom as
         // PartyController.getParty: a customers-realm token may only read the policy matching
@@ -171,7 +171,7 @@ public class PolicyController {
      * it -- but a reader should not have to know that to be sure.
      */
     @GetMapping("/policies/maturing")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('payouts.view')")
     public ResponseEntity<PolicySearchResponse> maturing(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
@@ -182,7 +182,7 @@ public class PolicyController {
     }
 
     @GetMapping("/policies")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('policies.view')")
     public ResponseEntity<PolicySearchResponse> searchPolicies(
             @RequestParam(required = false) UUID policyholderPartyId,
             @RequestParam(required = false) UUID relatedPartyId,
@@ -249,7 +249,7 @@ public class PolicyController {
      * a screen nobody has drawn.
      */
     @PostMapping("/group-schemes")
-    @PreAuthorize("hasRole('UNDERWRITER')")
+    @PreAuthorize("@access.can('schemes.manage')")
     public ResponseEntity<GroupSchemeResponseDto> issueGroupScheme(
             @Valid @RequestBody IssueGroupSchemeRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         // productId comes from the version, never from the caller: a request naming both
@@ -281,7 +281,7 @@ public class PolicyController {
      * insured, which is the same act as setting it in the first place.
      */
     @PutMapping("/group-schemes/{policyNumber}/free-cover-limit")
-    @PreAuthorize("hasRole('UNDERWRITER')")
+    @PreAuthorize("@access.can('schemes.manage')")
     public ResponseEntity<GroupSchemeResponseDto> amendFreeCoverLimit(
             @PathVariable String policyNumber,
             @Valid @RequestBody AmendFreeCoverLimitRequestDto request,
@@ -294,7 +294,7 @@ public class PolicyController {
     }
 
     @GetMapping("/group-schemes/{policyNumber}")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public ResponseEntity<GroupSchemeResponseDto> getGroupScheme(@PathVariable String policyNumber) {
         return ResponseEntity.ok(GroupSchemeResponseDto.from(policyApi.getGroupScheme(policyNumber)));
     }
@@ -314,7 +314,7 @@ public class PolicyController {
      *     member row itself holds only an id.
      */
     @GetMapping("/group-schemes/{policyNumber}/members")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public ResponseEntity<PolicyMemberResponseDto.PageResponse> listMembers(
             @PathVariable String policyNumber,
             @RequestParam(required = false) MemberStatus status,
@@ -332,7 +332,7 @@ public class PolicyController {
      * as onboarding the agent and setting their rate: this decides where commission money goes.
      */
     @PostMapping("/group-schemes/{policyNumber}/agent-of-record")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('agents.manage')")
     public ResponseEntity<PolicyResponseDto> changeAgentOfRecord(@PathVariable String policyNumber,
             @Valid @RequestBody ChangeAgentOfRecordRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(PolicyResponseDto.from(policyApi.changeSchemeAgentOfRecord(
@@ -344,7 +344,7 @@ public class PolicyController {
      * say whose death a bank transfer settles, and holds only the member id the claim carries.
      */
     @GetMapping("/group-schemes/{policyNumber}/members/{policyMemberId}")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public ResponseEntity<PolicyMemberResponseDto> getMember(@PathVariable String policyNumber,
                                                              @PathVariable UUID policyMemberId) {
         return ResponseEntity.ok(PolicyMemberResponseDto.from(policyApi.getMember(policyNumber, policyMemberId)));
@@ -358,7 +358,7 @@ public class PolicyController {
      * cover limit. It is the same decision as the opening schedule, taken one row at a time.
      */
     @PostMapping("/group-schemes/{policyNumber}/members")
-    @PreAuthorize("hasRole('UNDERWRITER')")
+    @PreAuthorize("@access.can('schemes.manage')")
     public ResponseEntity<PolicyMemberResponseDto> addMember(@PathVariable String policyNumber,
             @Valid @RequestBody GroupMemberInputDto request, @AuthenticationPrincipal Jwt jwt) {
         // A BORROWER JOINS BY FILE, NEVER ONE AT A TIME. A credit-life row admitted here skipped
@@ -377,7 +377,7 @@ public class PolicyController {
 
     /** Every family on a group funeral scheme: the main member's member row, the beneficiary, every life. */
     @GetMapping("/group-schemes/{policyNumber}/families")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public ResponseEntity<List<GroupFuneralFamilyView>> getGroupFuneralFamilies(@PathVariable String policyNumber) {
         return ResponseEntity.ok(policyApi.groupFuneralFamilies(policyNumber));
     }
@@ -387,7 +387,7 @@ public class PolicyController {
      * member raises the association's bill by one group rate from the next billing date.
      */
     @PostMapping("/group-schemes/{policyNumber}/families")
-    @PreAuthorize("hasRole('UNDERWRITER')")
+    @PreAuthorize("@access.can('schemes.manage')")
     public ResponseEntity<PolicyMemberResponseDto> addGroupFuneralFamily(@PathVariable String policyNumber,
             @RequestBody GroupFuneralRequests.Join request, @AuthenticationPrincipal Jwt jwt) {
         PolicyMemberView view = policyApi.addGroupFuneralFamily(policyNumber, request.toInputs(), request.joinedOn(),
@@ -402,7 +402,7 @@ public class PolicyController {
      */
     @PostMapping(value = "/group-schemes/{policyNumber}/funeral-joiners",
         consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('UNDERWRITER')")
+    @PreAuthorize("@access.can('schemes.manage')")
     public ResponseEntity<GroupFuneralJoiningReport> joinGroupFuneralFamilies(@PathVariable String policyNumber,
             @org.springframework.web.bind.annotation.RequestPart("file") org.springframework.web.multipart.MultipartFile file,
             @RequestParam(required = false) LocalDate joinedOn, @AuthenticationPrincipal Jwt jwt) {
@@ -416,7 +416,7 @@ public class PolicyController {
 
     /** A life joins a member's family from today. Staff: it changes the family's cover, never the bill. */
     @PostMapping("/group-schemes/{policyNumber}/members/{policyMemberId}/lives")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.canAny('schemes.manage', 'policies.service')")
     public ResponseEntity<CoveredLifeView> addGroupFuneralLife(@PathVariable String policyNumber,
             @PathVariable UUID policyMemberId, @RequestBody GroupFuneralRequests.Life request, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -425,7 +425,7 @@ public class PolicyController {
 
     /** A dependant comes off a member's family at the end of this month. */
     @PostMapping("/group-schemes/{policyNumber}/covered-lives/{coveredLifeId}/removal")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.canAny('schemes.manage', 'policies.service')")
     public ResponseEntity<CoveredLifeView> removeGroupFuneralLife(@PathVariable String policyNumber,
             @PathVariable UUID coveredLifeId, @RequestBody(required = false) GroupFuneralRequests.Remove request,
             @AuthenticationPrincipal Jwt jwt) {
@@ -439,7 +439,7 @@ public class PolicyController {
      * have their own routes.
      */
     @PostMapping("/group-schemes/{policyNumber}/members/{policyMemberId}/departure")
-    @PreAuthorize("hasRole('UNDERWRITER')")
+    @PreAuthorize("@access.can('schemes.manage')")
     public ResponseEntity<PolicyMemberResponseDto> groupFuneralMemberLeaves(@PathVariable String policyNumber,
             @PathVariable UUID policyMemberId, @RequestBody GroupFuneralRequests.Leave request, @AuthenticationPrincipal Jwt jwt) {
         if (policyApi.getGroupScheme(policyNumber).benefitBasis() != BenefitBasis.FUNERAL_PLAN) {
@@ -452,7 +452,7 @@ public class PolicyController {
     }
 
     @PostMapping("/policies/{policyNumber}/endorsements")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('policies.service')")
     public ResponseEntity<PolicyResponseDto> applyEndorsement(@PathVariable String policyNumber, @Valid @RequestBody EndorsementRequestDto request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey, @AuthenticationPrincipal Jwt jwt) {
         // Idempotency-Key accepted, not enforced (Global Constraints).
@@ -464,7 +464,7 @@ public class PolicyController {
     @PutMapping("/policies/{policyNumber}/beneficiaries")
     // Not a customer act (2026-10-08, the customer portal design, the user's D3): the portal reads and requests;
     // it does not change this. Staff and agents only.
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('policies.service')")
     public ResponseEntity<Void> replaceBeneficiaries(@PathVariable String policyNumber,
             @Valid @RequestBody List<BeneficiaryInputDto> beneficiaries, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         enforceCustomerOwnPolicyOnly(policyApi.getPolicy(policyNumber), jwt, authentication);
@@ -482,7 +482,7 @@ public class PolicyController {
      * 409 (INVALID_POLICY_STATE), already mapped by PolicyExceptionHandler.
      */
     @PostMapping("/policies/{policyNumber}/suspend")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('policies.status')")
     public ResponseEntity<PolicyResponseDto> suspendPolicy(@PathVariable String policyNumber,
             @Valid @RequestBody SuspendPolicyRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         policyApi.suspendPolicy(policyNumber, request.reason(), jwt.getSubject());
@@ -492,7 +492,7 @@ public class PolicyController {
     /** Same real-gap fix as suspendPolicy above -- SUSPENDED -> ACTIVE only, enforced by
      * `Policy.resume()`'s own guard (409 INVALID_POLICY_STATE on any other current status). */
     @PostMapping("/policies/{policyNumber}/resume")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('policies.status')")
     public ResponseEntity<PolicyResponseDto> resumePolicy(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt) {
         policyApi.resumeSuspendedPolicy(policyNumber, jwt.getSubject());
         return ResponseEntity.ok(PolicyResponseDto.from(policyApi.getPolicy(policyNumber)));
@@ -502,7 +502,7 @@ public class PolicyController {
      * `Policy.reinstate()`'s guard and `PolicyApiImpl`'s own TZ_REINSTATEMENT_WINDOW_MONTHS
      * check (both 409 INVALID_POLICY_STATE). */
     @PostMapping("/policies/{policyNumber}/reinstate")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('policies.status')")
     public ResponseEntity<PolicyResponseDto> reinstatePolicy(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt) {
         policyApi.reinstatePolicy(policyNumber, jwt.getSubject());
         return ResponseEntity.ok(PolicyResponseDto.from(policyApi.getPolicy(policyNumber)));
@@ -511,13 +511,13 @@ public class PolicyController {
     /** Make a savings policy paid-up: reduced cover, no further premium. 409 INVALID_POLICY_STATE
      * when the policy is not a savings product, not in a convertible status, or has no value yet. */
     @PostMapping("/policies/{policyNumber}/paid-up")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('policies.status')")
     public ResponseEntity<PolicyResponseDto> makePaidUp(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(PolicyResponseDto.from(policyApi.makePaidUp(policyNumber, jwt.getSubject())));
     }
 
     @GetMapping("/policies/{policyNumber}/surrender-value")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('policies.view')")
     public ResponseEntity<Map<String, Object>> getSurrenderValue(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         enforceCustomerOwnPolicyOnly(policyApi.getPolicy(policyNumber), jwt, authentication);
         SurrenderQuoteView quote = policyApi.quoteSurrenderValue(policyNumber);
@@ -537,7 +537,7 @@ public class PolicyController {
      * an ineligible policy, 404 if it does not exist.
      */
     @PostMapping("/policies/{policyNumber}/surrender")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('policies.surrender')")
     public ResponseEntity<SurrenderRequestResponseDto> requestSurrender(@PathVariable String policyNumber,
             @Valid @RequestBody SurrenderRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(SurrenderRequestResponseDto.from(
@@ -547,7 +547,7 @@ public class PolicyController {
     /** The policy's latest surrender request, or 204 when it has none. Read by the policy page so the
      *  approver can find a request to approve -- there was no other way to reach one. */
     @GetMapping("/policies/{policyNumber}/surrender-request")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('policies.view')")
     public ResponseEntity<SurrenderRequestResponseDto> latestSurrenderRequest(@PathVariable String policyNumber) {
         return policyApi.findLatestSurrenderRequest(policyNumber)
             .map(SurrenderRequestResponseDto::from)
@@ -558,7 +558,7 @@ public class PolicyController {
     /** Approve a surrender, by someone other than the requester. Cover stops and the payout is sent.
      *  Finance-only, like a commission payout: approving is what moves money out of the company. */
     @PostMapping("/surrender-requests/{surrenderRequestId}/approve")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('policies.surrender-approve')")
     public ResponseEntity<SurrenderRequestResponseDto> approveSurrender(@PathVariable UUID surrenderRequestId,
             @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(SurrenderRequestResponseDto.from(
@@ -569,13 +569,13 @@ public class PolicyController {
      * no long-running process now -- surrender completes through events -- so there is nothing to
      * poll, but the routable endpoint stays rather than 404. */
     @GetMapping("/policies/{policyNumber}/processes/{processInstanceId}")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('policies.view')")
     public ResponseEntity<ProblemDetail> getProcessStatus(@PathVariable String policyNumber, @PathVariable String processInstanceId) {
         return notImplementedChoreography();
     }
 
     @GetMapping("/policies/{policyNumber}/coverage-status")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('policies.view')")
     public ResponseEntity<CoverageStatusResponseDto> getCoverageStatus(@PathVariable String policyNumber,
             @RequestParam(required = false) LocalDate asOf,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
@@ -588,7 +588,7 @@ public class PolicyController {
      * other policy. Scoped exactly as getPolicy: a customer to their own policy, an agent to their team's.
      */
     @GetMapping("/policies/{policyNumber}/covered-lives")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('policies.view')")
     public ResponseEntity<List<CoveredLifeView>> getCoveredLives(@PathVariable String policyNumber,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         PolicyView view = policyApi.getPolicy(policyNumber);
@@ -602,7 +602,7 @@ public class PolicyController {
      * what the family pays, so it is an act on the contract, not a self-service edit.
      */
     @PostMapping("/policies/{policyNumber}/covered-lives")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('policies.service')")
     public ResponseEntity<CoveredLifeView> addCoveredLife(@PathVariable String policyNumber,
             @RequestBody CoveredLifeRequests.Add request, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -614,7 +614,7 @@ public class PolicyController {
      * R10). Claims staff do this when a death certificate arrives; idempotent.
      */
     @PostMapping("/policies/{policyNumber}/covered-lives/{coveredLifeId}/promotion")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER'))")
+    @PreAuthorize("@access.canAny('claims.assess', 'claims.settle')")
     public ResponseEntity<CoveredLifeView> promoteCoveredLife(@PathVariable String policyNumber, @PathVariable UUID coveredLifeId,
             @RequestBody CoveredLifeRequests.Identify request, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(policyApi.promoteCoveredLife(policyNumber, coveredLifeId, request.toRequest(), jwt.getSubject()));
@@ -625,7 +625,7 @@ public class PolicyController {
      * their identity document, made policyholder, re-priced as the main member from the next premium date.
      */
     @PostMapping("/policies/{policyNumber}/takeover")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('policies.service')")
     public ResponseEntity<PolicyResponseDto> takeOverFuneralPolicy(@PathVariable String policyNumber,
             @RequestBody CoveredLifeRequests.Identify request, @AuthenticationPrincipal Jwt jwt) {
         policyApi.takeOverFuneralPolicy(policyNumber, request.toRequest(), jwt.getSubject());
@@ -634,7 +634,7 @@ public class PolicyController {
 
     /** Take a dependant off cover at the next premium date. Staff only, as adding is. */
     @PostMapping("/policies/{policyNumber}/covered-lives/{coveredLifeId}/removal")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('policies.service')")
     public ResponseEntity<CoveredLifeView> removeCoveredLife(@PathVariable String policyNumber, @PathVariable UUID coveredLifeId,
             @RequestBody(required = false) CoveredLifeRequests.Remove request, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(policyApi.removeCoveredLife(policyNumber, coveredLifeId,
@@ -642,7 +642,7 @@ public class PolicyController {
     }
 
     @GetMapping("/policies/{policyNumber}/in-force")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('policies.view')")
     public ResponseEntity<Map<String, Boolean>> isInForce(@PathVariable String policyNumber, @RequestParam(required = false) LocalDate asOf) {
         return ResponseEntity.ok(Map.of("inForce", policyApi.isPolicyInForce(policyNumber, asOf)));
     }

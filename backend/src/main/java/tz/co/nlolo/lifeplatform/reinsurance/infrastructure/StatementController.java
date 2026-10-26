@@ -35,8 +35,6 @@ import java.util.UUID;
 @RestController
 public class StatementController {
 
-    private static final String FINANCE = "hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))";
-    private static final String APPROVER = "hasRole('REALM_STAFF') and hasRole('FINANCE_APPROVER')";
 
     public record PrepareStatementRequest(String quarter) {}
 
@@ -61,7 +59,7 @@ public class StatementController {
     }
 
     @GetMapping("/reinsurance-statements")
-    @PreAuthorize(FINANCE + " or " + APPROVER)
+    @PreAuthorize("@access.can('reinsurance.view')")
     public List<StatementResponseDto> list(@RequestParam(required = false) String status,
                                            @RequestParam(required = false) UUID treatyId) {
         return api.listStatements(status, treatyId).stream().map(StatementResponseDto::from).toList();
@@ -69,7 +67,7 @@ public class StatementController {
 
     @PostMapping("/treaties/{treatyId}/statements")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('reinsurance.manage')")
     public StatementResponseDto prepare(@PathVariable UUID treatyId, @RequestBody PrepareStatementRequest body,
                                         @AuthenticationPrincipal Jwt jwt) {
         return StatementResponseDto.from(api.prepareStatement(treatyId, body == null ? null : body.quarter(),
@@ -77,13 +75,13 @@ public class StatementController {
     }
 
     @GetMapping("/reinsurance-statements/{id}")
-    @PreAuthorize(FINANCE + " or " + APPROVER)
+    @PreAuthorize("@access.can('reinsurance.view')")
     public StatementResponseDto get(@PathVariable UUID id) {
         return StatementResponseDto.from(api.getStatement(id));
     }
 
     @PutMapping("/reinsurance-statements/{id}")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('reinsurance.manage')")
     public StatementResponseDto update(@PathVariable UUID id, @RequestBody UpdateStatementRequest body,
                                        @AuthenticationPrincipal Jwt jwt) {
         return StatementResponseDto.from(api.updateStatement(id, decimal(body.fundsWithheld(), "fundsWithheld"),
@@ -91,7 +89,7 @@ public class StatementController {
     }
 
     @PostMapping(value = "/reinsurance-statements/{id}/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('reinsurance.manage')")
     public StatementResponseDto attach(@PathVariable UUID id, @RequestPart("file") MultipartFile file,
                                        @AuthenticationPrincipal Jwt jwt) {
         // 404, or 409 when this person may not change it -- before anything is stored, so a refusal leaves no orphan.
@@ -113,25 +111,25 @@ public class StatementController {
     }
 
     @PostMapping("/reinsurance-statements/{id}/submission")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('reinsurance.manage')")
     public StatementResponseDto submit(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
         return StatementResponseDto.from(api.submitStatement(id, jwt.getSubject()));
     }
 
     @PostMapping("/reinsurance-statements/{id}/withdrawal")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('reinsurance.manage')")
     public StatementResponseDto withdraw(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
         return StatementResponseDto.from(api.withdrawStatement(id, jwt.getSubject()));
     }
 
     @PostMapping("/reinsurance-statements/{id}/approval")
-    @PreAuthorize(APPROVER)
+    @PreAuthorize("@access.can('reinsurance.approve')")
     public StatementResponseDto approve(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
         return StatementResponseDto.from(api.approveStatement(id, jwt.getSubject()));
     }
 
     @PostMapping("/reinsurance-statements/{id}/rejection")
-    @PreAuthorize(APPROVER)
+    @PreAuthorize("@access.can('reinsurance.approve')")
     public StatementResponseDto reject(@PathVariable UUID id, @RequestBody(required = false) StatementRejectionRequest body,
                                        @AuthenticationPrincipal Jwt jwt) {
         return StatementResponseDto.from(api.rejectStatement(id, body == null ? null : body.reason(), jwt.getSubject()));

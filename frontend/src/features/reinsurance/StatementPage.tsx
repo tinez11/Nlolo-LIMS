@@ -1,8 +1,9 @@
+import { can } from '@/auth/access';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from 'react-oidc-context';
 import { Link, useParams } from 'react-router-dom';
 import type { ReinsuranceStatementView } from '@/api/types';
-import { canApproveJournals, readIdentity } from '@/auth/claims';
+import { readIdentity } from '@/auth/claims';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
@@ -42,7 +43,7 @@ function Statement({ statement: s }: { statement: ReinsuranceStatementView }) {
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const isPreparer = identity.subject === s.preparer;
-  const mayDecide = canApproveJournals(identity) && !isPreparer;
+  const mayDecide = can('reinsurance.approve') && !isPreparer;
   const editable = s.status === 'DRAFT' && isPreparer;
 
   return (

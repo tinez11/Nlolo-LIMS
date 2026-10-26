@@ -1,5 +1,7 @@
 package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
 
+import tz.co.nlolo.lifeplatform.iam.api.CurrentAccess;
+import tz.co.nlolo.lifeplatform.iam.api.Permission;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.AnnuityChoice;
 import tz.co.nlolo.lifeplatform.underwriting.api.DeferredAnnuityChoice;
@@ -57,11 +59,14 @@ public class UnderwritingController {
 
     /** Returned for amendment, amended, resubmitted (2026-10-20). */
     private final ProposalAmendmentApi amendments;
+    /** Whether the caller may decide against the recommendation -- a platform permission, read per request. */
+    private final CurrentAccess currentAccess;
 
     public UnderwritingController(UnderwritingApi underwritingApi, PartyApi partyApi,
                                   tz.co.nlolo.lifeplatform.underwriting.api.AcceptedQuotationApi acceptedQuotations,
                                   com.fasterxml.jackson.databind.ObjectMapper objectMapper,
-                                  ProposalAmendmentApi amendments) {
+                                  ProposalAmendmentApi amendments, CurrentAccess currentAccess) {
+        this.currentAccess = currentAccess;
         this.underwritingApi = underwritingApi;
         this.partyApi = partyApi;
         this.acceptedQuotations = acceptedQuotations;
@@ -88,7 +93,7 @@ public class UnderwritingController {
      * every case in the tenant.
      */
     @GetMapping("/cases")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.view')")
     public ResponseEntity<UnderwritingCaseSearchResponse> listCases(
             @RequestParam(required = false) UnderwritingCaseStatus status,
             @RequestParam(required = false) DecisionOutcome outcome,
@@ -121,7 +126,7 @@ public class UnderwritingController {
      * set grows with every case ever decided; nearly all of them already have their policy.
      */
     @GetMapping("/cases/awaiting-issue")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.canAny('underwriting.view', 'policies.issue')")
     public ResponseEntity<UnderwritingCaseSearchResponse> listCasesAwaitingIssue(
             @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "0") int page,
@@ -133,7 +138,7 @@ public class UnderwritingController {
     // Transactional so an annuity choice refused below rolls back the case it would have opened:
     // a 422 must not leave a case behind (product step 5). Both service calls join this transaction.
     @PostMapping("/cases")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.propose')")
     @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<UnderwritingCaseView> openCase(@Valid @RequestBody OpenCaseRequest request,
                                                           @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
@@ -199,7 +204,7 @@ public class UnderwritingController {
 
     /** IFRS 17 I2: the channel and branch of the sale, editable until the policy is issued. */
     @PutMapping("/cases/{caseId}/sale")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.propose')")
     public ResponseEntity<UnderwritingCaseView> recordSale(@PathVariable UUID caseId, @Valid @RequestBody SaleRequest request,
                                                             @AuthenticationPrincipal Jwt jwt) {
         requireAgentScope(caseId);
@@ -209,7 +214,7 @@ public class UnderwritingController {
 
     /** The account charges a savings case will be issued on (2026-10-09); empty for the product's own. */
     @GetMapping("/cases/{caseId}/account-charges")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.view')")
     public ResponseEntity<AccountChargeChoice> accountCharges(@PathVariable UUID caseId) {
         requireAgentScope(caseId);
         return ResponseEntity.ok(new AccountChargeChoice(underwritingApi.accountCharges(caseId)));
@@ -217,7 +222,7 @@ public class UnderwritingController {
 
     /** Choose or change them (empty clears) -- until the policy is issued. */
     @PutMapping("/cases/{caseId}/account-charges")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('underwriting.propose')")
     public ResponseEntity<AccountChargeChoice> chooseAccountCharges(@PathVariable UUID caseId,
                                                                     @RequestBody AccountChargeChoice request) {
         underwritingApi.chooseAccountCharges(caseId, request.chargeIds());
@@ -240,7 +245,7 @@ public class UnderwritingController {
      * case deliberately has none — see {@link OpenGroupCaseRequest}.
      */
     @PostMapping("/cases/group")
-    @PreAuthorize("hasRole('UNDERWRITER')")
+    @PreAuthorize("@access.can('schemes.manage')")
     public ResponseEntity<UnderwritingCaseView> openGroupCase(@Valid @RequestBody OpenGroupCaseRequest request,
                                                                @AuthenticationPrincipal Jwt jwt) {
         UnderwritingCaseView view = underwritingApi.openCase(request.policyholderPartyId(),
@@ -256,7 +261,7 @@ public class UnderwritingController {
      */
     @PostMapping(value = "/cases/{caseId}/group-schedule",
         consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('UNDERWRITER')")
+    @PreAuthorize("@access.can('schemes.manage')")
     public ResponseEntity<tz.co.nlolo.lifeplatform.underwriting.api.GroupScheduleResult> replaceGroupSchedule(
             @PathVariable UUID caseId,
             @org.springframework.web.bind.annotation.RequestPart("file") org.springframework.web.multipart.MultipartFile file,
@@ -278,7 +283,7 @@ public class UnderwritingController {
      * The plan's role rules are applied when the proposal is opened.
      */
     @PostMapping(value = "/group-schedule/reading", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('UNDERWRITER')")
+    @PreAuthorize("@access.can('schemes.manage')")
     public ResponseEntity<GroupScheduleReading> readGroupSchedule(
             @org.springframework.web.bind.annotation.RequestPart("file") org.springframework.web.multipart.MultipartFile file) {
         try {
@@ -291,7 +296,7 @@ public class UnderwritingController {
 
     /** The schedule file's header and one example family, for an association to fill. */
     @GetMapping(value = "/group-schedule-template", produces = "text/csv")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('underwriting.view')")
     public ResponseEntity<String> groupScheduleTemplate() {
         String csv = String.join(",", tz.co.nlolo.lifeplatform.underwriting.api.FuneralScheduleFile.HEADER) + "\n"
             + "M001,MAIN_MEMBER,Juma Ali,1980-05-12,MALE,,,Asha Juma,SPOUSE,0712000000\n"
@@ -305,7 +310,7 @@ public class UnderwritingController {
     }
 
     @GetMapping("/cases/{caseId}")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.view')")
     public ResponseEntity<UnderwritingCaseView> getCase(@PathVariable UUID caseId) {
         return ResponseEntity.ok(requireAgentScope(caseId));
     }
@@ -316,7 +321,7 @@ public class UnderwritingController {
      * way. An agent reads only the quotations it confirmed.
      */
     @GetMapping("/cases/{caseId}/quotation")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.view')")
     public ResponseEntity<CaseQuotationResponse> getCaseQuotation(@PathVariable UUID caseId,
                                                                   @AuthenticationPrincipal Jwt jwt,
                                                                   Authentication authentication) {
@@ -329,7 +334,7 @@ public class UnderwritingController {
     }
 
     @PostMapping("/cases/{caseId}/assessments")
-    @PreAuthorize("hasRole('UNDERWRITER')")
+    @PreAuthorize("@access.can('underwriting.assess')")
     public ResponseEntity<UnderwritingCaseView> submitAssessment(@PathVariable UUID caseId,
                                                                   @Valid @RequestBody SubmitAssessmentRequest request,
                                                                   @AuthenticationPrincipal Jwt jwt) {
@@ -349,14 +354,12 @@ public class UnderwritingController {
      * dependency of its own.
      */
     @PostMapping("/cases/{caseId}/decision")
-    @PreAuthorize("hasRole('UNDERWRITER')")
+    @PreAuthorize("@access.can('underwriting.decide')")
     public ResponseEntity<UnderwritingCaseView> decide(@PathVariable UUID caseId,
                                                         @Valid @RequestBody DecideRequest request,
                                                         @AuthenticationPrincipal Jwt jwt,
                                                         Authentication authentication) {
-        boolean senior = authentication.getAuthorities().stream()
-            .map(GrantedAuthority::getAuthority)
-            .anyMatch("ROLE_SENIOR_UNDERWRITER"::equals);
+        boolean senior = currentAccess.can(Permission.UNDERWRITING_DECIDE_AGAINST);
         UnderwritingCaseView view = underwritingApi.decide(caseId,
             new UnderwritingApi.DecisionInput(request.outcome(), request.loadingPercent(), request.reason(),
                 Boolean.TRUE.equals(request.ageEvidenceConfirmed())),
@@ -369,7 +372,7 @@ public class UnderwritingController {
      * which is also the answer for every case that is not an annuity's.
      */
     @GetMapping("/cases/{caseId}/annuity-choice")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.view')")
     public ResponseEntity<AnnuityChoice> getAnnuityChoice(@PathVariable UUID caseId) {
         requireAgentScope(caseId);
         return underwritingApi.annuityChoice(caseId).map(ResponseEntity::ok)
@@ -378,7 +381,7 @@ public class UnderwritingController {
 
     /** Change an annuity case's choice before it is decided. Whoever may open a case may change it. */
     @PutMapping("/cases/{caseId}/annuity-choice")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.propose')")
     public ResponseEntity<AnnuityChoice> recordAnnuityChoice(@PathVariable UUID caseId,
                                                              @RequestBody OpenCaseRequest.AnnuityChoiceDto request,
                                                              @AuthenticationPrincipal Jwt jwt) {
@@ -391,7 +394,7 @@ public class UnderwritingController {
      * DEFERRED_ANNUITY_CHOICE_NOT_FOUND when there is none -- also the answer for every other case.
      */
     @GetMapping("/cases/{caseId}/deferred-annuity-choice")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.view')")
     public ResponseEntity<DeferredAnnuityChoice> getDeferredAnnuityChoice(@PathVariable UUID caseId) {
         requireAgentScope(caseId);
         return underwritingApi.deferredAnnuityChoice(caseId).map(ResponseEntity::ok)
@@ -400,7 +403,7 @@ public class UnderwritingController {
 
     /** Change a deferred annuity case's retirement age before it is decided. Whoever may open a case may change it. */
     @PutMapping("/cases/{caseId}/deferred-annuity-choice")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.propose')")
     public ResponseEntity<DeferredAnnuityChoice> recordDeferredAnnuityChoice(@PathVariable UUID caseId,
                                                                              @RequestBody OpenCaseRequest.DeferredAnnuityDto request,
                                                                              @AuthenticationPrincipal Jwt jwt) {
@@ -413,7 +416,7 @@ public class UnderwritingController {
      * when there is none -- also the answer for every other case.
      */
     @GetMapping("/cases/{caseId}/unit-linked-choice")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.view')")
     public ResponseEntity<UnitLinkedChoice> getUnitLinkedChoice(@PathVariable UUID caseId) {
         requireAgentScope(caseId);
         return underwritingApi.unitLinkedChoice(caseId).map(ResponseEntity::ok)
@@ -422,7 +425,7 @@ public class UnderwritingController {
 
     /** Record or replace a unit-linked case's choice before it is decided. Whoever may open a case may change it. */
     @PutMapping("/cases/{caseId}/unit-linked-choice")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.propose')")
     public ResponseEntity<UnitLinkedChoice> recordUnitLinkedChoice(@PathVariable UUID caseId,
                                                                    @RequestBody UnitLinkedChoice request,
                                                                    @AuthenticationPrincipal Jwt jwt) {
@@ -435,7 +438,7 @@ public class UnderwritingController {
      * FUNERAL_APPLICATION_NOT_FOUND when there is none -- also the answer for every other case.
      */
     @GetMapping("/cases/{caseId}/funeral-application")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.view')")
     public ResponseEntity<FuneralApplication> getFuneralApplication(@PathVariable UUID caseId) {
         requireAgentScope(caseId);
         return underwritingApi.funeralApplication(caseId).map(ResponseEntity::ok)
@@ -444,7 +447,7 @@ public class UnderwritingController {
 
     /** Record or replace a funeral case's plan and dependants before it is decided. Whoever may open a case may change it. */
     @PutMapping("/cases/{caseId}/funeral-application")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.propose')")
     public ResponseEntity<FuneralApplication> recordFuneralApplication(@PathVariable UUID caseId,
                                                                        @Valid @RequestBody FuneralApplicationRequest request,
                                                                        @AuthenticationPrincipal Jwt jwt) {
@@ -470,7 +473,7 @@ public class UnderwritingController {
      * <p>Same gate as {@link #getCase}: a caller who may read the case may read who it names.
      */
     @GetMapping("/cases/{caseId}/beneficiaries")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.view')")
     public ResponseEntity<List<BeneficiaryNomination>> listCaseBeneficiaries(@PathVariable UUID caseId) {
         return ResponseEntity.ok(requireAgentScope(caseId).beneficiaries());
     }
@@ -492,7 +495,7 @@ public class UnderwritingController {
      *     the plain meaning of the URL not resolving to anything.
      */
     @GetMapping("/cases/{caseId}/group-proposal")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.view')")
     public ResponseEntity<GroupProposalResponseDto> getGroupProposal(@PathVariable UUID caseId) {
         GroupProposal proposal = requireAgentScope(caseId).groupProposal();
         return proposal != null
@@ -501,7 +504,7 @@ public class UnderwritingController {
     }
 
     @PostMapping("/cases/{caseId}/referral")
-    @PreAuthorize("hasRole('UNDERWRITER')")
+    @PreAuthorize("@access.can('underwriting.refer')")
     public ResponseEntity<Void> referCase(@PathVariable UUID caseId) {
         underwritingApi.referToSeniorUnderwriter(caseId);
         return ResponseEntity.ok().build();
@@ -520,7 +523,7 @@ public class UnderwritingController {
      * to review. This is the writer.
      */
     @PostMapping("/cases/{caseId}/disclosures")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.propose')")
     public ResponseEntity<MedicalDisclosureView> recordDisclosures(@PathVariable UUID caseId,
             @Valid @RequestBody RecordDisclosuresRequest request, @AuthenticationPrincipal Jwt jwt) {
         requireAgentScope(caseId);
@@ -530,7 +533,7 @@ public class UnderwritingController {
     }
 
     @GetMapping("/cases/{caseId}/disclosures")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.view')")
     public ResponseEntity<List<MedicalDisclosureView>> listDisclosures(@PathVariable UUID caseId) {
         requireAgentScope(caseId);
         return ResponseEntity.ok(underwritingApi.listDisclosures(caseId));
@@ -544,7 +547,7 @@ public class UnderwritingController {
      * and cannot be decided until the agent resubmits it.
      */
     @PostMapping("/cases/{caseId}/return")
-    @PreAuthorize("hasRole('UNDERWRITER')")
+    @PreAuthorize("@access.can('underwriting.decide')")
     public ResponseEntity<UnderwritingCaseView> returnForAmendment(@PathVariable UUID caseId,
                                                                    @Valid @RequestBody AmendmentRequests.ReturnRequest request,
                                                                    @AuthenticationPrincipal Jwt jwt) {
@@ -586,7 +589,7 @@ public class UnderwritingController {
 
     /** Every return, amendment and resubmission on the case, oldest first -- for the underwriter and the agent alike. */
     @GetMapping("/cases/{caseId}/history")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('underwriting.view')")
     public ResponseEntity<List<ProposalAmendmentApi.CaseEventView>> history(@PathVariable UUID caseId) {
         requireAgentScope(caseId);
         return ResponseEntity.ok(amendments.history(caseId));
@@ -609,7 +612,7 @@ public class UnderwritingController {
      * {@code resubmittedOnly}, the ones that came back from agents alone.
      */
     @GetMapping("/arrivals")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('underwriting.view')")
     public ResponseEntity<ArrivalsResponse> arrivals(@RequestParam(defaultValue = "false") boolean resubmittedOnly,
                                                      @RequestParam(defaultValue = "0") int page,
                                                      @RequestParam(defaultValue = "20") int pageSize) {

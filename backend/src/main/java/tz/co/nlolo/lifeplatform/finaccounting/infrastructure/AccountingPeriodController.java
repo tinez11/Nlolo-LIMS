@@ -20,7 +20,6 @@ import java.util.List;
 @RestController
 public class AccountingPeriodController {
 
-    private static final String FINANCE = "hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))";
 
     /** Why a locked period is reopened. */
     public record ReopenRequest(String reason) {}
@@ -32,38 +31,38 @@ public class AccountingPeriodController {
     }
 
     @GetMapping("/finance/periods")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.view')")
     public List<AccountingPeriodView> periods() {
         return api.periods();
     }
 
     @GetMapping("/finance/periods/{period}")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.view')")
     public AccountingPeriodView period(@PathVariable String period) {
         return api.period(period);
     }
 
     @PostMapping("/finance/periods/{period}/closing")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public AccountingPeriodView startClosing(@PathVariable String period, @AuthenticationPrincipal Jwt jwt) {
         return api.startClosing(period, jwt.getSubject());
     }
 
     @PostMapping("/finance/periods/{period}/lock")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public AccountingPeriodView lock(@PathVariable String period, @AuthenticationPrincipal Jwt jwt) {
         return api.lockPeriod(period, jwt.getSubject());
     }
 
     @PostMapping("/finance/periods/{period}/reopen-request")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public AccountingPeriodView requestReopen(@PathVariable String period, @RequestBody ReopenRequest body,
                                               @AuthenticationPrincipal Jwt jwt) {
         return api.requestReopen(period, body == null ? null : body.reason(), jwt.getSubject());
     }
 
     @PostMapping("/finance/periods/{period}/reopen-approval")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public AccountingPeriodView approveReopen(@PathVariable String period, @AuthenticationPrincipal Jwt jwt) {
         return api.approveReopen(period, jwt.getSubject());
     }

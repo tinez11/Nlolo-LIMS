@@ -63,6 +63,35 @@ class PermissionCatalogueTest {
             .noneMatch(p -> p.area() == Permission.Area.UNDERWRITING);
     }
 
+    /**
+     * Every permission an endpoint names is in the catalogue -- @access.can refuses an unknown code, so a typo would
+     * lock everyone out of that endpoint -- and no endpoint asks Keycloak for a staff role any more: the platform holds
+     * them now, and a role read from the token would ignore every change an administrator makes.
+     */
+    @Test
+    void everyEndpointChecksAPermissionThatExistsAndNoneReadsAKeycloakStaffRole() throws Exception {
+        java.util.regex.Pattern code = java.util.regex.Pattern.compile("'([a-z0-9]+\\.[a-z0-9-]+)'");
+        java.util.List<String> unknown = new java.util.ArrayList<>();
+        java.util.List<String> keycloakRoles = new java.util.ArrayList<>();
+        int checked = 0;
+        try (var files = java.nio.file.Files.walk(java.nio.file.Path.of("src/main/java"))) {
+            for (java.nio.file.Path file : files.filter(f -> f.toString().endsWith(".java")).toList()) {
+                for (String line : java.nio.file.Files.readAllLines(file)) {
+                    if (!line.contains("@PreAuthorize(\"")) continue;
+                    checked++;
+                    java.util.regex.Matcher m = code.matcher(line);
+                    while (m.find()) {
+                        if (Permission.fromCode(m.group(1)).isEmpty()) unknown.add(file.getFileName() + ": " + m.group(1));
+                    }
+                    if (line.matches(".*hasRole\\('(?!REALM_)[A-Z_]+'\\).*")) keycloakRoles.add(file.getFileName() + ": " + line.trim());
+                }
+            }
+        }
+        assertThat(checked).as("annotations found").isGreaterThan(350);
+        assertThat(unknown).isEmpty();
+        assertThat(keycloakRoles).isEmpty();
+    }
+
     @Test
     void onlyAdministratorsManageAccess() {
         for (BuiltInRoles.Definition role : BuiltInRoles.ALL) {

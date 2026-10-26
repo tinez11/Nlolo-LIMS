@@ -58,7 +58,7 @@ public class RegulatoryReturnController {
     }
 
     @PostMapping("/regulatory-returns")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('returns.manage')")
     public ResponseEntity<RegulatoryReturnResponseDto> generateReturn(
             @Valid @RequestBody GenerateReturnRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         RegulatoryReturnView view = regreportingApi.generateReturn(request.returnType(), request.period(),
@@ -67,7 +67,7 @@ public class RegulatoryReturnController {
     }
 
     @GetMapping("/regulatory-returns")
-    @PreAuthorize("(hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))) or hasRole('REALM_REGULATORS')")
+    @PreAuthorize("hasRole('REALM_REGULATORS') or @access.can('returns.view')")
     public ResponseEntity<List<RegulatoryReturnResponseDto>> listReturns(
             @RequestParam(required = false) String period) {
         return ResponseEntity.ok(regreportingApi.listReturns(period).stream()
@@ -75,7 +75,7 @@ public class RegulatoryReturnController {
     }
 
     @GetMapping("/regulatory-returns/{returnId}")
-    @PreAuthorize("(hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))) or hasRole('REALM_REGULATORS')")
+    @PreAuthorize("hasRole('REALM_REGULATORS') or @access.can('returns.view')")
     public ResponseEntity<RegulatoryReturnResponseDto> getReturn(@PathVariable UUID returnId) {
         return ResponseEntity.ok(RegulatoryReturnResponseDto.from(regreportingApi.getReturn(returnId)));
     }

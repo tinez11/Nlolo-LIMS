@@ -1,3 +1,4 @@
+import { can } from '@/auth/access';
 import { z } from 'zod';
 import { canSeeFinance, type TokenIdentity } from '@/auth/claims';
 
@@ -25,5 +26,5 @@ export type BonusDeclarationValues = z.infer<typeof bonusDeclarationSchema>;
  * product in those categories with none is answered by the server's own refusal, as showsRates does.
  */
 export function showsBonuses(category: string | undefined, identity: TokenIdentity): boolean {
-  return ['ENDOWMENT', 'WHOLE_LIFE'].includes(category ?? '') && canSeeFinance(identity);
+  return ['ENDOWMENT', 'WHOLE_LIFE'].includes(category ?? '') && canSeeFinance(identity) && can('products.view');
 }

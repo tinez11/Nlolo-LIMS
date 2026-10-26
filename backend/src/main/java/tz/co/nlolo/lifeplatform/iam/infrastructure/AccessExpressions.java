@@ -9,6 +9,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.iam.api.AccessApi;
+import tz.co.nlolo.lifeplatform.iam.api.CurrentAccess;
 import tz.co.nlolo.lifeplatform.iam.api.Permission;
 
 import java.util.Collection;
@@ -25,7 +26,7 @@ import java.util.UUID;
  * {@code PermissionCatalogueTest} is what stops one reaching main.
  */
 @Component("access")
-public class AccessExpressions {
+public class AccessExpressions implements CurrentAccess {
 
     private static final Logger log = LoggerFactory.getLogger(AccessExpressions.class);
 
@@ -43,6 +44,21 @@ public class AccessExpressions {
         }
         AccessApi.AccessView view = current();
         return view != null && view.can(permission);
+    }
+
+    @Override
+    public boolean can(Permission permission) {
+        AccessApi.AccessView view = current();
+        return view != null && view.can(permission);
+    }
+
+    /**
+     * A staff member the platform knows and has not deactivated, whatever they hold -- for what every working staff
+     * member needs: their own access, reference lists, and a document whose reference they were already given.
+     */
+    public boolean active() {
+        AccessApi.AccessView view = current();
+        return view != null && view.active();
     }
 
     /** True when the caller holds any one of them. */

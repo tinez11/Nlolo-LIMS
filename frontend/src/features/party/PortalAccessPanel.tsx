@@ -1,3 +1,4 @@
+import { OneTimePassword } from '@/components/OneTimePassword';
 import { useEffect, useState } from 'react';
 import { useAuth } from 'react-oidc-context';
 import { getPortalAccess, invitePortal, resendPortalInvite, revokePortal, type PortalAccessView } from '@/api/portal';
@@ -104,15 +105,10 @@ export function PortalAccessPanel({ partyId }: { partyId: string }) {
       )}
 
       {outcome?.password && (
-        <div role="status" className="rounded-md border border-status-warning-fg/40 bg-status-warning-bg p-3 text-sm">
-          <p className="font-medium">One-time password — shown once</p>
-          <p className="mt-1 font-mono text-base tracking-wider">{outcome.password}</p>
-          {outcome.notice && <p className="mt-1">{outcome.notice}</p>}
-          <p className="mt-1 text-xs text-muted-foreground">
-            Give it to the client in person or by phone. They sign in as {access.username} and must choose their own
-            password straight away. It is not kept anywhere: if it is lost, re-send to make a new one.
-          </p>
-        </div>
+        <OneTimePassword password={outcome.password} notice={outcome.notice}>
+          Give it to the client in person or by phone. They sign in as {access.username} and must choose their own
+          password straight away. It is not kept anywhere: if it is lost, re-send to make a new one.
+        </OneTimePassword>
       )}
 
       {error && <InlineError error={error} />}

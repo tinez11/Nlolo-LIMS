@@ -28,14 +28,14 @@ public class RecoveryController {
     }
 
     @GetMapping("/policies/{policyNumber}/cessions")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('reinsurance.view')")
     public ResponseEntity<List<CessionResponseDto>> listCessionsForPolicy(@PathVariable String policyNumber) {
         return ResponseEntity.ok(reinsuranceApi.listCessionsForPolicy(policyNumber).stream()
             .map(CessionResponseDto::from).toList());
     }
 
     @GetMapping("/claims/{claimId}/recoveries")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('reinsurance.view')")
     public ResponseEntity<List<ClaimRecoveryResponseDto>> listRecoveriesForClaim(@PathVariable UUID claimId) {
         return ResponseEntity.ok(reinsuranceApi.listRecoveriesForClaim(claimId).stream()
             .map(ClaimRecoveryResponseDto::from).toList());

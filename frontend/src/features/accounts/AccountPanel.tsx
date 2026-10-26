@@ -1,9 +1,10 @@
+import { can } from '@/auth/access';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { useForm, type FieldValues, type UseFormReturn } from 'react-hook-form';
 import { useAuth } from 'react-oidc-context';
 import type { AccountView, AdjustmentView, LedgerEntryView, TermAccountView, WithdrawalView } from '@/api/types';
-import { canSeeFinance, readIdentity } from '@/auth/claims';
+import { readIdentity } from '@/auth/claims';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';
 import { FormField } from '@/components/FormField';
@@ -57,9 +58,8 @@ export function AccountPanel({ policyNumber }: { policyNumber: string }) {
   // A term account (2026-10-21) carries its locked rate and maturity beside the ledger; null for any other account.
   const termAccount = useAccumulationStore((s) => s.termAccount[policyNumber]);
   const loadTermAccount = useAccumulationStore((s) => s.loadTermAccount);
-  const auth = useAuth();
-  const identity = readIdentity(auth.user?.access_token);
-  const isFinance = identity ? canSeeFinance(identity) : false;
+  // Paying a matured deposit or term account to its payee (payouts.manage, 2026-10-26).
+  const isFinance = can('payouts.manage');
 
   useEffect(() => {
     void loadAccount(policyNumber);
@@ -163,7 +163,8 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const viewerSubject = identity?.subject ?? undefined;
-  const isFinance = identity ? canSeeFinance(identity) : false;
+  // The second signature on withdrawals and adjustments (accounts.approve, 2026-10-26).
+  const isFinance = can('accounts.approve');
 
   // Select the stored resource and default OUTSIDE the selector: `?? []` inside it returns a fresh
   // array on every call, which Zustand reads as a change and re-renders forever -- the render loop

@@ -49,6 +49,12 @@ test('staff keep home_branch and customers keep party_id', () => {
   assert.deepEqual(mappers('agents'), ['party_id', 'tenant_id']);
 });
 
+test('the staff user admin client takes its secret from the environment', () => {
+  const admin = realm('staff').clients.find((c) => c.clientId === 'lifeplatform-staff-admin');
+  assert.equal(admin.secret, '$(env:STAFF_ADMIN_CLIENT_SECRET)');
+  assert.ok(realm('staff').users.some((u) => u.username === 'service-account-lifeplatform-staff-admin'));
+});
+
 test('the portal admin client takes its secret from the environment', () => {
   const admin = realm('customers').clients.find((c) => c.clientId === 'lifeplatform-admin');
   assert.equal(admin.secret, '$(env:PORTAL_ADMIN_CLIENT_SECRET)');

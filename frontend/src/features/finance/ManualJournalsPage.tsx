@@ -1,3 +1,4 @@
+import { can } from '@/auth/access';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
@@ -112,9 +113,11 @@ export function ManualJournalsPage() {
                 Templates
               </Link>
             </Button>
-            <Button asChild variant="primary" size="sm">
-              <Link to="new">New journal</Link>
-            </Button>
+            {can('ledger.manage') && (
+              <Button asChild variant="primary" size="sm">
+                <Link to="new">New journal</Link>
+              </Button>
+            )}
           </div>
         </div>
         {renderBody()}

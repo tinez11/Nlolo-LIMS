@@ -46,7 +46,7 @@ public class PolicyLoanController {
     @PostMapping("/policies/{policyNumber}/loans")
     // Not a customer act (2026-10-08, the customer portal design, the user's D3): the portal reads and requests;
     // it does not change this. Staff and agents only.
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('loans.manage')")
     public ResponseEntity<LoanResponseDto> originateLoan(@PathVariable String policyNumber, @Valid @RequestBody OriginateLoanRequestDto request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
@@ -60,7 +60,7 @@ public class PolicyLoanController {
     }
 
     @GetMapping("/policies/{policyNumber}/loans")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('accounts.view')")
     public ResponseEntity<List<LoanResponseDto>> listLoans(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         enforceCustomerOwnPolicyOnly(policyNumber, jwt, authentication);
         return ResponseEntity.ok(policyLoanApi.listLoansForPolicy(policyNumber).stream().map(LoanResponseDto::from).toList());
@@ -77,7 +77,7 @@ public class PolicyLoanController {
      * {@code {loanId}} never sees this URL and never tries to parse it as a UUID.
      */
     @GetMapping("/loans/forced-lapse-review-queue")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.view')")
     public ResponseEntity<List<LoanResponseDto>> listForcedLapseReviewQueue() {
         return ResponseEntity.ok(policyLoanApi.listLoansPendingForcedLapseReview().stream().map(LoanResponseDto::from).toList());
     }
@@ -91,13 +91,13 @@ public class PolicyLoanController {
      * requested of an external rail, so there is no async leg to describe.
      */
     @PostMapping("/loans/{loanId}/forced-lapse-evaluation")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('loans.manage')")
     public ResponseEntity<LoanResponseDto> evaluateForcedLapse(@PathVariable UUID loanId) {
         return ResponseEntity.ok(LoanResponseDto.from(policyLoanApi.evaluateForcedLapse(loanId)));
     }
 
     @GetMapping("/loans/{loanId}")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('accounts.view')")
     public ResponseEntity<LoanResponseDto> getLoan(@PathVariable UUID loanId, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         LoanView loan = policyLoanApi.getLoan(loanId);
         enforceCustomerOwnPolicyOnly(loan.policyNumber(), jwt, authentication);
@@ -105,7 +105,7 @@ public class PolicyLoanController {
     }
 
     @PostMapping("/loans/{loanId}/repayments")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('loans.manage')")
     public ResponseEntity<LoanResponseDto> recordRepayment(@PathVariable UUID loanId, @Valid @RequestBody RepaymentRequestDto request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {

@@ -220,12 +220,12 @@ describe('design guards', () => {
   it('sets letter-spacing only through a type tier', () => {
     // Group captions had four spellings (tracking-wide x11, -wider, -[0.03em]) and the page title
     // took tracking-tight where the scale says -0.015em. The tiers in index.css carry tracking.
-    // The one exception is a temporary password, spaced out so it can be read aloud letter by
+    // The one exception is a one-time password (components/OneTimePassword), spaced out so it can be read aloud letter by
     // letter -- reading, not typesetting.
     expect(
       offenders(
         /\btracking-(tight|tighter|wide|wider|widest|normal|\[)/,
-        (path) => path.endsWith('/features/party/PortalAccessPanel.tsx'),
+        (path) => path.endsWith('/components/OneTimePassword.tsx'),
       ),
     ).toEqual([]);
   });

@@ -28,7 +28,6 @@ import java.util.UUID;
 @RestController
 public class PolicyRegisterController {
 
-    private static final String FINANCE = "hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))";
     private static final ZoneId CIVIL = ZoneId.of("Africa/Dar_es_Salaam");
 
     public record ApprovalRequest(String signOffRef) {}
@@ -43,7 +42,7 @@ public class PolicyRegisterController {
 
     /** The elections in force on {@code asOf} (today when omitted), those scheduled after it, and every one proposed. */
     @GetMapping("/finance/accounting-policies")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.view')")
     public List<PolicyElectionView> list(@RequestParam(required = false)
                                          @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
         return api.policyElections(asOf == null ? LocalDate.now(CIVIL) : asOf);
@@ -51,7 +50,7 @@ public class PolicyRegisterController {
 
     /** IFRS 17 I2: how a contract is classified, oldest first (a vesting pension has two). */
     @GetMapping("/finance/policy-classifications/{policyNumber}")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.view')")
     public List<tz.co.nlolo.lifeplatform.finaccounting.api.PolicyClassificationView> classifications(
             @PathVariable String policyNumber) {
         return api.policyClassifications(policyNumber);
@@ -59,20 +58,20 @@ public class PolicyRegisterController {
 
     @PostMapping("/finance/accounting-policies")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public PolicyElectionView propose(@RequestBody PolicyElectionInput input, @AuthenticationPrincipal Jwt jwt) {
         return api.proposePolicyElection(input, jwt.getSubject());
     }
 
     @PostMapping("/finance/accounting-policies/{electionId}/approval")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public PolicyElectionView approve(@PathVariable UUID electionId, @RequestBody ApprovalRequest body,
                                       @AuthenticationPrincipal Jwt jwt) {
         return api.approvePolicyElection(electionId, body == null ? null : body.signOffRef(), jwt.getSubject());
     }
 
     @PostMapping("/finance/accounting-policies/{electionId}/rejection")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public PolicyElectionView reject(@PathVariable UUID electionId, @RequestBody RejectionRequest body,
                                      @AuthenticationPrincipal Jwt jwt) {
         return api.rejectPolicyElection(electionId, body == null ? null : body.reason(), jwt.getSubject());

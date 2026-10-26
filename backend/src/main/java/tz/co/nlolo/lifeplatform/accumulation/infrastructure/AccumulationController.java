@@ -18,11 +18,6 @@ import java.util.UUID;
 @RestController
 public class AccumulationController {
 
-    /** Setting a price is ADMIN's, as publishing a product version is. */
-    static final String PRICING = "hasRole('REALM_STAFF') and hasRole('ADMIN')";
-    /** The second signature on money: another ADMIN, or finance. */
-    static final String FINANCE = "hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))";
-
     private final AccumulationApi api;
 
     public AccumulationController(AccumulationApi api) {
@@ -30,13 +25,13 @@ public class AccumulationController {
     }
 
     @GetMapping("/products/{productId}/rate-declarations")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('products.view')")
     public List<RateDeclarationResponse> listRates(@PathVariable UUID productId) {
         return api.listRates(productId).stream().map(RateDeclarationResponse::from).toList();
     }
 
     @PostMapping("/products/{productId}/rate-declarations")
-    @PreAuthorize(PRICING)
+    @PreAuthorize("@access.can('products.declare')")
     @ResponseStatus(HttpStatus.CREATED)
     public RateDeclarationResponse proposeRate(@PathVariable UUID productId, @Valid @RequestBody RateDeclarationRequest request,
                                                @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
@@ -54,7 +49,7 @@ public class AccumulationController {
      * be offered. 422 for a version that keeps no account, which has no savings rate to describe.
      */
     @PostMapping("/products/{productId}/versions/{versionId}/savings-quote")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('products.view')")
     public SavingsQuoteResponse quoteSavings(@PathVariable UUID productId, @PathVariable UUID versionId,
                                              @Valid @RequestBody SavingsQuoteResponse.Body body) {
         String currency = body.currency() == null || body.currency().isBlank() ? "TZS" : body.currency();
@@ -68,13 +63,13 @@ public class AccumulationController {
     }
 
     @PostMapping("/rate-declarations/{declarationId}/approve")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('products.declare-approve')")
     public RateDeclarationResponse approveRate(@PathVariable UUID declarationId, @AuthenticationPrincipal Jwt jwt) {
         return RateDeclarationResponse.from(api.approveRate(declarationId, jwt.getSubject()));
     }
 
     @PostMapping("/rate-declarations/{declarationId}/withdraw")
-    @PreAuthorize(PRICING)
+    @PreAuthorize("@access.can('products.declare')")
     public RateDeclarationResponse withdrawRate(@PathVariable UUID declarationId, @AuthenticationPrincipal Jwt jwt) {
         return RateDeclarationResponse.from(api.withdrawRate(declarationId, jwt.getSubject()));
     }
@@ -83,7 +78,7 @@ public class AccumulationController {
 
     /** Any staff member may read an account: it is the customer's own money and its history. */
     @GetMapping("/policies/{policyNumber}/account")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.view')")
     public AccountResponse account(@PathVariable String policyNumber) {
         return AccountResponse.from(api.findAccount(policyNumber).orElseThrow(() -> new AccountNotFoundException(policyNumber)),
             api.entries(policyNumber));
@@ -94,14 +89,14 @@ public class AccumulationController {
      * posted. The surrender approval shows this beside the request's own estimate (spec §5.4).
      */
     @GetMapping("/policies/{policyNumber}/account/quote")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.view')")
     public ClosingQuoteResponse quote(@PathVariable String policyNumber) {
         return ClosingQuoteResponse.from(api.quoteClosing(policyNumber, java.time.LocalDate.now()));
     }
 
     /** A period computed and reconciled, not filed -- the Statement tab. */
     @GetMapping("/policies/{policyNumber}/account/statement")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.view')")
     public StatementResponse statement(@PathVariable String policyNumber,
                                        @RequestParam java.time.LocalDate from, @RequestParam java.time.LocalDate to) {
         return StatementResponse.from(api.statement(policyNumber, from, to));
@@ -109,7 +104,7 @@ public class AccumulationController {
 
     /** Filed as a PDF -- or the existing one returned, when nothing new has been posted since. */
     @PostMapping("/policies/{policyNumber}/account/statements")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.transact')")
     @ResponseStatus(HttpStatus.CREATED)
     public StatementRecordResponse generateStatement(@PathVariable String policyNumber,
                                                      @Valid @RequestBody StatementPeriodBody body,
@@ -118,14 +113,14 @@ public class AccumulationController {
     }
 
     @GetMapping("/policies/{policyNumber}/account/statements")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.view')")
     public List<StatementRecordResponse> statements(@PathVariable String policyNumber) {
         return api.listStatements(policyNumber).stream().map(StatementRecordResponse::from).toList();
     }
 
     /** Loaded by id under RLS, so another tenant's statement is simply not found. */
     @GetMapping(value = "/account-statements/{statementId}/pdf", produces = "application/pdf")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.view')")
     public ResponseEntity<byte[]> statementPdf(@PathVariable UUID statementId) {
         return ResponseEntity.ok()
             .header("Content-Disposition", "attachment; filename=\"statement-" + statementId + ".pdf\"")
@@ -134,7 +129,7 @@ public class AccumulationController {
 
     /** Any staff member may REQUEST, as a surrender is requested; approving moves money and is finance's. */
     @PostMapping("/policies/{policyNumber}/account/withdrawals")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.transact')")
     @ResponseStatus(HttpStatus.CREATED)
     public WithdrawalResponse requestWithdrawal(@PathVariable String policyNumber,
                                                 @Valid @RequestBody AccountRequestBodies.Withdrawal body,
@@ -146,20 +141,20 @@ public class AccumulationController {
 
     /** 202: approved and REQUESTED from the rail, not yet paid -- as a payout approval. */
     @PostMapping("/account-withdrawals/{withdrawalId}/approve")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('accounts.approve')")
     public ResponseEntity<WithdrawalResponse> approveWithdrawal(@PathVariable UUID withdrawalId, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.accepted().body(WithdrawalResponse.from(api.approveWithdrawal(withdrawalId, jwt.getSubject())));
     }
 
     @GetMapping("/policies/{policyNumber}/account/withdrawals")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.view')")
     public List<WithdrawalResponse> listWithdrawals(@PathVariable String policyNumber) {
         return api.listWithdrawals(policyNumber).stream().map(WithdrawalResponse::from).toList();
     }
 
     /** 202: the collection is REQUESTED from the rail; it is credited only once payment confirms it. */
     @PostMapping("/policies/{policyNumber}/account/top-ups")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.transact')")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public TopUpResponse requestTopUp(@PathVariable String policyNumber, @Valid @RequestBody AccountRequestBodies.TopUp body,
                                       @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
@@ -169,14 +164,14 @@ public class AccumulationController {
     }
 
     @GetMapping("/policies/{policyNumber}/account/top-ups")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.view')")
     public List<TopUpResponse> listTopUps(@PathVariable String policyNumber) {
         return api.listTopUps(policyNumber).stream().map(TopUpResponse::from).toList();
     }
 
     /** Finance's: it puts money on an account. */
     @PostMapping("/policies/{policyNumber}/account/transfers-in")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('accounts.approve')")
     @ResponseStatus(HttpStatus.CREATED)
     public TransferInResponse recordTransferIn(@PathVariable String policyNumber,
                                                @Valid @RequestBody AccountRequestBodies.TransferIn body,
@@ -187,14 +182,14 @@ public class AccumulationController {
     }
 
     @GetMapping("/policies/{policyNumber}/account/transfers-in")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.view')")
     public List<TransferInResponse> listTransfersIn(@PathVariable String policyNumber) {
         return api.listTransfersIn(policyNumber).stream().map(TransferInResponse::from).toList();
     }
 
     /** Finance proposes a correction; a DIFFERENT finance user or admin decides it. */
     @PostMapping("/policies/{policyNumber}/account/adjustments")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('accounts.approve')")
     @ResponseStatus(HttpStatus.CREATED)
     public AdjustmentResponse proposeAdjustment(@PathVariable String policyNumber,
                                                 @Valid @RequestBody AccountRequestBodies.Adjustment body,
@@ -205,19 +200,19 @@ public class AccumulationController {
     }
 
     @PostMapping("/account-adjustments/{adjustmentId}/approve")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('accounts.approve')")
     public AdjustmentResponse approveAdjustment(@PathVariable UUID adjustmentId, @AuthenticationPrincipal Jwt jwt) {
         return AdjustmentResponse.from(api.approveAdjustment(adjustmentId, jwt.getSubject()));
     }
 
     @PostMapping("/account-adjustments/{adjustmentId}/reject")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('accounts.approve')")
     public AdjustmentResponse rejectAdjustment(@PathVariable UUID adjustmentId, @AuthenticationPrincipal Jwt jwt) {
         return AdjustmentResponse.from(api.rejectAdjustment(adjustmentId, jwt.getSubject()));
     }
 
     @GetMapping("/policies/{policyNumber}/account/adjustments")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.view')")
     public List<AdjustmentResponse> listAdjustments(@PathVariable String policyNumber) {
         return api.listAdjustments(policyNumber).stream().map(AdjustmentResponse::from).toList();
     }
@@ -226,14 +221,14 @@ public class AccumulationController {
 
     /** Any staff member, as the account is. 404 for a policy that is not a deposit. */
     @GetMapping("/policies/{policyNumber}/account/deposit")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.view')")
     public DepositResponse deposit(@PathVariable String policyNumber) {
         return DepositResponse.from(api.findDeposit(policyNumber).orElseThrow(() -> new AccountNotFoundException(policyNumber)));
     }
 
     /** The client's choice, taken by any staff member as a withdrawal request is. Changeable until maturity. */
     @PostMapping("/policies/{policyNumber}/account/deposit/maturity-instruction")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.transact')")
     @ResponseStatus(HttpStatus.CREATED)
     public DepositResponse.Instruction instruct(@PathVariable String policyNumber, @Valid @RequestBody DepositBodies.Instruction body,
                                                 @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
@@ -243,14 +238,14 @@ public class AccumulationController {
     }
 
     @GetMapping("/deposits/awaiting-payee")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('payouts.view')")
     public List<DepositResponse.Awaiting> awaitingPayee() {
         return api.listAwaitingPayee().stream().map(DepositResponse.Awaiting::from).toList();
     }
 
     /** 202: REQUESTED from the rail, not paid. Money out, so finance's. */
     @PostMapping("/policies/{policyNumber}/account/deposit/payout")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('payouts.manage')")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public DepositResponse.Period payOut(@PathVariable String policyNumber, @Valid @RequestBody DepositBodies.Payout body,
                                          @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
@@ -263,21 +258,21 @@ public class AccumulationController {
 
     /** Any staff member, as the account is. 404 for a policy that is not a term account. */
     @GetMapping("/policies/{policyNumber}/account/term-account")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.view')")
     public TermAccountResponse termAccount(@PathVariable String policyNumber) {
         return TermAccountResponse.from(api.findTermAccount(policyNumber)
             .orElseThrow(() -> new AccountNotFoundException(policyNumber)));
     }
 
     @GetMapping("/term-accounts/awaiting-payee")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('payouts.view')")
     public List<DepositResponse.Awaiting> termAccountsAwaitingPayee() {
         return api.listTermAccountsAwaitingPayee().stream().map(DepositResponse.Awaiting::from).toList();
     }
 
     /** 202: REQUESTED from the rail, not paid. Money out, so finance's -- as a deposit's payout is. */
     @PostMapping("/policies/{policyNumber}/account/term-account/payout")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('payouts.manage')")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public TermAccountResponse payOutTermAccount(@PathVariable String policyNumber, @Valid @RequestBody DepositBodies.Payout body,
                                                  @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,

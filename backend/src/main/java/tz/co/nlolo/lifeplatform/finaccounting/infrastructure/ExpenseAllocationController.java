@@ -27,8 +27,6 @@ import java.util.UUID;
 @RestController
 public class ExpenseAllocationController {
 
-    private static final String FINANCE = "hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))";
-    private static final String APPROVER = "hasRole('REALM_STAFF') and hasRole('FINANCE_APPROVER')";
 
     public record ApprovalRequest(Boolean aboveThePool) {}
 
@@ -41,7 +39,7 @@ public class ExpenseAllocationController {
     }
 
     @GetMapping("/ifrs17/periods/{period}/expense-allocation-preview")
-    @PreAuthorize(FINANCE + " or " + APPROVER)
+    @PreAuthorize("@access.can('ifrs17.view')")
     public ExpenseAllocationPreview preview(@PathVariable String period,
                                             @RequestParam(required = false) BigDecimal maintenance,
                                             @RequestParam(required = false) BigDecimal claimsHandling,
@@ -51,33 +49,33 @@ public class ExpenseAllocationController {
 
     @PostMapping("/ifrs17/periods/{period}/expense-allocations")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ifrs17.manage')")
     public ExpenseAllocationView prepare(@PathVariable String period, @RequestBody(required = false) ExpenseAllocationInput body,
                                          @AuthenticationPrincipal Jwt jwt) {
         return allocations.prepare(period, body, jwt.getSubject());
     }
 
     @GetMapping("/ifrs17/periods/{period}/expense-allocations")
-    @PreAuthorize(FINANCE + " or " + APPROVER)
+    @PreAuthorize("@access.can('ifrs17.view')")
     public List<ExpenseAllocationView> list(@PathVariable String period) {
         return allocations.list(period);
     }
 
     @GetMapping("/ifrs17/expense-allocations/{id}")
-    @PreAuthorize(FINANCE + " or " + APPROVER)
+    @PreAuthorize("@access.can('ifrs17.view')")
     public ExpenseAllocationView get(@PathVariable UUID id) {
         return allocations.get(id);
     }
 
     @PostMapping("/ifrs17/expense-allocations/{id}/approval")
-    @PreAuthorize(APPROVER)
+    @PreAuthorize("@access.can('ifrs17.approve')")
     public ExpenseAllocationView approve(@PathVariable UUID id, @RequestBody(required = false) ApprovalRequest body,
                                          @AuthenticationPrincipal Jwt jwt) {
         return allocations.approve(id, body != null && Boolean.TRUE.equals(body.aboveThePool()), jwt.getSubject());
     }
 
     @PostMapping("/ifrs17/expense-allocations/{id}/rejection")
-    @PreAuthorize(APPROVER)
+    @PreAuthorize("@access.can('ifrs17.approve')")
     public ExpenseAllocationView reject(@PathVariable UUID id, @RequestBody(required = false) RejectionRequest body,
                                         @AuthenticationPrincipal Jwt jwt) {
         return allocations.reject(id, body == null ? null : body.reason(), jwt.getSubject());

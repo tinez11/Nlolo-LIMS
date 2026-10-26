@@ -96,7 +96,7 @@ public class AgentController {
      * DistributionApiIntegrationTest).
      */
     @PostMapping("/agents")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('agents.manage')")
     public ResponseEntity<AgentResponseDto> onboardAgent(@Valid @RequestBody OnboardAgentRequestDto request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @AuthenticationPrincipal Jwt jwt) {
@@ -110,7 +110,7 @@ public class AgentController {
 
     /** IFRS 17 I2: the channel an agent sells through and the branch it sells from. Gated like onboarding. */
     @PutMapping("/agents/{agentId}/placement")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('agents.manage')")
     public ResponseEntity<AgentResponseDto> updatePlacement(@PathVariable UUID agentId,
             @Valid @RequestBody AgentPlacementRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(AgentResponseDto.from(distributionApi.updateAgentPlacement(agentId,
@@ -142,7 +142,7 @@ public class AgentController {
      * `partyId` answers "is this client also an agent" for the client register.
      */
     @GetMapping("/agents")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('agents.view')")
     public ResponseEntity<AgentSearchResponse> listAgents(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) LicenseStatus status,
@@ -155,7 +155,7 @@ public class AgentController {
     }
 
     @GetMapping("/agents/{agentId}")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('agents.view')")
     public ResponseEntity<AgentResponseDto> getAgent(@PathVariable UUID agentId,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         AgentView view = distributionApi.getAgent(agentId);   // 404s cross-tenant, before any 403
@@ -207,20 +207,20 @@ public class AgentController {
      * transition 409s via InvalidAgentStateException, already mapped by DistributionExceptionHandler.
      */
     @PostMapping("/agents/{agentId}/suspend")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('agents.manage')")
     public ResponseEntity<AgentResponseDto> suspendAgent(@PathVariable UUID agentId, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(AgentResponseDto.from(distributionApi.suspendAgent(agentId, jwt.getSubject())));
     }
 
     /** Same real-gap fix as {@link #suspendAgent} -- SUSPENDED -> ACTIVE only. */
     @PostMapping("/agents/{agentId}/reactivate")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('agents.manage')")
     public ResponseEntity<AgentResponseDto> reactivateAgent(@PathVariable UUID agentId, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(AgentResponseDto.from(distributionApi.reactivateAgent(agentId, jwt.getSubject())));
     }
 
     @GetMapping("/agents/{agentId}/commission-plan")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.canAny('agents.view', 'policies.issue')")
     public ResponseEntity<CommissionPlanResponseDto> getApplicablePlan(@PathVariable UUID agentId,
             @RequestParam UUID productId, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         distributionApi.getAgent(agentId);
@@ -234,7 +234,7 @@ public class AgentController {
      * with each. FINANCE_OFFICER or ADMIN: this decides how much commission money is owed.
      */
     @PutMapping("/agents/{agentId}/commission-rate")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('agents.manage')")
     public ResponseEntity<CommissionPlanResponseDto> setCommissionRate(@PathVariable UUID agentId,
             @Valid @RequestBody SetCommissionRateRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(CommissionPlanResponseDto.from(distributionApi.setAgentCommissionRate(
@@ -243,14 +243,14 @@ public class AgentController {
 
     /** What one policy has earned, and clawed back -- the scheme page reads this. Staff only. */
     @GetMapping("/commission-accruals")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('agents.view')")
     public ResponseEntity<List<CommissionAccrualResponseDto>> listAccrualsForPolicy(@RequestParam String policyNumber) {
         return ResponseEntity.ok(distributionApi.listAccrualsForPolicy(policyNumber).stream()
             .map(CommissionAccrualResponseDto::from).toList());
     }
 
     @GetMapping("/agents/{agentId}/commission-statements")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('agents.view')")
     public ResponseEntity<List<CommissionStatementResponseDto>> listStatements(@PathVariable UUID agentId,
             @RequestParam(required = false) String period,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
@@ -278,7 +278,7 @@ public class AgentController {
      * rather than confirming its existence with a 403.
      */
     @GetMapping("/agents/{agentId}/commission-statements/{statementId}/accruals")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('agents.view')")
     public ResponseEntity<List<CommissionAccrualResponseDto>> listAccruals(@PathVariable UUID agentId,
             @PathVariable UUID statementId, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         distributionApi.getAgent(agentId);
@@ -315,7 +315,7 @@ public class AgentController {
      * is among the named agent's own before acting, 404 on a mismatch.
      */
     @PostMapping("/agents/{agentId}/commission-statements/{statementId}/payout")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('commission.pay')")
     public ResponseEntity<Void> requestPayout(@PathVariable UUID agentId, @PathVariable UUID statementId,
             @Valid @RequestBody RequestPayoutRequestDto request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,

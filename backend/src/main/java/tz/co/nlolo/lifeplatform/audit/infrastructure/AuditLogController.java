@@ -40,7 +40,7 @@ public class AuditLogController {
     }
 
     @GetMapping("/audit-log")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('audit.view')")
     public ResponseEntity<AuditLogSearchResponse> listEvents(
             @RequestParam(required = false) String eventTypePrefix,
             @RequestParam(required = false) Instant from,

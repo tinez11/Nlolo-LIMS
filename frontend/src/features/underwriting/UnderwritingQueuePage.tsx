@@ -1,3 +1,4 @@
+import { can } from '@/auth/access';
 import { Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -256,12 +257,14 @@ export function UnderwritingQueuePage() {
         title="Underwriting"
         description="Every underwriting case in your tenant. Select one to preview it."
         actions={
-          <Button asChild size="sm" variant="primary">
-            <Link to="new">
-              <Plus />
-              New case
-            </Link>
-          </Button>
+          can('underwriting.propose') ? (
+            <Button asChild size="sm" variant="primary">
+              <Link to="new">
+                <Plus />
+                New case
+              </Link>
+            </Button>
+          ) : undefined
         }
         count={<CountLine {...count} />}
       />

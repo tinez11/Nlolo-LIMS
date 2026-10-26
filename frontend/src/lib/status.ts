@@ -421,6 +421,27 @@ export const STATUS_MAPS = {
     READY: 'success',
   },
 
+  // iam UserView.active, read as a word (2026-10-26)
+  staffUser: {
+    ACTIVE: 'active',
+    DEACTIVATED: 'neutral',
+  },
+
+  // iam RoleView.active
+  staffRole: {
+    IN_USE: 'active',
+    OFF: 'neutral',
+  },
+
+  // openapi-iam.yaml ChangeView.status
+  accessChange: {
+    APPLIED: 'success',
+    PENDING: 'pending',
+    APPROVED: 'success',
+    REJECTED: 'danger',
+    WITHDRAWN: 'neutral',
+  },
+
   // openapi-common.yaml ProcessStatus.status
   process: {
     IN_PROGRESS: 'pending',

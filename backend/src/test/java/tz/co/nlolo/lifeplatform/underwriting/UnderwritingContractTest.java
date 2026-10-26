@@ -160,7 +160,7 @@ class UnderwritingContractTest {
         // Proposing a scheme is the front of the act that ends in a contract on risk, so it
         // takes the same role that act does. A plain staff token is not enough.
         mockMvc.perform(post("/underwriting/cases/group")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_CLAIMS_ASSESSOR"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isForbidden());
@@ -517,7 +517,7 @@ class UnderwritingContractTest {
 
         // A plain staff token without the UNDERWRITER role is forbidden.
         mockMvc.perform(post("/underwriting/cases/" + caseId + "/assessments")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_CLAIMS_ASSESSOR"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""

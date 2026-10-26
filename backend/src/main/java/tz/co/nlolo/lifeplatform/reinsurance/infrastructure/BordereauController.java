@@ -31,14 +31,14 @@ public class BordereauController {
     }
 
     @GetMapping("/treaties/{treatyId}/bordereaux")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('reinsurance.view')")
     public ResponseEntity<List<BordereauResponseDto>> listBordereaux(@PathVariable UUID treatyId) {
         return ResponseEntity.ok(reinsuranceApi.listBordereaux(treatyId).stream().map(BordereauResponseDto::from).toList());
     }
 
     /** {@code period} YYYY-MM; the current month (Dar es Salaam) when absent. */
     @GetMapping("/treaties/{treatyId}/bordereau-preview")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('reinsurance.view')")
     public ResponseEntity<BordereauResponseDto> previewBordereau(@PathVariable UUID treatyId,
             @RequestParam(required = false) String period) {
         YearMonth month;
@@ -51,7 +51,7 @@ public class BordereauController {
     }
 
     @GetMapping("/bordereaux/{bordereauId}")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('reinsurance.view')")
     public ResponseEntity<BordereauResponseDto> getBordereau(@PathVariable UUID bordereauId) {
         return ResponseEntity.ok(BordereauResponseDto.from(reinsuranceApi.getBordereau(bordereauId)));
     }

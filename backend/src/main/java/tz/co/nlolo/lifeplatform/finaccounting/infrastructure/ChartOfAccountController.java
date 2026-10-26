@@ -47,7 +47,7 @@ public class ChartOfAccountController {
     }
 
     @GetMapping("/chart-of-accounts")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('ledger.view')")
     public ResponseEntity<List<ChartOfAccountResponseDto>> listChartOfAccounts() {
         return ResponseEntity.ok(finaccountingApi.listChartOfAccounts().stream()
             .map(ChartOfAccountResponseDto::from).toList());
@@ -68,7 +68,7 @@ public class ChartOfAccountController {
      * {@code TrialBalanceView}.
      */
     @GetMapping("/chart-of-accounts/balances")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('ledger.view')")
     public ResponseEntity<TrialBalanceResponseDto> trialBalance(
             /* YYYY-MM, or omitted for inception-to-date. Echoed back on the response, because a
                balance with no period beside it cannot be reconciled against anything. */
@@ -77,7 +77,7 @@ public class ChartOfAccountController {
     }
 
     @PostMapping("/chart-of-accounts")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('ledger.manage')")
     public ResponseEntity<ChartOfAccountResponseDto> createAccount(
             @Valid @RequestBody CreateAccountRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         ChartOfAccountView view = finaccountingApi.createAccount(request.accountCode(),
@@ -87,7 +87,7 @@ public class ChartOfAccountController {
     }
 
     @PutMapping("/chart-of-accounts/{accountCode}")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('ledger.manage')")
     public ResponseEntity<ChartOfAccountResponseDto> updateAccount(@PathVariable String accountCode,
             @Valid @RequestBody UpdateAccountRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         ChartOfAccountView view = finaccountingApi.updateAccount(accountCode, request.name(),
@@ -104,7 +104,7 @@ public class ChartOfAccountController {
      * moves.
      */
     @PostMapping("/chart-of-accounts/{accountCode}/deactivate")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('ledger.manage')")
     public ResponseEntity<ChartOfAccountResponseDto> deactivateAccount(@PathVariable String accountCode,
             @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(ChartOfAccountResponseDto.from(
@@ -112,7 +112,7 @@ public class ChartOfAccountController {
     }
 
     @PostMapping("/chart-of-accounts/{accountCode}/activate")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('ledger.manage')")
     public ResponseEntity<ChartOfAccountResponseDto> activateAccount(@PathVariable String accountCode,
             @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(ChartOfAccountResponseDto.from(
@@ -120,7 +120,7 @@ public class ChartOfAccountController {
     }
 
     @DeleteMapping("/chart-of-accounts/{accountCode}")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('ledger.manage')")
     public ResponseEntity<Void> deleteAccount(@PathVariable String accountCode) {
         finaccountingApi.deleteAccount(accountCode);
         return ResponseEntity.noContent().build();

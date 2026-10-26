@@ -1,5 +1,6 @@
 import { isValidElement } from 'react';
 import { describe, expect, it } from 'vitest';
+import { grantRoles } from '@/test/access';
 import type { ClaimView } from '@/api/types';
 import { claimSections } from './claimSections';
 
@@ -111,6 +112,8 @@ describe('claimSections', () => {
    * finance officer looking at one gets evidence and nothing else.
    */
   it('withholds payment until the claim has reached a paying status', () => {
+    // Finance sees where the money is through payouts.view (2026-10-26), not the FINANCE_OFFICER flag.
+    grantRoles('FINANCE_OFFICER');
     const roles = { FINANCE_OFFICER: true } as Roles;
     expect(sectionsFor({ roles }).map((s) => s.id)).not.toContain('payment');
     expect(

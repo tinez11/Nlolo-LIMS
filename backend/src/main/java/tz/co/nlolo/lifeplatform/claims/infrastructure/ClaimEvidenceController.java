@@ -65,7 +65,7 @@ public class ClaimEvidenceController {
      * to close on every customer-scoped endpoint.
      */
     @PostMapping(value = "/claims/{claimId}/evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.canAny('claims.register', 'claims.assess', 'claims.settle')")
     public ResponseEntity<ClaimEvidenceResponseDto> attachEvidence(@PathVariable UUID claimId,
             @RequestPart("file") MultipartFile file,
             @RequestPart(value = "description", required = false) String description,
@@ -119,7 +119,7 @@ public class ClaimEvidenceController {
     }
 
     @GetMapping("/claims/{claimId}/evidence")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('claims.view')")
     public ResponseEntity<List<ClaimEvidenceResponseDto>> listEvidence(@PathVariable UUID claimId,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ClaimView claim = claimsApi.getClaim(claimId);
@@ -139,7 +139,7 @@ public class ClaimEvidenceController {
      * nonexistent ref, so a caller cannot learn that someone else's document exists.
      */
     @GetMapping("/claims/{claimId}/evidence/{documentRef}")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('claims.view')")
     public ResponseEntity<byte[]> downloadEvidence(@PathVariable UUID claimId,
             @PathVariable String documentRef,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {

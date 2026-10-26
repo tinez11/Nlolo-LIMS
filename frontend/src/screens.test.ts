@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { REALM_CONFIG, type Realm } from '@/auth/realms';
-import { NAV_GROUPS, REALM_HOME, SCREENS, homeFor, navFor } from '@/screens';
+import { NAV_GROUPS, REALM_HOME, SCREENS, STAFF_PERMISSION, homeFor, navFor } from '@/screens';
+import { BUILT_IN_ROLES, grantAccess, grantRoles } from '@/test/access';
 
 /**
  * The manifest is the single source for both the router and the sidebar, so these
@@ -11,13 +12,13 @@ import { NAV_GROUPS, REALM_HOME, SCREENS, homeFor, navFor } from '@/screens';
 const realms = Object.keys(REALM_CONFIG) as Realm[];
 const built = realms.filter((realm) => SCREENS[realm].length > 0);
 
-/** An identity that passes every gate, so nav filtering doesn't hide entries here. */
-const superuser = {
-  roles: ['REALM_STAFF', 'FINANCE_OFFICER', 'ADMIN'],
-  preferredUsername: 'test',
-} as unknown as Parameters<typeof navFor>[1];
+/** The token is no longer read for the nav: staff pages follow permissions (2026-10-26). */
+const superuser = { roles: [], preferredUsername: 'test' } as unknown as Parameters<typeof navFor>[1];
 
 describe('screen manifest', () => {
+  // Every built-in role at once: every staff page is reachable, so nav filtering hides nothing here.
+  beforeEach(() => grantRoles(...Object.keys(BUILT_IN_ROLES)));
+
   it('has no duplicate paths within a realm', () => {
     for (const realm of realms) {
       const paths = SCREENS[realm].map((s) => s.path);
@@ -74,9 +75,9 @@ describe('screen manifest', () => {
     }
   });
 
-  it('hides every finance-gated group from an identity without the role', () => {
-    const withoutFinance = { roles: ['REALM_STAFF'] } as unknown as Parameters<typeof navFor>[1];
-    const labels = navFor('staff', withoutFinance).map((g) => g.label);
+  it('hides every finance group from someone whose permissions do not reach it', () => {
+    grantRoles('UNDERWRITER');
+    const labels = navFor('staff', superuser).map((g) => g.label);
     expect(labels).toContain('New business');
     // Both gated groups, not just the one named Finance -- Distribution carries
     // the same predicate because onboarding an agent is a finance-role action.
@@ -126,22 +127,28 @@ describe('screen manifest', () => {
       // taxonomy rather than the job.
       'Communications',
       'Configuration',
+      // Who may do what (2026-10-26): last, for the few who hold users.view.
+      'Administration',
     ]);
   });
 
-  it('shows Reports, and only Reports among the finance groups, to a finance approver', () => {
-    const approver = { roles: ['REALM_STAFF', 'FINANCE_APPROVER'] } as unknown as Parameters<typeof navFor>[1];
-    const labels = navFor('staff', approver).map((g) => g.label);
-    expect(labels).toContain('Reports');
-    expect(labels).not.toContain('Ledger');
+  it('shows a finance approver the groups holding what they approve, and none of the finance work', () => {
+    grantRoles('FINANCE_APPROVER');
+    const labels = navFor('staff', superuser).map((g) => g.label);
+    for (const theirs of ['Reports', 'Ledger', 'Valuation & close', 'Reinsurance & returns']) expect(labels).toContain(theirs);
+    for (const notTheirs of ['Collections', 'Paying out', 'Distribution', 'New business']) expect(labels).not.toContain(notTheirs);
   });
 
-  it('never makes the nav stricter than the endpoint it fronts', () => {
-    // `GET /audit-log` is hasRole('REALM_STAFF') -- any staff member may read it.
-    // Putting the Event journal in a finance-gated group would hide a screen most
-    // staff are authorised to see, which is how it was first written.
-    const withoutFinance = { roles: ['REALM_STAFF'] } as unknown as Parameters<typeof navFor>[1];
-    const items = navFor('staff', withoutFinance).flatMap((g) => g.items.map((i) => i.label));
+  it('gives every staff page the permission its endpoints check, so the nav is never stricter or looser', () => {
+    // A staff path missing here would be open to anyone who typed it; STAFF_PERMISSION is the one list.
+    for (const screen of SCREENS.staff) {
+      expect(STAFF_PERMISSION, screen.path).toHaveProperty([screen.path]);
+    }
+  });
+
+  it('shows the Event journal to whoever holds audit.view, whatever their job', () => {
+    grantAccess('audit.view');
+    const items = navFor('staff', superuser).flatMap((g) => g.items.map((i) => i.label));
     expect(items).toContain('Event journal');
   });
 
@@ -155,8 +162,8 @@ describe('screen manifest', () => {
     // person and an organisation are reviewed by different people against different
     // evidence. BOTH must be present -- one alone would leave a whole party type
     // reachable only by editing a URL.
-    const withoutFinance = { roles: ['REALM_STAFF'] } as unknown as Parameters<typeof navFor>[1];
-    const staffItems = navFor('staff', withoutFinance).flatMap((g) => g.items.map((i) => i.label));
+    grantRoles('CUSTOMER_SERVICE_REP');
+    const staffItems = navFor('staff', superuser).flatMap((g) => g.items.map((i) => i.label));
     expect(staffItems).toContain('Individuals');
     expect(staffItems).toContain('Corporate/Group');
     expect(navFor('agents', superuser).flatMap((g) => g.items.map((i) => i.label)))
@@ -224,8 +231,11 @@ describe('screen manifest', () => {
   });
 });
 
-const as = (...roles: string[]) =>
-  ({ roles: ['REALM_STAFF', ...roles] }) as unknown as Parameters<typeof homeFor>[1];
+/** Signs in holding these built-in roles; the identity itself is no longer read. */
+const as = (...roles: string[]) => {
+  grantRoles(...roles);
+  return { roles: [] } as unknown as Parameters<typeof homeFor>[1];
+};
 
 describe('homeFor', () => {
   // The dashboard shows the person's own figures and every queue they work, so it is where a role
@@ -239,15 +249,13 @@ describe('homeFor', () => {
   });
 
   /**
-   * A CUSTOMER_SERVICE_REP holds none of the dashboard roles, and a staff member may hold no role at
-   * all. They land on the KYC queue -- ungated, and the one queue they can genuinely work -- rather
-   * than on an empty dashboard or on Policies, which is everyone's register and nobody's task.
+   * Customer service has no dashboard of its own. They land on the KYC queue -- the one queue they decide -- rather
+   * than on Policies, which is everyone's register and nobody's task. Someone holding nothing lands on the
+   * dashboard, which says so plainly.
    */
   it('lands a role with no dashboard on the one queue it can work', () => {
-    for (const roles of [['CUSTOMER_SERVICE_REP'], []]) {
-      expect(homeFor('staff', as(...roles)), roles.join('+') || 'no roles')
-        .toBe('clients/individuals?kycStatus=PENDING');
-    }
+    expect(homeFor('staff', as('CUSTOMER_SERVICE_REP'))).toBe('clients/individuals?kycStatus=PENDING');
+    expect(homeFor('staff', as())).toBe('dashboard');
   });
 
   it('leaves other realms on their fixed home', () => {

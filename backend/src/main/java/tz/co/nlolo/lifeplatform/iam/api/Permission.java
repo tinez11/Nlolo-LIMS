@@ -70,8 +70,8 @@ public enum Permission {
 
     LEDGER_VIEW("ledger.view", Area.LEDGER, "See the ledger", "GL postings, chart of accounts, periods and journals."),
     LEDGER_MANAGE("ledger.manage", Area.LEDGER, "Keep the ledger",
-        "Chart of accounts, manual journals, templates, period closing, accounting policies."),
-    LEDGER_APPROVE("ledger.approve", Area.LEDGER, "Approve journals", "Approve or reject manual journals and period reopenings."),
+        "Chart of accounts, manual journals, templates, closing and reopening periods, accounting policies."),
+    LEDGER_APPROVE("ledger.approve", Area.LEDGER, "Approve journals", "Approve or reject manual journals."),
 
     IFRS17_VIEW("ifrs17.view", Area.IFRS17, "See IFRS 17", "Extracts, engine runs, allocations and year-end close."),
     IFRS17_MANAGE("ifrs17.manage", Area.IFRS17, "Run IFRS 17", "Prepare extracts, engine runs, allocations and the year-end close."),

@@ -127,6 +127,12 @@ class PaymentContractTest {
             .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
     }
 
+    /** A staff member holding a role without this endpoint's permission -- a bare token now holds every one in tests. */
+    private static RequestPostProcessor staffOf(UUID tenantId, String role) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_" + role))
+            .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
+    }
+
     private static RequestPostProcessor agentOf(UUID tenantId) {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
             .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
@@ -404,7 +410,7 @@ class PaymentContractTest {
         seedClaimPayout(tenantId, claimId, "MOBILE_MONEY", "COMPLETED");
 
         mockMvc.perform(get("/disbursements").param("purpose", "CLAIM_SETTLEMENT").param("sourceRef", claimId)
-                .with(staffOf(tenantId)))
+                .with(staffOf(tenantId, "UNDERWRITER")))
             .andExpect(status().isForbidden())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }

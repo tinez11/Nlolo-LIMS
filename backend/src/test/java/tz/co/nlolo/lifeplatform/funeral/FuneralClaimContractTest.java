@@ -163,9 +163,9 @@ class FuneralClaimContractTest {
             .andExpect(jsonPath("$.partyId").isNotEmpty())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(POLICY_SPEC));
 
-        // Not a claims role: refused.
+        // Not a claims role: refused. (A bare staff token holds every permission in the tests' token mode.)
         mockMvc.perform(post("/policies/" + policyNumber + "/covered-lives/" + asha + "/promotion")
-                .with(staff())
+                .with(staff("UNDERWRITER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idType\":\"NATIONAL_ID\",\"idNumber\":\"19880101-33333-00003-33\"}"))
             .andExpect(status().isForbidden());

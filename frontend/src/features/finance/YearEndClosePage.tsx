@@ -1,8 +1,9 @@
+import { can } from '@/auth/access';
 import { useEffect, useState } from 'react';
 import { useAuth } from 'react-oidc-context';
 import { Link, useParams } from 'react-router-dom';
 import type { YearEndCloseView } from '@/api/types';
-import { canApproveJournals, readIdentity } from '@/auth/claims';
+import { readIdentity } from '@/auth/claims';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
@@ -39,7 +40,7 @@ export function YearEndClosePage() {
 function Close({ close: c }: { close: YearEndCloseView }) {
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
-  const approver = canApproveJournals(identity);
+  const approver = can('ifrs17.approve');
   return (
     <>
       <PageHeader

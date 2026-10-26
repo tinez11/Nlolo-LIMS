@@ -56,7 +56,7 @@ public class PartyController {
     @PostMapping("/parties/individuals")
     // Not a customer act (2026-10-08, the customer portal design, the user's D3): the portal reads and requests;
     // it does not change this. Staff and agents only.
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('clients.edit')")
     public ResponseEntity<PartyView> registerIndividual(@Valid @RequestBody RegisterIndividualRequest request,
                                                           @AuthenticationPrincipal Jwt jwt,
                                                           Authentication authentication) {
@@ -165,7 +165,7 @@ public class PartyController {
     }
 
     @PostMapping("/parties/corporates")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('clients.edit')")
     public ResponseEntity<PartyView> registerCorporate(@Valid @RequestBody RegisterCorporateRequest request,
                                                          @AuthenticationPrincipal Jwt jwt,
                                                          Authentication authentication) {
@@ -191,7 +191,7 @@ public class PartyController {
      * <p>KYC status is deliberately untouched by this. See {@code PartyApi.amendIndividual}.
      */
     @PutMapping("/parties/individuals/{partyId}")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('clients.edit')")
     public ResponseEntity<PartyDetailView> amendIndividual(@PathVariable UUID partyId,
                                                             @Valid @RequestBody RegisterIndividualRequest request,
                                                             @AuthenticationPrincipal Jwt jwt) {
@@ -214,7 +214,7 @@ public class PartyController {
 
     /** @see #amendIndividual — the same act, for a company or a group. */
     @PutMapping("/parties/corporates/{partyId}")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('clients.edit')")
     public ResponseEntity<PartyDetailView> amendCorporate(@PathVariable UUID partyId,
                                                            @Valid @RequestBody AmendCorporateRequest request,
                                                            @AuthenticationPrincipal Jwt jwt) {
@@ -253,7 +253,7 @@ public class PartyController {
      * than masking the party as a 404. Existence is not the secret here; the PII is.
      */
     @GetMapping("/parties/{partyId}")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('clients.view')")
     public ResponseEntity<PartyDetailView> getParty(@PathVariable UUID partyId, @AuthenticationPrincipal Jwt jwt,
                                                Authentication authentication) {
         boolean isCustomer = authentication.getAuthorities().stream()
@@ -305,7 +305,7 @@ public class PartyController {
      * pager. Omitting it entirely means every type, which is what every existing caller does.
      */
     @GetMapping("/parties")
-    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_AGENTS')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('clients.view')")
     public ResponseEntity<PageResponse<PartyView>> searchParties(
             @RequestParam(required = false) KycStatus kycStatus,
             @RequestParam(required = false) String q,
@@ -341,7 +341,7 @@ public class PartyController {
      * endpoints; this answers "what do we hold on this person", which nothing could answer before.
      */
     @GetMapping("/parties/{partyId}/documents")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('clients.view')")
     public ResponseEntity<List<PartyDocumentResponseDto>> listPartyDocuments(@PathVariable UUID partyId,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         boolean isAgent = authentication.getAuthorities().stream()
@@ -375,7 +375,7 @@ public class PartyController {
      * {@code POST /parties/{id}/kyc} stays staff-only for exactly that reason.
      */
     @PostMapping(value = "/parties/{partyId}/kyc-evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_AGENTS')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('clients.edit')")
     public ResponseEntity<KycEvidenceUploadResponseDto> uploadKycEvidence(@PathVariable UUID partyId,
             @RequestPart("file") MultipartFile file, @AuthenticationPrincipal Jwt jwt,
             Authentication authentication) {
@@ -392,7 +392,7 @@ public class PartyController {
      * stays for identity evidence alone. Only identity evidence can carry a KYC decision.
      */
     @PostMapping(value = "/parties/{partyId}/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_AGENTS')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('clients.edit')")
     public ResponseEntity<KycEvidenceUploadResponseDto> uploadClientDocument(@PathVariable UUID partyId,
             @RequestPart("file") MultipartFile file, @RequestParam("type") String type,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
@@ -433,7 +433,7 @@ public class PartyController {
     }
 
     @PostMapping("/parties/{partyId}/kyc")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('clients.kyc')")
     public ResponseEntity<Void> submitKyc(@PathVariable UUID partyId, @Valid @RequestBody KycUpdateRequest request,
                                             @AuthenticationPrincipal Jwt jwt) {
         // The decider's NAME as well as their subject (V7). The subject is what any rule compares;
@@ -460,7 +460,7 @@ public class PartyController {
      * learns the outcome from the client's own {@code kycStatus}.
      */
     @GetMapping("/parties/{partyId}/kyc-decisions")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('clients.view')")
     public ResponseEntity<List<KycDecisionView>> listKycDecisions(@PathVariable UUID partyId) {
         return ResponseEntity.ok(partyApi.listKycDecisions(partyId));
     }
@@ -473,7 +473,7 @@ public class PartyController {
      * the only order it has.
      */
     @GetMapping("/parties/{partyId}/groups/{groupId}/members")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('clients.view')")
     public ResponseEntity<PageResponse<GroupMembershipView>> listGroupMembers(
             @PathVariable UUID partyId, @PathVariable UUID groupId,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "50") int pageSize) {
@@ -484,7 +484,7 @@ public class PartyController {
     }
 
     @PostMapping("/parties/{partyId}/groups/{groupId}/members")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('clients.edit')")
     public ResponseEntity<Void> addGroupMember(@PathVariable UUID partyId, @PathVariable UUID groupId,
                                                  @Valid @RequestBody AddGroupMemberRequest request) {
         partyApi.addGroupMember(groupId, request.memberPartyId());

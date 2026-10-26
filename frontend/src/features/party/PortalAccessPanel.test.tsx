@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { grantRoles } from '@/test/access';
 import * as portalApi from '@/api/portal';
 import type { PortalAccessView } from '@/api/portal';
 import { PortalAccessPanel } from './PortalAccessPanel';
@@ -21,6 +22,8 @@ const access = (over: Partial<PortalAccessView>): PortalAccessView => ({
 beforeEach(() => {
   vi.clearAllMocks();
   roles = ['CUSTOMER_SERVICE_REP'];
+
+  grantRoles(...roles);
 });
 
 describe('PortalAccessPanel', () => {
@@ -90,6 +93,8 @@ describe('PortalAccessPanel', () => {
 
   it('shows the access to other staff without the buttons', async () => {
     roles = ['UNDERWRITER'];
+
+    grantRoles(...roles);
     vi.mocked(portalApi.getPortalAccess).mockResolvedValue(access({}));
     render(<PortalAccessPanel partyId="p-1" />);
     expect(await screen.findByText(/Customer service or an administrator can invite/)).toBeInTheDocument();

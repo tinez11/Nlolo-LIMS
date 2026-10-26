@@ -134,6 +134,19 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "lifeplatform-staff-admin",
+      "name": "Life Platform staff user admin (service account)",
+      "description": "The backend adds, closes and resets staff logins through this service account (manage-users in this realm only) when an administrator uses the Users screen. No browser flows. Roles are not written here: the platform holds them.",
+      "enabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "dev-secret-staff-admin"
     }
   ],
   "users": [
@@ -325,6 +338,17 @@
         "CLAIMS_MANAGER",
         "CUSTOMER_SERVICE_REP"
       ]
+    },
+    {
+      "username": "service-account-lifeplatform-staff-admin",
+      "enabled": true,
+      "serviceAccountClientId": "lifeplatform-staff-admin",
+      "clientRoles": {
+        "realm-management": [
+          "manage-users",
+          "view-users"
+        ]
+      }
     }
   ],
   "components": {

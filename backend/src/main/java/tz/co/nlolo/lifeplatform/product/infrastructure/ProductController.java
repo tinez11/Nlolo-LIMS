@@ -41,7 +41,7 @@ public class ProductController {
     }
 
     @GetMapping("/products")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('products.view')")
     public ResponseEntity<List<ProductSummaryView>> listProducts(@RequestParam(required = false) ProductCategory category) {
         return ResponseEntity.ok(productApi.listActiveProducts(category));
     }
@@ -62,7 +62,7 @@ public class ProductController {
      * product is not something a policyholder or a tied agent gets to enumerate.
      */
     @GetMapping("/products/drafts")
-    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
+    @PreAuthorize("@access.can('products.manage')")
     public ResponseEntity<List<ProductSummaryView>> listDraftProducts() {
         return ResponseEntity.ok(productApi.listDraftProducts());
     }
@@ -87,7 +87,7 @@ public class ProductController {
      * roles that must never be blocked from it.
      */
     @PostMapping("/products")
-    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
+    @PreAuthorize("@access.can('products.manage')")
     public ResponseEntity<ProductSummaryView> createProduct(@Valid @RequestBody CreateProductRequest request,
                                                               @AuthenticationPrincipal Jwt jwt) {
         ProductSummaryView view = productApi.createProduct(request.productCode(), request.productName(), request.category(),
@@ -97,7 +97,7 @@ public class ProductController {
 
     /** Publishing a version prices the product and puts it in force — same gate as authoring it. */
     @PostMapping("/products/{productId}/versions")
-    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
+    @PreAuthorize("@access.can('products.manage')")
     public ResponseEntity<Void> publishVersion(@PathVariable UUID productId, @Valid @RequestBody PublishVersionRequest request,
                                                 @AuthenticationPrincipal Jwt jwt) {
         productApi.publishVersion(productId, request.ifrsMeasurementModel(), request.effectiveDate(), request.retirementDate(),
@@ -162,7 +162,7 @@ public class ProductController {
      * segment above ahead of this variable regardless of declaration order.
      */
     @GetMapping("/products/{productId}")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('products.view')")
     public ResponseEntity<ProductSummaryView> getProduct(@PathVariable UUID productId) {
         return ResponseEntity.ok(productApi.getProduct(productId));
     }
@@ -175,7 +175,7 @@ public class ProductController {
      * portfolio could neither be published (the savings-portfolio rule) nor fixed. 400 once a version is published.
      */
     @PutMapping("/products/{productId}/portfolio")
-    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
+    @PreAuthorize("@access.can('products.manage')")
     public ResponseEntity<ProductSummaryView> changePortfolio(@PathVariable UUID productId,
                                                               @RequestBody PortfolioRequest request) {
         if (request.portfolioCode() == null) {
@@ -189,14 +189,14 @@ public class ProductController {
 
     /** How the customer portal offers the product (2026-10-08, the customer portal design step 5). */
     @GetMapping("/products/{productId}/online-listing")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('products.view')")
     public ResponseEntity<tz.co.nlolo.lifeplatform.product.api.OnlineListingView> onlineListing(@PathVariable UUID productId) {
         return ResponseEntity.ok(productApi.onlineListing(productId));
     }
 
     /** ADMIN, like the rest of product authoring: what customers are offered is a product decision. */
     @PutMapping("/products/{productId}/online-listing")
-    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
+    @PreAuthorize("@access.can('products.manage')")
     public ResponseEntity<tz.co.nlolo.lifeplatform.product.api.OnlineListingView> describeOnline(@PathVariable UUID productId,
             @RequestBody OnlineListingRequest request) {
         return ResponseEntity.ok(productApi.describeOnline(productId, request.available(), request.summary(),
@@ -205,14 +205,14 @@ public class ProductController {
 
     /** Every published version, the most recently published first, the one priced today marked current (2026-10-08). */
     @GetMapping("/products/{productId}/versions")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('products.view')")
     public ResponseEntity<java.util.List<tz.co.nlolo.lifeplatform.product.api.ProductVersionSummaryView>> listVersions(
             @PathVariable UUID productId) {
         return ResponseEntity.ok(productApi.listVersions(productId));
     }
 
     @GetMapping("/products/{productId}/active-snapshot")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('products.view')")
     public ResponseEntity<ProductSnapshotView> getActiveSnapshot(@PathVariable UUID productId, @RequestParam(required = false) LocalDate effectiveDate) {
         return ResponseEntity.ok(productApi.getActiveSnapshot(productId, effectiveDate));
     }
@@ -229,7 +229,7 @@ public class ProductController {
      * therefore into access logs, proxy logs and browser history.
      */
     @PostMapping("/products/{productId}/premium-quote")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('products.view')")
     public ResponseEntity<ProductApi.PremiumQuoteView> quotePremium(@PathVariable UUID productId,
                                                                     @Valid @RequestBody PremiumQuoteRequest request) {
         return ResponseEntity.ok(productApi.quotePremium(new ProductApi.PremiumQuoteInput(
@@ -247,7 +247,7 @@ public class ProductController {
      * because Billing must keep reading it. This can be, and is.
      */
     @GetMapping("/products/{productId}/versions/{versionId}/rating")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('products.view')")
     public ResponseEntity<ProductApi.VersionRatingView> getVersionRating(@PathVariable UUID productId,
                                                                          @PathVariable UUID versionId) {
         return ResponseEntity.ok(productApi.getVersionRating(productId, versionId));
@@ -265,7 +265,7 @@ public class ProductController {
      * answer, not an error.
      */
     @GetMapping("/products/{productId}/versions/{versionId}/cash-value")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('products.view')")
     public CashValueTermsResponse getCashValueTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {
         return productApi.getCashValueConfig(versionId)
             .map(c -> new CashValueTermsResponse(true, c.minYearsForValue(), c.basisReference()))
@@ -280,7 +280,7 @@ public class ProductController {
      * Rate field. 200 either way: not a term account is an answer, not an error.
      */
     @GetMapping("/products/{productId}/versions/{versionId}/term-account")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('products.view')")
     public TermAccountTermsResponse getTermAccountTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {
         var plan = productApi.resolveAccumulationPlan(versionId);
         return plan.isTermAccount()
@@ -292,7 +292,7 @@ public class ProductController {
                                            java.math.BigDecimal maxRatePercent) {}
 
     @GetMapping("/products/{productId}/versions/{versionId}/annuity")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('products.view')")
     public ResponseEntity<AnnuityTermsResponse> getAnnuityTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {
         AnnuityPlan plan = productApi.resolveAnnuityPlan(versionId);
         if (!plan.annuity()) {
@@ -310,7 +310,7 @@ public class ProductController {
      * screen and the case form. 404 NOT_A_UNIT_LINKED_PRODUCT for any other version.
      */
     @GetMapping("/products/{productId}/versions/{versionId}/unit-linked")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('products.view')")
     public ResponseEntity<UnitLinkedPlan> getUnitLinkedTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {
         UnitLinkedPlan plan = productApi.resolveUnitLinkedPlan(versionId);
         if (!plan.unitLinked()) {
@@ -320,7 +320,7 @@ public class ProductController {
     }
 
     @GetMapping("/products/{productId}/versions/{versionId}/funeral")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('products.view')")
     public ResponseEntity<FuneralTermsResponse> getFuneralTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {
         FuneralPlan plan = productApi.resolveFuneralPlan(versionId);
         if (!plan.funeral()) {
@@ -340,7 +340,7 @@ public class ProductController {
      * NOT an error -- it comes back named in {@code problems}, so the form can say so while it is being typed.
      */
     @PostMapping("/products/{productId}/versions/{versionId}/group-funeral-quote")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('products.view')")
     public ResponseEntity<tz.co.nlolo.lifeplatform.product.api.GroupFuneralQuote> quoteGroupFuneral(
             @PathVariable UUID productId, @PathVariable UUID versionId,
             @Valid @RequestBody GroupFuneralQuoteRequest request) {
@@ -352,7 +352,7 @@ public class ProductController {
     }
 
     @PostMapping("/products/{productId}/versions/{versionId}/funeral-quote")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('products.view')")
     public ResponseEntity<FuneralQuote> quoteFuneral(@PathVariable UUID productId, @PathVariable UUID versionId,
                                                      @Valid @RequestBody FuneralQuoteRequest request) {
         if (!productApi.resolveFuneralPlan(versionId).funeral()) {
@@ -385,7 +385,7 @@ public class ProductController {
      * {@code ProductSnapshotView} and so already carries both fields.
      */
     @PutMapping("/products/{productId}/versions/{versionId}/exclusion-periods")
-    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
+    @PreAuthorize("@access.can('products.manage')")
     public ResponseEntity<Void> setExclusionPeriods(@PathVariable UUID productId,
                                                      @PathVariable UUID versionId,
                                                      @Valid @RequestBody SetExclusionPeriodsRequest request,

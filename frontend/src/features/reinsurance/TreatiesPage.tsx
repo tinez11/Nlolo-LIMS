@@ -1,3 +1,4 @@
+import { can } from '@/auth/access';
 import { Plus, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -154,12 +155,14 @@ export function TreatiesPage() {
         title="Treaties"
         description="Reinsurance treaties in your tenant. Select one to preview it."
         actions={
-          <Button asChild size="sm" variant="primary">
-            <Link to="new">
-              <Plus />
-              New treaty
-            </Link>
-          </Button>
+          can('reinsurance.manage') ? (
+            <Button asChild size="sm" variant="primary">
+              <Link to="new">
+                <Plus />
+                New treaty
+              </Link>
+            </Button>
+          ) : undefined
         }
         count={<CountLine {...count} />}
       />

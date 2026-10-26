@@ -10,5 +10,5 @@
  */
 @org.springframework.modulith.ApplicationModule(allowedDependencies = {
     "underwriting::api", "claims::api", "billing::api", "payment::api", "finaccounting::api",
-    "reporting::api", "party::api", "policy::api", "distribution::api", "audit::api" })
+    "reporting::api", "party::api", "policy::api", "distribution::api", "audit::api", "iam::api" })
 package tz.co.nlolo.lifeplatform.dashboard;

@@ -35,7 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * platform -- not the token -- says what a person may do.
  */
 @Testcontainers
-@SpringBootTest(classes = Application.class)
+@SpringBootTest(classes = Application.class, properties = "app.access.source=platform")
 @AutoConfigureMockMvc
 class AccessIntegrationTest {
 

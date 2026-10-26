@@ -43,10 +43,11 @@ public final class BuiltInRoles {
             EnumSet.of(CLIENTS_VIEW, CLIENTS_EDIT, UNDERWRITING_VIEW, UNDERWRITING_PROPOSE, UNDERWRITING_ASSESS,
                 UNDERWRITING_DECIDE, UNDERWRITING_REFER, POLICIES_VIEW, POLICIES_ISSUE, SCHEMES_VIEW, SCHEMES_MANAGE,
                 SCHEMES_ENROLMENTS, CLAIMS_VIEW, PRODUCTS_VIEW)),
+        // Not claims.assess: the assessor recommends and the manager decides, so the two signatures stay two people.
         new Definition("CLAIMS_MANAGER", "Claims manager",
-            "Decides settlements and reopens claims, as well as assessing them.",
-            EnumSet.of(CLIENTS_VIEW, POLICIES_VIEW, SCHEMES_VIEW, CLAIMS_VIEW, CLAIMS_REGISTER, CLAIMS_ASSESS,
-                CLAIMS_SETTLE, ACCOUNTS_VIEW, PAYOUTS_VIEW, PRODUCTS_VIEW)),
+            "Decides settlements and reopens claims; asks for documents and reads the assessments.",
+            EnumSet.of(CLIENTS_VIEW, POLICIES_VIEW, SCHEMES_VIEW, CLAIMS_VIEW, CLAIMS_REGISTER, CLAIMS_SETTLE,
+                ACCOUNTS_VIEW, PAYOUTS_VIEW, PRODUCTS_VIEW)),
         new Definition("CLAIMS_ASSESSOR", "Claims assessor",
             "Registers and assesses claims.",
             EnumSet.of(CLIENTS_VIEW, POLICIES_VIEW, SCHEMES_VIEW, CLAIMS_VIEW, CLAIMS_REGISTER, CLAIMS_ASSESS,
@@ -63,8 +64,8 @@ public final class BuiltInRoles {
                 + "loans, claims registration, portal invitations.",
             EnumSet.of(CLIENTS_VIEW, CLIENTS_EDIT, CLIENTS_KYC, CLIENTS_PORTAL, UNDERWRITING_VIEW, UNDERWRITING_PROPOSE,
                 POLICIES_VIEW, POLICIES_SERVICE, POLICIES_STATUS, POLICIES_SURRENDER, SCHEMES_VIEW, CLAIMS_VIEW,
-                CLAIMS_REGISTER, ACCOUNTS_VIEW, ACCOUNTS_TRANSACT, LOANS_MANAGE, COLLECTIONS_VIEW, PRODUCTS_VIEW,
-                COMMUNICATIONS_VIEW)));
+                CLAIMS_REGISTER, ACCOUNTS_VIEW, ACCOUNTS_TRANSACT, LOANS_MANAGE, COLLECTIONS_VIEW, PAYOUTS_VIEW,
+                PRODUCTS_VIEW, COMMUNICATIONS_VIEW)));
 
     private static Set<Permission> finance() {
         return EnumSet.of(CLIENTS_VIEW, POLICIES_VIEW, POLICIES_SURRENDER_APPROVE, SCHEMES_VIEW, CLAIMS_VIEW,

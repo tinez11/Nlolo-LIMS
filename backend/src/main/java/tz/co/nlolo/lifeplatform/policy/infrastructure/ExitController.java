@@ -74,7 +74,7 @@ public class ExitController {
      */
     @PostMapping(value = "/credit-life-schemes/{policyNumber}/exits",
                  consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.enrolments')")
     public ResponseEntity<ExitSubmissionView> submit(@PathVariable String policyNumber,
                                                       @RequestPart("file") MultipartFile file,
                                                       @AuthenticationPrincipal Jwt jwt) {
@@ -104,20 +104,20 @@ public class ExitController {
     /** The scheme's exits history, newest first. Without it a console page opening on a scheme
      * cannot reach the report of a file sent last month. */
     @GetMapping("/credit-life-schemes/{policyNumber}/exits")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public List<ExitSubmissionView> listSubmissions(@PathVariable String policyNumber) {
         return exitApi.listSubmissions(policyNumber);
     }
 
     @GetMapping("/credit-life-schemes/{policyNumber}/exits/{submissionId}")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public ExitSubmissionView getSubmission(@PathVariable String policyNumber,
                                              @PathVariable UUID submissionId) {
         return exitApi.getSubmission(submissionId);
     }
 
     @GetMapping("/credit-life-schemes/{policyNumber}/exits/{submissionId}/rows")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public List<ExitRowResponseDto> listRows(@PathVariable String policyNumber,
                                        @PathVariable UUID submissionId) {
         return ExitRowResponseDto.from(exitApi.listRows(submissionId));
@@ -129,7 +129,7 @@ public class ExitController {
      * from the token so that refusal has something real to compare.
      */
     @PostMapping("/credit-life-schemes/{policyNumber}/exits/{submissionId}/acceptance")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.enrolments')")
     public ExitSubmissionView accept(@PathVariable String policyNumber,
                                       @PathVariable UUID submissionId,
                                       @AuthenticationPrincipal Jwt jwt) {
@@ -137,7 +137,7 @@ public class ExitController {
     }
 
     @PostMapping("/credit-life-schemes/{policyNumber}/exits/{submissionId}/withdrawal")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.enrolments')")
     public ExitSubmissionView withdraw(@PathVariable String policyNumber,
                                         @PathVariable UUID submissionId,
                                         @AuthenticationPrincipal Jwt jwt) {
@@ -152,7 +152,7 @@ public class ExitController {
      */
     @GetMapping(value = "/credit-life-schemes/{policyNumber}/exits/{submissionId}/report",
                 produces = "text/csv")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public ResponseEntity<String> report(@PathVariable String policyNumber,
                                           @PathVariable UUID submissionId) {
         return ResponseEntity.ok()
@@ -177,7 +177,7 @@ public class ExitController {
      * deliberately not offered: only the claim path may write it.
      */
     @GetMapping(value = "/credit-life-schemes/{policyNumber}/exits-template", produces = "text/csv")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public ResponseEntity<String> exitsTemplate(@PathVariable String policyNumber) {
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION,
@@ -193,7 +193,7 @@ public class ExitController {
      * a date. The workbook also carries the instructions, which a CSV has nowhere to put.
      */
     @GetMapping(value = "/credit-life-schemes/{policyNumber}/exits-template.xlsx", produces = XLSX)
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public ResponseEntity<byte[]> exitsTemplateXlsx(@PathVariable String policyNumber) {
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION,

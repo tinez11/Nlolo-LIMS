@@ -32,7 +32,7 @@ public class NotificationController {
     }
 
     @GetMapping("/templates")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('communications.view')")
     public List<NotificationTemplateView> listTemplates() {
         return notificationApi.listTemplates();
     }
@@ -46,7 +46,7 @@ public class NotificationController {
      * actually say" should not need a privileged role.
      */
     @PutMapping("/templates/{templateId}")
-    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
+    @PreAuthorize("@access.can('communications.templates')")
     public ResponseEntity<NotificationTemplateView> rewordTemplate(
             @PathVariable UUID templateId,
             @Valid @RequestBody RewordTemplateRequestDto request) {
@@ -54,7 +54,7 @@ public class NotificationController {
     }
 
     @GetMapping("/dispatches")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('communications.view')")
     public List<NotificationDispatchView> listDispatches(
             @RequestParam(required = false) UUID partyId,
             @RequestParam(required = false) String policyNumber,

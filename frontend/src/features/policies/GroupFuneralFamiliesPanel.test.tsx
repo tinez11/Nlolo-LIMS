@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { grantRoles } from '@/test/access';
 import * as funeralApi from '@/api/funeral';
 import * as groupFuneralApi from '@/api/groupFuneral';
 import * as policiesApi from '@/api/policies';
@@ -50,6 +51,8 @@ const family: GroupFuneralFamilyView = {
 beforeEach(() => {
   vi.clearAllMocks();
   roles = [];
+
+  grantRoles(...roles);
   vi.mocked(groupFuneralApi.listGroupFuneralFamilies).mockResolvedValue([family]);
   vi.mocked(policiesApi.getPolicy).mockResolvedValue({
     policyNumber: 'GRP-1', status: 'ACTIVE', premiumFrequency: 'ANNUALLY',
@@ -60,6 +63,8 @@ beforeEach(() => {
 describe('GroupFuneralFamiliesPanel', () => {
   it('lets claims staff register a main member as a client, even on a yearly plan whose family is fixed', async () => {
     roles = ['CLAIMS_ASSESSOR'];
+
+    grantRoles(...roles);
     vi.mocked(funeralApi.promoteCoveredLife).mockResolvedValue({ ...martin, partyId: 'p-1' });
     render(<GroupFuneralFamiliesPanel policyNumber="GRP-1" onChanged={vi.fn()} />);
 
@@ -106,6 +111,8 @@ describe('GroupFuneralFamiliesPanel', () => {
 
   it('does not offer the promotion to staff the server would refuse', async () => {
     roles = ['UNDERWRITER'];
+
+    grantRoles(...roles);
     render(<GroupFuneralFamiliesPanel policyNumber="GRP-1" onChanged={vi.fn()} />);
     await screen.findByLabelText('Member M001');
     expect(screen.queryByRole('button', { name: /Promote .* to client/ })).not.toBeInTheDocument();

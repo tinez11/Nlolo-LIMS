@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { grantRoles } from '@/test/access';
 import type { AccountView } from '@/api/types';
 import { success } from '@/store/createResourceSlice';
 import { useAccumulationStore } from '@/store/accumulationStore';
@@ -66,6 +67,9 @@ const termAccount = (status: 'RUNNING' | 'MATURED' | 'AWAITING_PAYEE') => ({
   defaultPayeeRef: status === 'AWAITING_PAYEE' ? null : '+255700000777',
   maturedOn: status === 'RUNNING' ? null : '2028-10-21',
 });
+
+// A finance officer, as the page reads it now: permissions, not the token (2026-10-26).
+beforeEach(() => grantRoles('FINANCE_OFFICER'));
 
 describe('AccountPanel on a term account', () => {
   it('shows the locked rate and maturity, takes money in, and offers no withdrawal', () => {

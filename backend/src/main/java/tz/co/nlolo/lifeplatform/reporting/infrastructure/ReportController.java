@@ -27,8 +27,6 @@ import java.util.Map;
 @RestController
 public class ReportController {
 
-    static final String READ = "hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('FINANCE_APPROVER')"
-        + " or hasRole('ADMIN'))";
 
     private final ReportingApi reportingApi;
     private final ReportExporter exporter;
@@ -39,19 +37,19 @@ public class ReportController {
     }
 
     @GetMapping("/reports/catalogue")
-    @PreAuthorize(READ)
+    @PreAuthorize("@access.can('reports.view')")
     public List<ReportDefinitionView> catalogue() {
         return reportingApi.catalogue();
     }
 
     @GetMapping("/reports/{reportKey}")
-    @PreAuthorize(READ)
+    @PreAuthorize("@access.can('reports.view')")
     public ReportResult run(@PathVariable String reportKey, @RequestParam Map<String, String> query) {
         return reportingApi.run(reportKey, ReportFilterParams.parse(query));
     }
 
     @GetMapping("/reports/{reportKey}/export")
-    @PreAuthorize(READ)
+    @PreAuthorize("@access.can('reports.view')")
     public ResponseEntity<byte[]> export(@PathVariable String reportKey, @RequestParam Map<String, String> query) {
         ReportExporter.Export export = exporter.export(reportingApi.run(reportKey, ReportFilterParams.parse(query)),
             query.get("format"));
@@ -59,13 +57,13 @@ public class ReportController {
     }
 
     @PostMapping("/reports/rebuild")
-    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
+    @PreAuthorize("@access.can('reports.rebuild')")
     public ResponseEntity<RebuildStatusView> rebuild(@AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(reportingApi.startRebuild(jwt.getSubject()));
     }
 
     @GetMapping("/reports/rebuild/status")
-    @PreAuthorize(READ)
+    @PreAuthorize("@access.can('reports.view')")
     public RebuildStatusView rebuildStatus() {
         return reportingApi.rebuildStatus();
     }

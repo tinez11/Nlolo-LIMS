@@ -30,13 +30,13 @@ public class WithholdingController {
                                  LocalDate effectiveTo, String legalReference) {}
 
     @GetMapping("/withholding-rules")
-    @PreAuthorize(BenefitPayoutController.FINANCE)
+    @PreAuthorize("@access.can('payouts.view')")
     public List<WithholdingRuleResponse> list() {
         return rules.list().stream().map(WithholdingRuleResponse::from).toList();
     }
 
     @PostMapping("/withholding-rules")
-    @PreAuthorize(BenefitPayoutController.FINANCE)
+    @PreAuthorize("@access.can('payouts.manage')")
     @ResponseStatus(HttpStatus.CREATED)
     public WithholdingRuleResponse propose(@RequestBody ProposeRequest request,
                                            @RequestHeader("Idempotency-Key") String idempotencyKey,
@@ -46,7 +46,7 @@ public class WithholdingController {
     }
 
     @PostMapping("/withholding-rules/{ruleId}/approve")
-    @PreAuthorize(BenefitPayoutController.FINANCE)
+    @PreAuthorize("@access.can('payouts.approve')")
     public WithholdingRuleResponse approve(@PathVariable UUID ruleId, @AuthenticationPrincipal Jwt jwt) {
         return WithholdingRuleResponse.from(rules.approve(ruleId, jwt.getSubject()));
     }
@@ -55,14 +55,14 @@ public class WithholdingController {
 
     /** Ends an approved rule on its last day. One finance officer may do it alone (the user's decision). */
     @PostMapping("/withholding-rules/{ruleId}/end")
-    @PreAuthorize(BenefitPayoutController.FINANCE)
+    @PreAuthorize("@access.can('payouts.manage')")
     public WithholdingRuleResponse end(@PathVariable UUID ruleId, @RequestBody EndRequest request,
                                        @AuthenticationPrincipal Jwt jwt) {
         return WithholdingRuleResponse.from(rules.end(ruleId, request.effectiveTo(), jwt.getSubject()));
     }
 
     @PostMapping("/withholding-rules/{ruleId}/withdraw")
-    @PreAuthorize(BenefitPayoutController.FINANCE)
+    @PreAuthorize("@access.can('payouts.manage')")
     public WithholdingRuleResponse withdraw(@PathVariable UUID ruleId, @AuthenticationPrincipal Jwt jwt) {
         return WithholdingRuleResponse.from(rules.withdraw(ruleId, jwt.getSubject()));
     }

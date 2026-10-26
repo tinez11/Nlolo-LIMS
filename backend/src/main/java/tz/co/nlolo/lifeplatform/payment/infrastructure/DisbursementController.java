@@ -60,7 +60,7 @@ public class DisbursementController {
      * record for why the generic shape made this queue unbuildable.
      */
     @GetMapping("/disbursements/awaiting-execution")
-    @PreAuthorize("hasRole('FINANCE_OFFICER')")
+    @PreAuthorize("@access.can('payouts.view')")
     public ResponseEntity<List<AwaitingEftResponseDto>> listAwaitingExecution() {
         List<DisbursementStatusView> awaiting = paymentApi.listAwaitingEftExecution();
         return ResponseEntity.ok(awaiting.stream().map(AwaitingEftResponseDto::from).toList());
@@ -74,7 +74,7 @@ public class DisbursementController {
      * customer's own claim page has no business with the payee reference or the rail.
      */
     @GetMapping("/disbursements")
-    @PreAuthorize("hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER') or hasRole('FINANCE_OFFICER')")
+    @PreAuthorize("@access.can('payouts.view')")
     public ResponseEntity<List<DisbursementResponseDto>> listForSource(@RequestParam String purpose,
                                                                        @RequestParam String sourceRef) {
         return ResponseEntity.ok(paymentApi.listDisbursementsFor(purpose, sourceRef).stream()
@@ -87,7 +87,7 @@ public class DisbursementController {
      * (claim SETTLED, member EXITED, GL posted) run synchronously on this thread's AFTER_COMMIT.
      */
     @PostMapping("/disbursements/{disbursementId}/eft-execution")
-    @PreAuthorize("hasRole('FINANCE_OFFICER')")
+    @PreAuthorize("@access.can('payouts.manage')")
     public ResponseEntity<Void> markEftExecuted(@PathVariable UUID disbursementId,
             @Valid @RequestBody MarkEftExecutedRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         paymentApiImpl.markEftExecuted(disbursementId, request.bankReference(), jwt.getSubject());

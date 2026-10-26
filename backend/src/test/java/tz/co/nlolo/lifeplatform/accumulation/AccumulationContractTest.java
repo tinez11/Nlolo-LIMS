@@ -134,7 +134,7 @@ class AccumulationContractTest {
     @Test
     void theAccountIsReadToSpec() throws Exception {
         String policy = fundedAccount();
-        mockMvc.perform(get("/policies/" + policy + "/account").with(staff("UNDERWRITER", "uw")))
+        mockMvc.perform(get("/policies/" + policy + "/account").with(staff("CUSTOMER_SERVICE_REP", "uw")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.balance.amount").value("190000.00"))
             .andExpect(jsonPath("$.entries[0].type").value("CONTRIBUTION"))
@@ -145,7 +145,7 @@ class AccumulationContractTest {
     @Test
     void aScalePolicyHasNoAccount() throws Exception {
         var scale = fixtures.issueSavingsPlan(TENANT, AccumulationPlan.none(), LocalDate.now());
-        mockMvc.perform(get("/policies/" + scale.policyNumber() + "/account").with(staff("UNDERWRITER", "uw")))
+        mockMvc.perform(get("/policies/" + scale.policyNumber() + "/account").with(staff("CUSTOMER_SERVICE_REP", "uw")))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("ACCOUNT_NOT_FOUND"));
     }
@@ -154,7 +154,7 @@ class AccumulationContractTest {
     void aWithdrawalIsRequestedAndApprovedToSpec() throws Exception {
         String policy = fundedAccount();
         String created = mockMvc.perform(post("/policies/" + policy + "/account/withdrawals").header("Idempotency-Key", key())
-                .with(staff("UNDERWRITER", "staff-one")).contentType(MediaType.APPLICATION_JSON)
+                .with(staff("CUSTOMER_SERVICE_REP", "staff-one")).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"amount\":\"40000.00\",\"payeeRef\":\"+255700000001\"}"))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.status").value("REQUESTED"))
@@ -172,7 +172,7 @@ class AccumulationContractTest {
     @Test
     void theClosingQuoteIsReadToSpec() throws Exception {
         String policy = fundedAccount();
-        mockMvc.perform(get("/policies/" + policy + "/account/quote").with(staff("UNDERWRITER", "uw")))
+        mockMvc.perform(get("/policies/" + policy + "/account/quote").with(staff("CUSTOMER_SERVICE_REP", "uw")))
             .andExpect(status().isOk())
             // Funded today, so no interest has accrued yet and the value is the balance.
             .andExpect(jsonPath("$.balance.amount").value("190000.00"))
@@ -189,13 +189,13 @@ class AccumulationContractTest {
         String policy = fundedAccount();
         String today = LocalDate.now().toString();
         mockMvc.perform(get("/policies/" + policy + "/account/statement").param("from", today).param("to", today)
-                .with(staff("UNDERWRITER", "uw")))
+                .with(staff("CUSTOMER_SERVICE_REP", "uw")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.openingBalance.amount").value("0.00"))
             .andExpect(jsonPath("$.closingBalance.amount").value("190000.00"))
             .andExpect(jsonPath("$.groups[0].type").value("CONTRIBUTION"))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
-        mockMvc.perform(get("/policies/" + policy + "/account/statements").with(staff("UNDERWRITER", "uw")))
+        mockMvc.perform(get("/policies/" + policy + "/account/statements").with(staff("CUSTOMER_SERVICE_REP", "uw")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$").isEmpty())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
@@ -205,7 +205,7 @@ class AccumulationContractTest {
     void aMalformedAmountIsA400ThatNamesTheField() throws Exception {
         String policy = fundedAccount();
         mockMvc.perform(post("/policies/" + policy + "/account/withdrawals").header("Idempotency-Key", key())
-                .with(staff("UNDERWRITER", "staff-one")).contentType(MediaType.APPLICATION_JSON)
+                .with(staff("CUSTOMER_SERVICE_REP", "staff-one")).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"amount\":\"12.345\",\"payeeRef\":\"+255700000001\"}"))
             .andExpect(status().isBadRequest())
             .andExpect(result -> org.assertj.core.api.Assertions.assertThat(result.getResponse().getContentAsString())
@@ -239,10 +239,10 @@ class AccumulationContractTest {
         // The same transfer, answered twice -- not a second one.
         org.assertj.core.api.Assertions.assertThat((String) JsonPath.read(second, "$.transferId"))
             .isEqualTo(JsonPath.read(first, "$.transferId"));
-        mockMvc.perform(get("/policies/" + policy + "/account/transfers-in").with(staff("UNDERWRITER", "uw")))
+        mockMvc.perform(get("/policies/" + policy + "/account/transfers-in").with(staff("CUSTOMER_SERVICE_REP", "uw")))
             .andExpect(jsonPath("$.length()").value(1));
         // 190,000 + 30,000 once (the fixture's transfer allocation is 0%), never 250,000.
-        mockMvc.perform(get("/policies/" + policy + "/account").with(staff("UNDERWRITER", "uw")))
+        mockMvc.perform(get("/policies/" + policy + "/account").with(staff("CUSTOMER_SERVICE_REP", "uw")))
             .andExpect(jsonPath("$.balance.amount").value("220000.00"));
     }
 
@@ -252,12 +252,12 @@ class AccumulationContractTest {
         String key = key();
         String body = "{\"amount\":\"10000.00\",\"payeeRef\":\"+255700000001\"}";
         String first = mockMvc.perform(post("/policies/" + policy + "/account/withdrawals").header("Idempotency-Key", key)
-                .with(staff("UNDERWRITER", "staff-one")).contentType(MediaType.APPLICATION_JSON).content(body))
+                .with(staff("CUSTOMER_SERVICE_REP", "staff-one")).contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         // Without the key this would be a 422, "already in flight" -- the console would show a refusal
         // for a request that in fact succeeded.
         String second = mockMvc.perform(post("/policies/" + policy + "/account/withdrawals").header("Idempotency-Key", key)
-                .with(staff("UNDERWRITER", "staff-one")).contentType(MediaType.APPLICATION_JSON).content(body))
+                .with(staff("CUSTOMER_SERVICE_REP", "staff-one")).contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         org.assertj.core.api.Assertions.assertThat((String) JsonPath.read(second, "$.withdrawalId"))
             .isEqualTo(JsonPath.read(first, "$.withdrawalId"));
@@ -271,7 +271,7 @@ class AccumulationContractTest {
                 .content("{\"amount\":\"30000.00\",\"sourceScheme\":\"NSSF\"}"))
             .andExpect(status().isBadRequest());
         // And nothing was credited.
-        mockMvc.perform(get("/policies/" + policy + "/account").with(staff("UNDERWRITER", "uw")))
+        mockMvc.perform(get("/policies/" + policy + "/account").with(staff("CUSTOMER_SERVICE_REP", "uw")))
             .andExpect(jsonPath("$.balance.amount").value("190000.00"));
     }
 
@@ -303,7 +303,7 @@ class AccumulationContractTest {
     @Test
     void aDepositIsReadToSpec() throws Exception {
         String policy = depositPolicy();
-        mockMvc.perform(get("/policies/" + policy + "/account/deposit").with(staff("UNDERWRITER", "uw")))
+        mockMvc.perform(get("/policies/" + policy + "/account/deposit").with(staff("CUSTOMER_SERVICE_REP", "uw")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.periods[0].termMonths").value(3))
             .andExpect(jsonPath("$.periods[0].principal.amount").value("1000000.00"))
@@ -316,7 +316,7 @@ class AccumulationContractTest {
     @Test
     void aSavingsAccountIsNotADeposit() throws Exception {
         String policy = fundedAccount();
-        mockMvc.perform(get("/policies/" + policy + "/account/deposit").with(staff("UNDERWRITER", "uw")))
+        mockMvc.perform(get("/policies/" + policy + "/account/deposit").with(staff("CUSTOMER_SERVICE_REP", "uw")))
             .andExpect(status().isNotFound());
     }
 
@@ -326,17 +326,17 @@ class AccumulationContractTest {
         String key = key();
         String body = "{\"action\":\"REINVEST\",\"termMonths\":6}";
         String first = mockMvc.perform(post("/policies/" + policy + "/account/deposit/maturity-instruction")
-                .header("Idempotency-Key", key).with(staff("UNDERWRITER", "uw")).contentType(MediaType.APPLICATION_JSON).content(body))
+                .header("Idempotency-Key", key).with(staff("CUSTOMER_SERVICE_REP", "uw")).contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andReturn().getResponse().getContentAsString();
         String second = mockMvc.perform(post("/policies/" + policy + "/account/deposit/maturity-instruction")
-                .header("Idempotency-Key", key).with(staff("UNDERWRITER", "uw")).contentType(MediaType.APPLICATION_JSON).content(body))
+                .header("Idempotency-Key", key).with(staff("CUSTOMER_SERVICE_REP", "uw")).contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
         assertThat((String) JsonPath.read(second, "$.instructionId")).isEqualTo(JsonPath.read(first, "$.instructionId"));
         // Read back, the deposit names the instruction it now carries -- and the spec admits it.
-        mockMvc.perform(get("/policies/" + policy + "/account/deposit").with(staff("UNDERWRITER", "uw")))
+        mockMvc.perform(get("/policies/" + policy + "/account/deposit").with(staff("CUSTOMER_SERVICE_REP", "uw")))
             .andExpect(jsonPath("$.instruction.action").value("REINVEST"))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
@@ -345,7 +345,7 @@ class AccumulationContractTest {
     void aTopUpOnADepositIsA422InTheServersWords() throws Exception {
         String policy = depositPolicy();
         mockMvc.perform(post("/policies/" + policy + "/account/top-ups").header("Idempotency-Key", key())
-                .with(staff("UNDERWRITER", "uw")).contentType(MediaType.APPLICATION_JSON)
+                .with(staff("CUSTOMER_SERVICE_REP", "uw")).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"amount\":\"1000.00\",\"payerRef\":\"+255700000002\"}"))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.detail").value("This is a fixed-term deposit: nothing can be added or taken out until it matures on "

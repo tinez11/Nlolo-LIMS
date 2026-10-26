@@ -13,7 +13,8 @@ import { useAuth } from 'react-oidc-context';
 import { Link, useParams } from 'react-router-dom';
 import { ASSESSMENT_TYPES } from '@/api/types';
 import type { DecideRequest } from '@/api/types';
-import { readIdentity, staffRoles } from '@/auth/claims';
+import { readIdentity } from '@/auth/claims';
+import { can } from '@/auth/access';
 import { PageHeader } from '@/components/PageHeader';
 import { Field } from '@/components/Field';
 import { PartyName } from '@/components/PartyName';
@@ -101,7 +102,6 @@ export function UnderwritingCaseDetailPage() {
   const breadcrumb = useBreadcrumb([{ label: 'Underwriting', to: '/staff/underwriting' }]);
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
-  const roles = staffRoles(identity);
 
   const detail = useUnderwritingStore(selectCase(caseId));
   // Family funeral cover: null for every case that is not a funeral plan's (its 404, normalised).
@@ -278,7 +278,7 @@ export function UnderwritingCaseDetailPage() {
         )}
         {view?.groupScheme && (
           <GroupFuneralProposalPanel caseId={caseId}
-            canReplace={view.status !== 'DECIDED' && roles.UNDERWRITER} />
+            canReplace={view.status !== 'DECIDED' && can('schemes.manage')} />
         )}
         {funeralApplication && (
           <Panel title="Funeral plan" subtitle="The plan, the family it covers, and what each life costs today">
@@ -451,8 +451,8 @@ export function UnderwritingCaseDetailPage() {
             annuity={annuityCase}
             view={view}
             deciding={deciding}
-            canDecide={roles.UNDERWRITER}
-            isSenior={roles.SENIOR_UNDERWRITER}
+            canDecide={can('underwriting.decide')}
+            isSenior={can('underwriting.decide-against-recommendation')}
             callerSubject={identity.subject}
             onDecide={(request) => void commitDecision(request)}
           />
@@ -461,7 +461,7 @@ export function UnderwritingCaseDetailPage() {
         {/* Shown while the case is undecided AND when it is POSTPONED, which is a decision
             in status only: it means "come back with more evidence", so refusing further
             assessments made it the one outcome that could never resolve. */}
-        {(view?.status !== 'DECIDED' || isPostponed) && roles.UNDERWRITER ? (
+        {(view?.status !== 'DECIDED' || isPostponed) && can('underwriting.assess') ? (
           <Panel
             emphasis
             title={isPostponed ? 'Submit further evidence' : 'Submit an assessment'}
@@ -526,7 +526,7 @@ export function UnderwritingCaseDetailPage() {
 
         {/* Back to the agent for corrections, where the case is still the underwriter's to decide (2026-10-20). */}
         {view && (view.status === 'OPEN' || view.status === 'IN_REVIEW') && !view.evidenceForPolicyNumber
-          && !view.groupScheme && roles.UNDERWRITER && (
+          && !view.groupScheme && can('underwriting.decide') && (
           <ReturnToAgentPanel caseId={caseId} onReturned={() => void loadCase(caseId)} />
         )}
 
@@ -614,7 +614,7 @@ export function UnderwritingCaseDetailPage() {
             />
           )}
 
-          {view?.referralStatus === 'NONE' && roles.UNDERWRITER && (
+          {view?.referralStatus === 'NONE' && can('underwriting.refer') && (
             <div className="px-4 pb-4">
               <Button
                 size="sm"

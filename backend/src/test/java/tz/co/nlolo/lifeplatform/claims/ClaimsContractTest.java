@@ -313,6 +313,15 @@ class ClaimsContractTest {
         TenantContext.clear();
     }
 
+/**
+     * A staff member holding a role, but not the permission this endpoint needs (2026-10-26). A bare staff token
+     * names no role and so, in the tests' token mode, holds every permission -- it cannot show a refusal any more.
+     */
+    private static org.springframework.test.web.servlet.request.RequestPostProcessor staffWithoutPermission(UUID tenantId) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_CUSTOMER_SERVICE_REP"))
+            .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
+    }
+
     private static org.springframework.test.web.servlet.request.RequestPostProcessor staffOf(UUID tenantId) {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
             .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
@@ -856,7 +865,7 @@ class ClaimsContractTest {
         UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
 
         mockMvc.perform(get("/claims/" + claimId + "/claimable-cover")
-                .with(staffOf(tenantId)))
+                .with(staffWithoutPermission(tenantId)))
             .andExpect(status().isForbidden())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.errorCode").value("FORBIDDEN"));

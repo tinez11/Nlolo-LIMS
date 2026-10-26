@@ -43,7 +43,7 @@ public class AnnuityController {
 
     /** Prices without storing anything. Refusals are 422 ANNUITY_NOT_PRICEABLE, in the pricer's words. */
     @PostMapping("/annuity-quotes")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('products.view')")
     public AnnuityQuoteResponse quote(@RequestBody QuoteRequest r, @AuthenticationPrincipal Jwt jwt,
                                       Authentication authentication) {
         boolean prospect = r.annuitantPartyId() == null && r.annuitantDateOfBirth() != null;
@@ -75,7 +75,7 @@ public class AnnuityController {
 
     /** Any staff member may read, as with an account or a bonus history. 404 NOT_AN_ANNUITY otherwise. */
     @GetMapping("/policies/{policyNumber}/annuity")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.view')")
     public AnnuityContractResponse contract(@PathVariable String policyNumber) {
         AnnuityContractView view = api.contract(policyNumber).orElseThrow(() -> new NotAnAnnuityPolicyException(policyNumber));
         return AnnuityContractResponse.from(view);

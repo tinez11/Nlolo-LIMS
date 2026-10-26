@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { grantAccess, grantRoles } from '@/test/access';
 import {
   avatarHue,
   avatarInitials,
@@ -81,29 +82,26 @@ describe('readIdentity', () => {
 });
 
 describe('canSeeFinance', () => {
-  // Mirrors the backend expression on every finance endpoint:
-  // hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))
-  it('admits FINANCE_OFFICER and ADMIN', () => {
-    expect(canSeeFinance(readIdentity(unsignedToken({ realm_access: { roles: ['FINANCE_OFFICER'] } })))).toBe(true);
-    expect(canSeeFinance(readIdentity(unsignedToken({ realm_access: { roles: ['ADMIN'] } })))).toBe(true);
+  // Reads the platform's permissions now (2026-10-26), not the token's roles: the ledger is ledger.view's, whichever
+  // role -- or single permission -- gives it.
+  it('follows ledger.view, held through finance or administration by default', () => {
+    grantRoles('FINANCE_OFFICER');
+    expect(canSeeFinance()).toBe(true);
+    grantRoles('ADMIN');
+    expect(canSeeFinance()).toBe(true);
   });
 
-  it('excludes the operational staff roles', () => {
-    for (const role of ['UNDERWRITER', 'CLAIMS_ASSESSOR', 'CLAIMS_MANAGER']) {
-      expect(canSeeFinance(readIdentity(unsignedToken({ realm_access: { roles: [role] } })))).toBe(
-        false,
-      );
+  it('excludes the operational staff roles, whatever their token says', () => {
+    for (const role of ['UNDERWRITER', 'CLAIMS_ASSESSOR', 'CLAIMS_MANAGER', 'CUSTOMER_SERVICE_REP']) {
+      grantRoles(role);
+      expect(canSeeFinance(readIdentity(unsignedToken({ realm_access: { roles: ['FINANCE_OFFICER'] } }))), role).toBe(false);
     }
   });
 
-  // CUSTOMER_SERVICE_REP is defined in the staff realm but referenced by ZERO
-  // @PreAuthorize expressions, so it grants nothing beyond the shared read surface.
-  it('excludes CUSTOMER_SERVICE_REP, which the backend never checks anywhere', () => {
-    const identity = readIdentity(
-      unsignedToken({ realm_access: { roles: ['CUSTOMER_SERVICE_REP'] } }),
-    );
-    expect(canSeeFinance(identity)).toBe(false);
-    expect(staffRoles(identity).CUSTOMER_SERVICE_REP).toBe(true);
+  it('opens to one person given ledger.view as a single permission', () => {
+    grantAccess('ledger.view');
+    expect(canSeeFinance()).toBe(true);
+    expect(staffRoles().FINANCE_OFFICER).toBe(false);
   });
 });
 

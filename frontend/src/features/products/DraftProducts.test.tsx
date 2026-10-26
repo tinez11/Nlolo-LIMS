@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { grantRoles } from '@/test/access';
 import type { ProductSummary } from '@/api/types';
 import { idle, success } from '@/store/createResourceSlice';
 import { useProductStore } from '@/store/productStore';
@@ -73,12 +74,16 @@ function renderPage(drafts: ProductSummary[] | null, path = '/staff/products') {
 describe('draft products', () => {
   beforeEach(() => {
     roles = [];
+
+    grantRoles(...roles);
     loadDrafts.mockClear();
     useProductStore.setState({ drafts: idle() });
   });
 
   it('lists an unpublished product with its code and the way back into its setup', () => {
     roles = ['ADMIN'];
+
+    grantRoles(...roles);
     renderPage([draft], '/staff/products?view=drafts');
 
     expect(screen.getByRole('table', { name: 'Draft products' })).toBeInTheDocument();
@@ -93,6 +98,8 @@ describe('draft products', () => {
 
   it('counts the drafts on their tab, where the live catalogue is showing', () => {
     roles = ['ADMIN'];
+
+    grantRoles(...roles);
     renderPage([draft, { ...draft, productId: 'cccccccc-cccc-cccc-cccc-cccccccccccc', productCode: 'Edu01' }]);
     expect(screen.getByRole('button', { name: /Drafts/ })).toHaveTextContent('2');
     expect(screen.getByText('Demo Term Life')).toBeInTheDocument();
@@ -100,6 +107,8 @@ describe('draft products', () => {
 
   it('says so when nothing is unfinished', () => {
     roles = ['ADMIN'];
+
+    grantRoles(...roles);
     renderPage([], '/staff/products?view=drafts');
     expect(screen.getByText('No drafts')).toBeInTheDocument();
   });
@@ -110,6 +119,8 @@ describe('draft products', () => {
    */
   it('is neither shown nor requested for a staff member who cannot author', () => {
     roles = ['FINANCE_OFFICER'];
+
+    grantRoles(...roles);
     renderPage([draft], '/staff/products?view=drafts');
 
     expect(screen.queryByRole('button', { name: /Drafts/ })).not.toBeInTheDocument();
