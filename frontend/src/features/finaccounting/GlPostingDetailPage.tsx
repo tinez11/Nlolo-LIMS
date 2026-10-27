@@ -73,7 +73,7 @@ export function GlPostingDetailPage() {
         // Replaces a ghost button with a back arrow that sat in its own strip ABOVE the bar,
         // doing a breadcrumb's job while pushing the sticky bar 44px down every record.
         breadcrumb={BREADCRUMB}
-        title={entry?.sourceEvent ?? 'Journal entry'}
+        title={entry?.description ?? 'Journal entry'}
         description={entry?.policyNumber ? <span className="font-mono text-xs">{entry.policyNumber}</span> : undefined}
       />
 
@@ -87,9 +87,11 @@ export function GlPostingDetailPage() {
                   return (
                     <li key={p.postingId} className="px-4 py-2.5 text-sm">
                       <div className="flex items-center justify-between">
-                        <span className="font-mono text-xs">{p.accountCode}</span>
+                        <span>
+                          <span className="font-mono text-xs text-muted-foreground">{p.accountCode}</span> {p.accountName ?? ''}
+                        </span>
                         <span className="flex items-center gap-3">
-                          <span className="text-xs text-muted-foreground">{p.direction}</span>
+                          <span className="text-xs text-muted-foreground">{p.direction === 'DR' ? 'Debit' : 'Credit'}</span>
                           <span className="font-medium">{formatMoney(p.amount)}</span>
                         </span>
                       </div>
@@ -106,7 +108,10 @@ export function GlPostingDetailPage() {
               <dl className="px-4 pb-2">
                 <Field label="Period" value={entry.period} />
                 <Field label="Posted" value={formatInstant(entry.postedAt)} />
+                <Field label="Amount" value={formatMoney(entry.amount)} emphasis />
                 <Field label="Source" value={SOURCE_LABEL[entry.sourceType] ?? entry.sourceType} />
+                {/* The event that posted it, for whoever traces it (2026-10-27): the title now says what it is. */}
+                <Field label="Event" value={<span className="font-mono text-xs">{entry.sourceEvent}</span>} />
                 <Field label="Policy register version" value={entry.policyRegisterVersion} />
                 {entry.ruleVersion != null && <Field label="Posting rules" value={entry.ruleVersion} />}
                 <Field label="Source ref" value={<span className="font-mono text-xs">{entry.sourceRef}</span>} />

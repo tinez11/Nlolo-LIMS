@@ -58,13 +58,20 @@ public class GlPostingController {
             @RequestParam(defaultValue = "20") int pageSize) {
         Page<JournalEntryView> result = finaccountingApi.listJournalEntries(period, policyNumber, accountCode,
             PageRequest.of(page, Math.min(pageSize, 100)));
-        return ResponseEntity.ok(JournalEntrySearchResponseDto.from(result));
+        return ResponseEntity.ok(JournalEntrySearchResponseDto.from(result, accountNames()));
     }
 
     @GetMapping("/gl-postings/{journalEntryId}")
     @PreAuthorize("@access.can('ledger.view')")
     public ResponseEntity<JournalEntryResponseDto> getGlPosting(@PathVariable UUID journalEntryId) {
         JournalEntryView view = finaccountingApi.getJournalEntry(journalEntryId);
-        return ResponseEntity.ok(JournalEntryResponseDto.from(view));
+        return ResponseEntity.ok(JournalEntryResponseDto.from(view, accountNames()));
+    }
+
+    /** The chart's names by code, read once per request: a ledger line is shown with its account's name. */
+    private java.util.Map<String, String> accountNames() {
+        return finaccountingApi.listChartOfAccounts().stream().collect(java.util.stream.Collectors.toMap(
+            tz.co.nlolo.lifeplatform.finaccounting.api.ChartOfAccountView::accountCode,
+            tz.co.nlolo.lifeplatform.finaccounting.api.ChartOfAccountView::name, (a, b) -> a));
     }
 }

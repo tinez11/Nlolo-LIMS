@@ -40,7 +40,10 @@ export function GlPostingDrawer({
       }}
     >
       <SheetContent aria-label="Journal entry preview">
-        <SheetHeader title={entry?.sourceEvent ?? 'Journal entry'} subtitle={entry?.period} />
+        <SheetHeader
+          title={entry?.description ?? 'Journal entry'}
+          subtitle={entry ? `${formatMoney(entry.amount)} · period ${entry.period}` : undefined}
+        />
 
         <SheetBody>
           {isInitialLoad(detail) && <LoadingBlock />}
@@ -58,9 +61,11 @@ export function GlPostingDrawer({
               <ul className="divide-y divide-border rounded-md border border-border">
                 {entry.postings.map((p) => (
                   <li key={p.postingId} className="flex items-center justify-between px-3 py-2 text-xs">
-                    <span className="font-mono">{p.accountCode}</span>
+                    <span>
+                      <span className="font-mono text-muted-foreground">{p.accountCode}</span> {p.accountName ?? ''}
+                    </span>
                     <span className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">{p.direction}</span>
+                      <span className="text-xs text-muted-foreground">{p.direction === 'DR' ? 'Debit' : 'Credit'}</span>
                       <span className="font-medium">{formatMoney(p.amount)}</span>
                     </span>
                   </li>

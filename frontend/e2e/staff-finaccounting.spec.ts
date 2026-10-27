@@ -50,26 +50,32 @@ test.describe('staff finaccounting', () => {
   test('lists real journal entries this session already produced', async ({ page }) => {
     await page.goto('/staff/gl-postings');
     await expect(page.getByRole('heading', { name: 'GL postings' })).toBeVisible();
-    // Any real entry, not one particular event: which events fill the newest page depends on what ran before
-    // (a funeral restatement posts one entry per invoice it moves -- eleven at a time).
-    await expect(page.locator('td .font-mono').filter({ hasText: /^[a-z]+\.[A-Z][A-Za-z]+$/ }).first())
-      .toBeVisible({ timeout: 15_000 });
+    // Read as a ledger (2026-10-27): what each entry records in words, the accounts it debited and credited by code
+    // and name, and the amount -- not the source event. Any real entry: which fill the newest page depends on what
+    // ran before.
+    const table = page.getByRole('table', { name: 'GL postings' });
+    await expect(table.getByRole('columnheader', { name: 'Debit' })).toBeVisible({ timeout: 15_000 });
+    await expect(table.getByRole('columnheader', { name: 'Credit' })).toBeVisible();
+    await expect(table.getByText(/^TZS [\d,]+\.\d{2}$/).first()).toBeVisible({ timeout: 15_000 });
+    await expect(table.getByText(/^[a-z]+\.[A-Z][A-Za-z]+$/)).toHaveCount(0);
   });
 
   test('opens a row preview showing two balanced postings, then navigates to full detail', async ({
     page,
   }) => {
     await page.goto('/staff/gl-postings');
-    // The newest entry, whatever its event -- its detail page is titled with that same event.
+    // The newest entry, whatever it records -- its preview and detail page are titled with the same words.
     const firstRow = page.getByRole('row').filter({ has: page.getByRole('button') }).first();
-    const sourceEvent = (await firstRow.locator('.font-mono').first().innerText()).trim();
+    const description = (await firstRow.locator('td .font-medium').first().innerText()).trim();
     await firstRow.getByRole('button').click();
 
-    await expect(page.getByText('DR', { exact: true })).toBeVisible();
-    await expect(page.getByText('CR', { exact: true })).toBeVisible();
+    // Named by what it records, as its title says.
+    const preview = page.getByRole('dialog', { name: description });
+    await expect(preview.getByText('Debit', { exact: true }).first()).toBeVisible();
+    await expect(preview.getByText('Credit', { exact: true }).first()).toBeVisible();
 
     await page.getByRole('link', { name: 'Full detail' }).click();
-    await expect(page.getByRole('heading', { name: sourceEvent })).toBeVisible();
+    await expect(page.getByRole('heading', { name: description, level: 1 })).toBeVisible();
     await expect(page.getByText('Debits equal credits')).toBeVisible();
     await expect(page.getByText('Policy register version')).toBeVisible();
   });
@@ -110,7 +116,7 @@ test.describe('staff finaccounting', () => {
     }).toPass({ timeout: 20_000 });
 
     // Every row in a policyNumber-filtered result must actually carry it.
-    const rows = page.getByRole('row').filter({ hasText: 'billing.' });
+    const rows = page.getByRole('row').filter({ hasText: /Premium/ });
     await expect(rows.first()).toBeVisible();
     const count = await rows.count();
     for (let i = 0; i < count; i++) {

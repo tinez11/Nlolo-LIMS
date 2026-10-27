@@ -1620,6 +1620,9 @@ components:
         postingId: { type: string, format: uuid }
         journalEntryId: { type: string, format: uuid }
         accountCode: { type: string }
+        accountName:
+          type: [string, 'null']
+          description: "The account's name in the chart (2026-10-27); null where the chart does not name the code."
         direction: { $ref: '#/components/schemas/PostingDirection' }
         amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         period:
@@ -1649,10 +1652,16 @@ components:
         page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
     JournalEntryView:
       type: object
-      required: [journalEntryId, sourceEvent, sourceRef, period, postedAt, postings, sourceType,
+      required: [journalEntryId, description, amount, sourceEvent, sourceRef, period, postedAt, postings, sourceType,
                  policyRegisterVersion]
       properties:
         journalEntryId: { type: string, format: uuid }
+        description:
+          type: string
+          description: "What the entry records, in words (2026-10-27): 'Premium received', 'Claim paid'. The event stays in sourceEvent."
+        amount:
+          allOf: [{ $ref: 'openapi-common.yaml#/components/schemas/Money' }]
+          description: "The entry's debits added up, on the server."
         sourceEvent:
           type: string
           description: "The domain event this entry was derived from, e.g. billing.PremiumInvoiceGenerated"
