@@ -18,7 +18,8 @@ export async function confirmRequestedPayments(browser: Browser, policyNumber: s
     await page.goto(register);
     await expect(waiting.first()).toBeVisible({ timeout: 30_000 });
     for (;;) {
-      await waiting.first().click();
+      // The row's own button, not the row: a register row opens from its first cell.
+      await waiting.first().getByRole('button').first().click();
       await expect(page).toHaveURL(/\/staff\/receipts\/[0-9a-f-]{36}/, { timeout: 15_000 });
       await page.getByRole('button', { name: 'Confirm', exact: true }).click({ timeout: 30_000 });
       await page.getByRole('button', { name: 'Confirm receipt' }).click();
