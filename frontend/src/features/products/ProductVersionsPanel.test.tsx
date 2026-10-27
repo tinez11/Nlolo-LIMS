@@ -12,7 +12,7 @@ vi.mock('@/api/funeral');
 const version = (id: string, over: Partial<ProductVersionSummaryView> = {}): ProductVersionSummaryView => ({
   productVersionId: id, effectiveDate: '2026-10-08', retirementDate: null, current: false,
   publishedAt: '2026-10-08T08:00:00Z', publishedBy: 'admin', gracePeriodDays: 30,
-  expectedProfitabilityBucket: 'REMAINING', measurementModelOverride: null, survivalInvestmentComponentPercent: null, ...over,
+  expectedProfitabilityBucket: 'REMAINING', measurementModelOverride: null, survivalInvestmentComponentPercent: null, description: null, ...over,
 });
 
 /** One plan, the main member only, priced flat at `premium` a year for 4,000,000 of cover. */

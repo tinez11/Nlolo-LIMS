@@ -78,6 +78,10 @@ export function ProductVersionsPanel({ productId, category, refreshKey }: {
                 Effective {formatDate(v.effectiveDate)}{v.retirementDate ? ` to ${formatDate(v.retirementDate)}` : ''}
                 {' · '}published {formatDate(v.publishedAt)}{v.publishedBy ? ` by ${v.publishedBy}` : ''}
               </span>
+              {/* The version that wrote the description, not every version that kept it. */}
+              {v.description && v.description !== versions[i + 1]?.description && (
+                <span className="mt-0.5 block line-clamp-2 text-xs text-muted-foreground">Described as: {v.description}</span>
+              )}
               {category === 'FUNERAL' && <FuneralSummaryLine productId={productId} versionId={v.productVersionId} />}
             </span>
           </button>

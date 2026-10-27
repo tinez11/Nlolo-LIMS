@@ -97,4 +97,6 @@ public record PublishVersionRequest(
 
     // IFRS 17 I3b, optional: the investment component share (%) of a survival or income instalment, set by the actuary.
     @jakarta.validation.constraints.DecimalMin("0") @jakarta.validation.constraints.DecimalMax("100")
-    java.math.BigDecimal survivalInvestmentComponentPercent) {}
+    java.math.BigDecimal survivalInvestmentComponentPercent,
+    // V35, optional: what the product is, as of this version. Absent keeps the product's current description.
+    @jakarta.validation.constraints.Size(max = 2000) String description) {}

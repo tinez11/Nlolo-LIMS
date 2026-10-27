@@ -21,12 +21,14 @@ export const createProductFormSchema = z.object({
     message: 'Choose the IFRS 17 portfolio',
   }),
   defaultCurrency: z.string().regex(CURRENCY_PATTERN, 'Must be a 3-letter code like TZS'),
+  // Optional (2026-10-26): what staff read when choosing this product to quote, propose or issue.
+  description: z.string().max(2000, 'Keep it under 2,000 characters').optional(),
 });
 
 export type CreateProductFormValues = z.infer<typeof createProductFormSchema>;
 
 export function blankCreateProductForm(): CreateProductFormValues {
-  return { productCode: '', productName: '', category: 'TERM_LIFE', portfolioCode: 'TERM', defaultCurrency: 'TZS' };
+  return { productCode: '', productName: '', category: 'TERM_LIFE', portfolioCode: 'TERM', defaultCurrency: 'TZS', description: '' };
 }
 
 export function toApiRequest(values: CreateProductFormValues): CreateProductRequest {
@@ -36,5 +38,6 @@ export function toApiRequest(values: CreateProductFormValues): CreateProductRequ
     category: values.category,
     portfolioCode: values.portfolioCode,
     defaultCurrency: values.defaultCurrency,
+    ...(values.description?.trim() ? { description: values.description.trim() } : {}),
   };
 }

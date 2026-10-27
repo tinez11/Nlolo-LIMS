@@ -4,6 +4,7 @@ import { dmy, todayIso } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
 import { fillPolicyNumberManually } from './guards';
 import { asSeniorOnSameCase, assess } from './underwriting';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * Family funeral cover through the real stack: a funeral plan published with its plans, premium table
@@ -123,7 +124,7 @@ test.describe('family funeral cover', () => {
     await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
     await page.getByPlaceholder('Type a name to search').fill('Amina');
     await page.getByRole('option', { name: 'Amina Owner' }).click();
-    await page.getByLabel('Product').selectOption({ label: `${name} (${code})` });
+    await chooseProduct(page, `${name} (${code})`);
     await expect(page.getByText('Resolving product version…')).not.toBeVisible();
     await page.getByLabel('Plan', { exact: true }).selectOption('B');
     // The sum assured is the plan's main-member benefit, filled for staff (R3).

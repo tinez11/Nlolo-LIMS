@@ -4,6 +4,7 @@ import { dmy } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
 import { selectAgentOfRecord } from './policies';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * Fixtures for "an agent who has actually earned something".
@@ -90,7 +91,7 @@ export async function issueRealPolicyForAgent(
   const caseId = await caseAwaitingManualIssue(page);
   await page.goto('/staff/policies/new');
   await selectUnderwritingCase(page, caseId);
-  await page.getByLabel('Product').selectOption({ label: productOptionLabel });
+  await chooseProduct(page, productOptionLabel);
   await expect(page.getByText('Resolving product version…')).not.toBeVisible();
   await page.getByLabel('Sum assured').fill('2000000.00');
   await page.getByLabel('Premium', { exact: true }).fill('800.00');
@@ -122,7 +123,7 @@ export async function giveAgentEarningPolicy(
   try {
     // The plan is authored from the agent's own page, which is where the create form lives.
     await financePage.goto(`/staff/agents/${agentId}`);
-    await financePage.getByLabel('Product').selectOption({ label: optionLabel });
+    await chooseProduct(financePage, optionLabel);
     await expect(financePage.getByText('No plan applies to this agent for this product yet.')).toBeVisible();
     await createDefaultPlan(financePage, '0.1000');
     await expect(financePage.getByText('Active plan', { exact: true })).toBeVisible({ timeout: 15_000 });

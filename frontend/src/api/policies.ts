@@ -48,6 +48,9 @@ export interface PolicySearchParams {
    */
   relatedPartyId?: string;
   q?: string;
+  /** Only policies sold under this product, or under a product of this category (2026-10-26). */
+  productId?: string;
+  productCategory?: string;
   page?: number;
   pageSize?: number;
 }
@@ -76,6 +79,8 @@ export async function searchPolicies(params: PolicySearchParams = {}): Promise<P
       ...(params.policyholderPartyId ? { policyholderPartyId: params.policyholderPartyId } : {}),
       ...(params.relatedPartyId ? { relatedPartyId: params.relatedPartyId } : {}),
       ...(params.q ? { q: params.q } : {}),
+      ...(params.productId ? { productId: params.productId } : {}),
+      ...(params.productCategory ? { productCategory: params.productCategory } : {}),
       page,
       pageSize,
     },

@@ -59,6 +59,11 @@ export function ProductDrawer({
           )}
 
           {product && (
+            <p className={product.description ? 'mb-3 text-sm whitespace-pre-line' : 'mb-3 text-sm text-muted-foreground'}>
+              {product.description || 'No description yet.'}
+            </p>
+          )}
+          {product && (
             <dl className="space-y-0">
               <Field label="Category" value={product.category?.replace(/_/g, ' ') ?? '—'} />
               <Field label="Default currency" value={product.defaultCurrency ?? '—'} />

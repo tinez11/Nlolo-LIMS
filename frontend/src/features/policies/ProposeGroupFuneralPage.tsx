@@ -13,6 +13,7 @@ import { FormLayout } from '@/components/FormLayout';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyPicker } from '@/components/PartyPicker';
+import { ProductChooser } from '@/components/ProductChooser';
 import { NoAccess } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
@@ -177,12 +178,8 @@ export function ProposeGroupFuneralPage() {
                   sold to group schemes first.
                 </p>
               ) : (
-                <Select value={productId} onChange={(e) => { setProductId(e.target.value); setPlanCode(''); setTerms(null); }}>
-                  <option value="">Select a funeral product</option>
-                  {funeralProducts.map((p) => (
-                    <option key={p.productId} value={p.productId}>{p.productName} ({p.productCode})</option>
-                  ))}
-                </Select>
+                <ProductChooser products={funeralProducts} value={productId}
+                  onChange={(id) => { setProductId(id); setPlanCode(''); setTerms(null); }} />
               )}
             </FormField>
             <FormField label="Plan">

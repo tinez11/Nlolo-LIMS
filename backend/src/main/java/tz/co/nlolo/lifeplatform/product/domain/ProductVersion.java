@@ -149,6 +149,15 @@ public class ProductVersion {
         this.createdBy = createdBy;
     }
 
+    /** What the product was described as when this version was published (V35, 2026-10-26); history, never edited. */
+    @Column(name = "description")
+    private String description;
+
+    public String getDescription() { return description; }
+
+    /** Written once, as the version is published. */
+    public void recordDescription(String text) { this.description = text; }
+
     public UUID getProductVersionId() { return productVersionId; }
     public UUID getTenantId() { return tenantId; }
     public UUID getProductId() { return productId; }

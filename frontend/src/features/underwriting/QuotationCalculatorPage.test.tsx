@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getActiveSnapshot, listProducts, quotePremium } from '@/api/products';
@@ -50,6 +50,12 @@ const DEPOSIT = {
   defaultCurrency: 'TZS',
 };
 
+/** The chooser: a category first, then the product in it. */
+async function chooseProduct(category: RegExp, product: string) {
+  await userEvent.click(screen.getByRole('button', { name: category }));
+  await userEvent.click(screen.getByRole('button', { name: product }));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(listProducts).mockResolvedValue([ENDOWMENT, ANNUITY] as never);
@@ -83,13 +89,13 @@ async function fillProspectAndPlan() {
     </Routes>,
     { route: '/agents/quotation' },
   );
-  await screen.findByRole('option', { name: 'Prospect Endowment (END1)' });
+  await screen.findByRole('group', { name: 'Product category' });
   await userEvent.type(screen.getByLabelText('Full name'), 'Halima Prospect');
   // The first date on the page is the person's date of birth; the second is when cover would start.
   await userEvent.type(screen.getAllByLabelText('date')[0]!, '1985-05-01');
   await userEvent.selectOptions(screen.getByLabelText('Sex'), 'MALE');
   await userEvent.selectOptions(screen.getByLabelText('Smoker status'), 'NON_SMOKER');
-  await userEvent.selectOptions(screen.getByLabelText('Product'), 'prod-end');
+  await chooseProduct(/^Endowment/, 'Prospect Endowment (END1)');
   await waitFor(() => expect(getActiveSnapshot).toHaveBeenCalledWith('prod-end'));
   await userEvent.type(screen.getByLabelText('Sum assured or amount'), '1000000');
   await userEvent.selectOptions(screen.getByLabelText('Premium frequency'), 'MONTHLY');
@@ -180,11 +186,11 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
 
   it('says beside the field when an amount is not digits, and sends nothing until it is', async () => {
     renderScreen(<QuotationCalculatorPage />, { route: '/agents/quotation' });
-    await screen.findByRole('option', { name: 'Prospect Endowment (END1)' });
+    await screen.findByRole('group', { name: 'Product category' });
     await userEvent.type(screen.getByLabelText('Full name'), 'Halima Prospect');
     await userEvent.type(screen.getAllByLabelText('date')[0]!, '1985-05-01');
     await userEvent.selectOptions(screen.getByLabelText('Sex'), 'MALE');
-    await userEvent.selectOptions(screen.getByLabelText('Product'), 'prod-end');
+    await chooseProduct(/^Endowment/, 'Prospect Endowment (END1)');
     await userEvent.selectOptions(screen.getByLabelText('Premium frequency'), 'MONTHLY');
     await userEvent.type(screen.getByLabelText('Sum assured or amount'), '1,000,000');
     await userEvent.type(screen.getByLabelText('Term (months)'), '10 years');
@@ -232,7 +238,7 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
 
   it('says what is missing while Proceed is not available', async () => {
     renderScreen(<QuotationCalculatorPage />, { route: '/agents/quotation' });
-    await screen.findByRole('option', { name: 'Prospect Endowment (END1)' });
+    await screen.findByRole('group', { name: 'Product category' });
 
     expect(screen.getByText("Enter the person's name, the product and the plan to proceed.")).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Proceed to onboarding' })).toBeDisabled();
@@ -257,8 +263,10 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
   it('offers the products it can quote, annuities among them, and says who quotes the rest', async () => {
     renderScreen(<QuotationCalculatorPage />, { route: '/agents/quotation' });
 
-    expect(await screen.findByRole('option', { name: 'Prospect Endowment (END1)' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Immediate Annuity (ANN1)' })).toBeInTheDocument();
+    const categories = await screen.findByRole('group', { name: 'Product category' });
+    expect(within(categories).getByRole('button', { name: /^Endowment/ })).toBeInTheDocument();
+    await userEvent.click(within(categories).getByRole('button', { name: /^Annuity/ }));
+    expect(screen.getByRole('button', { name: 'Immediate Annuity (ANN1)' })).toBeInTheDocument();
     expect(screen.getByText(/Unit-linked and group cover are quoted by the office/)).toBeInTheDocument();
   });
 
@@ -269,8 +277,8 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
     vi.mocked(listProducts).mockResolvedValue([ENDOWMENT, ANNUITY, DEPOSIT] as never);
     renderScreen(<QuotationCalculatorPage />, { route: '/agents/quotation' });
 
-    await screen.findByRole('option', { name: 'Fixed Term Deposit (FTD1)' });
-    await userEvent.selectOptions(screen.getByLabelText('Product'), 'prod-dep');
+    await screen.findByRole('group', { name: 'Product category' });
+    await chooseProduct(/^Education savings/, 'Fixed Term Deposit (FTD1)');
     await waitFor(() => expect(getActiveSnapshot).toHaveBeenCalledWith('prod-dep'));
 
     const frequency = screen.getByLabelText('Premium frequency') as HTMLSelectElement;

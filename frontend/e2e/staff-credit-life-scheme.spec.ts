@@ -8,6 +8,7 @@ import {
   staffToken,
 } from './creditLife';
 import { dmy } from './dates';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * A lender's month on a credit-life scheme, in a browser, against the real stack.
@@ -58,8 +59,11 @@ test.describe('staff credit-life scheme', () => {
     await expect(panel.getByText('Group members')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Group schemes' })).toHaveCount(0);
 
-    // Registered over the API as staff.admin, so the record names them rather than a login id.
+    // Registered over the API as staff.admin, so the record names them rather than a login id -- on the Overview
+    // tab, where "Registered by" has lived since the client page was restructured (2026-10-22).
+    await page.getByRole('tab', { name: 'Overview', exact: true }).click();
     await expect(page.getByText('Asha Admin')).toBeVisible();
+    await page.getByRole('tab', { name: 'Policies', exact: true }).click();
 
     // The row goes to the credit-life scheme's own page, where the borrowers are.
     await panel.getByText(policyNumber).click();
@@ -262,7 +266,7 @@ test.describe('staff credit-life scheme', () => {
 
     // Only CREDIT_LIFE products are offered. A term-life product here would be a 409 after the
     // form, which is the version of this that wastes somebody's afternoon.
-    await page.getByLabel('Product').selectOption({ label: fixtures.productLabel });
+    await chooseProduct(page, fixtures.productLabel);
 
     await page.getByLabel('Premium rate (% of each loan)').fill('0.5');
     await page.getByLabel('Free cover limit (optional)').fill('600000000.00');

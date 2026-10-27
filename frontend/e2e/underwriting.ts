@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * Fixtures for the underwriting flow, shared because manual issuance now needs one.
@@ -32,7 +33,7 @@ export async function openCaseForAmina(
   await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
   await page.getByPlaceholder('Type a name to search').fill('Amina');
   await page.getByRole('option', { name: 'Amina Owner' }).click();
-  await page.getByLabel('Product').selectOption({ label: productLabel });
+  await chooseProduct(page, productLabel);
   await expect(page.getByText('Resolving product version…')).not.toBeVisible();
   await page.getByLabel('Sum assured').fill(sumAssured);
   await page.getByRole('button', { name: 'Open case' }).click();

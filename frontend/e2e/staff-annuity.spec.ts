@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { dmy, todayIso } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
 import { asSeniorOnSameCase } from './underwriting';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * An immediate annuity through the real stack (product step 5): a version published with its form
@@ -121,7 +122,7 @@ test.describe('an immediate annuity', () => {
       await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
       await page.getByPlaceholder('Type a name to search').fill('Amina');
       await page.getByRole('option', { name: 'Amina Owner' }).click();
-      await page.getByLabel('Product').selectOption({ label: `${name} (${code})` });
+      await chooseProduct(page, `${name} (${code})`);
       await expect(page.getByText('Resolving product version…')).not.toBeVisible();
       await page.getByLabel('Purchase price').fill(`${price}.00`);
       await page.getByLabel('Annuity form').selectOption('LIFE');

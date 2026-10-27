@@ -664,6 +664,15 @@ public interface PolicyApi {
     Page<PolicyView> searchPolicies(UUID policyholderPartyId, UUID relatedPartyId, PolicyStatus status,
                                      Set<UUID> agentOfRecordIds, String q, Pageable pageable);
 
+    /** As above, narrowed to one product and/or one product category (either may be null). */
+    Page<PolicyView> searchPolicies(UUID policyholderPartyId, UUID relatedPartyId, PolicyStatus status,
+                                     Set<UUID> agentOfRecordIds, String q, UUID productId, String productCategory,
+                                     Pageable pageable);
+
+    /** The numbers of this tenant's policies under a product and/or category, for claims' product
+     *  filter -- claims may not read product itself. */
+    Set<String> policyNumbersForProduct(UUID productId, String productCategory);
+
     /**
      * The policy numbers an agents-realm caller's own hierarchy team (itself plus its downline,
      * within {@code DistributionApi.resolveAgentTeam}'s depth cap) is entitled to see -- resolves

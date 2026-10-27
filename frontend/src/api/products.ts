@@ -87,6 +87,11 @@ export function getProduct(productId: string): Promise<ProductSummary> {
  * `POST /policies/manual-issue` actually needs (`productVersionId`), which
  * `GET /products` itself does not expose.
  */
+/** ADMIN: what the product is, for staff choosing it (2026-10-26). Blank clears it. */
+export function describeProduct(productId: string, description: string): Promise<ProductSummary> {
+  return put<ProductSummary>(`/products/${encodeURIComponent(productId)}/description`, { description });
+}
+
 export function getActiveSnapshot(productId: string): Promise<ProductSnapshot> {
   return get<ProductSnapshot>(`/products/${encodeURIComponent(productId)}/active-snapshot`);
 }

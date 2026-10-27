@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { type FieldErrors, useFieldArray, useForm } from 'react-hook-form';
 import type { ProductSummary } from '@/api/types';
 import { Field } from '@/components/Field';
+import { FormField } from '@/components/FormField';
+import { ProductChooser } from '@/components/ProductChooser';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -55,20 +57,9 @@ export function CommissionPlanPanel({
 
   return (
     <div className="p-4">
-      <label className="block">
-        <span className="mb-1 block text-xs font-medium text-muted-foreground">Product</span>
-        <Select
-          value={productId}
-          onChange={(e) => setProductId(e.target.value)}
-        >
-          <option value="">Select a product</option>
-          {products.map((p) => (
-            <option key={p.productId} value={p.productId}>
-              {p.productName} ({p.productCode})
-            </option>
-          ))}
-        </Select>
-      </label>
+      <FormField label="Product">
+        <ProductChooser products={products} value={productId} onChange={(id) => setProductId(id)} />
+      </FormField>
 
       {productId && isInitialLoad(plan) && <LoadingBlock label="Resolving plan" />}
 

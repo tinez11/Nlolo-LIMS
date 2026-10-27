@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * Manual policy issuance e2e coverage.
@@ -37,8 +38,9 @@ test.describe('staff issue policy', () => {
   test('the real seeded product populates the picker and resolves a real productVersionId', async ({
     page,
   }) => {
-    const select = page.getByLabel('Product');
-    await expect(select.locator('option', { hasText: 'Demo Term Life' })).toHaveCount(1);
+    // Category first: the seeded term product sits under Term life, with its description or the lack of one.
+    await page.getByRole('group', { name: 'Product category' }).getByRole('button', { name: /^Term life/ }).click();
+    await expect(page.getByRole('button', { name: 'Demo Term Life (DEMO-TERM-01)', exact: true })).toHaveCount(1);
   });
 
   /*
@@ -70,7 +72,7 @@ test.describe('staff issue policy', () => {
     const caseId = await caseAwaitingManualIssue(page);
     await page.goto('/staff/policies/new');
     await selectUnderwritingCase(page, caseId);
-    await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
+    await chooseProduct(page, 'Demo Term Life (DEMO-TERM-01)');
     // The version id resolves asynchronously via GET /products/{id}/active-snapshot
     // -- wait for that to actually land before submitting, or the request would
     // fire with an empty productVersionId and 400.

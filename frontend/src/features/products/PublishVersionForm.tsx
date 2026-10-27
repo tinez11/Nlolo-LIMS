@@ -38,7 +38,7 @@ import {
   type PublishVersionFormInput,
   type PublishVersionFormValues,
 } from './publishVersionSchema';
-import { Input, Select } from '@/components/ui/input';
+import { Input, Select, Textarea } from '@/components/ui/input';
 import { CheckboxField } from '@/components/ui/checkbox';
 import { InlineError } from '@/components/InlineError';
 import { humanizeStatus } from '@/lib/status';
@@ -102,6 +102,7 @@ const STEP_OF_FIELD: Partial<Record<string, StepId>> = {
   expectedProfitabilityBucket: 'basics',
   measurementModelOverride: 'basics',
   survivalInvestmentComponentPercent: 'basics',
+  description: 'basics',
   minEntryAge: 'eligibility',
   maxEntryAge: 'eligibility',
   minTermMonths: 'eligibility',
@@ -156,6 +157,7 @@ export function PublishVersionForm({
   onPublished,
   portfolioCode,
   draft = false,
+  description = '',
 }: {
   productId: string;
   category: ProductCategory;
@@ -163,6 +165,8 @@ export function PublishVersionForm({
   /** The product's IFRS 17 portfolio, and whether it can still change: see `requiredPortfolios`. */
   portfolioCode?: string | undefined;
   draft?: boolean | undefined;
+  /** The product's current description, which this version starts from. */
+  description?: string | null | undefined;
 }) {
   const publishVersion = useProductStore((s) => s.publishVersion);
   const resetPublishVersion = useProductStore((s) => s.resetPublishVersion);
@@ -189,6 +193,7 @@ export function PublishVersionForm({
       expectedProfitabilityBucket: 'REMAINING',
       measurementModelOverride: '',
       survivalInvestmentComponentPercent: '',
+      description: description ?? '',
       effectiveDate: '',
       retirementDate: '',
       // Funeral is priced by its premium grid and unit-linked by its mortality table: no rating rows at all.
@@ -490,6 +495,14 @@ export function PublishVersionForm({
                 name="retirementDate"
                 render={({ field }) => <DatePicker value={field.value || null} onChange={(iso) => field.onChange(iso ?? '')} />}
               />
+            </FormField>
+            <FormField
+              label="Description (optional)"
+              hint="What staff read when choosing this product. Changing it here updates the product from this version on."
+              error={errors.description?.message}
+              className="col-span-2"
+            >
+              <Textarea className="min-h-20 py-2" {...register('description')} />
             </FormField>
             <FormField label="TIRA filing reference" error={errors.tiraReference?.message}>
               <Input placeholder="TIRA/LIFE/2026/0001" {...register('tiraReference')} />

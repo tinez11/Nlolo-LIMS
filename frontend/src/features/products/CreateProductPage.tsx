@@ -18,7 +18,7 @@ import {
   type CreateProductFormValues,
 } from './createProductForm';
 import { PublishVersionForm } from './PublishVersionForm';
-import { Input, Select } from '@/components/ui/input';
+import { Input, Select, Textarea } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { PORTFOLIO_CODES, PORTFOLIO_LABEL, portfolioDefaultFor } from '@/lib/ifrs17';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
@@ -138,6 +138,13 @@ export function CreateProductPage() {
                   {...register('defaultCurrency')}
                 />
               </FormField>
+              <FormField
+                label="Description (optional)"
+                hint="What staff read when choosing this product: who it is for and what it pays. Each new version can update it."
+                error={errors.description?.message}
+              >
+                <Textarea className="min-h-20 py-2" {...register('description')} />
+              </FormField>
 
               {creating.status === 'error' && creating.error && (
                 <InlineError error={creating.error}>
@@ -172,6 +179,7 @@ export function CreateProductPage() {
               productId={created.productId}
               category={created.category ?? 'TERM_LIFE'}
               portfolioCode={created.portfolioCode}
+              description={created.description}
               draft
               onPublished={() => navigate(`../${created.productId}`, { relative: 'path' })}
             />

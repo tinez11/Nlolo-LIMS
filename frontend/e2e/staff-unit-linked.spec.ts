@@ -3,6 +3,7 @@ import { asAdmin } from './admin';
 import { dmy, todayIso } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
 import { asSeniorOnSameCase, assess } from './underwriting';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * Unit-linked (product step 6) through the real stack: finance adds two funds to the register and proposes
@@ -132,7 +133,7 @@ test.describe('unit-linked', () => {
     await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
     await page.getByPlaceholder('Type a name to search').fill('Amina');
     await page.getByRole('option', { name: 'Amina Owner' }).click();
-    await page.getByLabel('Product').selectOption({ label: `${name} (${code})` });
+    await chooseProduct(page, `${name} (${code})`);
     await expect(page.getByText('Resolving product version…')).not.toBeVisible();
     await page.getByLabel(/^Sum assured/).fill(sumAssured.toFixed(2));
     await page.getByLabel('Premium frequency').selectOption('MONTHLY');

@@ -4,6 +4,7 @@ import { dmy, todayIso } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
 import { fillPolicyNumberManually } from './guards';
 import { acceptProposedScheme, pickParty } from './groupSchemes';
+import { chooseProduct } from './chooseProduct';
 
 /**
  * A group funeral scheme through the real stack (2026-10-07): a FUNERAL product sold to group schemes,
@@ -72,7 +73,7 @@ test.describe('group funeral schemes', () => {
     await page.goto('/staff/group-funeral-schemes/new');
     await expect(page.getByRole('heading', { name: 'Propose a group funeral scheme' })).toBeVisible();
     await pickParty(page, 'Search for the association by name', 'Amina', 'Amina Owner');
-    await page.getByLabel('Funeral product').selectOption({ label: `${name} (${code})` });
+    await chooseProduct(page, `${name} (${code})`);
     await page.getByLabel('Plan', { exact: true }).selectOption('A1', { timeout: 15_000 });
     const family = page.getByLabel('Family M001');
     await family.getByLabel('Main member').fill(juma);

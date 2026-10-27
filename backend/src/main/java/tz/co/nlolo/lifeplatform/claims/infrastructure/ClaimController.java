@@ -136,6 +136,8 @@ public class ClaimController {
             @RequestParam(required = false) String q,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate registeredFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate registeredTo,
+            @RequestParam(required = false) UUID productId,
+            @RequestParam(required = false) String productCategory,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int pageSize,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
@@ -146,6 +148,16 @@ public class ClaimController {
         // distribution dependency, since a claim carries no agentOfRecordId of its own.
         Set<String> policyNumbers = isAgent(authentication)
             ? policyApi.policyNumbersForAgentTeam(ownAgentPartyIdOrThrow(jwt)) : null;
+        // A product or category narrows to the policies sold under it, intersected with any agent scope
+        // above -- it can only ever take away from what the caller may see, never add.
+        boolean byProduct = productId != null || (productCategory != null && !productCategory.isBlank());
+        if (byProduct) {
+            Set<String> underProduct = new java.util.HashSet<>(policyApi.policyNumbersForProduct(productId, productCategory));
+            if (policyNumbers != null) {
+                underProduct.retainAll(policyNumbers);
+            }
+            policyNumbers = underProduct;
+        }
         // Civil days in Africa/Dar_es_Salaam, half-open: registeredFrom 00:00 inclusive to registeredTo+1 00:00
         // exclusive, so "registered in October" is every instant of the 1st through the 31st and none of 1 November.
         ClaimFilter filter = ClaimFilter.status(status).withClaimType(claimType)

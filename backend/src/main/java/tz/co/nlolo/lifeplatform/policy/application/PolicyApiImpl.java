@@ -947,7 +947,15 @@ public class PolicyApiImpl implements PolicyApi {
     @Override
     public Page<PolicyView> searchPolicies(UUID policyholderPartyId, UUID relatedPartyId, PolicyStatus status,
                                             Set<UUID> agentOfRecordIds, String q, Pageable pageable) {
+        return searchPolicies(policyholderPartyId, relatedPartyId, status, agentOfRecordIds, q, null, null, pageable);
+    }
+
+    @Override
+    public Page<PolicyView> searchPolicies(UUID policyholderPartyId, UUID relatedPartyId, PolicyStatus status,
+                                            Set<UUID> agentOfRecordIds, String q, UUID productId,
+                                            String productCategory, Pageable pageable) {
         UUID tenantId = TenantContext.get();
+        String category = productCategory != null && !productCategory.isBlank() ? productCategory.trim() : null;
         Page<Policy> page;
         boolean hasQ = q != null && !q.isBlank();
         // The three no-agent-filter branches stay on the original derived-query methods (unchanged
@@ -967,10 +975,11 @@ public class PolicyApiImpl implements PolicyApi {
         // OR at all, so a request carrying it MUST NOT fall through to them -- doing so would
         // silently ignore the filter and return the whole tenant's policies to a claims desk
         // asking about one person.
-        if (agentOfRecordIds != null || hasQ || relatedPartyId != null) {
+        // A product or category filter routes there too, for the same reason.
+        if (agentOfRecordIds != null || hasQ || relatedPartyId != null || productId != null || category != null) {
             page = policyRepository.search(tenantId, policyholderPartyId, relatedPartyId,
                 status != null ? status.name() : null,
-                agentOfRecordIds, hasQ ? q.trim() : null, pageable);
+                agentOfRecordIds, productId, category, hasQ ? q.trim() : null, pageable);
         } else if (policyholderPartyId != null && status != null) {
             page = policyRepository.findByTenantIdAndPolicyholderPartyIdAndStatus(tenantId, policyholderPartyId, status.name(), pageable);
         } else if (policyholderPartyId != null) {
@@ -981,6 +990,12 @@ public class PolicyApiImpl implements PolicyApi {
             page = policyRepository.findByTenantId(tenantId, pageable);
         }
         return page.map(this::toView);
+    }
+
+    @Override
+    public Set<String> policyNumbersForProduct(UUID productId, String productCategory) {
+        String category = productCategory != null && !productCategory.isBlank() ? productCategory.trim() : null;
+        return new java.util.HashSet<>(policyRepository.findPolicyNumbersByProduct(TenantContext.get(), productId, category));
     }
 
     @Override

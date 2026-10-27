@@ -75,6 +75,21 @@ public class ProductDefinition {
         this.onlineBenefits = lines.isEmpty() ? null : lines;
     }
 
+    /**
+     * What the product is, for staff choosing it (V35, 2026-10-26): the latest written, on the product or its newest
+     * version. Optional; separate from the customer portal's {@link #onlineSummary}.
+     */
+    @Column(name = "description")
+    private String description;
+
+    public String getDescription() { return description; }
+
+    /** Blank clears it: an optional text written away to nothing is no description, not an empty one. */
+    public void describe(String text) {
+        String trimmed = text == null ? null : text.trim();
+        this.description = trimmed == null || trimmed.isEmpty() ? null : trimmed;
+    }
+
     public boolean isAvailableOnline() { return availableOnline; }
     public String getOnlineSummary() { return onlineSummary; }
     public java.util.List<String> getOnlineBenefits() {

@@ -892,6 +892,9 @@ export function publishVersionFormSchema(category: ProductCategory) {
       .refine((v) => v === '' || (/^\d{1,3}(\.\d{1,4})?$/.test(v) && Number(v) <= 100), {
         message: 'A percentage from 0 to 100, or blank for none',
       }),
+    // Optional (2026-10-26): what staff read when choosing the product. Starts as the product's current one; a
+    // version that changes it changes the product's, and keeps its own copy.
+    description: z.string().max(2000, 'Keep it under 2,000 characters'),
     effectiveDate: z.string().trim().min(1, 'Effective date is required').regex(ISO_DATE_PATTERN),
     // Blank means "no retirement date" -- toApiRequest converts that to null.
     retirementDate: z
@@ -1228,6 +1231,7 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
     expectedProfitabilityBucket: 'REMAINING',
     measurementModelOverride: '',
     survivalInvestmentComponentPercent: '',
+    description: '',
     effectiveDate: '',
     retirementDate: '',
     ratingTable: [],
@@ -1322,6 +1326,7 @@ export function toApiRequest(values: PublishVersionFormValues, category?: Produc
     measurementModelOverride: values.measurementModelOverride === '' ? null : values.measurementModelOverride,
     survivalInvestmentComponentPercent:
       values.survivalInvestmentComponentPercent === '' ? null : Number(values.survivalInvestmentComponentPercent),
+    ...(values.description !== undefined && { description: values.description.trim() }),
     effectiveDate: values.effectiveDate,
     retirementDate: values.retirementDate === '' ? null : values.retirementDate,
     // Age bounds go on the wire as numbers for AGE rows and are OMITTED for every other

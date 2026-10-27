@@ -72,7 +72,7 @@ const snapshot = {
 async function renderPage(rating: VersionRatingView) {
   vi.mocked(productsApi.listProductVersions).mockResolvedValue([{ productVersionId: VERSION_ID, effectiveDate: '2026-01-01',
     retirementDate: null, current: true, publishedAt: '2026-01-01T08:00:00Z', publishedBy: 'actuary', gracePeriodDays: 30,
-    expectedProfitabilityBucket: 'REMAINING', measurementModelOverride: null, survivalInvestmentComponentPercent: null }]);
+    expectedProfitabilityBucket: 'REMAINING', measurementModelOverride: null, survivalInvestmentComponentPercent: null, description: null }]);
   useProductStore.setState({
     list: success([product]),
     snapshots: { [PRODUCT_ID]: success(snapshot) },
@@ -304,7 +304,7 @@ describe('rating basis', () => {
   it('says when the only version starts later, rather than calling it current', async () => {
     vi.mocked(productsApi.listProductVersions).mockResolvedValue([{ productVersionId: VERSION_ID, effectiveDate: '2099-01-01',
       retirementDate: null, current: false, publishedAt: '2026-01-01T08:00:00Z', publishedBy: 'actuary', gracePeriodDays: 30,
-      expectedProfitabilityBucket: 'REMAINING', measurementModelOverride: null, survivalInvestmentComponentPercent: null }]);
+      expectedProfitabilityBucket: 'REMAINING', measurementModelOverride: null, survivalInvestmentComponentPercent: null, description: null }]);
     useProductStore.setState({ list: success([product]), ratings: {}, loadList: vi.fn(async () => {}), loadRating: vi.fn(async () => {}) });
     render(
       <MemoryRouter initialEntries={[`/staff/products/${PRODUCT_ID}`]}>

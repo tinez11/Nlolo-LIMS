@@ -92,7 +92,24 @@ public class ProductController {
                                                               @AuthenticationPrincipal Jwt jwt) {
         ProductSummaryView view = productApi.createProduct(request.productCode(), request.productName(), request.category(),
             request.portfolioCode(), request.defaultCurrency(), jwt.getSubject());
+        if (request.description() != null && !request.description().isBlank()) {
+            view = productApi.describeProduct(view.productId(), request.description());
+        }
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
+    }
+
+    /** Body of a description change. */
+    public record DescriptionRequest(@jakarta.validation.constraints.Size(max = 2000) String description) {}
+
+    /**
+     * What the product is, for staff choosing it (V35, 2026-10-26). ADMIN, as all product authoring is; optional, and a
+     * blank one clears it. It changes no price and no term, so a draft or an active product alike may be described.
+     */
+    @PutMapping("/products/{productId}/description")
+    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
+    public ResponseEntity<ProductSummaryView> describeProduct(@PathVariable UUID productId,
+                                                              @Valid @RequestBody DescriptionRequest request) {
+        return ResponseEntity.ok(productApi.describeProduct(productId, request.description()));
     }
 
     /** Publishing a version prices the product and puts it in force — same gate as authoring it. */
@@ -143,6 +160,8 @@ public class ProductController {
             new Ifrs17Terms(request.expectedProfitabilityBucket(), request.measurementModelOverride(),
                 request.survivalInvestmentComponentPercent()),
             jwt.getSubject());
+        // The description this version was published with: the product's from now on, and the version's own history.
+        productApi.describeNewestVersion(productId, request.description());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
