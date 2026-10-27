@@ -121,6 +121,7 @@ public final class DepositTestMigrations {
         "db-migrations/payment/V8__benefit_payout_purposes.sql",
         "db-migrations/payment/V9__account_purposes.sql",
         "db-migrations/payment/V10__deposit_maturity_purpose.sql",
+        "db-migrations/payment/V17__manual_receipts.sql",
         "db-migrations/policyloan/V1__create_policyloan_schema.sql",
         "db-migrations/policyloan/V3__money_check_constraints.sql",
         "db-migrations/policyloan/V4__persist_reservation_id.sql",

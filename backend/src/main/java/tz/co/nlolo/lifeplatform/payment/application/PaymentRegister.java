@@ -28,13 +28,14 @@ class PaymentRegister {
     /** What a person asks for, in the words of the work, mapped to each ledger's own statuses. */
     static final Map<String, List<String>> STATES = Map.of(
         "attention", List.of("IN_DOUBT", "FAILED"),
-        "waiting", List.of("PENDING", "AWAITING_EXECUTION"),
+        "waiting", List.of("PENDING", "AWAITING_EXECUTION", "AWAITING_APPROVAL"),
         "done", List.of("CONFIRMED", "COMPLETED"),
-        "all", List.of("PENDING", "AWAITING_EXECUTION", "IN_DOUBT", "CONFIRMED", "COMPLETED", "FAILED"));
+        "all", List.of("PENDING", "AWAITING_EXECUTION", "AWAITING_APPROVAL", "IN_DOUBT", "CONFIRMED", "COMPLETED",
+            "FAILED", "REJECTED"));
 
     private static final String ROWS = """
         SELECT * FROM (
-            SELECT payment_transaction_id AS id, 'IN' AS direction, purpose, 'MOBILE_MONEY' AS method, status, amount,
+            SELECT payment_transaction_id AS id, 'IN' AS direction, purpose, method, status, amount,
                    currency, payer_ref AS counterparty, gateway_reference AS reference, source_ref, policy_number,
                    created_at, CAST(NULL AS VARCHAR) AS executed_by, CAST(NULL AS TIMESTAMPTZ) AS executed_at
               FROM payment.payment_transaction WHERE tenant_id = :tenant

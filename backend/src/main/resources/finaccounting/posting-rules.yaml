@@ -24,8 +24,13 @@
 # v3 (IFRS 17 I3c): reinsurance held from the monthly bordereau (K-01, K-02) instead of a cession posting the ceded
 # SUM ASSURED as premium; the reinsurer's share of a claim (B-05) when the claim is approved, to 6120 -- not to the
 # claims expense, and with no staff confirmation.
+#
+# v5 (payment methods, 2026-10-27): a premium collected is debited to RECEIPT -- the account the money came in to, by
+# how it was paid: 1140 Mobile money wallets for mobile money and a Lipa number, 1120 Premium collection bank account
+# for a bank deposit, a cheque, a TANQR scan and cash (banked). It was always 1140, which was true only while the
+# gateway was the one way money came in.
 
-version: 4
+version: 5
 rules:
 
   # ---- Premium: billed, collected, credited, restated, waived ------------------------------------------------------
@@ -64,9 +69,9 @@ rules:
   - id: PLAT-A07
     event: billing.PremiumCollected
     models: [GMM, VFA]
-    description: Premium collected, straight to the mobile money wallet; the premium levy at the rate in force (A-19)
+    description: Premium collected, to the account it reached by its payment method; the premium levy at the rate in force (A-19)
     lines:
-      - {dr: "1140", amount: amount}
+      - {dr: "RECEIPT", amount: amount}
       - {cr: "2122", amount: amount, movement: PRM_REN}
       - {dr: "5220", amount: levy}
       - {cr: "2650", amount: levy}
@@ -74,9 +79,9 @@ rules:
   - id: I-02
     event: billing.PremiumCollected
     models: [PAA]
-    description: PAA premium received; the premium levy at the rate in force (A-19)
+    description: PAA premium received, to the account it reached by its payment method; the premium levy at the rate in force (A-19)
     lines:
-      - {dr: "1140", amount: amount}
+      - {dr: "RECEIPT", amount: amount}
       - {cr: "2142", amount: amount, movement: PRM_REN}
       - {dr: "5220", amount: levy}
       - {cr: "2650", amount: levy}

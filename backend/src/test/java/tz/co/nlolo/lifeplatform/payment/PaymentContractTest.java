@@ -113,7 +113,8 @@ class PaymentContractTest {
             "db-migrations/payment/V6__disbursement_method.sql",
             "db-migrations/payment/V7__q4_2026_partitions.sql",
             "db-migrations/payment/V8__benefit_payout_purposes.sql",
-            "db-migrations/payment/V9__account_purposes.sql");
+            "db-migrations/payment/V9__account_purposes.sql",
+            "db-migrations/payment/V17__manual_receipts.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -601,5 +602,22 @@ class PaymentContractTest {
         mockMvc.perform(get("/payments").with(staffOf(mine, "FINANCE_OFFICER")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.page.totalElements").value(0));
+    }
+
+    // --- Receipts (2026-10-27): who may record and who may confirm --------------------------------
+
+    @Test
+    void recordingAReceiptIsFinancesAndConfirmingOneIsTheApprovers() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String body = "{\"invoiceId\":\"" + UUID.randomUUID() + "\",\"method\":\"CASH\",\"reference\":\"CR-1\","
+            + "\"amount\":{\"amount\":\"100.00\",\"currencyCode\":\"TZS\"},\"receivedOn\":\"2026-10-27\"}";
+        mockMvc.perform(post("/receipts").contentType(MediaType.APPLICATION_JSON).content(body)
+                .with(staffOf(tenantId, "UNDERWRITER")))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/receipts/" + UUID.randomUUID() + "/approval").with(staffOf(tenantId, "CUSTOMER_SERVICE_REP")))
+            .andExpect(status().isForbidden());
+        // A finance officer may ask: an unknown receipt is a 404, not a refusal of the role.
+        mockMvc.perform(post("/receipts/" + UUID.randomUUID() + "/approval").with(staffOf(tenantId, "FINANCE_OFFICER")))
+            .andExpect(status().isNotFound());
     }
 }

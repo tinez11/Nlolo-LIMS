@@ -33,6 +33,11 @@ const PURPOSES: Record<string, string> = {
 const METHODS: Record<string, string> = {
   MOBILE_MONEY: 'Mobile money',
   EFT: 'Bank transfer',
+  CASH: 'Cash',
+  BANK_DEPOSIT: 'Bank deposit',
+  CHEQUE: 'Cheque',
+  LIPA_NUMBER: 'Lipa number',
+  TANQR: 'TANQR',
 };
 
 /** The payout instalments benefitpayout owns: their sourceRef is the instalment, which has its own page. */
@@ -54,6 +59,8 @@ export function methodWords(method: string): string {
  * the platform cannot say -- an older row with no policy recorded, or an agent's commission.
  */
 export function paymentLink(p: PaymentRecord): string | null {
+  // A receipt recorded by hand has its own page: what came in, who recorded it, and its confirmation.
+  if (p.direction === 'IN' && p.method !== 'MOBILE_MONEY') return `/staff/receipts/${encodeURIComponent(p.id)}`;
   if (p.purpose === 'CLAIM_SETTLEMENT') return `/staff/claims/${encodeURIComponent(p.sourceRef)}`;
   if (INSTALMENT_PURPOSES.has(p.purpose)) return `/staff/payouts/${encodeURIComponent(p.sourceRef)}`;
   if (p.policyNumber) return `/staff/policies/${encodeURIComponent(p.policyNumber)}`;

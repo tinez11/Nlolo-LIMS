@@ -105,6 +105,18 @@ public final class PostingRuleValidator {
                 checkAmountAndMovement(rule, id, line, shape, problems);
                 continue;
             }
+            if (PostingRuleSet.RECEIPT.equals(line.account())) {
+                // Every account a receipt can reach must take this rule's postings, checked here at start-up.
+                for (String code : java.util.List.of(PostingRuleSet.RECEIPT_BANK, PostingRuleSet.BANK_MOBILE_MONEY)) {
+                    ChartOfAccountBlueprint.Seed reached = chart.stream().filter(s -> s.code().equals(code)).findFirst()
+                        .orElse(null);
+                    if (reached == null || !reached.postingAllowed() || reached.mode() == PostingMode.MAN) {
+                        problems.add(id + ": RECEIPT reaches " + code + ", which takes no automatic postings");
+                    }
+                }
+                checkAmountAndMovement(rule, id, line, shape, problems);
+                continue;
+            }
             ChartOfAccountBlueprint.Seed account = chart.stream()
                 .filter(s -> s.code().equals(line.account())).findFirst().orElse(null);
             if (account == null) {

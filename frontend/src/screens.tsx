@@ -48,6 +48,8 @@ import {
 import { NewRolePage } from '@/features/admin/NewRolePage';
 import { ApprovalsPage } from '@/features/approvals/ApprovalsPage';
 import { PaymentsPage } from '@/features/payments/PaymentsPage';
+import { NewReceiptPage } from '@/features/receipts/NewReceiptPage';
+import { ReceiptPage } from '@/features/receipts/ReceiptPage';
 import { NewUserPage } from '@/features/admin/NewUserPage';
 import { RoleDetailPage } from '@/features/admin/RoleDetailPage';
 import { RolesPage } from '@/features/admin/RolesPage';
@@ -370,6 +372,7 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   'underwriting/:caseId': ['underwriting.view'],
   agents: ['agents.view'], 'agents/new': ['agents.manage'], 'agents/:agentId': ['agents.view'],
   payments: ['collections.view', 'payouts.view'],
+  'receipts/new': ['collections.manage'], 'receipts/:receiptId': ['collections.view', 'collections.manage'],
   arrears: ['collections.view'], 'field-receipts': ['collections.view'], 'bank-transfers': ['collections.view'],
   payouts: ['payouts.view'], 'payouts/:instalmentId': ['payouts.view'], 'payment-runs': ['payouts.view'],
   'payment-runs/:paymentRunId': ['payouts.view'], 'withholding-rules': ['payouts.view'], maturities: ['payouts.view'],
@@ -633,6 +636,9 @@ const STAFF_SCREENS: Screen[] = [
   // the instruction existed. A queue that could only fill.
   // Every payment in and out, opening on the stuck and the failed (2026-10-27): before it a payment could be read
   // only by its id.
+  // A receipt for premium the gateway did not pull, and its confirmation by a second person (2026-10-27).
+  { path: 'receipts/new', element: <NewReceiptPage />, reach: 'drill-in' },
+  { path: 'receipts/:receiptId', element: <ReceiptPage />, reach: 'drill-in' },
   { path: 'payments', element: <PaymentsPage />, reach: { group: 'collections', label: 'Payments', icon: ArrowLeftRight, badge: 'payments-attention' } },
   {
     path: 'bank-transfers',

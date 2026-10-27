@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { can } from '@/auth/access';
 import { DEFAULT_PAGE_SIZE } from '@/api/billing';
 import { FIELD_RECEIPT_STATUSES, type FieldReceiptStatus, type FieldReceiptView } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
@@ -10,12 +11,10 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { FilterChip } from '@/components/FilterChip';
-import { ConfirmAct } from '@/components/ConfirmAct';
-import { InlineError } from '@/components/InlineError';
 import { formatInstant } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
-import { selectFieldReceipts, selectReconciling, useBillingStore } from '@/store/billingStore';
+import { selectFieldReceipts, useBillingStore } from '@/store/billingStore';
 
 /**
  * Field receipts: cash an agent says they collected, and whether the platform has matched it
@@ -50,13 +49,6 @@ export function FieldReceiptsPage() {
   const list = useBillingStore(selectFieldReceipts);
   const loadFieldReceipts = useBillingStore((s) => s.loadFieldReceipts);
 
-  // ONE confirmation at a time, held by the page rather than by each row. Arming several
-  // assertions about money at once is not an interaction anybody should be offered, and the
-  // confirmation needs more room than a table cell has.
-  const [confirming, setConfirming] = useState<FieldReceiptView | null>(null);
-  const [reconcilingId, setReconcilingId] = useState<string | null>(null);
-  const reconcile = useBillingStore((s) => s.reconcileFieldReceipt);
-  const reconcileState = useBillingStore(selectReconciling(reconcilingId ?? confirming?.receiptId ?? ''));
 
   useEffect(() => {
     void loadFieldReceipts({
@@ -193,16 +185,16 @@ export function FieldReceiptsPage() {
        * assertions about money at once is not something anybody should be offered.
        *
        * Nothing is offered on an already-RECONCILED row: there is no second thing to do.
+       *
+       * Since 2026-10-27 the act is RECORDING THE MONEY, not asserting a match. "Mark matched" flipped a status and
+       * nothing else: no invoice was paid and nothing reached the ledger. Now the agent's cash is recorded as a
+       * receipt against the policy's invoice; a second finance person confirms it, and that confirmation pays the
+       * invoice, posts the money and closes this field receipt -- all by the receipt road.
        */
       render: (r) =>
-        r.receiptId && r.status !== 'RECONCILED' ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={reconcilingId === r.receiptId}
-            onClick={() => setConfirming(r)}
-          >
-            {reconcilingId === r.receiptId ? 'Matching…' : 'Mark matched'}
+        r.receiptId && r.status !== 'RECONCILED' && can('collections.manage') ? (
+          <Button asChild size="sm" variant="ghost">
+            <Link to={receiptLink(r)}>Record as received</Link>
           </Button>
         ) : null,
     },
@@ -300,30 +292,6 @@ export function FieldReceiptsPage() {
             <FilterChip label="All" active={status === undefined} onClick={() => update({ status: 'ALL' })} />
           </div>
 
-          {confirming && (
-            <ReconcileConfirm
-              receipt={confirming}
-              busy={reconcileState.status === 'loading'}
-              onConfirm={() => {
-                const id = confirming.receiptId!;
-                setConfirming(null);
-                setReconcilingId(id);
-                void reconcile(id).finally(() => setReconcilingId(null));
-              }}
-              onCancel={() => setConfirming(null)}
-            />
-          )}
-
-          {/* Full bleed, so it reads as a strip across the queue rather than a card
-              floating inside one. */}
-          {reconcileState.status === 'error' && reconcileState.error && (
-            <InlineError
-              lead="Could not mark it matched"
-              error={reconcileState.error}
-              className="rounded-none border-b border-border px-4"
-            />
-          )}
-
           {renderBody()}
         </div>
       </div>
@@ -332,49 +300,12 @@ export function FieldReceiptsPage() {
 }
 
 /**
- * The confirmation for one receipt, rendered above the table where it has room.
- *
- * Separate from the row button on purpose — see the reconcile column's own note. The confirming
- * verb deliberately differs from the arming one ("Mark matched" → "Record the match"), which is
- * ConfirmAct's stated rule: two identical-looking buttons a click apart is how the second click
- * becomes as automatic as the first. The waive flow makes the same distinction.
+ * The receipt form, prefilled from an agent's field receipt (2026-10-27): its policy, its amount, cash, and the field
+ * receipt it closes once a second person confirms the money.
  */
-function ReconcileConfirm({
-  receipt,
-  busy,
-  onConfirm,
-  onCancel,
-}: {
-  receipt: FieldReceiptView;
-  busy: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div className="border-b border-border px-3 py-2.5">
-      <ConfirmAct
-        heading="Mark this receipt as matched?"
-        // The real values, not a generic warning: this is a statement about specific money.
-        consequence={
-          <>
-            Record that{' '}
-            <strong>{receipt.amount ? formatMoney(receipt.amount) : 'this amount'}</strong> collected
-            against <strong>{receipt.policyNumber}</strong> has been matched to money actually
-            received.
-          </>
-        }
-        /*
-         * Honest about the route back rather than a blanket "this is permanent": there genuinely
-         * is no un-reconcile on this platform -- FieldReceipt has no such transition -- but the
-         * assertion is recorded with its actor, so it can be traced rather than merely regretted.
-         */
-        reversal="There is no un-match: the receipt stays matched. The event records who matched it, so a mistake is traceable in the event journal rather than reversible here."
-        confirmLabel="Record the match"
-        tone="primary"
-        busy={busy}
-        onConfirm={onConfirm}
-        onCancel={onCancel}
-      />
-    </div>
-  );
+function receiptLink(r: FieldReceiptView): string {
+  const params = new URLSearchParams({ method: 'CASH', fieldReceipt: r.receiptId ?? '' });
+  if (r.policyNumber) params.set('policy', r.policyNumber);
+  if (r.amount?.amount) params.set('amount', r.amount.amount);
+  return '/staff/receipts/new?' + params.toString();
 }

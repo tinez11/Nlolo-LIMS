@@ -41,6 +41,24 @@ public record PostingRuleSet(int version, List<Rule> rules) {
     public static final String BANK_EFT = "1130";
     public static final String BANK_MOBILE_MONEY = "1140";
 
+    /**
+     * Payment methods (2026-10-27): a line's account may be RECEIPT -- the account the money came IN to, by how it was
+     * paid. Mobile money and a Lipa number (a mobile-money merchant till) reach 1140 Mobile money wallets; a bank
+     * deposit, a cheque, a TANQR scan and cash (banked: the guide's petty cash 1150 is manual only, and its chart is
+     * kept exactly) reach 1120 Premium collection bank account.
+     */
+    public static final String RECEIPT = "RECEIPT";
+    public static final String RECEIPT_BANK = "1120";
+
+    /** The account a premium reached, by its receipt method; null or unknown is the gateway's mobile money. */
+    public static String receiptAccount(String method) {
+        if (method == null) return BANK_MOBILE_MONEY;
+        return switch (method) {
+            case "CASH", "BANK_DEPOSIT", "CHEQUE", "TANQR" -> RECEIPT_BANK;
+            default -> BANK_MOBILE_MONEY;
+        };
+    }
+
     public PostingRuleSet {
         rules = List.copyOf(rules);
     }

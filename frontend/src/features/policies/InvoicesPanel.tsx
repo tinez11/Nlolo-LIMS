@@ -240,6 +240,17 @@ function InvoiceRow({
               Request payment
             </Button>
           )}
+          {/* Paid some other way -- cash, a bank deposit, a cheque, a Lipa number, TANQR (2026-10-27): finance records
+              it, and it pays this invoice once a second person confirms it. */}
+          {canWaive && owesSomething(invoice) && (
+            <Button asChild size="sm" variant="ghost">
+              <Link
+                to={`/staff/receipts/new?policy=${encodeURIComponent(policyNumber)}&invoice=${encodeURIComponent(invoiceId)}`}
+              >
+                Record a receipt
+              </Link>
+            </Button>
+          )}
         </div>
       )}
 

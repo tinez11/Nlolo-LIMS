@@ -247,10 +247,21 @@ export const STATUS_MAPS = {
     PENDING: 'pending',
     // A bank transfer nobody has made yet (the payments register, 2026-10-27, lists both ledgers).
     AWAITING_EXECUTION: 'warning',
+    // A receipt recorded by hand, waiting for a second finance person (2026-10-27).
+    AWAITING_APPROVAL: 'warning',
+    REJECTED: 'neutral',
     IN_DOUBT: 'warning', // outcome unknown, NOT lost
     CONFIRMED: 'success',
     COMPLETED: 'success',
     FAILED: 'danger',
+  },
+
+  // payment/domain/PaymentTransaction.java -- a receipt recorded by hand (2026-10-27). Refused is neutral: it paid
+  // nothing, and nothing about it is wrong any more.
+  receipt: {
+    AWAITING_APPROVAL: 'warning',
+    CONFIRMED: 'success',
+    REJECTED: 'neutral',
   },
 
   // policyloan/api/LoanStatus.java

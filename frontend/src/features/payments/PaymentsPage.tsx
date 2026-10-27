@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { can } from '@/auth/access';
 import { DEFAULT_PAGE_SIZE } from '@/api/billing';
 import type { PaymentDirection, PaymentRecord, RegisterState } from '@/api/payments';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
@@ -202,6 +203,13 @@ export function PaymentsPage() {
         title="Payments"
         description="Every payment in and out, newest first. Opens on the ones that need attention: stuck with the provider or failed. Select one to open what it pays."
         count={<CountLine {...count} />}
+        actions={
+          can('collections.manage') ? (
+            <Button asChild variant="primary">
+              <Link to="/staff/receipts/new">Record a receipt</Link>
+            </Button>
+          ) : undefined
+        }
       />
       <div className="px-6 pb-6">
         <div className="rounded-xl border border-border bg-surface shadow-card">

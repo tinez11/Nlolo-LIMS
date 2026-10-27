@@ -5,7 +5,12 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
+import tz.co.nlolo.lifeplatform.billing.api.InvoiceStatus;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
+import tz.co.nlolo.lifeplatform.payment.api.ReceiptMethod;
+import tz.co.nlolo.lifeplatform.payment.api.ReceiptRefusedException;
+import tz.co.nlolo.lifeplatform.payment.api.ReceiptView;
+import tz.co.nlolo.lifeplatform.payment.application.Receipts;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalSource;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPosting;
@@ -55,6 +60,7 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 import tz.co.nlolo.lifeplatform.product.api.BenefitCalculationMethod;
 
@@ -106,6 +112,15 @@ class PremiumPostingEndToEndTest {
     static void applyMigrationsAndBootstrapAppRole() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/audit/V1__create_audit_schema.sql",
+            // Recorded receipts (2026-10-27) live in payment's collection ledger.
+            "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V16__payment_policy_number.sql",
+            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
+            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
+            "db-migrations/payment/V6__disbursement_method.sql",
+            "db-migrations/payment/V7__q4_2026_partitions.sql",
+            "db-migrations/payment/V9__account_purposes.sql",
+            "db-migrations/payment/V17__manual_receipts.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
@@ -247,6 +262,7 @@ class PremiumPostingEndToEndTest {
     @Autowired private ProductApi productApi;
     @Autowired private PolicyApi policyApi;
     @Autowired private BillingApi billingApi;
+    @Autowired private Receipts receipts;
     @Autowired private JournalEntryRepository journalEntryRepository;
     @Autowired private GlPostingRepository glPostingRepository;
     @Autowired private ApplicationEventPublisher eventPublisher;
@@ -418,6 +434,81 @@ class PremiumPostingEndToEndTest {
         assertThat(collectedEntry.getPolicyRegisterVersion()).isPositive();
         assertThat(countAllRows("pg_class WHERE relname IN ('csm_ledger', 'lrc_ledger', 'lic_ledger')"))
             .as("finaccounting V10 drops the pre-IFRS-17 measurement ledgers").isZero();
+    }
+
+    /**
+     * Payment methods (2026-10-27): a premium paid into the bank -- a deposit, a cheque, TANQR, cash -- is debited to
+     * 1120 Premium collection bank account, and one paid to the Lipa number to the mobile-money wallets, 1140. Before
+     * this every premium went to 1140, true only while the gateway was the one way money came in.
+     */
+    @Test
+    void aPremiumIsDebitedToTheAccountItsPaymentMethodReached() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "PREMIUM-E2E-METHOD");
+        BigDecimal premium = new BigDecimal("120000.00");
+        String policyNumber = issueAnnualPolicy(tenantId, fixture, new BigDecimal("2000000"), premium);
+        TenantContext.set(tenantId);
+        InvoiceView invoice = billingApi.getNextDueInvoice(policyNumber);
+
+        TenantContext.set(tenantId);
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), premium, CURRENCY, "SLIP-0042", "Amina Owner",
+            "BANK_DEPOSIT");
+
+        TenantContext.set(tenantId);
+        JournalEntry collected = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged())
+            .stream().filter(e -> "billing.PremiumCollected".equals(e.getSourceEvent())).findFirst().orElseThrow();
+        TenantContext.set(tenantId);
+        List<GlPosting> legs = glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(
+            tenantId, collected.getJournalEntryId());
+        assertThat(legs).extracting(GlPosting::getAccountCode).containsExactlyInAnyOrder("1120", "2122");
+        assertThat(legFor(legs, "1120").getDirection()).isEqualTo(PostingDirection.DR);
+        assertThat(legFor(legs, "1120").getAmount()).isEqualByComparingTo(premium);
+    }
+
+    /**
+     * A receipt recorded by one finance officer and approved by another (2026-10-27): nothing is paid while it waits,
+     * the same slip cannot be recorded twice, the recorder cannot approve it, and approval pays the invoice and posts
+     * the premium to the bank account the cheque reached.
+     */
+    @Test
+    void aRecordedReceiptPaysTheInvoiceOnlyOnceASecondPersonApprovesIt() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "PREMIUM-E2E-RECEIPT");
+        BigDecimal premium = new BigDecimal("120000.00");
+        String policyNumber = issueAnnualPolicy(tenantId, fixture, new BigDecimal("2000000"), premium);
+        TenantContext.set(tenantId);
+        InvoiceView invoice = billingApi.getNextDueInvoice(policyNumber);
+        var newReceipt = new Receipts.NewReceipt(invoice.invoiceId(), ReceiptMethod.CHEQUE, "CHQ-000731", premium,
+            java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")), "Amina Owner", "Paid at the branch",
+            null);
+
+        TenantContext.set(tenantId);
+        ReceiptView recorded = receipts.record(newReceipt, "finance-one");
+        assertThat(recorded.status()).isEqualTo("AWAITING_APPROVAL");
+        assertThat(recorded.policyNumber()).isEqualTo(policyNumber);
+        TenantContext.set(tenantId);
+        assertThat(billingApi.getInvoice(invoice.invoiceId()).status()).as("nothing is paid while it waits")
+            .isNotEqualTo(InvoiceStatus.PAID);
+
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> receipts.record(newReceipt, "finance-two"))
+            .isInstanceOf(ReceiptRefusedException.class).hasMessageContaining("already recorded");
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> receipts.approve(recorded.receiptId(), "finance-one"))
+            .isInstanceOf(ReceiptRefusedException.class).hasMessageContaining("someone other than");
+
+        TenantContext.set(tenantId);
+        transactionTemplate().executeWithoutResult(s -> receipts.approve(recorded.receiptId(), "finance-two"));
+
+        TenantContext.set(tenantId);
+        assertThat(billingApi.getInvoice(invoice.invoiceId()).status()).isEqualTo(InvoiceStatus.PAID);
+        TenantContext.set(tenantId);
+        JournalEntry collected = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged())
+            .stream().filter(e -> "billing.PremiumCollected".equals(e.getSourceEvent())).findFirst().orElseThrow();
+        TenantContext.set(tenantId);
+        assertThat(glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(tenantId,
+                collected.getJournalEntryId()))
+            .extracting(GlPosting::getAccountCode).containsExactlyInAnyOrder("1120", "2122");
     }
 
     private static GlPosting legFor(List<GlPosting> legs, String accountCode) {

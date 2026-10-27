@@ -405,7 +405,9 @@ public class PaymentApiImpl implements PaymentApi {
                    // takes ACCOUNT_TOP_UP. Billing used to parse every sourceRef as an invoice id.
                    "purpose", transaction.getPurpose(),
                    // The number the money came from. A fixed-term deposit pays back to it by default.
-                   "payerRef", transaction.getPayerRef())));
+                   "payerRef", transaction.getPayerRef(),
+                   // How it came in (2026-10-27): the ledger posts it to the account it reached.
+                   "method", transaction.getMethod())));
     }
 
     /** Review fix (I2): same reasoning as {@code failDisbursement} above, for the collection

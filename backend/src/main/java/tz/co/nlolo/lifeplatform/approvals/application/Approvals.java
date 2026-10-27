@@ -43,7 +43,7 @@ public class Approvals {
      * kind not named here (a module's new one) follows, in bean order, rather than being dropped.
      */
     static final List<String> ORDER = List.of(
-        "bank-transfer", "payout-approval", "payment-run", "free-look", "surrender", "account-withdrawal",
+        "bank-transfer", "receipt", "payout-approval", "payment-run", "free-look", "surrender", "account-withdrawal",
         "unit-withdrawal", "deposit-payee", "term-account-payee", "payout-review", "account-adjustment",
         "field-receipt", "price-adjustment", "fund-price", "rate-declaration", "bonus-declaration", "withholding-rule",
         "manual-journal", "expense-allocation", "engine-run", "year-end-close", "reinsurance-statement",

@@ -34,6 +34,87 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PaymentRegisterPage' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /receipts:
+    post:
+      summary: Record a receipt for premium the gateway did not pull (collections.manage)
+      description: >
+        2026-10-27. Cash, a bank deposit, a cheque, a Lipa-number payment or a TANQR scan, against one invoice. It pays
+        nothing until a second person approves it. Refused (409, RECEIPT_REFUSED) for an invoice already paid or
+        waived, an amount above what is owed, a future date, or a reference already on a live receipt.
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordReceipt' }
+      responses:
+        '201':
+          description: Recorded, awaiting approval
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Receipt' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /receipts/{receiptId}:
+    get:
+      summary: One recorded receipt (collections.view or collections.manage)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: receiptId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Receipt' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /receipts/{receiptId}/approval:
+    post:
+      summary: Confirm a receipt someone else recorded (collections.approve); the invoice is paid from it
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: receiptId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Confirmed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Receipt' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /receipts/{receiptId}/rejection:
+    post:
+      summary: Refuse a receipt someone else recorded, saying why (collections.approve); it pays nothing
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: receiptId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: Refused
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Receipt' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
   /payments/{paymentRequestId}/status:
     get:
       summary: Get payment status
@@ -247,6 +328,50 @@ paths:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   schemas:
+    ReceiptMethod:
+      type: string
+      enum: [CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR]
+    RecordReceipt:
+      type: object
+      additionalProperties: false
+      required: [invoiceId, method, reference, amount, receivedOn]
+      properties:
+        invoiceId: { type: string, format: uuid }
+        method: { $ref: '#/components/schemas/ReceiptMethod' }
+        reference:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: The method's own reference -- a bank slip, a cheque number, a Lipa or TANQR transaction id.
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        receivedOn: { type: string, format: date }
+        payerRef: { type: [string, 'null'], maxLength: 255 }
+        note: { type: [string, 'null'], maxLength: 500 }
+        fieldReceiptId:
+          type: [string, 'null']
+          format: uuid
+          description: The agent's field receipt this brings in; it is matched when the receipt is approved.
+    Receipt:
+      type: object
+      additionalProperties: false
+      required: [receiptId, method, reference, payerRef, amount, invoiceId, receivedOn, status, recordedBy, recordedAt]
+      properties:
+        receiptId: { type: string, format: uuid }
+        method: { $ref: '#/components/schemas/ReceiptMethod' }
+        reference: { type: string }
+        payerRef: { type: string }
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        invoiceId: { type: string, format: uuid }
+        policyNumber: { type: [string, 'null'] }
+        receivedOn: { type: string, format: date }
+        note: { type: [string, 'null'] }
+        fieldReceiptId: { type: [string, 'null'], format: uuid }
+        status: { type: string, enum: [AWAITING_APPROVAL, CONFIRMED, REJECTED] }
+        recordedBy: { type: string }
+        recordedAt: { type: string, format: date-time }
+        decidedBy: { type: [string, 'null'] }
+        decidedAt: { type: [string, 'null'], format: date-time }
+        decisionReason: { type: [string, 'null'] }
     PaymentRegisterPage:
       type: object
       additionalProperties: false
@@ -265,8 +390,10 @@ components:
         id: { type: string, format: uuid }
         direction: { type: string, enum: [IN, OUT] }
         purpose: { type: string }
-        method: { type: string, enum: [MOBILE_MONEY, EFT] }
-        status: { type: string, enum: [PENDING, AWAITING_EXECUTION, IN_DOUBT, CONFIRMED, COMPLETED, FAILED] }
+        method: { type: string, enum: [MOBILE_MONEY, EFT, CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR] }
+        status:
+          type: string
+          enum: [PENDING, AWAITING_EXECUTION, AWAITING_APPROVAL, IN_DOUBT, CONFIRMED, COMPLETED, FAILED, REJECTED]
         amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         counterparty: { type: string, description: Who paid (IN) or who is paid (OUT), as recorded. }
         reference: { type: [string, 'null'], description: The rail's or the bank's reference, once there is one. }

@@ -74,6 +74,36 @@ public class PaymentTransaction {
     @Column(nullable = false)
     private String purpose = "PREMIUM";
 
+    /**
+     * How the money came in (payment V17, 2026-10-27): MOBILE_MONEY, the gateway's, for every collection it pulls;
+     * CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER or TANQR for a receipt a person records.
+     */
+    @Column(nullable = false)
+    private String method = "MOBILE_MONEY";
+
+    /** A recorded receipt's own facts (payment V17); null on everything the gateway pulled. */
+    @Column(name = "received_on")
+    private java.time.LocalDate receivedOn;
+
+    @Column(name = "recorded_by")
+    private String recordedBy;
+
+    @Column
+    private String note;
+
+    /** The agent's field receipt this records, where it records one -- it closes on approval. */
+    @Column(name = "field_receipt_id")
+    private UUID fieldReceiptId;
+
+    @Column(name = "decided_by")
+    private String decidedBy;
+
+    @Column(name = "decided_at")
+    private Instant decidedAt;
+
+    @Column(name = "decision_reason")
+    private String decisionReason;
+
     /** The policy this money is for, where the request named one (payment V16, 2026-10-27). */
     @Column(name = "policy_number")
     private String policyNumber;
@@ -102,6 +132,64 @@ public class PaymentTransaction {
     public String getPurpose() { return purpose; }
 
     public String getPolicyNumber() { return policyNumber; }
+
+    public String getMethod() { return method; }
+    public java.time.LocalDate getReceivedOn() { return receivedOn; }
+    public String getRecordedBy() { return recordedBy; }
+    public String getNote() { return note; }
+    public UUID getFieldReceiptId() { return fieldReceiptId; }
+    public String getDecidedBy() { return decidedBy; }
+    public Instant getDecidedAt() { return decidedAt; }
+    public String getDecisionReason() { return decisionReason; }
+
+    /**
+     * A receipt a person records for money the gateway did not pull (2026-10-27). It pays nothing until a second
+     * person approves it: AWAITING_APPROVAL is not a collection the rail is working, it is one finance is checking.
+     */
+    public static PaymentTransaction manualReceipt(UUID tenantId, String idempotencyKey, String method, String reference,
+                                                   String payerRef, java.math.BigDecimal amount, String currency,
+                                                   UUID invoiceId, String policyNumber, java.time.LocalDate receivedOn,
+                                                   String note, UUID fieldReceiptId, String recordedBy) {
+        PaymentTransaction t = new PaymentTransaction(tenantId, idempotencyKey, payerRef, amount, currency,
+            invoiceId.toString(), "PREMIUM");
+        t.method = method;
+        t.gatewayReference = reference;
+        t.policyNumber = policyNumber;
+        t.receivedOn = receivedOn;
+        t.note = note;
+        t.fieldReceiptId = fieldReceiptId;
+        t.recordedBy = recordedBy;
+        t.status = "AWAITING_APPROVAL";
+        return t;
+    }
+
+    /** The second person confirms it: the money now counts, and the invoice is paid from it. */
+    public void approveReceipt(String by) {
+        requireAwaitingApproval(by);
+        this.status = "CONFIRMED";
+        this.decidedBy = by;
+        this.decidedAt = Instant.now();
+    }
+
+    /** The second person finds it wrong. It never paid anything, and stays as the record that it was refused. */
+    public void rejectReceipt(String by, String reason) {
+        requireAwaitingApproval(by);
+        this.status = "REJECTED";
+        this.decidedBy = by;
+        this.decidedAt = Instant.now();
+        this.decisionReason = reason;
+    }
+
+    private void requireAwaitingApproval(String by) {
+        if (!"AWAITING_APPROVAL".equals(status)) {
+            throw new tz.co.nlolo.lifeplatform.payment.api.ReceiptRefusedException("This receipt is already "
+                + ("CONFIRMED".equals(status) ? "approved" : "refused") + ": it is no longer waiting for a decision");
+        }
+        if (by != null && by.equals(recordedBy)) {
+            throw new tz.co.nlolo.lifeplatform.payment.api.ReceiptRefusedException(
+                "A receipt must be approved by someone other than the person who recorded it");
+        }
+    }
 
     public void notePolicy(String policyNumber) { this.policyNumber = policyNumber; }
 

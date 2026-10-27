@@ -250,6 +250,9 @@ class PostingEngine {
 
     /** The line's account; BANK is the rail's -- 1130 for a bank transfer, 1140 for mobile money (user answer Q3). */
     private static String account(PostingRuleSet.Line line, PostingFacts facts) {
+        if (PostingRuleSet.RECEIPT.equals(line.account())) {
+            return PostingRuleSet.receiptAccount(facts.attribute("receiptMethod"));
+        }
         if (!PostingRuleSet.BANK.equals(line.account())) {
             return line.account();
         }

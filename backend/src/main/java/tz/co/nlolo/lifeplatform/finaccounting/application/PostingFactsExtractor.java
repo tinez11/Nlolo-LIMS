@@ -115,7 +115,13 @@ final class PostingFactsExtractor {
                 }
                 yield List.of(money(type, string(p.get("invoiceId")), policy, p.get("amount"), today, attrs));
             }
-            case "billing.PremiumCollected", "billing.InvoiceWaived" ->
+            // How the money came in (2026-10-27) rides as receiptMethod, for the RECEIPT account; absent is mobile money.
+            case "billing.PremiumCollected" -> {
+                Map<String, String> attrs = new HashMap<>(Map.of("refType", "INVOICE"));
+                putIfPresent(attrs, "receiptMethod", p.get("receiptMethod"));
+                yield List.of(money(type, string(p.get("invoiceId")), policy, p.get("amount"), today, attrs));
+            }
+            case "billing.InvoiceWaived" ->
                 List.of(money(type, string(p.get("invoiceId")), policy, p.get("amount"), today, Map.of("refType", "INVOICE")));
             // Keyed on the CREDIT: one invoice carries a credit for every borrower on its file, each its own movement.
             case "billing.PremiumRefundDue" -> {

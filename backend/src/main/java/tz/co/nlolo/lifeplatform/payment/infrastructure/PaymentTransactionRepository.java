@@ -14,6 +14,17 @@ public interface PaymentTransactionRepository
     Optional<PaymentTransaction> findByIdempotencyKeyAndTenantId(String idempotencyKey, UUID tenantId);
     Optional<PaymentTransaction> findByGatewayReferenceAndTenantId(String gatewayReference, UUID tenantId);
 
+    // ---- Recorded receipts (2026-10-27) ----
+
+    /** Whether this method's reference -- a bank slip, a cheque, a Lipa transaction -- is already on a live receipt. */
+    boolean existsByTenantIdAndMethodAndGatewayReferenceAndStatusNot(UUID tenantId, String method, String gatewayReference,
+                                                                    String status);
+
+    /** Whether an agent's field receipt is already recorded on a live receipt. */
+    boolean existsByTenantIdAndFieldReceiptIdAndStatusNot(UUID tenantId, UUID fieldReceiptId, String status);
+
+    java.util.List<PaymentTransaction> findByTenantIdAndStatusOrderByCreatedAtAsc(UUID tenantId, String status);
+
     /** Same bootstrap as DisbursementInstructionRepository.resolveTenantByGatewayReference, for
      * the collection (inbound-payment) ledger -- see that method's javadoc and
      * db-migrations/payment/V3 for why this needs a SECURITY DEFINER function rather than a
