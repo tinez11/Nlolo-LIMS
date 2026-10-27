@@ -380,6 +380,8 @@ public class BillingApiImpl implements BillingApi {
         }
         eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PaymentRequested", tenantId,
             Map.of("invoiceId", invoiceId,
+                   // For the payments register (2026-10-27): which policy this money is for.
+                   "policyNumber", invoice.getPolicyNumber(),
                    "payerRef", payerRef,
                    "amount", Map.of("amount", balance.toPlainString(),
                                     "currencyCode", invoice.getCurrency()),

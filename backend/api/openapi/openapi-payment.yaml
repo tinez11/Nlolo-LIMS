@@ -12,6 +12,28 @@ info:
 servers:
   - url: https://api.nlolo-lifeplatform.tz/v1
 paths:
+  /payments:
+    get:
+      summary: The payments register -- money in and money out as one list, newest first (collections.view or payouts.view)
+      description: >
+        2026-10-27. Both ledgers through one read: a collection (IN) or a disbursement (OUT). The state filter speaks the
+        work's words -- attention is IN_DOUBT and FAILED, waiting is PENDING and AWAITING_EXECUTION, done is CONFIRMED
+        and COMPLETED. policyNumber is recorded from 2026-10-27 on; older rows and commission carry none.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: direction, in: query, required: false, schema: { type: string, enum: [IN, OUT] } }
+        - { name: state, in: query, required: false, schema: { type: string, enum: [attention, waiting, done, all] } }
+        - { name: policyNumber, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: pageSize, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentRegisterPage' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /payments/{paymentRequestId}/status:
     get:
       summary: Get payment status
@@ -225,6 +247,34 @@ paths:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   schemas:
+    PaymentRegisterPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PaymentRecord' }
+        page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
+    PaymentRecord:
+      type: object
+      additionalProperties: false
+      description: One payment in the register -- a collection (IN) or a disbursement (OUT).
+      required: [id, direction, purpose, method, status, amount, counterparty, sourceRef, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        direction: { type: string, enum: [IN, OUT] }
+        purpose: { type: string }
+        method: { type: string, enum: [MOBILE_MONEY, EFT] }
+        status: { type: string, enum: [PENDING, AWAITING_EXECUTION, IN_DOUBT, CONFIRMED, COMPLETED, FAILED] }
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        counterparty: { type: string, description: Who paid (IN) or who is paid (OUT), as recorded. }
+        reference: { type: [string, 'null'], description: The rail's or the bank's reference, once there is one. }
+        sourceRef: { type: string, description: The owning record's id -- an invoice, a claim, an instalment. }
+        policyNumber: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        executedBy: { type: [string, 'null'] }
+        executedAt: { type: [string, 'null'], format: date-time }
     AwaitingEftView:
       type: object
       additionalProperties: false

@@ -57,7 +57,7 @@ describe('approveGates', () => {
     const refused = gates.find((g) => !g.ok)!;
     expect(refused.hard).toBe(true);
     expect(refused.detail).toBe(
-      'A payout must be approved by someone other than the person who reviewed it (fin-1)',
+      'You reviewed this payout, so someone else must approve it.',
     );
   });
 

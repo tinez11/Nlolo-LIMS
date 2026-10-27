@@ -31,6 +31,7 @@ public class PaymentApiImpl implements PaymentApi {
 
     private final DisbursementIdempotencyRepository disbursementIdempotencyRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final PaymentRegister register;
     // Task 8 (review fix, Critical 3): a fresh PROPAGATION_REQUIRES_NEW transaction for
     // applyGatewayCallback's mutation, opened only AFTER TenantContext has been set to the
     // resolved tenant. See applyGatewayCallback's javadoc for why this can't just be a plain
@@ -47,7 +48,9 @@ public class PaymentApiImpl implements PaymentApi {
                            PaymentIdempotencyRepository paymentIdempotencyRepository,
                            DisbursementIdempotencyRepository disbursementIdempotencyRepository,
                            ApplicationEventPublisher eventPublisher,
-                           PlatformTransactionManager transactionManager) {
+                           PlatformTransactionManager transactionManager,
+                           PaymentRegister register) {
+        this.register = register;
         this.paymentTransactionRepository = paymentTransactionRepository;
         this.disbursementRepository = disbursementRepository;
         this.payoutBatchRepository = payoutBatchRepository;
@@ -129,6 +132,7 @@ public class PaymentApiImpl implements PaymentApi {
                                               String sourceRef, DisbursementMethod method) {
         DisbursementInstruction instruction = new DisbursementInstruction(
             tenantId, idempotencyKey, payeeRef, amount, currency, purpose, sourceRef, method);
+        instruction.notePolicy(RequestPolicy.current());
         // Claim FIRST, and let the affected-row count decide. An INSERT ... ON CONFLICT DO
         // NOTHING returning 0 is the only race-free way to answer "did I already process this?"
         // -- a findBy...isPresent() check before inserting has a real TOCTOU window that two
@@ -168,6 +172,7 @@ public class PaymentApiImpl implements PaymentApi {
                                             BigDecimal amount, String currency, String sourceRef, String purpose) {
         PaymentTransaction transaction =
             new PaymentTransaction(tenantId, idempotencyKey, payerRef, amount, currency, sourceRef, purpose);
+        transaction.notePolicy(RequestPolicy.current());
         int claimed = paymentIdempotencyRepository.claimKey(tenantId, idempotencyKey, transaction.getPaymentTransactionId());
         if (claimed == 0) {
             return Optional.empty();
@@ -212,6 +217,13 @@ public class PaymentApiImpl implements PaymentApi {
         return disbursementRepository
             .findByTenantIdAndStatusOrderByCreatedAtAsc(TenantContext.get(), "AWAITING_EXECUTION")
             .stream().map(PaymentApiImpl::toView).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<tz.co.nlolo.lifeplatform.payment.api.PaymentRecordView> register(
+            String direction, String state, String policyNumber, org.springframework.data.domain.Pageable pageable) {
+        return register.search(direction, state, policyNumber, pageable);
     }
 
     @Override

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { StaffName } from '@/components/StaffName';
 import type { VestingView } from '@/api/types';
 import { can } from '@/auth/access';
 import { Field } from '@/components/Field';
@@ -83,7 +84,12 @@ export function PolicyVestingPanel({ policyNumber, productId }: { policyNumber: 
         )}
         <Field
           label="Age confirmed"
-          value={`${formatDate(v.confirmedDateOfBirth)}${v.confirmedSex ? `, ${v.confirmedSex.toLowerCase()}` : ''} · by ${v.ageConfirmedBy}`}
+          value={
+            <>
+              {formatDate(v.confirmedDateOfBirth)}
+              {v.confirmedSex ? `, ${v.confirmedSex.toLowerCase()}` : ''} · by <StaffName subject={v.ageConfirmedBy} />
+            </>
+          }
         />
       </dl>
 

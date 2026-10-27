@@ -16,6 +16,7 @@ import { startMutation } from '@/lib/idempotency';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useBenefitPayoutStore } from '@/store/benefitPayoutStore';
+import { StaffName } from '@/components/StaffName';
 
 const BREADCRUMB = [{ label: 'Payment runs', to: '/staff/payment-runs' }];
 
@@ -93,7 +94,7 @@ export function PaymentRunPage() {
                 value={formatMoney(run.total)}
                 note="Computed by the server, not summed from the rows below."
               />
-              <Field label="Released by" value={run.approvedBy ?? '—'} />
+              <Field label="Released by" value={<StaffName subject={run.approvedBy} />} />
             </dl>
           </Panel>
         }
@@ -179,7 +180,7 @@ function ApprovedRunReceipt({ run }: { run: PaymentRunView }) {
       lines={[
         { label: 'Instalments', value: String(run.instalmentCount) },
         { label: 'Total', value: formatMoney(run.total) },
-        { label: 'Released by', value: run.approvedBy ?? '—' },
+        { label: 'Released by', value: <StaffName subject={run.approvedBy} /> },
       ]}
       note="Requested, not yet paid. Each instalment shows PAID once the payment provider confirms it, and one that fails can be tried again from its own page without touching the rest."
     />

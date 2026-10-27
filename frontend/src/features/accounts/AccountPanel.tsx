@@ -38,6 +38,7 @@ import { DepositSection } from './DepositSection';
 import { TermAccountSection } from './TermAccountSection';
 import { ENTRY_LABEL } from './entryLabels';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { StaffName } from '@/components/StaffName';
 
 /**
  * The savings account behind a policy (product step 3): its balance, every entry on its ledger, and
@@ -445,8 +446,8 @@ function WithdrawalRow({
           <span className="text-sm font-medium">{formatMoney(withdrawal.amount)}</span>{' '}
           <StatusBadge kind="accountWithdrawal" value={withdrawal.status} />
           <p className="text-xs text-muted-foreground">
-            To {withdrawal.payeeRef} · requested by {withdrawal.requestedBy}
-            {withdrawal.approvedBy ? ` · approved by ${withdrawal.approvedBy}` : ''}
+            To {withdrawal.payeeRef} · requested by <StaffName subject={withdrawal.requestedBy} />
+            {withdrawal.approvedBy && <> · approved by <StaffName subject={withdrawal.approvedBy} /></>}
           </p>
         </div>
       </div>
@@ -511,8 +512,8 @@ function AdjustmentRow({
         <span className="text-sm font-medium">{formatMoney(money)}</span>{' '}
         <StatusBadge kind="accountAdjustment" value={adjustment.status} />
         <p className="text-xs text-muted-foreground">
-          {adjustment.reason} · proposed by {adjustment.proposedBy}
-          {adjustment.decidedBy ? ` · decided by ${adjustment.decidedBy}` : ''}
+          {adjustment.reason} · proposed by <StaffName subject={adjustment.proposedBy} />
+          {adjustment.decidedBy && <> · decided by <StaffName subject={adjustment.decidedBy} /></>}
         </p>
       </div>
       {adjustment.status === 'PROPOSED' && isFinance && (

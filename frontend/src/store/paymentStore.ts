@@ -1,5 +1,11 @@
 import { create } from 'zustand';
-import { listAwaitingEftExecution, markEftExecuted } from '@/api/payments';
+import {
+  listAwaitingEftExecution,
+  listPayments,
+  markEftExecuted,
+  type PaymentRegisterPage,
+  type PaymentRegisterQuery,
+} from '@/api/payments';
 import type { AwaitingEftView } from '@/api/types';
 import { idle, track, type Resource } from './createResourceSlice';
 
@@ -24,13 +30,25 @@ interface PaymentState {
    * under another row's action.
    */
   executing: Keyed<void>;
+  /** The payments register (2026-10-27): single slot, the page on screen. */
+  register: Resource<PaymentRegisterPage>;
   loadAwaitingEft: () => Promise<void>;
+  loadRegister: (query: PaymentRegisterQuery) => Promise<void>;
   markExecuted: (disbursementId: string, bankReference: string) => Promise<void>;
 }
 
 export const usePaymentStore = create<PaymentState>((set, getState) => ({
   awaitingEft: idle(),
   executing: {},
+  register: idle(),
+
+  loadRegister: (query) =>
+    track(
+      'payment.register',
+      getState().register,
+      (next) => set({ register: next }),
+      () => listPayments(query),
+    ),
 
   loadAwaitingEft: () =>
     track(
@@ -71,5 +89,6 @@ export const usePaymentStore = create<PaymentState>((set, getState) => ({
 }));
 
 export const selectAwaitingEft = (s: PaymentState) => s.awaitingEft;
+export const selectRegister = (s: PaymentState) => s.register;
 export const selectExecuting = (disbursementId: string) => (s: PaymentState) =>
   s.executing[disbursementId] ?? idle<void>();

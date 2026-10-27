@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { formatInstant } from '@/lib/dates';
 import { useEngineStore } from '@/store/engineStore';
 import { FIGURE_LABEL, RUN_STATUS_LABEL, canAccept, canDecide, differenceLabel } from './enginePeriod';
+import { StaffName } from '@/components/StaffName';
 
 const money = (n: number | null | undefined) =>
   n == null ? '—' : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -53,11 +54,11 @@ function Run({ run: r }: { run: EngineRunView }) {
         <section className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-surface shadow-card p-4 text-sm sm:grid-cols-2"
           aria-label="About this run">
           <p><span className="text-muted-foreground">Engine:</span> {r.engineName ?? '—'} · measured {r.measurementDate ?? '—'}</p>
-          <p><span className="text-muted-foreground">Uploaded:</span> {formatInstant(r.uploadedAt)} by {r.uploadedBy}</p>
+          <p><span className="text-muted-foreground">Uploaded:</span> {formatInstant(r.uploadedAt)} by <StaffName subject={r.uploadedBy} /></p>
           {r.decidedAt && (
             <p>
               <span className="text-muted-foreground">{r.status === 'REJECTED' ? 'Rejected' : 'Approved'}:</span>{' '}
-              {formatInstant(r.decidedAt)} by {r.decidedBy}{r.decisionReason ? ` — ${r.decisionReason}` : ''}
+              {formatInstant(r.decidedAt)} by <StaffName subject={r.decidedBy} />{r.decisionReason ? ` — ${r.decisionReason}` : ''}
             </p>
           )}
           {r.signOffReference && <p><span className="text-muted-foreground">Actuary's sign-off:</span> {r.signOffReference}</p>}

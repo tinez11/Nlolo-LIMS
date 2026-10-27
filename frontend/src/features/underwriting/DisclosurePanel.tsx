@@ -18,6 +18,7 @@ import {
   type AnswerDraft,
 } from './disclosureForm';
 import { Input } from '@/components/ui/input';
+import { StaffName } from '@/components/StaffName';
 
 /**
  * What an applicant declared on the proposal form, and the form for recording it.
@@ -85,7 +86,7 @@ export function DisclosurePanel({ caseId }: { caseId: string }) {
         >
           <p className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
             Recorded {formatInstant(set.recordedAt)}
-            {set.recordedBy && <> by <span className="font-mono">{set.recordedBy}</span></>}
+            {set.recordedBy && <> by <StaffName subject={set.recordedBy} /></>}
           </p>
           <dl className="divide-y divide-border">
             {(set.answers ?? []).map((a, i) => (

@@ -5,6 +5,7 @@ import {
   CalendarCheck,
   CalendarClock,
   ClipboardCheck,
+  ArrowLeftRight,
   Stamp,
   FileWarning,
   FileText,
@@ -46,6 +47,7 @@ import {
 } from 'lucide-react';
 import { NewRolePage } from '@/features/admin/NewRolePage';
 import { ApprovalsPage } from '@/features/approvals/ApprovalsPage';
+import { PaymentsPage } from '@/features/payments/PaymentsPage';
 import { NewUserPage } from '@/features/admin/NewUserPage';
 import { RoleDetailPage } from '@/features/admin/RoleDetailPage';
 import { RolesPage } from '@/features/admin/RolesPage';
@@ -203,7 +205,8 @@ export type BadgeKey =
   | 'receipts-overdue'
   | 'eft-awaiting'
   | 'needs-action'
-  | 'approvals';
+  | 'approvals'
+  | 'payments-attention';
 
 interface NavPlacement {
   group: NavGroupId;
@@ -366,6 +369,7 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   underwriting: ['underwriting.view'], 'underwriting/new': ['underwriting.propose'],
   'underwriting/:caseId': ['underwriting.view'],
   agents: ['agents.view'], 'agents/new': ['agents.manage'], 'agents/:agentId': ['agents.view'],
+  payments: ['collections.view', 'payouts.view'],
   arrears: ['collections.view'], 'field-receipts': ['collections.view'], 'bank-transfers': ['collections.view'],
   payouts: ['payouts.view'], 'payouts/:instalmentId': ['payouts.view'], 'payment-runs': ['payouts.view'],
   'payment-runs/:paymentRunId': ['payouts.view'], 'withholding-rules': ['payouts.view'], maturities: ['payouts.view'],
@@ -627,6 +631,9 @@ const STAFF_SCREENS: Screen[] = [
   // Both its endpoints shipped with credit-life plan 4 and NOTHING called them, so a claim could
   // be approved, valued and instructed and then simply stop, with no screen anywhere admitting
   // the instruction existed. A queue that could only fill.
+  // Every payment in and out, opening on the stuck and the failed (2026-10-27): before it a payment could be read
+  // only by its id.
+  { path: 'payments', element: <PaymentsPage />, reach: { group: 'collections', label: 'Payments', icon: ArrowLeftRight, badge: 'payments-attention' } },
   {
     path: 'bank-transfers',
     element: <EftExecutionPage />,

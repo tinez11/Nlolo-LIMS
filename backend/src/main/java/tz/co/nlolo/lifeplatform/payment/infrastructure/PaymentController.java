@@ -46,6 +46,23 @@ public class PaymentController {
         return ResponseEntity.ok(dto);
     }
 
+    /**
+     * The payments register (2026-10-27): money in and money out as one list, newest first. Anyone who reads either
+     * side of the money -- collections or payouts -- reads the register; it changes nothing.
+     */
+    @GetMapping("/payments")
+    @PreAuthorize("@access.canAny('collections.view', 'payouts.view')")
+    public ResponseEntity<PaymentRegisterResponseDto.PageResponse> register(
+            @RequestParam(required = false) String direction,
+            @RequestParam(required = false) String state,
+            @RequestParam(required = false) String policyNumber,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int pageSize) {
+        return ResponseEntity.ok(PaymentRegisterResponseDto.PageResponse.from(
+            paymentApi.register(direction, state, policyNumber,
+                org.springframework.data.domain.PageRequest.of(Math.max(page, 0), Math.min(Math.max(pageSize, 1), 100)))));
+    }
+
     @GetMapping("/payout-batches/{batchId}")
     @PreAuthorize("@access.can('payouts.view')")
     public ResponseEntity<PayoutBatchResponseDto> getPayoutBatch(@PathVariable UUID batchId) {

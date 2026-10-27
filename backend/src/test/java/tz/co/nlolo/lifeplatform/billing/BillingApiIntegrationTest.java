@@ -187,6 +187,7 @@ class BillingApiIntegrationTest {
             "db-migrations/billing/V10__premium_receipt.sql",
             "db-migrations/billing/V11__premium_in_advance.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             // M5 final-review fix wave: V3's callback resolvers and V4's widened status CHECK
             // (IN_DOUBT). This class drives real payment.PaymentRequestListener chains, so its

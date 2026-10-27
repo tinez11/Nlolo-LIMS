@@ -245,6 +245,8 @@ export const STATUS_MAPS = {
   // as one union discriminated by `kind`).
   payment: {
     PENDING: 'pending',
+    // A bank transfer nobody has made yet (the payments register, 2026-10-27, lists both ledgers).
+    AWAITING_EXECUTION: 'warning',
     IN_DOUBT: 'warning', // outcome unknown, NOT lost
     CONFIRMED: 'success',
     COMPLETED: 'success',

@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { approveSurrenderGates, paidUpGates, surrenderGates } from '@/gates/valueGates';
 import { formatMoney } from '@/lib/money';
 import type { PolicyView, SurrenderQuote, SurrenderRequestView } from '@/api/types';
+import { StaffName } from '@/components/StaffName';
 
 const isPositiveAmount = (amount: string | undefined) => Number(amount ?? '0') > 0;
 import {
@@ -185,7 +186,7 @@ function SurrenderAction({
           { label: 'Policy', value: policyNumber },
           { label: 'Paying', value: formatMoney(approving.data.quotedValue) },
           { label: 'Payee', value: approving.data.payeeRef ?? '—' },
-          { label: 'Approved by', value: approving.data.approvedBy ?? '—' },
+          { label: 'Approved by', value: <StaffName subject={approving.data.approvedBy} /> },
         ]}
         note="Cover has stopped and the payout has been requested, not paid. This panel shows PAID once the payment provider confirms it."
       />
@@ -202,7 +203,7 @@ function SurrenderAction({
       {request && !awaitingApproval && request.status !== 'FAILED' && (
         <p className="text-xs text-muted-foreground">
           {formatMoney(request.quotedValue)} to {request.payeeRef}, requested by{' '}
-          {request.requestedBy}.
+          <StaffName subject={request.requestedBy} />.
         </p>
       )}
 

@@ -103,7 +103,7 @@ describe('ValueActions surrender', () => {
     await waitFor(() =>
       expect(
         screen.getByText(
-          'A surrender must be approved by someone other than the person who requested it (alice).',
+          'You requested this surrender, so someone else must approve it.',
         ),
       ).toBeInTheDocument(),
     );

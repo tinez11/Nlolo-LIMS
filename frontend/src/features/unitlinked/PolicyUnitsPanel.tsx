@@ -18,6 +18,7 @@ import { selectApprovingSurrender, selectRequestingSurrender, selectSurrenderReq
 import { useUnitLinkedStore } from '@/store/unitLinkedStore';
 import { PremiumSplitPanel, StatementsPanel, SwitchForm, TopUpForm, WithdrawalPanel } from './U2Panels';
 import { offers } from './u2Forms';
+import { StaffName } from '@/components/StaffName';
 
 const ENTRY_LABEL: Record<string, string> = {
   ALLOCATION: 'Premium allocated',
@@ -280,8 +281,8 @@ function UnitLinkedSurrender({ policy }: { policy: PolicyView }) {
       </p>
       {current && !awaitingApproval && current.status !== 'FAILED' && (
         <p className="text-xs text-muted-foreground">
-          To {current.payeeRef}, requested by {current.requestedBy}
-          {current.approvedBy ? `, approved by ${current.approvedBy}` : ''}.
+          To {current.payeeRef}, requested by <StaffName subject={current.requestedBy} />
+          {current.approvedBy && <>, approved by <StaffName subject={current.approvedBy} /></>}.
         </p>
       )}
       {requesting.status === 'error' && requesting.error && <InlineError error={requesting.error} />}

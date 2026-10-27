@@ -13,6 +13,7 @@ import { CheckboxField } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { formatInstant } from '@/lib/dates';
 import { useExpenseAllocationStore } from '@/store/expenseAllocationStore';
+import { StaffName } from '@/components/StaffName';
 import {
   ALLOCATION_STATUS_LABEL,
   CATEGORY_LABEL,
@@ -65,11 +66,11 @@ function Allocation({ allocation: a }: { allocation: ExpenseAllocationView }) {
           )}
           {a.studyReference && <p><span className="text-muted-foreground">Study:</span> {a.studyReference}</p>}
           {a.note && <p><span className="text-muted-foreground">Note:</span> {a.note}</p>}
-          <p><span className="text-muted-foreground">Prepared:</span> {formatInstant(a.preparedAt)} by {a.preparedBy}</p>
+          <p><span className="text-muted-foreground">Prepared:</span> {formatInstant(a.preparedAt)} by <StaffName subject={a.preparedBy} /></p>
           {a.decidedAt && (
             <p>
               <span className="text-muted-foreground">{a.status === 'REJECTED' ? 'Rejected' : 'Approved'}:</span>{' '}
-              {formatInstant(a.decidedAt)} by {a.decidedBy}{a.decisionReason ? ` — ${a.decisionReason}` : ''}
+              {formatInstant(a.decidedAt)} by <StaffName subject={a.decidedBy} />{a.decisionReason ? ` — ${a.decisionReason}` : ''}
             </p>
           )}
           {a.replacesId && (

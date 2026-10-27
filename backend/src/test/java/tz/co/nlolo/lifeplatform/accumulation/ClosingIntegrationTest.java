@@ -151,6 +151,7 @@ class ClosingIntegrationTest {
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V6__disbursement_method.sql",
             "db-migrations/payment/V7__q4_2026_partitions.sql",

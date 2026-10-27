@@ -11,6 +11,7 @@ import { formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useExpenseAllocationStore } from '@/store/expenseAllocationStore';
 import { ALLOCATION_STATUS_LABEL, CATEGORY_LABEL, DRIVER_LABEL, money, parseAmount } from './expenseAllocation';
+import { StaffName } from '@/components/StaffName';
 
 type Totals = { maintenance: string; claimsHandling: string; acquisition: string };
 const EMPTY: Totals = { maintenance: '', claimsHandling: '', acquisition: '' };
@@ -180,7 +181,7 @@ function AllocationList({ allocations }: { allocations: ExpenseAllocationView[] 
               {a.nilReason ? `None this month: ${a.nilReason}` : a.studyReference}
             </td>
             <td className="py-1 text-xs text-muted-foreground">
-              {formatInstant(a.preparedAt)} by {a.preparedBy}
+              {formatInstant(a.preparedAt)} by <StaffName subject={a.preparedBy} />
             </td>
           </tr>
         ))}

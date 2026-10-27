@@ -30,6 +30,7 @@ import {
   type PayoutReviewValues,
 } from './payoutReviewForm';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { StaffName } from '@/components/StaffName';
 
 const BREADCRUMB = [{ label: 'Payouts', to: '/staff/payouts' }];
 
@@ -125,8 +126,8 @@ export function PayoutPage() {
             )}
             {payout.statusReason && <Field label="Why" value={payout.statusReason} />}
             <Field label="Payee" value={payout.payeeRef ?? '—'} />
-            <Field label="Reviewed by" value={payout.reviewedBy ?? '—'} />
-            <Field label="Approved by" value={payout.approvedBy ?? '—'} />
+            <Field label="Reviewed by" value={<StaffName subject={payout.reviewedBy} />} />
+            <Field label="Approved by" value={<StaffName subject={payout.approvedBy} />} />
             <Field label="Payment attempts" value={payout.attempts} />
           </dl>
         </Panel>

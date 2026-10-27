@@ -15,6 +15,12 @@ export type NewStaffUser = S['NewUser'];
 export type CreatedStaffUser = S['CreatedUser'];
 export type AccessOutcome = S['Outcome'];
 export type PasswordIssued = S['PasswordIssued'];
+export type StaffNameView = S['StaffName'];
+
+/** Staff members' names by token subject (2026-10-27); a subject the platform does not know is left out. */
+export function getStaffNames(ids: string[]): Promise<StaffNameView[]> {
+  return get<StaffNameView[]>('/staff-names', { params: { ids: ids.join(',') } });
+}
 
 export function getMyAccess(): Promise<MyAccess> {
   return get<MyAccess>('/me/access');

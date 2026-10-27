@@ -132,10 +132,12 @@ public class PaymentRequestListener {
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> payload = (Map<String, Object>) envelope.payload();
+            RequestPolicy.set(payload.get("policyNumber") == null ? null : String.valueOf(payload.get("policyNumber")));
             handler.accept(payload);
         } catch (Exception e) {
             log.error("payment failed to process {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
         } finally {
+            RequestPolicy.clear();
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);
             } else {

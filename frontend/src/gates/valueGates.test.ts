@@ -72,7 +72,7 @@ describe('approveSurrenderGates', () => {
     const gates = approveSurrenderGates({ status: 'REQUESTED', requestedBy: 'alice' } as never, 'alice');
     const failed = gates.find((g) => !g.ok)!;
     expect(failed.hard).toBe(true);
-    expect(failed.detail).toContain('other than the person who requested it');
+    expect(failed.detail).toBe('You requested this surrender, so someone else must approve it.');
   });
 
   it('passes a different approver on a REQUESTED surrender', () => {

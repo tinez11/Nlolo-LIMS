@@ -811,7 +811,7 @@ public class ClaimsApiImpl implements ClaimsApi {
             // payment request; this method's job ends at publishing it.
             claim.markSettlementRequested(idempotencyKey);
             eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimSettlementRequested", tenantId,
-                Map.of("claimId", claimId, "payeeRef", payeeRef,
+                Map.of("claimId", claimId, "payeeRef", payeeRef, "policyNumber", claim.getPolicyNumber(),
                        "amount", Map.of("amount", approvedAmount.toPlainString(), "currencyCode", approvedCurrency),
                        // A credit-life payout goes to a LENDER and extinguishes a debt. It must
                        // not go near the mobile-money rail, which in this environment is a mock

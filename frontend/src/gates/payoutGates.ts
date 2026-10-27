@@ -68,7 +68,7 @@ export function approveGates(payout: PayoutInstalmentView, viewerSubject: string
       title: 'Reviewed',
       detail:
         payout.status === 'REVIEWED'
-          ? `Reviewed by ${payout.reviewedBy ?? 'someone else'}.`
+          ? (sameAsReviewer ? 'Reviewed by you.' : 'Reviewed by someone else.')
           : `This payout is ${label(payout.status)}, so it cannot be approved.`,
     },
     {
@@ -76,7 +76,7 @@ export function approveGates(payout: PayoutInstalmentView, viewerSubject: string
       hard: true,
       title: 'A second person approves',
       detail: sameAsReviewer
-        ? `A payout must be approved by someone other than the person who reviewed it (${payout.reviewedBy})`
+        ? 'You reviewed this payout, so someone else must approve it.'
         : 'You did not review this payout.',
     },
   ];

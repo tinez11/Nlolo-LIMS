@@ -74,6 +74,10 @@ public class PaymentTransaction {
     @Column(nullable = false)
     private String purpose = "PREMIUM";
 
+    /** The policy this money is for, where the request named one (payment V16, 2026-10-27). */
+    @Column(name = "policy_number")
+    private String policyNumber;
+
     @Version
     private long version;
 
@@ -96,6 +100,10 @@ public class PaymentTransaction {
     }
 
     public String getPurpose() { return purpose; }
+
+    public String getPolicyNumber() { return policyNumber; }
+
+    public void notePolicy(String policyNumber) { this.policyNumber = policyNumber; }
 
     public void markConfirmed(String gatewayReference) {
         if ("CONFIRMED".equals(status)) {

@@ -222,6 +222,9 @@ describe('screen manifest', () => {
     //
     // Approvals (2026-10-27) is the server's own count of signatures waiting on this person, less their own requests --
     // one read the approvals module composes, not a sum the browser makes.
+    //
+    // Payments (2026-10-27) counts the register's own total for one state -- in doubt or failed -- which is money
+    // somebody has to chase, never the volume of payments.
     expect(badged.sort()).toEqual([
       'Approvals',
       'Arrears',
@@ -230,6 +233,7 @@ describe('screen manifest', () => {
       'Corporate/Group',
       'Field receipts',
       'Individuals',
+      'Payments',
       'Underwriting',
     ]);
   });

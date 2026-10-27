@@ -33,6 +33,7 @@ import {
   type WithdrawalValues,
 } from './u2Forms';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { StaffName } from '@/components/StaffName';
 
 /**
  * The U2 actions on a unit-linked policy's Units tab (product step 6): premium redirection, a fund switch, a partial
@@ -107,7 +108,7 @@ export function PremiumSplitPanel({ policyNumber, fundCodes }: { policyNumber: s
         <ul aria-label="Split history" className="space-y-0.5 text-xs text-muted-foreground">
           {history?.data?.slice(1).map((h) => (
             <li key={h.splitId}>
-              From {formatInstant(h.effectiveFrom)}: {h.shares.map((s) => `${s.fundCode} ${s.percent}%`).join(', ')} · by {h.recordedBy}
+              From {formatInstant(h.effectiveFrom)}: {h.shares.map((s) => `${s.fundCode} ${s.percent}%`).join(', ')} · by <StaffName subject={h.recordedBy} />
             </li>
           ))}
         </ul>
@@ -301,8 +302,8 @@ function WithdrawalCard({
   return (
     <div className="space-y-2 rounded-md border border-border p-3" aria-label="Withdrawal in progress">
       <p className="text-xs">
-        {m(withdrawal.grossAmount)} to {withdrawal.payeeRef}, requested by {withdrawal.requestedBy}
-        {withdrawal.approvedBy ? `, approved by ${withdrawal.approvedBy} — waiting for its price` : ''}.
+        {m(withdrawal.grossAmount)} to {withdrawal.payeeRef}, requested by <StaffName subject={withdrawal.requestedBy} />
+        {withdrawal.approvedBy && <>, approved by <StaffName subject={withdrawal.approvedBy} /> — waiting for its price</>}.
       </p>
       <dl className="grid grid-cols-2 gap-x-4 text-xs sm:grid-cols-4">
         <dt className="text-muted-foreground">Surrender charge ({withdrawal.chargePercent ?? '0'}%)</dt>

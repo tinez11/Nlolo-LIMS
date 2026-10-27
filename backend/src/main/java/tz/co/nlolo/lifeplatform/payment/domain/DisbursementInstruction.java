@@ -89,6 +89,10 @@ public class DisbursementInstruction {
     @Column(name = "executed_at")
     private Instant executedAt;
 
+    /** The policy this money is for, where the request named one (payment V16, 2026-10-27). */
+    @Column(name = "policy_number")
+    private String policyNumber;
+
     @Version
     private long version;
 
@@ -197,6 +201,10 @@ public class DisbursementInstruction {
     public String getPurpose() { return purpose; }
     public String getStatus() { return status; }
     public String getMethod() { return method; }
+
+    public String getPolicyNumber() { return policyNumber; }
+
+    public void notePolicy(String policyNumber) { this.policyNumber = policyNumber; }
     public String getExecutedBy() { return executedBy; }
     public java.time.Instant getExecutedAt() { return executedAt; }
 

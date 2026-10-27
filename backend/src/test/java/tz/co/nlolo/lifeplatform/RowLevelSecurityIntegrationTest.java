@@ -206,6 +206,7 @@ class RowLevelSecurityIntegrationTest {
             // disbursementIdempotencyRegistryIsTenantIsolatedUnderRls below need payment's own
             // schema/grants/RLS -- V1 alone shipped zero GRANTs and zero RLS on any table.
             "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V6__disbursement_method.sql",
             "db-migrations/payment/V7__q4_2026_partitions.sql",

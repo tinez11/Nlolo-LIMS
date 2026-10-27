@@ -1,4 +1,6 @@
+import type { ReactNode } from 'react';
 import { can } from '@/auth/access';
+import { StaffName } from '@/components/StaffName';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useWatch } from 'react-hook-form';
 import type { DepositPeriodView, DepositView } from '@/api/types';
@@ -134,13 +136,18 @@ export function DepositSection({ deposit, isFinance }: { deposit: DepositView; i
   );
 }
 
-function describeInstruction(deposit: DepositView): string {
+function describeInstruction(deposit: DepositView): ReactNode {
   const fallback = deposit.defaultPayeeRef ?? 'a payee finance records';
   const current = deposit.instruction;
   if (!current) return `No instruction: it will be paid out to ${fallback}.`;
-  return current.action === 'REINVEST'
-    ? `Reinvest for ${current.termMonths} months (recorded by ${current.recordedBy}).`
-    : `Pay out to ${current.payeeRef ?? fallback} (recorded by ${current.recordedBy}).`;
+  return (
+    <>
+      {current.action === 'REINVEST'
+        ? `Reinvest for ${current.termMonths} months`
+        : `Pay out to ${current.payeeRef ?? fallback}`}{' '}
+      (recorded by <StaffName subject={current.recordedBy} />).
+    </>
+  );
 }
 
 function MaturityPanel({ deposit }: { deposit: DepositView }) {

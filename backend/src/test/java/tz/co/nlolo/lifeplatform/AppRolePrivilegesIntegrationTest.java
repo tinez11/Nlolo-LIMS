@@ -251,6 +251,7 @@ class AppRolePrivilegesIntegrationTest {
             // needs payment's own schema/grants -- V1 alone had zero GRANT statements anywhere
             // in the file, the exact M1 failure mode this class exists to catch.
             "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             // M5 final-review fix wave (I2). payment/V3 and V4 issue SIX `GRANT EXECUTE ... TO
             // app_role` statements between them -- the only function grants anywhere in this

@@ -146,6 +146,26 @@ class AccessIntegrationTest {
         assertThat(detail).contains("UNDERWRITER").contains("SENIOR_UNDERWRITER");
     }
 
+    /** "Reviewed by 1bccfb0a-…" becomes a name (2026-10-27); an unknown subject is left out, and a tenant's staff only. */
+    @Test
+    void staffNamesAreReadBySubjectWithinTheTenantOnly() throws Exception {
+        UUID tenant = UUID.randomUUID();
+        UUID colleague = UUID.randomUUID();
+        UUID viewer = UUID.randomUUID();
+        // First sight records the colleague as a staff member of this tenant.
+        mockMvc.perform(get("/me/access").with(staff(tenant, colleague, "FINANCE_OFFICER"))).andExpect(status().isOk());
+        UUID stranger = UUID.randomUUID();
+        mockMvc.perform(get("/me/access").with(staff(UUID.randomUUID(), stranger, "FINANCE_OFFICER")))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(get("/staff-names").param("ids", colleague + "," + stranger + ",not-a-subject")
+                .with(staff(tenant, viewer, "UNDERWRITER")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].subject").value(colleague.toString()))
+            .andExpect(jsonPath("$[0].name").value("Neema Staff"));
+    }
+
     @Test
     void anAgentHasNoPlatformAccessToRead() throws Exception {
         mockMvc.perform(get("/me/access").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
