@@ -82,7 +82,8 @@ public class ClaimController {
      * party as claimant.
      */
     @PostMapping("/claims")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('claims.register')")
+    // Not an agent's (2026-10-27, one agent level): the claimant registers it, or claims staff do.
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or @access.can('claims.register')")
     public ResponseEntity<ClaimResponseDto> registerClaim(@Valid @RequestBody RegisterClaimRequestDto request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {

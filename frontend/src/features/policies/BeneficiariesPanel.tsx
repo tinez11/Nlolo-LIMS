@@ -32,9 +32,12 @@ import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 export function BeneficiariesPanel({
   policyNumber,
   beneficiaries,
+  canChange,
 }: {
   policyNumber: string;
   beneficiaries: BeneficiaryInput[];
+  /** Staff who service policies (2026-10-27: an agent reads them, and changes nothing). */
+  canChange: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const resetSaveBeneficiaries = usePolicyStore((s) => s.resetSaveBeneficiaries);
@@ -43,6 +46,7 @@ export function BeneficiariesPanel({
     return (
       <ReadView
         beneficiaries={beneficiaries}
+        canChange={canChange}
         onEdit={() => {
           // Clears any error left over from a previous, unrelated attempt --
           // without this a stale rejection reappears the instant editing starts
@@ -67,8 +71,10 @@ export function BeneficiariesPanel({
 function ReadView({
   beneficiaries,
   onEdit,
+  canChange,
 }: {
   beneficiaries: BeneficiaryInput[];
+  canChange: boolean;
   onEdit: () => void;
 }) {
   return (
@@ -93,9 +99,11 @@ function ReadView({
           ))}
         </dl>
       )}
-      <Button size="sm" variant="ghost" className="-ml-2 mt-1" onClick={onEdit}>
-        Edit beneficiaries
-      </Button>
+      {canChange && (
+        <Button size="sm" variant="ghost" className="-ml-2 mt-1" onClick={onEdit}>
+          Edit beneficiaries
+        </Button>
+      )}
     </div>
   );
 }

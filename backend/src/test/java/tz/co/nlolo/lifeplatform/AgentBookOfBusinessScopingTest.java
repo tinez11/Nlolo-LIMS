@@ -567,6 +567,34 @@ class AgentBookOfBusinessScopingTest {
             .andExpect(status().isForbidden());
     }
 
+    /** One agent level (2026-10-27, user decision): an agent requests payment and registers clients. Changing a
+     * policy, lending on it or registering a claim is staff work -- even on a customer in their own book. */
+    @Test
+    void anAgentChangesNothingOnAPolicyEvenInTheirOwnBook() throws Exception {
+        Book book = buildBook("ACT-NONE");
+        var supervisor = agentOf(book.tenantId(), book.supervisor().partyId());
+        var json = org.springframework.http.MediaType.APPLICATION_JSON;
+        mockMvc.perform(put("/policies/{n}/beneficiaries", book.policyInTeam()).with(supervisor)
+                .contentType(json).content("[]"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/policies/{n}/endorsements", book.policyInTeam()).with(supervisor)
+                .contentType(json).content("{\"endorsementType\":\"ADDRESS_CHANGE\",\"effectiveDate\":\"2026-11-01\",\"changes\":{\"newAddress\":\"Dar es Salaam\"}}"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/policies/{n}/loans", book.policyInTeam()).with(supervisor)
+                .contentType(json).content("{\"requestedAmount\":{\"amount\":\"1000.00\",\"currencyCode\":\"TZS\"},\"payeeRef\":\"+255700000001\"}"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/loans/{l}/repayments", UUID.randomUUID()).with(supervisor)
+                .contentType(json).content("{\"amount\":{\"amount\":\"100.00\",\"currencyCode\":\"TZS\"},\"paymentReference\":\"PAY-AGENT\"}"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/claims").with(supervisor).header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(json).content("""
+                    {"policyNumber":"%s","claimantPartyId":"%s","claimType":"DEATH","dateOfEvent":"2026-10-01",
+                     "details":{"claimType":"DEATH","causeOfDeath":"Cardiac arrest","placeOfDeath":"Dar es Salaam",
+                     "dateOfDeath":"2026-10-01","attendingPhysician":"Dr. Kessy"}}
+                    """.formatted(book.policyInTeam(), UUID.randomUUID())))
+            .andExpect(status().isForbidden());
+    }
+
     @Test
     void anAgentFilesFieldReceiptsOnlyAsThemselvesAndOnlyForTheirBook() throws Exception {
         Book book = buildBook("ACT-FR");

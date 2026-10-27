@@ -49,7 +49,7 @@ describe('LoansPanel', () => {
       { ...disbursedLoan, status: 'DISBURSEMENT_REQUESTED' },
     ]);
 
-    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} />);
+    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange />);
 
     await waitFor(() => expect(screen.getByText(/of .*principal/)).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Record repayment' })).not.toBeInTheDocument();
@@ -62,7 +62,7 @@ describe('LoansPanel', () => {
       .mockResolvedValue({ ...disbursedLoan, status: 'SETTLED', outstandingBalance: TZS('0.00') });
     const user = userEvent.setup();
 
-    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} />);
+    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange />);
     await waitFor(() => expect(listLoans).toHaveBeenCalledTimes(1));
 
     await user.click(screen.getByRole('button', { name: 'Record repayment' }));
@@ -86,7 +86,7 @@ describe('LoansPanel', () => {
     const recordRepayment = vi.spyOn(policiesApi, 'recordLoanRepayment');
     const user = userEvent.setup();
 
-    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} />);
+    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange />);
     await waitFor(() => expect(screen.getByText(/of .*principal/)).toBeInTheDocument());
 
     await user.click(screen.getByRole('button', { name: 'Record repayment' }));
@@ -111,7 +111,7 @@ describe('LoansPanel', () => {
     });
     const user = userEvent.setup();
 
-    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} />);
+    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange />);
     await waitFor(() => expect(screen.getByText(/of .*principal/)).toBeInTheDocument());
 
     await user.click(screen.getByRole('button', { name: 'Record repayment' }));
@@ -128,7 +128,7 @@ describe('LoansPanel', () => {
   it('disables origination while the policy has no cash value, and says why', async () => {
     vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([]);
 
-    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} />);
+    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange />);
 
     await waitFor(() => expect(screen.getByText('No loans')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Take a loan' })).toBeDisabled();
@@ -145,7 +145,7 @@ describe('LoansPanel', () => {
     const originate = vi.spyOn(policiesApi, 'originateLoan').mockResolvedValue(disbursedLoan);
     const user = userEvent.setup();
 
-    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('1000000.00')} />);
+    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('1000000.00')} canChange />);
     await waitFor(() => expect(screen.getByText('No loans')).toBeInTheDocument());
 
     const takeLoan = screen.getByRole('button', { name: 'Take a loan' });
@@ -161,5 +161,13 @@ describe('LoansPanel', () => {
         payeeRef: 'MPESA-0712345678',
       }),
     );
+  });
+
+  it('shows an agent the loans but offers no loan and no repayment (2026-10-27)', async () => {
+    vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([disbursedLoan]);
+    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('1000000.00')} canChange={false} />);
+    await waitFor(() => expect(screen.getByText(/principal/)).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Take a loan' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record repayment' })).not.toBeInTheDocument();
   });
 });

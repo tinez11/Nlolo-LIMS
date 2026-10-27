@@ -448,6 +448,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 <BeneficiariesPanel
                   policyNumber={policyNumber}
                   beneficiaries={policy.beneficiaries ?? []}
+                  canChange={isStaff && can('policies.service')}
                 />
               )}
             </Panel>
@@ -493,7 +494,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             content: (
               <div className="pt-5">
                 <Panel title="Loans" subtitle="Policy loans taken against cash value">
-                  <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} />
+                  <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} canChange={isStaff && can('loans.manage')} />
                 </Panel>
               </div>
             ),

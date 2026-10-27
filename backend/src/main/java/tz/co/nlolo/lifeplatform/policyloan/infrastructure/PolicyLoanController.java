@@ -46,14 +46,13 @@ public class PolicyLoanController {
 
     @PostMapping("/policies/{policyNumber}/loans")
     // Not a customer act (2026-10-08, the customer portal design, the user's D3): the portal reads and requests;
-    // it does not change this. Staff and agents only.
-    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('loans.manage')")
+    // it does not change this. Nor does an agent (2026-10-27, one agent level): staff only.
+    @PreAuthorize("@access.can('loans.manage')")
     public ResponseEntity<LoanResponseDto> originateLoan(@PathVariable String policyNumber, @Valid @RequestBody OriginateLoanRequestDto request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         // Idempotency-Key accepted, not enforced (Global Constraints).
         enforceCustomerOwnPolicyOnly(policyNumber, jwt, authentication);
-        AgentBook.require(policyApi, policyNumber, jwt, authentication);
         LoanView loan = policyLoanApi.originateLoan(policyNumber, new BigDecimal(request.requestedAmount().amount()),
             request.requestedAmount().currencyCode(), request.payeeRef(), jwt.getSubject());
         // 202, not 200/201: openapi-policyloan.yaml describes this as "Loan reservation
@@ -109,13 +108,13 @@ public class PolicyLoanController {
     }
 
     @PostMapping("/loans/{loanId}/repayments")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('loans.manage')")
+    // A customer repays their own loan; an agent no longer records one (2026-10-27, one agent level).
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or @access.can('loans.manage')")
     public ResponseEntity<LoanResponseDto> recordRepayment(@PathVariable UUID loanId, @Valid @RequestBody RepaymentRequestDto request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         LoanView existing = policyLoanApi.getLoan(loanId);
         enforceCustomerOwnPolicyOnly(existing.policyNumber(), jwt, authentication);
-        AgentBook.require(policyApi, existing.policyNumber(), jwt, authentication);
         LoanView loan = policyLoanApi.recordRepayment(loanId, new BigDecimal(request.amount().amount()), request.amount().currencyCode(),
             request.paymentReference(), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(LoanResponseDto.from(loan));

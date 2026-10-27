@@ -87,7 +87,10 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
   }
 
   const sections = claim
-    ? claimSections({ claim, claimId, roles, canAssess, canDecide, canReopen, canSeeReinsurance })
+    ? claimSections({
+        claim, claimId, roles, canAssess, canDecide, canReopen, canSeeReinsurance,
+        canAttachEvidence: realm === 'staff',
+      })
     : [];
 
   return (

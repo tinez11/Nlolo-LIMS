@@ -36,6 +36,7 @@ export function claimSections({
   canDecide,
   canReopen,
   canSeeReinsurance,
+  canAttachEvidence = true,
 }: {
   claim: ClaimView;
   claimId: string;
@@ -44,6 +45,8 @@ export function claimSections({
   canDecide: boolean;
   canReopen: boolean;
   canSeeReinsurance: boolean;
+  /** False for an agent (2026-10-27): they read a claim on their book, and add nothing to it. */
+  canAttachEvidence?: boolean;
 }): Section[] {
   const sections: Section[] = [];
 
@@ -175,7 +178,7 @@ export function claimSections({
         title="Evidence"
         subtitle="Photos, certificates, and reports attached to this claim"
       >
-        <EvidencePanel claimId={claimId} canAttach={claim.status !== 'SETTLED'} />
+        <EvidencePanel claimId={claimId} canAttach={canAttachEvidence && claim.status !== 'SETTLED'} />
       </Panel>
     ),
   });

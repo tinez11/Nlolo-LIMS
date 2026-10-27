@@ -42,9 +42,17 @@ afterEach(() => {
 });
 
 async function openTheEditor(user: ReturnType<typeof userEvent.setup>) {
-  render(<BeneficiariesPanel policyNumber="POL-000001" beneficiaries={EXISTING} />);
+  render(<BeneficiariesPanel policyNumber="POL-000001" beneficiaries={EXISTING} canChange />);
   await user.click(screen.getByRole('button', { name: 'Edit beneficiaries' }));
 }
+
+describe('BeneficiariesPanel for someone who may not change them', () => {
+  it('reads the beneficiaries and offers no edit (2026-10-27: agents)', () => {
+    render(<BeneficiariesPanel policyNumber="POL-000001" beneficiaries={EXISTING} canChange={false} />);
+    expect(screen.getByText('The estate')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit beneficiaries' })).not.toBeInTheDocument();
+  });
+});
 
 describe('BeneficiariesPanel short-circuits a designation the client rejects', () => {
   it('does not send shares that fail the sum-to-100 rule', async () => {
