@@ -1004,4 +1004,14 @@ public interface PolicyApi {
 
     /** The death claim was rejected. Clears only THAT claim; a no-op if another is recorded. */
     void clearOpenDeathClaim(String policyNumber, UUID policyMemberId, UUID claimId);
+
+    /**
+     * Whether a policy is in an agent's book (2026-10-27): its agent of record is the agent behind {@code agentPartyId}
+     * or someone in their downline -- the rule GET /policies/{n} already applied, here for every module that lets an
+     * agent act on a policy. A policy sold direct is in no agent's book.
+     */
+    boolean inAgentBook(String policyNumber, UUID agentPartyId);
+
+    /** The agent profile behind a signed-in agent's party, if they are one. */
+    java.util.Optional<UUID> agentIdOf(UUID agentPartyId);
 }

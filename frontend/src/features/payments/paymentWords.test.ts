@@ -24,7 +24,7 @@ describe('payment words', () => {
 
   it('opens the claim a settlement pays and the instalment a benefit pays', () => {
     expect(paymentLink(payment({ purpose: 'CLAIM_SETTLEMENT', sourceRef: 'c-9' }))).toBe('/staff/claims/c-9');
-    expect(paymentLink(payment({ purpose: 'SURVIVAL_BENEFIT_PAYOUT', sourceRef: 'i-3' }))).toBe('/staff/payouts/i-3');
+    expect(paymentLink(payment({ purpose: 'SURVIVAL_BENEFIT_PAYOUT', sourceRef: 'i-3' }))).toBe('/staff/payouts/i-3?from=payments');
   });
 
   it('otherwise opens the policy, and nothing where none was recorded', () => {

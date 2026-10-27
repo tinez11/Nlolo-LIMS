@@ -304,8 +304,10 @@ class ModuleArchitectureB1EndToEndRaceTest {
         }
     }
 
+    // Staff, not an agent (2026-10-27): an agent originates only on their own book, and this race is about two
+    // originations, not about who may make them.
     private static RequestPostProcessor agentOf(UUID tenantId) {
-        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
             .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
     }
 

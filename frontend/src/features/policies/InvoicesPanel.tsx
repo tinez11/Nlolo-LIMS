@@ -1,6 +1,6 @@
 import { can } from '@/auth/access';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import type { EnrolmentSubmissionView, InvoiceView, PolicyMemberView } from '@/api/types';
@@ -37,7 +37,10 @@ import {
   waiveInvoiceFormSchema,
   type WaiveInvoiceFormValues,
 } from './waiveInvoiceForm';
-import { Input } from '@/components/ui/input';
+import { Input, Select } from '@/components/ui/input';
+import type { ReceiptMethod } from '@/api/receipts';
+import { InvoiceReceiptForm } from '@/features/receipts/InvoiceReceiptForm';
+import { RECEIPT_METHODS } from '@/features/receipts/receiptForm';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { Tip } from '@/components/ui/tooltip';
 
@@ -240,17 +243,6 @@ function InvoiceRow({
               Request payment
             </Button>
           )}
-          {/* Paid some other way -- cash, a bank deposit, a cheque, a Lipa number, TANQR (2026-10-27): finance records
-              it, and it pays this invoice once a second person confirms it. */}
-          {canWaive && owesSomething(invoice) && (
-            <Button asChild size="sm" variant="ghost">
-              <Link
-                to={`/staff/receipts/new?policy=${encodeURIComponent(policyNumber)}&invoice=${encodeURIComponent(invoiceId)}`}
-              >
-                Record a receipt
-              </Link>
-            </Button>
-          )}
         </div>
       )}
 
@@ -264,6 +256,7 @@ function InvoiceRow({
       {action === 'payment' && invoiceId && (
         <PaymentRequestForm
           policyNumber={policyNumber}
+          invoice={invoice}
           invoiceId={invoiceId}
           onDone={() => setAction(null)}
         />
@@ -410,13 +403,61 @@ function WaiveForm({
   );
 }
 
+/**
+ * How an invoice is paid (2026-10-27): asked for now by mobile money -- a request to the payer's phone -- or, for
+ * finance, already received some other way and recorded here. One action, the method chosen first, and you stay on
+ * the policy either way.
+ */
 function PaymentRequestForm({
   policyNumber,
+  invoice,
   invoiceId,
   onDone,
 }: {
   policyNumber: string;
+  invoice: InvoiceView;
   invoiceId: string;
+  onDone: () => void;
+}) {
+  const [method, setMethod] = useState<'MOBILE_MONEY' | ReceiptMethod>('MOBILE_MONEY');
+  const canRecord = can('collections.manage');
+  const chooser = canRecord ? (
+    <FormField label="How is it being paid?">
+      <Select inputSize="sm" value={method} onChange={(e) => setMethod(e.target.value as 'MOBILE_MONEY' | ReceiptMethod)}>
+        <optgroup label="Ask for it now">
+          <option value="MOBILE_MONEY">Mobile money — send a request to the payer’s phone</option>
+        </optgroup>
+        <optgroup label="Already paid — record it">
+          {RECEIPT_METHODS.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </optgroup>
+      </Select>
+    </FormField>
+  ) : null;
+
+  if (method !== 'MOBILE_MONEY') {
+    return (
+      <div className="mt-2 space-y-2 rounded-md border border-border p-2.5">
+        {chooser}
+        <InvoiceReceiptForm policyNumber={policyNumber} invoice={invoice} method={method} onDone={onDone} />
+      </div>
+    );
+  }
+  return <MobileMoneyRequestForm policyNumber={policyNumber} invoiceId={invoiceId} chooser={chooser} onDone={onDone} />;
+}
+
+function MobileMoneyRequestForm({
+  policyNumber,
+  invoiceId,
+  chooser,
+  onDone,
+}: {
+  policyNumber: string;
+  invoiceId: string;
+  chooser: ReactNode;
   onDone: () => void;
 }) {
   const requestPaymentForInvoice = usePolicyStore((s) => s.requestPaymentForInvoice);
@@ -450,8 +491,9 @@ function PaymentRequestForm({
 
   return (
     <form className="mt-2 space-y-2 rounded-md border border-border p-2.5" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+      {chooser}
       <FormField label="Payer reference" error={errors.payerRef?.message}>
-        <Input inputSize="sm" placeholder="Mobile-money source" {...register('payerRef')} />
+        <Input inputSize="sm" placeholder="The mobile-money number to ask" {...register('payerRef')} />
       </FormField>
 
       {requesting.status === 'error' && requesting.error && (

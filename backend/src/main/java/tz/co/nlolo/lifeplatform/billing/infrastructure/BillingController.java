@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.billing.infrastructure;
 
+import tz.co.nlolo.lifeplatform.policy.api.AgentBook;
 import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceStatus;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
@@ -125,6 +126,7 @@ public class BillingController {
                                                                   @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         PolicyView policy = policyApi.getPolicy(policyNumber);
         enforceCustomerOwnPolicyOnly(policy, jwt, authentication);
+        AgentBook.require(policyApi, policyNumber, jwt, authentication);
         List<InvoiceResponseDto> invoices = billingApi.listInvoices(policyNumber, status).stream().map(InvoiceResponseDto::from).toList();
         return ResponseEntity.ok(invoices);
     }
@@ -143,6 +145,7 @@ public class BillingController {
                                                                        Authentication authentication) {
         PolicyView policy = policyApi.getPolicy(policyNumber);
         enforceCustomerOwnPolicyOnly(policy, jwt, authentication);
+        AgentBook.require(policyApi, policyNumber, jwt, authentication);
         return ResponseEntity.ok(billingApi.listCredits(policyNumber).stream()
             .map(PremiumCreditResponseDto::from).toList());
     }
@@ -153,6 +156,7 @@ public class BillingController {
                                                                  @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         PolicyView policy = policyApi.getPolicy(policyNumber);
         enforceCustomerOwnPolicyOnly(policy, jwt, authentication);
+        AgentBook.require(policyApi, policyNumber, jwt, authentication);
         InvoiceView invoice = billingApi.getNextDueInvoice(policyNumber);
         return ResponseEntity.ok(InvoiceResponseDto.from(invoice));
     }
@@ -238,6 +242,8 @@ public class BillingController {
         }
         InvoiceView invoice = billingApi.getInvoice(invoiceId);
         enforceCustomerOwnPolicyOnly(policyApi.getPolicy(invoice.policyNumber()), jwt, authentication);
+        // An agent asks only their own customers to pay (2026-10-27).
+        AgentBook.require(policyApi, invoice.policyNumber(), jwt, authentication);
         billingApi.requestPaymentForInvoice(invoiceId, request.payerRef(), idempotencyKey);
         return ResponseEntity.accepted().build();
     }

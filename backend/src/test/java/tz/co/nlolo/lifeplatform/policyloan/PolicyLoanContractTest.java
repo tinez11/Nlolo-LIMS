@@ -292,6 +292,12 @@ class PolicyLoanContractTest {
         return new Fixture(tenantId, policyNumber, applicantId);
     }
 
+    /** Since 2026-10-27 an agent acts only on their own book; the loan contract is staff's to prove. */
+    private static RequestPostProcessor staffOf(UUID tenantId) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+            .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
+    }
+
     private static RequestPostProcessor agentOf(UUID tenantId) {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
             .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
@@ -313,7 +319,7 @@ class PolicyLoanContractTest {
         Fixture fixture = issuePolicyWithCashValue("LOAN-CONTRACT-01", "1000000.00");
 
         mockMvc.perform(post("/policies/" + fixture.policyNumber() + "/loans")
-                .with(agentOf(fixture.tenantId()))
+                .with(staffOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(ORIGINATE_BODY))
             .andExpect(status().isAccepted())
@@ -339,7 +345,7 @@ class PolicyLoanContractTest {
         Fixture fixture = issuePolicyWithCashValue("LOAN-CONTRACT-02", "100000.00");
 
         mockMvc.perform(post("/policies/" + fixture.policyNumber() + "/loans")
-                .with(agentOf(fixture.tenantId()))
+                .with(staffOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(ORIGINATE_BODY))
             .andExpect(status().isConflict())
@@ -355,7 +361,7 @@ class PolicyLoanContractTest {
         // policyloan's LOAN_NOT_FOUND. The path segment still matches openapi-common's
         // PolicyNumberRef pattern, so the request half of the contract validates too.
         mockMvc.perform(post("/policies/NOSUCHPOLICY1/loans")
-                .with(agentOf(UUID.randomUUID()))
+                .with(staffOf(UUID.randomUUID()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(ORIGINATE_BODY))
             .andExpect(status().isNotFound())
@@ -377,7 +383,7 @@ class PolicyLoanContractTest {
     void everyLoanEndpointRejectsACustomerActingOnSomeoneElsesPolicyWith403() throws Exception {
         Fixture fixture = issuePolicyWithCashValue("LOAN-CONTRACT-03", "1000000.00");
         String originateResponse = mockMvc.perform(post("/policies/" + fixture.policyNumber() + "/loans")
-                .with(agentOf(fixture.tenantId()))
+                .with(staffOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(ORIGINATE_BODY))
             .andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString();
@@ -433,7 +439,7 @@ class PolicyLoanContractTest {
                 .content(ORIGINATE_BODY))
             .andExpect(status().isForbidden());
         String originateResponse = mockMvc.perform(post("/policies/" + fixture.policyNumber() + "/loans")
-                .with(agentOf(fixture.tenantId()))
+                .with(staffOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(ORIGINATE_BODY))
             .andExpect(status().isAccepted())
@@ -472,13 +478,13 @@ class PolicyLoanContractTest {
     void listLoansMatchesOpenApiContract() throws Exception {
         Fixture fixture = issuePolicyWithCashValue("LOAN-CONTRACT-05", "1000000.00");
         mockMvc.perform(post("/policies/" + fixture.policyNumber() + "/loans")
-                .with(agentOf(fixture.tenantId()))
+                .with(staffOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(ORIGINATE_BODY))
             .andExpect(status().isAccepted());
 
         mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/loans")
-                .with(agentOf(fixture.tenantId())))
+                .with(staffOf(fixture.tenantId())))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.length()").value(1))
@@ -492,7 +498,7 @@ class PolicyLoanContractTest {
     void getLoanMatchesOpenApiContractAndRendersTheSameAmountAsOriginate() throws Exception {
         Fixture fixture = issuePolicyWithCashValue("LOAN-CONTRACT-06", "1000000.00");
         String originateResponse = mockMvc.perform(post("/policies/" + fixture.policyNumber() + "/loans")
-                .with(agentOf(fixture.tenantId()))
+                .with(staffOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(ORIGINATE_BODY))
             .andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString();
@@ -503,7 +509,7 @@ class PolicyLoanContractTest {
         // back out of NUMERIC(19,2). See this class's scale note -- a scale-2 request amount is
         // what makes these two renderings comparable at all.
         mockMvc.perform(get("/loans/" + loanId)
-                .with(agentOf(fixture.tenantId())))
+                .with(staffOf(fixture.tenantId())))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.loanId").value(loanId.toString()))
@@ -530,7 +536,7 @@ class PolicyLoanContractTest {
     void recordRepaymentIsRejectedBeforeDisbursementAndAcceptedAfterIt() throws Exception {
         Fixture fixture = issuePolicyWithCashValue("LOAN-CONTRACT-07", "1000000.00");
         String originateResponse = mockMvc.perform(post("/policies/" + fixture.policyNumber() + "/loans")
-                .with(agentOf(fixture.tenantId()))
+                .with(staffOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(ORIGINATE_BODY))
             .andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString();
@@ -541,7 +547,7 @@ class PolicyLoanContractTest {
             """;
 
         mockMvc.perform(post("/loans/" + loanId + "/repayments")
-                .with(agentOf(fixture.tenantId()))
+                .with(staffOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(repaymentBody))
             .andExpect(status().isConflict())
@@ -561,7 +567,7 @@ class PolicyLoanContractTest {
         }
 
         mockMvc.perform(post("/loans/" + loanId + "/repayments")
-                .with(agentOf(fixture.tenantId()))
+                .with(staffOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(repaymentBody))
             .andExpect(status().isAccepted())
@@ -646,7 +652,7 @@ class PolicyLoanContractTest {
         Fixture fixture = issuePolicyWithCashValue("LOAN-CONTRACT-FL", "1000000.00");
 
         String originateResponse = mockMvc.perform(post("/policies/" + fixture.policyNumber() + "/loans")
-                .with(agentOf(fixture.tenantId()))
+                .with(staffOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"requestedAmount":{"amount":"200000.00","currencyCode":"TZS"},"payeeRef":"MPESA-0712345678"}

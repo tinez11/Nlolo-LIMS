@@ -1,4 +1,5 @@
 import type { ApprovalRow } from '@/api/approvals';
+import { fromList } from '@/lib/returnCrumbs';
 
 const policy = (row: ApprovalRow, tab?: string) =>
   row.policyNumber
@@ -13,7 +14,7 @@ const id = (row: ApprovalRow) => encodeURIComponent(row.reference);
  */
 const LINKS: Record<string, (row: ApprovalRow) => string | null> = {
   'bank-transfer': () => '/staff/bank-transfers',
-  receipt: (r) => `/staff/receipts/${id(r)}`,
+  receipt: (r) => `/staff/receipts/${id(r)}?from=approvals`,
   'payout-review': (r) => `/staff/payouts/${id(r)}`,
   'payout-approval': (r) => `/staff/payouts/${id(r)}`,
   'payment-run': (r) => `/staff/payment-runs/${id(r)}`,
@@ -39,6 +40,8 @@ const LINKS: Record<string, (row: ApprovalRow) => string | null> = {
   'period-reopen': () => '/staff/periods',
 };
 
+/** Opened from the inbox, so the record leads back to it (2026-10-27). */
 export function approvalLink(kind: string, row: ApprovalRow): string | null {
-  return LINKS[kind]?.(row) ?? null;
+  const to = LINKS[kind]?.(row) ?? null;
+  return to === null || to.includes('from=') ? to : fromList(to, 'approvals');
 }

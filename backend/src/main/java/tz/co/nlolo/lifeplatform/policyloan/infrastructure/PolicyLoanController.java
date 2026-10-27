@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.policyloan.infrastructure;
 
+import tz.co.nlolo.lifeplatform.policy.api.AgentBook;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
 import tz.co.nlolo.lifeplatform.policyloan.api.LoanView;
@@ -52,6 +53,7 @@ public class PolicyLoanController {
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         // Idempotency-Key accepted, not enforced (Global Constraints).
         enforceCustomerOwnPolicyOnly(policyNumber, jwt, authentication);
+        AgentBook.require(policyApi, policyNumber, jwt, authentication);
         LoanView loan = policyLoanApi.originateLoan(policyNumber, new BigDecimal(request.requestedAmount().amount()),
             request.requestedAmount().currencyCode(), request.payeeRef(), jwt.getSubject());
         // 202, not 200/201: openapi-policyloan.yaml describes this as "Loan reservation
@@ -63,6 +65,7 @@ public class PolicyLoanController {
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('accounts.view')")
     public ResponseEntity<List<LoanResponseDto>> listLoans(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         enforceCustomerOwnPolicyOnly(policyNumber, jwt, authentication);
+        AgentBook.require(policyApi, policyNumber, jwt, authentication);
         return ResponseEntity.ok(policyLoanApi.listLoansForPolicy(policyNumber).stream().map(LoanResponseDto::from).toList());
     }
 
@@ -101,6 +104,7 @@ public class PolicyLoanController {
     public ResponseEntity<LoanResponseDto> getLoan(@PathVariable UUID loanId, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         LoanView loan = policyLoanApi.getLoan(loanId);
         enforceCustomerOwnPolicyOnly(loan.policyNumber(), jwt, authentication);
+        AgentBook.require(policyApi, loan.policyNumber(), jwt, authentication);
         return ResponseEntity.ok(LoanResponseDto.from(loan));
     }
 
@@ -111,6 +115,7 @@ public class PolicyLoanController {
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         LoanView existing = policyLoanApi.getLoan(loanId);
         enforceCustomerOwnPolicyOnly(existing.policyNumber(), jwt, authentication);
+        AgentBook.require(policyApi, existing.policyNumber(), jwt, authentication);
         LoanView loan = policyLoanApi.recordRepayment(loanId, new BigDecimal(request.amount().amount()), request.amount().currencyCode(),
             request.paymentReference(), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(LoanResponseDto.from(loan));

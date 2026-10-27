@@ -304,7 +304,7 @@ export function FieldReceiptsPage() {
  * receipt it closes once a second person confirms the money.
  */
 function receiptLink(r: FieldReceiptView): string {
-  const params = new URLSearchParams({ method: 'CASH', fieldReceipt: r.receiptId ?? '' });
+  const params = new URLSearchParams({ method: 'CASH', fieldReceipt: r.receiptId ?? '', from: 'field-receipts' });
   if (r.policyNumber) params.set('policy', r.policyNumber);
   if (r.amount?.amount) params.set('amount', r.amount.amount);
   return '/staff/receipts/new?' + params.toString();

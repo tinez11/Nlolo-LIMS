@@ -15,6 +15,7 @@ import { formatInstant } from '@/lib/dates';
 import { useYearEndStore } from '@/store/yearEndStore';
 import { CLOSE_STATUS_LABEL, canDecideClose, money, resultLabel } from './yearEnd';
 import { YearEndFigures } from './YearEndFigures';
+import { useReturnCrumbs } from '@/lib/returnCrumbs';
 import { StaffName } from '@/components/StaffName';
 
 /**
@@ -39,12 +40,15 @@ export function YearEndClosePage() {
 }
 
 function Close({ close: c }: { close: YearEndCloseView }) {
+  // Back to the list it was opened from -- Approvals, Payments -- when it was (2026-10-27).
+  const crumbs = useReturnCrumbs([{ label: 'Year-end close', to: '/staff/year-end' }]);
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const approver = can('ifrs17.approve');
   return (
     <>
       <PageHeader
+        breadcrumb={crumbs}
         title={`Close of ${c.year}`}
         description={`${CLOSE_STATUS_LABEL[c.status ?? ''] ?? c.status} · ${resultLabel(c.profit)} · dividends ${money(c.dividends)}`}
       />

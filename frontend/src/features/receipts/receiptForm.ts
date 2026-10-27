@@ -72,3 +72,23 @@ export function toApiRequest(values: ReceiptFormValues, currency: string): Recor
     fieldReceiptId: values.fieldReceiptId || null,
   };
 }
+
+/**
+ * Where a receipt was reached from, so its pages lead back there (2026-10-27): the agent's field receipts, the policy
+ * it pays, or the payments register. Before this both receipt pages pointed at Payments whatever page you had come
+ * from -- a client's policy, most often.
+ */
+export function receiptOrigin(from: string | null, policyNumber: string | null | undefined) {
+  const lists: Record<string, { label: string; to: string }> = {
+    'field-receipts': { label: 'Field receipts', to: '/staff/field-receipts' },
+    payments: { label: 'Payments', to: '/staff/payments' },
+    approvals: { label: 'Approvals', to: '/staff/approvals' },
+  };
+  const list = from ? lists[from] : undefined;
+  if (list) return { crumbs: [list], back: list.to };
+  if (policyNumber) {
+    const policy = `/staff/policies/${encodeURIComponent(policyNumber)}?tab=billing`;
+    return { crumbs: [{ label: 'Policies', to: '/staff/policies' }, { label: policyNumber, to: policy }], back: policy };
+  }
+  return { crumbs: [{ label: 'Payments', to: '/staff/payments' }], back: '/staff/payments' };
+}

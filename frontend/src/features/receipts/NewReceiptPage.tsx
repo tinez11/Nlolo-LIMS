@@ -16,7 +16,15 @@ import { formatDate } from '@/lib/dates';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { formatMoney } from '@/lib/money';
 import { useReceiptStore } from '@/store/receiptStore';
-import { blankReceiptForm, methodOf, RECEIPT_METHODS, receiptFormSchema, toApiRequest, type ReceiptFormValues } from './receiptForm';
+import {
+  blankReceiptForm,
+  methodOf,
+  RECEIPT_METHODS,
+  receiptFormSchema,
+  receiptOrigin,
+  toApiRequest,
+  type ReceiptFormValues,
+} from './receiptForm';
 
 /** Invoices a receipt can still pay: not paid, not waived. */
 const OPEN = new Set(['DUE', 'PARTIALLY_PAID', 'IN_GRACE', 'OVERDUE']);
@@ -95,16 +103,18 @@ export function NewReceiptPage() {
   }, [lookedUp, prefill.invoiceId, setValue]);
 
   const invoice = invoices?.find((i) => i.invoiceId === invoiceId) ?? null;
+  const from = params.get('from');
+  const origin = receiptOrigin(from, prefill.policyNumber || null);
 
   async function onSubmit(values: ReceiptFormValues) {
     const saved = await record(toApiRequest(values, invoice ? owed(invoice).currencyCode : 'TZS'));
-    if (saved) navigate(`/staff/receipts/${saved.receiptId}`);
+    if (saved) navigate(`/staff/receipts/${saved.receiptId}${from ? `?from=${encodeURIComponent(from)}` : ''}`);
   }
 
   return (
     <>
       <PageHeader
-        breadcrumb={[{ label: 'Payments', to: '/staff/payments' }]}
+        breadcrumb={origin.crumbs}
         title="Record a receipt"
         description="Premium paid by cash, bank deposit, cheque, Lipa number or TANQR. It pays the invoice once a second finance person confirms it."
       />
@@ -192,7 +202,7 @@ export function NewReceiptPage() {
               Record receipt
             </Button>
             <Button asChild variant="ghost">
-              <Link to="/staff/payments">Cancel</Link>
+              <Link to={origin.back}>Cancel</Link>
             </Button>
           </div>
         </form>

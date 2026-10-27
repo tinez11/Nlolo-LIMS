@@ -1,4 +1,5 @@
 import type { PaymentRecord } from '@/api/payments';
+import { fromList } from '@/lib/returnCrumbs';
 import { humanizeStatus } from '@/lib/status';
 
 /**
@@ -60,9 +61,9 @@ export function methodWords(method: string): string {
  */
 export function paymentLink(p: PaymentRecord): string | null {
   // A receipt recorded by hand has its own page: what came in, who recorded it, and its confirmation.
-  if (p.direction === 'IN' && p.method !== 'MOBILE_MONEY') return `/staff/receipts/${encodeURIComponent(p.id)}`;
+  if (p.direction === 'IN' && p.method !== 'MOBILE_MONEY') return `/staff/receipts/${encodeURIComponent(p.id)}?from=payments`;
   if (p.purpose === 'CLAIM_SETTLEMENT') return `/staff/claims/${encodeURIComponent(p.sourceRef)}`;
-  if (INSTALMENT_PURPOSES.has(p.purpose)) return `/staff/payouts/${encodeURIComponent(p.sourceRef)}`;
+  if (INSTALMENT_PURPOSES.has(p.purpose)) return fromList(`/staff/payouts/${encodeURIComponent(p.sourceRef)}`, 'payments');
   if (p.policyNumber) return `/staff/policies/${encodeURIComponent(p.policyNumber)}`;
   return null;
 }

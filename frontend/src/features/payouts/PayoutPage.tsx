@@ -30,6 +30,7 @@ import {
   type PayoutReviewValues,
 } from './payoutReviewForm';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { useReturnCrumbs } from '@/lib/returnCrumbs';
 import { StaffName } from '@/components/StaffName';
 
 const BREADCRUMB = [{ label: 'Payouts', to: '/staff/payouts' }];
@@ -56,6 +57,8 @@ const KIND_LABEL: Record<PayoutKind, string> = {
  */
 export function PayoutPage() {
   const { instalmentId = '' } = useParams();
+  // Back to the list it was opened from -- Approvals, Payments -- when it was (2026-10-27).
+  const crumbs = useReturnCrumbs(BREADCRUMB);
   const detail = useBenefitPayoutStore((s) => s.instalment[instalmentId]);
   const load = useBenefitPayoutStore((s) => s.loadInstalment);
 
@@ -70,7 +73,7 @@ export function PayoutPage() {
       <>
         {/* The bar renders on the error path too, so a record that fails to load keeps its
             heading and its way out. */}
-        <PageHeader breadcrumb={BREADCRUMB} title="Payout" />
+        <PageHeader breadcrumb={crumbs} title="Payout" />
         <div className="px-6 pt-6">
           <ErrorPanel error={detail.error} onRetry={() => void load(instalmentId)} />
         </div>
@@ -84,7 +87,7 @@ export function PayoutPage() {
   return (
     <>
       <PageHeader
-        breadcrumb={BREADCRUMB}
+        breadcrumb={crumbs}
         title={KIND_LABEL[payout.kind]}
         description={
           <Link to={`/staff/policies/${encodeURIComponent(payout.policyNumber)}`} className="font-mono text-xs underline underline-offset-2">

@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.policy.infrastructure;
 
+import tz.co.nlolo.lifeplatform.policy.api.AgentBook;
 import tz.co.nlolo.lifeplatform.TokenNames;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
@@ -456,7 +457,9 @@ public class PolicyController {
     @PostMapping("/policies/{policyNumber}/endorsements")
     @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('policies.service')")
     public ResponseEntity<PolicyResponseDto> applyEndorsement(@PathVariable String policyNumber, @Valid @RequestBody EndorsementRequestDto request,
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey, @AuthenticationPrincipal Jwt jwt) {
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey, @AuthenticationPrincipal Jwt jwt,
+            Authentication authentication) {
+        AgentBook.require(policyApi, policyNumber, jwt, authentication);
         // Idempotency-Key accepted, not enforced (Global Constraints).
         PolicyView view = policyApi.applyEndorsement(policyNumber,
             new PolicyApi.EndorsementInput(request.endorsementType(), request.effectiveDate(), request.changes()), jwt.getSubject());
@@ -470,6 +473,7 @@ public class PolicyController {
     public ResponseEntity<Void> replaceBeneficiaries(@PathVariable String policyNumber,
             @Valid @RequestBody List<BeneficiaryInputDto> beneficiaries, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         enforceCustomerOwnPolicyOnly(policyApi.getPolicy(policyNumber), jwt, authentication);
+        AgentBook.require(policyApi, policyNumber, jwt, authentication);
         policyApi.replaceBeneficiaries(policyNumber, beneficiaries.stream().map(BeneficiaryInputDto::toApiInput).toList(), jwt.getSubject());
         return ResponseEntity.ok().build();
     }
@@ -522,6 +526,7 @@ public class PolicyController {
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('policies.view')")
     public ResponseEntity<Map<String, Object>> getSurrenderValue(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         enforceCustomerOwnPolicyOnly(policyApi.getPolicy(policyNumber), jwt, authentication);
+        AgentBook.require(policyApi, policyNumber, jwt, authentication);
         SurrenderQuoteView quote = policyApi.quoteSurrenderValue(policyNumber);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("policyNumber", quote.policyNumber());
@@ -582,6 +587,7 @@ public class PolicyController {
             @RequestParam(required = false) LocalDate asOf,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         enforceCustomerOwnPolicyOnly(policyApi.getPolicy(policyNumber), jwt, authentication);
+        AgentBook.require(policyApi, policyNumber, jwt, authentication);
         return ResponseEntity.ok(CoverageStatusResponseDto.from(policyApi.getCoverageStatus(policyNumber, asOf)));
     }
 
@@ -645,7 +651,9 @@ public class PolicyController {
 
     @GetMapping("/policies/{policyNumber}/in-force")
     @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('policies.view')")
-    public ResponseEntity<Map<String, Boolean>> isInForce(@PathVariable String policyNumber, @RequestParam(required = false) LocalDate asOf) {
+    public ResponseEntity<Map<String, Boolean>> isInForce(@PathVariable String policyNumber, @RequestParam(required = false) LocalDate asOf,
+                                                          @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        AgentBook.require(policyApi, policyNumber, jwt, authentication);
         return ResponseEntity.ok(Map.of("inForce", policyApi.isPolicyInForce(policyNumber, asOf)));
     }
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import type { Receipt } from '@/api/receipts';
 import { can } from '@/auth/access';
@@ -21,9 +21,8 @@ import { formatDate, formatInstant } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useReceiptStore } from '@/store/receiptStore';
-import { methodOf } from './receiptForm';
+import { methodOf, receiptOrigin } from './receiptForm';
 
-const BREADCRUMB = [{ label: 'Payments', to: '/staff/payments' }];
 
 /**
  * One recorded receipt (2026-10-27): what came in, how, against which invoice, who recorded it -- and, for a second
@@ -33,6 +32,7 @@ export function ReceiptPage() {
   const { receiptId = '' } = useParams();
   const resource = useReceiptStore((s) => s.receipt[receiptId]);
   const load = useReceiptStore((s) => s.load);
+  const [params] = useSearchParams();
 
   useEffect(() => {
     void load(receiptId);
@@ -42,7 +42,7 @@ export function ReceiptPage() {
   if (!resource.data && resource.status === 'error' && resource.error) {
     return (
       <>
-        <PageHeader breadcrumb={BREADCRUMB} title="Receipt" />
+        <PageHeader breadcrumb={receiptOrigin(params.get('from'), null).crumbs} title="Receipt" />
         <div className="px-6">
           <ErrorPanel error={resource.error} onRetry={() => void load(receiptId)} />
         </div>
@@ -52,13 +52,13 @@ export function ReceiptPage() {
   const receipt = resource.data;
   if (!receipt) return null;
   const method = methodOf(receipt.method);
+  const origin = receiptOrigin(params.get('from'), receipt.policyNumber);
 
   return (
     <>
       <PageHeader
-        breadcrumb={BREADCRUMB}
+        breadcrumb={origin.crumbs}
         title={`${method?.label ?? receipt.method} receipt`}
-        description={receipt.policyNumber ?? undefined}
         status={<StatusBadge kind="receipt" value={receipt.status} />}
       />
       <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">

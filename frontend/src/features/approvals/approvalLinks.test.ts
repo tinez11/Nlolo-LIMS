@@ -12,16 +12,16 @@ const row = (over: Partial<ApprovalRow> = {}): ApprovalRow => ({
 
 describe('approvalLink', () => {
   it('sends an account withdrawal to its policy, on the account tab', () => {
-    expect(approvalLink('account-withdrawal', row())).toBe('/staff/policies/POL-1?tab=account');
+    expect(approvalLink('account-withdrawal', row())).toBe('/staff/policies/POL-1?tab=account&from=approvals');
   });
 
   it('sends a payout to its own page', () => {
-    expect(approvalLink('payout-approval', row({ reference: 'inst-9' }))).toBe('/staff/payouts/inst-9');
+    expect(approvalLink('payout-approval', row({ reference: 'inst-9' }))).toBe('/staff/payouts/inst-9?from=approvals');
   });
 
   it('sends a declaration to the product it declares for', () => {
     expect(approvalLink('rate-declaration', row({ reference: 'prod-7', policyNumber: null }))).toBe(
-      '/staff/products/prod-7',
+      '/staff/products/prod-7?from=approvals',
     );
   });
 

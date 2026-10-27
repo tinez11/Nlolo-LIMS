@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { formatInstant } from '@/lib/dates';
 import { useEngineStore } from '@/store/engineStore';
 import { FIGURE_LABEL, RUN_STATUS_LABEL, canAccept, canDecide, differenceLabel } from './enginePeriod';
+import { useReturnCrumbs } from '@/lib/returnCrumbs';
 import { StaffName } from '@/components/StaffName';
 
 const money = (n: number | null | undefined) =>
@@ -41,12 +42,15 @@ export function EngineRunPage() {
 }
 
 function Run({ run: r }: { run: EngineRunView }) {
+  // Back to the list it was opened from -- Approvals, Payments -- when it was (2026-10-27).
+  const crumbs = useReturnCrumbs([{ label: 'IFRS 17 engine', to: '/staff/ifrs17-engine' }]);
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const approver = can('ifrs17.approve');
   return (
     <>
       <PageHeader
+        breadcrumb={crumbs}
         title={`Engine run ${r.engineReference ?? ''}`.trim()}
         description={`${RUN_STATUS_LABEL[r.status] ?? r.status} · period ${r.period ?? '—'} · extract #${r.extractNumber ?? '—'}`}
       />

@@ -945,6 +945,18 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public boolean inAgentBook(String policyNumber, UUID agentPartyId) {
+        UUID agentOfRecord = findPolicyOrThrow(policyNumber, TenantContext.get()).getAgentOfRecordId();
+        return agentOfRecord != null && distributionApi.resolveAgentTeam(agentPartyId).contains(agentOfRecord);
+    }
+
+    @Override
+    public java.util.Optional<UUID> agentIdOf(UUID agentPartyId) {
+        return distributionApi.agentIdForParty(agentPartyId);
+    }
+
+    @Override
     public Page<PolicyView> searchPolicies(UUID policyholderPartyId, UUID relatedPartyId, PolicyStatus status,
                                             Set<UUID> agentOfRecordIds, String q, Pageable pageable) {
         return searchPolicies(policyholderPartyId, relatedPartyId, status, agentOfRecordIds, q, null, null, pageable);

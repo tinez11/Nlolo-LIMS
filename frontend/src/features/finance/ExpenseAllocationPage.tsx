@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { formatInstant } from '@/lib/dates';
 import { useExpenseAllocationStore } from '@/store/expenseAllocationStore';
 import { StaffName } from '@/components/StaffName';
+import { useReturnCrumbs } from '@/lib/returnCrumbs';
 import {
   ALLOCATION_STATUS_LABEL,
   CATEGORY_LABEL,
@@ -44,12 +45,15 @@ export function ExpenseAllocationPage() {
 }
 
 function Allocation({ allocation: a }: { allocation: ExpenseAllocationView }) {
+  // Back to the list it was opened from -- Approvals, Payments -- when it was (2026-10-27).
+  const crumbs = useReturnCrumbs([{ label: 'IFRS 17 engine', to: '/staff/ifrs17-engine' }]);
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const approver = can('ifrs17.approve');
   return (
     <>
       <PageHeader
+        breadcrumb={crumbs}
         title={`Expense allocation ${a.period}`}
         description={`${ALLOCATION_STATUS_LABEL[a.status] ?? a.status} · total ${money(a.total)} · pool ${money(a.pool)}`}
       />

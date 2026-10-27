@@ -54,9 +54,9 @@ describe('ApprovalsPage', () => {
     expect(within(withdrawals).getByText('2 waiting · 1 for you')).toBeInTheDocument();
     expect(within(withdrawals).getByText('Neema Service')).toBeInTheDocument();
     expect(within(withdrawals).getByRole('link', { name: 'Approve' })).toHaveAttribute(
-      'href', '/staff/policies/POL-1?tab=account',
+      'href', '/staff/policies/POL-1?tab=account&from=approvals',
     );
-    expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute('href', '/staff/payouts/i-1');
+    expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute('href', '/staff/payouts/i-1?from=approvals');
   });
 
   it("marks the viewer's own request as someone else's to sign, with no act offered", async () => {
@@ -65,7 +65,7 @@ describe('ApprovalsPage', () => {
     expect(within(withdrawals).getByText('You — someone else signs')).toBeInTheDocument();
     expect(within(withdrawals).getAllByRole('link', { name: 'Approve' })).toHaveLength(1);
     expect(within(withdrawals).getByRole('link', { name: 'Open' })).toHaveAttribute(
-      'href', '/staff/policies/POL-2?tab=account',
+      'href', '/staff/policies/POL-2?tab=account&from=approvals',
     );
   });
 

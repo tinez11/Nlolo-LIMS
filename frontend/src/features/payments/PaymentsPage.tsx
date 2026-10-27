@@ -206,7 +206,7 @@ export function PaymentsPage() {
         actions={
           can('collections.manage') ? (
             <Button asChild variant="primary">
-              <Link to="/staff/receipts/new">Record a receipt</Link>
+              <Link to="/staff/receipts/new?from=payments">Record a receipt</Link>
             </Button>
           ) : undefined
         }

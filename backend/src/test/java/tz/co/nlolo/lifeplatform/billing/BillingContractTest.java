@@ -162,16 +162,26 @@ class BillingContractTest {
             "db-migrations/billing/V11__premium_in_advance.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
-            "db-migrations/audit/V3__q4_2026_partitions.sql");
+            "db-migrations/audit/V3__q4_2026_partitions.sql",
+            // Real agents (2026-10-27): an agent acts only on their own book, so the agent calls here are an
+            // onboarded agent of record acting on their own policies.
+            "db-migrations/distribution/V1__create_distribution_schema.sql",
+            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
+            "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
+            "db-migrations/distribution/V6__commission_withholding.sql",
+            "db-migrations/distribution/V7__projection_policyholder.sql");
     }
 
     @Autowired private MockMvc mockMvc;
+    @Autowired private tz.co.nlolo.lifeplatform.party.api.PartyApi partyApi;
+    @Autowired private tz.co.nlolo.lifeplatform.distribution.api.DistributionApi distributionApi;
     @Autowired private FieldReceiptRepository fieldReceiptRepository;
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
 
-    private record Fixture(UUID tenantId, String policyNumber, UUID policyholderPartyId) {}
+    private record Fixture(UUID tenantId, String policyNumber, UUID policyholderPartyId, UUID agentId,
+                           UUID agentPartyId) {}
 
     /**
      * Full-HTTP fixture chain (register applicant -> publish product -> open underwriting case ->
@@ -232,6 +242,15 @@ class BillingContractTest {
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String caseId = JsonPath.read(caseResponse, "$.caseId");
 
+        TenantContext.set(tenantId);
+        var agentParty = partyApi.registerIndividual("Billing Contract Agent", java.time.LocalDate.of(1980, 1, 1),
+            "+255714" + String.format("%06d", Math.abs(productCode.hashCode() % 1000000)), null, "test-fixture");
+        partyApi.submitKycEvidence(agentParty.partyId(), tz.co.nlolo.lifeplatform.party.api.KycStatus.VERIFIED,
+            "doc-agent", "kyc-officer");
+        var agent = distributionApi.onboardAgent(new tz.co.nlolo.lifeplatform.distribution.api.DistributionApi.OnboardAgentRequest(
+            agentParty.partyId(), "LIC-" + productCode, java.time.LocalDate.now().plusYears(1), null), "staff-1");
+        TenantContext.clear();
+
         String policyResponse = mockMvc.perform(post("/policies/manual-issue")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
@@ -240,12 +259,12 @@ class BillingContractTest {
                     {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
                      "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
                      "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"premiumFrequency":"MONTHLY",
-                     "agentOfRecordId":null,"reasonForManualIssue":"Billing contract test issuance"}
-                    """.formatted(caseId, applicantId, productVersionId)))
+                     "agentOfRecordId":"%s","reasonForManualIssue":"Billing contract test issuance"}
+                    """.formatted(caseId, applicantId, productVersionId, agent.agentId())))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String policyNumber = JsonPath.read(policyResponse, "$.policyNumber");
 
-        return new Fixture(tenantId, policyNumber, applicantId);
+        return new Fixture(tenantId, policyNumber, applicantId, agent.agentId(), agentParty.partyId());
     }
 
 /**
@@ -265,6 +284,13 @@ class BillingContractTest {
     private static RequestPostProcessor agentOf(UUID tenantId) {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
             .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
+    }
+
+    /** The policy's own agent of record, signed in: their party on the token, as the agents realm issues it. */
+    private static RequestPostProcessor agentOf(Fixture fixture) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+            .jwt(builder -> builder.claim("tenant_id", fixture.tenantId().toString())
+                .claim("party_id", fixture.agentPartyId().toString()));
     }
 
     private static RequestPostProcessor customerOf(UUID tenantId, UUID partyId) {
@@ -431,9 +457,9 @@ class BillingContractTest {
     // --- GET /field-receipts (the reconciliation queue) ---------------------------------------
 
     /** Captures a receipt the way the agent field app does, and returns its id. */
-    private UUID captureReceipt(UUID tenantId, String policyNumber, String amount) throws Exception {
-        String body = mockMvc.perform(post("/agents/" + UUID.randomUUID() + "/field-receipts")
-                .with(agentOf(tenantId))
+    private UUID captureReceipt(Fixture fixture, String policyNumber, String amount) throws Exception {
+        String body = mockMvc.perform(post("/agents/" + fixture.agentId() + "/field-receipts")
+                .with(agentOf(fixture))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"policyNumber\":\"" + policyNumber + "\",\"amount\":{\"amount\":\"" + amount
                     + "\",\"currencyCode\":\"TZS\"},\"clientIdempotencyKey\":\"" + UUID.randomUUID()
@@ -456,7 +482,7 @@ class BillingContractTest {
     @Test
     void theReconciliationQueueMatchesTheSpecAndShowsUnmatchedCash() throws Exception {
         Fixture fixture = issuePolicy("BILLING-RECEIPTS-01");
-        UUID receiptId = captureReceipt(fixture.tenantId(), fixture.policyNumber(), "27500.00");
+        UUID receiptId = captureReceipt(fixture, fixture.policyNumber(), "27500.00");
 
         mockMvc.perform(get("/field-receipts").with(financeOf(fixture.tenantId())))
             .andExpect(status().isOk())
@@ -489,8 +515,8 @@ class BillingContractTest {
     @Test
     void theReconciliationQueueCanAnswerTheOverdueAlertsOwnQuestion() throws Exception {
         Fixture fixture = issuePolicy("BILLING-RECEIPTS-02");
-        UUID healthy = captureReceipt(fixture.tenantId(), fixture.policyNumber(), "1000.00");
-        UUID overdue = captureReceipt(fixture.tenantId(), fixture.policyNumber(), "2000.00");
+        UUID healthy = captureReceipt(fixture, fixture.policyNumber(), "1000.00");
+        UUID overdue = captureReceipt(fixture, fixture.policyNumber(), "2000.00");
 
         // Flipped directly, exactly as billing.sweep_billing_state() would on an SLA breach --
         // the SQL half is proven separately by BillingSweepPsqlTest.
@@ -532,7 +558,7 @@ class BillingContractTest {
     @Test
     void theReconciliationQueueNeverShowsAnotherTenantsCash() throws Exception {
         Fixture fixture = issuePolicy("BILLING-RECEIPTS-03");
-        captureReceipt(fixture.tenantId(), fixture.policyNumber(), "9000.00");
+        captureReceipt(fixture, fixture.policyNumber(), "9000.00");
 
         mockMvc.perform(get("/field-receipts").with(financeOf(UUID.randomUUID())))
             .andExpect(status().isOk())
@@ -654,7 +680,7 @@ class BillingContractTest {
         Fixture fixture = issuePolicy("BILLING-CONTRACT-NEXTDUE-01");
 
         mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices/next-due")
-                .with(agentOf(fixture.tenantId())))
+                .with(agentOf(fixture)))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.policyNumber").value(fixture.policyNumber()))
@@ -681,7 +707,7 @@ class BillingContractTest {
         }
 
         mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices/next-due")
-                .with(agentOf(fixture.tenantId())))
+                .with(agentOf(fixture)))
             .andExpect(status().isNotFound())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.errorCode").value("INVOICE_NOT_FOUND"));
@@ -721,7 +747,7 @@ class BillingContractTest {
         String invoiceId = JsonPath.read(listResponse, "$[0].invoiceId");
 
         mockMvc.perform(post("/invoices/" + invoiceId + "/waiver")
-                .with(agentOf(fixture.tenantId()))
+                .with(agentOf(fixture))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"reason":"Contract test waiver reason"}
@@ -799,7 +825,7 @@ class BillingContractTest {
         String invoiceId = JsonPath.read(listResponse, "$[0].invoiceId");
 
         mockMvc.perform(post("/invoices/" + invoiceId + "/payment-request")
-                .with(agentOf(fixture.tenantId()))
+                .with(agentOf(fixture))
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Idempotency-Key", "contract-payreq-02-attempt-1")
                 .content("""
@@ -963,11 +989,11 @@ class BillingContractTest {
     @Test
     void captureFieldReceiptMatchesOpenApiContractAndPersistsPendingReconciliation() throws Exception {
         Fixture fixture = issuePolicy("BILLING-CONTRACT-RECEIPT-01");
-        UUID agentId = UUID.randomUUID();
+        UUID agentId = fixture.agentId();
         String idempotencyKey = "contract-key-" + UUID.randomUUID();
 
         String response = mockMvc.perform(post("/agents/" + agentId + "/field-receipts")
-                .with(agentOf(fixture.tenantId()))
+                .with(agentOf(fixture))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"policyNumber":"%s","amount":{"amount":"15000.00","currencyCode":"TZS"},
@@ -1012,7 +1038,7 @@ class BillingContractTest {
     @Test
     void captureFieldReceiptIsIdempotentOnARepeatedClientKey() throws Exception {
         Fixture fixture = issuePolicy("BILLING-CONTRACT-RECEIPT-02");
-        UUID agentId = UUID.randomUUID();
+        UUID agentId = fixture.agentId();
         String idempotencyKey = "contract-key-" + UUID.randomUUID();
         String body = """
             {"policyNumber":"%s","amount":{"amount":"15000.00","currencyCode":"TZS"},
@@ -1020,14 +1046,14 @@ class BillingContractTest {
             """.formatted(fixture.policyNumber(), idempotencyKey);
 
         String firstResponse = mockMvc.perform(post("/agents/" + agentId + "/field-receipts")
-                .with(agentOf(fixture.tenantId()))
+                .with(agentOf(fixture))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
             .andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString();
         String firstReceiptId = JsonPath.read(firstResponse, "$.receiptId");
 
         String secondResponse = mockMvc.perform(post("/agents/" + agentId + "/field-receipts")
-                .with(agentOf(fixture.tenantId()))
+                .with(agentOf(fixture))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
             .andExpect(status().isAccepted())
