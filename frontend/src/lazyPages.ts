@@ -212,6 +212,9 @@ export const ManualJournalDetailPage = lazy(() =>
 export const JournalTemplatesPage = lazy(() =>
   import('@/features/finance/JournalTemplatesPage').then((m) => ({ default: m.JournalTemplatesPage })),
 );
+export const MonthEndPage = lazy(() =>
+  import('@/features/finance/MonthEndPage').then((m) => ({ default: m.MonthEndPage })),
+);
 export const EnginePage = lazy(() =>
   import('@/features/finance/EnginePage').then((m) => ({ default: m.EnginePage })),
 );

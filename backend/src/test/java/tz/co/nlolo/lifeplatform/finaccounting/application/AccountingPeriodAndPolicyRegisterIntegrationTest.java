@@ -16,6 +16,7 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi;
 import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingValidationException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalSource;
+import tz.co.nlolo.lifeplatform.finaccounting.api.MonthEndView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PeriodStateException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PeriodStatus;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PolicyElectionInput;
@@ -131,6 +132,7 @@ class AccountingPeriodAndPolicyRegisterIntegrationTest {
     @Autowired private FinaccountingApi api;
     @Autowired private FinaccountingApiImpl impl;
     @Autowired private ChartOfAccountSeeder seeder;
+    @Autowired private MonthEnd monthEnd;
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
@@ -172,6 +174,44 @@ class AccountingPeriodAndPolicyRegisterIntegrationTest {
         post(tenant, "clr-out", "2026-07", "1140", "9110", "500.00", JournalSource.SYSTEM);
         as(tenant);
         assertThat(api.lockPeriod("2026-07", "alice").status()).isEqualTo(PeriodStatus.LOCKED);
+    }
+
+    /** The month-end timeline (2026-10-27): the guide's eight steps, read from what each step leaves behind. */
+    @Test
+    void theMonthEndTimelineFollowsTheMonthFromOpenToLocked() {
+        UUID tenant = tenantWithChart();
+        post(tenant, "me-clr", "2026-05", "9110", "1140", "500.00");
+
+        as(tenant);
+        MonthEndView open = monthEnd.of("2026-05");
+        assertThat(open.steps()).extracting(MonthEndView.Step::key).containsExactly(
+            "queue", "journals", "closing", "allocation", "extract", "results", "reconcile", "lock");
+        assertThat(open.steps()).extracting(MonthEndView.Step::state).containsExactly(
+            "DONE", "DONE", "TODO", "TODO", "TODO", "TODO", "TODO", "TODO");
+        assertThat(open.current()).isEqualTo(3);
+
+        api.startClosing("2026-05", "alice");
+        MonthEndView closing = monthEnd.of("2026-05");
+        assertThat(closing.steps().get(2)).satisfies(s -> {
+            assertThat(s.state()).isEqualTo("DONE");
+            assertThat(s.by()).isEqualTo("alice");
+            assertThat(s.at()).isNotNull();
+        });
+        assertThat(closing.current()).isEqualTo(4);
+        // The lock's own words: what still stops it.
+        assertThat(closing.blockers()).containsExactly("Clearing account 9110 holds 500.00 TZS in 2026-05; clearing"
+            + " accounts must return to zero before the period locks");
+        assertThat(closing.steps().get(7).detail()).startsWith("Not yet: Clearing account 9110");
+
+        post(tenant, "me-clr-out", "2026-05", "1140", "9110", "500.00", JournalSource.SYSTEM);
+        as(tenant);
+        assertThat(monthEnd.of("2026-05").steps().get(7).detail()).isEqualTo(
+            "Nothing stops the lock. Lock it in Accounting periods.");
+        api.lockPeriod("2026-05", "alice");
+        MonthEndView locked = monthEnd.of("2026-05");
+        assertThat(locked.status()).isEqualTo(PeriodStatus.LOCKED);
+        assertThat(locked.steps().get(7).state()).isEqualTo("DONE");
+        assertThat(locked.blockers()).isEmpty();
     }
 
     @Test

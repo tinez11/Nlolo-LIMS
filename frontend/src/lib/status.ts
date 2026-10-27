@@ -177,6 +177,13 @@ export const STATUS_MAPS = {
     CLOSING: 'warning',
     LOCKED: 'neutral',
   },
+  // finaccounting MonthEndView.Step.state (2026-10-27): one step of a month's close.
+  monthEndStep: {
+    DONE: 'success',
+    WAITING: 'pending',
+    TODO: 'neutral',
+    BLOCKED: 'danger',
+  },
   policyElection: {
     PROPOSED: 'pending',
     APPROVED: 'active',

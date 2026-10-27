@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from 'react-oidc-context';
+import { Link } from 'react-router-dom';
 import type { AccountingPeriodView } from '@/api/types';
 import { readIdentity } from '@/auth/claims';
 import { ConfirmAct } from '@/components/ConfirmAct';
@@ -131,6 +132,13 @@ function PeriodRow({ view, viewerSubject }: { view: AccountingPeriodView; viewer
             <>Reopened by <StaffName subject={view.reopenedBy} />: {view.reopenReason ?? ''}</>
           )}
         </span>
+        {/* Where the month's close stands, step by step (2026-10-27). */}
+        <Link
+          className="ml-auto text-xs underline hover:text-foreground"
+          to={`/staff/month-end?period=${encodeURIComponent(view.period)}`}
+        >
+          Month-end steps
+        </Link>
       </div>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
 

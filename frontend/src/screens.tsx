@@ -38,6 +38,7 @@ import {
   ListChecks,
   CircleMinus,
   Calculator,
+  ListOrdered,
   Inbox,
   Coins,
   NotebookPen,
@@ -139,6 +140,7 @@ import {
   ManualJournalEditorPage,
   ManualJournalDetailPage,
   JournalTemplatesPage,
+  MonthEndPage,
   EnginePage,
   EngineRunPage,
   ExpenseAllocationPage,
@@ -382,7 +384,7 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   'unposted-events': ['ledger.view'], 'manual-journals': ['ledger.view'], 'manual-journals/new': ['ledger.manage'],
   'manual-journals/:id': ['ledger.view'], 'manual-journals/:id/edit': ['ledger.manage'],
   'journal-templates': ['ledger.view'],
-  'ifrs17-engine': ['ifrs17.view'], 'ifrs17-engine/runs/:runId': ['ifrs17.view'],
+  'month-end': ['ledger.view', 'ifrs17.view'], 'ifrs17-engine': ['ifrs17.view'], 'ifrs17-engine/runs/:runId': ['ifrs17.view'],
   'ifrs17-engine/allocations/:allocationId': ['ifrs17.view'], 'year-end': ['ifrs17.view'],
   'year-end/closes/:closeId': ['ifrs17.view'],
   treaties: ['reinsurance.view'], 'treaties/new': ['reinsurance.manage'], 'treaties/:treatyId': ['reinsurance.view'],
@@ -726,6 +728,12 @@ const STAFF_SCREENS: Screen[] = [
     path: 'journal-templates',
     element: <JournalTemplatesPage />,
     reach: { group: 'ledger', label: 'Journal templates', icon: Files },
+  },
+  // Where a month's close stands (2026-10-27): the guide's eight steps, each opening the page that does it.
+  {
+    path: 'month-end',
+    element: <MonthEndPage />,
+    reach: { group: 'valuation', label: 'Month-end close', icon: ListOrdered },
   },
   // IFRS 17 I5a: month-end steps 6 and 7 -- the engine's extract, its results through 9160, the reconciliation.
   {
