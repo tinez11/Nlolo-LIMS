@@ -1,0 +1,88 @@
+openapi: 3.1.0
+info:
+  title: Approvals API
+  version: "0.1.0-draft"
+  description: >
+    What waits for the viewer's signature, across the platform (2026-10-27). Each module that holds an approval reports
+    its own rows; the answer keeps only the kinds the viewer's permissions let them act on. A kind whose module could
+    not be read is marked unreadable and counted as nothing -- never as zero waiting.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /approvals:
+    get:
+      summary: Everything waiting for the viewer's signature (any active staff member)
+      description: >
+        Groups appear only for kinds the viewer holds the acting permission for. Rows are the oldest waiting, at most 25
+        a group; `total` is the whole queue. On a two-person kind the viewer's own requests are listed with `yours` and
+        left out of `actionable`.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalsView' }
+        '403': { $ref: '#/components/responses/Problem' }
+components:
+  responses:
+    Problem:
+      description: An error, as RFC 7807 problem details
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  schemas:
+    ApprovalsView:
+      type: object
+      required: [actionable, groups]
+      properties:
+        actionable:
+          type: integer
+          minimum: 0
+          description: How many the viewer can act on now, across every group.
+        groups:
+          type: array
+          items: { $ref: '#/components/schemas/ApprovalGroup' }
+    ApprovalGroup:
+      type: object
+      required: [kind, label, act, total, actionable, unreadable, rows]
+      properties:
+        kind:
+          type: string
+          description: Stable key the console routes on, e.g. account-withdrawal.
+        label: { type: string }
+        act:
+          type: string
+          description: What acting on one means, as a verb.
+        total: { type: integer, minimum: 0 }
+        actionable: { type: integer, minimum: 0 }
+        unreadable: { type: boolean }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/ApprovalRow' }
+    ApprovalRow:
+      type: object
+      required: [reference, summary, yours]
+      properties:
+        reference:
+          type: string
+          description: The row's own id (a product id for a declaration, a period for a reopening).
+        policyNumber: { type: [string, 'null'] }
+        summary: { type: string }
+        amount:
+          anyOf:
+            - type: 'null'
+            - { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        requestedBy:
+          type: [string, 'null']
+          description: The asker's subject; null for a queue nobody asked for.
+        requestedByName:
+          type: [string, 'null']
+          description: The asker's name, where the platform knows them.
+        requestedAt:
+          type: [string, 'null']
+          format: date-time
+        yours:
+          type: boolean
+          description: The viewer asked for this, so somebody else must sign it.

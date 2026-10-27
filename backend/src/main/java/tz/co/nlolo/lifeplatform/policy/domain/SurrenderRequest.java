@@ -116,5 +116,6 @@ public class SurrenderRequest {
     public String getQuotedValueCurrency() { return quotedValueCurrency; }
     public String getPayeeRef() { return payeeRef; }
     public String getRequestedBy() { return requestedBy; }
+    public Instant getRequestedAt() { return requestedAt; }
     public String getApprovedBy() { return approvedBy; }
 }

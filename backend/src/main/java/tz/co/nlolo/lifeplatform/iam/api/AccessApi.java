@@ -29,4 +29,11 @@ public interface AccessApi {
     }
 
     AccessView accessOf(StaffIdentity identity);
+
+    /**
+     * The names of the staff members behind these token subjects, in this tenant (2026-10-27). Screens used to print
+     * "proposed by 1bccfb0a-…"; a subject the platform has not seen yet (or one that is not a staff member's) is
+     * simply absent from the answer, and the caller keeps the subject.
+     */
+    java.util.Map<String, String> displayNames(java.util.Collection<String> subjects);
 }

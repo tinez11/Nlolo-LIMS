@@ -13,6 +13,9 @@ import java.util.UUID;
 public interface DeclarationRepository extends JpaRepository<Declaration, UUID> {
     List<Declaration> findByProductIdOrderByValuationDateDescProposedAtDesc(UUID productId);
 
+    /** Every declaration in one status, across the tenant's products, oldest first: the approvals queue (2026-10-27). */
+    List<Declaration> findByStatusOrderByProposedAtAsc(String status);
+
     /** The latest APPROVED declaration on or before a date -- the one an exit is valued against. */
     @Query(value = "SELECT * FROM bonus.declaration WHERE product_id = :productId AND status = 'APPROVED' "
         + "AND valuation_date <= :date ORDER BY valuation_date DESC LIMIT 1", nativeQuery = true)

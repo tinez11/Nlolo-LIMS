@@ -11,5 +11,5 @@
  * {@code benefitpayout::api} to value a death claim, and there is no cycle because this module
  * never imports {@code claims}.
  */
-@org.springframework.modulith.ApplicationModule(allowedDependencies = { "policy::api", "product::api", "accumulation::api", "bonus::api" })
+@org.springframework.modulith.ApplicationModule(allowedDependencies = { "policy::api", "product::api", "accumulation::api", "bonus::api", "approvals::api" })
 package tz.co.nlolo.lifeplatform.benefitpayout;

@@ -5,6 +5,7 @@ import {
   CalendarCheck,
   CalendarClock,
   ClipboardCheck,
+  Stamp,
   FileWarning,
   FileText,
   HandCoins,
@@ -44,6 +45,7 @@ import {
   UserCog,
 } from 'lucide-react';
 import { NewRolePage } from '@/features/admin/NewRolePage';
+import { ApprovalsPage } from '@/features/approvals/ApprovalsPage';
 import { NewUserPage } from '@/features/admin/NewUserPage';
 import { RoleDetailPage } from '@/features/admin/RoleDetailPage';
 import { RolesPage } from '@/features/admin/RolesPage';
@@ -200,7 +202,8 @@ export type BadgeKey =
   | 'arrears-at-lapse'
   | 'receipts-overdue'
   | 'eft-awaiting'
-  | 'needs-action';
+  | 'needs-action'
+  | 'approvals';
 
 interface NavPlacement {
   group: NavGroupId;
@@ -344,6 +347,10 @@ export function homeFor(realm: Realm, identity: ReturnType<typeof readIdentity>)
  */
 export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   dashboard: [], today: [],
+  // Anyone who signs anything the inbox lists (2026-10-27); the server keeps each group to its own permission.
+  approvals: ['accounts.approve', 'policies.surrender-approve', 'payouts.approve', 'payouts.manage',
+    'collections.manage', 'funds.approve', 'funds.manage', 'products.declare-approve', 'ledger.approve', 'ledger.manage',
+    'ifrs17.approve', 'reinsurance.approve'],
   policies: ['policies.view'], 'policies/new': ['policies.issue'], 'policies/:policyNumber': ['policies.view'],
   'held-vestings': ['accounts.view'],
   'group-schemes/new': ['schemes.manage'], 'group-funeral-schemes/new': ['schemes.manage'],
@@ -389,6 +396,9 @@ function withPermissions(screens: Screen[]): Screen[] {
 
 const STAFF_SCREENS: Screen[] = [
   { path: 'dashboard', element: <DashboardPage realm="staff" />, reach: { group: 'work', label: 'Dashboard', icon: LayoutDashboard } },
+  // Every signature waiting on this person, across every policy (2026-10-27): finance signed in ~20 places, most of
+  // them findable only by opening the right policy.
+  { path: 'approvals', element: <ApprovalsPage />, reach: { group: 'work', label: 'Approvals', icon: Stamp, badge: 'approvals' } },
   // Retired 2026-10-14 for the dashboard. Kept as a redirect, with its query, for bookmarks and the old landing URL.
   { path: 'today', element: <RedirectPreservingQuery to="../dashboard" />, reach: 'drill-in' },
   {

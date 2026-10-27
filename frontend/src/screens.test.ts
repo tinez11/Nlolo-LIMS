@@ -219,7 +219,11 @@ describe('screen manifest', () => {
     // Bank transfers is the third and the only one where the platform is the debtor: an EFT
     // cannot move without a person, so an uncounted queue here is a settled claim whose money
     // never left. The other two are recoverable by chasing; this one is only visible.
+    //
+    // Approvals (2026-10-27) is the server's own count of signatures waiting on this person, less their own requests --
+    // one read the approvals module composes, not a sum the browser makes.
     expect(badged.sort()).toEqual([
+      'Approvals',
       'Arrears',
       'Bank transfers',
       'Claims',
