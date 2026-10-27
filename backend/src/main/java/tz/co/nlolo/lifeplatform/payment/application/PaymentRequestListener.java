@@ -8,6 +8,8 @@ import tz.co.nlolo.lifeplatform.payment.domain.PaymentGatewayPort;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.event.TransactionPhase;
@@ -65,7 +67,9 @@ import java.util.UUID;
  * failure must land the row in FAILED with a published *Failed event" -- correct for a rail that
  * DECLINES, and wrong for a rail that says nothing:
  * <ul>
- *   <li><b>accepted</b> -> COMPLETED/CONFIRMED + {@code *Completed}/{@code *Confirmed} event.</li>
+ *   <li><b>accepted</b> -> a disbursement COMPLETED + {@code *Completed} event; a collection
+ *       AWAITING_APPROVAL, no event -- finance confirms it like any receipt (2026-10-27), and that
+ *       approval publishes {@code PaymentConfirmed}.</li>
  *   <li><b>explicitly declined</b> (a business rejection like INSUFFICIENT_FLOAT) -> FAILED +
  *       {@code *Failed} event, so the requesting module compensates. Unchanged.</li>
  *   <li><b>indeterminate</b> ({@link GatewayException}: read timeout, 5xx, empty body, or ACCEPTED
@@ -382,8 +386,12 @@ public class PaymentRequestListener {
                 new PaymentGatewayPort.GatewayCollectionRequest(
                     payerRef, money.amount(), money.currency(), transactionId.toString()));
             if (result.accepted()) {
+                // Accepted is not paid (2026-10-27, user decision): with no live integration yet a mobile-money
+                // request is receipted like every other method -- it waits for finance to see the money and a
+                // second person to approve it, and only that approval pays the invoice.
+                String requestedBy = requestedBy();
                 requiresNewTransactionTemplate.executeWithoutResult(status ->
-                    paymentApiImpl.confirmCollection(tenantId, transactionId, result.gatewayReference()));
+                    paymentApiImpl.awaitApproval(tenantId, transactionId, result.gatewayReference(), requestedBy));
             } else {
                 // Same defaulting as submitDisbursement's else-branch, same reason: a null here
                 // would NPE inside Map.of(..., "reason", reason) and strand this row at PENDING.
@@ -400,6 +408,13 @@ public class PaymentRequestListener {
             recordIndeterminate("collection", transactionId, tenantId, e, () ->
                 paymentApiImpl.markCollectionInDoubt(tenantId, transactionId, null));
         }
+    }
+
+    /** Who asked for the money: the listener runs after the requester's own commit, on their request's thread. A
+     * request with no signed-in person behind it is the system's, which any finance officer may approve. */
+    private static String requestedBy() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth == null || auth.getName() == null ? "system" : auth.getName();
     }
 
     /**

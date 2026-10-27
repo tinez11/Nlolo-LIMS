@@ -19,6 +19,8 @@ import tz.co.nlolo.lifeplatform.billing.domain.PremiumInvoice;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.BillingScheduleRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.FieldReceiptRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.PremiumInvoiceRepository;
+import tz.co.nlolo.lifeplatform.payment.api.ReceiptView;
+import tz.co.nlolo.lifeplatform.payment.application.Receipts;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -236,6 +238,7 @@ class BillingApiIntegrationTest {
 
     @Autowired private PolicyApi policyApi;
     @Autowired private BillingApi billingApi;
+    @Autowired private Receipts receipts;
     @Autowired private tz.co.nlolo.lifeplatform.party.api.PartyApi partyApi;
     @Autowired private tz.co.nlolo.lifeplatform.product.api.ProductApi productApi;
     @Autowired private BillingScheduleRepository billingScheduleRepository;
@@ -637,6 +640,18 @@ class BillingApiIntegrationTest {
         // synchronously and committed -- no await/sleep, same reasoning as
         // LoanDisbursementEndToEndTest's own class-level Javadoc.
         billingApi.requestPaymentForInvoice(invoice.invoiceId(), "MPESA-0712340001", "billing-it-paid-01-attempt-1");
+
+        // Accepted is not paid (2026-10-27): the request waits for finance like any receipt.
+        PremiumInvoice waiting = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoice.invoiceId(), tenantId)
+            .orElseThrow(() -> new AssertionError("expected the invoice to still exist"));
+        assertThat(waiting.getStatus()).isNotEqualTo("PAID");
+        List<ReceiptView> awaiting = receipts.awaitingApproval();
+        assertThat(awaiting).singleElement().satisfies(r -> {
+            assertThat(r.method()).isEqualTo("MOBILE_MONEY");
+            assertThat(r.reference()).isEqualTo("MM-BILLING-PAID-01");
+            assertThat(r.recordedBy()).isEqualTo("system");
+        });
+        receipts.approve(awaiting.get(0).receiptId(), "finance-approver");
 
         PremiumInvoice reloaded = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoice.invoiceId(), tenantId)
             .orElseThrow(() -> new AssertionError("expected the invoice to still exist"));

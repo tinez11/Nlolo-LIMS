@@ -193,6 +193,25 @@ public class PaymentTransaction {
 
     public void notePolicy(String policyNumber) { this.policyNumber = policyNumber; }
 
+    /**
+     * The rail accepted a mobile-money request (2026-10-27, user decision: no live integration yet, so it is receipted
+     * like every other method). Accepted is not paid: the request waits, as a receipt recorded by whoever asked for it,
+     * until finance sees the money and a second person approves it.
+     */
+    public void awaitApproval(String gatewayReference, String requestedBy) {
+        if (!"PENDING".equals(status)) {
+            throw new IllegalStateException("Payment " + paymentTransactionId + " is " + status + ", cannot await approval");
+        }
+        this.status = "AWAITING_APPROVAL";
+        this.gatewayReference = gatewayReference;
+        this.recordedBy = requestedBy;
+    }
+
+    /** A receipt the platform asked the payer's phone for, rather than one a person recorded by hand. */
+    public boolean isRequested() {
+        return "MOBILE_MONEY".equals(method);
+    }
+
     public void markConfirmed(String gatewayReference) {
         if ("CONFIRMED".equals(status)) {
             return; // idempotent: a redelivered success callback is not an error

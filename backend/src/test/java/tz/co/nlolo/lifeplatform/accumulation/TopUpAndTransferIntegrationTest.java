@@ -198,6 +198,7 @@ class TopUpAndTransferIntegrationTest {
     @Autowired private AccumulationTestFixtures fixtures;
     @Autowired private AccumulationApi api;
     @Autowired private AccumulationApiImpl impl;
+    @Autowired private tz.co.nlolo.lifeplatform.payment.application.Receipts receipts;
 
     private <T> T asTenant(java.util.function.Supplier<T> work) {
         TenantContext.set(TENANT);
@@ -208,7 +209,11 @@ class TopUpAndTransferIntegrationTest {
     void aTopUpIsCollectedThroughPaymentAndCreditedAtTheContributionRate() {
         var issued = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, LocalDate.now());
         var topUp = asTenant(() -> api.requestTopUp(issued.policyNumber(), new BigDecimal("20000.00"), "+255700000002", "staff-one"));
-        // The mock rail confirms synchronously; the confirmation reaches accumulation, not billing.
+        // Accepted is not paid (2026-10-27): nothing is credited until a second finance person confirms the money.
+        assertThat(asTenant(() -> api.entries(issued.policyNumber()))).isEmpty();
+        asTenant(() -> receipts.awaitingApproval().stream()
+            .map(r -> receipts.approve(r.receiptId(), "finance-approver")).toList());
+        // The confirmation reaches accumulation, not billing.
         assertThat(asTenant(() -> api.entries(issued.policyNumber())))
             .extracting(LedgerEntryView::type, e -> e.amount().toPlainString())
             .containsExactly(tuple(EntryType.TOP_UP, "20000.00"), tuple(EntryType.ALLOCATION_CHARGE, "-1000.00"));

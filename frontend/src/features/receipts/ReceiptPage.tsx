@@ -21,7 +21,7 @@ import { formatDate, formatInstant } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useReceiptStore } from '@/store/receiptStore';
-import { methodOf, receiptOrigin } from './receiptForm';
+import { methodOf, receiptOrigin, REQUESTED_MOBILE_MONEY } from './receiptForm';
 
 
 /**
@@ -53,6 +53,7 @@ export function ReceiptPage() {
   if (!receipt) return null;
   const method = methodOf(receipt.method);
   const origin = receiptOrigin(params.get('from'), receipt.policyNumber);
+  const requested = receipt.method === REQUESTED_MOBILE_MONEY.value;
 
   return (
     <>
@@ -70,7 +71,7 @@ export function ReceiptPage() {
             <Field label="Amount" value={formatMoney(receipt.amount)} emphasis />
             <Field label="How it came in" value={method?.label ?? receipt.method} />
             <Field label={method?.reference ?? 'Reference'} value={<span className="font-mono">{receipt.reference}</span>} />
-            <Field label="Received on" value={formatDate(receipt.receivedOn)} />
+            {receipt.receivedOn && <Field label="Received on" value={formatDate(receipt.receivedOn)} />}
             <Field label="Paid by" value={receipt.payerRef} />
             <Field
               label="Policy"
@@ -86,8 +87,11 @@ export function ReceiptPage() {
             />
             {receipt.note && <Field label="Note" value={receipt.note} />}
             {receipt.fieldReceiptId && <Field label="Brings in" value="An agent's field receipt" />}
-            <Field label="Recorded by" value={<StaffName subject={receipt.recordedBy} />} />
-            <Field label="Recorded" value={formatInstant(receipt.recordedAt)} />
+            <Field
+              label={requested ? 'Requested by' : 'Recorded by'}
+              value={receipt.recordedBy === 'system' ? 'The platform' : <StaffName subject={receipt.recordedBy} />}
+            />
+            <Field label={requested ? 'Requested' : 'Recorded'} value={formatInstant(receipt.recordedAt)} />
             {receipt.decidedBy && (
               <Field
                 label={receipt.status === 'REJECTED' ? 'Refused by' : 'Confirmed by'}
@@ -140,6 +144,7 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
   return (
     <Panel title="Confirm this receipt" subtitle="Only a confirmed receipt pays the invoice.">
       <div className="space-y-3 px-4 py-3">
+        {receipt.method === REQUESTED_MOBILE_MONEY.value && <p className="text-sm">{REQUESTED_MOBILE_MONEY.hint}</p>}
         <GatePanel gates={gates} title="Before confirming" />
         {deciding?.status === 'error' && deciding.error && <InlineError error={deciding.error} />}
         {armed === 'confirm' ? (

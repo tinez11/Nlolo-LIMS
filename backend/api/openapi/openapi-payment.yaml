@@ -357,13 +357,16 @@ components:
       required: [receiptId, method, reference, payerRef, amount, invoiceId, receivedOn, status, recordedBy, recordedAt]
       properties:
         receiptId: { type: string, format: uuid }
-        method: { $ref: '#/components/schemas/ReceiptMethod' }
+        method:
+          type: string
+          enum: [MOBILE_MONEY, CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR]
+          description: How it came in. MOBILE_MONEY is a request to the payer's phone, confirmed like any receipt (2026-10-27).
         reference: { type: string }
         payerRef: { type: string }
         amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         invoiceId: { type: string, format: uuid }
         policyNumber: { type: [string, 'null'] }
-        receivedOn: { type: string, format: date }
+        receivedOn: { type: [string, 'null'], format: date, description: 'The day it was received; null on a mobile-money request' }
         note: { type: [string, 'null'] }
         fieldReceiptId: { type: [string, 'null'], format: uuid }
         status: { type: string, enum: [AWAITING_APPROVAL, CONFIRMED, REJECTED] }

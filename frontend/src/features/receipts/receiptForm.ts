@@ -19,8 +19,19 @@ export const RECEIPT_METHODS: { value: ReceiptMethod; label: string; reference: 
     hint: 'Paid by scanning the insurer’s TANQR code.' },
 ];
 
-export function methodOf(value: string) {
-  return RECEIPT_METHODS.find((m) => m.value === value);
+/**
+ * A mobile-money request (2026-10-27): asked of the payer's phone rather than recorded by hand, and -- with no live
+ * integration yet -- confirmed by finance like every other receipt once the money shows on the statement.
+ */
+export const REQUESTED_MOBILE_MONEY = {
+  value: 'MOBILE_MONEY',
+  label: 'Mobile money',
+  reference: 'Mobile-money reference',
+  hint: 'Requested from the payer’s phone. Confirm it once the money shows on the mobile-money statement.',
+} as const;
+
+export function methodOf(value: string): { value: string; label: string; reference: string; hint: string } | undefined {
+  return value === REQUESTED_MOBILE_MONEY.value ? REQUESTED_MOBILE_MONEY : RECEIPT_METHODS.find((m) => m.value === value);
 }
 
 /** Mirrors Receipts.record: an invoice, a method and its reference, an amount above zero, a day no later than today. */

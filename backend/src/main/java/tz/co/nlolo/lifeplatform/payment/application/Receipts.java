@@ -127,6 +127,16 @@ public class Receipts {
         PaymentTransaction receipt = find(receiptId);
         receipt.rejectReceipt(by, reason.trim());
         transactions.save(receipt);
+        if (receipt.isRequested()) {
+            // A request the platform made, not a slip someone typed: whoever asked for the money hears it never came,
+            // exactly as a declined request -- a loan repayment or a top-up unwinds on it.
+            events.publishEvent(DomainEventEnvelope.of("payment.PaymentFailed", TenantContext.get(),
+                Map.of("paymentRequestId", receipt.getPaymentTransactionId(),
+                       "idempotencyKey", receipt.getIdempotencyKey(),
+                       "sourceRef", receipt.getSourceRef(),
+                       "reason", reason.trim(),
+                       "purpose", receipt.getPurpose())));
+        }
         return view(receipt);
     }
 
@@ -164,6 +174,11 @@ public class Receipts {
             case LIPA_NUMBER -> "Lipa number";
             case TANQR -> "TANQR";
         };
+    }
+
+    /** As {@link #words(ReceiptMethod)}, for a stored method -- which may also be a mobile-money request. */
+    public static String words(String method) {
+        return "MOBILE_MONEY".equals(method) ? "mobile money" : words(ReceiptMethod.valueOf(method));
     }
 
     private static String blankToNull(String s) {

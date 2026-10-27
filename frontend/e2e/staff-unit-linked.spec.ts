@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { confirmRequestedPayments } from './payments';
 import { asAdmin } from './admin';
 import { dmy, todayIso } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
@@ -185,6 +186,8 @@ test.describe('unit-linked', () => {
       await pay.getByRole('button', { name: 'Request payment' }).click();
       await expect(admin.getByLabel('Payer reference')).not.toBeVisible({ timeout: 60_000 });
     });
+    // Paid once a second finance person confirms the money came (2026-10-27).
+    await confirmRequestedPayments(browser, policyUrl.split('/').pop()!);
 
     await expect(async () => {
       await page.goto(policyUrl);

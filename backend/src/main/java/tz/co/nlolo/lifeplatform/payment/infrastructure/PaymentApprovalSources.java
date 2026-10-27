@@ -25,7 +25,7 @@ class PaymentApprovalSources {
         return ApprovalSource.of("receipt", "Receipts to confirm", "Confirm", "collections.approve",
             limit -> ApprovalSource.Pending.of(receipts.awaitingApproval().stream()
                 .map(r -> new ApprovalSource.Item(r.receiptId().toString(), r.policyNumber(),
-                    Receipts.words(tz.co.nlolo.lifeplatform.payment.api.ReceiptMethod.valueOf(r.method())) + " " + r.reference(),
+                    Receipts.words(r.method()) + " " + r.reference(),
                     r.amount(), r.currency(), r.recordedBy(), r.recordedAt()))
                 .toList(), limit));
     }

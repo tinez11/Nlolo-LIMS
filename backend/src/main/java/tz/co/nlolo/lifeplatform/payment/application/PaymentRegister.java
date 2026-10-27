@@ -37,7 +37,7 @@ class PaymentRegister {
         SELECT * FROM (
             SELECT payment_transaction_id AS id, 'IN' AS direction, purpose, method, status, amount,
                    currency, payer_ref AS counterparty, gateway_reference AS reference, source_ref, policy_number,
-                   created_at, CAST(NULL AS VARCHAR) AS executed_by, CAST(NULL AS TIMESTAMPTZ) AS executed_at
+                   created_at, recorded_by AS executed_by, decided_at AS executed_at
               FROM payment.payment_transaction WHERE tenant_id = :tenant
             UNION ALL
             SELECT disbursement_id, 'OUT', purpose, method, status, amount, currency, payee_ref, gateway_reference,

@@ -1,4 +1,5 @@
 import { expect, test, type Browser } from '@playwright/test';
+import { confirmRequestedPayments } from './payments';
 import { asAdmin } from './admin';
 import { dmy } from './dates';
 import { caseAwaitingManualIssue, SAVINGS_PRODUCT, selectUnderwritingCase } from './underwriting';
@@ -63,6 +64,8 @@ test.describe('a savings account', () => {
     await page.getByLabel('Collect from').fill('+255700000002');
     await page.getByRole('button', { name: 'Request top-up', exact: true }).last().click();
     await expect(page.getByText(/collection has been requested from the provider/)).toBeVisible({ timeout: 20_000 });
+    // Credited once a second finance person confirms the money came (2026-10-27).
+    await confirmRequestedPayments(browser, policyNumber);
 
     // Credited once payment confirms it -- a poll, not an assumption about timing. NO policy fee is
     // expected for the three past months: the month-end drain (every ten seconds here) has already

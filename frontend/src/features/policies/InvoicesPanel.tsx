@@ -167,6 +167,7 @@ function InvoiceRow({
   // Mirrors the endpoint exactly: REALM_STAFF and (FINANCE_OFFICER or ADMIN).
   const canWaive = can('collections.manage');
   const invoiceId = invoice.invoiceId ?? '';
+  const requested = usePolicyStore(selectRequestingPayment(invoiceId)).status === 'success';
 
   return (
     <div className="px-4 py-3">
@@ -210,6 +211,14 @@ function InvoiceRow({
       )}
 
       <InvoiceReconciliationLines invoice={invoice} credits={credits} />
+
+      {/* Accepted is not paid (2026-10-27): with no live mobile-money integration yet, finance confirms the money
+          like any receipt, and only that pays the invoice. */}
+      {requested && action === null && (
+        <p className="mt-0.5 text-xs text-muted-foreground" role="status">
+          Requested from the payer’s phone. Finance confirms it when the money arrives, and the invoice is paid then.
+        </p>
+      )}
 
       {invoice.gracePeriodEndsAt && (
         <p className="mt-0.5 text-xs text-muted-foreground">

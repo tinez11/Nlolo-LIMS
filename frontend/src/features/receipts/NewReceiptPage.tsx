@@ -49,7 +49,8 @@ export function NewReceiptPage() {
   const recording = useReceiptStore((s) => s.recording);
 
   const prefill = useMemo(() => {
-    const method = methodOf(params.get('method') ?? '')?.value;
+    // Only a method recorded by hand: a mobile-money request is never typed in here.
+    const method = RECEIPT_METHODS.find((m) => m.value === params.get('method'))?.value;
     return blankReceiptForm({
       policyNumber: params.get('policy') ?? '',
       invoiceId: params.get('invoice') ?? '',

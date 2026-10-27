@@ -386,6 +386,17 @@ public class PaymentApiImpl implements PaymentApi {
         paymentTransactionRepository.save(transaction);
     }
 
+    /** The rail accepted it; finance confirms it (see {@link PaymentTransaction#awaitApproval}). Publishes nothing:
+     * nothing is paid yet. */
+    @Transactional
+    void awaitApproval(UUID tenantId, UUID paymentTransactionId, String gatewayReference, String requestedBy) {
+        PaymentTransaction transaction = paymentTransactionRepository
+            .findByPaymentTransactionIdAndTenantId(paymentTransactionId, tenantId)
+            .orElseThrow(() -> new PaymentNotFoundException("Payment " + paymentTransactionId + " not found"));
+        transaction.awaitApproval(gatewayReference, requestedBy);
+        paymentTransactionRepository.save(transaction);
+    }
+
     @Transactional
     void confirmCollection(UUID tenantId, UUID paymentTransactionId, String gatewayReference) {
         PaymentTransaction transaction = paymentTransactionRepository
