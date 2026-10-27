@@ -41,7 +41,7 @@ async function verifyLenderKyc(http: APIRequestContext, lenderPartyId: string) {
 }
 
 async function acceptEnrolment(http: APIRequestContext, policyNumber: string, submissionId: string) {
-  const token = await staffToken(http, 'staff.manager');
+  const token = await staffToken(http, 'staff.underwriter');
   const accepted = await http.post(
     `${API}/credit-life-schemes/${policyNumber}/enrolments/${submissionId}/acceptance`,
     { headers: { Authorization: `Bearer ${token}` } },

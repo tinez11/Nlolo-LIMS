@@ -1,5 +1,5 @@
+import { can } from '@/auth/access';
 import { useEffect, useState } from 'react';
-import { useAuth } from 'react-oidc-context';
 import {
   createAccountCharge,
   getChargeSetting,
@@ -11,7 +11,6 @@ import {
   type ChargeAmountType,
   type ChargeWhen,
 } from '@/api/accountCharges';
-import { readIdentity, staffRoles } from '@/auth/claims';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
@@ -30,8 +29,7 @@ const WHENS = Object.keys(CHARGE_WHEN) as ChargeWhen[];
  * the organisation's rule on the minimum balance; everyone on staff can read it.
  */
 export function AccountChargesPage() {
-  const roles = staffRoles(readIdentity(useAuth().user?.access_token));
-  const canEdit = roles.FINANCE_OFFICER || roles.ADMIN;
+  const canEdit = can('products.charges');
   const [charges, setCharges] = useState<AccountChargeView[] | null>(null);
   const [belowMinimum, setBelowMinimum] = useState<boolean | null>(null);
   const [error, setError] = useState<ApiError | null>(null);

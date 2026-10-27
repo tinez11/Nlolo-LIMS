@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { VestingView } from '@/api/types';
+import { can } from '@/auth/access';
 import { Field } from '@/components/Field';
 import { InlineError } from '@/components/InlineError';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -95,7 +96,8 @@ export function PolicyVestingPanel({ policyNumber, productId }: { policyNumber: 
           today={todayIso()}
           onDone={() => setInstructing(false)}
         />
-      ) : (
+      ) : can('accounts.transact') && (
+        // Instructing and re-confirming are customer service's (accounts.transact, 2026-10-26).
         <div className="flex gap-2">
           <Button size="sm" onClick={() => setInstructing(true)} disabled={!terms?.terms}>
             Record vesting instruction

@@ -1,3 +1,4 @@
+import { can } from '@/auth/access';
 import { z } from 'zod';
 import { canSeeFinance, type TokenIdentity } from '@/auth/claims';
 
@@ -14,5 +15,5 @@ export type RateDeclarationValues = z.infer<typeof rateDeclarationSchema>;
 
 /** Whether the rates panel belongs on this product page at all. */
 export function showsRates(category: string | undefined, identity: TokenIdentity): boolean {
-  return ['ENDOWMENT', 'WHOLE_LIFE', 'EDUCATION_SAVINGS'].includes(category ?? '') && canSeeFinance(identity);
+  return ['ENDOWMENT', 'WHOLE_LIFE', 'EDUCATION_SAVINGS'].includes(category ?? '') && canSeeFinance(identity) && can('products.view');
 }

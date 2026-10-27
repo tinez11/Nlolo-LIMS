@@ -90,7 +90,7 @@ public class QuotationDocumentController {
     }
 
     @PostMapping(value = "/quotations/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('products.view')")
     public ResponseEntity<byte[]> quotation(@Valid @RequestBody Body body, @AuthenticationPrincipal Jwt jwt,
                                             Authentication authentication) {
         if ((body.applicantPartyId() == null) == (body.prospect() == null)) {
@@ -149,7 +149,7 @@ public class QuotationDocumentController {
      * registered, as for an individual.
      */
     @PostMapping(value = "/quotations/scheme/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('products.view')")
     public ResponseEntity<byte[]> schemeQuotation(@Valid @RequestBody SchemeBody body, @AuthenticationPrincipal Jwt jwt,
                                                   Authentication authentication) {
         boolean agent = authentication.getAuthorities().stream().map(GrantedAuthority::getAuthority)

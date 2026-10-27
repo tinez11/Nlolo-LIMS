@@ -1,8 +1,7 @@
+import { can } from '@/auth/access';
 import { useEffect, useState } from 'react';
-import { useAuth } from 'react-oidc-context';
 import { Link } from 'react-router-dom';
 import { getRebuildStatus, startRebuild, type RebuildStatus, type ReportDefinition } from '@/api/reporting';
-import { readIdentity } from '@/auth/claims';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -17,8 +16,7 @@ const CATEGORY_LABELS: Record<ReportDefinition['category'], string> = {
 /** Every report this tenant can run, grouped by the department that reads it. Management reports read a
  * projection of domain events; accounting reports read the general ledger itself. */
 export function ReportsCataloguePage() {
-  const auth = useAuth();
-  const isAdmin = readIdentity(auth.user?.access_token).roles.includes('ADMIN');
+  const isAdmin = can('reports.rebuild');
   const catalogue = useReportingStore((s) => s.catalogue);
   const loadCatalogue = useReportingStore((s) => s.loadCatalogue);
 

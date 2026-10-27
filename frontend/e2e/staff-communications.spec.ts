@@ -12,7 +12,8 @@ import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting'
  * through a second HTTP endpoint into this page. Nothing here is stubbed at the browser.
  */
 test.describe('staff communications', () => {
-  test.use({ storageState: 'e2e/.auth/staff.json' });
+  // Messages sent are communications.view, which an underwriter no longer holds; the admin holds every role.
+  test.use({ storageState: 'e2e/.auth/staff-admin.json' });
 
   test('the Communications section is reachable and lists the seeded templates', async ({ page }) => {
     await page.goto('/staff/policies');

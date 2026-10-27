@@ -42,7 +42,9 @@ async function savingsPolicy(browser: Browser): Promise<string> {
 }
 
 test.describe('a savings account', () => {
-  test.use({ storageState: 'e2e/.auth/staff-finance.json' });
+  // Customer service requests the money movements (accounts.transact) and the admin signs (accounts.approve), since
+  // staff permissions (2026-10-26).
+  test.use({ storageState: 'e2e/.auth/staff-service.json' });
   // An underwriting case, a second underwriter's decision and a manual issue, then a collection
   // through the rail and a month-end drain, then a second person in their own context. None of
   // that is the behaviour under test; it is the cost of reaching it.
@@ -81,18 +83,17 @@ test.describe('a savings account', () => {
       expect(text).not.toMatch(/-/);
     }
 
-    // Money out: requested by this finance officer, approved by someone else.
+    // Money out: requested by customer service, approved by someone else.
     await page.getByRole('button', { name: 'Request withdrawal' }).click();
     await page.getByLabel('Amount').fill('10000.00');
     await page.getByLabel('Pay to').fill('+255700000009');
     await page.getByRole('button', { name: 'Continue' }).click();
     await page.getByRole('button', { name: 'Request withdrawal', exact: true }).last().click();
 
-    // The requester cannot approve: the gate says so in the server's words and the button is off.
-    await expect(
-      page.getByText('A withdrawal must be approved by someone other than the person who requested it'),
-    ).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
+    // The requester cannot approve. Customer service does not hold accounts.approve, so it is offered no approval at
+    // all (2026-10-26); the two-people rule for a finance requester is pinned by AccountPanel's own tests.
+    await expect(page.getByText(/requested by /).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
 
     const policyUrl = page.url();
     await asAdmin(browser, async (adminPage) => {
@@ -126,8 +127,10 @@ test.describe('a savings account', () => {
   });
 });
 
-test.describe('an underwriter on a savings account', () => {
-  // The default identity is staff.underwriter: may read the account, may not put money on it.
+test.describe('customer service on a savings account', () => {
+  // Customer service may request movements on the account, but not record a transfer in or propose an adjustment:
+  // those are finance's (accounts.approve). This was the underwriter, who no longer reads accounts at all (2026-10-26).
+  test.use({ storageState: 'e2e/.auth/staff-service.json' });
   test.setTimeout(180_000);
 
   test('sees the account but is not offered a transfer in or an adjustment', async ({ page, browser }) => {

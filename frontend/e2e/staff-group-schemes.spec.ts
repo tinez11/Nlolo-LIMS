@@ -31,6 +31,8 @@ import { chooseProduct } from './chooseProduct';
 const FLAT_BENEFIT = '5000000.00';
 
 test.describe('staff group schemes', () => {
+  // Underwriting a scheme and registering its claim are two jobs since staff permissions (2026-10-26); the admin holds both.
+  test.use({ storageState: 'e2e/.auth/staff-admin.json' });
   test('proposes a scheme, has it underwritten, and derives its total from its members', async ({
     page,
     browser,

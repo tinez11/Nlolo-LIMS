@@ -47,7 +47,7 @@ public class EnrolmentController {
 
     @PostMapping(value = "/credit-life-schemes/{policyNumber}/enrolments",
                  consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.enrolments')")
     public ResponseEntity<EnrolmentSubmissionView> submit(@PathVariable String policyNumber,
                                                            @RequestPart("file") MultipartFile file,
                                                            @AuthenticationPrincipal Jwt jwt) {
@@ -76,7 +76,7 @@ public class EnrolmentController {
     }
 
     @PostMapping("/credit-life-schemes/{policyNumber}/enrolments/{submissionId}/acceptance")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.enrolments')")
     public EnrolmentSubmissionView accept(@PathVariable String policyNumber,
                                            @PathVariable UUID submissionId,
                                            @AuthenticationPrincipal Jwt jwt) {
@@ -84,7 +84,7 @@ public class EnrolmentController {
     }
 
     @PostMapping("/credit-life-schemes/{policyNumber}/enrolments/{submissionId}/withdrawal")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.enrolments')")
     public EnrolmentSubmissionView withdraw(@PathVariable String policyNumber,
                                              @PathVariable UUID submissionId,
                                              @AuthenticationPrincipal Jwt jwt) {
@@ -103,20 +103,20 @@ public class EnrolmentController {
      * this endpoint's.
      */
     @GetMapping("/credit-life-schemes/{policyNumber}/enrolments")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public List<EnrolmentSubmissionView> listSubmissions(@PathVariable String policyNumber) {
         return enrolmentApi.listSubmissions(policyNumber);
     }
 
     @GetMapping("/credit-life-schemes/{policyNumber}/enrolments/{submissionId}")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public EnrolmentSubmissionView getSubmission(@PathVariable String policyNumber,
                                                   @PathVariable UUID submissionId) {
         return enrolmentApi.getSubmission(submissionId);
     }
 
     @GetMapping("/credit-life-schemes/{policyNumber}/enrolments/{submissionId}/rows")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public List<EnrolmentRowResponseDto> listRows(@PathVariable String policyNumber,
                                             @PathVariable UUID submissionId) {
         return EnrolmentRowResponseDto.from(enrolmentApi.listRows(submissionId));
@@ -130,7 +130,7 @@ public class EnrolmentController {
      */
     @GetMapping(value = "/credit-life-schemes/{policyNumber}/enrolments/{submissionId}/report",
                 produces = "text/csv")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public ResponseEntity<String> report(@PathVariable String policyNumber,
                                           @PathVariable UUID submissionId) {
         return ResponseEntity.ok()
@@ -157,7 +157,7 @@ public class EnrolmentController {
      * path could not be served to a bank without first deciding which product they meant.
      */
     @GetMapping(value = "/credit-life-schemes/{policyNumber}/template", produces = "text/csv")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public ResponseEntity<String> enrolmentTemplate(@PathVariable String policyNumber) {
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION,
@@ -174,7 +174,7 @@ public class EnrolmentController {
      */
     @GetMapping(value = "/credit-life-schemes/{policyNumber}/template.xlsx",
                 produces = XLSX)
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('schemes.view')")
     public ResponseEntity<byte[]> enrolmentTemplateXlsx(@PathVariable String policyNumber) {
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION,

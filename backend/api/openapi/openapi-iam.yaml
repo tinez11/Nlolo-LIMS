@@ -1,0 +1,358 @@
+openapi: 3.1.0
+info:
+  title: Identity & Access API
+  version: "1.0.0"
+  description: >-
+    Staff users, roles and permissions held by the platform (2026-10-26). Keycloak keeps the login; what a staff
+    member may see and do is decided here, read on every request, so a change applies at once.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /me/access:
+    get:
+      summary: What the signed-in staff member may see and do
+      description: >-
+        The console reads this to draw only what the person can use. The server checks every act regardless. A
+        deactivated person holds no permission. primaryRole is the one role the badge shows under their name.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MyAccess' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /access/permissions:
+    get:
+      summary: The permission catalogue, grouped by area
+      security: [{ staffAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/PermissionInfo' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /access/roles:
+    get:
+      summary: Every role, built-in first, with what it carries and how many active people hold it
+      security: [{ staffAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/RoleView' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Create a role of the administrator's own
+      security: [{ staffAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoleDraft' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoleView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /access/roles/{roleId}:
+    put:
+      summary: Change a role's name, description, permissions or active flag
+      description: >-
+        Refused (403 ACCESS_SELF_CHANGE) for a role the caller holds. A change that gives its holders an
+        Administration permission waits for a second administrator (applied false).
+      security: [{ staffAuth: [] }]
+      parameters:
+        - { name: roleId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoleDraft' }
+      responses:
+        '200':
+          description: Applied, or waiting for a second administrator
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Outcome' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /access/users:
+    get:
+      summary: Staff users, active first
+      security: [{ staffAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/UserView' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Add a staff user
+      description: >-
+        Creates their login in the staff realm with a temporary password, returned once, which they change at first
+        sign-in. Roles giving an Administration permission wait for a second administrator (awaitingApproval).
+      security: [{ staffAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewUser' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedUser' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /access/users/{userId}:
+    get:
+      summary: One staff user and the history of their access
+      security: [{ staffAuth: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserDetail' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /access/users/{userId}/access:
+    put:
+      summary: Set a user's roles and single permissions (the whole set)
+      security: [{ staffAuth: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccessChange' }
+      responses:
+        '200':
+          description: Applied, or waiting for a second administrator
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Outcome' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /access/users/{userId}/active:
+    put:
+      summary: Deactivate or reactivate a user -- deactivating closes their login and ends their sessions
+      security: [{ staffAuth: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [active]
+              properties:
+                active: { type: boolean }
+      responses:
+        '204': { description: Done }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /access/users/{userId}/password-reset:
+    post:
+      summary: Send a user a new password -- an email link, or a one-time password returned once
+      security: [{ staffAuth: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PasswordIssued' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /access/changes/pending:
+    get:
+      summary: Changes waiting for a second administrator
+      security: [{ staffAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/ChangeView' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /access/changes/{changeId}/approval:
+    post:
+      summary: Approve a pending change (not the person who asked, not the person it is for)
+      security: [{ staffAuth: [] }]
+      parameters:
+        - { name: changeId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Applied }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /access/changes/{changeId}/rejection:
+    post:
+      summary: Reject a pending change
+      security: [{ staffAuth: [] }]
+      parameters:
+        - { name: changeId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Rejected }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+components:
+  securitySchemes:
+    staffAuth:
+      type: openIdConnect
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/staff/.well-known/openid-configuration
+  schemas:
+    RoleRef:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string, example: UNDERWRITER }
+        name: { type: string, example: Underwriter }
+    MyAccess:
+      type: object
+      required: [userId, displayName, active, roles, primaryRole, permissions]
+      properties:
+        userId: { type: string, format: uuid }
+        displayName: { type: [string, "null"] }
+        active: { type: boolean }
+        roles:
+          type: array
+          items: { $ref: '#/components/schemas/RoleRef' }
+        primaryRole:
+          anyOf:
+            - { $ref: '#/components/schemas/RoleRef' }
+            - { type: "null" }
+        permissions:
+          type: array
+          description: Permission codes, e.g. underwriting.decide.
+          items: { type: string }
+    PermissionInfo:
+      type: object
+      required: [code, area, areaLabel, label, description]
+      properties:
+        code: { type: string }
+        area: { type: string }
+        areaLabel: { type: string }
+        label: { type: string }
+        description: { type: string }
+    RoleView:
+      type: object
+      required: [roleId, code, name, description, builtIn, active, permissions, holders]
+      properties:
+        roleId: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        description: { type: [string, "null"] }
+        builtIn: { type: boolean }
+        active: { type: boolean }
+        permissions: { type: array, items: { type: string } }
+        holders: { type: integer }
+    RoleDraft:
+      type: object
+      properties:
+        code: { type: [string, "null"], description: "Only when creating; e.g. BRANCH_MANAGER" }
+        name: { type: [string, "null"] }
+        description: { type: [string, "null"] }
+        permissions: { type: [array, "null"], items: { type: string } }
+        active: { type: [boolean, "null"] }
+    Outcome:
+      type: object
+      required: [applied, changeId]
+      properties:
+        applied: { type: boolean, description: false when the change waits for a second administrator }
+        changeId: { type: string, format: uuid }
+    UserView:
+      type: object
+      required: [userId, username, displayName, email, phone, homeBranch, active, lastSeenAt, roles, extraPermissions,
+                 effectivePermissions, pendingApproval]
+      properties:
+        userId: { type: string, format: uuid }
+        username: { type: string }
+        displayName: { type: [string, "null"] }
+        email: { type: [string, "null"] }
+        phone: { type: [string, "null"] }
+        homeBranch: { type: [string, "null"] }
+        active: { type: boolean }
+        lastSeenAt: { type: [string, "null"], format: date-time }
+        roles: { type: array, items: { $ref: '#/components/schemas/RoleRef' } }
+        extraPermissions: { type: array, items: { type: string } }
+        effectivePermissions: { type: array, items: { type: string } }
+        pendingApproval: { type: boolean }
+    ChangeView:
+      type: object
+      required: [changeId, userId, userName, roleId, roleName, changeType, detail, status, requestedByName, requestedAt,
+                 decidedByName, decidedAt]
+      properties:
+        changeId: { type: string, format: uuid }
+        userId: { type: [string, "null"], format: uuid }
+        userName: { type: [string, "null"] }
+        roleId: { type: [string, "null"], format: uuid }
+        roleName: { type: [string, "null"] }
+        changeType: { type: string, enum: [IMPORTED, USER_CREATED, ACCESS_CHANGED, USER_ACTIVATED, USER_DEACTIVATED,
+                                           PASSWORD_RESET, ROLE_CREATED, ROLE_CHANGED] }
+        detail: { type: object, additionalProperties: true }
+        status: { type: string, enum: [APPLIED, PENDING, APPROVED, REJECTED, WITHDRAWN] }
+        requestedByName: { type: [string, "null"] }
+        requestedAt: { type: string, format: date-time }
+        decidedByName: { type: [string, "null"] }
+        decidedAt: { type: [string, "null"], format: date-time }
+    UserDetail:
+      type: object
+      required: [user, history]
+      properties:
+        user: { $ref: '#/components/schemas/UserView' }
+        history: { type: array, items: { $ref: '#/components/schemas/ChangeView' } }
+    NewUser:
+      type: object
+      required: [username, firstName, lastName]
+      properties:
+        username: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        email: { type: [string, "null"] }
+        phone: { type: [string, "null"] }
+        homeBranch: { type: [string, "null"] }
+        roleCodes: { type: array, items: { type: string } }
+        permissions: { type: array, items: { type: string } }
+    PasswordDelivery:
+      type: string
+      enum: [EMAIL_LINK, TEMPORARY_PASSWORD]
+      description: >-
+        The portal invite's rule, less SMS: an email link where mail is on and the user has an address, otherwise a
+        one-time password returned once to the administrator.
+    PasswordIssued:
+      type: object
+      required: [delivery, temporaryPassword]
+      properties:
+        delivery: { $ref: '#/components/schemas/PasswordDelivery' }
+        temporaryPassword: { type: [string, "null"], description: Only for TEMPORARY_PASSWORD; shown once }
+    CreatedUser:
+      type: object
+      required: [user, delivery, temporaryPassword, awaitingApproval]
+      properties:
+        user: { $ref: '#/components/schemas/UserView' }
+        delivery: { $ref: '#/components/schemas/PasswordDelivery' }
+        temporaryPassword: { type: [string, "null"], description: Only for TEMPORARY_PASSWORD; shown once }
+        awaitingApproval: { type: boolean }
+    AccessChange:
+      type: object
+      required: [roleCodes, permissions]
+      properties:
+        roleCodes: { type: array, items: { type: string } }
+        permissions: { type: array, items: { type: string } }

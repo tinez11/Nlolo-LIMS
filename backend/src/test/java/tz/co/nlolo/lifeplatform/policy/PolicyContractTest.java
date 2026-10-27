@@ -286,7 +286,7 @@ class PolicyContractTest {
         mockMvc.perform(get("/policies/maturing")
                 .param("from", LocalDate.now().toString()).param("to", LocalDate.now().plusDays(90).toString())
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
-                        new SimpleGrantedAuthority("ROLE_CUSTOMER_SERVICE_REP"))
+                        new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
             .andExpect(status().isForbidden());
 
@@ -1365,7 +1365,7 @@ class PolicyContractTest {
 
         // A plain staff token cannot open a scheme.
         mockMvc.perform(post("/group-schemes")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_CLAIMS_ASSESSOR"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isForbidden());
@@ -1382,7 +1382,7 @@ class PolicyContractTest {
 
         // Nor may plain staff admit a life to one.
         mockMvc.perform(post("/group-schemes/" + policyNumber + "/members")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_CLAIMS_ASSESSOR"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"memberPartyId\":\"%s\"}".formatted(staffRegisteredPerson(tenantId, "8103"))))

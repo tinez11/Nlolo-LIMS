@@ -1,5 +1,7 @@
 package tz.co.nlolo.lifeplatform.dashboard.infrastructure;
 
+import tz.co.nlolo.lifeplatform.iam.api.CurrentAccess;
+import tz.co.nlolo.lifeplatform.iam.api.Permission;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -39,9 +41,11 @@ public class DashboardController {
     private final ClaimsDashboard claims;
     private final FinanceDashboard finance;
     private final AgentDashboard agent;
+    private final CurrentAccess currentAccess;
 
     public DashboardController(UnderwritingDashboard underwriting, ClaimsDashboard claims, FinanceDashboard finance,
-                               AgentDashboard agent) {
+                               AgentDashboard agent, CurrentAccess currentAccess) {
+        this.currentAccess = currentAccess;
         this.underwriting = underwriting;
         this.claims = claims;
         this.finance = finance;
@@ -49,7 +53,7 @@ public class DashboardController {
     }
 
     @GetMapping("/dashboards/underwriting")
-    @PreAuthorize("hasRole('UNDERWRITER')")
+    @PreAuthorize("@access.canAny('underwriting.assess', 'underwriting.decide')")
     public ResponseEntity<UnderwritingDashboardView> underwriting(@RequestParam(required = false) String from,
                                                                   @RequestParam(required = false) String to) {
         LocalDate today = LocalDate.now(CIVIL);
@@ -61,19 +65,18 @@ public class DashboardController {
      * reading claims, which admits both.
      */
     @GetMapping("/dashboards/claims")
-    @PreAuthorize("hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER')")
+    @PreAuthorize("@access.canAny('claims.assess', 'claims.settle')")
     public ResponseEntity<ClaimsDashboardView> claims(Authentication authentication,
                                                       @RequestParam(required = false) String from,
                                                       @RequestParam(required = false) String to) {
-        boolean manager = authentication.getAuthorities().stream()
-            .map(GrantedAuthority::getAuthority).anyMatch("ROLE_CLAIMS_MANAGER"::equals);
+        boolean manager = currentAccess.can(Permission.CLAIMS_SETTLE);
         LocalDate today = LocalDate.now(CIVIL);
         return ResponseEntity.ok(claims.build(manager, DashboardPeriod.of(from, to, today), today));
     }
 
     /** The same expression as every finance endpoint (39 of them) and the reports. */
     @GetMapping("/dashboards/finance")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('ledger.view')")
     public ResponseEntity<FinanceDashboardView> finance(@RequestParam(required = false) String from,
                                                         @RequestParam(required = false) String to) {
         LocalDate today = LocalDate.now(CIVIL);

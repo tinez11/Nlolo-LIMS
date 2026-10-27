@@ -1,9 +1,10 @@
+import { can } from '@/auth/access';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useAuth } from 'react-oidc-context';
 import type { FreeLookCancellationView, PolicyView } from '@/api/types';
-import { canSeeFinance, readIdentity } from '@/auth/claims';
+import { readIdentity } from '@/auth/claims';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';
 import { FormField } from '@/components/FormField';
@@ -38,7 +39,7 @@ export function FreeLookPanel({ policy }: { policy: PolicyView }) {
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const viewerSubject = identity?.subject ?? undefined;
-  const isFinance = identity ? canSeeFinance(identity) : false;
+  const isFinance = can('payouts.approve');
 
   const cancellation = useBenefitPayoutStore((s) => s.freeLook[policyNumber]);
   const loadFreeLook = useBenefitPayoutStore((s) => s.loadFreeLook);

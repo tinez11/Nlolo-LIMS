@@ -11,6 +11,7 @@ import { RequireAuth } from '@/auth/RequireAuth';
 import { REALM_CONFIG, type Realm } from '@/auth/realms';
 import { AppShell } from '@/components/AppShell';
 import { RealmHome } from '@/components/RealmHome';
+import { RequirePermission, StaffAccessGate } from '@/components/StaffAccess';
 import { RealmPicker } from '@/features/RealmPicker';
 import { entryPath, hasRealmFallback, SHOW_REALM_PICKER } from '@/entryPath';
 import { REALM_HOME, SCREENS } from '@/screens';
@@ -52,7 +53,17 @@ const router = createBrowserRouter(
             <Route key={realm} path={`/${realm}`} element={<RealmSubtree realm={realm} />}>
               {home && <Route index element={<RealmHome realm={realm} />} />}
               {SCREENS[realm].map((screen) => (
-                <Route key={screen.path} path={screen.path} element={screen.element} />
+                <Route
+                  key={screen.path}
+                  path={screen.path}
+                  element={
+                    screen.permission ? (
+                      <RequirePermission permissions={screen.permission}>{screen.element}</RequirePermission>
+                    ) : (
+                      screen.element
+                    )
+                  }
+                />
               ))}
               {/* A mistyped path inside a realm belongs to that realm's home, not to the site entrance: a customer
                   who fat-fingers /customers/polices should not land on a sign-in that is not theirs. Only where the
@@ -75,9 +86,18 @@ function RealmSubtree({ realm }: { realm: Realm }) {
   return (
     <RealmAuthProvider realm={realm}>
       <RequireAuth realm={realm}>
-        <AppShell realm={realm}>
-          <Outlet />
-        </AppShell>
+        {/* Staff pages are drawn for what the person holds, so their access arrives first. */}
+        {realm === 'staff' ? (
+          <StaffAccessGate>
+            <AppShell realm={realm}>
+              <Outlet />
+            </AppShell>
+          </StaffAccessGate>
+        ) : (
+          <AppShell realm={realm}>
+            <Outlet />
+          </AppShell>
+        )}
       </RequireAuth>
     </RealmAuthProvider>
   );

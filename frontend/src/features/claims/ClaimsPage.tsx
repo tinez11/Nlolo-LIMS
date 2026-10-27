@@ -1,3 +1,4 @@
+import { can } from '@/auth/access';
 import { Plus, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -271,7 +272,7 @@ export function ClaimsPage({
         title={title}
         description={description}
         actions={
-          showNewClaimAction ? (
+          showNewClaimAction && can('claims.register') ? (
             <Button asChild size="sm" variant="primary">
               <Link to="new">
                 <Plus />

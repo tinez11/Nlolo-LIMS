@@ -32,7 +32,7 @@ public class UnitLinkedReconciliationController {
                                          @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal ledgerBalance2150, @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal difference) {}
 
     @GetMapping("/finance/unit-linked-reconciliation")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('ledger.view')")
     public ReconciliationResponse reconcile() {
         UnitLinkedValuation source = valuation.getIfAvailable();
         List<UnitLinkedValuation.FundValuation> funds = source == null ? List.of() : source.valuations();

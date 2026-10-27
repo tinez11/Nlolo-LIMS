@@ -3,6 +3,10 @@ import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting'
 import { dmy, todayIso } from './dates';
 import { fillPolicyNumberManually } from './guards';
 
+// Since staff permissions (2026-10-26) an underwriter registers no claims and services no policies: this spec issues a
+// policy and then does that work, so it runs as staff.admin, who holds every role.
+test.use({ storageState: 'e2e/.auth/staff-admin.json' });
+
 /**
  * `POST /claims/{claimId}/evidence` + `GET .../evidence` + `GET .../evidence/{ref}`
  * -- fully built since M6/M11, but with zero staff UI until this staff-portal
@@ -88,9 +92,9 @@ test.describe('staff claim evidence', () => {
 
     await expect(page.getByText(description)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('No evidence')).not.toBeVisible();
-    // The uploader is named from their own token (staff.underwriter), where this used to
+    // The uploader is named from their own token (staff.admin), where this used to
     // print their Keycloak subject.
-    await expect(page.getByText(/^Halima Underwriter · /).first()).toBeVisible();
+    await expect(page.getByText(/^Asha Admin · /).first()).toBeVisible();
 
     // "View" opens the real downloaded file in a new tab -- assert on the new
     // tab's own response rather than just that a tab opened, so this proves the

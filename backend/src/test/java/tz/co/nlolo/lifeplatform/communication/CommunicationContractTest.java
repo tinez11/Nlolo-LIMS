@@ -117,6 +117,15 @@ class CommunicationContractTest {
         TenantContext.clear();
     }
 
+/**
+     * A staff member holding a role, but not the permission this endpoint needs (2026-10-26). A bare staff token
+     * names no role and so, in the tests' token mode, holds every permission -- it cannot show a refusal any more.
+     */
+    private static RequestPostProcessor staffWithoutPermission() {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_CUSTOMER_SERVICE_REP"))
+            .jwt(builder -> builder.claim("tenant_id", SEEDED_TENANT.toString()));
+    }
+
     private static RequestPostProcessor staff() {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
             .jwt(builder -> builder.claim("tenant_id", SEEDED_TENANT.toString()));
@@ -219,7 +228,7 @@ class CommunicationContractTest {
         // they do.
         UUID templateId = templateFor("OFFER_CLOSING", "SMS", "sw").templateId();
 
-        mockMvc.perform(put("/notifications/templates/" + templateId).with(staff())
+        mockMvc.perform(put("/notifications/templates/" + templateId).with(staffWithoutPermission())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"bodyTemplate\":\"Anything at all.\"}"))
             .andExpect(status().isForbidden());

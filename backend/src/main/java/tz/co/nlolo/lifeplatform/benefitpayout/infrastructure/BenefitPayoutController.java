@@ -25,7 +25,6 @@ public class BenefitPayoutController {
      * approving a payout both move real money, so neither is open to every staff role -- the gap
      * step 1's surrender approval had until it was closed.
      */
-    static final String FINANCE = "hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))";
 
     private final BenefitPayoutApi api;
 
@@ -35,13 +34,13 @@ public class BenefitPayoutController {
 
     /** A whole policy's schedule. Readable by any staff member: it is the contract's own terms. */
     @GetMapping("/policies/{policyNumber}/payouts")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('payouts.view')")
     public List<PayoutInstalmentResponse> listForPolicy(@PathVariable String policyNumber) {
         return api.listForPolicy(policyNumber).stream().map(PayoutInstalmentResponse::from).toList();
     }
 
     @GetMapping("/payouts/{instalmentId}")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('payouts.view')")
     public PayoutInstalmentResponse get(@PathVariable UUID instalmentId) {
         return PayoutInstalmentResponse.from(api.getInstalment(instalmentId));
     }
@@ -52,7 +51,7 @@ public class BenefitPayoutController {
      * show another -- on a queue, that is a customer nobody pays.
      */
     @GetMapping("/payouts")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('payouts.view')")
     public PayoutInstalmentResponse.PageResponse search(@RequestParam(required = false) InstalmentStatus status,
                                                         @RequestParam(defaultValue = "0") int page,
                                                         @RequestParam(defaultValue = "20") int pageSize) {
@@ -65,7 +64,7 @@ public class BenefitPayoutController {
     }
 
     @PostMapping("/payouts/{instalmentId}/review")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('payouts.manage')")
     public PayoutInstalmentResponse review(@PathVariable UUID instalmentId,
                                            @Valid @RequestBody ReviewPayoutRequest request,
                                            @AuthenticationPrincipal Jwt jwt) {
@@ -75,7 +74,7 @@ public class BenefitPayoutController {
 
     /** 202: the payout is REQUESTED from the payment rail, not yet paid. The console says so. */
     @PostMapping("/payouts/{instalmentId}/approve")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('payouts.approve')")
     public ResponseEntity<PayoutInstalmentResponse> approve(@PathVariable UUID instalmentId,
                                                             @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.accepted().body(PayoutInstalmentResponse.from(api.approve(instalmentId, jwt.getSubject())));
@@ -86,33 +85,33 @@ public class BenefitPayoutController {
      * an IN_DOUBT one stays APPROVED and waits for a person, because retrying it could pay twice.
      */
     @PostMapping("/payouts/{instalmentId}/retry")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('payouts.manage')")
     public ResponseEntity<PayoutInstalmentResponse> retry(@PathVariable UUID instalmentId) {
         return ResponseEntity.accepted().body(PayoutInstalmentResponse.from(api.retry(instalmentId)));
     }
 
     /** A bare array: one run per tenant per day, so this list stays short for years. */
     @GetMapping("/payment-runs")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('payouts.view')")
     public List<PaymentRunResponse> listRuns() {
         return api.listRuns().stream().map(PaymentRunResponse::from).toList();
     }
 
     @GetMapping("/payment-runs/{paymentRunId}")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('payouts.view')")
     public PaymentRunResponse getRun(@PathVariable UUID paymentRunId) {
         return PaymentRunResponse.from(api.getRun(paymentRunId));
     }
 
     @GetMapping("/payment-runs/{paymentRunId}/instalments")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('payouts.view')")
     public List<PayoutInstalmentResponse> runInstalments(@PathVariable UUID paymentRunId) {
         return api.runInstalments(paymentRunId).stream().map(PayoutInstalmentResponse::from).toList();
     }
 
     /** 202: every instalment in the batch is REQUESTED from the rail, not yet paid. */
     @PostMapping("/payment-runs/{paymentRunId}/approve")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('payouts.approve')")
     public ResponseEntity<PaymentRunResponse> approveRun(@PathVariable UUID paymentRunId,
                                                          @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.accepted().body(PaymentRunResponse.from(api.approveRun(paymentRunId, jwt.getSubject())));
@@ -123,7 +122,7 @@ public class BenefitPayoutController {
      * money moves at approval, and that is finance's.
      */
     @PostMapping("/policies/{policyNumber}/free-look-cancellation")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('policies.status')")
     public ResponseEntity<FreeLookResponse> requestFreeLook(@PathVariable String policyNumber,
                                                             @Valid @RequestBody FreeLookRequest request,
                                                             @AuthenticationPrincipal Jwt jwt) {
@@ -137,7 +136,7 @@ public class BenefitPayoutController {
 
     /** 204 rather than 404 when there is none: "this policy has no cancellation" is not an error. */
     @GetMapping("/policies/{policyNumber}/free-look-cancellation")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('policies.view')")
     public ResponseEntity<FreeLookResponse> findFreeLook(@PathVariable String policyNumber) {
         return api.findFreeLook(policyNumber).map(FreeLookResponse::from)
             .map(ResponseEntity::ok)
@@ -145,7 +144,7 @@ public class BenefitPayoutController {
     }
 
     @PostMapping("/free-look-cancellations/{cancellationId}/approve")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('payouts.approve')")
     public ResponseEntity<FreeLookResponse> approveFreeLook(@PathVariable UUID cancellationId,
                                                              @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.accepted()
@@ -153,7 +152,7 @@ public class BenefitPayoutController {
     }
 
     @PostMapping("/payout-streams/{streamId}/proof-of-life")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('payouts.manage')")
     public ResponseEntity<Void> recordProofOfLife(@PathVariable UUID streamId,
                                                   @Valid @RequestBody ProofOfLifeRequest request,
                                                   @AuthenticationPrincipal Jwt jwt) {

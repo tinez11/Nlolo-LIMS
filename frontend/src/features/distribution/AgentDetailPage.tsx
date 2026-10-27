@@ -1,3 +1,4 @@
+import { can } from '@/auth/access';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useBreadcrumb } from '@/lib/cameFrom';
 import { Pause, Play } from 'lucide-react';
@@ -11,8 +12,6 @@ import type { ApiError } from '@/lib/apiError';
 import { channelLabel } from '@/lib/ifrs17';
 import { AGENT_CHANNELS, agentPlacementSchema, type AgentPlacementValues } from './onboardAgentForm';
 import { Link, useParams } from 'react-router-dom';
-import { useAuth } from 'react-oidc-context';
-import { readIdentity, staffRoles } from '@/auth/claims';
 import { PageHeader } from '@/components/PageHeader';
 import { InlineError } from '@/components/InlineError';
 import { Field } from '@/components/Field';
@@ -48,9 +47,7 @@ export function AgentDetailPage() {
   const { agentId = '' } = useParams();
   // Back to the client it was opened from, when it was (2026-10-20); otherwise the list it sits in.
   const breadcrumb = useBreadcrumb([{ label: 'Agents', to: '/staff/agents' }]);
-  const auth = useAuth();
-  const roles = staffRoles(readIdentity(auth.user?.access_token));
-  const canManage = roles.FINANCE_OFFICER || roles.ADMIN;
+  const canManage = can('agents.manage');
 
   const detail = useDistributionStore(selectAgent(agentId));
   const loadAgent = useDistributionStore((s) => s.loadAgent);

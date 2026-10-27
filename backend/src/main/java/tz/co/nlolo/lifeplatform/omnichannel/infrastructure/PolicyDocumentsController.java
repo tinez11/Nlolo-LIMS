@@ -43,7 +43,7 @@ public class PolicyDocumentsController {
     }
 
     @GetMapping("/policies/{policyNumber}/payment-schedule")
-    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_CUSTOMERS')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or @access.can('policies.view')")
     public PaymentScheduleView paymentSchedule(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt,
                                                Authentication authentication) {
         ownPolicyOnly(policyNumber, jwt, authentication);
@@ -51,7 +51,7 @@ public class PolicyDocumentsController {
     }
 
     @GetMapping(value = "/policies/{policyNumber}/payment-schedule/{format}")
-    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_CUSTOMERS')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or @access.can('policies.view')")
     public ResponseEntity<byte[]> paymentScheduleFile(@PathVariable String policyNumber, @PathVariable String format,
                                                       @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ownPolicyOnly(policyNumber, jwt, authentication);
@@ -59,7 +59,7 @@ public class PolicyDocumentsController {
     }
 
     @GetMapping("/policies/{policyNumber}/savings-statement")
-    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_CUSTOMERS')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or @access.can('policies.view')")
     public SavingsStatementView savingsStatement(@PathVariable String policyNumber, @RequestParam LocalDate from,
                                                  @RequestParam LocalDate to, @AuthenticationPrincipal Jwt jwt,
                                                  Authentication authentication) {
@@ -68,7 +68,7 @@ public class PolicyDocumentsController {
     }
 
     @GetMapping("/policies/{policyNumber}/savings-statement/{format}")
-    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_CUSTOMERS')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or @access.can('policies.view')")
     public ResponseEntity<byte[]> savingsStatementFile(@PathVariable String policyNumber, @PathVariable String format,
                                                        @RequestParam LocalDate from, @RequestParam LocalDate to,
                                                        @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
@@ -79,7 +79,7 @@ public class PolicyDocumentsController {
 
     /** The policy schedule (2026-10-08, the customer portal step 3): what the policy is, on one page. PDF only. */
     @GetMapping("/policies/{policyNumber}/policy-schedule/pdf")
-    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_CUSTOMERS')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or @access.can('policies.view')")
     public ResponseEntity<byte[]> policySchedule(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt,
                                                  Authentication authentication) {
         ownPolicyOnly(policyNumber, jwt, authentication);
@@ -88,7 +88,7 @@ public class PolicyDocumentsController {
 
     /** A fixed-term deposit's schedule (2026-10-09): maturity figures and the value if closed at each month. PDF. */
     @GetMapping("/policies/{policyNumber}/deposit-schedule/pdf")
-    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_CUSTOMERS')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or @access.can('policies.view')")
     public ResponseEntity<byte[]> depositSchedule(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt,
                                                   Authentication authentication) {
         ownPolicyOnly(policyNumber, jwt, authentication);
@@ -97,7 +97,7 @@ public class PolicyDocumentsController {
 
     /** Every premium received on the policy, newest first (2026-10-08, the customer portal step 3). */
     @GetMapping("/policies/{policyNumber}/receipts")
-    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_CUSTOMERS')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or @access.can('policies.view')")
     public java.util.List<tz.co.nlolo.lifeplatform.omnichannel.api.ReceiptLine> receipts(@PathVariable String policyNumber,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ownPolicyOnly(policyNumber, jwt, authentication);
@@ -106,7 +106,7 @@ public class PolicyDocumentsController {
 
     /** One premium receipt as a PDF. */
     @GetMapping("/policies/{policyNumber}/receipts/{receiptId}/pdf")
-    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_CUSTOMERS')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or @access.can('policies.view')")
     public ResponseEntity<byte[]> receipt(@PathVariable String policyNumber, @PathVariable java.util.UUID receiptId,
                                           @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ownPolicyOnly(policyNumber, jwt, authentication);

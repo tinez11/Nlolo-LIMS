@@ -45,7 +45,7 @@ public class GlPostingController {
      * the cap is what stops it being a denial-of-service knob.
      */
     @GetMapping("/gl-postings")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('ledger.view')")
     public ResponseEntity<JournalEntrySearchResponseDto> listGlPostings(
             @RequestParam(required = false) String period,
             @RequestParam(required = false) String policyNumber,
@@ -62,7 +62,7 @@ public class GlPostingController {
     }
 
     @GetMapping("/gl-postings/{journalEntryId}")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('ledger.view')")
     public ResponseEntity<JournalEntryResponseDto> getGlPosting(@PathVariable UUID journalEntryId) {
         JournalEntryView view = finaccountingApi.getJournalEntry(journalEntryId);
         return ResponseEntity.ok(JournalEntryResponseDto.from(view));

@@ -379,7 +379,7 @@ class ProductContractTest {
         // A version's exclusions are a priced term of the product, so the same ADMIN gate that
         // protects publishVersion protects this. Staff alone is not enough.
         mockMvc.perform(put("/products/" + productId + "/versions/" + versionId + "/exclusion-periods")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""

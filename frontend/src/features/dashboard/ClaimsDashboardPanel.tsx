@@ -1,3 +1,4 @@
+import { can } from '@/auth/access';
 import { Banknote, CalendarClock, FileText, Inbox } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
@@ -251,7 +252,9 @@ export function ClaimsDashboardPanel({ range }: PanelProps) {
                 : []),
             ]}
             actions={[
-              { label: 'Register a claim', description: 'Identify the claimant, then the policy', to: '/staff/claims/new' },
+              ...(can('claims.register')
+                ? [{ label: 'Register a claim', description: 'Identify the claimant, then the policy', to: '/staff/claims/new' }]
+                : []),
               ...(next
                 ? [
                     {

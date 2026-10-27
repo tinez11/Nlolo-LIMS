@@ -56,7 +56,7 @@ public class BillingController {
      * never show another. On a collections queue that is a customer who is never chased.
      */
     @GetMapping("/arrears")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('collections.view')")
     public ResponseEntity<ArrearsCaseResponseDto.PageResponse> listArrears(
             @RequestParam(required = false) Integer minDunningLevel,
             @RequestParam(required = false) Boolean resolved,
@@ -79,7 +79,7 @@ public class BillingController {
      * @param asOf the civil day the age is measured from; today in Africa/Dar_es_Salaam when omitted
      */
     @GetMapping("/arrears/aging")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('collections.view')")
     public ResponseEntity<List<ReceivablesAging>> receivablesAging(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
         return ResponseEntity.ok(billingApi.receivablesAging(
@@ -107,7 +107,7 @@ public class BillingController {
      * bulk sync from one agent lands many receipts in the same instant.
      */
     @GetMapping("/field-receipts")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('collections.view')")
     public ResponseEntity<FieldReceiptQueueResponseDto.PageResponse> listFieldReceipts(
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "0") int page,
@@ -119,7 +119,7 @@ public class BillingController {
     }
 
     @GetMapping("/policies/{policyNumber}/invoices")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('policies.view')")
     public ResponseEntity<List<InvoiceResponseDto>> listInvoices(@PathVariable String policyNumber,
                                                                   @RequestParam(required = false) InvoiceStatus status,
                                                                   @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
@@ -137,7 +137,7 @@ public class BillingController {
      * came to be shown 13,800 due when 9,600 was.
      */
     @GetMapping("/policies/{policyNumber}/credits")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('policies.view')")
     public ResponseEntity<List<PremiumCreditResponseDto>> listCredits(@PathVariable String policyNumber,
                                                                        @AuthenticationPrincipal Jwt jwt,
                                                                        Authentication authentication) {
@@ -190,7 +190,7 @@ public class BillingController {
      * not already know. See the queue dto's own javadoc on why the two exist separately.
      */
     @PostMapping("/field-receipts/{receiptId}/reconcile")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('collections.manage')")
     public ResponseEntity<FieldReceiptQueueResponseDto> reconcileFieldReceipt(
             @PathVariable UUID receiptId, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(FieldReceiptQueueResponseDto.from(
@@ -198,7 +198,7 @@ public class BillingController {
     }
 
     @PostMapping("/invoices/{invoiceId}/waiver")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('collections.manage')")
     public ResponseEntity<Void> waiveInvoice(@PathVariable UUID invoiceId, @Valid @RequestBody WaiverRequestDto request,
                                               @AuthenticationPrincipal Jwt jwt) {
         billingApi.waiveInvoice(invoiceId, request.reason(), jwt.getSubject());
@@ -223,7 +223,7 @@ public class BillingController {
      * {@code VALIDATION_ERROR} ProblemDetails, which is what openapi-billing.yaml declares.
      */
     @PostMapping("/invoices/{invoiceId}/payment-request")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_STAFF') or hasRole('REALM_AGENTS')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.canAny('policies.service', 'collections.manage')")
     public ResponseEntity<Void> requestPaymentForInvoice(@PathVariable UUID invoiceId,
                                                           @Valid @RequestBody PaymentRequestDto request,
                                                           @RequestHeader(value = "Idempotency-Key", required = false)

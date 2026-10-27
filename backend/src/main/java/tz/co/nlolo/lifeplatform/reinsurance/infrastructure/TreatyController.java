@@ -48,7 +48,7 @@ public class TreatyController {
      * {@code MissingRequestHeaderException} for the first only.
      */
     @PostMapping("/treaties")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('reinsurance.manage')")
     public ResponseEntity<TreatyResponseDto> createTreaty(@Valid @RequestBody CreateTreatyRequestDto request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @AuthenticationPrincipal Jwt jwt) {
@@ -64,7 +64,7 @@ public class TreatyController {
     }
 
     @GetMapping("/treaties/{treatyId}")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('reinsurance.view')")
     public ResponseEntity<TreatyResponseDto> getTreaty(@PathVariable UUID treatyId) {
         TreatyView view = reinsuranceApi.getTreaty(treatyId);
         return ResponseEntity.ok(TreatyResponseDto.from(view));
@@ -81,7 +81,7 @@ public class TreatyController {
      * one per policy it covers for as long as it runs.
      */
     @GetMapping("/treaties/{treatyId}/cessions")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('reinsurance.view')")
     public ResponseEntity<CessionSearchResponseDto> listTreatyCessions(@PathVariable UUID treatyId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int pageSize) {
@@ -98,14 +98,14 @@ public class TreatyController {
      * that figure is always too small and always plausible.
      */
     @GetMapping("/treaties/{treatyId}/utilisation")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('reinsurance.view')")
     public ResponseEntity<TreatyUtilisationResponseDto> getTreatyUtilisation(@PathVariable UUID treatyId) {
         return ResponseEntity.ok(TreatyUtilisationResponseDto.from(
             reinsuranceApi.getTreatyUtilisation(treatyId)));
     }
 
     @GetMapping("/treaties")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('reinsurance.view')")
     public ResponseEntity<List<TreatyResponseDto>> listTreaties(
             @RequestParam(required = false) TreatyStatus status) {
         return ResponseEntity.ok(reinsuranceApi.listTreaties(status).stream()

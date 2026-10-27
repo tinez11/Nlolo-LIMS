@@ -54,12 +54,14 @@ test.describe('free-look cancellation', () => {
   // The fixture builds an underwriting case, a second underwriter's decision and a manual issue
   // before the behaviour under test even starts, and the release runs in its own browser context.
   test.setTimeout(180_000);
+  // Preparing is policies.status, customer service's; releasing is payouts.approve, finance's (2026-10-26).
+  test.use({ storageState: 'e2e/.auth/staff-service.json' });
 
   test('is prepared by one person and released by another', async ({ page, browser }) => {
     const policyNumber = await activeMoneyBackPolicy(browser, 'E2E fixture: free-look cancellation');
 
-    // Preparing is open to ANY staff member — it commits nothing. The identity here is
-    // staff.underwriter, which is the point: money only moves at approval.
+    // Preparing commits nothing. The identity here is staff.service, customer service, which is the point: money only
+    // moves at approval, and customer service cannot give it.
     await openFreeLookPanel(page, policyNumber);
     await page.getByLabel('Refund to').fill('+255700000009');
     await page.getByRole('button', { name: 'Cancel in free-look' }).click();
@@ -69,7 +71,7 @@ test.describe('free-look cancellation', () => {
     await expect(page.getByText('Premiums collected')).toBeVisible({ timeout: 20_000 });
     // Preparing changed nothing about the contract.
     await expect(page.getByText('Active', { exact: true }).first()).toBeVisible();
-    // An underwriter is told who releases it, rather than shown a button that would 403.
+    // Customer service is told who releases it, rather than shown a button that would 403.
     await expect(page.getByText(/Awaiting approval by a finance officer/)).toBeVisible();
 
     await asAdmin(browser, async (adminPage) => {

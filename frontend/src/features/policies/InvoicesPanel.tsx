@@ -1,10 +1,9 @@
+import { can } from '@/auth/access';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useAuth } from 'react-oidc-context';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import type { EnrolmentSubmissionView, InvoiceView, PolicyMemberView } from '@/api/types';
-import { canSeeFinance, readIdentity } from '@/auth/claims';
 import { FilterChip } from '@/components/FilterChip';
 import { InlineError } from '@/components/InlineError';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -163,7 +162,7 @@ function InvoiceRow({
 }) {
   const [action, setAction] = useState<'waive' | 'payment' | null>(null);
   // Mirrors the endpoint exactly: REALM_STAFF and (FINANCE_OFFICER or ADMIN).
-  const canWaive = canSeeFinance(readIdentity(useAuth().user?.access_token));
+  const canWaive = can('collections.manage');
   const invoiceId = invoice.invoiceId ?? '';
 
   return (

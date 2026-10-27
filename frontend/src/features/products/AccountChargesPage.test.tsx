@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { grantRoles } from '@/test/access';
 import * as chargesApi from '@/api/accountCharges';
 import type { AccountChargeView } from '@/api/accountCharges';
 import { AccountChargesPage } from './AccountChargesPage';
@@ -18,6 +19,9 @@ const fee: AccountChargeView = {
   chargeId: 'c-1', name: 'Withdrawal fee', description: null, when: 'WITHDRAWAL', amountType: 'PERCENT', amount: 1.5,
   currency: 'TZS', fromPolicyYear: 1, toPolicyYear: null, active: true, createdBy: 'finance', createdAt: '2026-10-09T08:00:00Z',
 };
+
+// A finance officer, as the page reads it now: permissions, not the token (2026-10-26).
+beforeEach(() => grantRoles('FINANCE_OFFICER'));
 
 describe('account charges', () => {
   it('says what a charge takes, flat or of what', () => {

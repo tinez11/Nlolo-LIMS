@@ -1,3 +1,4 @@
+import { can } from '@/auth/access';
 import { Plus } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -204,12 +205,14 @@ export function AgentsPage() {
         title="Agents"
         description="Every agent in your tenant. Select one to open it."
         actions={
-          <Button asChild size="sm" variant="primary">
-            <Link to="new">
-              <Plus />
-              Onboard agent
-            </Link>
-          </Button>
+          can('agents.manage') ? (
+            <Button asChild size="sm" variant="primary">
+              <Link to="new">
+                <Plus />
+                Onboard agent
+              </Link>
+            </Button>
+          ) : undefined
         }
         count={<CountLine {...count} />}
       />

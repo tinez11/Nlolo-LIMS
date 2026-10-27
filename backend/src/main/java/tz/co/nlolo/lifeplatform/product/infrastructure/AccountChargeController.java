@@ -50,7 +50,7 @@ public class AccountChargeController {
      * issued on a choice of its own. Empty for a version charged by rows of its own, or by nothing.
      */
     @GetMapping("/products/{productId}/versions/{versionId}/account-charges")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('products.view')")
     public ResponseEntity<List<AccountChargeView>> versionCharges(@PathVariable UUID productId,
                                                                   @PathVariable UUID versionId) {
         List<UUID> ids = productApi.resolveAccumulationPlan(versionId).accountChargeIds();
@@ -60,13 +60,13 @@ public class AccountChargeController {
     }
 
     @GetMapping("/account-charges")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('products.view')")
     public ResponseEntity<List<AccountChargeView>> list(@RequestParam(defaultValue = "false") boolean activeOnly) {
         return ResponseEntity.ok(accountCharges.list(activeOnly));
     }
 
     @PostMapping("/account-charges")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('products.charges')")
     public ResponseEntity<AccountChargeView> create(@RequestBody CreateCharge body, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.status(HttpStatus.CREATED).body(accountCharges.create(body.name(), body.description(),
             body.when(), body.amountType(), body.amount(), body.currency(),
@@ -75,25 +75,25 @@ public class AccountChargeController {
 
     /** No longer offered on new cases and policies; the policies already on it keep it. */
     @PostMapping("/account-charges/{chargeId}/withdrawal")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('products.charges')")
     public ResponseEntity<AccountChargeView> withdraw(@PathVariable UUID chargeId) {
         return ResponseEntity.ok(accountCharges.setActive(chargeId, false));
     }
 
     @PostMapping("/account-charges/{chargeId}/reinstatement")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('products.charges')")
     public ResponseEntity<AccountChargeView> reinstate(@PathVariable UUID chargeId) {
         return ResponseEntity.ok(accountCharges.setActive(chargeId, true));
     }
 
     @GetMapping("/account-charges/setting")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('products.view')")
     public ResponseEntity<ChargeSetting> setting() {
         return ResponseEntity.ok(new ChargeSetting(accountCharges.mayGoBelowMinimum()));
     }
 
     @PutMapping("/account-charges/setting")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('products.charges')")
     public ResponseEntity<ChargeSetting> changeSetting(@RequestBody ChargeSetting body, @AuthenticationPrincipal Jwt jwt) {
         accountCharges.setMayGoBelowMinimum(body.mayGoBelowMinimum(), jwt.getSubject());
         return ResponseEntity.ok(new ChargeSetting(accountCharges.mayGoBelowMinimum()));

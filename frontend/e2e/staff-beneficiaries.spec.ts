@@ -1,6 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
 import { issueRealPolicy } from './policies';
 
+// Since staff permissions (2026-10-26) an underwriter registers no claims and services no policies: this spec issues a
+// policy and then does that work, so it runs as staff.admin, who holds every role.
+test.use({ storageState: 'e2e/.auth/staff-admin.json' });
+
 /**
  * The first mutation's e2e coverage: real Keycloak session, real PUT against the
  * real backend, real Postgres row change -- confirmed by reloading the page after

@@ -51,7 +51,9 @@ test.describe('agents my book of business', () => {
     // retries; it used to finish early because it failed at the first assertion.
     test.slow();
     const AGENT_SENIOR_ID = await ownAgentId(page);
-    const staffContext = await browser.newContext({ storageState: 'e2e/.auth/staff.json' });
+    // The admin, not the underwriter: naming an agent of record reads agents (agents.view), which is distribution's
+    // since staff permissions (2026-10-26).
+    const staffContext = await browser.newContext({ storageState: 'e2e/.auth/staff-admin.json' });
     const staffPage = await staffContext.newPage();
 
     async function issuePolicy(agentOfRecordId: string | null, reason: string): Promise<string> {

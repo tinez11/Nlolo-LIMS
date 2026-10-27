@@ -1,7 +1,6 @@
+import { can } from '@/auth/access';
 import { useEffect, useState } from 'react';
-import { useAuth } from 'react-oidc-context';
 import type { NotificationTemplateView } from '@/api/types';
-import { readIdentity } from '@/auth/claims';
 import { PageHeader } from '@/components/PageHeader';
 import { InlineError } from '@/components/InlineError';
 import { Panel } from '@/components/Panel';
@@ -23,8 +22,7 @@ import { humanizeTemplateKey } from './templateKeys';
  * fails every send with nothing an operator can do about it. This screen changes wording.
  */
 export function TemplatesPage() {
-  const auth = useAuth();
-  const isAdmin = readIdentity(auth.user?.access_token).roles.includes('ADMIN');
+  const isAdmin = can('communications.templates');
 
   const templates = useCommunicationsStore((s) => s.templates);
   const loadTemplates = useCommunicationsStore((s) => s.loadTemplates);

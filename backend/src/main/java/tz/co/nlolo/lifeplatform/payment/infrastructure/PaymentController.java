@@ -30,13 +30,13 @@ public class PaymentController {
     }
 
     @GetMapping("/payments/{paymentRequestId}/status")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.canAny('policies.service', 'collections.view')")
     public ResponseEntity<PaymentStatusResponseDto> getPaymentStatus(@PathVariable UUID paymentRequestId) {
         return ResponseEntity.ok(PaymentStatusResponseDto.from(paymentApi.getPaymentStatus(paymentRequestId)));
     }
 
     @GetMapping("/payments/status-by-key")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_AGENTS') or @access.canAny('policies.service', 'collections.view')")
     public ResponseEntity<PaymentStatusResponseDto> getStatusByIdempotencyKey(@RequestParam String idempotencyKey) {
         PaymentApi.IdempotencyLookupResult result = paymentApi.getStatusByIdempotencyKey(idempotencyKey);
         // Exactly one of the two is non-null (PaymentApi.IdempotencyLookupResult's own contract).
@@ -47,7 +47,7 @@ public class PaymentController {
     }
 
     @GetMapping("/payout-batches/{batchId}")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('payouts.view')")
     public ResponseEntity<PayoutBatchResponseDto> getPayoutBatch(@PathVariable UUID batchId) {
         return ResponseEntity.ok(PayoutBatchResponseDto.from(paymentApi.getPayoutBatch(batchId)));
     }

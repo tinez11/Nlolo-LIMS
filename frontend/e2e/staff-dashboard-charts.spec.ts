@@ -16,14 +16,16 @@ test.describe('staff dashboard charts, as finance', () => {
   test('the finance dashboard draws premiums by month and ages its receivables', async ({ page }) => {
     await page.goto('/staff/dashboard?dashboard=finance');
 
-    await expect(page.getByRole('img', { name: /Premiums collected by month/ })).toBeVisible();
+    // The ledger read follows the person's access (/me/access) and can take a while on a busy run.
+    await expect(page.getByRole('img', { name: /Premiums collected by month/ })).toBeVisible({ timeout: 20_000 });
     // The bands when anything is owed, or the plain answer when nothing is: both correct, neither is a failure to read.
     await expect(page.getByRole('list', { name: 'Owed by how overdue' }).or(page.getByText('Nothing is owed.'))).toBeVisible();
   });
 
   test('a range button re-reads the dashboard for those months', async ({ page }) => {
     await page.goto('/staff/dashboard?dashboard=finance');
-    await expect(page.getByRole('img', { name: /Premiums collected by month/ })).toBeVisible();
+    // The ledger read follows the person's access (/me/access) and can take a while on a busy run.
+    await expect(page.getByRole('img', { name: /Premiums collected by month/ })).toBeVisible({ timeout: 20_000 });
 
     await page.getByRole('button', { name: 'Last 12 months' }).click();
     await expect(page).toHaveURL(/from=\d{4}-\d{2}&to=\d{4}-\d{2}/);

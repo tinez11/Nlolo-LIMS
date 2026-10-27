@@ -38,8 +38,6 @@ import java.util.UUID;
 @RestController
 public class ManualJournalController {
 
-    private static final String FINANCE = "hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))";
-    private static final String APPROVER = "hasRole('REALM_STAFF') and hasRole('FINANCE_APPROVER')";
 
     public record RejectionRequest(String reason) {}
 
@@ -54,7 +52,7 @@ public class ManualJournalController {
     }
 
     @GetMapping("/finance/manual-journals")
-    @PreAuthorize(FINANCE + " or " + APPROVER)
+    @PreAuthorize("@access.can('ledger.view')")
     public List<ManualJournalView> list(@RequestParam(required = false) String status,
                                         @RequestParam(required = false) String period,
                                         @RequestParam(required = false) String preparer) {
@@ -63,44 +61,44 @@ public class ManualJournalController {
 
     @PostMapping("/finance/manual-journals")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public ManualJournalView create(@RequestBody ManualJournalInput input, @AuthenticationPrincipal Jwt jwt) {
         return api.create(input, jwt.getSubject());
     }
 
     @GetMapping("/finance/manual-journals/{id}")
-    @PreAuthorize(FINANCE + " or " + APPROVER)
+    @PreAuthorize("@access.can('ledger.view')")
     public ManualJournalView get(@PathVariable UUID id) {
         return api.get(id);
     }
 
     @PutMapping("/finance/manual-journals/{id}")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public ManualJournalView update(@PathVariable UUID id, @RequestBody ManualJournalInput input,
                                     @AuthenticationPrincipal Jwt jwt) {
         return api.update(id, input, jwt.getSubject());
     }
 
     @PostMapping("/finance/manual-journals/{id}/submission")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public ManualJournalView submit(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
         return api.submit(id, jwt.getSubject());
     }
 
     @PostMapping("/finance/manual-journals/{id}/withdrawal")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public ManualJournalView withdraw(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
         return api.withdraw(id, jwt.getSubject());
     }
 
     @PostMapping("/finance/manual-journals/{id}/approval")
-    @PreAuthorize(APPROVER)
+    @PreAuthorize("@access.can('ledger.approve')")
     public ManualJournalView approve(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
         return api.approve(id, jwt.getSubject());
     }
 
     @PostMapping("/finance/manual-journals/{id}/rejection")
-    @PreAuthorize(APPROVER)
+    @PreAuthorize("@access.can('ledger.approve')")
     public ManualJournalView reject(@PathVariable UUID id, @RequestBody(required = false) RejectionRequest body,
                                     @AuthenticationPrincipal Jwt jwt) {
         return api.reject(id, body == null ? null : body.reason(), jwt.getSubject());
@@ -108,13 +106,13 @@ public class ManualJournalController {
 
     @PostMapping("/finance/manual-journals/{id}/reversal")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public ManualJournalView reverse(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
         return api.reverse(id, jwt.getSubject());
     }
 
     @PostMapping(value = "/finance/manual-journals/{id}/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public ManualJournalView attach(@PathVariable UUID id, @RequestPart("file") MultipartFile file,
                                     @AuthenticationPrincipal Jwt jwt) {
         // 404, or 409 when this person may not change the draft -- before anything is stored, so a refused
@@ -145,14 +143,14 @@ public class ManualJournalController {
     }
 
     @DeleteMapping("/finance/manual-journals/{id}/documents/{documentRef}")
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public ManualJournalView detach(@PathVariable UUID id, @PathVariable String documentRef,
                                     @AuthenticationPrincipal Jwt jwt) {
         return api.detachDocument(id, documentRef, jwt.getSubject());
     }
 
     @PostMapping(value = "/finance/manual-journals/{id}/lines", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public ManualJournalView uploadLines(@PathVariable UUID id, @RequestPart("file") MultipartFile file,
                                          @AuthenticationPrincipal Jwt jwt) {
         try {
@@ -163,14 +161,14 @@ public class ManualJournalController {
     }
 
     @GetMapping("/finance/journal-templates")
-    @PreAuthorize(FINANCE + " or " + APPROVER)
+    @PreAuthorize("@access.can('ledger.view')")
     public List<JournalTemplateView> templates() {
         return api.templates();
     }
 
     @PostMapping("/finance/journal-templates")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize(FINANCE)
+    @PreAuthorize("@access.can('ledger.manage')")
     public JournalTemplateView saveTemplate(@RequestBody TemplateRequest body, @AuthenticationPrincipal Jwt jwt) {
         return api.saveTemplate(body.name(), body.description(), body.lines(), body.reasonCode(), jwt.getSubject());
     }

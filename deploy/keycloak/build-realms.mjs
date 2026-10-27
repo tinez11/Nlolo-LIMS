@@ -71,6 +71,9 @@ export function buildRealm(realm, staffSpa) {
     if (client.clientId === 'lifeplatform-admin') {
       client.secret = '$(env:PORTAL_ADMIN_CLIENT_SECRET)';
     }
+    if (client.clientId === 'lifeplatform-staff-admin') {
+      client.secret = '$(env:STAFF_ADMIN_CLIENT_SECRET)';
+    }
   }
 
   r.sslRequired = 'external';

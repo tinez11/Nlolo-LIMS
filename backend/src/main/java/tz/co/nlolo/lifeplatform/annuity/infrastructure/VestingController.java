@@ -41,26 +41,26 @@ public class VestingController {
 
     /** 404 NOT_A_DEFERRED_ANNUITY for every other policy -- the console reads it as "no vesting panel". */
     @GetMapping("/policies/{policyNumber}/annuity/vesting")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.view')")
     public VestingResponse vesting(@PathVariable String policyNumber) {
         return VestingResponse.from(api.vesting(policyNumber).orElseThrow(() -> new NotADeferredAnnuityException(policyNumber)));
     }
 
     @PutMapping("/policies/{policyNumber}/annuity/vesting/instruction")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.transact')")
     public VestingResponse recordInstruction(@PathVariable String policyNumber, @RequestBody InstructionRequest request,
                                              @AuthenticationPrincipal Jwt jwt) {
         return VestingResponse.from(api.recordVestingInstruction(policyNumber, request.toInput(), jwt.getSubject()));
     }
 
     @PostMapping("/policies/{policyNumber}/annuity/vesting/reconfirm-age")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.transact')")
     public VestingResponse reconfirmAge(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt) {
         return VestingResponse.from(api.reconfirmAge(policyNumber, jwt.getSubject()));
     }
 
     @GetMapping("/annuity-vestings/held")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('accounts.view')")
     public List<VestingResponse> held() {
         return api.listHeldVestings().stream().map(VestingResponse::from).toList();
     }

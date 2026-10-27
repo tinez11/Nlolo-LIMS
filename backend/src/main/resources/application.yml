@@ -78,6 +78,21 @@ spring:
       connection-timeout: ${SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT_MS:10000}
 
 app:
+  # Staff permissions (2026-10-26): "platform" reads the iam tables, where administrators manage roles; "token" reads
+  # the Keycloak roles on the token through their built-in definitions -- only for tests with no iam schema.
+  access:
+    source: ${APP_ACCESS_SOURCE:platform}
+  # Staff logins (2026-10-26): administrators add, close and reset staff logins from the Users screen, through the
+  # lifeplatform-staff-admin service account of the staff realm (manage-users there only).
+  staff-admin:
+    keycloak:
+      base-url: ${KEYCLOAK_BASE_URL:http://localhost:8081}
+      realm: staff
+      client-id: lifeplatform-staff-admin
+      client-secret: ${KEYCLOAK_STAFF_ADMIN_SECRET:dev-secret-staff-admin}
+      console-client-id: lifeplatform-spa
+    # Where a set-your-password email sends a new staff member once they have chosen one.
+    console-url: ${STAFF_CONSOLE_URL:http://localhost:5173/staff}
   # Customer portal (2026-10-08): staff invite a client, and the platform creates the client's login in the customers
   # realm through the lifeplatform-admin service account (manage-users there only). The secret is never committed for a
   # real environment; the default is the dev realm's own placeholder.

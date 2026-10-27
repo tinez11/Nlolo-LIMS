@@ -1,3 +1,4 @@
+import { can } from '@/auth/access';
 import type { ReactNode } from 'react';
 import type { ClaimView } from '@/api/types';
 import type { staffRoles } from '@/auth/claims';
@@ -127,7 +128,7 @@ export function claimSections({
   // Once approved, where the money is. Shown to the claims staff who decided it and to finance
   // who pay it; payee and rail are internal, so not to anybody else.
   if (
-    (roles.CLAIMS_ASSESSOR || roles.CLAIMS_MANAGER || roles.FINANCE_OFFICER) &&
+    (roles.CLAIMS_ASSESSOR || roles.CLAIMS_MANAGER || can('payouts.view')) &&
     (claim.status === 'APPROVED' ||
       claim.status === 'SETTLEMENT_REQUESTED' ||
       claim.status === 'SETTLED' ||

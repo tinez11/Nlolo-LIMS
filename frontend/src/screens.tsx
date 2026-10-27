@@ -40,7 +40,15 @@ import {
   Coins,
   NotebookPen,
   ChartColumn,
+  ShieldCheck,
+  UserCog,
 } from 'lucide-react';
+import { NewRolePage } from '@/features/admin/NewRolePage';
+import { NewUserPage } from '@/features/admin/NewUserPage';
+import { RoleDetailPage } from '@/features/admin/RoleDetailPage';
+import { RolesPage } from '@/features/admin/RolesPage';
+import { UserDetailPage } from '@/features/admin/UserDetailPage';
+import { UsersPage } from '@/features/admin/UsersPage';
 import { AccountChargesPage } from '@/features/products/AccountChargesPage';
 import { CustomerApplicationsPage } from '@/features/customer/CustomerApplicationsPage';
 import { CustomerClaimPage } from '@/features/customer/CustomerClaimPage';
@@ -54,7 +62,8 @@ import { CustomerPayPage } from '@/features/customer/CustomerPayPage';
 import { CustomerPoliciesPage } from '@/features/customer/CustomerPoliciesPage';
 import { CustomerPolicyPage } from '@/features/customer/CustomerPolicyPage';
 import type { ReactNode } from 'react';
-import { canSeeFinance, canSeeReports, staffRoles, type StaffRoles, type readIdentity } from '@/auth/claims';
+import { can, canAny } from '@/auth/access';
+import type { readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
 import { RedirectPreservingQuery } from '@/components/RedirectPreservingQuery';
 import { dashboardsFor } from '@/features/dashboard/dashboards';
@@ -165,6 +174,7 @@ type NavGroupId =
   | 'records'
   | 'communications'
   | 'configuration'
+  | 'administration'
   | 'my-business'
   | 'my-cover';
 
@@ -202,7 +212,7 @@ interface NavPlacement {
    * manager, because those are two different queues behind one nav item and a badge showing
    * the other role's backlog is a number the reader cannot act on.
    */
-  badge?: BadgeKey | ((roles: StaffRoles) => BadgeKey | undefined);
+  badge?: BadgeKey | (() => BadgeKey | undefined);
 }
 
 export interface Screen {
@@ -214,13 +224,16 @@ export interface Screen {
    * declaration that it is only reachable by drilling in from another screen.
    */
   reach: NavPlacement | 'drill-in';
+  /**
+   * Staff only (2026-10-26): the permissions any one of which opens this page. The menu offers it only to someone who
+   * holds one, and a typed address answers "not available to your role" to anyone else. Set from STAFF_PERMISSION.
+   */
+  permission?: readonly string[];
 }
 
 export interface NavGroup {
   id: NavGroupId;
   label: string;
-  /** Undefined means always visible. */
-  requires?: (identity: ReturnType<typeof readIdentity>) => boolean;
 }
 
 /**
@@ -253,16 +266,16 @@ export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
     // books, valuation and the year-end, and what is ceded and filed. Every one carries the gate
     // the single group did, which mirrors the backend expression on every finance endpoint:
     // hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))
-    { id: 'collections', label: 'Collections', requires: canSeeFinance },
+    { id: 'collections', label: 'Collections' },
     // "Paying out", not "Payouts": the group would otherwise share its name with an item in it.
-    { id: 'paying-out', label: 'Paying out', requires: canSeeFinance },
-    { id: 'ledger', label: 'Ledger', requires: canSeeFinance },
-    { id: 'valuation', label: 'Valuation & close', requires: canSeeFinance },
-    { id: 'reinsurance-returns', label: 'Reinsurance & returns', requires: canSeeFinance },
-    { id: 'distribution', label: 'Distribution', requires: canSeeFinance },
+    { id: 'paying-out', label: 'Paying out' },
+    { id: 'ledger', label: 'Ledger' },
+    { id: 'valuation', label: 'Valuation & close' },
+    { id: 'reinsurance-returns', label: 'Reinsurance & returns' },
+    { id: 'distribution', label: 'Distribution' },
     // Its own group, after the finance jobs and before Records: reports read across every area above, and
-    // FINANCE_APPROVER can see it without seeing the finance groups (canSeeReports, not canSeeFinance).
-    { id: 'reports', label: 'Reports', requires: canSeeReports },
+    // A finance approver sees it without seeing the finance groups: reports.view, not ledger.manage.
+    { id: 'reports', label: 'Reports' },
     // UNGATED, to match its endpoint. `GET /audit-log` is `hasRole('REALM_STAFF')`
     // -- any staff member may read it -- so putting the journal in a
     // finance-gated group would make the nav stricter than the API and hide a
@@ -276,6 +289,8 @@ export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
     // sent get read together, usually by the same person answering the same complaint.
     { id: 'communications', label: 'Communications' },
     { id: 'configuration', label: 'Configuration' },
+    // Last: who may do what (2026-10-26). Shown to whoever holds users.view -- administrators, by default.
+    { id: 'administration', label: 'Administration' },
   ],
   // Dashboard on its own first, same as staff's ungrouped 'work' (2026-10-21) -- it is not "my business" or "new
   // business", it is the landing page. 'new-business' second: where a sale starts and how it is going, kept apart
@@ -310,17 +325,66 @@ export function homeFor(realm: Realm, identity: ReturnType<typeof readIdentity>)
   // Anyone with a dashboard lands on it (2026-10-14, replacing Today, which showed the same counts
   // as a flat list). The per-role queues below stay as the answer for an identity with no dashboard.
   if (dashboardsFor('staff', identity).length > 0) return 'dashboard';
-  const roles = staffRoles(identity);
-  if (roles.ADMIN) return 'policies';
-  if (roles.UNDERWRITER) return 'underwriting';
-  if (roles.CLAIMS_MANAGER) return 'claims?status=SETTLEMENT_REQUESTED';
-  if (roles.CLAIMS_ASSESSOR) return 'claims?status=REGISTERED';
-  if (roles.FINANCE_OFFICER) return 'arrears';
-  // No dashboard and no queue of their own -- a CUSTOMER_SERVICE_REP, or a staff member with no
-  // role at all. KYC verification is ungated, so it is the one queue they can genuinely work, and
-  // it is what Today used to show them. Policies would be a register of everyone's work and
-  // nobody's task.
-  return 'clients/individuals?kycStatus=PENDING';
+  // No dashboard: the first queue their permissions reach (2026-10-26), else the KYC queue customer service works,
+  // else the dashboard page, which says plainly when a person holds nothing.
+  // Whoever decides KYC works that queue first -- customer service, by default.
+  if (can('clients.kyc')) return 'clients/individuals?kycStatus=PENDING';
+  if (can('underwriting.view')) return 'underwriting';
+  if (can('claims.view')) return 'claims?status=REGISTERED';
+  if (can('collections.view')) return 'arrears';
+  if (can('clients.view')) return 'clients/individuals?kycStatus=PENDING';
+  if (can('policies.view')) return 'policies';
+  return 'dashboard';
+}
+
+/**
+ * The permission each staff page needs (2026-10-26) -- the same one its endpoints check, so the menu never offers a
+ * page whose data would be refused. Any one of a list opens it. A staff path missing here fails screens.test.
+ * Your-work pages carry none: every staff member has a dashboard, even an empty one.
+ */
+export const STAFF_PERMISSION: Record<string, readonly string[]> = {
+  dashboard: [], today: [],
+  policies: ['policies.view'], 'policies/new': ['policies.issue'], 'policies/:policyNumber': ['policies.view'],
+  'held-vestings': ['accounts.view'],
+  'group-schemes/new': ['schemes.manage'], 'group-funeral-schemes/new': ['schemes.manage'],
+  'credit-life-schemes/new': ['schemes.manage'], 'group-schemes/:policyNumber': ['schemes.view'],
+  'credit-life-schemes/:policyNumber': ['schemes.view'],
+  claims: ['claims.view'], 'claims/new': ['claims.register'], 'claims/:claimId': ['claims.view'],
+  'audit-log': ['audit.view'], 'notifications/messages': ['communications.view'],
+  'notifications/templates': ['communications.view'],
+  products: ['products.view'], 'account-charges': ['products.view'], 'products/new': ['products.manage'],
+  'products/:productId': ['products.view'],
+  'clients/individuals': ['clients.view'], 'clients/organisations': ['clients.view'], kyc: ['clients.view'],
+  clients: ['clients.view'], 'parties/:partyId': ['clients.view'], 'parties/:partyId/edit': ['clients.edit'],
+  underwriting: ['underwriting.view'], 'underwriting/new': ['underwriting.propose'],
+  'underwriting/:caseId': ['underwriting.view'],
+  agents: ['agents.view'], 'agents/new': ['agents.manage'], 'agents/:agentId': ['agents.view'],
+  arrears: ['collections.view'], 'field-receipts': ['collections.view'], 'bank-transfers': ['collections.view'],
+  payouts: ['payouts.view'], 'payouts/:instalmentId': ['payouts.view'], 'payment-runs': ['payouts.view'],
+  'payment-runs/:paymentRunId': ['payouts.view'], 'withholding-rules': ['payouts.view'], maturities: ['payouts.view'],
+  funds: ['funds.view'],
+  'gl-postings': ['ledger.view'], 'gl-postings/:journalEntryId': ['ledger.view'], 'chart-of-accounts': ['ledger.view'],
+  periods: ['ledger.view'], 'accounting-policies': ['ledger.view'], 'posting-rules': ['ledger.view'],
+  'unposted-events': ['ledger.view'], 'manual-journals': ['ledger.view'], 'manual-journals/new': ['ledger.manage'],
+  'manual-journals/:id': ['ledger.view'], 'manual-journals/:id/edit': ['ledger.manage'],
+  'journal-templates': ['ledger.view'],
+  'ifrs17-engine': ['ifrs17.view'], 'ifrs17-engine/runs/:runId': ['ifrs17.view'],
+  'ifrs17-engine/allocations/:allocationId': ['ifrs17.view'], 'year-end': ['ifrs17.view'],
+  'year-end/closes/:closeId': ['ifrs17.view'],
+  treaties: ['reinsurance.view'], 'treaties/new': ['reinsurance.manage'], 'treaties/:treatyId': ['reinsurance.view'],
+  'treaties/:treatyId/bordereaux/:bordereauId': ['reinsurance.view'],
+  'treaties/:treatyId/statements/:statementId': ['reinsurance.view'], 'reinsurance-statements': ['reinsurance.view'],
+  'regulatory-returns': ['returns.view'], 'regulatory-returns/:returnId': ['returns.view'],
+  reports: ['reports.view'], 'reports/:reportKey': ['reports.view'],
+  users: ['users.view'], 'users/new': ['users.manage'], 'users/:userId': ['users.view'], roles: ['users.view'],
+  'roles/new': ['roles.manage'], 'roles/:roleId': ['users.view'],
+};
+
+function withPermissions(screens: Screen[]): Screen[] {
+  return screens.map((screen) => {
+    const permission = STAFF_PERMISSION[screen.path];
+    return permission && permission.length > 0 ? { ...screen, permission } : screen;
+  });
 }
 
 const STAFF_SCREENS: Screen[] = [
@@ -397,7 +461,7 @@ const STAFF_SCREENS: Screen[] = [
       // A manager's whole job is the settlement decision, and it had no work signal at all
       // while the assessor's queue had one. Manager wins when an identity carries both
       // roles (staff.admin does): a settlement decision is the more consequential queue.
-      badge: (roles) => (roles.CLAIMS_MANAGER ? 'claims-settlement-pending' : 'claims-unassessed'),
+      badge: () => (can('claims.settle') ? 'claims-settlement-pending' : 'claims-unassessed'),
     },
   },
   { path: 'claims/new', element: <RegisterClaimPage />, reach: 'drill-in' },
@@ -431,6 +495,12 @@ const STAFF_SCREENS: Screen[] = [
   },
   // Savings account charges (2026-10-09): chosen per savings policy on its case or at issue.
   { path: 'account-charges', element: <AccountChargesPage />, reach: { group: 'configuration', label: 'Account charges', icon: Percent } },
+  { path: 'users', element: <UsersPage />, reach: { group: 'administration', label: 'Users', icon: UserCog } },
+  { path: 'users/new', element: <NewUserPage />, reach: 'drill-in' },
+  { path: 'users/:userId', element: <UserDetailPage />, reach: 'drill-in' },
+  { path: 'roles', element: <RolesPage />, reach: { group: 'administration', label: 'Roles', icon: ShieldCheck } },
+  { path: 'roles/new', element: <NewRolePage />, reach: 'drill-in' },
+  { path: 'roles/:roleId', element: <RoleDetailPage />, reach: 'drill-in' },
   { path: 'products/new', element: <CreateProductPage />, reach: 'drill-in' },
   { path: 'products/:productId', element: <ProductDetailPage />, reach: 'drill-in' },
 
@@ -787,7 +857,7 @@ const CUSTOMER_SCREENS: Screen[] = [
 ];
 
 export const SCREENS: Record<Realm, Screen[]> = {
-  staff: STAFF_SCREENS,
+  staff: withPermissions(STAFF_SCREENS),
   agents: AGENTS_SCREENS,
   customers: CUSTOMER_SCREENS,
   regulators: [],
@@ -802,23 +872,27 @@ export const SCREENS: Record<Realm, Screen[]> = {
  */
 export type NavItem = Omit<NavPlacement, 'badge'> & { badge?: BadgeKey; to: string };
 
-/** The sidebar for one realm: groups the identity may see, each with its screens. */
+/**
+ * The sidebar for one realm: groups the person may see, each with its screens. The identity is no longer read --
+ * staff pages follow permissions (auth/access) -- and stays in the signature for the callers that pass it.
+ */
 export function navFor(
   realm: Realm,
-  identity: ReturnType<typeof readIdentity>,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _identity?: ReturnType<typeof readIdentity>,
 ): { label: string; items: NavItem[] }[] {
   return NAV_GROUPS[realm]
-    .filter((group) => group.requires?.(identity) ?? true)
     .map((group) => ({
       label: group.label,
       items: SCREENS[realm]
+        // A group shows when any of its pages does: every staff page carries its own permission (2026-10-26).
+        .filter((screen) => !screen.permission || canAny(...screen.permission))
         .filter((screen) => screen.reach !== 'drill-in' && screen.reach.group === group.id)
         .map((screen) => {
           const reach = screen.reach as NavPlacement;
           // Resolved HERE, where the identity is already in hand, so AppShell keeps taking a
           // plain BadgeKey and useNavBadges can fetch exactly the counts that are on screen.
-          const badge =
-            typeof reach.badge === 'function' ? reach.badge(staffRoles(identity)) : reach.badge;
+          const badge = typeof reach.badge === 'function' ? reach.badge() : reach.badge;
           const { badge: _declared, ...rest } = reach;
           // The key is OMITTED rather than set to undefined: exactOptionalPropertyTypes is on,
           // and an explicitly-undefined optional is not the same type as an absent one.

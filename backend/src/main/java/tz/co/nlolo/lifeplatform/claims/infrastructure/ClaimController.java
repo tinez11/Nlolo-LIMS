@@ -82,7 +82,7 @@ public class ClaimController {
      * party as claimant.
      */
     @PostMapping("/claims")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('claims.register')")
     public ResponseEntity<ClaimResponseDto> registerClaim(@Valid @RequestBody RegisterClaimRequestDto request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
@@ -108,7 +108,7 @@ public class ClaimController {
     }
 
     @GetMapping("/claims/{claimId}")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('claims.view')")
     public ResponseEntity<ClaimResponseDto> getClaim(@PathVariable UUID claimId,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ClaimView view = claimsApi.getClaim(claimId);
@@ -128,7 +128,7 @@ public class ClaimController {
      * none, per docs/04:56's "register/read scoped").
      */
     @GetMapping("/claims")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('claims.view')")
     public ResponseEntity<ClaimSearchResponseDto> listClaims(
             @RequestParam(required = false) ClaimStatus status,
             @RequestParam(required = false) ClaimType claimType,
@@ -170,7 +170,7 @@ public class ClaimController {
     }
 
     @PostMapping("/claims/{claimId}/assessments")
-    @PreAuthorize("hasRole('CLAIMS_ASSESSOR')")
+    @PreAuthorize("@access.can('claims.assess')")
     public ResponseEntity<ClaimAssessmentResponseDto> submitAssessment(@PathVariable UUID claimId,
             @Valid @RequestBody SubmitClaimAssessmentRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         ClaimAssessmentView assessment = claimsApi.submitAssessment(claimId, request.findings(),
@@ -210,7 +210,7 @@ public class ClaimController {
      * never travel back to them.
      */
     @GetMapping("/claims/{claimId}/assessments")
-    @PreAuthorize("hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER')")
+    @PreAuthorize("@access.canAny('claims.assess', 'claims.settle')")
     public ResponseEntity<List<ClaimAssessmentResponseDto>> listAssessments(@PathVariable UUID claimId) {
         return ResponseEntity.ok(claimsApi.listAssessments(claimId).stream()
             .map(ClaimAssessmentResponseDto::from)
@@ -225,7 +225,7 @@ public class ClaimController {
      * recommending an amount is bounded by exactly the same ceiling as the manager approving one.
      */
     @GetMapping("/claims/{claimId}/claimable-cover")
-    @PreAuthorize("hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER')")
+    @PreAuthorize("@access.canAny('claims.assess', 'claims.settle')")
     public ResponseEntity<ClaimCoverResponseDto> claimableCover(@PathVariable UUID claimId) {
         return ResponseEntity.ok(ClaimCoverResponseDto.from(claimsApi.claimableCover(claimId)));
     }
@@ -246,7 +246,7 @@ public class ClaimController {
      * product that waives its waiting period for an accident then pays a death inside it. Before the decision.
      */
     @PutMapping("/claims/{claimId}/accidental")
-    @PreAuthorize("hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER')")
+    @PreAuthorize("@access.canAny('claims.assess', 'claims.settle')")
     public ResponseEntity<ClaimResponseDto> recordAccidentalDeath(@PathVariable UUID claimId,
             @RequestBody java.util.Map<String, Boolean> request, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(ClaimResponseDto.from(
@@ -254,7 +254,7 @@ public class ClaimController {
     }
 
     @PostMapping("/claims/{claimId}/settlement-decision")
-    @PreAuthorize("hasRole('CLAIMS_MANAGER')")
+    @PreAuthorize("@access.can('claims.settle')")
     public ResponseEntity<ClaimResponseDto> decideSettlement(@PathVariable UUID claimId,
             @Valid @RequestBody SettlementDecisionRequestDto request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
@@ -268,7 +268,7 @@ public class ClaimController {
     }
 
     @PostMapping("/claims/{claimId}/reopen")
-    @PreAuthorize("hasRole('CLAIMS_MANAGER')")
+    @PreAuthorize("@access.can('claims.settle')")
     public ResponseEntity<ClaimResponseDto> reopenClaim(@PathVariable UUID claimId,
             @Valid @RequestBody ReopenClaimRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         claimsApi.reopenClaim(claimId, request.reason(), jwt.getSubject());

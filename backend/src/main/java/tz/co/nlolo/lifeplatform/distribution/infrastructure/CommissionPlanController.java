@@ -34,7 +34,7 @@ public class CommissionPlanController {
     }
 
     @PostMapping("/commission-plans")
-    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    @PreAuthorize("@access.can('agents.manage')")
     public ResponseEntity<CommissionPlanResponseDto> createCommissionPlan(
             @Valid @RequestBody CreateCommissionPlanRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         List<DistributionApi.CommissionRuleInput> rules = request.rules().stream()

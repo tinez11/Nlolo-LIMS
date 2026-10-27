@@ -69,6 +69,8 @@ async function asManager<T>(page: Page, claimId: string, work: (manager: Page) =
 }
 
 test.describe('family funeral cover', () => {
+  // Selling the plan, adding a life and registering the claims are three jobs since staff permissions (2026-10-26); the admin holds them all.
+  test.use({ storageState: 'e2e/.auth/staff-admin.json' });
   // A product published, a case decided by a second person, a collection through the rail, a life
   // added, and two claims each through three identities.
   test.setTimeout(420_000);

@@ -128,8 +128,9 @@ export async function giveAgentEarningPolicy(
     await createDefaultPlan(financePage, '0.1000');
     await expect(financePage.getByText('Active plan', { exact: true })).toBeVisible({ timeout: 15_000 });
 
-    return await issueRealPolicyForAgent(financePage, optionLabel, agentId, reason);
   } finally {
     await financeContext.close();
   }
+  // Selling the policy is underwriting's, not finance's, since staff permissions (2026-10-26).
+  return asAdmin(browser, (page) => issueRealPolicyForAgent(page, optionLabel, agentId, reason));
 }

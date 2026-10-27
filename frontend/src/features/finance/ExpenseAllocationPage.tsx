@@ -1,8 +1,9 @@
+import { can } from '@/auth/access';
 import { useEffect, useState } from 'react';
 import { useAuth } from 'react-oidc-context';
 import { Link, useParams } from 'react-router-dom';
 import type { ExpenseAllocationView } from '@/api/types';
-import { canApproveJournals, readIdentity } from '@/auth/claims';
+import { readIdentity } from '@/auth/claims';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
@@ -44,7 +45,7 @@ export function ExpenseAllocationPage() {
 function Allocation({ allocation: a }: { allocation: ExpenseAllocationView }) {
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
-  const approver = canApproveJournals(identity);
+  const approver = can('ifrs17.approve');
   return (
     <>
       <PageHeader

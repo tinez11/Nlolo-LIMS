@@ -10,5 +10,5 @@
 // This is the same validation, one field over, that openCase already performs against
 // `party::api` for the applicant: check the outbound reference at the boundary where whoever
 // supplied it is still present to fix it.
-@org.springframework.modulith.ApplicationModule(allowedDependencies = { "party::api", "product::api", "document::api", "refdata::api", "distribution::api" })
+@org.springframework.modulith.ApplicationModule(allowedDependencies = { "party::api", "product::api", "document::api", "refdata::api", "distribution::api", "iam::api" })
 package tz.co.nlolo.lifeplatform.underwriting;

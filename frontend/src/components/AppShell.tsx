@@ -15,6 +15,7 @@ import { LoadingBlock } from './states';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Tip } from './ui/tooltip';
+import { useMyAccess } from '@/store/accessStore';
 
 /**
  * The console chrome: sidebar, nav, user block.
@@ -287,7 +288,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
           ))}
         </nav>
 
-        <UserBlock identity={identity} />
+        <UserBlock identity={identity} realm={realm} />
       </aside>
 
       <CommandPalette
@@ -348,7 +349,26 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
   );
 }
 
-function UserBlock({ identity }: { identity: ReturnType<typeof readIdentity> }) {
+/** The built-in roles in the order the badge prefers them -- the server's own precedence (iam BuiltInRoles). */
+const ROLE_PRECEDENCE = [
+  'ADMIN', 'SENIOR_UNDERWRITER', 'UNDERWRITER', 'CLAIMS_MANAGER', 'CLAIMS_ASSESSOR', 'FINANCE_APPROVER',
+  'FINANCE_OFFICER', 'CUSTOMER_SERVICE_REP',
+];
+
+/**
+ * The one role the badge shows under the name (2026-10-26, the user: never the whole list). For staff, the platform's
+ * own answer once it arrives; until then, the most senior Keycloak role on the token, so the line does not flash empty.
+ * Agents and customers hold no staff role, and are simply named for the console they are in.
+ */
+function badgeRole(realm: Realm, identity: ReturnType<typeof readIdentity>, platformRole: string | null | undefined): string | null {
+  if (realm === 'agents') return 'Agent';
+  if (realm === 'customers') return 'Customer';
+  if (platformRole) return platformRole;
+  const held = ROLE_PRECEDENCE.find((role) => identity.roles.includes(role));
+  return held ? humanizeStatus(held) : null;
+}
+
+function UserBlock({ identity, realm }: { identity: ReturnType<typeof readIdentity>; realm: Realm }) {
   const auth = useAuth();
   const navigate = useNavigate();
   // The inline script in index.html has already applied the class before first
@@ -356,12 +376,8 @@ function UserBlock({ identity }: { identity: ReturnType<typeof readIdentity> }) 
   const [theme, setTheme] = useState<Theme>(() => currentTheme());
   const name = displayName(identity);
   const seed = identity.preferredUsername ?? name;
-  // The platform's own roles only: they are SCREAMING_SNAKE, while Keycloak's built-ins that can
-  // ride the same claim (`offline_access`, `default-roles-…`) are not, and are nothing a person holds.
-  const roleLine = identity.roles
-    .filter((role) => /^[A-Z][A-Z_]*$/.test(role))
-    .map(humanizeStatus)
-    .join(' · ');
+  const access = useMyAccess(realm === 'staff');
+  const roleLine = badgeRole(realm, identity, access?.primaryRole?.name);
 
   return (
     // No rule above it (2026-10-09): the nav's own scroll shadow marks the edge when there is more
@@ -382,17 +398,7 @@ function UserBlock({ identity }: { identity: ReturnType<typeof readIdentity> }) 
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium">{name}</p>
-          {/* Roles as words, not enums (2026-10-09): "UNDERWRITER, FINANCE..." shouted, and at 240px
-              the full set still may not fit, so the whole of it is the title. */}
-          {roleLine ? (
-            <Tip content={roleLine}>
-              <p tabIndex={0} className="truncate rounded-sm text-xs text-muted-foreground">
-                {roleLine}
-              </p>
-            </Tip>
-          ) : (
-            <p className="truncate text-xs text-muted-foreground">No roles</p>
-          )}
+          <p className="truncate text-xs text-muted-foreground">{roleLine ?? 'No role'}</p>
         </div>
       </div>
 

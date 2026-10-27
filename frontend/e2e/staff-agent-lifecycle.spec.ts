@@ -48,15 +48,16 @@ test.describe('staff agent lifecycle', () => {
   // DistributionContractTest's suspendAgentRejectsAnAlreadySuspendedAgentWith409
   // and reactivateAgentRejectsAnAlreadyActiveAgentWith409.
 
-  test('a staff.underwriter session sees no lifecycle actions on an agent', async ({ page, browser }) => {
+  test('a staff.underwriter session cannot open an agent, let alone act on one', async ({ page, browser }) => {
     const agentId = await onboardRealAgent(page);
 
     const underwriterContext = await browser.newContext({ storageState: 'e2e/.auth/staff.json' });
     const underwriterPage = await underwriterContext.newPage();
     await underwriterPage.goto(`/staff/agents/${agentId}`);
-    await expect(underwriterPage.getByRole('heading', { name: /E2E-LIC-LIFECYCLE-/ })).toBeVisible();
+    // Agents are distribution's (agents.view) since staff permissions (2026-10-26): an underwriter cannot open the
+    // page at all, let alone act on it.
+    await expect(underwriterPage.getByText('You do not have access to this')).toBeVisible({ timeout: 15_000 });
     await expect(underwriterPage.getByRole('button', { name: 'Suspend' })).not.toBeVisible();
-    await expect(underwriterPage.getByRole('heading', { level: 2, name: 'Lifecycle' })).not.toBeVisible();
     await underwriterContext.close();
   });
 
@@ -75,9 +76,12 @@ test.describe('staff agent lifecycle', () => {
 
     await page.goto('/staff/agents/new');
     await page.getByRole('button', { name: 'Search for a VERIFIED party by name' }).click();
-    await page.getByPlaceholder('Type a name to search').fill('E2E Picker Exclusion Fixture');
+    // This run's own name, not the shared prefix: an earlier run's fixture can since have been verified by another
+    // spec working the KYC queue, and would then rightly be offered.
+    await page.getByPlaceholder('Type a name to search').fill(pendingName);
 
     await expect(page.getByText(/No matches for/)).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText(pendingName)).not.toBeVisible();
+    // An option, not any text: the "No matches for …" line itself names what was searched for.
+    await expect(page.getByRole('option', { name: new RegExp(pendingName) })).toHaveCount(0);
   });
 });

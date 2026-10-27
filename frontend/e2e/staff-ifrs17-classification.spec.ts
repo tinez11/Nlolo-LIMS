@@ -23,7 +23,9 @@ test.describe('IFRS 17 classification at sale', () => {
 });
 
 test.describe('IFRS 17 classification at sale -- a policy', () => {
-  test.use({ storageState: 'e2e/.auth/staff-finance.json' });
+  // Changing a case's sale and issuing are underwriting's, reading the group is finance's: since staff permissions
+  // (2026-10-26) the admin is the one seeded login holding all three.
+  test.use({ storageState: 'e2e/.auth/staff-admin.json' });
 
   test('the case sale is changed, fixed at issue, and the policy is classified into its group', async ({ page }) => {
     // A case, a manual issue and a classification event that lands after the issue commits: about a minute alone,

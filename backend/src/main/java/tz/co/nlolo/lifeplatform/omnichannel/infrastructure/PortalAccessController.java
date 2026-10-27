@@ -31,8 +31,6 @@ import java.util.UUID;
 @RestController
 public class PortalAccessController {
 
-    private static final String CAN_INVITE =
-        "hasRole('REALM_STAFF') and (hasRole('CUSTOMER_SERVICE_REP') or hasRole('ADMIN'))";
 
     private final PortalAccessService service;
     private final PartyApi partyApi;
@@ -43,25 +41,25 @@ public class PortalAccessController {
     }
 
     @GetMapping("/parties/{partyId}/portal-access")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.can('clients.view')")
     public ResponseEntity<PortalAccessView> access(@PathVariable UUID partyId) {
         return ResponseEntity.ok(service.access(partyId));
     }
 
     @PostMapping("/parties/{partyId}/portal-access")
-    @PreAuthorize(CAN_INVITE)
+    @PreAuthorize("@access.can('clients.portal')")
     public ResponseEntity<PortalInvite> invite(@PathVariable UUID partyId, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.invite(partyId, staffName(jwt)));
     }
 
     @PostMapping("/parties/{partyId}/portal-access/resend")
-    @PreAuthorize(CAN_INVITE)
+    @PreAuthorize("@access.can('clients.portal')")
     public ResponseEntity<PortalInvite> resend(@PathVariable UUID partyId) {
         return ResponseEntity.ok(service.resend(partyId));
     }
 
     @DeleteMapping("/parties/{partyId}/portal-access")
-    @PreAuthorize(CAN_INVITE)
+    @PreAuthorize("@access.can('clients.portal')")
     public ResponseEntity<PortalAccessView> revoke(@PathVariable UUID partyId, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(service.revoke(partyId, staffName(jwt)));
     }

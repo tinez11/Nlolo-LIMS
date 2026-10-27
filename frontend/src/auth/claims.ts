@@ -114,18 +114,23 @@ function decodeIdentity(accessToken: string | undefined): TokenIdentity {
   };
 }
 
-/** Structured staff roles, so nav gating reads as a field rather than a string match. */
-export function staffRoles(identity: TokenIdentity): StaffRoles {
-  const has = (role: keyof StaffRoles) => identity.roles.includes(role);
+/**
+ * What a staff member can do, read as the job it amounts to (2026-10-26). No longer the Keycloak roles on the token:
+ * the platform holds roles and permissions now, and an administrator may give one person a single permission without
+ * a role -- so each field is the permission that job's controls need. Prefer `can('…')` in new code; this remains for
+ * the screens that read a job.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function staffRoles(_identity?: TokenIdentity): StaffRoles {
   return {
-    UNDERWRITER: has('UNDERWRITER'),
-    SENIOR_UNDERWRITER: has('SENIOR_UNDERWRITER'),
-    CLAIMS_ASSESSOR: has('CLAIMS_ASSESSOR'),
-    CLAIMS_MANAGER: has('CLAIMS_MANAGER'),
-    FINANCE_OFFICER: has('FINANCE_OFFICER'),
-    FINANCE_APPROVER: has('FINANCE_APPROVER'),
-    CUSTOMER_SERVICE_REP: has('CUSTOMER_SERVICE_REP'),
-    ADMIN: has('ADMIN'),
+    UNDERWRITER: canAny('underwriting.assess', 'underwriting.decide'),
+    SENIOR_UNDERWRITER: can('underwriting.decide-against-recommendation'),
+    CLAIMS_ASSESSOR: can('claims.assess'),
+    CLAIMS_MANAGER: can('claims.settle'),
+    FINANCE_OFFICER: can('ledger.manage'),
+    FINANCE_APPROVER: can('ledger.approve'),
+    CUSTOMER_SERVICE_REP: can('clients.portal'),
+    ADMIN: can('users.manage'),
   };
 }
 
@@ -133,26 +138,27 @@ export function staffRoles(identity: TokenIdentity): StaffRoles {
  * The Finance nav group. Mirrors the backend's own expression on every finance
  * endpoint: `hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))`.
  */
-export function canSeeFinance(identity: TokenIdentity): boolean {
-  const roles = staffRoles(identity);
-  return roles.FINANCE_OFFICER || roles.ADMIN;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function canSeeFinance(_identity?: TokenIdentity): boolean {
+  return can('ledger.view');
 }
 
 /**
  * Management reports. Mirrors the reporting controller: FINANCE_OFFICER, FINANCE_APPROVER or ADMIN (user's
  * decision 2026-10-11 -- no reporting role exists, and the approvers read the management figures).
  */
-export function canSeeReports(identity: TokenIdentity): boolean {
-  const roles = staffRoles(identity);
-  return roles.FINANCE_OFFICER || roles.FINANCE_APPROVER || roles.ADMIN;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function canSeeReports(_identity?: TokenIdentity): boolean {
+  return can('reports.view');
 }
 
 /**
  * Approving or rejecting a manual journal (IFRS 17 I4). Mirrors `hasRole('REALM_STAFF') and hasRole('FINANCE_APPROVER')`;
  * the server also refuses the journal's own preparer, whatever their roles.
  */
-export function canApproveJournals(identity: TokenIdentity): boolean {
-  return staffRoles(identity).FINANCE_APPROVER;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function canApproveJournals(_identity?: TokenIdentity): boolean {
+  return can('ledger.approve');
 }
 
 /**
@@ -166,8 +172,9 @@ export function canApproveJournals(identity: TokenIdentity): boolean {
  *
  * Reading the catalogue is not gated here and must not be — issuing a policy needs it.
  */
-export function canAuthorProducts(identity: TokenIdentity): boolean {
-  return staffRoles(identity).ADMIN;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function canAuthorProducts(_identity?: TokenIdentity): boolean {
+  return can('products.manage');
 }
 
 /** A display name that degrades gracefully -- tokens vary in which claims they carry. */
@@ -225,13 +232,14 @@ export function avatarHue(seed: string): number {
  * Inviting a client to the customer portal, re-sending or revoking it (2026-10-08). Mirrors
  * `hasRole('CUSTOMER_SERVICE_REP') or hasRole('ADMIN')` on `/parties/{id}/portal-access`.
  */
-export function canInviteToPortal(identity: TokenIdentity): boolean {
-  const roles = staffRoles(identity);
-  return roles.CUSTOMER_SERVICE_REP || roles.ADMIN;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function canInviteToPortal(_identity?: TokenIdentity): boolean {
+  return can('clients.portal');
 }
 
-export function canUnderwriteGroupSchemes(identity: TokenIdentity): boolean {
-  return staffRoles(identity).UNDERWRITER;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function canUnderwriteGroupSchemes(_identity?: TokenIdentity): boolean {
+  return can('schemes.manage');
 }
 
 /**
@@ -239,7 +247,8 @@ export function canUnderwriteGroupSchemes(identity: TokenIdentity): boolean {
  * claimed. Mirrors `hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER')` on
  * `POST /policies/{n}/covered-lives/{id}/promotion`.
  */
-export function canPromoteCoveredLives(identity: TokenIdentity): boolean {
-  const roles = staffRoles(identity);
-  return roles.CLAIMS_ASSESSOR || roles.CLAIMS_MANAGER;
-}
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function canPromoteCoveredLives(_identity?: TokenIdentity): boolean {
+  return canAny('claims.assess', 'claims.settle');
+}import { can, canAny } from './access';
+

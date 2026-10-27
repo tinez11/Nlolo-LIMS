@@ -1,3 +1,4 @@
+import { can, canAny } from '@/auth/access';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useBreadcrumb } from '@/lib/cameFrom';
 import { Pause, Play, RotateCcw, Users } from 'lucide-react';
@@ -8,8 +9,6 @@ import { PolicyScheduleDownload } from '@/features/documents/PolicyScheduleDownl
 import { SchemeCoverPanel } from './SchemeCoverPanel';
 import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router-dom';
-import { useAuth } from 'react-oidc-context';
-import { canSeeFinance, readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
 import { PageHeader } from '@/components/PageHeader';
 import { InlineError } from '@/components/InlineError';
@@ -104,9 +103,10 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   const { policyNumber = '' } = useParams();
   // Back to the client it was opened from, when it was (2026-10-20); otherwise the list it sits in.
   const breadcrumb = useBreadcrumb([{ label: 'Policies', to: `/${realm}/policies` }]);
-  const auth = useAuth();
-  const canSeeReinsurance = canSeeFinance(readIdentity(auth.user?.access_token));
+  const canSeeReinsurance = can('reinsurance.view');
   const isStaff = realm === 'staff';
+  // A tab a staff member's permissions reach; agents keep what their own realm shows them.
+  const staffCan = (code: string) => !isStaff || can(code);
 
   const detail = usePolicyStore(selectDetail(policyNumber));
   const coverage = usePolicyStore(selectCoverage(policyNumber));
@@ -308,7 +308,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     if (policy && isStaff) {
       overview.push(
         <Panel key="sale-ifrs17" title="Sale & IFRS 17" subtitle="Classified at issue and never changed">
-          <Ifrs17Classification policy={policy} showAccounting={canSeeReinsurance} />
+          <Ifrs17Classification policy={policy} showAccounting={can('ledger.view')} />
         </Panel>,
       );
     }
@@ -354,14 +354,18 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       );
     }
     if (isStaff && policy) {
-      overview.push(
-        <Panel key="lifecycle" title="Lifecycle">
-          <LifecycleActions policyNumber={policyNumber} status={policy.status} category={policy.productCategory ?? undefined} />
-        </Panel>,
-      );
+      // Each panel only for someone who may act in it (2026-10-26): a button the server would refuse is not drawn.
+      if (can('policies.status')) {
+        overview.push(
+          <Panel key="lifecycle" title="Lifecycle">
+            <LifecycleActions policyNumber={policyNumber} status={policy.status} category={policy.productCategory ?? undefined} />
+          </Panel>,
+        );
+      }
       // Only on a policy that could have value. A term policy has none, and a panel offering to
       // surrender nothing would be two refusals wearing the shape of an action.
-      if (VALUE_CATEGORIES.includes(policy.productCategory ?? '')) {
+      if (VALUE_CATEGORIES.includes(policy.productCategory ?? '')
+          && canAny('policies.surrender', 'policies.status', 'policies.surrender-approve')) {
         overview.push(
           <Panel key="value" title="Value" subtitle="Stop paying and keep reduced cover, or cash it in">
             <ValueActions policy={policy} />
@@ -372,7 +376,8 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       // scheme is cancelled under the terms its employer or lender negotiated, and the server
       // refuses the window for one, so offering it here would be an action that can only 422.
       // Not on a group funeral scheme, which is category FUNERAL but an association's contract (audit 2026-10-07).
-      if (INDIVIDUAL_CATEGORIES.includes(policy.productCategory ?? '') && !isGroupFuneral) {
+      if (INDIVIDUAL_CATEGORIES.includes(policy.productCategory ?? '') && !isGroupFuneral
+          && canAny('policies.status', 'payouts.approve')) {
         overview.push(
           <Panel
             key="free-look"
@@ -405,7 +410,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           <div className="pt-5">
             <Panel title="Covered lives" subtitle="The main member and their family: what each death pays, and each life's own waiting period">
               <div className="p-4">
-                <CoveredLivesPanel policyNumber={policyNumber} canChange={isStaff} />
+                <CoveredLivesPanel policyNumber={policyNumber} canChange={isStaff && can('policies.service')} />
               </div>
             </Panel>
           </div>
@@ -414,7 +419,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     }
 
     // Unit-linked (product step 6): the units, their forward-priced orders and ledger, and the surrender.
-    if (policy?.productCategory === 'UNIT_LINKED') {
+    if (policy?.productCategory === 'UNIT_LINKED' && staffCan('accounts.view')) {
       tabs.push({
         value: 'units',
         label: 'Units',
@@ -481,7 +486,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       },
       // Only where a loan is possible (audit 2026-10-07): a policy loan is lent against cash value, which only
       // these categories build; on term, funeral, annuity, unit-linked and schemes the tab could never be used.
-      ...(VALUE_CATEGORIES.includes(policy?.productCategory ?? '')
+      ...(VALUE_CATEGORIES.includes(policy?.productCategory ?? '') && staffCan('accounts.view')
         ? [{
             value: 'loans',
             label: 'Loans',
@@ -494,21 +499,23 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             ),
           }]
         : []),
-      {
-        value: 'payouts',
-        label: 'Payouts',
-        content: (
-          <div className="pt-5">
-            <Panel
-              title="Payouts"
-              subtitle="What this contract pays while the life assured is alive, dated at issue"
-            >
-              <PayoutsPanel policyNumber={policyNumber} />
-            </Panel>
-          </div>
-        ),
-      },
-      ...(savingsAccount?.data
+      ...(staffCan('payouts.view')
+        ? [{
+            value: 'payouts',
+            label: 'Payouts',
+            content: (
+              <div className="pt-5">
+                <Panel
+                  title="Payouts"
+                  subtitle="What this contract pays while the life assured is alive, dated at issue"
+                >
+                  <PayoutsPanel policyNumber={policyNumber} />
+                </Panel>
+              </div>
+            ),
+          }]
+        : []),
+      ...(savingsAccount?.data && staffCan('accounts.view')
         ? [
             {
               value: 'account',

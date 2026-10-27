@@ -41,6 +41,10 @@ const MINIMAL_PNG = Buffer.from(
  * registration) was invisible to staff, with no way to find it at all.
  */
 test.describe('staff clients register', () => {
+  // Correcting a client is clients.edit and deciding KYC clients.kyc since staff permissions (2026-10-26) --
+  // customer service's, not an underwriter's. staff.admin holds every role.
+  test.use({ storageState: 'e2e/.auth/staff-admin.json' });
+
   test('shows every client by default, not only those awaiting KYC', async ({ page }) => {
     await page.goto('/staff/clients/individuals');
     await expectStaffShellReady(page);

@@ -1,3 +1,4 @@
+import { can } from '@/auth/access';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useWatch } from 'react-hook-form';
 import type { DepositPeriodView, DepositView } from '@/api/types';
@@ -96,7 +97,8 @@ export function DepositSection({ deposit, isFinance }: { deposit: DepositView; i
           </p>
           {deposit.schedule && <EarlyClosingTable schedule={deposit.schedule} />}
           <DepositScheduleDownload policyNumber={deposit.policyNumber} />
-          <MaturityPanel deposit={deposit} />
+          {/* Instructing what happens at maturity is customer service's (accounts.transact, 2026-10-26). */}
+          {can('accounts.transact') ? <MaturityPanel deposit={deposit} /> : <p className="text-sm">{describeInstruction(deposit)}</p>}
         </>
       )}
       {deposit.awaitingPayee &&

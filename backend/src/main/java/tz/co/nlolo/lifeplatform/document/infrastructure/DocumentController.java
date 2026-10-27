@@ -34,7 +34,7 @@ public class DocumentController {
     }
 
     @GetMapping("/documents/{documentRef}")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.active()")
     public ResponseEntity<byte[]> download(@PathVariable String documentRef) {
         DocumentMetadataView metadata = documentApi.getMetadata(documentRef);
         return FileDownloadResponses.fileResponse(documentApi.download(documentRef), metadata.contentType(),
@@ -42,7 +42,7 @@ public class DocumentController {
     }
 
     @GetMapping("/documents/{documentRef}/metadata")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("@access.active()")
     public ResponseEntity<DocumentMetadataResponseDto> metadata(@PathVariable String documentRef) {
         return ResponseEntity.ok(DocumentMetadataResponseDto.from(documentApi.getMetadata(documentRef)));
     }

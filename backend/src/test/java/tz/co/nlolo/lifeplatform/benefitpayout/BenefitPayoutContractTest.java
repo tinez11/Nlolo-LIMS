@@ -213,7 +213,7 @@ class BenefitPayoutContractTest {
             .andExpect(status().isUnprocessableEntity());
 
         // Finance's, not customer service's.
-        mockMvc.perform(post("/withholding-rules/{id}/end", ruleId).with(staff("CUSTOMER_SERVICE", "cs-1"))
+        mockMvc.perform(post("/withholding-rules/{id}/end", ruleId).with(staff("CUSTOMER_SERVICE_REP", "cs-1"))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"effectiveTo\":\"" + today + "\"}"))
             .andExpect(status().isForbidden());
     }
