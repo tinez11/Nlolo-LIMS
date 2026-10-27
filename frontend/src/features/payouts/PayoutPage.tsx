@@ -99,7 +99,7 @@ export function PayoutPage() {
         </div>
 
         <Panel title="This payout">
-          <dl className="divide-y divide-border">
+          <dl className="px-4 pb-2">
             <Field label="Status" value={<StatusBadge kind="payoutInstalment" value={payout.status} />} />
             <Field label="Due" value={formatDate(payout.dueDate)} />
             <Field

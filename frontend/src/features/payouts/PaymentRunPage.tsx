@@ -85,7 +85,7 @@ export function PaymentRunPage() {
       <DetailLayout
         record={
           <Panel title="This run">
-            <dl className="divide-y divide-border">
+            <dl className="px-4 pb-2">
               <Field label="Status" value={<StatusBadge kind="paymentRun" value={run.status} />} />
               <Field label="Run date" value={formatDate(run.runDate)} />
               <Field label="Instalments" value={run.instalmentCount} />
