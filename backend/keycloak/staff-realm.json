@@ -309,6 +309,32 @@
       ]
     },
     {
+      "username": "staff.service",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "staff.service@example.tz",
+      "firstName": "Neema",
+      "lastName": "Service",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ],
+        "home_branch": [
+          "DSM"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "devpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CUSTOMER_SERVICE_REP"
+      ]
+    },
+    {
       "username": "staff.admin",
       "enabled": true,
       "emailVerified": true,

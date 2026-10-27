@@ -48,11 +48,13 @@ test.describe('staff distribution', () => {
     await expect(financePage.getByRole('heading', { name: /E2E-LIC-/ })).toBeVisible();
     await financeContext.close();
 
-    // Issuing a policy is REALM_STAFF-broad, not finance-gated -- the default
-    // staff.underwriter identity is enough here.
+    // Issuing names an agent of record, and choosing one reads agents (agents.view), which is distribution's since
+    // staff permissions (2026-10-26) -- an underwriter has policies.issue but cannot list agents. The admin holds both.
     // Manual issue names a real, unissued case now. The policyholder and product
     // come from it by prefill, so this no longer picks them by hand. The sum assured
     // still does: the case view @JsonIgnores it, so the console cannot read it.
+    const adminContext = await browser.newContext({ storageState: 'e2e/.auth/staff-admin.json' });
+    page = await adminContext.newPage();
     const caseId = await caseAwaitingManualIssue(page);
     await page.goto('/staff/policies/new');
     await selectUnderwritingCase(page, caseId);
@@ -89,36 +91,23 @@ test.describe('staff distribution', () => {
     await expect(page.getByRole('link', { name: agentId })).toHaveCount(0);
     await agentLink.click();
     await expect(page).toHaveURL(new RegExp(`/staff/agents/${agentId}$`));
+    await adminContext.close();
   });
 
-  test('a staff.underwriter session can read an agent but sees no management actions', async ({
+  test('a staff.underwriter session cannot open an agent, so sees no plan or payout actions', async ({
     page,
     browser,
   }) => {
     const financeContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance.json' });
     const financePage = await financeContext.newPage();
     const agentId = await onboardRealAgent(financePage);
-    // A FRESH product, not the seeded Demo Term Life. A commission plan hangs off a
-    // PRODUCT, so once anything -- another suite, or a person clicking around the dev
-    // console -- authors a plan on the shared fixture, every agent selecting it shows
-    // "Active plan" instead. That is what broke this test: it asserted the empty state
-    // on a product that had since acquired a plan.
-    //
-    // The no-plan state is not incidental here, it is load-bearing: the inline
-    // create-plan form ONLY renders in that state, so "canManage is false, no create
-    // form" proves nothing on a product that already has a plan. Reading the seeded
-    // fixture made the two assertions below quietly vacuous as well as red.
-    const { optionLabel } = await asAdmin(browser, createRealActiveProduct);
     await financeContext.close();
 
-    // getAgent/listStatements are REALM_STAFF-broad reads -- staff.underwriter
-    // (no FINANCE_OFFICER/ADMIN) can see this page, just not act on it.
+    // Agents and their commission are distribution's (agents.view) since staff permissions (2026-10-26). This used
+    // to prove a read-only view; no built-in role reads agents without also managing them now, so what is left to
+    // prove is that an underwriter is refused the page, not shown actions that would 403.
     await page.goto(`/staff/agents/${agentId}`);
-    await expect(page.getByRole('heading', { name: /E2E-LIC-/ })).toBeVisible();
-
-    await page.getByLabel('Product').selectOption({ label: optionLabel });
-    await expect(page.getByText('No plan applies to this agent for this product yet.')).toBeVisible();
-    // canManage is false for this identity -- no inline create-plan form.
+    await expect(page.getByText('You do not have access to this')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Create a plan for this product')).not.toBeVisible();
     await expect(page.getByRole('button', { name: 'Request payout' })).not.toBeVisible();
   });
@@ -183,7 +172,8 @@ test.describe('staff distribution', () => {
     await createDefaultPlan(financePage, '0.1000');
     await expect(financePage.getByText('Active plan', { exact: true })).toBeVisible({ timeout: 15_000 });
 
-    await issueRealPolicyForAgent(financePage, optionLabel, agentId);
+    // Selling the policy is underwriting's, not finance's, since staff permissions (2026-10-26).
+    await asAdmin(browser, (page) => issueRealPolicyForAgent(page, optionLabel, agentId));
 
     // Accrual is event-driven off policy.PolicyIssued, published inside the
     // same transaction the manual-issue POST commits -- normally visible

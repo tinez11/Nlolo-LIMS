@@ -2,6 +2,10 @@ import { expect, test, type Page } from '@playwright/test';
 import { expectStaffShellReady } from './guards';
 import { issueRealPolicy } from './policies';
 
+// Since staff permissions (2026-10-26) an underwriter registers no claims and services no policies: this spec issues a
+// policy and then does that work, so it runs as staff.admin, who holds every role.
+test.use({ storageState: 'e2e/.auth/staff-admin.json' });
+
 /**
  * Claim intake, claimant first.
  *

@@ -2,6 +2,7 @@ import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { grantRoles } from '@/test/access';
 import { getParty, listKycDecisions, listPartyDocuments } from '@/api/party';
 import type { PartyDetailView, PartyDocumentView } from '@/api/types';
 import { usePartyStore } from '@/store/partyStore';
@@ -100,6 +101,8 @@ function evidenceOnRecord(over: Partial<PartyDocumentView> = {}): PartyDocumentV
 }
 
 beforeEach(() => {
+  // Staff here decide KYC and file evidence: customer service, as the page reads it from permissions (2026-10-26).
+  grantRoles('CUSTOMER_SERVICE_REP');
   usePartyStore.setState({
     detail: { [PARTY_ID]: { ...RESOURCE, data: party() } },
     documents: { [PARTY_ID]: { ...RESOURCE, data: [] } },

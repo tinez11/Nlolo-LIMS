@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { asAdmin } from './admin';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
 import { dmy, todayIso } from './dates';
 import { expectNavItemsHidden, expectRouteDenied } from './guards';
@@ -109,21 +110,26 @@ test.describe('staff reinsurance', () => {
     // Manual issue names a real, unissued case now. The policyholder and product
     // come from it by prefill, so this no longer picks them by hand. The sum assured
     // still does: the case view @JsonIgnores it, so the console cannot read it.
-    const caseId = await caseAwaitingManualIssue(page);
-    await page.goto('/staff/policies/new');
-    await selectUnderwritingCase(page, caseId);
-    await expect(page.getByText('Resolving product version…')).not.toBeVisible();
-    await page.getByLabel('Sum assured').fill('2000000.00');
-    await page.getByLabel('Premium', { exact: true }).fill('800.00');
-    // Required, and MIGRATION so the policy is in force rather than an offer.
-    await page.getByLabel('Why is this being issued by hand?').selectOption('MIGRATION');
-    await page.getByLabel('Reason for manual issue').fill('E2E reinsurance fixture');
-    await page.getByRole('button', { name: 'Issue policy' }).click();
-    await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
+    // Issuing is underwriting's, not finance's, since staff permissions (2026-10-26): the admin issues, finance reads
+    // the cession.
+    const policyUrl = await asAdmin(browser, async (admin) => {
+      const caseId = await caseAwaitingManualIssue(admin);
+      await admin.goto('/staff/policies/new');
+      await selectUnderwritingCase(admin, caseId);
+      await expect(admin.getByText('Resolving product version…')).not.toBeVisible();
+      await admin.getByLabel('Sum assured').fill('2000000.00');
+      await admin.getByLabel('Premium', { exact: true }).fill('800.00');
+      // Required, and MIGRATION so the policy is in force rather than an offer.
+      await admin.getByLabel('Why is this being issued by hand?').selectOption('MIGRATION');
+      await admin.getByLabel('Reason for manual issue').fill('E2E reinsurance fixture');
+      await admin.getByRole('button', { name: 'Issue policy' }).click();
+      await expect(admin).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
+      return admin.url();
+    });
 
     // Cessions are a tab on the record now, and the poll below reloads -- which preserves
     // the query string, so landing on the tab once here is enough.
-    await page.goto(`${page.url()}?tab=reinsurance`);
+    await page.goto(`${policyUrl}?tab=reinsurance`);
 
     // Cession is a same-transaction, event-driven side effect of PolicyIssued
     // -- normally visible immediately, polled defensively rather than assumed.

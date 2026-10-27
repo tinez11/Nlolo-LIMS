@@ -102,6 +102,7 @@ test.describe('staff policies', () => {
 
   test('a term policy offers no surrender at all, because it has nothing to surrender', async ({
     page,
+    browser,
   }) => {
     // Its own term policy -- an underwriting case, a second underwriter's decision and a manual
     // issue -- before the assertion can run.
@@ -110,6 +111,10 @@ test.describe('staff policies', () => {
     // business" stopped being true when the money-back fixtures arrived: they sort newest-first,
     // carry a cash value, and so CORRECTLY show the Value panel this test asserts is absent.
     const policyNumber = await issueRealPolicy(page, 'E2E fixture: a term policy has nothing to surrender');
+    // The underwriter issues; the Lifecycle panel is customer service's (policies.status) since staff permissions
+    // (2026-10-26), so the policy is read as them.
+    const serviceContext = await browser.newContext({ storageState: 'e2e/.auth/staff-service.json' });
+    page = await serviceContext.newPage();
     await page.goto(`/staff/policies/${policyNumber}`);
 
     /*
@@ -122,6 +127,7 @@ test.describe('staff policies', () => {
     await expect(page.getByRole('heading', { name: 'Lifecycle' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Value' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /surrender/i })).toHaveCount(0);
+    await serviceContext.close();
   });
 
   test('a filter is shareable through the URL', async ({ page }) => {

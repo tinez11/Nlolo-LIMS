@@ -155,6 +155,9 @@ test.describe('unit-linked U2', () => {
     await page.getByRole('link', { name: /full detail/i }).click();
     await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
     const policyUrl = new URL(page.url()).pathname;
+    // The underwriter sold it; the units are customer service's to service (accounts.view, accounts.transact) since
+    // staff permissions (2026-10-26), so the rest of the policy's life is theirs.
+    page = await (await browser.newContext({ storageState: 'e2e/.auth/staff-service.json' })).newPage();
 
     // ---- The first premium through the mock rail; it waits for tomorrow's price.
     await asAdmin(browser, async (admin) => {

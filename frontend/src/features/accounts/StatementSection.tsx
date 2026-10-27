@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { downloadStatementPdf } from '@/api/accumulation';
+import { can } from '@/auth/access';
 import { getSavingsStatement, type SavingsStatementView } from '@/api/documents';
 import type { ApiError } from '@/lib/apiError';
 import type { StatementRecordView } from '@/api/types';
@@ -79,9 +80,13 @@ export function StatementSection({ policyNumber }: { policyNumber: string }) {
         <Button size="sm" onClick={() => void show()} disabled={loading}>
           Show statement
         </Button>
-        <Button size="sm" variant="outline" onClick={() => void file()} disabled={acting?.status === 'loading'}>
-          Generate PDF
-        </Button>
+        {/* Filing a statement is customer service's (accounts.transact, 2026-10-26); anyone who reads the account
+            may still show one. */}
+        {can('accounts.transact') && (
+          <Button size="sm" variant="outline" onClick={() => void file()} disabled={acting?.status === 'loading'}>
+            Generate PDF
+          </Button>
+        )}
       </div>
 
       {error && <InlineError error={error} />}

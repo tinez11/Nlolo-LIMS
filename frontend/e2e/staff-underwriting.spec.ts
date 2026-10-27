@@ -262,14 +262,16 @@ test.describe('staff underwriting', () => {
     await expect(page.getByRole('button', { name: 'Refer to senior underwriter' })).not.toBeVisible();
   });
 
-  test('a staff.finance session (no UNDERWRITER role) sees no assessment form or refer button on a real case', async ({
+  test('a customer service session (no UNDERWRITER role) sees no assessment form or refer button on a real case', async ({
     page,
     browser,
   }) => {
     await openCaseForAmina(page);
     const caseUrl = page.url();
 
-    const financeContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance.json' });
+    // Customer service, not finance: since staff permissions (2026-10-26) finance cannot open a case at all, while
+    // customer service reads cases and takes proposals (underwriting.view, underwriting.propose) without assessing.
+    const financeContext = await browser.newContext({ storageState: 'e2e/.auth/staff-service.json' });
     const financePage = await financeContext.newPage();
     await financePage.goto(caseUrl);
     await expect(financePage.getByRole('heading', { name: 'Underwriting case' })).toBeVisible();

@@ -43,6 +43,9 @@ function loansPanel(page: Page): Locator {
  * by the backend's own end-to-end tests.
  */
 test.describe('staff policy loans', () => {
+  // Issuing the endowment is underwriting's and its Loans tab is accounts' (accounts.view, loans.manage) since staff
+  // permissions (2026-10-26); the admin holds both.
+  test.use({ storageState: 'e2e/.auth/staff-admin.json' });
   test('the loans panel renders real loan data or an honest empty state', async ({ page }) => {
     const opened = await openFirstPolicyDetail(page);
     test.skip(!opened, 'no seeded policy to open');

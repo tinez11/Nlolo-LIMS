@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { asAdmin } from './admin';
 import { issueRealPolicy } from './policies';
 import { expectStaffShellReady } from './guards';
 
@@ -83,13 +84,14 @@ test.describe('waiving a premium is finance-only', () => {
 test.describe('waiving a premium is offered to finance', () => {
   test.use({ storageState: 'e2e/.auth/staff-finance.json' });
 
-  test('a finance officer still has the Waive action', async ({ page }) => {
+  test('a finance officer still has the Waive action', async ({ page, browser }) => {
     // Its own policy, issued here. The literal POL-6BD5702F was 'the seeded policy' until
     // the volumes were last reset -- policy numbers are minted POL-<random>, so it can never
     // exist again and both tests in this block were failing for a reason unrelated to who
     // may waive a premium.
     test.slow();
-    const policyNumber = await issueRealPolicy(page, 'E2E role-gates fixture');
+    // Issuing is underwriting's, not finance's, since staff permissions (2026-10-26): the admin issues, finance waives.
+    const policyNumber = await asAdmin(browser, (admin) => issueRealPolicy(admin, 'E2E role-gates fixture'));
     await page.goto(`/staff/policies/${policyNumber}?tab=billing`);
     await expect(page.getByRole('heading', { name: 'Invoices' })).toBeVisible({ timeout: 30_000 });
 

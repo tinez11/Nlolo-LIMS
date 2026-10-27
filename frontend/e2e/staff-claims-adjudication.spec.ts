@@ -70,7 +70,7 @@ async function registerRealDeathClaim(page: Page, policyNumber: string): Promise
   return page.url().split('/').pop() as string;
 }
 
-test.describe('staff claims adjudication', () => {
+test.describe('staff claims adjudication, as an underwriter', () => {
   test('a staff.underwriter session sees no adjudication panels on any claim', async ({ page }) => {
     // The real seeded DEATH claim -- read-only for this test, never mutated.
     // Rows open a preview drawer ("drawer previews, page acts"); "Full detail"
@@ -87,6 +87,12 @@ test.describe('staff claims adjudication', () => {
     await expect(page.getByRole('heading', { name: 'Decide settlement' })).not.toBeVisible();
     await expect(page.getByRole('heading', { name: 'Reopen' })).not.toBeVisible();
   });
+});
+
+test.describe('staff claims adjudication', () => {
+  // Issuing the policy and registering the claim were "any staff" until staff permissions (2026-10-26); an underwriter
+  // now registers no claims, so `page` is staff.admin, who holds every role. The assessor and manager stay separate.
+  test.use({ storageState: 'e2e/.auth/staff-admin.json' });
 
   test('a fresh claim moves REGISTERED -> UNDER_ASSESSMENT -> SETTLED via two distinct real staff identities', async ({
     page,

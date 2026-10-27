@@ -165,6 +165,8 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
   const viewerSubject = identity?.subject ?? undefined;
   // The second signature on withdrawals and adjustments (accounts.approve, 2026-10-26).
   const isFinance = can('accounts.approve');
+  // Requesting a withdrawal or a top-up is customer service's (accounts.transact, 2026-10-26); finance signs.
+  const canTransact = can('accounts.transact');
 
   // Select the stored resource and default OUTSIDE the selector: `?? []` inside it returns a fresh
   // array on every call, which Zustand reads as a change and re-renders forever -- the render loop
@@ -180,12 +182,12 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
     <div className="space-y-4">
       {open && (
         <div className="flex flex-wrap gap-2">
-          {moneyOut && (
+          {canTransact && moneyOut && (
             <Button size="sm" variant={action === 'withdraw' ? 'secondary' : 'outline'} onClick={() => setAction('withdraw')}>
               Request withdrawal
             </Button>
           )}
-          {moneyIn && (
+          {canTransact && moneyIn && (
             <Button size="sm" variant={action === 'topup' ? 'secondary' : 'outline'} onClick={() => setAction('topup')}>
               Request top-up
             </Button>

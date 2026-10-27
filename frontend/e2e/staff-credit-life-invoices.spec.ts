@@ -17,8 +17,8 @@ const API = 'http://localhost:8080';
  * 12,000 comes back -- and 53,000 is owed.
  */
 async function acceptEnrolment(http: APIRequestContext, policyNumber: string, submissionId: string) {
-  // A SECOND person: the platform refuses the uploader's own acceptance.
-  const token = await staffToken(http, 'staff.manager');
+  // A SECOND person, and one whose job it is: accepting a schedule is schemes.enrolments, an underwriter's.
+  const token = await staffToken(http, 'staff.underwriter');
   const accepted = await http.post(
     `${API}/credit-life-schemes/${policyNumber}/enrolments/${submissionId}/acceptance`,
     { headers: { Authorization: `Bearer ${token}` } },
@@ -54,10 +54,10 @@ async function exitOnTheDayTheyBorrowed(http: APIRequestContext, policyNumber: s
   });
   expect(upload.ok(), `exits upload -> ${upload.status()} ${await upload.text()}`).toBeTruthy();
   const submission = (await upload.json()) as Record<string, unknown>;
-  const manager = await staffToken(http, 'staff.manager');
+  const underwriter = await staffToken(http, 'staff.underwriter');
   const accepted = await http.post(
     `${API}/credit-life-schemes/${policyNumber}/exits/${submission.submissionId as string}/acceptance`,
-    { headers: { Authorization: `Bearer ${manager}` } },
+    { headers: { Authorization: `Bearer ${underwriter}` } },
   );
   expect(accepted.ok(), `exits acceptance -> ${accepted.status()} ${await accepted.text()}`).toBeTruthy();
 }

@@ -4,6 +4,10 @@ import { dmy, todayIso } from './dates';
 import { fillPolicyNumberManually } from './guards';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
 
+// Since staff permissions (2026-10-26) an underwriter registers no claims and services no policies: this spec issues a
+// policy and then does that work, so it runs as staff.admin, who holds every role.
+test.use({ storageState: 'e2e/.auth/staff-admin.json' });
+
 /**
  * Claims e2e coverage against the real stack.
  *

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { canAny } from '@/auth/access';
-import { EmptyState, LoadingBlock } from '@/components/states';
+import { LoadingBlock, NoAccess } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { useAccessStore, useMyAccess } from '@/store/accessStore';
 
@@ -30,14 +30,10 @@ export function StaffAccessGate({ children }: { children: ReactNode }) {
 
 /**
  * A staff page the person's permissions do not reach. The menu never offers it; this answers a typed or bookmarked
- * address, and names the page's own permission so the person knows what to ask their administrator for.
+ * address.
  */
 export function RequirePermission({ permissions, children }: { permissions: readonly string[]; children: ReactNode }) {
   if (canAny(...permissions)) return <>{children}</>;
-  return (
-    <EmptyState
-      title="Not available to your role"
-      description="This page needs a permission you do not hold. If your work needs it, ask an administrator to add it to your access."
-    />
-  );
+  // The platform's own refusal: the same sentence a 403 shows, so it reads alike from the server or from here.
+  return <NoAccess what="This page" who="staff whose role gives them access; ask an administrator if your work needs it" />;
 }

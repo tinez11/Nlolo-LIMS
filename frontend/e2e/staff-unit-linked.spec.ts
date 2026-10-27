@@ -167,6 +167,10 @@ test.describe('unit-linked', () => {
     await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
     const policyUrl = new URL(page.url()).pathname;
 
+    // The underwriter sold it; the units are customer service's to service (accounts.view, accounts.transact) since
+    // staff permissions (2026-10-26), so the rest of the policy's life is theirs.
+    page = await (await browser.newContext({ storageState: 'e2e/.auth/staff-service.json' })).newPage();
+    await page.goto(policyUrl);
     await page.getByRole('tab', { name: 'Units' }).click();
     await expect(page.getByText('No units yet')).toBeVisible({ timeout: 15_000 });
 

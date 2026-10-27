@@ -1,3 +1,4 @@
+import { can } from '@/auth/access';
 import { useEffect, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Check, ChevronDown, FileCheck, X } from 'lucide-react';
@@ -157,7 +158,8 @@ export function KycDecisionPanel({
       </div>
 
       <div className="order-last lg:order-none lg:col-start-1 lg:row-start-2 lg:self-start">
-        <DocumentUpload partyId={partyId} onUploaded={open} />
+        {/* Filing evidence is clients.edit and deciding it clients.kyc (2026-10-26): what a person cannot do is not drawn. */}
+        {can('clients.edit') && <DocumentUpload partyId={partyId} onUploaded={open} />}
       </div>
 
       <div className="space-y-4 lg:col-start-2 lg:row-span-2 lg:row-start-1">
@@ -177,7 +179,7 @@ export function KycDecisionPanel({
           </div>
         )}
 
-        {chosen && !chosenEvidence ? (
+        {!can('clients.kyc') ? null : chosen && !chosenEvidence ? (
           <p className="text-sm text-muted-foreground">
             A signed form is not proof of identity. Open identity evidence to decide on KYC.
           </p>

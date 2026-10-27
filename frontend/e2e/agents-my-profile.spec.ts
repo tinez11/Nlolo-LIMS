@@ -102,12 +102,13 @@ test.describe('agents onboard a customer', () => {
     await page.getByPlaceholder('Search by name').fill(`E2E Person Record ${suffix}`);
     await page.getByRole('button', { name: new RegExp(`E2E Person Record ${suffix}`) }).click();
 
-    await expect(page.getByRole('heading', { level: 2, name: 'Person' })).toBeVisible();
+    // The client record opens on its Overview (2026-10-22): the person's rating facts, then where they live.
+    await expect(page.getByRole('heading', { level: 2, name: 'Underwriting facts' })).toBeVisible();
     await expect(page.getByText('Non-smoker')).toBeVisible();
     await expect(page.getByText('Secondary school teacher')).toBeVisible();
     await expect(page.getByText('Ilala Secondary School')).toBeVisible();
     await expect(page.getByText(idNumber)).toBeVisible();
-    await expect(page.getByRole('heading', { level: 2, name: 'Address' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Contact' })).toBeVisible();
     await expect(page.getByText('Dar es Salaam')).toBeVisible();
   });
 

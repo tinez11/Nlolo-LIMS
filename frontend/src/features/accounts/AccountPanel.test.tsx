@@ -73,6 +73,8 @@ beforeEach(() => grantRoles('FINANCE_OFFICER'));
 
 describe('AccountPanel on a term account', () => {
   it('shows the locked rate and maturity, takes money in, and offers no withdrawal', () => {
+    // Both sides of the counter: customer service requests the top-up, finance records a transfer in.
+    grantRoles('FINANCE_OFFICER', 'CUSTOMER_SERVICE_REP');
     useAccumulationStore.setState({ termAccount: { 'POL-1': success(termAccount('RUNNING')) } });
     render(<AccountPanel policyNumber="POL-1" />);
     expect(screen.getByText('5.25% a year')).toBeInTheDocument();
@@ -101,14 +103,31 @@ describe('AccountPanel', () => {
     expect(ledger).toHaveTextContent('reverses #2');
   });
 
-  it('offers finance the transfer in and the adjustment, and everyone the withdrawal and top-up', () => {
+  it('offers finance the transfer in and the adjustment, but not the withdrawal or top-up', () => {
     render(<AccountPanel policyNumber="POL-1" />);
-    for (const name of ['Request withdrawal', 'Request top-up', 'Record transfer in', 'Propose adjustment']) {
+    for (const name of ['Record transfer in', 'Propose adjustment']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
+    // Requesting money movements is customer service's (accounts.transact, 2026-10-26); the server would refuse it.
+    for (const name of ['Request withdrawal', 'Request top-up']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    }
+  });
+
+  it('offers customer service the withdrawal and top-up, but not the transfer in or the adjustment', () => {
+    grantRoles('CUSTOMER_SERVICE_REP');
+    render(<AccountPanel policyNumber="POL-1" />);
+    for (const name of ['Request withdrawal', 'Request top-up']) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
+    for (const name of ['Record transfer in', 'Propose adjustment']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
     }
   });
 
   it('on a deposit shows the term and its rate, and offers no money movement but the adjustment', () => {
+    // Both sides of the counter, so "no money movement" is not merely a permission missing.
+    grantRoles('FINANCE_OFFICER', 'CUSTOMER_SERVICE_REP');
     useAccumulationStore.setState({
       deposit: {
         'POL-1': success({

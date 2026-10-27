@@ -26,6 +26,7 @@ const MINIMAL_PNG = Buffer.from(
 test.describe('staff party KYC verification', () => {
   test('reaches the party by drilling in from a policy, then drives a real reject-then-verify round trip', async ({
     page,
+    browser,
   }) => {
     // SITS ON THE 60s BOUNDARY AND FLIPS EITHER WAY, EVEN RUN ALONE -- measured 2026-09-28:
     // two consecutive solo runs, one pass and one timeout, with nothing else on the machine.
@@ -76,10 +77,17 @@ test.describe('staff party KYC verification', () => {
     const partyHref = await policyholderLink.getAttribute('href');
     await policyholderLink.click();
     await expect(page).toHaveURL(partyHref as string);
-    await page.getByRole('tab', { name: 'KYC & documents', exact: true }).click();
-    await expect(page.getByRole('heading', { level: 2, name: 'KYC & documents' })).toBeVisible();
 
-    await rejectThenVerify(page);
+    // The underwriter issues and drills in; deciding identity is customer service's (clients.kyc) since staff
+    // permissions (2026-10-26), so the decision is made as them on the same party.
+    const serviceContext = await browser.newContext({ storageState: 'e2e/.auth/staff-service.json' });
+    const service = await serviceContext.newPage();
+    await service.goto(partyHref as string);
+    await service.getByRole('tab', { name: 'KYC & documents', exact: true }).click();
+    await expect(service.getByRole('heading', { level: 2, name: 'KYC & documents' })).toBeVisible();
+
+    await rejectThenVerify(service);
+    await serviceContext.close();
   });
 });
 

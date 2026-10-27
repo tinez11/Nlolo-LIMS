@@ -28,6 +28,8 @@ async function asStaff<T>(page: Page, state: string, url: string, work: (other: 
 }
 
 test.describe('group funeral schemes', () => {
+  // The association's scheme is underwritten, then a claim registered: two jobs since staff permissions (2026-10-26); the admin holds both.
+  test.use({ storageState: 'e2e/.auth/staff-admin.json' });
   test.setTimeout(420_000);
 
   test('an association is proposed one family, pays, gains a member and is paid a child’s death', async ({ page, browser }) => {

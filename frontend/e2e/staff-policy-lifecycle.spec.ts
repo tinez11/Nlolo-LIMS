@@ -72,16 +72,24 @@ test.describe('staff policy lifecycle', () => {
   // Audit 2026-10-07: the console offered Suspend on every policy and the server refused it on all but the
   // categories POLICY_SUSPENSION_ELIGIBLE_CATEGORIES names. It now reads that list and says why instead; the
   // server's own 409 stays covered by PolicyApiIntegrationTest.
-  test('does not offer to suspend an ineligible (TERM_LIFE) product category, and says why', async ({ page }) => {
+  test('does not offer to suspend an ineligible (TERM_LIFE) product category, and says why', async ({
+    page,
+    browser,
+  }) => {
     const policyNumber = await issuePolicyAgainst(
       page,
       'Demo Term Life (DEMO-TERM-01)',
       'E2E ineligible-suspend fixture',
     );
 
-    await expect(page).toHaveURL(new RegExp(`/staff/policies/${policyNumber}$`));
-    await expect(page.getByText('This kind of policy is not suspended')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('button', { name: 'Suspend' })).toHaveCount(0);
+    // The underwriter issues; suspending is customer service's (policies.status) since staff permissions
+    // (2026-10-26), so the reason is read as them.
+    const serviceContext = await browser.newContext({ storageState: 'e2e/.auth/staff-service.json' });
+    const service = await serviceContext.newPage();
+    await service.goto(`/staff/policies/${policyNumber}`);
+    await expect(service.getByText('This kind of policy is not suspended')).toBeVisible({ timeout: 15_000 });
+    await expect(service.getByRole('button', { name: 'Suspend' })).toHaveCount(0);
+    await serviceContext.close();
   });
 
   test('the search bar finds a real policy by its policy number', async ({ page }) => {
