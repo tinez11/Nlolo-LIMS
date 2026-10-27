@@ -206,7 +206,7 @@ function ReconciliationRow({ runId, row, viewer, approver }: {
       <td className="py-1 pr-3 text-right tabular-nums">{money(row.engine)}</td>
       <td className="py-1">
         <p className={row.status === 'EXCEPTION' ? 'text-status-danger-fg' : undefined}>{differenceLabel(row)}</p>
-        {row.explanation && <p className="text-xs text-muted-foreground">“{row.explanation}” — {row.explainedBy}</p>}
+        {row.explanation && <p className="text-xs text-muted-foreground">“{row.explanation}” — <StaffName subject={row.explainedBy} /></p>}
         {(row.status === 'EXCEPTION' || row.status === 'EXPLAINED') && (
           <form className="mt-1 flex items-end gap-2" aria-label={`Explain ${row.group} ${row.figure}`}
             onSubmit={(e) => {

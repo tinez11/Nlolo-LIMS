@@ -13,6 +13,7 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { useLedgerControlsStore } from '@/store/ledgerControlsStore';
 import { dismissSchema, type DismissValues } from './postingQueueForms';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { StaffName } from '@/components/StaffName';
 
 const REASON_LABEL: Record<string, string> = {
   UNMAPPED: 'No rule posts it',
@@ -76,7 +77,7 @@ export function UnpostedEventsPage() {
                       <td className="py-1 pr-3 font-mono text-xs">{e.sourceRef}</td>
                       <td className="py-1 pr-3">{e.resolution === 'POSTED' ? 'Posted' : 'Dismissed'}</td>
                       <td className="py-1 pr-3 text-xs">
-                        {e.resolvedBy} {e.resolvedAt ? formatInstant(e.resolvedAt) : ''}
+                        {e.resolvedBy && <StaffName subject={e.resolvedBy} />} {e.resolvedAt ? formatInstant(e.resolvedAt) : ''}
                       </td>
                       <td className="py-1 text-xs text-muted-foreground">{e.resolutionReason ?? ''}</td>
                     </tr>

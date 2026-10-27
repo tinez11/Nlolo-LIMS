@@ -472,7 +472,7 @@ export function StatementsPanel({ policyNumber }: { policyNumber: string }) {
               <span className="text-sm">
                 {formatDate(s.periodFrom)} to {formatDate(s.periodTo)}
                 <span className="ml-2 text-xs text-muted-foreground">
-                  {s.kind === 'ANNUAL' ? 'Annual' : 'On demand'} · by {s.generatedBy}
+                  {s.kind === 'ANNUAL' ? 'Annual' : 'On demand'} · by <StaffName subject={s.generatedBy} />
                 </span>
               </span>
               <Button

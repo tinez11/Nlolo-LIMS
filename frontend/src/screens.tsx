@@ -375,7 +375,7 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   agents: ['agents.view'], 'agents/new': ['agents.manage'], 'agents/:agentId': ['agents.view'],
   payments: ['collections.view', 'payouts.view'],
   'receipts/new': ['collections.manage'], 'receipts/:receiptId': ['collections.view', 'collections.manage'],
-  arrears: ['collections.view'], 'field-receipts': ['collections.view'], 'bank-transfers': ['collections.view'],
+  arrears: ['collections.view'], 'field-receipts': ['collections.view'], 'bank-transfers': ['payouts.view'],
   payouts: ['payouts.view'], 'payouts/:instalmentId': ['payouts.view'], 'payment-runs': ['payouts.view'],
   'payment-runs/:paymentRunId': ['payouts.view'], 'withholding-rules': ['payouts.view'], maturities: ['payouts.view'],
   funds: ['funds.view'],
@@ -642,11 +642,6 @@ const STAFF_SCREENS: Screen[] = [
   { path: 'receipts/new', element: <NewReceiptPage />, reach: 'drill-in' },
   { path: 'receipts/:receiptId', element: <ReceiptPage />, reach: 'drill-in' },
   { path: 'payments', element: <PaymentsPage />, reach: { group: 'collections', label: 'Payments', icon: ArrowLeftRight, badge: 'payments-attention' } },
-  {
-    path: 'bank-transfers',
-    element: <EftExecutionPage />,
-    reach: { group: 'collections', label: 'Bank transfers', icon: Banknote, badge: 'eft-awaiting' },
-  },
   // Money owed to LIVING policyholders (product step 2), as distinct from the claims queue, which
   // pays on death. Under finance for the same reason bank transfers are: reviewing and approving a
   // payout both move real money, and the endpoints are FINANCE_OFFICER/ADMIN only.
@@ -662,6 +657,13 @@ const STAFF_SCREENS: Screen[] = [
     reach: { group: 'paying-out', label: 'Payment runs', icon: ListChecks },
   },
   { path: 'payment-runs/:paymentRunId', element: <PaymentRunPage />, reach: 'drill-in' },
+  // Money OUT that someone makes by hand at the bank (2026-10-27): under Paying out, not Collections, and read with
+  // payouts.view -- the permission its list endpoint checks.
+  {
+    path: 'bank-transfers',
+    element: <EftExecutionPage />,
+    reach: { group: 'paying-out', label: 'Bank transfers', icon: Banknote, badge: 'eft-awaiting' },
+  },
   // The unit-linked fund register (product step 6): funds, their two-person daily prices, the
   // price-correction adjustments and the 2150 reconciliation. Finance's: it prices the units.
   {

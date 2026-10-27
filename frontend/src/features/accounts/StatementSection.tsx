@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { startMutation } from '@/lib/idempotency';
 import { useAccumulationStore } from '@/store/accumulationStore';
+import { StaffName } from '@/components/StaffName';
 
 /** The last full calendar year: the period the annual statement covers. */
 function lastYear(): { from: string; to: string } {
@@ -126,7 +127,7 @@ function FiledStatements({ records }: { records: StatementRecordView[] }) {
           <div key={record.statementId} className="flex items-center justify-between gap-2 px-4 py-2.5">
             <span className="text-sm">
               {formatDate(record.periodFrom)} to {formatDate(record.periodTo)}
-              <span className="ml-2 text-xs text-muted-foreground">by {record.generatedBy}</span>
+              <span className="ml-2 text-xs text-muted-foreground">by <StaffName subject={record.generatedBy} /></span>
             </span>
             <Button size="sm" variant="ghost" onClick={() => void download(record)}>
               Download

@@ -1,12 +1,16 @@
 import { screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getApprovals } from '@/api/approvals';
 import { getFinanceDashboard } from '@/api/dashboard';
+import { useApprovalsStore } from '@/store/approvalsStore';
 import { useDashboardStore } from '@/store/dashboardStore';
+import { grantRoles } from '@/test/access';
 import { renderScreen } from '@/test/renderScreen';
 import { FinanceDashboardPanel } from './FinanceDashboardPanel';
 import { lastDayOf, reportLink } from './reportLinks';
 
 vi.mock('@/api/dashboard');
+vi.mock('@/api/approvals');
 
 const TZS = (amount: string) => ({ amount, currencyCode: 'TZS' });
 const RANGE = { from: '2026-07', to: '2026-09' };
@@ -65,6 +69,8 @@ const VIEW = {
 beforeEach(() => {
   useDashboardStore.setState({ finance: { status: 'idle', data: null, error: null, loadedAt: null } } as never);
   vi.mocked(getFinanceDashboard).mockResolvedValue(VIEW);
+  useApprovalsStore.setState({ approvals: { status: 'idle', data: null, error: null, loadedAt: null } } as never);
+  vi.mocked(getApprovals).mockResolvedValue({ actionable: 2, groups: [] } as never);
 });
 
 describe('FinanceDashboardPanel', () => {
@@ -110,16 +116,27 @@ describe('FinanceDashboardPanel', () => {
     expect(within(bands).getByText('31 to 60 days')).toBeInTheDocument();
   });
 
-  /** Journals cannot link: the journals list does not read a status from its URL, so it would show every journal. */
-  it('does not link a count its list cannot reproduce', async () => {
+  /** Only what the viewer can act on (2026-10-27): their own signatures, not every journal waiting for anyone. */
+  it('counts the signatures waiting for this viewer, and each list they can work', async () => {
+    grantRoles('FINANCE_OFFICER');
     renderScreen(<FinanceDashboardPanel range={RANGE} />);
 
-    expect(await screen.findByText('Journals waiting for approval')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Journals waiting for approval/ })).not.toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /Waiting for your signatures*2/ })).toHaveAttribute('href', '/staff/approvals');
+    expect(screen.queryByText('Journals waiting for approval')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Field receipts past their deadline/ })).toHaveAttribute(
       'href',
       '/staff/field-receipts?status=RECONCILIATION_OVERDUE',
     );
+  });
+
+  it('shows a finance approver no list they cannot work', async () => {
+    grantRoles('FINANCE_APPROVER');
+    renderScreen(<FinanceDashboardPanel range={RANGE} />);
+
+    expect(await screen.findByRole('link', { name: /Waiting for your signature/ })).toBeInTheDocument();
+    expect(screen.queryByText('Field receipts past their deadline')).not.toBeInTheDocument();
+    expect(screen.queryByText('Bank transfers not yet made')).not.toBeInTheDocument();
+    expect(screen.queryByText('Policies in arrears at the lapse level')).not.toBeInTheDocument();
   });
 
   it('builds links and month ends correctly', () => {

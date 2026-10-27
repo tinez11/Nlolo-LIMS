@@ -8,6 +8,13 @@ const OUTCOME: Record<string, string> = {
   DECLINED: 'declined',
 };
 
+/** The payments register, on the event's policy when it names one -- every state, so the payment is in the list. */
+function register(refs: Record<string, string>, state: 'done' | 'attention'): string {
+  return refs.policyNumber
+    ? `/staff/payments?state=all&policy=${encodeURIComponent(refs.policyNumber)}`
+    : `/staff/payments?state=${state}`;
+}
+
 /**
  * Words per event type, each with the reference it links by. Only events a dashboard actually shows are here; any
  * other type is humanised from its own name rather than dropped, so a new backend event appears instead of vanishing.
@@ -73,10 +80,12 @@ const WORDS: Record<
     text: () => 'Refund due',
     link: (r) => (r.policyNumber ? `/staff/policies/${r.policyNumber}` : undefined),
   },
-  'payment.PaymentConfirmed': { text: () => 'Payment confirmed' },
-  'payment.PaymentFailed': { text: () => 'Payment failed' },
-  'payment.DisbursementCompleted': { text: () => 'Payout completed' },
-  'payment.DisbursementFailed': { text: () => 'Payout failed' },
+  // Money in and out opens the payments register (2026-10-27): on its policy where the event names one, otherwise on the
+  // state the payment ended in.
+  'payment.PaymentConfirmed': { text: () => 'Payment confirmed', link: (r) => register(r, 'done') },
+  'payment.PaymentFailed': { text: () => 'Payment failed', link: (r) => register(r, 'attention') },
+  'payment.DisbursementCompleted': { text: () => 'Payout completed', link: (r) => register(r, 'done') },
+  'payment.DisbursementFailed': { text: () => 'Payout failed', link: (r) => register(r, 'attention') },
   'payment.EftDisbursementAwaitingExecution': {
     text: () => 'Bank transfer waiting to be made',
     link: () => '/staff/bank-transfers',

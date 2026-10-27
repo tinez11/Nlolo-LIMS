@@ -16,6 +16,7 @@ import { funeralSummary, pricedOtherwise } from './versionText';
 import { AnnuityTermsDetail, FuneralTermsDetail, UnitLinkedTermsDetail } from './VersionTerms';
 import { chargeLine } from './chargeText';
 import { useVersionCharges } from './useVersionCharges';
+import { StaffName } from '@/components/StaffName';
 
 /**
  * Every published version of a product (2026-10-08): one version is shown whole; several are a list, newest first,
@@ -53,7 +54,7 @@ export function ProductVersionsPanel({ productId, category, refreshKey }: {
     return (
       <div className="pb-2">
         <p className="px-4 pt-3 text-xs text-muted-foreground">
-          One version, {stateOf(only)}. Published {formatDate(only.publishedAt)}{only.publishedBy ? ` by ${only.publishedBy}` : ''}.
+          One version, {stateOf(only)}. Published {formatDate(only.publishedAt)}{only.publishedBy && <> by <StaffName subject={only.publishedBy} /></>}.
         </p>
         <VersionDetails productId={productId} category={category} version={only} />
       </div>
@@ -76,7 +77,7 @@ export function ProductVersionsPanel({ productId, category, refreshKey }: {
               </span>
               <span className="block text-xs text-muted-foreground">
                 Effective {formatDate(v.effectiveDate)}{v.retirementDate ? ` to ${formatDate(v.retirementDate)}` : ''}
-                {' · '}published {formatDate(v.publishedAt)}{v.publishedBy ? ` by ${v.publishedBy}` : ''}
+                {' · '}published {formatDate(v.publishedAt)}{v.publishedBy && <> by <StaffName subject={v.publishedBy} /></>}
               </span>
               {/* The version that wrote the description, not every version that kept it. */}
               {v.description && v.description !== versions[i + 1]?.description && (
