@@ -154,9 +154,13 @@ describe('AccountPanel', () => {
     expect(past).toHaveTextContent('Mobile money · +255700000009');
   });
 
-  it('records a top-up already received with its reference and day, sent as that method', async () => {
+  it('records a top-up already received with its reference and day, then closes the form and says it was credited', async () => {
     grantRoles('CUSTOMER_SERVICE_REP');
-    const topUp = vi.fn(async () => {});
+    const topUp = vi.fn(async () => ({
+      topUpId: 't-1', policyNumber: 'POL-1', amount: money('25000.00'), payerRef: '—', status: 'COLLECTED' as const,
+      requestedBy: 'staff-one', requestedAt: '2026-10-28T08:00:00Z', method: 'CASH' as const, reference: 'RC-104',
+      receivedOn: '2026-10-28',
+    }));
     useAccumulationStore.setState({ topUp });
     const user = userEvent.setup();
     render(<AccountPanel policyNumber="POL-1" />);
@@ -172,6 +176,10 @@ describe('AccountPanel', () => {
       expect.objectContaining({ amount: '25000', method: 'CASH', reference: 'RC-104' }),
       expect.anything(),
     );
+    // The form closes and a receipt says what happened (2026-10-28): it used to reset in place, looking like nothing had.
+    const receipt = (await screen.findByText('Top-up credited')).closest('section')!;
+    expect(receipt).toHaveTextContent('Cash · RC-104');
+    expect(screen.queryByRole('button', { name: 'Record top-up' })).not.toBeInTheDocument();
   });
 
   it('asks a bank transfer for the bank, branch, account name and number -- and not a phone number', async () => {

@@ -14,6 +14,7 @@ import type {
 } from '@/api/types';
 import { readIdentity } from '@/auth/claims';
 import { ConfirmAct } from '@/components/ConfirmAct';
+import { Receipt } from '@/components/Receipt';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Field } from '@/components/Field';
 import { FormField } from '@/components/FormField';
@@ -269,12 +270,19 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
   const withdrawals = withdrawalsResource?.data ?? NONE_WITHDRAWN;
   const waiting = useWaiting(policyNumber);
   const [action, setAction] = useState<Action>(null);
+  // What the last top-up or withdrawal did, shown until the next action is chosen (2026-10-28). The form used to reset
+  // in place with one grey line, and a recorded top-up read as if nothing had happened.
+  const [done, setDone] = useState<{ kind: 'topup'; topUp: TopUpView } | { kind: 'withdraw'; withdrawal: WithdrawalView } | null>(null);
   const open = account.status === 'OPEN';
   const close = () => setAction(null);
+  const choose = (next: Action) => {
+    setDone(null);
+    setAction(next);
+  };
 
   const actionButton = (value: Exclude<Action, null>, label: string, icon: ReactNode) => (
     <Button size="sm" variant={action === value ? 'secondary' : 'outline'} aria-expanded={action === value}
-      onClick={() => setAction(action === value ? null : value)}>
+      onClick={() => choose(action === value ? null : value)}>
       {icon}
       {label}
     </Button>
@@ -294,8 +302,64 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
         </div>
       )}
 
-      {action === 'withdraw' && <WithdrawalForm account={account} withdrawals={withdrawals} onDone={close} />}
-      {action === 'topup' && <TopUpForm policyNumber={policyNumber} onDone={close} />}
+      {done?.kind === 'topup' && (
+        <Receipt
+          heading={done.topUp.status === 'COLLECTED' ? 'Top-up credited' : 'Top-up requested'}
+          lines={[
+            { label: 'Amount', value: formatMoney(done.topUp.amount) },
+            { label: 'How it came in', value: topUpHow(done.topUp) },
+            ...(done.topUp.receivedOn ? [{ label: 'Received on', value: formatDate(done.topUp.receivedOn) }] : []),
+            { label: 'Balance now', value: formatMoney(account.balance) },
+          ]}
+          note={
+            done.topUp.status === 'COLLECTED'
+              ? 'It is on the ledger below, less any allocation charge, and in the account value on the Overview.'
+              : 'A request was sent to the payer’s phone. It is credited once finance confirms the money came, and waits below until then.'
+          }
+          onward={
+            <Button size="sm" variant="ghost" onClick={() => setDone(null)}>
+              Done
+            </Button>
+          }
+        />
+      )}
+      {done?.kind === 'withdraw' && (
+        <Receipt
+          heading="Withdrawal requested"
+          lines={[
+            { label: 'Amount', value: formatMoney(done.withdrawal.amount) },
+            { label: 'Paid by', value: `${methodWords(done.withdrawal.method)} to ${describeRoute(done.withdrawal)}` },
+          ]}
+          note="Nothing has left the account yet. A finance officer approves it below; the money leaves the balance then."
+          onward={
+            <Button size="sm" variant="ghost" onClick={() => setDone(null)}>
+              Done
+            </Button>
+          }
+        />
+      )}
+
+      {action === 'withdraw' && (
+        <WithdrawalForm
+          account={account}
+          withdrawals={withdrawals}
+          onDone={close}
+          onRequested={(withdrawal) => {
+            setAction(null);
+            setDone({ kind: 'withdraw', withdrawal });
+          }}
+        />
+      )}
+      {action === 'topup' && (
+        <TopUpForm
+          policyNumber={policyNumber}
+          onDone={close}
+          onRecorded={(topUp) => {
+            setAction(null);
+            setDone({ kind: 'topup', topUp });
+          }}
+        />
+      )}
       {action === 'transfer' && <TransferInForm policyNumber={policyNumber} onDone={close} />}
       {action === 'adjust' && <AdjustmentForm policyNumber={policyNumber} onDone={close} />}
 
@@ -463,10 +527,12 @@ function WithdrawalForm({
   account,
   withdrawals,
   onDone,
+  onRequested,
 }: {
   account: AccountView;
   withdrawals: WithdrawalView[];
   onDone: () => void;
+  onRequested: (withdrawal: WithdrawalView) => void;
 }) {
   const policyNumber = account.policyNumber;
   const withdraw = useAccumulationStore((s) => s.withdraw);
@@ -495,8 +561,8 @@ function WithdrawalForm({
         confirmLabel="Request withdrawal"
         busy={acting?.status === 'loading'}
         onConfirm={() => {
-          void withdraw(policyNumber, { amount: armed.amount, ...routeBody(armed) }, startMutation()).then(() => {
-            if (useAccumulationStore.getState().acting[`withdraw.${policyNumber}`]?.status === 'success') onDone();
+          void withdraw(policyNumber, { amount: armed.amount, ...routeBody(armed) }, startMutation()).then((requested) => {
+            if (requested) onRequested(requested);
           });
           setArmed(null);
         }}
@@ -533,7 +599,15 @@ function WithdrawalForm({
  * reaches the insurer by hand -- the same chooser the Billing tab's invoices use. One person records it: a received
  * top-up is credited as soon as payment receipts it, with no second signature.
  */
-function TopUpForm({ policyNumber, onDone }: { policyNumber: string; onDone: () => void }) {
+function TopUpForm({
+  policyNumber,
+  onDone,
+  onRecorded,
+}: {
+  policyNumber: string;
+  onDone: () => void;
+  onRecorded: (topUp: TopUpView) => void;
+}) {
   const topUp = useAccumulationStore((s) => s.topUp);
   const acting = useAccumulationStore((s) => s.acting[`topup.${policyNumber}`]);
   const form = useForm<TopUpValues>({
@@ -543,19 +617,11 @@ function TopUpForm({ policyNumber, onDone }: { policyNumber: string; onDone: () 
   });
   const method = useWatch({ control: form.control, name: 'method' });
   const received = method !== 'MOBILE_MONEY' ? RECEIPT_METHODS.find((m) => m.value === method) : undefined;
-  const [sent, setSent] = useState<'requested' | 'recorded' | null>(null);
   const errors = form.formState.errors;
 
   return (
     <ActionBox title="Top up the account" onClose={onDone}>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
-      {acting?.status === 'success' && sent && (
-        <p className="text-xs text-muted-foreground" role="status">
-          {sent === 'requested'
-            ? 'The collection has been requested from the provider. It is credited once the payment is confirmed.'
-            : 'Recorded. It is credited to the account in a moment, under Waiting until it is.'}
-        </p>
-      )}
       <form
         onSubmit={form.handleSubmit((v) => {
           const body =
@@ -568,11 +634,8 @@ function TopUpForm({ policyNumber, onDone }: { policyNumber: string; onDone: () 
                   receivedOn: v.receivedOn,
                   ...(v.payerRef.trim() ? { payerRef: v.payerRef.trim() } : {}),
                 };
-          void topUp(policyNumber, body, startMutation()).then(() => {
-            if (useAccumulationStore.getState().acting[`topup.${policyNumber}`]?.status === 'success') {
-              setSent(v.method === 'MOBILE_MONEY' ? 'requested' : 'recorded');
-              form.reset({ ...v, amount: '', reference: '' });
-            }
+          void topUp(policyNumber, body, startMutation()).then((recorded) => {
+            if (recorded) onRecorded(recorded);
           });
         })}
         className="space-y-3"

@@ -320,7 +320,7 @@ public class AccumulationApiImpl implements AccumulationApi {
         var catalogue = chosenCharges.of(request.getPolicyNumber(), account.getProductVersionId());
         if (catalogue.catalogue()) {
             List<LedgerService.Line> lines = new java.util.ArrayList<>();
-            lines.add(LedgerService.Line.of(EntryType.TOP_UP, amount, effective, "Top-up from " + request.getPayerRef()));
+            lines.add(LedgerService.Line.of(EntryType.TOP_UP, amount, effective, topUpReason(request)));
             lines.addAll(chosenCharges.lines(catalogue.in(year), premiumCharges(account), amount,
                 room(account, account.getBalance().add(amount)), effective));
             ledger.post(request.getPolicyNumber(), topUpSource(request), lines,
@@ -331,10 +331,27 @@ public class AccumulationApiImpl implements AccumulationApi {
             .contributionAllocationPercent();
         BigDecimal charge = amount.multiply(pct).divide(HUNDRED, 2, RoundingMode.HALF_EVEN);
         ledger.post(request.getPolicyNumber(), topUpSource(request), List.of(
-            LedgerService.Line.of(EntryType.TOP_UP, amount, effective, "Top-up from " + request.getPayerRef()),
+            LedgerService.Line.of(EntryType.TOP_UP, amount, effective, topUpReason(request)),
             LedgerService.Line.of(EntryType.ALLOCATION_CHARGE, charge.negate(), effective,
                 "Allocation charge " + pct.stripTrailingZeros().toPlainString() + "% (policy year " + year + ")")),
             request.getRequestedBy(), null);
+    }
+
+    /**
+     * The ledger line's words: "Top-up from +255..." for a mobile-money request; "Top-up by cash, RC-104" for money
+     * received by hand, with who paid when the slip names them (2026-10-28) -- it used to read "Top-up from —".
+     */
+    private static String topUpReason(TopUpRequest request) {
+        if ("MOBILE_MONEY".equals(request.getMethod())) return "Top-up from " + request.getPayerRef();
+        String how = switch (request.getMethod()) {
+            case "CASH" -> "cash";
+            case "BANK_DEPOSIT" -> "bank deposit";
+            case "CHEQUE" -> "cheque";
+            case "LIPA_NUMBER" -> "Lipa number";
+            default -> request.getMethod();
+        };
+        boolean named = request.getPayerRef() != null && !"—".equals(request.getPayerRef());
+        return "Top-up by " + how + ", " + request.getReference() + (named ? " from " + request.getPayerRef() : "");
     }
 
     /** The top-up's ledger source, carrying how the money came in so the GL debits the account it reached. */

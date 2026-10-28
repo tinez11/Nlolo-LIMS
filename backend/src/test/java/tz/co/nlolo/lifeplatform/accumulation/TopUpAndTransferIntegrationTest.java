@@ -241,6 +241,9 @@ class TopUpAndTransferIntegrationTest {
         assertThat(asTenant(() -> api.entries(issued.policyNumber())))
             .extracting(LedgerEntryView::type, e -> e.amount().toPlainString())
             .containsExactly(tuple(EntryType.TOP_UP, "20000.00"), tuple(EntryType.ALLOCATION_CHARGE, "-1000.00"));
+        // Says how it came in, not "Top-up from —".
+        assertThat(asTenant(() -> api.entries(issued.policyNumber()))).first()
+            .extracting(LedgerEntryView::reason).isEqualTo("Top-up by cash, " + reference + " from Amina Owner");
         assertThat(asTenant(() -> api.listTopUps(issued.policyNumber()))).first()
             .satisfies(t -> {
                 assertThat(t.status()).isEqualTo("COLLECTED");
