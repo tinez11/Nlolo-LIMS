@@ -101,6 +101,6 @@ class DepositPlanValidatorTest {
         assertThatThrownBy(() -> DepositPlanValidator.validate(ProductCategory.ENDOWMENT, DepositPlanTest.userGrid(),
                 AccumulationPlan.none(), CashValuePlan.none(), FrequencyLoading.none(), NO_ROWS,
                 new EligibilityBounds(null, null, null, null, new BigDecimal("1000000"), null)))
-            .hasMessage("The lowest deposit band must start at the version's minimum sum assured (1000000)");
+            .hasMessage("The lowest deposit band must start at the version's minimum deposit (1000000)");
     }
 }

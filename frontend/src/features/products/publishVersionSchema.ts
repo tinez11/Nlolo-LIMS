@@ -801,6 +801,15 @@ interface DepositFields extends CashValueFields {
   payoutRows: PayoutRowValues[];
 }
 
+/**
+ * A band row with nothing typed in it (2026-10-28): an extra "Add a band" left blank. It is ignored, as a blank
+ * spreadsheet row is -- it used to count as a band starting at 0 and raise five wrong messages, among them "the lowest
+ * deposit band must start at the minimum" on a grid whose lowest band did.
+ */
+export function isBlankBand(band: DepositBandValues): boolean {
+  return band.minAmount.trim() === '' && band.rates.every((r) => (r ?? '').trim() === '');
+}
+
 /** `DepositPlanValidator`, rule for rule and message for message. Only a DEPOSIT version is checked. */
 function validateDeposit(category: ProductCategory, v: DepositFields, ctx: z.RefinementCtx) {
   if (v.valueBasis !== 'DEPOSIT') return;
@@ -818,7 +827,8 @@ function validateDeposit(category: ProductCategory, v: DepositFields, ctx: z.Ref
   if (v.payoutRows.length > 0) {
     issue(['payoutRows'], 'A fixed-term deposit matures through its account; it carries no payout schedule');
   }
-  if (v.depositTerms.length === 0 || v.depositBands.length === 0) {
+  const bands = v.depositBands.map((band, i) => ({ band, i })).filter(({ band }) => !isBlankBand(band));
+  if (v.depositTerms.length === 0 || bands.length === 0) {
     issue(['depositBands'], 'A fixed-term deposit needs at least one term and one band');
     return;
   }
@@ -831,9 +841,13 @@ function validateDeposit(category: ProductCategory, v: DepositFields, ctx: z.Ref
   });
   if (new Set(terms).size !== terms.length) issue(['depositTerms'], 'Each term may appear once');
   const starts = new Set<number>();
-  v.depositBands.forEach((band, i) => {
+  bands.forEach(({ band, i }) => {
     const min = Number(band.minAmount);
-    if (!isNumber(band.minAmount) || min <= 0) {
+    // Named by its place when it has no start yet: "the band from  does not offer" named nothing.
+    const name = isNumber(band.minAmount) ? `The band from ${band.minAmount}` : `Band ${i + 1}`;
+    if (band.minAmount.trim() === '') {
+      issue(['depositBands', i, 'minAmount'], `Band ${i + 1} needs the deposit it starts at`);
+    } else if (!isNumber(band.minAmount) || min <= 0) {
       issue(['depositBands', i, 'minAmount'], 'A deposit band must start above zero');
     } else if (starts.has(min)) {
       issue(['depositBands', i, 'minAmount'], 'Each band may start only once');
@@ -842,15 +856,17 @@ function validateDeposit(category: ProductCategory, v: DepositFields, ctx: z.Ref
     terms.forEach((t, j) => {
       const rate = band.rates[j] ?? '';
       if (rate === '') {
-        issue(['depositBands', i, 'rates', j], `The band from ${band.minAmount} does not offer a ${t}-month term`);
+        issue(['depositBands', i, 'rates', j], `${name} does not offer a ${t}-month term`);
       } else if (!isNumber(rate) || Number(rate) < 0 || Number(rate) > 100) {
         issue(['depositBands', i, 'rates', j], 'A deposit rate must be between 0 and 100 percent');
       }
     });
   });
-  const lowest = Math.min(...v.depositBands.map((b) => Number(b.minAmount)));
-  if (v.minSumAssured && Number(v.minSumAssured) !== lowest) {
-    issue(['depositBands'], `The lowest deposit band must start at the version's minimum sum assured (${v.minSumAssured})`);
+  // Only over bands that do start somewhere: a band still missing its start is named above, not taken as 0 here.
+  const bandStarts = bands.map(({ band }) => band.minAmount).filter((m) => isNumber(m) && Number(m) > 0).map(Number);
+  const lowest = Math.min(...bandStarts);
+  if (v.minSumAssured && bandStarts.length > 0 && Number(v.minSumAssured) !== lowest) {
+    issue(['depositBands'], `The lowest deposit band must start at the version's minimum deposit (${v.minSumAssured})`);
   }
 }
 
@@ -1467,7 +1483,7 @@ export function toApiRequest(values: PublishVersionFormValues, category?: Produc
     // server builds the zero-charge account behind it.
     ...(values.valueBasis === 'DEPOSIT' && {
       deposit: {
-        rates: values.depositBands.flatMap((band) =>
+        rates: values.depositBands.filter((band) => !isBlankBand(band)).flatMap((band) =>
           values.depositTerms.map((term, j) => ({
             minAmount: Number(band.minAmount),
             termMonths: Number(term.months),
