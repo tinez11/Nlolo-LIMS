@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import tz.co.nlolo.lifeplatform.payment.api.ReceiptMethod;
 import tz.co.nlolo.lifeplatform.payment.api.ReceiptView;
@@ -70,6 +71,13 @@ public class ReceiptController {
             new BigDecimal(body.amount().amount()), body.receivedOn(), body.payerRef(), body.note(),
             body.fieldReceiptId()), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(ReceiptResponse.from(recorded));
+    }
+
+    /** The receipts waiting to be confirmed on one invoice -- the invoice's own view of what is in flight. */
+    @GetMapping("/receipts")
+    @PreAuthorize("@access.canAny('collections.view', 'collections.manage')")
+    public ResponseEntity<java.util.List<ReceiptResponse>> waiting(@RequestParam UUID invoiceId) {
+        return ResponseEntity.ok(receipts.waitingOn(invoiceId).stream().map(ReceiptResponse::from).toList());
     }
 
     @GetMapping("/receipts/{receiptId}")

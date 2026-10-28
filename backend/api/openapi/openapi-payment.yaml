@@ -35,12 +35,29 @@ paths:
               schema: { $ref: '#/components/schemas/PaymentRegisterPage' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /receipts:
+    get:
+      summary: The receipts waiting to be confirmed on one invoice, oldest first (collections.view or collections.manage)
+      description: >
+        2026-10-28. What the invoice shows as in flight, so a receipt is visible where it was recorded and not only in
+        somebody else's approvals inbox.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: invoiceId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Receipt' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
     post:
       summary: Record a receipt for premium the gateway did not pull (collections.manage)
       description: >
         2026-10-27. Cash, a bank deposit, a cheque, a Lipa-number payment or a TANQR scan, against one invoice. It pays
         nothing until a second person approves it. Refused (409, RECEIPT_REFUSED) for an invoice already paid or
-        waived, an amount above what is owed, a future date, or a reference already on a live receipt.
+        waived, an amount above what is owed, a future date, a reference already on a live receipt, or -- since
+        2026-10-28 -- an amount that, with the receipts already waiting on the invoice, would be more than is owed.
       security:
         - staffAuth: []
       requestBody:

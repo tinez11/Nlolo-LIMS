@@ -43,6 +43,10 @@ import { InvoiceReceiptForm } from '@/features/receipts/InvoiceReceiptForm';
 import { RECEIPT_METHODS } from '@/features/receipts/receiptForm';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { Tip } from '@/components/ui/tooltip';
+import type { Receipt } from '@/api/receipts';
+import { StaffName } from '@/components/StaffName';
+import { methodWords } from '@/features/payments/paymentWords';
+import { useReceiptStore } from '@/store/receiptStore';
 
 /**
  * `POST /invoices/{invoiceId}/waiver` (**finance staff only** -- FINANCE_OFFICER
@@ -168,6 +172,19 @@ function InvoiceRow({
   const canWaive = can('collections.manage');
   const invoiceId = invoice.invoiceId ?? '';
   const requested = usePolicyStore(selectRequestingPayment(invoiceId)).status === 'success';
+  // What has been recorded against this invoice and still waits for a second person (2026-10-28). Without it a
+  // recorded receipt showed nowhere here, the invoice still read Due, and POL-C0B3B81A was receipted twice.
+  const loadWaiting = useReceiptStore((s) => s.loadWaiting);
+  const waitingResource = useReceiptStore((s) => s.waiting[invoiceId]);
+  const waiting = waitingResource?.data ?? NONE_WAITING;
+  const owing = owesSomething(invoice);
+  useEffect(() => {
+    if (invoiceId && owing && can('collections.view')) void loadWaiting(invoiceId);
+  }, [invoiceId, owing, loadWaiting]);
+  const owed = invoice.balanceDue ?? invoice.amount;
+  const waitingTotal = waiting.reduce((sum, r) => sum + Number(r.amount.amount), 0);
+  // Covered once what waits reaches what is owed: another receipt would be refused, so it is not offered.
+  const covered = waiting.length > 0 && owed != null && waitingTotal >= Number(owed.amount);
 
   return (
     <div className="px-4 py-3">
@@ -220,6 +237,8 @@ function InvoiceRow({
         </p>
       )}
 
+      {waiting.length > 0 && <WaitingReceipts receipts={waiting} />}
+
       {invoice.gracePeriodEndsAt && (
         <p className="mt-0.5 text-xs text-muted-foreground">
           Grace ends {formatDate(invoice.gracePeriodEndsAt)}
@@ -242,7 +261,7 @@ function InvoiceRow({
           )}
           {/* Only while something is owed. The request asks for the balance due, and the
               backend refuses one on an invoice payments and credits already cover. */}
-          {owesSomething(invoice) && (
+          {owing && !covered && (
             <Button
               size="sm"
               variant="ghost"
@@ -270,6 +289,41 @@ function InvoiceRow({
           onDone={() => setAction(null)}
         />
       )}
+    </div>
+  );
+}
+
+const NONE_WAITING: Receipt[] = [];
+
+/**
+ * The receipts recorded against an invoice that a second person has not yet confirmed -- each with how it came in,
+ * its reference, who recorded it and a way to it. The invoice is paid only when one is confirmed under Approvals.
+ */
+function WaitingReceipts({ receipts }: { receipts: Receipt[] }) {
+  return (
+    <div className="mt-2 rounded-md border border-border bg-band px-3 py-2" aria-label="Receipts waiting to be confirmed">
+      <p className="text-xs font-medium">
+        {receipts.length === 1 ? 'A receipt is waiting to be confirmed' : `${receipts.length} receipts are waiting to be confirmed`}
+      </p>
+      <ul className="mt-1 space-y-1">
+        {receipts.map((r) => (
+          <li key={r.receiptId} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-xs">
+            <span className="min-w-0 text-muted-foreground">
+              <span className="font-medium text-foreground">{methodWords(r.method)}</span> {r.reference} · recorded by{' '}
+              <StaffName subject={r.recordedBy} />
+            </span>
+            <span className="flex shrink-0 items-baseline gap-3">
+              <span className="font-medium tabular-nums text-foreground">{formatMoney(r.amount)}</span>
+              <Link to={`/staff/receipts/${encodeURIComponent(r.receiptId)}`} className="underline hover:text-foreground">
+                Open
+              </Link>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-xs text-muted-foreground">
+        It pays this invoice once a second finance person confirms it under Approvals.
+      </p>
     </div>
   );
 }

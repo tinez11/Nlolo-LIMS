@@ -15,6 +15,11 @@ export function recordReceipt(body: RecordReceipt): Promise<Receipt> {
   return post<Receipt>('/receipts', body);
 }
 
+/** `GET /receipts?invoiceId=` -- the receipts still waiting to be confirmed on one invoice (2026-10-28). */
+export function listWaitingReceipts(invoiceId: string): Promise<Receipt[]> {
+  return get<Receipt[]>(`/receipts?invoiceId=${encodeURIComponent(invoiceId)}`);
+}
+
 export function getReceipt(receiptId: string): Promise<Receipt> {
   return get<Receipt>(`/receipts/${encodeURIComponent(receiptId)}`);
 }

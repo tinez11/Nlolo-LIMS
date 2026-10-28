@@ -498,6 +498,16 @@ class PremiumPostingEndToEndTest {
         TenantContext.set(tenantId);
         assertThatThrownBy(() -> receipts.record(newReceipt, "finance-two"))
             .isInstanceOf(ReceiptRefusedException.class).hasMessageContaining("already recorded");
+        // Another slip for the same invoice while this one waits would pay it twice (POL-C0B3B81A, 2026-10-28).
+        TenantContext.set(tenantId);
+        var secondSlip = new Receipts.NewReceipt(invoice.invoiceId(), ReceiptMethod.CASH, "RC-000732", premium,
+            java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")), null, null, null);
+        assertThatThrownBy(() -> receipts.record(secondSlip, "finance-two"))
+            .isInstanceOf(ReceiptRefusedException.class)
+            .hasMessage("A cheque receipt (CHQ-000731) of 120000.00 TZS is already waiting to be confirmed on this "
+                + "invoice. Confirm or refuse it under Approvals before recording another");
+        TenantContext.set(tenantId);
+        assertThat(receipts.waitingOn(invoice.invoiceId())).extracting(ReceiptView::reference).containsExactly("CHQ-000731");
         TenantContext.set(tenantId);
         assertThatThrownBy(() -> receipts.approve(recorded.receiptId(), "finance-one"))
             .isInstanceOf(ReceiptRefusedException.class).hasMessageContaining("someone other than");

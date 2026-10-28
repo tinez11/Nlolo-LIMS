@@ -89,6 +89,21 @@ public class Receipts {
                 && transactions.existsByTenantIdAndFieldReceiptIdAndStatusNot(tenantId, in.fieldReceiptId(), REJECTED)) {
             throw new ReceiptRefusedException("This agent's receipt is already recorded");
         }
+        // What is already waiting on this invoice counts against what is owed (2026-10-28): POL-C0B3B81A's 20,000,000
+        // invoice took two 20,000,000 receipts, because a waiting one showed nowhere and nothing refused the second.
+        List<PaymentTransaction> waiting = transactions.findByTenantIdAndSourceRefAndStatusOrderByCreatedAtAsc(tenantId,
+            invoice.invoiceId().toString(), "AWAITING_APPROVAL");
+        BigDecimal waitingTotal = waiting.stream().map(PaymentTransaction::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (!waiting.isEmpty() && waitingTotal.add(in.amount()).compareTo(owed) > 0) {
+            PaymentTransaction first = waiting.get(0);
+            throw new ReceiptRefusedException(waiting.size() == 1
+                ? "A " + words(first.getMethod()) + " receipt (" + first.getGatewayReference() + ") of "
+                    + first.getAmount().toPlainString() + " " + invoice.currency() + " is already waiting to be confirmed on "
+                    + "this invoice. Confirm or refuse it under Approvals before recording another"
+                : waiting.size() + " receipts totalling " + waitingTotal.toPlainString() + " " + invoice.currency()
+                    + " are already waiting to be confirmed on this invoice. Confirm or refuse them under Approvals "
+                    + "before recording another");
+        }
 
         PaymentTransaction receipt = PaymentTransaction.manualReceipt(tenantId, "receipt:" + UUID.randomUUID(),
             in.method().name(), reference, blankToNull(in.payerRef()) == null ? "—" : in.payerRef().trim(), in.amount(),
@@ -143,6 +158,16 @@ public class Receipts {
     @Transactional(readOnly = true)
     public ReceiptView get(UUID receiptId) {
         return view(find(receiptId));
+    }
+
+    /**
+     * One invoice's receipts still waiting for their second signature, oldest first -- shown on the invoice, so a
+     * recorded receipt is visible where it was recorded and not only to somebody else's inbox (2026-10-28).
+     */
+    @Transactional(readOnly = true)
+    public List<ReceiptView> waitingOn(UUID invoiceId) {
+        return transactions.findByTenantIdAndSourceRefAndStatusOrderByCreatedAtAsc(TenantContext.get(), invoiceId.toString(),
+            "AWAITING_APPROVAL").stream().map(Receipts::view).toList();
     }
 
     /** Receipts waiting for their second signature, oldest first: the approvals inbox's rows. */
