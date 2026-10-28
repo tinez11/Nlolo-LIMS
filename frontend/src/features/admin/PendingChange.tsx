@@ -8,8 +8,9 @@ import { selectActing, useIamStore } from '@/store/iamStore';
 import { describeChange } from './changeText';
 
 /**
- * A change waiting for a second administrator (2026-10-26) -- decided on the record it changes, a person or a role,
- * by someone who neither asked for it nor is its subject; the server refuses either.
+ * A change left waiting from when giving Administration needed a second administrator (2026-10-26). That rule is gone
+ * (2026-10-28, user decision), so nothing new waits; what was left is applied or dropped here by any administrator who
+ * is not its subject -- the one who asked included.
  */
 export function PendingChange({ change, subjectIsMe }: { change: AccessChangeView; subjectIsMe: boolean }) {
   const acting = useIamStore(selectActing(change.changeId));
@@ -25,17 +26,17 @@ export function PendingChange({ change, subjectIsMe }: { change: AccessChangeVie
   }
 
   return (
-    <Panel emphasis title="Waiting for a second administrator" subtitle={describeChange(change)}>
+    <Panel emphasis title="A change left waiting" subtitle={describeChange(change)}>
       <div className="space-y-2 px-4 pb-4">
         <p className="text-xs text-muted-foreground">
-          Asked by {change.requestedByName ?? 'an administrator'} on {formatInstant(change.requestedAt)}. It gives
-          Administration, so it needs a second administrator who did not ask for it.
+          Asked by {change.requestedByName ?? 'an administrator'} on {formatInstant(change.requestedAt)}, when giving
+          Administration needed a second administrator. It no longer does: apply it, or drop it.
         </p>
         {acting.status === 'error' && acting.error && <InlineError error={acting.error} />}
         {mayDecide && (
           <div className="flex gap-2">
-            <Button size="sm" variant="primary" pending={acting.status === 'loading'} onClick={() => void act(true)}>Approve</Button>
-            <Button size="sm" variant="ghost" disabled={acting.status === 'loading'} onClick={() => void act(false)}>Reject</Button>
+            <Button size="sm" variant="primary" pending={acting.status === 'loading'} onClick={() => void act(true)}>Apply</Button>
+            <Button size="sm" variant="ghost" disabled={acting.status === 'loading'} onClick={() => void act(false)}>Drop</Button>
           </div>
         )}
       </div>
