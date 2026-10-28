@@ -110,7 +110,7 @@ export function FinanceDashboardPanel({ range }: PanelProps) {
       show: true },
     { n: v.receiptsOverdue, text: 'Field receipts past their deadline', to: '/staff/field-receipts?status=RECONCILIATION_OVERDUE', tone: 'warn',
       show: can('collections.manage') },
-    { n: v.transfersAwaiting, text: 'Bank transfers not yet made', to: '/staff/bank-transfers', tone: 'calm',
+    { n: v.transfersAwaiting, text: 'Bank transfers and cheques not yet made', to: '/staff/bank-transfers', tone: 'calm',
       show: can('payouts.manage') },
     { n: v.arrearsAtLapse, text: 'Policies in arrears at the lapse level', to: '/staff/arrears?minDunningLevel=5', tone: 'warn',
       show: can('collections.manage') },

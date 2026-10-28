@@ -17,7 +17,7 @@ import { whatHappensNext } from './payoutNextStep';
  * individual business that is invisible because it lasts seconds -- the mobile-money gateway
  * answers and the claim settles itself. On credit life it can last days: the payout is an EFT to
  * the lender, and nothing moves it but a finance officer making the transfer in the bank and
- * recording it under Finance → Bank transfers -- a screen a claims manager cannot open. So the
+ * recording it under Finance → Payments to make -- a screen a claims manager cannot open. So the
  * claim sat there with no sign of who it was waiting on.
  *
  * Reloads when the claim's status changes, so an approval shows its payout without a refresh.

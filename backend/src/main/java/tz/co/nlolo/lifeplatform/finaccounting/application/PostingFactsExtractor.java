@@ -58,7 +58,7 @@ final class PostingFactsExtractor {
         Map.entry("policyloan.LoanRepaid", new EventShape(Set.of(AMOUNT, "interest", "principal"), Set.of())),
         Map.entry("policyloan.LoanInterestAccrued", amount()),
         Map.entry("policyloan.LoanForcedLapseTriggered", new EventShape(Set.of("total", "principal", "interest"), Set.of())),
-        Map.entry("accumulation.PostingRecorded", amount("flow")),
+        Map.entry("accumulation.PostingRecorded", amount("flow", "receiptMethod")),
         Map.entry("accumulation.PayoutRequested", new EventShape(Set.of("charge"), Set.of())),
         Map.entry("accumulation.PayoutPaid", amount()),
         // IFRS 17 I3c: reinsurance held from the monthly bordereau (K-01/K-02) and a recovery at claim approval (B-05).
@@ -314,8 +314,11 @@ final class PostingFactsExtractor {
                 case "VESTING" -> "VESTING";
                 default -> entryType + (amount.signum() > 0 ? "_UP" : "_DOWN");   // REVERSAL_UP, ADJUSTMENT_DOWN ...
             };
+            Map<String, String> attrs = new HashMap<>(Map.of("flow", flow, "refType", "ACCOUNT"));
+            // How a top-up came in (2026-10-28), for the RECEIPT account; absent is mobile money, as before.
+            putIfPresent(attrs, "receiptMethod", p.get("receiptMethod"));
             out.add(new PostingFacts(type, p.get("postingId") + ":" + e.get("seq"), policy, "TZS", today,
-                Map.of(AMOUNT, amount.abs()), Map.of("flow", flow, "refType", "ACCOUNT")));
+                Map.of(AMOUNT, amount.abs()), attrs));
         }
         return out;
     }

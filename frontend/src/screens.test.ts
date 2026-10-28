@@ -216,7 +216,7 @@ describe('screen manifest', () => {
     // receipts counts the SLA breach a live Prometheus alert already fires on, which until
     // then named a number and no receipt.
     //
-    // Bank transfers is the third and the only one where the platform is the debtor: an EFT
+    // Payments to make (bank transfers and cheques) is the third and the only one where the platform is the debtor: an EFT
     // cannot move without a person, so an uncounted queue here is a settled claim whose money
     // never left. The other two are recoverable by chasing; this one is only visible.
     //
@@ -228,12 +228,12 @@ describe('screen manifest', () => {
     expect(badged.sort()).toEqual([
       'Approvals',
       'Arrears',
-      'Bank transfers',
       'Claims',
       'Corporate/Group',
       'Field receipts',
       'Individuals',
       'Payments',
+      'Payments to make',
       'Underwriting',
     ]);
   });

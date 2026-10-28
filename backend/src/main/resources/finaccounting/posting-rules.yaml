@@ -29,8 +29,11 @@
 # how it was paid: 1140 Mobile money wallets for mobile money and a Lipa number, 1120 Premium collection bank account
 # for a bank deposit, a cheque, a TANQR scan and cash (banked). It was always 1140, which was true only while the
 # gateway was the one way money came in.
+#
+# v6 (payment methods, 2026-10-28): an IFRS 9 account's money in (G-05) is debited to RECEIPT the same way -- a top-up
+# received by cash, bank deposit, cheque or TANQR reaches 1120, not the mobile-money wallets.
 
-version: 5
+version: 6
 rules:
 
   # ---- Premium: billed, collected, credited, restated, waived ------------------------------------------------------
@@ -521,9 +524,9 @@ rules:
     event: accumulation.PostingRecorded
     models: [IFRS9]
     when: {flow: IN}
-    description: Contribution, top-up or transfer in
+    description: Contribution, top-up or transfer in -- into the account the money reached (1140 unless it says otherwise)
     lines:
-      - {dr: "1140", amount: amount}
+      - {dr: "RECEIPT", amount: amount}
       - {cr: "2320", amount: amount}
 
   - id: G-06

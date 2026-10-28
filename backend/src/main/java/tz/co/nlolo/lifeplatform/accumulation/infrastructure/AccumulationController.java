@@ -135,7 +135,14 @@ public class AccumulationController {
                                                 @Valid @RequestBody AccountRequestBodies.Withdrawal body,
                                                 @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                                 @AuthenticationPrincipal Jwt jwt) {
-        return WithdrawalResponse.from(api.requestWithdrawal(policyNumber, new BigDecimal(body.amount()), body.payeeRef(),
+        tz.co.nlolo.lifeplatform.PayoutRoute route;
+        try {
+            route = tz.co.nlolo.lifeplatform.PayoutRoute.of(body.method(), body.payeeRef(), body.payeeBank(),
+                body.payeeBranch(), body.payeeAccountName(), body.payeeAccountNumber());
+        } catch (IllegalArgumentException e) {
+            throw new AccumulationStateException(e.getMessage());
+        }
+        return WithdrawalResponse.from(api.requestWithdrawal(policyNumber, new BigDecimal(body.amount()), route,
             jwt.getSubject(), idempotencyKey));
     }
 
@@ -159,6 +166,10 @@ public class AccumulationController {
     public TopUpResponse requestTopUp(@PathVariable String policyNumber, @Valid @RequestBody AccountRequestBodies.TopUp body,
                                       @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                       @AuthenticationPrincipal Jwt jwt) {
+        if (body.method() != null && !body.method().isBlank() && !"MOBILE_MONEY".equals(body.method())) {
+            return TopUpResponse.from(api.recordTopUp(policyNumber, new BigDecimal(body.amount()), body.method(),
+                body.reference(), body.receivedOn(), body.payerRef(), jwt.getSubject(), idempotencyKey));
+        }
         return TopUpResponse.from(api.requestTopUp(policyNumber, new BigDecimal(body.amount()), body.payerRef(), jwt.getSubject(),
             idempotencyKey));
     }

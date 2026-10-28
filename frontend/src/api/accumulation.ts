@@ -91,7 +91,13 @@ export function downloadStatementPdf(statementId: string): Promise<Blob> {
 
 export interface WithdrawalBody {
   amount: string;
-  payeeRef: string;
+  /** Mobile money: the number. Cheque: the name it is made out to. Absent on a bank transfer. */
+  payeeRef?: string;
+  method?: 'MOBILE_MONEY' | 'EFT' | 'CHEQUE';
+  payeeBank?: string;
+  payeeBranch?: string;
+  payeeAccountName?: string;
+  payeeAccountNumber?: string;
 }
 
 export function requestWithdrawal(policyNumber: string, body: WithdrawalBody, attempt: MutationAttempt): Promise<WithdrawalView> {
@@ -105,9 +111,16 @@ export function approveWithdrawal(withdrawalId: string, attempt: MutationAttempt
   });
 }
 
+/**
+ * A mobile-money request to payerRef's phone, or (2026-10-28) money already received by hand: its method, the method's
+ * own reference and the day it came -- recorded by one person and credited once payment receipts it.
+ */
 export interface TopUpBody {
   amount: string;
-  payerRef: string;
+  payerRef?: string;
+  method?: 'MOBILE_MONEY' | 'CASH' | 'BANK_DEPOSIT' | 'CHEQUE' | 'LIPA_NUMBER' | 'TANQR';
+  reference?: string;
+  receivedOn?: string;
 }
 
 /** 202: the collection is requested; it is credited only when payment confirms it. */

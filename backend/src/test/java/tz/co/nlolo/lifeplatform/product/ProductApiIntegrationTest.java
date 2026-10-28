@@ -93,7 +93,9 @@ class ProductApiIntegrationTest {
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
             "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
-            "db-migrations/accumulation/V1__create_accumulation_schema.sql");
+            "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V7__top_up_methods.sql");
     }
 
     @BeforeEach

@@ -117,6 +117,8 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/benefitpayout/V3__withholding.sql",
             "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -213,6 +215,8 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/payment/V8__benefit_payout_purposes.sql",
             "db-migrations/payment/V9__account_purposes.sql",
             "db-migrations/payment/V17__manual_receipts.sql",
+            "db-migrations/payment/V18__payout_routes.sql",
+            "db-migrations/payment/V19__top_up_one_person.sql",
             // M7 (Task 10) additions. distribution/V1 enabled RLS on NONE of its four tables and
             // granted app_role nothing; V2 is what adds both, plus commission_accrual and
             // policy_projection with their own policies. Until now no test in this class or

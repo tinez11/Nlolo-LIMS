@@ -16,7 +16,7 @@ export function SessionSplash({ label, console: consoleName }: { label: string; 
       <div className="flex flex-col items-center text-center">
         {/* The sidebar's monogram, at the size of a front door: the platform's, not any one insurer's. */}
         <span
-          className="grid size-14 place-items-center rounded-2xl bg-accent font-display text-lg font-semibold text-accent-foreground shadow-card"
+          className="grid size-14 place-items-center rounded-2xl bg-accent font-display text-base font-semibold text-accent-foreground shadow-card"
           aria-hidden
         >
           LP

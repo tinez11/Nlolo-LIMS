@@ -256,7 +256,9 @@ class PostingEngine {
         if (!PostingRuleSet.BANK.equals(line.account())) {
             return line.account();
         }
-        return "EFT".equals(facts.attribute("paymentMethod")) ? PostingRuleSet.BANK_EFT : PostingRuleSet.BANK_MOBILE_MONEY;
+        // A cheque is drawn on the same bank account a transfer leaves (2026-10-28).
+        String method = facts.attribute("paymentMethod");
+        return "EFT".equals(method) || "CHEQUE".equals(method) ? PostingRuleSet.BANK_EFT : PostingRuleSet.BANK_MOBILE_MONEY;
     }
 
     private static LineDimensions dimensions(PostingFacts facts, PostingRuleSet.Line line,

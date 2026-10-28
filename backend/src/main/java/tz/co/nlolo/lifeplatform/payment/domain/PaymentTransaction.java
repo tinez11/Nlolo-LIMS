@@ -163,6 +163,29 @@ public class PaymentTransaction {
         return t;
     }
 
+    /**
+     * A savings top-up already received by hand (2026-10-28, user decision: one person). Receipted and confirmed at
+     * once by the person who records it -- there is no second signature to wait for.
+     */
+    public static PaymentTransaction receivedTopUp(UUID tenantId, String idempotencyKey, String method, String reference,
+                                                   String payerRef, java.math.BigDecimal amount, String currency,
+                                                   String topUpId, String policyNumber, java.time.LocalDate receivedOn,
+                                                   String recordedBy) {
+        PaymentTransaction t = new PaymentTransaction(tenantId, idempotencyKey, payerRef, amount, currency, topUpId,
+            TOP_UP);
+        t.method = method;
+        t.gatewayReference = reference;
+        t.policyNumber = policyNumber;
+        t.receivedOn = receivedOn;
+        t.recordedBy = recordedBy;
+        t.status = "CONFIRMED";
+        t.decidedBy = recordedBy;
+        t.decidedAt = Instant.now();
+        return t;
+    }
+
+    private static final String TOP_UP = "ACCOUNT_TOP_UP";
+
     /** The second person confirms it: the money now counts, and the invoice is paid from it. */
     public void approveReceipt(String by) {
         requireAwaitingApproval(by);
@@ -185,7 +208,8 @@ public class PaymentTransaction {
             throw new tz.co.nlolo.lifeplatform.payment.api.ReceiptRefusedException("This receipt is already "
                 + ("CONFIRMED".equals(status) ? "approved" : "refused") + ": it is no longer waiting for a decision");
         }
-        if (by != null && by.equals(recordedBy)) {
+        // A savings top-up needs no second person (2026-10-28): whoever asked for it may confirm the money came.
+        if (by != null && by.equals(recordedBy) && !TOP_UP.equals(purpose)) {
             throw new tz.co.nlolo.lifeplatform.payment.api.ReceiptRefusedException(
                 "A receipt must be approved by someone other than the person who recorded it");
         }

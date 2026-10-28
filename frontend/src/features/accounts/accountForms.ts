@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { todayIso } from '@/lib/dates';
+import { payoutRouteFields, refineRoute } from '@/features/payments/payoutRoute';
 
 /**
  * The money-moving forms on a savings account (product step 3).
@@ -20,16 +22,37 @@ const positiveAmount = z
   .regex(AMOUNT, AMOUNT_MESSAGE)
   .refine((v) => Number(v) > 0, 'Must be more than zero');
 
-export const withdrawalSchema = z.object({
-  amount: positiveAmount,
-  payeeRef: z.string().trim().min(1, 'Who is the money paid to?').max(200),
-});
+/** The amount, and how it is paid (2026-10-28): mobile money, a bank transfer to a named account, or a cheque. */
+export const withdrawalSchema = z
+  .object({ amount: positiveAmount, ...payoutRouteFields })
+  .superRefine(refineRoute);
 export type WithdrawalValues = z.infer<typeof withdrawalSchema>;
 
-export const topUpSchema = z.object({
-  amount: positiveAmount,
-  payerRef: z.string().trim().min(1, 'Who is the money collected from?').max(200),
-});
+/**
+ * A top-up (2026-10-28): asked of the payer's phone by mobile money, or already received -- cash, a bank deposit, a
+ * cheque, a Lipa number or TANQR -- with the method's own reference and the day it came. One person records it.
+ */
+export const topUpSchema = z
+  .object({
+    amount: positiveAmount,
+    method: z.enum(['MOBILE_MONEY', 'CASH', 'BANK_DEPOSIT', 'CHEQUE', 'LIPA_NUMBER', 'TANQR']),
+    payerRef: z.string().trim().max(200),
+    reference: z.string().trim().max(100),
+    receivedOn: z.string(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.method === 'MOBILE_MONEY') {
+      if (!v.payerRef) ctx.addIssue({ code: 'custom', path: ['payerRef'], message: 'Who is the money collected from?' });
+      return;
+    }
+    if (!v.reference) {
+      ctx.addIssue({ code: 'custom', path: ['reference'], message: 'Enter the reference, so the same money cannot be credited twice' });
+    }
+    if (!v.receivedOn) ctx.addIssue({ code: 'custom', path: ['receivedOn'], message: 'The day the money was received' });
+    else if (v.receivedOn > todayIso()) {
+      ctx.addIssue({ code: 'custom', path: ['receivedOn'], message: 'It cannot be later than today' });
+    }
+  });
 export type TopUpValues = z.infer<typeof topUpSchema>;
 
 export const transferInSchema = z.object({

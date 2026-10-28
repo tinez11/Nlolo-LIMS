@@ -97,6 +97,8 @@ class StatementIntegrationTest {
             "db-migrations/product/V34__version_account_charges.sql",
             "db-migrations/product/V35__product_description.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",

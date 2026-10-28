@@ -1,11 +1,20 @@
 import { can } from '@/auth/access';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useState } from 'react';
-import { useForm, type FieldValues, type UseFormReturn } from 'react-hook-form';
+import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, PencilLine, RefreshCw } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Controller, useForm, useWatch, type FieldValues, type UseFormReturn } from 'react-hook-form';
 import { useAuth } from 'react-oidc-context';
-import type { AccountView, AdjustmentView, LedgerEntryView, TermAccountView, WithdrawalView } from '@/api/types';
+import type {
+  AccountView,
+  AdjustmentView,
+  LedgerEntryView,
+  TermAccountView,
+  TopUpView,
+  WithdrawalView,
+} from '@/api/types';
 import { readIdentity } from '@/auth/claims';
 import { ConfirmAct } from '@/components/ConfirmAct';
+import { DataTable, type Column } from '@/components/DataTable';
 import { Field } from '@/components/Field';
 import { FormField } from '@/components/FormField';
 import { GatePanel } from '@/components/GatePanel';
@@ -13,13 +22,18 @@ import { InlineError } from '@/components/InlineError';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Input, Select } from '@/components/ui/input';
+import { DatePicker } from '@/components/DatePicker';
+import { RECEIPT_METHODS } from '@/features/receipts/receiptForm';
+import { PayoutRouteFields } from '@/features/payments/PayoutRouteFields';
+import { BLANK_ROUTE, describeRoute, routeBody } from '@/features/payments/payoutRoute';
+import { methodWords } from '@/features/payments/paymentWords';
 import {
   approveWithdrawalGates,
   decideAdjustmentGates,
   requestWithdrawalGates,
 } from '@/gates/accumulationGates';
-import { formatDate } from '@/lib/dates';
+import { formatDate, formatInstantDay, todayIso } from '@/lib/dates';
 import { startMutation } from '@/lib/idempotency';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
@@ -40,14 +54,26 @@ import { ENTRY_LABEL } from './entryLabels';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { StaffName } from '@/components/StaffName';
 
+/** How often the tab rereads the account while money is on its way in or out (2026-10-28). */
+const REFRESH_MS = 5000;
+
+/** Stable empties, so a missing list is the same value on every render. */
+const NONE_WITHDRAWN: WithdrawalView[] = [];
+const NONE_TOPPED_UP: TopUpView[] = [];
+const NONE_ADJUSTED: AdjustmentView[] = [];
+
 /**
- * The savings account behind a policy (product step 3): its balance, every entry on its ledger, and
- * the money that can move on it.
+ * The savings account behind a policy (product step 3), laid out the way a person reads a bank account
+ * (2026-10-28): the balance and what has gone in and out of it first, then what can be done, then what is
+ * waiting, then the ledger.
  *
- * The ledger is the record, and it is shown as one -- in sequence order, nothing edited. A correction
- * appears as its own REVERSAL or ADJUSTMENT line that names what it corrects, never as a changed
- * figure. Requesting is open to any staff member; anything that moves money needs a finance officer,
- * and a second person, exactly as the endpoints do.
+ * The ledger is the record, and it is shown as one -- nothing edited. A correction appears as its own REVERSAL or
+ * ADJUSTMENT line that names what it corrects, never as a changed figure. Requesting is open to any staff member;
+ * anything that moves money out needs a finance officer, and a second person, exactly as the endpoints do.
+ *
+ * While anything is waiting -- a withdrawal to approve or to be paid, a top-up to be collected, an adjustment to
+ * decide -- the tab rereads itself every few seconds. A withdrawal used to look stuck until somebody reloaded the
+ * page, though its money had already left the balance at approval.
  */
 export function AccountPanel({ policyNumber }: { policyNumber: string }) {
   const account = useAccumulationStore((s) => s.account[policyNumber]);
@@ -61,6 +87,7 @@ export function AccountPanel({ policyNumber }: { policyNumber: string }) {
   const loadTermAccount = useAccumulationStore((s) => s.loadTermAccount);
   // Paying a matured deposit or term account to its payee (payouts.manage, 2026-10-26).
   const isFinance = can('payouts.manage');
+  const waiting = useWaiting(policyNumber);
 
   useEffect(() => {
     void loadAccount(policyNumber);
@@ -69,46 +96,87 @@ export function AccountPanel({ policyNumber }: { policyNumber: string }) {
     void loadTermAccount(policyNumber);
   }, [policyNumber, loadAccount, loadMovements, loadDeposit, loadTermAccount]);
 
+  const somethingWaiting = waiting.count > 0;
+  useEffect(() => {
+    if (!somethingWaiting) return undefined;
+    const timer = window.setInterval(() => {
+      // A hidden tab is not read; the next interval after it is shown again catches up.
+      if (document.visibilityState !== 'visible') return;
+      void loadAccount(policyNumber);
+      void loadMovements(policyNumber);
+    }, REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [somethingWaiting, policyNumber, loadAccount, loadMovements]);
+
   if (!account || isInitialLoad(account)) return <LoadingBlock />;
   if (account.status === 'error' && account.error && account.data === null) {
     return <ErrorPanel error={account.error} onRetry={() => void loadAccount(policyNumber)} />;
   }
   if (!account.data) return null;
+  // An unpaid deposit's empty ledger would invite a top-up or transfer it cannot take; the deposit section already
+  // says what is awaited.
+  const unpaidDeposit = Boolean(deposit?.data) && account.data.entries.length === 0;
 
   return (
     <div className="space-y-5">
-      <Summary account={account.data} />
+      <Figures account={account.data} />
       {deposit?.data && <DepositSection deposit={deposit.data} isFinance={isFinance} />}
       {termAccount?.data && <TermAccountSection termAccount={termAccount.data} isFinance={isFinance} />}
-      {/* An unpaid deposit's empty ledger would invite a top-up or transfer it cannot take; the
-          deposit section already says what is awaited. */}
-      {!(deposit?.data && account.data.entries.length === 0) && <Ledger entries={account.data.entries} />}
       <Movements account={account.data} deposit={Boolean(deposit?.data)} termAccount={termAccount?.data ?? null} />
+      {!unpaidDeposit && <Ledger entries={account.data.entries} />}
+      <PastRequests policyNumber={policyNumber} />
     </div>
   );
 }
 
+/** Everything on the account still waiting on a person or a payment, oldest first. */
+function useWaiting(policyNumber: string) {
+  const withdrawalsResource = useAccumulationStore((s) => s.withdrawals[policyNumber]);
+  const topUpsResource = useAccumulationStore((s) => s.topUps[policyNumber]);
+  const adjustmentsResource = useAccumulationStore((s) => s.adjustments[policyNumber]);
+  const withdrawals = (withdrawalsResource?.data ?? NONE_WITHDRAWN).filter(
+    (w) => w.status === 'REQUESTED' || w.status === 'APPROVED',
+  );
+  const topUps = (topUpsResource?.data ?? NONE_TOPPED_UP).filter((t) => t.status === 'REQUESTED');
+  const adjustments = (adjustmentsResource?.data ?? NONE_ADJUSTED).filter((a) => a.status === 'PROPOSED');
+  return { withdrawals, topUps, adjustments, count: withdrawals.length + topUps.length + adjustments.length };
+}
+
 /**
- * Four facts, laid out two to a row. A single column here left this box mostly empty on any
- * screen wider than a phone -- the same complaint the policy record rail never had, because the
- * rail is only 320px wide and these facts had the room to be read as a column of short rows. Full
- * panel width turns that column into a lot of blank space beside each short value, so it reflows
- * sm+ the way `Summary` and `DepositSection`'s running-term box both now do.
+ * The figures band: the balance, and what has gone in and out, each a figure the server summed. Below it the facts
+ * that qualify them -- the account's state, when it opened, interest earned and charges taken.
  */
-function Summary({ account }: { account: AccountView }) {
+function Figures({ account }: { account: AccountView }) {
+  const { totals } = account;
   return (
-    <dl className="grid grid-cols-1 gap-x-6 rounded-md border border-border px-4 py-1 sm:grid-cols-2">
-      <Field label="Status" value={<StatusBadge kind="savingsAccount" value={account.status} />} />
-      <Field label="Balance" value={formatMoney(account.balance)} emphasis />
-      <Field label="Opened" value={formatDate(account.openedOn)} />
-      {account.closedOn && (
-        <Field label="Closed" value={`${formatDate(account.closedOn)} (${account.closedReason ?? 'closed'})`} />
-      )}
-    </dl>
+    <div className="space-y-3">
+      <dl className="hero-scope grid grid-cols-1 gap-x-8 gap-y-4 rounded-xl bg-hero p-5 sm:grid-cols-3">
+        <Field stacked label="Balance" value={formatMoney(account.balance)} />
+        <Field stacked label="Paid in" value={formatMoney(totals.paidIn)} note="Premiums, top-ups and transfers in" />
+        <Field stacked label="Paid out" value={formatMoney(totals.paidOut)} note="Withdrawals and other payments out" />
+      </dl>
+      <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="Status" value={<StatusBadge kind="savingsAccount" value={account.status} />} />
+        <Field label="Opened" value={formatDate(account.openedOn)} />
+        <Field label="Interest credited" value={formatMoney(totals.interest)} />
+        <Field label="Charges taken" value={formatMoney(totals.charges)} />
+        {account.closedOn && (
+          <Field label="Closed" value={`${formatDate(account.closedOn)} (${account.closedReason ?? 'closed'})`} />
+        )}
+      </dl>
+    </div>
   );
 }
 
+/** How many ledger lines show before "Show all" -- the latest, since that is what a person checks first. */
+const LEDGER_PREVIEW = 12;
+
+/**
+ * The ledger as a statement: newest first, money in and money out in their own columns, the running balance last.
+ * A reversal names the line it undoes by its number.
+ */
 function Ledger({ entries }: { entries: LedgerEntryView[] }) {
+  const [all, setAll] = useState(false);
   if (entries.length === 0) {
     return (
       <EmptyState
@@ -118,41 +186,66 @@ function Ledger({ entries }: { entries: LedgerEntryView[] }) {
     );
   }
   const seqById = new Map(entries.map((e) => [e.entryId, e.seq]));
-  return (
-    <div>
-      <p className="mb-1.5 text-xs font-medium">Ledger</p>
-      <div className="divide-y divide-border rounded-md border border-border" role="list" aria-label="Ledger">
-        {entries.map((entry) => (
-          <div key={entry.entryId} role="listitem" className="flex items-start justify-between gap-3 px-4 py-2.5">
-            <div className="min-w-0">
-              <span className="text-xs text-muted-foreground">#{entry.seq}</span>{' '}
-              <span className="text-sm font-medium">{ENTRY_LABEL[entry.type]}</span>
-              <p className="text-xs text-muted-foreground">
-                {formatDate(entry.effectiveDate)}
-                {entry.reason ? ` · ${entry.reason}` : ''}
-                {entry.reversesEntryId ? ` · reverses #${seqById.get(entry.reversesEntryId) ?? '?'}` : ''}
-              </p>
-            </div>
-            <span className="shrink-0 text-right">
-              <span className="block text-sm font-medium">{formatMoney(entry.amount)}</span>
-              <span className="block text-xs text-muted-foreground">balance {formatMoney(entry.balanceAfter)}</span>
+  const newestFirst = [...entries].sort((a, b) => b.seq - a.seq);
+  const shown = all ? newestFirst : newestFirst.slice(0, LEDGER_PREVIEW);
+  const signed = (e: LedgerEntryView) => !e.amount.amount.startsWith('-');
+  const columns: Column<LedgerEntryView>[] = [
+    { key: 'date', header: 'Date', nowrap: true, render: (e) => formatDate(e.effectiveDate) },
+    {
+      key: 'entry',
+      header: 'Entry',
+      render: (e) => (
+        <span className="block min-w-0">
+          <span className="font-medium">{ENTRY_LABEL[e.type]}</span>{' '}
+          <span className="text-xs text-subtle-foreground">#{e.seq}</span>
+          {(e.reason || e.reversesEntryId) && (
+            <span className="block text-xs text-muted-foreground">
+              {e.reason}
+              {e.reason && e.reversesEntryId ? ' · ' : ''}
+              {e.reversesEntryId ? `reverses #${seqById.get(e.reversesEntryId) ?? '?'}` : ''}
             </span>
-          </div>
-        ))}
+          )}
+        </span>
+      ),
+    },
+    { key: 'in', header: 'Money in', align: 'right', render: (e) => (signed(e) ? formatMoney(e.amount) : '') },
+    {
+      key: 'out',
+      header: 'Money out',
+      align: 'right',
+      render: (e) => (signed(e) ? '' : formatMoney({ ...e.amount, amount: e.amount.amount.slice(1) })),
+    },
+    { key: 'balance', header: 'Balance', align: 'right', render: (e) => <span className="font-medium">{formatMoney(e.balanceAfter)}</span> },
+  ];
+  return (
+    <section aria-labelledby="ledger-heading" className="space-y-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 id="ledger-heading" className="text-sm font-semibold">
+          Ledger
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          {entries.length} {entries.length === 1 ? 'entry' : 'entries'}, newest first
+        </p>
       </div>
-    </div>
+      <div className="overflow-hidden rounded-lg border border-border">
+        <DataTable caption="Ledger" columns={columns} rows={shown} rowKey={(e) => e.entryId} />
+      </div>
+      {entries.length > LEDGER_PREVIEW && (
+        <Button size="sm" variant="ghost" onClick={() => setAll((v) => !v)}>
+          {all ? `Show the latest ${LEDGER_PREVIEW}` : `Show all ${entries.length} entries`}
+        </Button>
+      )}
+    </section>
   );
 }
 
 type Action = 'withdraw' | 'topup' | 'transfer' | 'adjust' | null;
 
-/** Stable empties, so a missing list is the same value on every render. */
-const NONE_WITHDRAWN: WithdrawalView[] = [];
-const NONE_ADJUSTED: AdjustmentView[] = [];
-
 /**
- * `deposit`: a fixed-term deposit takes nothing in and lets nothing out during its term (spec
- * D5), so only the adjustment -- the two-person correction -- is offered.
+ * What can be done, then what is waiting.
+ *
+ * `deposit`: a fixed-term deposit takes nothing in and lets nothing out during its term (spec D5), so only the
+ * adjustment -- the two-person correction -- is offered.
  *
  * `termAccount`: money comes in during its term but nothing goes out, so no withdrawal is offered; once it has
  * matured, nothing comes in either -- it only waits to be paid out.
@@ -173,71 +266,158 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
   // array on every call, which Zustand reads as a change and re-renders forever -- the render loop
   // createResourceSlice warns about, and a blank page in the browser.
   const withdrawalsResource = useAccumulationStore((s) => s.withdrawals[policyNumber]);
-  const adjustmentsResource = useAccumulationStore((s) => s.adjustments[policyNumber]);
   const withdrawals = withdrawalsResource?.data ?? NONE_WITHDRAWN;
-  const adjustments = adjustmentsResource?.data ?? NONE_ADJUSTED;
+  const waiting = useWaiting(policyNumber);
   const [action, setAction] = useState<Action>(null);
   const open = account.status === 'OPEN';
+  const close = () => setAction(null);
+
+  const actionButton = (value: Exclude<Action, null>, label: string, icon: ReactNode) => (
+    <Button size="sm" variant={action === value ? 'secondary' : 'outline'} aria-expanded={action === value}
+      onClick={() => setAction(action === value ? null : value)}>
+      {icon}
+      {label}
+    </Button>
+  );
 
   return (
     <div className="space-y-4">
       {open && (
         <div className="flex flex-wrap gap-2">
-          {canTransact && moneyOut && (
-            <Button size="sm" variant={action === 'withdraw' ? 'secondary' : 'outline'} onClick={() => setAction('withdraw')}>
-              Request withdrawal
-            </Button>
-          )}
-          {canTransact && moneyIn && (
-            <Button size="sm" variant={action === 'topup' ? 'secondary' : 'outline'} onClick={() => setAction('topup')}>
-              Request top-up
-            </Button>
-          )}
+          {canTransact && moneyOut && actionButton('withdraw', 'Request withdrawal', <ArrowUpRight aria-hidden className="size-4" />)}
+          {canTransact && moneyIn && actionButton('topup', 'Request top-up', <ArrowDownLeft aria-hidden className="size-4" />)}
           {/* Finance's: recording a transfer puts money on the account, and an adjustment is a
               correction a second finance user signs. Not offered at all to anyone else, rather than
               a button that would 403. */}
-          {isFinance && (
-            <>
-              {moneyIn && (
-                <Button size="sm" variant={action === 'transfer' ? 'secondary' : 'outline'} onClick={() => setAction('transfer')}>
-                  Record transfer in
-                </Button>
-              )}
-              <Button size="sm" variant={action === 'adjust' ? 'secondary' : 'outline'} onClick={() => setAction('adjust')}>
-                Propose adjustment
-              </Button>
-            </>
-          )}
+          {isFinance && moneyIn && actionButton('transfer', 'Record transfer in', <ArrowRightLeft aria-hidden className="size-4" />)}
+          {isFinance && actionButton('adjust', 'Propose adjustment', <PencilLine aria-hidden className="size-4" />)}
         </div>
       )}
 
-      {action === 'withdraw' && <WithdrawalForm account={account} withdrawals={withdrawals} onDone={() => setAction(null)} />}
-      {action === 'topup' && <TopUpForm policyNumber={policyNumber} onDone={() => setAction(null)} />}
-      {action === 'transfer' && <TransferInForm policyNumber={policyNumber} onDone={() => setAction(null)} />}
-      {action === 'adjust' && <AdjustmentForm policyNumber={policyNumber} onDone={() => setAction(null)} />}
+      {action === 'withdraw' && <WithdrawalForm account={account} withdrawals={withdrawals} onDone={close} />}
+      {action === 'topup' && <TopUpForm policyNumber={policyNumber} onDone={close} />}
+      {action === 'transfer' && <TransferInForm policyNumber={policyNumber} onDone={close} />}
+      {action === 'adjust' && <AdjustmentForm policyNumber={policyNumber} onDone={close} />}
 
-      {withdrawals.length > 0 && (
-        <div>
-          <p className="mb-1.5 text-xs font-medium">Withdrawals</p>
-          <div className="divide-y divide-border rounded-md border border-border">
-            {withdrawals.map((w) => (
+      {waiting.count > 0 && (
+        <section aria-labelledby="waiting-heading" className="rounded-lg border border-border">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 pt-3 pb-1">
+            <h3 id="waiting-heading" className="text-sm font-semibold">
+              Waiting <span className="font-normal text-muted-foreground">· {waiting.count}</span>
+            </h3>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <RefreshCw aria-hidden className="size-3.5" />
+              Updates by itself every few seconds
+            </p>
+          </div>
+          <div className="divide-y divide-border">
+            {waiting.withdrawals.map((w) => (
               <WithdrawalRow key={w.withdrawalId} withdrawal={w} viewerSubject={viewerSubject} isFinance={isFinance} />
             ))}
-          </div>
-        </div>
-      )}
-
-      {adjustments.length > 0 && (
-        <div>
-          <p className="mb-1.5 text-xs font-medium">Adjustments</p>
-          <div className="divide-y divide-border rounded-md border border-border">
-            {adjustments.map((a) => (
+            {waiting.topUps.map((t) => (
+              <WaitingLine
+                key={t.topUpId}
+                what="Top-up"
+                amount={formatMoney(t.amount)}
+                status={<StatusBadge kind="accountTopUp" value={t.status} />}
+                detail={<>{topUpHow(t)} · requested by <StaffName subject={t.requestedBy} /> · waiting for the money to arrive</>}
+              />
+            ))}
+            {waiting.adjustments.map((a) => (
               <AdjustmentRow key={a.adjustmentId} adjustment={a} viewerSubject={viewerSubject} isFinance={isFinance} />
             ))}
           </div>
-        </div>
+        </section>
       )}
     </div>
+  );
+}
+
+/** How a top-up came in, in one phrase: "Mobile money from +255…", "Cash · RC-104". */
+function topUpHow(t: TopUpView): string {
+  if (t.method === 'MOBILE_MONEY') return `Mobile money from ${t.payerRef}`;
+  return [methodWords(t.method), t.reference].filter(Boolean).join(' · ');
+}
+
+/** One waiting item: what it is and how much on the first line, who and why it waits on the second. */
+function WaitingLine({ what, amount, status, detail, children }: {
+  what: string;
+  amount: string;
+  status: ReactNode;
+  detail: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="space-y-2 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-sm font-medium">{what}</span>
+        <span className="text-sm font-medium tabular-nums">{amount}</span>
+        {status}
+      </div>
+      <p className="text-xs text-muted-foreground">{detail}</p>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Every request that is no longer waiting -- paid, collected, failed, decided -- newest first, so "what happened to
+ * the withdrawal I asked for" has an answer on the tab rather than in the ledger's wording.
+ */
+function PastRequests({ policyNumber }: { policyNumber: string }) {
+  const withdrawalsResource = useAccumulationStore((s) => s.withdrawals[policyNumber]);
+  const topUpsResource = useAccumulationStore((s) => s.topUps[policyNumber]);
+  const adjustmentsResource = useAccumulationStore((s) => s.adjustments[policyNumber]);
+  type Row = { id: string; at: string; what: string; amount: string; how: string; status: ReactNode };
+  const rows: Row[] = [
+    ...(withdrawalsResource?.data ?? NONE_WITHDRAWN)
+      .filter((w) => w.status === 'PAID' || w.status === 'FAILED')
+      .map((w) => ({
+        id: w.withdrawalId,
+        at: w.requestedAt,
+        what: 'Withdrawal',
+        amount: formatMoney(w.amount),
+        how: `${methodWords(w.method)} · ${describeRoute(w)}`,
+        status: <StatusBadge kind="accountWithdrawal" value={w.status} />,
+      })),
+    ...(topUpsResource?.data ?? NONE_TOPPED_UP)
+      .filter((t) => t.status !== 'REQUESTED')
+      .map((t) => ({
+        id: t.topUpId,
+        at: t.requestedAt,
+        what: 'Top-up',
+        amount: formatMoney(t.amount),
+        how: topUpHow(t),
+        status: <StatusBadge kind="accountTopUp" value={t.status} />,
+      })),
+    ...(adjustmentsResource?.data ?? NONE_ADJUSTED)
+      .filter((a) => a.status !== 'PROPOSED')
+      .map((a) => ({
+        id: a.adjustmentId,
+        at: a.proposedAt,
+        what: 'Adjustment',
+        amount: formatMoney({ amount: a.amount, currencyCode: 'TZS' }),
+        how: a.reason,
+        status: <StatusBadge kind="accountAdjustment" value={a.status} />,
+      })),
+  ].sort((a, b) => b.at.localeCompare(a.at));
+  if (rows.length === 0) return null;
+  const columns: Column<Row>[] = [
+    { key: 'at', header: 'Requested', nowrap: true, render: (r) => formatInstantDay(r.at) },
+    { key: 'what', header: 'Request', render: (r) => <span className="font-medium">{r.what}</span> },
+    { key: 'how', header: 'Paid to / from', secondary: true, render: (r) => <span className="text-muted-foreground">{r.how}</span> },
+    { key: 'amount', header: 'Amount', align: 'right', render: (r) => r.amount },
+    { key: 'status', header: 'Status', render: (r) => r.status },
+  ];
+  return (
+    <section aria-labelledby="past-requests-heading" className="space-y-2">
+      <h3 id="past-requests-heading" className="text-sm font-semibold">
+        Past requests
+      </h3>
+      <div className="overflow-hidden rounded-lg border border-border">
+        <DataTable caption="Past requests" columns={columns} rows={rows} rowKey={(r) => r.id} />
+      </div>
+    </section>
   );
 }
 
@@ -264,6 +444,21 @@ function TextField<T extends FieldValues>({
   );
 }
 
+/** A movement form's frame: a titled, flat box under the action buttons, with a way out. */
+function ActionBox({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  return (
+    <section aria-label={title} className="space-y-3 rounded-lg border border-border-strong p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <Button type="button" size="sm" variant="ghost" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+      {children}
+    </section>
+  );
+}
+
 function WithdrawalForm({
   account,
   withdrawals,
@@ -277,7 +472,11 @@ function WithdrawalForm({
   const withdraw = useAccumulationStore((s) => s.withdraw);
   const acting = useAccumulationStore((s) => s.acting[`withdraw.${policyNumber}`]);
   const [armed, setArmed] = useState<WithdrawalValues | null>(null);
-  const form = useForm<WithdrawalValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(withdrawalSchema), defaultValues: { amount: '', payeeRef: '' } });
+  const form = useForm<WithdrawalValues>({
+    ...VALIDATE_ON_TOUCH,
+    resolver: zodResolver(withdrawalSchema),
+    defaultValues: { amount: '', ...BLANK_ROUTE },
+  });
   const gates = requestWithdrawalGates(account, withdrawals);
   const refused = gates.some((g) => !g.ok && g.hard);
 
@@ -288,14 +487,15 @@ function WithdrawalForm({
         consequence={
           <>
             <strong>{formatMoney({ amount: armed.amount, currencyCode: account.balance.currencyCode })}</strong> from{' '}
-            <strong>{policyNumber}</strong> to {armed.payeeRef}. It is valued again when a second person approves it.
+            <strong>{policyNumber}</strong>, paid by {methodWords(armed.method).toLowerCase()} to{' '}
+            <strong>{describeRoute(routeBody(armed))}</strong>. It is valued again when a second person approves it.
           </>
         }
         reversal="Nothing moves until a finance officer approves it. A request can be left unapproved."
         confirmLabel="Request withdrawal"
         busy={acting?.status === 'loading'}
         onConfirm={() => {
-          void withdraw(policyNumber, { amount: armed.amount, payeeRef: armed.payeeRef.trim() }, startMutation()).then(() => {
+          void withdraw(policyNumber, { amount: armed.amount, ...routeBody(armed) }, startMutation()).then(() => {
             if (useAccumulationStore.getState().acting[`withdraw.${policyNumber}`]?.status === 'success') onDone();
           });
           setArmed(null);
@@ -306,56 +506,116 @@ function WithdrawalForm({
   }
 
   return (
-    <div className="space-y-3 rounded-md border border-border p-3">
+    <ActionBox title="Withdraw from the account" onClose={onDone}>
       <GatePanel gates={gates} title="Before requesting" />
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
-      <form onSubmit={form.handleSubmit((v) => setArmed(v))} className="space-y-3">
-        <TextField form={form} name="amount" label="Amount" placeholder="40000.00" inputMode="decimal" />
-        <TextField form={form} name="payeeRef" label="Pay to" placeholder="Mobile money number or bank destination" />
-        <p className="text-xs text-muted-foreground">
-          The account must keep its product&apos;s minimum balance, after any policy loan. The server checks the exact figure.
-        </p>
-        <Button type="submit" size="sm" disabled={refused}>
+      <form onSubmit={form.handleSubmit((v) => setArmed(v))} className="space-y-4">
+        <div className="max-w-xs">
+          <FormField
+            label={`Amount (${account.balance.currencyCode})`}
+            hint="The account keeps its product’s minimum balance, after any policy loan."
+            error={form.formState.errors.amount?.message}
+          >
+            <Input {...form.register('amount')} placeholder="40000.00" inputMode="decimal" />
+          </FormField>
+        </div>
+        <PayoutRouteFields form={form} />
+        <Button type="submit" size="sm" variant="primary" disabled={refused}>
           Continue
         </Button>
       </form>
-    </div>
+    </ActionBox>
   );
 }
 
+/**
+ * A top-up (2026-10-28): asked of the payer's phone now, or recorded as already received by any of the five ways money
+ * reaches the insurer by hand -- the same chooser the Billing tab's invoices use. One person records it: a received
+ * top-up is credited as soon as payment receipts it, with no second signature.
+ */
 function TopUpForm({ policyNumber, onDone }: { policyNumber: string; onDone: () => void }) {
   const topUp = useAccumulationStore((s) => s.topUp);
   const acting = useAccumulationStore((s) => s.acting[`topup.${policyNumber}`]);
-  const form = useForm<TopUpValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(topUpSchema), defaultValues: { amount: '', payerRef: '' } });
+  const form = useForm<TopUpValues>({
+    ...VALIDATE_ON_TOUCH,
+    resolver: zodResolver(topUpSchema),
+    defaultValues: { amount: '', method: 'MOBILE_MONEY', payerRef: '', reference: '', receivedOn: todayIso() },
+  });
+  const method = useWatch({ control: form.control, name: 'method' });
+  const received = method !== 'MOBILE_MONEY' ? RECEIPT_METHODS.find((m) => m.value === method) : undefined;
+  const [sent, setSent] = useState<'requested' | 'recorded' | null>(null);
+  const errors = form.formState.errors;
 
   return (
-    <div className="space-y-3 rounded-md border border-border p-3">
+    <ActionBox title="Top up the account" onClose={onDone}>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
-      {acting?.status === 'success' && (
+      {acting?.status === 'success' && sent && (
         <p className="text-xs text-muted-foreground" role="status">
-          The collection has been requested from the provider. It is credited once the payment is confirmed.
+          {sent === 'requested'
+            ? 'The collection has been requested from the provider. It is credited once the payment is confirmed.'
+            : 'Recorded. It is credited to the account in a moment, under Waiting until it is.'}
         </p>
       )}
       <form
-        onSubmit={form.handleSubmit((v) =>
-          void topUp(policyNumber, { amount: v.amount, payerRef: v.payerRef.trim() }, startMutation()).then(() => {
-            if (useAccumulationStore.getState().acting[`topup.${policyNumber}`]?.status === 'success') form.reset();
-          }),
-        )}
+        onSubmit={form.handleSubmit((v) => {
+          const body =
+            v.method === 'MOBILE_MONEY'
+              ? { amount: v.amount, payerRef: v.payerRef.trim() }
+              : {
+                  amount: v.amount,
+                  method: v.method,
+                  reference: v.reference.trim(),
+                  receivedOn: v.receivedOn,
+                  ...(v.payerRef.trim() ? { payerRef: v.payerRef.trim() } : {}),
+                };
+          void topUp(policyNumber, body, startMutation()).then(() => {
+            if (useAccumulationStore.getState().acting[`topup.${policyNumber}`]?.status === 'success') {
+              setSent(v.method === 'MOBILE_MONEY' ? 'requested' : 'recorded');
+              form.reset({ ...v, amount: '', reference: '' });
+            }
+          });
+        })}
         className="space-y-3"
       >
-        <TextField form={form} name="amount" label="Amount" placeholder="20000.00" inputMode="decimal" />
-        <TextField form={form} name="payerRef" label="Collect from" placeholder="Mobile money number" />
-        <div className="flex gap-2">
-          <Button type="submit" size="sm" disabled={acting?.status === 'loading'}>
-            Request top-up
-          </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={onDone}>
-            Close
-          </Button>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <FormField label="How is it being paid?" hint={received?.hint} error={errors.method?.message}>
+            <Select {...form.register('method')}>
+              <optgroup label="Ask for it now">
+                <option value="MOBILE_MONEY">Mobile money — send a request to the payer’s phone</option>
+              </optgroup>
+              <optgroup label="Already received — record it">
+                {RECEIPT_METHODS.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </optgroup>
+            </Select>
+          </FormField>
+          <TextField form={form} name="amount" label="Amount" placeholder="20000.00" inputMode="decimal" />
+          {received ? (
+            <>
+              <FormField label={received.reference} error={errors.reference?.message}>
+                <Input className="font-mono" {...form.register('reference')} />
+              </FormField>
+              <FormField label="Received on" error={errors.receivedOn?.message}>
+                <Controller
+                  control={form.control}
+                  name="receivedOn"
+                  render={({ field }) => <DatePicker value={field.value} onChange={(iso) => field.onChange(iso ?? '')} />}
+                />
+              </FormField>
+              <TextField form={form} name="payerRef" label="Paid by (optional)" placeholder="As the slip shows it" />
+            </>
+          ) : (
+            <TextField form={form} name="payerRef" label="Collect from" placeholder="Mobile money number" />
+          )}
         </div>
+        <Button type="submit" size="sm" variant="primary" disabled={acting?.status === 'loading'}>
+          {received ? 'Record top-up' : 'Request top-up'}
+        </Button>
       </form>
-    </div>
+    </ActionBox>
   );
 }
 
@@ -369,7 +629,7 @@ function TransferInForm({ policyNumber, onDone }: { policyNumber: string; onDone
   });
 
   return (
-    <div className="space-y-3 rounded-md border border-border p-3">
+    <ActionBox title="Record a transfer in" onClose={onDone}>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <form
         onSubmit={form.handleSubmit((v) =>
@@ -383,14 +643,16 @@ function TransferInForm({ policyNumber, onDone }: { policyNumber: string; onDone
         )}
         className="space-y-3"
       >
-        <TextField form={form} name="amount" label="Amount received" placeholder="300000.00" inputMode="decimal" />
-        <TextField form={form} name="sourceScheme" label="From scheme" placeholder="NSSF member 1234" />
-        <TextField form={form} name="documentRef" label="Document reference (optional)" />
-        <Button type="submit" size="sm" disabled={acting?.status === 'loading'}>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <TextField form={form} name="amount" label="Amount received" placeholder="300000.00" inputMode="decimal" />
+          <TextField form={form} name="sourceScheme" label="From scheme" placeholder="NSSF member 1234" />
+          <TextField form={form} name="documentRef" label="Document reference (optional)" />
+        </div>
+        <Button type="submit" size="sm" variant="primary" disabled={acting?.status === 'loading'}>
           Record transfer in
         </Button>
       </form>
-    </div>
+    </ActionBox>
   );
 }
 
@@ -400,7 +662,7 @@ function AdjustmentForm({ policyNumber, onDone }: { policyNumber: string; onDone
   const form = useForm<AdjustmentValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(adjustmentSchema), defaultValues: { amount: '', reason: '' } });
 
   return (
-    <div className="space-y-3 rounded-md border border-border p-3">
+    <ActionBox title="Propose an adjustment" onClose={onDone}>
       <p className="text-xs text-muted-foreground">
         A correction is a new entry, never an edit. A negative amount takes money out. It is posted only once a second
         person approves it.
@@ -414,14 +676,24 @@ function AdjustmentForm({ policyNumber, onDone }: { policyNumber: string; onDone
         )}
         className="space-y-3"
       >
-        <TextField form={form} name="amount" label="Amount" placeholder="-250.00" inputMode="decimal" />
-        <TextField form={form} name="reason" label="Reason" placeholder="Fee charged twice in error" />
-        <Button type="submit" size="sm" disabled={acting?.status === 'loading'}>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <TextField form={form} name="amount" label="Amount" placeholder="-250.00" inputMode="decimal" />
+          <TextField form={form} name="reason" label="Reason" placeholder="Fee charged twice in error" />
+        </div>
+        <Button type="submit" size="sm" variant="primary" disabled={acting?.status === 'loading'}>
           Propose adjustment
         </Button>
       </form>
-    </div>
+    </ActionBox>
   );
+}
+
+/** What a withdrawal is waiting for, in words: a person's approval, or the payment itself. */
+function waitingFor(w: WithdrawalView): string {
+  if (w.status === 'REQUESTED') return 'waiting for a finance officer to approve it';
+  if (w.method === 'EFT') return 'taken from the balance; waiting for finance to make the bank transfer';
+  if (w.method === 'CHEQUE') return 'taken from the balance; waiting for finance to write the cheque';
+  return 'taken from the balance; waiting for the mobile-money provider to confirm the payment';
 }
 
 function WithdrawalRow({
@@ -438,23 +710,24 @@ function WithdrawalRow({
   const [armed, setArmed] = useState(false);
   const gates = approveWithdrawalGates(withdrawal, viewerSubject);
   const refused = gates.some((g) => !g.ok && g.hard);
+  const to = describeRoute(withdrawal);
 
   return (
-    <div className="space-y-2 px-4 py-2.5">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <span className="text-sm font-medium">{formatMoney(withdrawal.amount)}</span>{' '}
-          <StatusBadge kind="accountWithdrawal" value={withdrawal.status} />
-          <p className="text-xs text-muted-foreground">
-            To {withdrawal.payeeRef} · requested by <StaffName subject={withdrawal.requestedBy} />
-            {withdrawal.approvedBy && <> · approved by <StaffName subject={withdrawal.approvedBy} /></>}
-          </p>
-        </div>
-      </div>
-      {/* 202 from the rail: REQUESTED, never "paid" -- the badge reads PAID only once the provider confirms. */}
-      {acting?.status === 'success' && (
+    <WaitingLine
+      what="Withdrawal"
+      amount={formatMoney(withdrawal.amount)}
+      status={<StatusBadge kind="accountWithdrawal" value={withdrawal.status} />}
+      detail={
+        <>
+          {methodWords(withdrawal.method)} to {to} · requested by <StaffName subject={withdrawal.requestedBy} />
+          {withdrawal.approvedBy && <> · approved by <StaffName subject={withdrawal.approvedBy} /></>} · {waitingFor(withdrawal)}
+        </>
+      }
+    >
+      {/* 202 from the rail: REQUESTED, never "paid" -- the badge reads PAID only once the payment is confirmed. */}
+      {acting?.status === 'success' && withdrawal.status === 'APPROVED' && (
         <p className="text-xs text-muted-foreground" role="status">
-          The payment has been requested from the provider.
+          Approved. {withdrawal.method === 'MOBILE_MONEY' ? 'The payment has been requested from the provider.' : 'It is in finance’s queue of payments to make.'}
         </p>
       )}
       {withdrawal.status === 'REQUESTED' && isFinance && (
@@ -466,8 +739,8 @@ function WithdrawalRow({
               heading="Approve this withdrawal?"
               consequence={
                 <>
-                  <strong>{formatMoney(withdrawal.amount)}</strong> leaves the account now and is requested for{' '}
-                  {withdrawal.payeeRef}.
+                  <strong>{formatMoney(withdrawal.amount)}</strong> leaves the account now and is paid by{' '}
+                  {methodWords(withdrawal.method).toLowerCase()} to {to}.
                 </>
               }
               reversal="If the payment fails, the money goes back to the account as a reversal entry."
@@ -481,13 +754,13 @@ function WithdrawalRow({
               onCancel={() => setArmed(false)}
             />
           ) : (
-            <Button size="sm" disabled={refused} onClick={() => setArmed(true)}>
+            <Button size="sm" variant="primary" disabled={refused} onClick={() => setArmed(true)}>
               Approve
             </Button>
           )}
         </>
       )}
-    </div>
+    </WaitingLine>
   );
 }
 
@@ -507,15 +780,17 @@ function AdjustmentRow({
   const money = { amount: adjustment.amount, currencyCode: 'TZS' };
 
   return (
-    <div className="space-y-2 px-4 py-2.5">
-      <div>
-        <span className="text-sm font-medium">{formatMoney(money)}</span>{' '}
-        <StatusBadge kind="accountAdjustment" value={adjustment.status} />
-        <p className="text-xs text-muted-foreground">
-          {adjustment.reason} · proposed by <StaffName subject={adjustment.proposedBy} />
-          {adjustment.decidedBy && <> · decided by <StaffName subject={adjustment.decidedBy} /></>}
-        </p>
-      </div>
+    <WaitingLine
+      what="Adjustment"
+      amount={formatMoney(money)}
+      status={<StatusBadge kind="accountAdjustment" value={adjustment.status} />}
+      detail={
+        <>
+          {adjustment.reason} · proposed by <StaffName subject={adjustment.proposedBy} /> · waiting for a second person
+          to decide it
+        </>
+      }
+    >
       {adjustment.status === 'PROPOSED' && isFinance && (
         <>
           <GatePanel gates={gates} title="Before deciding" />
@@ -523,6 +798,7 @@ function AdjustmentRow({
           <div className="flex gap-2">
             <Button
               size="sm"
+              variant="primary"
               disabled={refused || acting?.status === 'loading'}
               onClick={() => void decide(adjustment.policyNumber, adjustment.adjustmentId, true, startMutation())}
             >
@@ -539,6 +815,6 @@ function AdjustmentRow({
           </div>
         </>
       )}
-    </div>
+    </WaitingLine>
   );
 }

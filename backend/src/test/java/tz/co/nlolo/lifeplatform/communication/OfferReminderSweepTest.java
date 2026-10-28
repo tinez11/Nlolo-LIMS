@@ -139,6 +139,8 @@ class OfferReminderSweepTest {
             "db-migrations/benefitpayout/V3__withholding.sql",
             "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",

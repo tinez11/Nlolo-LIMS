@@ -185,31 +185,9 @@ public class PaymentRequestListener {
         UUID tenantId = TenantContext.get();
         String idempotencyKey = requireKey(payload);
         UUID claimId = (UUID) payload.get("claimId");
-        String payeeRef = (String) payload.get("payeeRef");
-        Money money = money(payload);
-        // Which rail, named by the publisher. Absent means MOBILE_MONEY — every publisher
-        // before credit life, whose behaviour is unchanged.
-        DisbursementMethod method = payload.get("disbursementMethod") == null
-            ? DisbursementMethod.MOBILE_MONEY
-            : DisbursementMethod.valueOf((String) payload.get("disbursementMethod"));
-
-        Optional<UUID> disbursementId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordDisbursementRequest(
-            tenantId, idempotencyKey, payeeRef, money.amount(), money.currency(), "CLAIM_SETTLEMENT",
-            claimId.toString(), method));
-        disbursementId.ifPresentOrElse(
-            id -> {
-                if (method == DisbursementMethod.EFT) {
-                    // RECORDED, NOT SENT. There is no rail to call: finance moves this in the
-                    // bank's own portal and confirms it here afterwards. Calling the gateway
-                    // would put a multi-million-shilling lender payout through a mock with no
-                    // authentication, which is the entire reason EFT exists.
-                    log.info("Disbursement {} for claim {} is EFT -- recorded awaiting execution, "
-                        + "not submitted to any gateway", id, claimId);
-                    return;
-                }
-                submitDisbursement(tenantId, id, payeeRef, money);
-            },
-            () -> log.info("Dropping duplicate ClaimSettlementRequested for tenant {} key {}", tenantId, idempotencyKey));
+        // Which rail, named by the publisher: a credit-life claim is a bank transfer (EFT) finance makes by hand; any
+        // claim that names no method is mobile money, as before credit life.
+        payOut(tenantId, idempotencyKey, payload, "CLAIM_SETTLEMENT", claimId.toString(), "ClaimSettlementRequested");
     }
 
     /** M7: distribution's commission payout to an agent. Structurally identical to {@link
@@ -242,14 +220,8 @@ public class PaymentRequestListener {
     private void handleSurrenderPayout(Map<String, Object> payload) {
         UUID tenantId = TenantContext.get();
         String idempotencyKey = requireKey(payload);
-        String surrenderRequestId = (String) payload.get("surrenderRequestId");
-        String payeeRef = (String) payload.get("payeeRef");
-        Money money = money(payload);
-        Optional<UUID> disbursementId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordDisbursementRequest(
-            tenantId, idempotencyKey, payeeRef, money.amount(), money.currency(), "SURRENDER_PAYOUT", surrenderRequestId));
-        disbursementId.ifPresentOrElse(
-            id -> submitDisbursement(tenantId, id, payeeRef, money),
-            () -> log.info("Dropping duplicate SurrenderPayoutRequested for tenant {} key {}", tenantId, idempotencyKey));
+        payOut(tenantId, idempotencyKey, payload, "SURRENDER_PAYOUT", (String) payload.get("surrenderRequestId"),
+            "SurrenderPayoutRequested");
     }
 
     /**
@@ -261,15 +233,8 @@ public class PaymentRequestListener {
     private void handleAccountPayout(Map<String, Object> payload) {
         UUID tenantId = TenantContext.get();
         String idempotencyKey = requireKey(payload);
-        String purpose = (String) payload.get("purpose");
-        String sourceRef = (String) payload.get("sourceRef");
-        String payeeRef = (String) payload.get("payeeRef");
-        Money money = money(payload);
-        Optional<UUID> disbursementId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordDisbursementRequest(
-            tenantId, idempotencyKey, payeeRef, money.amount(), money.currency(), purpose, sourceRef));
-        disbursementId.ifPresentOrElse(
-            id -> submitDisbursement(tenantId, id, payeeRef, money),
-            () -> log.info("Dropping duplicate accumulation.PayoutRequested for tenant {} key {}", tenantId, idempotencyKey));
+        payOut(tenantId, idempotencyKey, payload, (String) payload.get("purpose"), (String) payload.get("sourceRef"),
+            "accumulation.PayoutRequested");
     }
 
     /** A unit-linked top-up: a collection under UL_TOP_UP -- neither billing's premium nor accumulation's top-up. */
@@ -286,13 +251,25 @@ public class PaymentRequestListener {
             () -> log.info("Dropping duplicate unitlinked.TopUpRequested for tenant {} key {}", tenantId, idempotencyKey));
     }
 
-    /** A top-up: a collection that is not a premium, so billing leaves its confirmation alone. */
+    /**
+     * A top-up: a collection that is not a premium, so billing leaves its confirmation alone. Money already received by
+     * hand (a method other than mobile money, 2026-10-28) is receipted and confirmed at once; a mobile-money top-up is
+     * requested from the payer's phone.
+     */
     private void handleTopUpCollection(Map<String, Object> payload) {
         UUID tenantId = TenantContext.get();
         String idempotencyKey = requireKey(payload);
         String topUpId = String.valueOf(payload.get("topUpId"));
         String payerRef = (String) payload.get("payerRef");
         Money money = money(payload);
+        Object method = payload.get("method");
+        if (method != null && !"MOBILE_MONEY".equals(method)) {
+            requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordReceivedTopUp(tenantId, idempotencyKey,
+                method.toString(), (String) payload.get("reference"), payerRef, money.amount(), money.currency(), topUpId,
+                (String) payload.get("policyNumber"), java.time.LocalDate.parse((String) payload.get("receivedOn")),
+                (String) payload.get("recordedBy")));
+            return;
+        }
         Optional<UUID> transactionId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordCollectionRequest(
             tenantId, idempotencyKey, payerRef, money.amount(), money.currency(), topUpId, "ACCOUNT_TOP_UP"));
         transactionId.ifPresentOrElse(
@@ -311,14 +288,7 @@ public class PaymentRequestListener {
         String idempotencyKey = requireKey(payload);
         String sourceRef = payload.get("instalmentId") != null
             ? (String) payload.get("instalmentId") : (String) payload.get("cancellationId");
-        String purpose = (String) payload.get("purpose");
-        String payeeRef = (String) payload.get("payeeRef");
-        Money money = money(payload);
-        Optional<UUID> disbursementId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordDisbursementRequest(
-            tenantId, idempotencyKey, payeeRef, money.amount(), money.currency(), purpose, sourceRef));
-        disbursementId.ifPresentOrElse(
-            id -> submitDisbursement(tenantId, id, payeeRef, money),
-            () -> log.info("Dropping duplicate PayoutRequested for tenant {} key {}", tenantId, idempotencyKey));
+        payOut(tenantId, idempotencyKey, payload, (String) payload.get("purpose"), sourceRef, "PayoutRequested");
     }
 
     private void handlePremiumCollection(Map<String, Object> payload) {
@@ -415,6 +385,30 @@ public class PaymentRequestListener {
     private static String requestedBy() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         return auth == null || auth.getName() == null ? "system" : auth.getName();
+    }
+
+    /**
+     * Every payout by the route its requester named (2026-10-28, user decision: mobile money, bank transfer or cheque).
+     * Mobile money goes to the gateway as it always has. A bank transfer or a cheque is recorded AWAITING_EXECUTION and
+     * handed to nothing: finance makes it by hand and records its bank reference or cheque number. A request that names
+     * no method is mobile money to its payeeRef -- every publisher not yet taught the choice.
+     */
+    private void payOut(UUID tenantId, String idempotencyKey, Map<String, Object> payload, String purpose,
+                        String sourceRef, String what) {
+        tz.co.nlolo.lifeplatform.PayoutRoute route = tz.co.nlolo.lifeplatform.PayoutRoute.fromPayload(payload);
+        Money money = money(payload);
+        Optional<UUID> disbursementId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordDisbursementRequest(
+            tenantId, idempotencyKey, route, money.amount(), money.currency(), purpose, sourceRef));
+        disbursementId.ifPresentOrElse(
+            id -> {
+                if (route.byHand()) {
+                    log.info("Disbursement {} ({} {}) is {} -- recorded for finance to make by hand, not sent to a gateway",
+                        id, purpose, sourceRef, route.method());
+                    return;
+                }
+                submitDisbursement(tenantId, id, route.payee(), money);
+            },
+            () -> log.info("Dropping duplicate {} for tenant {} key {}", what, tenantId, idempotencyKey));
     }
 
     /**

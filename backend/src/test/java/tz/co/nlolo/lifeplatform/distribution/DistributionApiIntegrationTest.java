@@ -128,6 +128,8 @@ class DistributionApiIntegrationTest {
             "db-migrations/benefitpayout/V3__withholding.sql",
             "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",

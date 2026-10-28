@@ -96,7 +96,9 @@ class MobileMoneyCallbackIntegrationTest {
             "db-migrations/payment/V7__q4_2026_partitions.sql",
             "db-migrations/payment/V8__benefit_payout_purposes.sql",
             "db-migrations/payment/V9__account_purposes.sql",
-            "db-migrations/payment/V17__manual_receipts.sql");
+            "db-migrations/payment/V17__manual_receipts.sql",
+            "db-migrations/payment/V18__payout_routes.sql",
+            "db-migrations/payment/V19__top_up_one_person.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

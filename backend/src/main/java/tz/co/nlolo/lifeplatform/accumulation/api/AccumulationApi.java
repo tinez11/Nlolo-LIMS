@@ -68,6 +68,10 @@ public interface AccumulationApi {
      */
     WithdrawalView requestWithdrawal(String policyNumber, java.math.BigDecimal amount, String payeeRef, String requestedBy);
 
+    /** The same, paid by the route the person chose: mobile money, bank transfer or cheque (2026-10-28). */
+    WithdrawalView requestWithdrawal(String policyNumber, java.math.BigDecimal amount,
+                                     tz.co.nlolo.lifeplatform.PayoutRoute route, String requestedBy);
+
     /** A second person. Posts the WITHDRAWAL entry and requests the payment; a failed payment is reversed. */
     WithdrawalView approveWithdrawal(java.util.UUID withdrawalId, String approvedBy);
 
@@ -103,8 +107,19 @@ public interface AccumulationApi {
     WithdrawalView requestWithdrawal(String policyNumber, java.math.BigDecimal amount, String payeeRef, String requestedBy,
                                      String idempotencyKey);
 
+    WithdrawalView requestWithdrawal(String policyNumber, java.math.BigDecimal amount,
+                                     tz.co.nlolo.lifeplatform.PayoutRoute route, String requestedBy, String idempotencyKey);
+
     TopUpView requestTopUp(String policyNumber, java.math.BigDecimal amount, String payerRef, String requestedBy,
                            String idempotencyKey);
+
+    /**
+     * Money already received for the account (2026-10-28, user decision: one person, no second signature): cash, a
+     * bank deposit, a cheque, a Lipa number or TANQR, with the method's own reference and the day it came. Credited
+     * as soon as payment has receipted it.
+     */
+    TopUpView recordTopUp(String policyNumber, java.math.BigDecimal amount, String method, String reference,
+                          java.time.LocalDate receivedOn, String payerRef, String recordedBy, String idempotencyKey);
 
     TransferInView recordTransferIn(String policyNumber, java.math.BigDecimal amount, String sourceScheme,
                                     String documentRef, String recordedBy, String idempotencyKey);

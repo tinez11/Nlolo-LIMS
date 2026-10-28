@@ -7,6 +7,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
+import tz.co.nlolo.lifeplatform.PayoutRoute;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.accumulation.api.*;
 import tz.co.nlolo.lifeplatform.accumulation.domain.*;
@@ -99,6 +100,16 @@ public class AccumulationApiImpl implements AccumulationApi {
         if (payeeRef == null || payeeRef.isBlank()) {
             throw new AccumulationStateException("A withdrawal needs a payee reference");
         }
+        return withdraw(policyNumber, amount, PayoutRoute.mobileMoney(payeeRef), requestedBy);
+    }
+
+    @Override
+    @Transactional
+    public WithdrawalView requestWithdrawal(String policyNumber, BigDecimal amount, PayoutRoute route, String requestedBy) {
+        return withdraw(policyNumber, amount, route, requestedBy);
+    }
+
+    private WithdrawalView withdraw(String policyNumber, BigDecimal amount, PayoutRoute route, String requestedBy) {
         if (amount == null || amount.signum() <= 0) {
             throw new AccumulationStateException("A withdrawal must be for more than zero");
         }
@@ -111,7 +122,7 @@ public class AccumulationApiImpl implements AccumulationApi {
         }
         refuseBelowMinimum(account, amount);
         WithdrawalRequest request = withdrawals.save(new WithdrawalRequest(TenantContext.get(), policyNumber,
-            amount.setScale(2, RoundingMode.UNNECESSARY), account.getCurrency(), payeeRef, requestedBy));
+            amount.setScale(2, RoundingMode.UNNECESSARY), account.getCurrency(), route, requestedBy));
         return toView(request);
     }
 
@@ -130,20 +141,20 @@ public class AccumulationApiImpl implements AccumulationApi {
         refuseBelowMinimum(account, request.getAmount());
         List<LedgerService.Line> lines = new java.util.ArrayList<>();
         lines.add(LedgerService.Line.of(EntryType.WITHDRAWAL, request.getAmount().negate(), LocalDate.now(),
-            "Partial withdrawal to " + request.getPayeeRef()));
+            "Partial withdrawal to " + request.route().describe()));
         // A withdrawal fee comes out of what is LEFT, not out of the payout (the user, 2026-10-09).
         lines.addAll(chosenCharges.lines(chargesIn(account, LocalDate.now()), Set.of("WITHDRAWAL"),
             request.getAmount(), room(account, account.getBalance().subtract(request.getAmount())), LocalDate.now()));
         ledger.post(request.getPolicyNumber(), new LedgerService.Source("withdrawal", "withdrawal:" + withdrawalId),
             lines, request.getRequestedBy(), approvedBy);
         withdrawals.save(request);
-        events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutRequested", TenantContext.get(), Map.of(
-            "purpose", "WITHDRAWAL_PAYOUT",
-            "sourceRef", withdrawalId.toString(),
-            "idempotencyKey", "withdrawal:" + withdrawalId,
-            "policyNumber", request.getPolicyNumber(),
-            "payeeRef", request.getPayeeRef(),
-            "amount", Map.of("amount", request.getAmount().toPlainString(), "currencyCode", request.getCurrency()))));
+        Map<String, Object> payout = new java.util.LinkedHashMap<>(request.route().toPayload());
+        payout.put("purpose", "WITHDRAWAL_PAYOUT");
+        payout.put("sourceRef", withdrawalId.toString());
+        payout.put("idempotencyKey", "withdrawal:" + withdrawalId);
+        payout.put("policyNumber", request.getPolicyNumber());
+        payout.put("amount", Map.of("amount", request.getAmount().toPlainString(), "currencyCode", request.getCurrency()));
+        events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutRequested", TenantContext.get(), payout));
         return toView(request);
     }
 
@@ -223,7 +234,7 @@ public class AccumulationApiImpl implements AccumulationApi {
 
     private WithdrawalView toView(WithdrawalRequest w) {
         return new WithdrawalView(w.getWithdrawalId(), w.getPolicyNumber(), w.getAmount(), w.getCurrency(), w.getPayeeRef(),
-            w.getStatus(), w.getRequestedBy(), w.getRequestedAt(), w.getApprovedBy(), w.getApprovedAt());
+            w.getStatus(), w.getRequestedBy(), w.getRequestedAt(), w.getApprovedBy(), w.getApprovedAt(), w.route());
     }
 
     // ---- Top-ups and transfers in (task 6) -----------------------------------------------------
@@ -251,6 +262,50 @@ public class AccumulationApiImpl implements AccumulationApi {
         return toView(request);
     }
 
+    private static final java.util.Set<String> RECEIVED_METHODS =
+        java.util.Set.of("CASH", "BANK_DEPOSIT", "CHEQUE", "LIPA_NUMBER", "TANQR");
+
+    @Transactional
+    public TopUpView recordTopUp(String policyNumber, BigDecimal amount, String method, String reference,
+                                 LocalDate receivedOn, String payerRef, String recordedBy) {
+        if (method == null || !RECEIVED_METHODS.contains(method)) {
+            throw new AccumulationStateException("Say how the money came in: cash, bank deposit, cheque, Lipa number or TANQR");
+        }
+        String ref = reference == null ? "" : reference.trim();
+        if (ref.isEmpty()) {
+            throw new AccumulationStateException("A top-up received by hand needs its reference, so the same money cannot be "
+                + "credited twice");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            throw new AccumulationStateException("A top-up must be for more than zero");
+        }
+        if (receivedOn == null || receivedOn.isAfter(LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")))) {
+            throw new AccumulationStateException("Say the day the money was received; it cannot be later than today");
+        }
+        if (topUps.existsByTenantIdAndMethodAndReferenceAndStatusNot(TenantContext.get(), method, ref, "FAILED")) {
+            throw new AccumulationStateException("A top-up with this reference (" + ref + ") is already recorded");
+        }
+        Account account = loadOpen(policyNumber);
+        deposits.refuseMovement(account);
+        refuseIfMaturedTermAccount(account);
+        String payer = payerRef == null || payerRef.isBlank() ? "—" : payerRef.trim();
+        TopUpRequest request = topUps.save(TopUpRequest.received(TenantContext.get(), policyNumber,
+            amount.setScale(2, RoundingMode.UNNECESSARY), account.getCurrency(), method, ref, receivedOn, payer, recordedBy));
+        // Payment receipts it at once, confirmed by the person who recorded it, and its confirmation credits the account
+        // by the same road a mobile-money top-up takes.
+        events.publishEvent(DomainEventEnvelope.of("accumulation.TopUpRequested", TenantContext.get(), Map.of(
+            "topUpId", request.getTopUpId().toString(),
+            "idempotencyKey", "topup:" + request.getTopUpId(),
+            "policyNumber", policyNumber,
+            "payerRef", payer,
+            "method", method,
+            "reference", ref,
+            "receivedOn", receivedOn.toString(),
+            "recordedBy", recordedBy,
+            "amount", Map.of("amount", request.getAmount().toPlainString(), "currencyCode", request.getCurrency()))));
+        return toView(request);
+    }
+
     /** The money is in. Credited at the CONTRIBUTION rate: a top-up is a contribution the customer chose. */
     @Transactional
     public void creditTopUp(UUID topUpId, BigDecimal amount, LocalDate confirmedOn) {
@@ -268,18 +323,23 @@ public class AccumulationApiImpl implements AccumulationApi {
             lines.add(LedgerService.Line.of(EntryType.TOP_UP, amount, effective, "Top-up from " + request.getPayerRef()));
             lines.addAll(chosenCharges.lines(catalogue.in(year), premiumCharges(account), amount,
                 room(account, account.getBalance().add(amount)), effective));
-            ledger.post(request.getPolicyNumber(), new LedgerService.Source("topup", "topup:" + topUpId), lines,
+            ledger.post(request.getPolicyNumber(), topUpSource(request), lines,
                 request.getRequestedBy(), null);
             return;
         }
         BigDecimal pct = productApi.resolveAccumulationPlan(account.getProductVersionId()).chargesFor(year)
             .contributionAllocationPercent();
         BigDecimal charge = amount.multiply(pct).divide(HUNDRED, 2, RoundingMode.HALF_EVEN);
-        ledger.post(request.getPolicyNumber(), new LedgerService.Source("topup", "topup:" + topUpId), List.of(
+        ledger.post(request.getPolicyNumber(), topUpSource(request), List.of(
             LedgerService.Line.of(EntryType.TOP_UP, amount, effective, "Top-up from " + request.getPayerRef()),
             LedgerService.Line.of(EntryType.ALLOCATION_CHARGE, charge.negate(), effective,
                 "Allocation charge " + pct.stripTrailingZeros().toPlainString() + "% (policy year " + year + ")")),
             request.getRequestedBy(), null);
+    }
+
+    /** The top-up's ledger source, carrying how the money came in so the GL debits the account it reached. */
+    private static LedgerService.Source topUpSource(TopUpRequest request) {
+        return new LedgerService.Source("topup", "topup:" + request.getTopUpId(), request.getMethod());
     }
 
     @Transactional
@@ -350,7 +410,7 @@ public class AccumulationApiImpl implements AccumulationApi {
 
     private TopUpView toView(TopUpRequest t) {
         return new TopUpView(t.getTopUpId(), t.getPolicyNumber(), t.getAmount(), t.getCurrency(), t.getPayerRef(),
-            t.getStatus(), t.getRequestedBy(), t.getRequestedAt());
+            t.getStatus(), t.getRequestedBy(), t.getRequestedAt(), t.getMethod(), t.getReference(), t.getReceivedOn());
     }
 
     private TransferInView toView(TransferIn t) {
@@ -427,10 +487,26 @@ public class AccumulationApiImpl implements AccumulationApi {
     }
 
     @Override
+    public WithdrawalView requestWithdrawal(String policyNumber, BigDecimal amount, PayoutRoute route, String requestedBy,
+                                            String idempotencyKey) {
+        return keyed.once(idempotencyKey, "WITHDRAWAL", policyNumber, requestedBy,
+            () -> requestWithdrawal(policyNumber, amount, route, requestedBy), WithdrawalView::withdrawalId,
+            id -> toView(withdrawals.findById(id).orElseThrow()));
+    }
+
+    @Override
     public TopUpView requestTopUp(String policyNumber, BigDecimal amount, String payerRef, String requestedBy,
                                   String idempotencyKey) {
         return keyed.once(idempotencyKey, "TOP_UP", policyNumber, requestedBy,
             () -> requestTopUp(policyNumber, amount, payerRef, requestedBy), TopUpView::topUpId,
+            id -> toView(topUps.findById(id).orElseThrow()));
+    }
+
+    @Override
+    public TopUpView recordTopUp(String policyNumber, BigDecimal amount, String method, String reference,
+                                 LocalDate receivedOn, String payerRef, String recordedBy, String idempotencyKey) {
+        return keyed.once(idempotencyKey, "TOP_UP", policyNumber, recordedBy,
+            () -> recordTopUp(policyNumber, amount, method, reference, receivedOn, payerRef, recordedBy), TopUpView::topUpId,
             id -> toView(topUps.findById(id).orElseThrow()));
     }
 

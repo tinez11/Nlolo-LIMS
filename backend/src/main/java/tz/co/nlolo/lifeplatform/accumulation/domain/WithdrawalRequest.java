@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.accumulation.domain;
 
 import jakarta.persistence.*;
 import org.hibernate.annotations.UuidGenerator;
+import tz.co.nlolo.lifeplatform.PayoutRoute;
 import tz.co.nlolo.lifeplatform.accumulation.api.AccumulationStateException;
 
 import java.math.BigDecimal;
@@ -18,6 +19,12 @@ public class WithdrawalRequest {
     @Column(nullable = false) private BigDecimal amount;
     @Column(nullable = false) private String currency;
     @Column(name = "payee_ref", nullable = false) private String payeeRef;
+    // How the money reaches them (V6, 2026-10-28): mobile money to payee_ref, or a bank transfer / cheque.
+    @Column(nullable = false) private String method = PayoutRoute.MOBILE_MONEY;
+    @Column(name = "payee_bank") private String payeeBank;
+    @Column(name = "payee_branch") private String payeeBranch;
+    @Column(name = "payee_account_name") private String payeeAccountName;
+    @Column(name = "payee_account_number") private String payeeAccountNumber;
     @Column(nullable = false) private String status = "REQUESTED";
     @Column(name = "requested_by", nullable = false) private String requestedBy;
     @Column(name = "requested_at", nullable = false) private Instant requestedAt = Instant.now();
@@ -36,6 +43,20 @@ public class WithdrawalRequest {
         this.currency = currency;
         this.payeeRef = payeeRef;
         this.requestedBy = requestedBy;
+    }
+
+    public WithdrawalRequest(UUID tenantId, String policyNumber, BigDecimal amount, String currency, PayoutRoute route,
+                             String requestedBy) {
+        this(tenantId, policyNumber, amount, currency, route.payee(), requestedBy);
+        this.method = route.method();
+        this.payeeBank = route.bank();
+        this.payeeBranch = route.branch();
+        this.payeeAccountName = route.accountName();
+        this.payeeAccountNumber = route.accountNumber();
+    }
+
+    public PayoutRoute route() {
+        return new PayoutRoute(method, payeeRef, payeeBank, payeeBranch, payeeAccountName, payeeAccountNumber);
     }
 
     public void approve(String by) {

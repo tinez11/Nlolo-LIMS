@@ -72,7 +72,7 @@ test.describe('a savings account', () => {
     // passed over them while the account held nothing, and a month on an account never paid into
     // posts nothing by design. Month-end interest and fees are proven in MonthEndIntegrationTest;
     // what this proves is the money path through the real rail.
-    const ledger = page.getByRole('list', { name: 'Ledger' });
+    const ledger = page.getByRole('table', { name: 'Ledger' });
     await expect(async () => {
       await page.reload();
       await page.getByRole('tab', { name: 'Account' }).click();
@@ -82,14 +82,14 @@ test.describe('a savings account', () => {
     // 100,000 in, 5% held back in policy year 1.
     await expect(page.getByText('TZS 95,000.00').first()).toBeVisible();
     // No balance on the ledger ever goes below zero -- the database refuses one.
-    for (const text of await ledger.getByText(/^balance /).allTextContents()) {
+    for (const text of await ledger.locator('tbody tr td:last-child').allTextContents()) {
       expect(text).not.toMatch(/-/);
     }
 
     // Money out: requested by customer service, approved by someone else.
     await page.getByRole('button', { name: 'Request withdrawal' }).click();
     await page.getByLabel('Amount').fill('10000.00');
-    await page.getByLabel('Pay to').fill('+255700000009');
+    await page.getByLabel('Mobile-money number').fill('+255700000009');
     await page.getByRole('button', { name: 'Continue' }).click();
     await page.getByRole('button', { name: 'Request withdrawal', exact: true }).last().click();
 
@@ -104,10 +104,11 @@ test.describe('a savings account', () => {
       await adminPage.getByRole('tab', { name: 'Account' }).click();
       await adminPage.getByRole('button', { name: 'Approve', exact: true }).click();
       await adminPage.getByRole('button', { name: /^Pay TZS/ }).click();
-      // REQUESTED from the rail, not paid -- and the page must not claim otherwise.
-      await expect(adminPage.getByText('The payment has been requested from the provider.')).toBeVisible({
-        timeout: 20_000,
-      });
+      // REQUESTED from the rail, not paid -- and the page must not claim otherwise. The mock rail may confirm it at
+      // once, and the tab rereads itself while it waits (2026-10-28), so the row may already have moved to past requests.
+      await expect(
+        adminPage.getByText(/The payment has been requested from the provider\.|Mobile money · \+255700000009/).first(),
+      ).toBeVisible({ timeout: 20_000 });
     });
 
     // A statement for this year, filed as a PDF and listed.

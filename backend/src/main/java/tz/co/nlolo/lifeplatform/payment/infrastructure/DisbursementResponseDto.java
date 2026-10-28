@@ -18,11 +18,13 @@ import java.util.UUID;
  */
 public record DisbursementResponseDto(UUID disbursementId, String method, String status, MoneyDto amount,
                                        String payeeRef, String reference, Instant createdAt,
-                                       Instant executedAt) {
+                                       Instant executedAt, String payeeBank, String payeeBranch,
+                                       String payeeAccountName, String payeeAccountNumber) {
 
     public static DisbursementResponseDto from(DisbursementStatusView view) {
         return new DisbursementResponseDto(view.disbursementId(), view.method(), view.status().name(),
             new MoneyDto(view.amount().toPlainString(), view.currency()), view.payeeRef(),
-            view.gatewayReference(), view.createdAt(), view.executedAt());
+            view.gatewayReference(), view.createdAt(), view.executedAt(), view.payeeBank(), view.payeeBranch(),
+            view.payeeAccountName(), view.payeeAccountNumber());
     }
 }

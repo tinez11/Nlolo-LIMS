@@ -333,7 +333,7 @@ export function ClaimSettlementPanel({
               </p>
               <p className="mt-0.5 text-muted-foreground">
                 Finance makes the transfer to the lender&rsquo;s account and records it under Finance
-                &rarr; Bank transfers.
+                &rarr; Payments to make.
               </p>
             </div>
           ) : (

@@ -662,7 +662,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'bank-transfers',
     element: <EftExecutionPage />,
-    reach: { group: 'paying-out', label: 'Bank transfers', icon: Banknote, badge: 'eft-awaiting' },
+    reach: { group: 'paying-out', label: 'Payments to make', icon: Banknote, badge: 'eft-awaiting' },
   },
   // The unit-linked fund register (product step 6): funds, their two-person daily prices, the
   // price-correction adjustments and the 2150 reconciliation. Finance's: it prices the units.

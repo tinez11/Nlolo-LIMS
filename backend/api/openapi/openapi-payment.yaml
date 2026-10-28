@@ -413,7 +413,7 @@ components:
         answers "what became of this payment" about a payment the caller already knows about.
         Nothing else on the platform tells a finance officer these exist, so the row carries what
         the act needs: who is paid, what for, how much, and since when.
-      required: [disbursementId, amount, payeeRef, sourceRef, waitingSince]
+      required: [disbursementId, amount, payeeRef, sourceRef, waitingSince, method]
       properties:
         disbursementId: { type: string, format: uuid }
         amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
@@ -434,6 +434,14 @@ components:
             When the instruction was raised. Not decoration: every row here is money the insurer
             owes and has not paid, and on a credit-life claim an ageing row is a lender still
             carrying a dead borrower's loan.
+        method:
+          type: string
+          enum: [MOBILE_MONEY, EFT, CHEQUE]
+          description: EFT is a bank transfer made in the bank's portal; CHEQUE is written by hand.
+        payeeBank: { type: [string, "null"], description: The bank a transfer goes to; null on mobile money and cheques. }
+        payeeBranch: { type: [string, "null"] }
+        payeeAccountName: { type: [string, "null"] }
+        payeeAccountNumber: { type: [string, "null"] }
     DisbursementView:
       type: object
       additionalProperties: false
@@ -445,9 +453,9 @@ components:
         disbursementId: { type: string, format: uuid }
         method:
           type: string
-          enum: [MOBILE_MONEY, EFT]
+          enum: [MOBILE_MONEY, EFT, CHEQUE]
           description: >
-            EFT waits for a finance officer to make the transfer in the bank and record it;
+            EFT and CHEQUE wait for a finance officer to make the transfer in the bank and record it;
             mobile money completes when the gateway calls back.
         status:
           type: string
@@ -464,6 +472,10 @@ components:
           type: [string, "null"]
           format: date-time
           description: When finance recorded an EFT as made. Null otherwise.
+        payeeBank: { type: [string, "null"], description: The bank a transfer goes to; null on mobile money and cheques. }
+        payeeBranch: { type: [string, "null"] }
+        payeeAccountName: { type: [string, "null"] }
+        payeeAccountNumber: { type: [string, "null"] }
     PaymentStatusView:
       type: object
       additionalProperties: false

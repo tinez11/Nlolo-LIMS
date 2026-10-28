@@ -135,7 +135,7 @@ describe('FinanceDashboardPanel', () => {
 
     expect(await screen.findByRole('link', { name: /Waiting for your signature/ })).toBeInTheDocument();
     expect(screen.queryByText('Field receipts past their deadline')).not.toBeInTheDocument();
-    expect(screen.queryByText('Bank transfers not yet made')).not.toBeInTheDocument();
+    expect(screen.queryByText('Bank transfers and cheques not yet made')).not.toBeInTheDocument();
     expect(screen.queryByText('Policies in arrears at the lapse level')).not.toBeInTheDocument();
   });
 
