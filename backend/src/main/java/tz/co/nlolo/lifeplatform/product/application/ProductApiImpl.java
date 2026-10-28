@@ -480,6 +480,13 @@ public class ProductApiImpl implements ProductApi {
             refuseUnlessASavingsPortfolio(product, deposit.isDeposit(), annuity.deferred());
         }
         refuseUnfitAccountCharges(product, accumulationPlan, deposit.isDeposit());
+        // 2026-10-28: a version that stops selling on the day it starts was never on sale -- Ndot0-Clive was published
+        // so, and every quotation for it was refused with "No version of this product is in force".
+        if (retirementDate != null && !retirementDate.isAfter(effectiveDate)) {
+            throw new InvalidProductVersionException("\"Stop selling on\" (" + retirementDate + ") must be after the"
+                + " effective date (" + effectiveDate + "): on that day the version stops being sold. Leave it blank to"
+                + " keep selling until a later version replaces it.");
+        }
 
         // Version rollover: ux_product_version_active permits at most one
         // is_active_for_new_business = true row per product_id. Retire whatever version

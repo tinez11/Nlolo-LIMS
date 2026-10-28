@@ -1012,6 +1012,13 @@ describe('fixed-term deposit', () => {
     );
   });
 
+  /** 2026-10-28: Ndot0-Clive was published to stop selling on the day it started, so it was never in force. */
+  it('refuses a stop-selling date that is not after the effective date', () => {
+    expect(messages(endowment.safeParse(deposit({ effectiveDate: '2026-10-28', retirementDate: '2026-10-28' }))))
+      .toContain('"Stop selling on" must be after the effective date. Leave it blank to keep selling.');
+    expect(endowment.safeParse(deposit({ effectiveDate: '2026-10-28', retirementDate: '2027-10-28' })).success).toBe(true);
+  });
+
   /** 2026-10-28: an extra "Add a band" left blank raised five wrong messages, among them the minimum-deposit one on a
    * grid whose lowest band started at the minimum. A blank row is ignored; a half-filled one is named by its place. */
   it('ignores a band row left completely empty, and names a half-filled one by its place', () => {

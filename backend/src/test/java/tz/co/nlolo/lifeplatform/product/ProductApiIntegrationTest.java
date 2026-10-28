@@ -203,6 +203,21 @@ class ProductApiIntegrationTest {
         return productApi.listVersions(productId).get(0).productVersionId();
     }
 
+    /** 2026-10-28: Ndot0-Clive was published to stop selling on its first day, and so was never in force. */
+    @Test
+    void aVersionThatStopsSellingOnTheDayItStartsIsRefused() {
+        UUID productId = productApi.createProduct("TERM-RET-01", "Term", ProductCategory.TERM_LIFE, "TZS", "actuary").productId();
+        LocalDate today = LocalDate.now();
+        assertThatThrownBy(() -> productApi.publishVersion(productId, null, today, today,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+                null, ANY_FILING, "actuary"))
+            .isInstanceOf(InvalidProductVersionException.class)
+            .hasMessageStartingWith("\"Stop selling on\" (" + today + ") must be after the effective date");
+        assertThat(productApi.listVersions(productId)).isEmpty();
+    }
+
     /**
      * The product page lists every version (2026-10-08), and marks current the one a sale today is priced on. Two
      * versions effective the same day -- a mistake and its correction, published an hour apart -- were in whatever

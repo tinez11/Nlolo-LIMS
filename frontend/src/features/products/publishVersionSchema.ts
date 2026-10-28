@@ -1114,6 +1114,14 @@ export function publishVersionFormSchema(category: ProductCategory) {
     // A UNIT_LINKED version's funds, allocation, fee, mortality, death and lapse rules (product step 6); see unitLinkedSchema.
     ...unitLinkedFieldsShape,
   }).superRefine((values, ctx) => {
+    // The publish rule (ProductApiImpl, 2026-10-28): a version that stops selling the day it starts was never on sale.
+    if (values.retirementDate && values.effectiveDate && values.retirementDate <= values.effectiveDate) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['retirementDate'],
+        message: '"Stop selling on" must be after the effective date. Leave it blank to keep selling.',
+      });
+    }
     validateFuneral(category, values, ctx);
     validateUnitLinked(category, values, ctx);
     validateCashValue(category, values, ctx);
