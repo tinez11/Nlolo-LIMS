@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { canAny } from '@/auth/access';
-import { LoadingBlock, NoAccess } from '@/components/states';
+import { NoAccess } from '@/components/states';
+import { SessionSplash } from '@/components/SessionSplash';
 import { Button } from '@/components/ui/button';
 import { useAccessStore, useMyAccess } from '@/store/accessStore';
 
@@ -25,7 +26,8 @@ export function StaffAccessGate({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  return <LoadingBlock label="Loading your access" />;
+  // The same screen as signing in, one line further on: the person sees one continuous moment, not two pages.
+  return <SessionSplash label="Opening your console" console="Staff" />;
 }
 
 /**

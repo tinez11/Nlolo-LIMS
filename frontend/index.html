@@ -18,9 +18,53 @@
         /* no stored preference reachable; fall through to the light default */
       }
     </script>
+    <!-- The sign-in screen before the app has loaded (2026-10-28): the same centred mark SessionSplash draws, so the
+         first frame is that screen and not a white page. Plain CSS, as the app's own has not arrived yet; React
+         replaces it on mount. Colours are the console's Background, Accent and Muted ink tokens, in both themes. -->
+    <style>
+      html { background: oklch(0.975 0.006 200); color: oklch(0.22 0.03 230); }
+      html.dark { background: oklch(0.17 0.02 235); color: oklch(0.95 0.01 200); }
+      html, body, #root { height: 100%; margin: 0; }
+      .boot { display: grid; height: 100%; place-items: center; font-family: 'Manrope Variable', Manrope, ui-sans-serif, system-ui, sans-serif; text-align: center; }
+      .boot__mark { display: grid; place-items: center; width: 56px; height: 56px; margin: 0 auto; border-radius: 16px;
+        background: oklch(0.52 0.11 190); color: oklch(0.99 0 0); font-weight: 600; font-size: 18px; }
+      html.dark .boot__mark { background: oklch(0.72 0.11 190); color: oklch(0.18 0.03 230); }
+      .boot__name { margin: 16px 0 0; font-weight: 600; font-size: 16px; }
+      .boot__mark, .boot__name { font-family: 'Sora Variable', Sora, 'Manrope Variable', ui-sans-serif, system-ui, sans-serif; }
+      .boot__console { margin: 0; min-height: 20px; font-size: 14px; color: oklch(0.5 0.025 230); }
+      html.dark .boot__console { color: oklch(0.74 0.02 220); }
+      .boot__line { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 24px 0 0;
+        font-size: 14px; color: oklch(0.5 0.025 230); }
+      .boot__spin { width: 16px; height: 16px; animation: boot-spin 1s linear infinite; }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .boot__spin { animation: none; } }
+      html.dark .boot__line { color: oklch(0.74 0.02 220); }
+    </style>
   </head>
   <body class="h-full">
-    <div id="root" class="h-full"></div>
+    <div id="root" class="h-full">
+      <div class="boot" role="status">
+        <div>
+          <span class="boot__mark" aria-hidden="true">LP</span>
+          <p class="boot__name">Life Platform</p>
+          <p class="boot__console" id="boot-console"></p>
+          <p class="boot__line">
+            <svg class="boot__spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+            Signing you in
+          </p>
+        </div>
+      </div>
+    </div>
+    <script>
+      // Which console, from the address -- the same words SessionSplash shows next, so nothing on screen moves.
+      (function () {
+        var names = { staff: 'Staff', agents: 'Agent', customers: 'Policyholder', regulators: 'Regulator' };
+        var name = names[location.pathname.split('/')[1]];
+        var line = document.getElementById('boot-console');
+        if (name && line) line.textContent = name + ' console';
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

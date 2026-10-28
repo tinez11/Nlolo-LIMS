@@ -2,7 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { useAuth } from 'react-oidc-context';
 import { Navigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { LoadingBlock } from '@/components/states';
+import { SessionSplash } from '@/components/SessionSplash';
 import { readReturnRouterState, readReturnTo, returnToState } from './returnTo';
 import { REALM_CONFIG, type Realm } from './realms';
 
@@ -77,7 +77,7 @@ export function RequireAuth({ realm, children }: { realm: Realm; children: React
     );
   }
 
-  return <LoadingBlock label="Signing in" />;
+  return <SessionSplash label="Signing you in" console={REALM_CONFIG[realm].label} />;
 }
 
 /**
