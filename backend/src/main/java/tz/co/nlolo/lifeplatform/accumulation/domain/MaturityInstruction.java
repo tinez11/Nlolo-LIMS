@@ -18,6 +18,8 @@ public class MaturityInstruction {
     @Column(nullable = false) private String action;
     @Column(name = "term_months") private Integer termMonths;
     @Column(name = "payee_ref") private String payeeRef;
+    // How a pay-out instruction is paid (V8, 2026-10-28): mobile money to payee_ref, or a bank transfer / cheque.
+    @jakarta.persistence.Embedded private tz.co.nlolo.lifeplatform.PayoutRouteColumns route = tz.co.nlolo.lifeplatform.PayoutRouteColumns.mobileMoney();
     @Column(name = "recorded_by", nullable = false) private String recordedBy;
     @Column(name = "recorded_at", nullable = false) private Instant recordedAt;
     @Column(name = "superseded_at") private Instant supersededAt;
@@ -44,6 +46,12 @@ public class MaturityInstruction {
     public UUID getPeriodId() { return periodId; }
     public Integer getTermMonths() { return termMonths; }
     public String getPayeeRef() { return payeeRef; }
+
+    /** Paid by this route; its payee becomes payee_ref. */
+    public void payBy(tz.co.nlolo.lifeplatform.PayoutRoute route) { this.payeeRef = route.payee(); this.route = tz.co.nlolo.lifeplatform.PayoutRouteColumns.of(route); }
+
+    /** Null when the instruction names nobody: the default payee is paid. */
+    public tz.co.nlolo.lifeplatform.PayoutRoute route() { return payeeRef == null ? null : route.toRoute(payeeRef); }
     public String getRecordedBy() { return recordedBy; }
     public Instant getRecordedAt() { return recordedAt; }
 }

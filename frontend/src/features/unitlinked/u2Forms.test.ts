@@ -1,3 +1,4 @@
+import { BLANK_ROUTE } from '@/features/payments/payoutRoute';
 import { describe, expect, it } from 'vitest';
 import {
   money,
@@ -49,7 +50,7 @@ describe('withdrawalSchema', () => {
   const schema = withdrawalSchema(100000, 'TZS');
 
   it('refuses less than the minimum, in the server words', () => {
-    const r = schema.safeParse({ grossAmount: '50000', funds: [], payeeRef: '+255700000600' });
+    const r = schema.safeParse({ grossAmount: '50000', funds: [], ...BLANK_ROUTE, payeeRef: '+255700000600' });
     expect(messages(r)).toEqual(['A withdrawal is at least 100,000.00 TZS']);
   });
 
@@ -57,20 +58,20 @@ describe('withdrawalSchema', () => {
     const r = schema.safeParse({
       grossAmount: '150000',
       funds: [{ fundCode: 'EQ1', amount: '100000' }, { fundCode: 'BD1', amount: '' }],
-      payeeRef: '+255700000600',
+      ...BLANK_ROUTE, payeeRef: '+255700000600',
     });
     expect(messages(r)).toEqual(["The named funds' amounts total 100,000.00; they must total the withdrawal of 150,000.00"]);
   });
 
   it('needs a payee', () => {
-    expect(messages(schema.safeParse({ grossAmount: '150000', funds: [], payeeRef: '' }))).toEqual([
-      'A withdrawal needs the payee to pay',
+    expect(messages(schema.safeParse({ grossAmount: '150000', funds: [], ...BLANK_ROUTE, payeeRef: '' }))).toEqual([
+      'Give the mobile-money number to pay',
     ]);
   });
 
   it('is pro rata when no fund is named', () => {
-    const v = { grossAmount: '150000.00', funds: [{ fundCode: 'EQ1', amount: '' }], payeeRef: '+255700000600' };
-    expect(toWithdrawalRequest(v)).toEqual({ grossAmount: '150000.00', funds: [], payeeRef: '+255700000600' });
+    const v = { grossAmount: '150000.00', funds: [{ fundCode: 'EQ1', amount: '' }], ...BLANK_ROUTE, payeeRef: '+255700000600' };
+    expect(toWithdrawalRequest(v)).toEqual({ grossAmount: '150000.00', funds: [], method: 'MOBILE_MONEY', payeeRef: '+255700000600' });
   });
 });
 

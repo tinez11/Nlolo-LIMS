@@ -1,6 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
-import { type FieldErrors, useForm } from 'react-hook-form';
+import { type FieldErrors, type UseFormReturn, useForm } from 'react-hook-form';
+import { PayoutRouteFields } from '@/features/payments/PayoutRouteFields';
+import { routeBody, routeWords, type PayoutRouteValues } from '@/features/payments/payoutRoute';
 import { Button } from '@/components/ui/button';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { FormField } from '@/components/FormField';
@@ -89,17 +91,18 @@ export function ClaimSettlementPanel({
   const latestAssessment = assessmentsResource.data?.[0] ?? null;
   const recommended = latestAssessment?.recommendedAmount ?? null;
 
+  const form = useForm<SettlementDecisionFormValues>({
+    ...VALIDATE_ON_TOUCH,
+    resolver: zodResolver(settlementDecisionSchema(cover, !creditLife)),
+    defaultValues: blankApproveDecision(),
+  });
   const {
     register,
     handleSubmit,
     watch,
     reset,
     formState: { errors, isDirty },
-  } = useForm<SettlementDecisionFormValues>({
-    ...VALIDATE_ON_TOUCH,
-    resolver: zodResolver(settlementDecisionSchema(cover, !creditLife)),
-    defaultValues: blankApproveDecision(),
-  });
+  } = form;
 
   // eslint-disable-next-line react-hooks/incompatible-library -- see RegisterClaimPage
   const approved = watch('approved');
@@ -337,9 +340,8 @@ export function ClaimSettlementPanel({
               </p>
             </div>
           ) : (
-            <FormField label="Payee reference" error={fieldError(errors, 'payeeRef')}>
-              <Input placeholder="Mobile-money destination" {...register('payeeRef')} />
-            </FormField>
+            // Only the approval branch renders this, so the route fields are on the form it holds.
+            <PayoutRouteFields form={form as unknown as UseFormReturn<PayoutRouteValues>} />
           )}
         </>
       ) : (
@@ -386,7 +388,9 @@ export function ClaimSettlementPanel({
                     by bank transfer
                   </>
                 ) : (
-                  <strong>{pending.payeeRef}</strong>
+                  <>
+                    by <strong>{routeWords(routeBody(pending))}</strong>
+                  </>
                 )}
                 .
               </>

@@ -128,7 +128,7 @@ test.describe('staff credit-life claim', () => {
     await expect(managerPage.getByText(/the lender who holds this scheme, by bank transfer/)).toBeVisible({
       timeout: 30_000,
     });
-    await expect(managerPage.getByLabel('Payee reference')).toHaveCount(0);
+    await expect(managerPage.getByLabel('Mobile-money number')).toHaveCount(0);
 
     /*
       WAIT FOR THE PREFILL. The amount is written in when the assessment and the cover arrive,

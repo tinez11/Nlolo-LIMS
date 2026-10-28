@@ -1442,11 +1442,19 @@ public class PolicyApiImpl implements PolicyApi {
     @Override
     @Transactional
     public SurrenderRequestView requestSurrender(String policyNumber, String payeeRef, String requestedBy) {
-        UUID tenantId = TenantContext.get();
-        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
         if (payeeRef == null || payeeRef.isBlank()) {
             throw new IllegalArgumentException("A surrender needs a payee reference");
         }
+        return requestSurrender(policyNumber, tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney(payeeRef), requestedBy);
+    }
+
+    @Override
+    @Transactional
+    public SurrenderRequestView requestSurrender(String policyNumber, tz.co.nlolo.lifeplatform.PayoutRoute route,
+                                                 String requestedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        String payeeRef = route.payee();
         if (!policy.canSurrender()) {
             throw new InvalidPolicyStateException("Policy " + policyNumber + " cannot be surrendered from its current status");
         }
@@ -1496,6 +1504,7 @@ public class PolicyApiImpl implements PolicyApi {
             }
             SurrenderRequest unitLinkedRequest = SurrenderRequest.forUnitLinked(tenantId, policyNumber,
                 policy.getPremiumCurrency(), payeeRef, requestedBy);
+            unitLinkedRequest.payBy(route);
             surrenderRequestRepository.save(unitLinkedRequest);
             return toSurrenderView(unitLinkedRequest);
         }
@@ -1530,6 +1539,7 @@ public class PolicyApiImpl implements PolicyApi {
 
         SurrenderRequest request = new SurrenderRequest(tenantId, policyNumber, quoted,
             account.getCashValueCurrency(), payeeRef, requestedBy);
+        request.payBy(route);
         surrenderRequestRepository.save(request);
         return toSurrenderView(request);
     }
@@ -1556,37 +1566,41 @@ public class PolicyApiImpl implements PolicyApi {
             // the proceeds under SURRENDER_PAYOUT with the request as the source, so step 1's SurrenderPaymentListener
             // marks it paid unchanged. Policy cannot call unitlinked (a cycle), so it says what it approved, and when.
             eventPublisher.publishEvent(DomainEventEnvelope.of("policy.UnitLinkedSurrenderApproved", tenantId,
-                Map.of("surrenderRequestId", surrenderRequestId.toString(),
+                routed(request, Map.of("surrenderRequestId", surrenderRequestId.toString(),
                        "policyNumber", request.getPolicyNumber(),
-                       "payeeRef", request.getPayeeRef(),
                        "approvedBy", approvedBy,
-                       "approvedAt", Instant.now().toString())));
+                       "approvedAt", Instant.now().toString()))));
         } else if (productApi.resolveAccumulationPlan(policy.getProductVersionId()).isAccount()) {
             // Product step 3 (spec §5.4): an account is valued at approval, with interest to the
             // day, and the payment is accumulation's. Policy cannot call accumulation -- that would be
             // a cycle -- so it says what it approved, with the charge it already resolves.
             ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(policy.getProductVersionId());
             eventPublisher.publishEvent(DomainEventEnvelope.of("policy.AccountSurrenderApproved", tenantId,
-                Map.of("surrenderRequestId", surrenderRequestId.toString(),
+                routed(request, Map.of("surrenderRequestId", surrenderRequestId.toString(),
                        "policyNumber", request.getPolicyNumber(),
-                       "payeeRef", request.getPayeeRef(),
                        "surrenderChargePercent", resolveSurrenderChargePercent(snapshot.surrenderChargeScheduleJson(),
                            policy.getIssueDate()).toPlainString(),
                        "approvedBy", approvedBy,
-                       "approvedAt", Instant.now().toString())));
+                       "approvedAt", Instant.now().toString()))));
         } else {
             // The payout, through the disbursement rail. The surrender request id is both the source
             // reference and the idempotency key -- one payout per approval. Every scale-valued
             // surrender, which is every one before product step 3.
             eventPublisher.publishEvent(DomainEventEnvelope.of("policy.SurrenderPayoutRequested", tenantId,
-                Map.of("surrenderRequestId", surrenderRequestId.toString(),
+                routed(request, Map.of("surrenderRequestId", surrenderRequestId.toString(),
                        "idempotencyKey", surrenderRequestId.toString(),
                        "policyNumber", request.getPolicyNumber(),
-                       "payeeRef", request.getPayeeRef(),
                        "amount", Map.of("amount", request.getQuotedValueAmount().toPlainString(),
-                            "currencyCode", request.getQuotedValueCurrency()))));
+                            "currencyCode", request.getQuotedValueCurrency())))));
         }
         return toSurrenderView(request);
+    }
+
+    /** An approval event's facts with the payee and how it is paid (2026-10-28) -- payeeRef, method, bank fields. */
+    private static Map<String, Object> routed(SurrenderRequest request, Map<String, Object> facts) {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>(request.route().toPayload());
+        payload.putAll(facts);
+        return payload;
     }
 
     @Override
@@ -1662,7 +1676,7 @@ public class PolicyApiImpl implements PolicyApi {
     private SurrenderRequestView toSurrenderView(SurrenderRequest r) {
         return new SurrenderRequestView(r.getSurrenderRequestId(), r.getPolicyNumber(), r.getStatus(),
             r.getQuotedValueAmount(), r.getQuotedValueCurrency(), r.getPayeeRef(), r.getRequestedBy(),
-            r.getApprovedBy());
+            r.getApprovedBy(), r.route());
     }
 
     @Override

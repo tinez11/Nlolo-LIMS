@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { BLANK_ROUTE } from '@/features/payments/payoutRoute';
 import {
   blankApproveDecision,
   blankRejectDecision,
@@ -13,6 +14,7 @@ const validApprove = () => ({
   approved: true as const,
   approvedAmount: '1500000.00',
   approvedCurrency: 'TZS',
+  ...BLANK_ROUTE,
   payeeRef: 'MOBILE-MONEY-REF-1',
 });
 
@@ -85,6 +87,7 @@ describe('toApiRequest', () => {
     expect(request).toEqual({
       approved: true,
       approvedAmount: { amount: '1500000.00', currencyCode: 'TZS' },
+      method: 'MOBILE_MONEY',
       payeeRef: 'MOBILE-MONEY-REF-1',
       rejectionReason: null,
     });

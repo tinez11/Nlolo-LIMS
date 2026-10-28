@@ -548,7 +548,7 @@ public class PolicyController {
     public ResponseEntity<SurrenderRequestResponseDto> requestSurrender(@PathVariable String policyNumber,
             @Valid @RequestBody SurrenderRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(SurrenderRequestResponseDto.from(
-            policyApi.requestSurrender(policyNumber, request.payeeRef(), jwt.getSubject())));
+            policyApi.requestSurrender(policyNumber, request.route(), jwt.getSubject())));
     }
 
     /** The policy's latest surrender request, or 204 when it has none. Read by the policy page so the

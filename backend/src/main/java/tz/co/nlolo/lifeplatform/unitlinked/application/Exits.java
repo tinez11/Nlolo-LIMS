@@ -131,6 +131,14 @@ class Exits implements UnitsPricedListener {
      */
     private void exit(String policyNumber, String purpose, FrozenPolicy.Reason reason, String sourceType, String sourceRef,
                       Instant at, String payeeRef) {
+        exit(policyNumber, purpose, reason, sourceType, sourceRef, at,
+            payeeRef == null || payeeRef.isBlank() ? null : tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney(payeeRef));
+    }
+
+    /** {@code route} null: nobody to pay yet -- the exit waits for a payee once its units are sold. */
+    private void exit(String policyNumber, String purpose, FrozenPolicy.Reason reason, String sourceType, String sourceRef,
+                      Instant at, tz.co.nlolo.lifeplatform.PayoutRoute route) {
+        String payeeRef = route == null ? null : route.payee();
         UUID tenantId = TenantContext.get();
         if (exits.findByTenantIdAndSourceTypeAndSourceRef(tenantId, sourceType, sourceRef).isPresent()) {
             return; // redelivered
@@ -141,6 +149,7 @@ class Exits implements UnitsPricedListener {
         // ...and a withdrawal not yet priced: its waiting sales are cancelled with the rest below.
         withdrawalsProvider.getObject().cancelLive(policyNumber);
         ExitState state = new ExitState(tenantId, policyNumber, purpose, sourceType, sourceRef, payeeRef);
+        if (route != null) state.payBy(route);
         // Each money source still waiting for units, by its type: a premium, or a top-up (U2) -- both go back whole.
         java.util.Map<String, String> returnedPremiums = new java.util.LinkedHashMap<>();
         for (PendingOrder waiting : orders.findByTenantIdAndPolicyNumberAndStatusOrderByReceivedAt(tenantId, policyNumber, "WAITING")) {
@@ -303,7 +312,7 @@ class Exits implements UnitsPricedListener {
         // payout), so one key per exit is enough -- and the prefix is how this module recognises its own payments.
         payload.put("idempotencyKey", "unit-linked:" + state.getSourceType() + ":" + state.getSourceRef());
         payload.put("policyNumber", state.getPolicyNumber());
-        payload.put("payeeRef", state.getPayeeRef());
+        payload.putAll(state.route().toPayload());
         payload.put("amount", Map.of("amount", amount.toPlainString(), "currencyCode", policy.premiumCurrency()));
         events.publishEvent(DomainEventEnvelope.of("unitlinked.PayoutRequested", TenantContext.get(), payload));
         events.publishEvent(DomainEventEnvelope.of("unitlinked.ProceedsReady", TenantContext.get(), Map.of(
@@ -316,7 +325,7 @@ class Exits implements UnitsPricedListener {
     /** Registration freezes the policy and sells its units at the first price after it -- never one already known. */
     @Transactional
     void onDeathRegistered(UUID claimId, String policyNumber, Instant registeredAt) {
-        exit(policyNumber, "DEATH", FrozenPolicy.Reason.DEATH, DEATH, claimId.toString(), registeredAt, null);
+        exit(policyNumber, "DEATH", FrozenPolicy.Reason.DEATH, DEATH, claimId.toString(), registeredAt, (String) null);
     }
 
     @Transactional(readOnly = true)
@@ -408,9 +417,9 @@ class Exits implements UnitsPricedListener {
 
     /** Bound at APPROVAL, not the request: an approver who could see the price first could choose it (spec §7). */
     @Transactional
-    void onSurrenderApproved(UUID surrenderRequestId, String policyNumber, String payeeRef, Instant approvedAt) {
+    void onSurrenderApproved(UUID surrenderRequestId, String policyNumber, tz.co.nlolo.lifeplatform.PayoutRoute route, Instant approvedAt) {
         exit(policyNumber, "SURRENDER", FrozenPolicy.Reason.SURRENDER, SURRENDER, surrenderRequestId.toString(), approvedAt,
-            payeeRef);
+            route);
     }
 
     /** The maturity date's own price: the sweep binds the sale to that date, before its cut-off. */
@@ -503,7 +512,7 @@ class Exits implements UnitsPricedListener {
                 chargeRefunded(policyNumber, FREE_LOOK + ":" + policyNumber + ":refund:" + charge.getEntryId(), charge.getAmount().negate());
             }
         }
-        exit(policyNumber, "FREE_LOOK", FrozenPolicy.Reason.FREE_LOOK, FREE_LOOK, policyNumber, cancelledAt, null);
+        exit(policyNumber, "FREE_LOOK", FrozenPolicy.Reason.FREE_LOOK, FREE_LOOK, policyNumber, cancelledAt, (String) null);
     }
 
     /** A charge given back: the income it was is reversed against the payout that returns it. */

@@ -193,6 +193,15 @@ public class Deposits {
     @Transactional
     public MaturityInstructionView instruct(String policyNumber, MaturityAction action, Integer termMonths, String payeeRef,
                                             String by) {
+        return instruct(policyNumber, action, termMonths,
+            blankToNull(payeeRef) == null ? null : tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney(payeeRef.trim()), by);
+    }
+
+    /** {@code route} null on a pay-out: paid to the number the deposit came from. Ignored on a reinvestment. */
+    @Transactional
+    public MaturityInstructionView instruct(String policyNumber, MaturityAction action, Integer termMonths, tz.co.nlolo.lifeplatform.PayoutRoute route,
+                                            String by) {
+        String payeeRef = route == null ? null : route.payee();
         if (action == null) {
             throw new AccumulationStateException("Say whether the deposit is reinvested or paid out");
         }
@@ -214,9 +223,11 @@ public class Deposits {
             previous.supersede();
             instructions.saveAndFlush(previous); // free ux_maturity_instruction_current before the new row
         });
-        MaturityInstruction saved = instructions.save(new MaturityInstruction(TenantContext.get(), policyNumber,
+        MaturityInstruction instruction = new MaturityInstruction(TenantContext.get(), policyNumber,
             period.getPeriodId(), action, action == MaturityAction.REINVEST ? termMonths : null,
-            action == MaturityAction.PAY_OUT ? blankToNull(payeeRef) : null, by));
+            action == MaturityAction.PAY_OUT ? blankToNull(payeeRef) : null, by);
+        if (action == MaturityAction.PAY_OUT && route != null) instruction.payBy(route);
+        MaturityInstruction saved = instructions.save(instruction);
         return view(saved);
     }
 
@@ -262,8 +273,8 @@ public class Deposits {
             }
             note = "Reinvestment for " + instruction.getTermMonths() + " months is no longer offered; paid out instead";
         }
-        String payee = instruction != null && instruction.getPayeeRef() != null ? instruction.getPayeeRef()
-            : period.getDefaultPayeeRef();
+        tz.co.nlolo.lifeplatform.PayoutRoute payee = instruction != null && instruction.route() != null ? instruction.route()
+            : period.getDefaultPayeeRef() == null ? null : tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney(period.getDefaultPayeeRef());
         if (payee == null) {
             log.warn("Fixed-term deposit {} matured with no number to pay it to; {} waits on the account for a payee",
                 policyNumber, account.getBalance());
@@ -302,23 +313,24 @@ public class Deposits {
      * The whole balance out, closing the account, then the payment requested through payment. The
      * attempt number makes each try its own source reference (§R7).
      */
-    private void payOut(Account account, DepositPeriod period, String payee, String note, LocalDate on, String by) {
+    private void payOut(Account account, DepositPeriod period, tz.co.nlolo.lifeplatform.PayoutRoute payee, String note, LocalDate on, String by) {
         int attempt = period.recordPayoutAttempt();
         periods.save(period);
         String ref = period.getPeriodId() + ":" + attempt;
         BigDecimal value = account.getBalance();
         ledger.post(account.getPolicyNumber(), new LedgerService.Source("deposit-maturity", "deposit-maturity:" + ref),
             List.of(LedgerService.Line.of(EntryType.MATURITY, value.negate(), on,
-                note != null ? note : "Matured; paid to " + payee)), by, null);
+                note != null ? note : "Matured; paid to " + payee.describe())), by, null);
         account.close("MATURED", on);
         accounts.save(account);
-        events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutRequested", TenantContext.get(), Map.of(
+        Map<String, Object> payout = new java.util.LinkedHashMap<>(payee.toPayload());
+        payout.putAll(Map.of(
             "purpose", "DEPOSIT_MATURITY_PAYOUT",
             "sourceRef", ref,
             "idempotencyKey", "deposit-maturity:" + ref,
             "policyNumber", account.getPolicyNumber(),
-            "payeeRef", payee,
-            "amount", Map.of("amount", value.toPlainString(), "currencyCode", account.getCurrency()))));
+            "amount", Map.of("amount", value.toPlainString(), "currencyCode", account.getCurrency())));
+        events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutRequested", TenantContext.get(), payout));
         policyApi.markMatured(account.getPolicyNumber(), "system:accumulation");
     }
 
@@ -338,13 +350,19 @@ public class Deposits {
         if (payeeRef == null || payeeRef.isBlank()) {
             throw new AccumulationStateException("A payout needs a payee reference");
         }
+        return payOutAwaiting(policyNumber, tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney(payeeRef), by);
+    }
+
+    /** Finance names the payee and how it is paid (2026-10-28): mobile money, a bank transfer or a cheque. */
+    @Transactional
+    public DepositPeriodView payOutAwaiting(String policyNumber, tz.co.nlolo.lifeplatform.PayoutRoute route, String by) {
         Account account = accounts.lockForPosting(policyNumber).orElseThrow(() -> new AccountNotFoundException(policyNumber));
         List<DepositPeriod> all = periods.findByPolicyNumberOrderBySeq(policyNumber);
         if (!awaitingPayee(account, all)) {
             throw new AccumulationStateException("Policy " + policyNumber + " has no matured deposit waiting for a payee");
         }
         DepositPeriod period = all.get(all.size() - 1);
-        payOut(account, period, payeeRef, "Matured; paid to " + payeeRef + " (payee recorded by staff)", LocalDate.now(), by);
+        payOut(account, period, route, "Matured; paid to " + route.describe() + " (payee recorded by staff)", LocalDate.now(), by);
         return view(period);
     }
 
@@ -409,7 +427,7 @@ public class Deposits {
 
     static MaturityInstructionView view(MaturityInstruction i) {
         return new MaturityInstructionView(i.getInstructionId(), i.getPeriodId(), i.action(), i.getTermMonths(), i.getPayeeRef(),
-            i.getRecordedBy(), i.getRecordedAt());
+            i.getRecordedBy(), i.getRecordedAt(), i.route());
     }
 
     static String blankToNull(String s) { return s == null || s.isBlank() ? null : s; }

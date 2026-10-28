@@ -1,3 +1,4 @@
+import type { RouteBody } from '@/features/payments/payoutRoute';
 import { get, post } from '@/lib/http';
 import type { ApiError } from '@/lib/apiError';
 import type { MutationAttempt } from '@/lib/idempotency';
@@ -229,7 +230,13 @@ export async function getDeposit(policyNumber: string): Promise<DepositView | nu
 export interface MaturityInstructionBody {
   action: 'REINVEST' | 'PAY_OUT';
   termMonths?: number;
+  /** A pay-out's route (2026-10-28); none pays the number the deposit came from. */
+  method?: 'MOBILE_MONEY' | 'EFT' | 'CHEQUE';
   payeeRef?: string;
+  payeeBank?: string;
+  payeeBranch?: string;
+  payeeAccountName?: string;
+  payeeAccountNumber?: string;
 }
 
 /** The client's choice for the end of the running term; a new one supersedes the last. */
@@ -261,11 +268,11 @@ export async function getTermAccount(policyNumber: string): Promise<TermAccountV
 }
 
 /** 202: requested from the rail, not paid. Finance's: a matured term account with nobody to pay. */
-export function payOutTermAccount(policyNumber: string, payeeRef: string, attempt: MutationAttempt): Promise<TermAccountView> {
-  return post<TermAccountView>(`${account(policyNumber)}/term-account/payout`, { payeeRef }, { headers: attempt.headers() });
+export function payOutTermAccount(policyNumber: string, route: RouteBody, attempt: MutationAttempt): Promise<TermAccountView> {
+  return post<TermAccountView>(`${account(policyNumber)}/term-account/payout`, route, { headers: attempt.headers() });
 }
 
 /** 202: requested from the rail, not paid. The screen must say so. */
-export function payOutDeposit(policyNumber: string, payeeRef: string, attempt: MutationAttempt): Promise<DepositPeriodView> {
-  return post<DepositPeriodView>(`${account(policyNumber)}/deposit/payout`, { payeeRef }, { headers: attempt.headers() });
+export function payOutDeposit(policyNumber: string, route: RouteBody, attempt: MutationAttempt): Promise<DepositPeriodView> {
+  return post<DepositPeriodView>(`${account(policyNumber)}/deposit/payout`, route, { headers: attempt.headers() });
 }

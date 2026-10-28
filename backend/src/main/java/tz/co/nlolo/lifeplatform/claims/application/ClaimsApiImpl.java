@@ -655,6 +655,17 @@ public class ClaimsApiImpl implements ClaimsApi {
     public void decideSettlement(UUID claimId, boolean approved, BigDecimal approvedAmount, String approvedCurrency,
                                   String rejectionReason, ClaimDeclineReason declineReason,
                                   String payeeRef, String idempotencyKey, String decidedBy) {
+        decideSettlement(claimId, approved, approvedAmount, approvedCurrency, rejectionReason, declineReason,
+            payeeRef == null || payeeRef.isBlank() ? null : tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney(payeeRef),
+            idempotencyKey, decidedBy);
+    }
+
+    @Override
+    @Transactional
+    public void decideSettlement(UUID claimId, boolean approved, BigDecimal approvedAmount, String approvedCurrency,
+                                  String rejectionReason, ClaimDeclineReason declineReason,
+                                  tz.co.nlolo.lifeplatform.PayoutRoute route, String idempotencyKey, String decidedBy) {
+        String payeeRef = route == null ? null : route.payee();
         UUID tenantId = TenantContext.get();
         Claim claim = findOrThrow(claimId, tenantId);
 
@@ -810,8 +821,11 @@ public class ClaimsApiImpl implements ClaimsApi {
             // APPROVED -> SETTLEMENT_REQUESTED. Task 6 owns turning this event into an actual
             // payment request; this method's job ends at publishing it.
             claim.markSettlementRequested(idempotencyKey);
-            eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimSettlementRequested", tenantId,
-                Map.of("claimId", claimId, "payeeRef", payeeRef, "policyNumber", claim.getPolicyNumber(),
+            // How it is paid (2026-10-28): the route the manager chose -- mobile money, a bank transfer or a cheque.
+            Map<String, Object> requested = new java.util.LinkedHashMap<>(creditLife || route == null
+                ? Map.of("payeeRef", payeeRef) : route.toPayload());
+            requested.putAll(
+                Map.of("claimId", claimId, "policyNumber", claim.getPolicyNumber(),
                        "amount", Map.of("amount", approvedAmount.toPlainString(), "currencyCode", approvedCurrency),
                        // A credit-life payout goes to a LENDER and extinguishes a debt. It must
                        // not go near the mobile-money rail, which in this environment is a mock
@@ -821,8 +835,9 @@ public class ClaimsApiImpl implements ClaimsApi {
                        // takes a particular rail is a fact about the product, and payment has
                        // no business knowing what credit life is. Every other publisher omits
                        // the key and gets MOBILE_MONEY, which is what they have always had.
-                       "disbursementMethod", creditLife ? "EFT" : "MOBILE_MONEY",
-                       "idempotencyKey", idempotencyKey)));
+                       "disbursementMethod", creditLife ? "EFT" : route.method(),
+                       "idempotencyKey", idempotencyKey));
+            eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimSettlementRequested", tenantId, requested));
         } else {
             settlementDecisionRepository.save(new SettlementDecision(tenantId, claimId, decidedBy, false,
                 null, null, rejectionReason, null));

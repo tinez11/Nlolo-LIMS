@@ -24,7 +24,10 @@ public record WithdrawalView(UUID withdrawalId, String policyNumber,
                              @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal proceeds,
                              @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal surrenderCharge,
                              @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal shortfall,
-                             String requestedBy, Instant requestedAt, String approvedBy, Instant approvedAt) {
+                             String requestedBy, Instant requestedAt, String approvedBy, Instant approvedAt,
+                             /* How it is paid (2026-10-28): MOBILE_MONEY, EFT or CHEQUE, and the account on an EFT. */
+                             String method, String payeeBank, String payeeBranch, String payeeAccountName,
+                             String payeeAccountNumber) {
 
     public record Named(String fundCode, @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal amount) {}
 }

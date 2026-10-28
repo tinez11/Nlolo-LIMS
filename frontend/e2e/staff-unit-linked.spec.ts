@@ -210,7 +210,7 @@ test.describe('unit-linked', () => {
     // ---- A surrender: requested with no figure, approved by a second person, and the units wait to be sold.
     const surrender = page.getByRole('region', { name: 'Surrender' });
     await expect(surrender.getByText(/No figure is quoted/)).toBeVisible();
-    await surrender.getByLabel('Payee (mobile money or bank destination)').fill('+255700000781');
+    await surrender.getByLabel('Mobile-money number').fill('+255700000781');
     await surrender.getByRole('button', { name: 'Request surrender' }).click();
     await surrender.getByRole('button', { name: 'Record surrender request' }).click();
     await expect(surrender.getByText('Requested', { exact: true })).toBeVisible({ timeout: 15_000 });

@@ -12,14 +12,16 @@ export function whatHappensNext(payout: DisbursementView, superseded: boolean): 
   }
   switch (payout.status) {
     case 'AWAITING_EXECUTION':
-      return 'Waiting for Finance to make this bank transfer and record it under Finance → Payments to make. The claim settles, and the life leaves cover, when they do.';
+      return payout.method === 'CHEQUE'
+        ? 'Waiting for Finance to write this cheque and record its number under Finance → Payments to make. The claim settles, and the life leaves cover, when they do.'
+        : 'Waiting for Finance to make this bank transfer and record it under Finance → Payments to make. The claim settles, and the life leaves cover, when they do.';
     case 'PENDING':
       return 'Sent to the mobile-money gateway. The claim settles when the gateway confirms it.';
     case 'IN_DOUBT':
       return 'The gateway has not said whether this was paid. Finance is alerted; the claim stays here until the outcome is known.';
     case 'COMPLETED':
       return payout.executedAt
-        ? `Paid. Finance recorded the transfer ${formatInstant(payout.executedAt)}.`
+        ? `Paid. Finance recorded the ${payout.method === 'CHEQUE' ? 'cheque' : 'transfer'} ${formatInstant(payout.executedAt)}.`
         : 'Paid. The gateway confirmed it.';
     case 'FAILED':
       return 'The payment failed and the claim returned to Approved, so it can be paid again.';

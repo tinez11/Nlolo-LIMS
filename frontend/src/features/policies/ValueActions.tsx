@@ -1,4 +1,16 @@
 import { useEffect, useState } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import { PayoutRouteFields } from '@/features/payments/PayoutRouteFields';
+import {
+  BLANK_ROUTE,
+  payoutRouteSchema,
+  routeBody,
+  routeWords,
+  type PayoutRouteValues,
+  type RouteBody,
+} from '@/features/payments/payoutRoute';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { useAuth } from 'react-oidc-context';
 import { readIdentity } from '@/auth/claims';
 import { ConfirmAct } from '@/components/ConfirmAct';
@@ -9,8 +21,6 @@ import { InlineError } from '@/components/InlineError';
 import { Receipt } from '@/components/Receipt';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
-import { FormField } from '@/components/FormField';
-import { Input } from '@/components/ui/input';
 import { approveSurrenderGates, paidUpGates, surrenderGates } from '@/gates/valueGates';
 import { formatMoney } from '@/lib/money';
 import type { PolicyView, SurrenderQuote, SurrenderRequestView } from '@/api/types';
@@ -166,7 +176,9 @@ function SurrenderAction({
   const approveSurrender = usePolicyStore((s) => s.approveSurrender);
   const requesting = usePolicyStore(selectRequestingSurrender(policyNumber));
   const approving = usePolicyStore(selectApprovingSurrender(policyNumber));
-  const [payeeRef, setPayeeRef] = useState('');
+  // How it is paid (2026-10-28): mobile money, a bank transfer to a named account, or a cheque.
+  const routeForm = useForm<PayoutRouteValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(payoutRouteSchema), defaultValues: BLANK_ROUTE });
+  const [route, setRoute] = useState<RouteBody | null>(null);
   const [armed, setArmed] = useState<'request' | 'approve' | null>(null);
 
   const awaitingApproval = request?.status === 'REQUESTED';
@@ -185,7 +197,7 @@ function SurrenderAction({
         lines={[
           { label: 'Policy', value: policyNumber },
           { label: 'Paying', value: formatMoney(approving.data.quotedValue) },
-          { label: 'Payee', value: approving.data.payeeRef ?? '—' },
+          { label: 'Paid by', value: routeWords(approving.data) },
           { label: 'Approved by', value: <StaffName subject={approving.data.approvedBy} /> },
         ]}
         note="Cover has stopped and the payout has been requested, not paid. This panel shows PAID once the payment provider confirms it."
@@ -202,7 +214,7 @@ function SurrenderAction({
 
       {request && !awaitingApproval && request.status !== 'FAILED' && (
         <p className="text-xs text-muted-foreground">
-          {formatMoney(request.quotedValue)} to {request.payeeRef}, requested by{' '}
+          {formatMoney(request.quotedValue)} by {request ? routeWords(request) : '—'}, requested by{' '}
           <StaffName subject={request.requestedBy} />.
         </p>
       )}
@@ -232,7 +244,7 @@ function SurrenderAction({
             tone="danger"
             consequence={
               <>
-                Pay <strong>{amount}</strong> to {request?.payeeRef} and stop cover on{' '}
+                Pay <strong>{amount}</strong> by {request ? routeWords(request) : '—'} and stop cover on{' '}
                 <strong>{policyNumber}</strong> as of today.
               </>
             }
@@ -255,34 +267,33 @@ function SurrenderAction({
           heading="Request this surrender?"
           consequence={
             <>
-              Record a surrender of <strong>{policyNumber}</strong> for <strong>{amount}</strong> to{' '}
-              {payeeRef}. Cover does <strong>not</strong> stop yet — a second person has to approve
-              it.
+              Record a surrender of <strong>{policyNumber}</strong> for <strong>{amount}</strong>, paid by{' '}
+              {route ? routeWords(route) : '—'}. Cover does <strong>not</strong> stop yet — a second person has
+              to approve it.
             </>
           }
           reversal="A request that is never approved leaves the policy exactly as it is, still on cover and still billed."
           confirmLabel="Record surrender request"
           busy={requesting.status === 'loading'}
           onConfirm={() => {
-            void requestSurrender(policyNumber, payeeRef);
+            if (route) void requestSurrender(policyNumber, route);
             setArmed(null);
           }}
           onCancel={() => setArmed(null)}
         />
       ) : (
-        <div className="space-y-2">
-          <FormField label="Payee (mobile money or bank destination)">
-            <Input
-              inputSize="sm"
-              placeholder="+255712345678"
-              value={payeeRef}
-              onChange={(e) => setPayeeRef(e.target.value)}
-            />
-          </FormField>
-          <Button size="sm" disabled={refused || payeeRef.trim() === ''} onClick={() => setArmed('request')}>
+        <form
+          className="space-y-3"
+          onSubmit={routeForm.handleSubmit((v) => {
+            setRoute(routeBody(v));
+            setArmed('request');
+          })}
+        >
+          <PayoutRouteFields form={routeForm} />
+          <Button type="submit" size="sm" disabled={refused}>
             Request surrender
           </Button>
-        </div>
+        </form>
       )}
     </div>
   );

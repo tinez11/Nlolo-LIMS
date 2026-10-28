@@ -557,10 +557,26 @@ public class AccumulationApiImpl implements AccumulationApi {
     }
 
     @Override
+    public MaturityInstructionView recordMaturityInstruction(String policyNumber, MaturityAction action, Integer termMonths,
+                                                             tz.co.nlolo.lifeplatform.PayoutRoute route, String recordedBy, String idempotencyKey) {
+        return keyed.once(idempotencyKey, "MATURITY_INSTRUCTION", policyNumber, recordedBy,
+            () -> deposits.instruct(policyNumber, action, termMonths, route, recordedBy),
+            MaturityInstructionView::instructionId, deposits::instructionView);
+    }
+
+    @Override
     public DepositPeriodView payOutMaturedDeposit(String policyNumber, String payeeRef, String requestedBy,
                                                   String idempotencyKey) {
         return keyed.once(idempotencyKey, "DEPOSIT_PAYOUT", policyNumber, requestedBy,
             () -> deposits.payOutAwaiting(policyNumber, payeeRef, requestedBy),
+            DepositPeriodView::periodId, deposits::periodView);
+    }
+
+    @Override
+    public DepositPeriodView payOutMaturedDeposit(String policyNumber, tz.co.nlolo.lifeplatform.PayoutRoute route, String requestedBy,
+                                                  String idempotencyKey) {
+        return keyed.once(idempotencyKey, "DEPOSIT_PAYOUT", policyNumber, requestedBy,
+            () -> deposits.payOutAwaiting(policyNumber, route, requestedBy),
             DepositPeriodView::periodId, deposits::periodView);
     }
 
@@ -618,6 +634,14 @@ public class AccumulationApiImpl implements AccumulationApi {
     }
 
     @Override
+    public TermAccountView payOutMaturedTermAccount(String policyNumber, tz.co.nlolo.lifeplatform.PayoutRoute route, String requestedBy,
+                                                    String idempotencyKey) {
+        return keyed.once(idempotencyKey, "TERM_ACCOUNT_PAYOUT", policyNumber, requestedBy,
+            () -> payOutAwaitingTermAccount(policyNumber, route, requestedBy), TermAccountView::termAccountId,
+            id -> view(termAccounts.findById(id).orElseThrow()));
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<AwaitingPayeeView> listTermAccountsAwaitingPayee() {
         return termAccounts.findByStatusOrderByMaturedOn(TermAccountStatus.AWAITING_PAYEE.name()).stream()
@@ -653,7 +677,7 @@ public class AccumulationApiImpl implements AccumulationApi {
                     "Interest to maturity at " + term.getRatePercent().stripTrailingZeros().toPlainString() + "%")),
                 "system", null);
         }
-        String payee = term.getDefaultPayeeRef();
+        tz.co.nlolo.lifeplatform.PayoutRoute payee = term.getDefaultPayeeRef() == null ? null : tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney(term.getDefaultPayeeRef());
         if (payee == null) {
             log.warn("Term account {} matured with no number to pay it to; {} waits on the account for a payee",
                 policyNumber, account.getBalance());
@@ -669,7 +693,7 @@ public class AccumulationApiImpl implements AccumulationApi {
      * closing the account; then the payment, through payment. Each attempt is its own source reference, as a
      * deposit's is, so a retry after a failed payment posts and pays again rather than being taken for a redelivery.
      */
-    private void payOutTermAccount(Account account, TermAccount term, String payee, LocalDate on, String by) {
+    private void payOutTermAccount(Account account, TermAccount term, tz.co.nlolo.lifeplatform.PayoutRoute payee, LocalDate on, String by) {
         String policyNumber = account.getPolicyNumber();
         int attempt = term.recordPayoutAttempt();
         String ref = policyNumber + ":" + attempt;
@@ -683,7 +707,7 @@ public class AccumulationApiImpl implements AccumulationApi {
             paid = value.subtract(ChosenCharges.total(charges));
         }
         if (paid.signum() > 0) {
-            lines.add(LedgerService.Line.of(EntryType.MATURITY, paid.negate(), on, "Matured; paid to " + payee));
+            lines.add(LedgerService.Line.of(EntryType.MATURITY, paid.negate(), on, "Matured; paid to " + payee.describe()));
         }
         if (!lines.isEmpty()) {
             ledger.post(policyNumber, new LedgerService.Source("term-account-maturity", "term-account-maturity:" + ref),
@@ -694,13 +718,14 @@ public class AccumulationApiImpl implements AccumulationApi {
         term.paidOut(on);
         termAccounts.save(term);
         if (paid.signum() > 0) {
-            events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutRequested", TenantContext.get(), Map.of(
+            Map<String, Object> payout = new java.util.LinkedHashMap<>(payee.toPayload());
+            payout.putAll(Map.of(
                 "purpose", "TERM_ACCOUNT_MATURITY_PAYOUT",
                 "sourceRef", ref,
                 "idempotencyKey", "term-account-maturity:" + ref,
                 "policyNumber", policyNumber,
-                "payeeRef", payee,
-                "amount", Map.of("amount", paid.toPlainString(), "currencyCode", account.getCurrency()))));
+                "amount", Map.of("amount", paid.toPlainString(), "currencyCode", account.getCurrency())));
+            events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutRequested", TenantContext.get(), payout));
         }
         policyApi.markMatured(policyNumber, "system:accumulation");
     }
@@ -711,13 +736,19 @@ public class AccumulationApiImpl implements AccumulationApi {
         if (payeeRef == null || payeeRef.isBlank()) {
             throw new AccumulationStateException("A payout needs a payee reference");
         }
+        return payOutAwaitingTermAccount(policyNumber, tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney(payeeRef), by);
+    }
+
+    /** Finance names the payee and how it is paid (2026-10-28): mobile money, a bank transfer or a cheque. */
+    @Transactional
+    public TermAccountView payOutAwaitingTermAccount(String policyNumber, tz.co.nlolo.lifeplatform.PayoutRoute route, String by) {
         Account account = accounts.lockForPosting(policyNumber).orElseThrow(() -> new AccountNotFoundException(policyNumber));
         TermAccount term = termAccountOf(account).filter(t -> t.status() == TermAccountStatus.AWAITING_PAYEE)
             .filter(t -> account.status() == AccountStatus.OPEN)
             .orElseThrow(() -> new AccumulationStateException("Policy " + policyNumber
                 + " has no matured term account waiting for a payee"));
-        term.payTo(payeeRef);
-        payOutTermAccount(account, term, payeeRef, LocalDate.now(), by);
+        term.payTo(route.payee());
+        payOutTermAccount(account, term, route, LocalDate.now(), by);
         return view(term);
     }
 
@@ -908,7 +939,7 @@ public class AccumulationApiImpl implements AccumulationApi {
      * on step 1's existing path.
      */
     @Transactional
-    public void closeForSurrender(String policyNumber, UUID surrenderRequestId, String payeeRef,
+    public void closeForSurrender(String policyNumber, UUID surrenderRequestId, PayoutRoute route,
                                   BigDecimal chargePercent, String approvedBy, LocalDate on) {
         Account account = accounts.lockForPosting(policyNumber).orElse(null);
         if (account == null || account.status() != AccountStatus.OPEN) {
@@ -922,17 +953,19 @@ public class AccumulationApiImpl implements AccumulationApi {
                 surrenderRequestId, policyNumber, chargePercent);
             return;
         }
-        events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutRequested", TenantContext.get(), Map.of(
+        // Paid by the route the surrender was requested with (2026-10-28): mobile money, a bank transfer or a cheque.
+        Map<String, Object> payout = new java.util.LinkedHashMap<>(route.toPayload());
+        payout.putAll(Map.of(
             "purpose", "SURRENDER_PAYOUT",
             "sourceRef", surrenderRequestId.toString(),
             // The bare request id, as step 1's own surrender payout uses -- payment's key registry
             // pays one request once whichever path published it.
             "idempotencyKey", surrenderRequestId.toString(),
             "policyNumber", policyNumber,
-            "payeeRef", payeeRef,
             "amount", Map.of("amount", paid.toPlainString(), "currencyCode", account.getCurrency()),
             // IFRS 17 I3b: the value before the surrender charge, so the ledger can earn the charge (7310).
-            "grossAmount", Map.of("amount", value.toPlainString(), "currencyCode", account.getCurrency()))));
+            "grossAmount", Map.of("amount", value.toPlainString(), "currencyCode", account.getCurrency())));
+        events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutRequested", TenantContext.get(), payout));
     }
 
     /**

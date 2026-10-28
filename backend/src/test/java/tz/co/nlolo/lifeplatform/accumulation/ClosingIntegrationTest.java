@@ -149,6 +149,7 @@ class ClosingIntegrationTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
@@ -230,6 +231,28 @@ class ClosingIntegrationTest {
         // The fixture version authors no surrender charge, so the whole value is paid -- and the
         // request is marked PAID through step 1's own listener, by the source ref.
         assertThat(asTenant(() -> policyApi.findLatestSurrenderRequest(policy).orElseThrow()).status()).isEqualTo("PAID");
+    }
+
+    @Autowired private tz.co.nlolo.lifeplatform.payment.api.PaymentApi paymentApi;
+
+    /**
+     * 2026-10-28: a surrender requested for payment by cheque keeps its route through policy's approval and
+     * accumulation's close: payment holds it for finance to write, made out to the payee, and never calls the gateway.
+     */
+    @Test
+    void aSurrenderPaidByChequeWaitsForFinanceToWriteIt() {
+        String policy = fundedWithMonthEnds();
+        var route = tz.co.nlolo.lifeplatform.PayoutRoute.of("CHEQUE", "Juma Owner", null, null, null, null);
+        var request = asTenant(() -> policyApi.requestSurrender(policy, route, "staff-one"));
+        assertThat(request.route()).isEqualTo(route);
+        asTenant(() -> policyApi.approveSurrender(request.surrenderRequestId(), "finance-two"));
+
+        var waiting = asTenant(() -> paymentApi.listAwaitingEftExecution()).stream()
+            .filter(d -> d.sourceRef().equals(request.surrenderRequestId().toString())).findFirst().orElseThrow();
+        assertThat(waiting.method()).isEqualTo("CHEQUE");
+        assertThat(waiting.payeeRef()).isEqualTo("Juma Owner");
+        // Approved, not paid: the cheque has not been written.
+        assertThat(asTenant(() -> policyApi.findLatestSurrenderRequest(policy).orElseThrow()).status()).isEqualTo("APPROVED");
     }
 
     @Test

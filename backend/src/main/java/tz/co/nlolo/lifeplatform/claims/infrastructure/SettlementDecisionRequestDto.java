@@ -12,6 +12,13 @@ public record SettlementDecisionRequestDto(
     @Valid MoneyDto approvedAmount,
     String rejectionReason,
     String payeeRef,
+    // How it is paid (2026-10-28): MOBILE_MONEY (payeeRef is the number, the default), EFT (the four bank fields)
+    // or CHEQUE (payeeRef is who it is made out to). Ignored on a rejection; refused on credit life.
+    String method,
+    String payeeBank,
+    String payeeBranch,
+    String payeeAccountName,
+    String payeeAccountNumber,
     // A policy-term reason for a decline (ClaimDeclineReason): an exclusion window, or a funeral plan's
     // waiting period. Refused on an approval, and refused when its window was not open on the date of event.
     tz.co.nlolo.lifeplatform.claims.api.ClaimDeclineReason declineReason) {}

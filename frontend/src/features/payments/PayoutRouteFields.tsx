@@ -11,7 +11,14 @@ import { PAYOUT_METHODS, TANZANIAN_BANKS, type PayoutMethod, type PayoutRouteVal
  * asks for the bank, branch, account name and account number; mobile money for the number; a cheque for the name it
  * is made out to.
  */
-export function PayoutRouteFields<T extends FieldValues & PayoutRouteValues>({ form }: { form: UseFormReturn<T> }) {
+export function PayoutRouteFields<T extends FieldValues & PayoutRouteValues>({
+  form,
+  numberHint,
+}: {
+  form: UseFormReturn<T>;
+  /** Under the mobile-money number, where the form allows it blank -- what a blank number means there. */
+  numberHint?: string;
+}) {
   const banksId = useId();
   const method = useWatch({ control: form.control, name: 'method' as Path<T> }) as PayoutMethod;
   const errors = form.formState.errors as Partial<Record<keyof PayoutRouteValues, { message?: string }>>;
@@ -47,7 +54,7 @@ export function PayoutRouteFields<T extends FieldValues & PayoutRouteValues>({ f
       </div>
 
       {method === 'MOBILE_MONEY' && (
-        <FormField label="Mobile-money number" error={errors.payeeRef?.message}>
+        <FormField label="Mobile-money number" hint={numberHint} error={errors.payeeRef?.message}>
           <Input {...reg('payeeRef')} placeholder="+255712345678" inputMode="tel" autoComplete="off" />
         </FormField>
       )}

@@ -1,3 +1,4 @@
+import type { RouteBody } from '@/features/payments/payoutRoute';
 import { create } from 'zustand';
 import {
   approveAdjustment,
@@ -85,9 +86,9 @@ interface AccumulationState {
   loadDeposit: (policyNumber: string) => Promise<void>;
   loadAwaiting: () => Promise<void>;
   instruct: (policyNumber: string, body: MaturityInstructionBody, attempt: MutationAttempt) => Promise<void>;
-  payOutDeposit: (policyNumber: string, payeeRef: string, attempt: MutationAttempt) => Promise<void>;
+  payOutDeposit: (policyNumber: string, route: RouteBody, attempt: MutationAttempt) => Promise<void>;
   loadTermAccount: (policyNumber: string) => Promise<void>;
-  payOutTermAccount: (policyNumber: string, payeeRef: string, attempt: MutationAttempt) => Promise<void>;
+  payOutTermAccount: (policyNumber: string, route: RouteBody, attempt: MutationAttempt) => Promise<void>;
 
   withdraw: (policyNumber: string, body: WithdrawalBody, attempt: MutationAttempt) => Promise<void>;
   approveWithdrawal: (policyNumber: string, withdrawalId: string, attempt: MutationAttempt) => Promise<void>;
@@ -167,9 +168,9 @@ export const useAccumulationStore = create<AccumulationState>((set, getState) =>
       }),
 
     // Rereads the account too: a payout closes it, and the balance on screen must say so.
-    payOutDeposit: (policyNumber, payeeRef, attempt) =>
+    payOutDeposit: (policyNumber, route, attempt) =>
       act(`depositPayout.${policyNumber}`, async () => {
-        await payOutDeposit(policyNumber, payeeRef, attempt);
+        await payOutDeposit(policyNumber, route, attempt);
         await Promise.all([getState().loadDeposit(policyNumber), getState().loadAccount(policyNumber)]);
       }),
 
@@ -177,9 +178,9 @@ export const useAccumulationStore = create<AccumulationState>((set, getState) =>
       keyed('termAccount', policyNumber, 'termAccount', () => getTermAccount(policyNumber)),
 
     // Rereads the account too, as a deposit's payout does: a payout closes it.
-    payOutTermAccount: (policyNumber, payeeRef, attempt) =>
+    payOutTermAccount: (policyNumber, route, attempt) =>
       act(`termAccountPayout.${policyNumber}`, async () => {
-        await payOutTermAccount(policyNumber, payeeRef, attempt);
+        await payOutTermAccount(policyNumber, route, attempt);
         await Promise.all([getState().loadTermAccount(policyNumber), getState().loadAccount(policyNumber)]);
       }),
 

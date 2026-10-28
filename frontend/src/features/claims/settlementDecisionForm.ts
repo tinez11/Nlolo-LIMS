@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Money, SettlementDecisionRequest } from '@/api/types';
 import { AMOUNT_PATTERN, compareAmounts, formatMoney } from '@/lib/money';
 import { CURRENCY_PATTERN } from '@/lib/patterns';
+import { BLANK_ROUTE, payoutRouteFields, refineRoute, routeBody } from '@/features/payments/payoutRoute';
 
 /**
  * Zod schema for `POST /claims/{claimId}/settlement-decision`, transcribed from
@@ -70,15 +71,14 @@ export function settlementDecisionSchema(
         },
       ),
     approvedCurrency: z.string().regex(CURRENCY_PATTERN, 'Must be a 3-letter code like TZS'),
-    // Claim.approve() itself has no @NotBlank annotation to mirror (it is a
-    // domain object, not a DTO) -- ClaimsApiImpl.decideSettlement's own explicit
-    // check IS the rule: "A payee reference is required to approve a claim".
-    payeeRef: payeeRequired
-      ? z.string().trim().min(1, 'A payee reference is required to approve')
-      : z.string(),
+    // How it is paid (2026-10-28): mobile money, a bank transfer to a named account, or a cheque. What each
+    // needs is checked below, on the approval branch only -- and not at all on credit life, which pays the lender.
+    ...payoutRouteFields,
   });
 
-  return z.discriminatedUnion('approved', [approveSchema, rejectSchema]);
+  return z.discriminatedUnion('approved', [approveSchema, rejectSchema]).superRefine((v, ctx) => {
+    if (v.approved && payeeRequired) refineRoute(v, ctx);
+  });
 }
 
 /** The unbounded schema, kept as the shape every other consumer types against. */
@@ -115,7 +115,7 @@ export function blankApproveDecision(
     approved: true,
     approvedAmount: start?.amount ?? '',
     approvedCurrency: start?.currencyCode ?? 'TZS',
-    payeeRef: '',
+    ...BLANK_ROUTE,
   };
 }
 
@@ -164,7 +164,7 @@ export function toApiRequest(
     return {
       approved: true,
       approvedAmount: { amount: values.approvedAmount, currencyCode: values.approvedCurrency },
-      payeeRef: platformNamesPayee ? null : values.payeeRef.trim(),
+      ...(platformNamesPayee ? { payeeRef: null } : routeBody(values)),
       rejectionReason: null,
     };
   }

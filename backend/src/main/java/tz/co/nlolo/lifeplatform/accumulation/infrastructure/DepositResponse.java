@@ -42,10 +42,14 @@ public record DepositResponse(String policyNumber, List<Period> periods, Instruc
     }
 
     public record Instruction(String instructionId, String periodId, String action, Integer termMonths, String payeeRef,
-                              String recordedBy, String recordedAt) {
+                              String recordedBy, String recordedAt, String method, String payeeBank, String payeeBranch,
+                              String payeeAccountName, String payeeAccountNumber) {
         static Instruction from(MaturityInstructionView i) {
+            var r = i.route();
             return new Instruction(i.instructionId().toString(), i.periodId().toString(), i.action().name(), i.termMonths(),
-                i.payeeRef(), i.recordedBy(), i.recordedAt().toString());
+                i.payeeRef(), i.recordedBy(), i.recordedAt().toString(), r == null ? null : r.method(),
+                r == null ? null : r.bank(), r == null ? null : r.branch(), r == null ? null : r.accountName(),
+                r == null ? null : r.accountNumber());
         }
     }
 

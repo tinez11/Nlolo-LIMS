@@ -211,7 +211,7 @@ test.describe('family funeral cover', () => {
       // The amount prefills when the assessment arrives; typing first makes the form dirty and the
       // panel then (by design) never overwrites it, leaving the amount blank.
       await expect(manager.getByLabel('Approved amount')).toHaveValue('1000000.00', { timeout: 30_000 });
-      await manager.getByLabel('Payee reference').fill('+255700000779');
+      await manager.getByLabel('Mobile-money number').fill('+255700000779');
       await manager.getByRole('button', { name: 'Approve claim' }).click();
       await manager.getByRole('button', { name: 'Approve and pay' }).click();
       await expect(manager.getByText(/Settlement requested|Settled/).first()).toBeVisible({ timeout: 60_000 });
@@ -224,7 +224,7 @@ test.describe('family funeral cover', () => {
       // The amount prefills when the assessment arrives; typing first makes the form dirty and the
       // panel then (by design) never overwrites it, leaving the amount blank.
       await expect(manager.getByLabel('Approved amount')).toHaveValue('1000000.00', { timeout: 30_000 });
-      await manager.getByLabel('Payee reference').fill('+255700000779');
+      await manager.getByLabel('Mobile-money number').fill('+255700000779');
       await manager.getByRole('button', { name: 'Approve claim' }).click();
       await manager.getByRole('button', { name: 'Approve and pay' }).click();
       await expect(manager.getByText(/was inside the waiting period/)).toBeVisible({ timeout: 30_000 });

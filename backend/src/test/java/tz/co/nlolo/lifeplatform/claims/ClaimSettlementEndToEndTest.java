@@ -219,6 +219,7 @@ class ClaimSettlementEndToEndTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -383,6 +384,34 @@ class ClaimSettlementEndToEndTest {
 
         // 4. The gateway was called exactly once -- the real proof the rail genuinely ran.
         wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/disburse")));
+    }
+
+    /**
+     * 2026-10-28: a claim the manager approves for payment by bank transfer never reaches the mobile-money gateway. It
+     * waits in finance's queue with the account to pay, and the claim waits with it, SETTLEMENT_REQUESTED.
+     */
+    @Test
+    void aClaimApprovedForABankTransferWaitsForFinanceWithTheAccountAndNeverReachesTheGateway() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-E2E-EFT");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerAndAssessDeathClaim(tenantId, fixture, policyNumber, "e2e-reg-eft", "assessor-e2e-eft");
+        String settleKey = "e2e-settle-eft-" + claimId;
+
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null, null,
+            tz.co.nlolo.lifeplatform.PayoutRoute.of("EFT", null, "NMB Bank", "Mlimani City", "Neema Heir", "2011000456"),
+            settleKey, "manager-e2e-eft");
+
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.SETTLEMENT_REQUESTED);
+        DisbursementInstruction instruction = disbursementRepository
+            .findByIdempotencyKeyAndTenantId(settleKey, tenantId)
+            .orElseThrow(() -> new AssertionError("Expected a disbursement_instruction row for key " + settleKey));
+        assertThat(instruction.getMethod()).isEqualTo("EFT");
+        assertThat(instruction.getStatus()).isEqualTo("AWAITING_EXECUTION");
+        assertThat(instruction.getPayeeRef()).isEqualTo("Neema Heir");
+        assertThat(instruction.getPayeeBank()).isEqualTo("NMB Bank");
+        assertThat(instruction.getPayeeAccountNumber()).isEqualTo("2011000456");
+        wireMock.verify(exactly(0), postRequestedFor(urlPathEqualTo("/disburse")));
     }
 
     @Test

@@ -182,8 +182,15 @@ public interface AccumulationApi {
     MaturityInstructionView recordMaturityInstruction(String policyNumber, MaturityAction action, Integer termMonths,
                                                       String payeeRef, String recordedBy, String idempotencyKey);
 
+    /** The same, a pay-out naming how it is paid (2026-10-28); route null pays the number the deposit came from. */
+    MaturityInstructionView recordMaturityInstruction(String policyNumber, MaturityAction action, Integer termMonths,
+                                                      tz.co.nlolo.lifeplatform.PayoutRoute route, String recordedBy, String idempotencyKey);
+
     /** Finance pays a matured deposit that had no number to go to. Once per key. */
     DepositPeriodView payOutMaturedDeposit(String policyNumber, String payeeRef, String requestedBy, String idempotencyKey);
+
+    /** The same, by the route finance chose: mobile money, a bank transfer or a cheque (2026-10-28). */
+    DepositPeriodView payOutMaturedDeposit(String policyNumber, tz.co.nlolo.lifeplatform.PayoutRoute route, String requestedBy, String idempotencyKey);
 
     /** Matured deposits whose money waits for a payee, longest-waiting first. */
     List<AwaitingPayeeView> listAwaitingPayee();
@@ -195,6 +202,9 @@ public interface AccumulationApi {
 
     /** Finance pays a matured term account that had no number to go to, or whose payment failed. Once per key. */
     TermAccountView payOutMaturedTermAccount(String policyNumber, String payeeRef, String requestedBy, String idempotencyKey);
+
+    /** The same, by the route finance chose: mobile money, a bank transfer or a cheque (2026-10-28). */
+    TermAccountView payOutMaturedTermAccount(String policyNumber, tz.co.nlolo.lifeplatform.PayoutRoute route, String requestedBy, String idempotencyKey);
 
     /** Matured term accounts whose money waits for a payee, longest-waiting first. */
     List<AwaitingPayeeView> listTermAccountsAwaitingPayee();

@@ -1,3 +1,4 @@
+import type { RouteBody } from '@/features/payments/payoutRoute';
 import { get, post, put } from '@/lib/http';
 import type { MutationAttempt } from '@/lib/idempotency';
 import type {
@@ -318,8 +319,9 @@ export function getSurrenderRequest(policyNumber: string): Promise<SurrenderRequ
 }
 
 /** `POST /policies/{n}/surrender` -- records a REQUESTED surrender. Does NOT stop cover. */
-export function requestSurrender(policyNumber: string, payeeRef: string): Promise<SurrenderRequestView> {
-  return post<SurrenderRequestView>(`/policies/${encodeURIComponent(policyNumber)}/surrender`, { payeeRef });
+/** Paid by the route chosen (2026-10-28): mobile money, a bank transfer to a named account, or a cheque. */
+export function requestSurrender(policyNumber: string, route: RouteBody): Promise<SurrenderRequestView> {
+  return post<SurrenderRequestView>(`/policies/${encodeURIComponent(policyNumber)}/surrender`, route);
 }
 
 /** `POST /surrender-requests/{id}/approve` -- finance only, and never the requester. Cover stops. */

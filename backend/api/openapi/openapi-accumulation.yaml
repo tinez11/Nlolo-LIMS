@@ -692,6 +692,11 @@ components:
         payeeRef: { type: [string, "null"] }
         recordedBy: { type: string }
         recordedAt: { type: string, format: date-time }
+        method: { type: [string, "null"], enum: [MOBILE_MONEY, EFT, CHEQUE, null] }
+        payeeBank: { type: [string, "null"] }
+        payeeBranch: { type: [string, "null"] }
+        payeeAccountName: { type: [string, "null"] }
+        payeeAccountNumber: { type: [string, "null"] }
     MaturityInstructionRequest:
       type: object
       required: [action]
@@ -699,11 +704,24 @@ components:
         action: { type: string, enum: [REINVEST, PAY_OUT] }
         termMonths: { type: integer, minimum: 1, maximum: 120 }
         payeeRef: { type: string, maxLength: 200 }
+        method: { type: string, enum: [MOBILE_MONEY, EFT, CHEQUE], description: "How it is paid (2026-10-28); absent is mobile money" }
+        payeeBank: { type: string, maxLength: 100 }
+        payeeBranch: { type: string, maxLength: 100 }
+        payeeAccountName: { type: string, maxLength: 200 }
+        payeeAccountNumber: { type: string, maxLength: 50 }
     DepositPayoutRequest:
       type: object
-      required: [payeeRef]
+      description: >
+        Who is paid and how (2026-10-28): mobile money to payeeRef (the default), a bank transfer to the account the
+        bank fields name, or a cheque made out to payeeRef. A missing field is a 422 naming it.
       properties:
         payeeRef: { type: string, maxLength: 200 }
+        method: { type: string, enum: [MOBILE_MONEY, EFT, CHEQUE], description: "How it is paid (2026-10-28); absent is mobile money" }
+        payeeBank: { type: string, maxLength: 100 }
+        payeeBranch: { type: string, maxLength: 100 }
+        payeeAccountName: { type: string, maxLength: 200 }
+        payeeAccountNumber: { type: string, maxLength: 50 }
+
     Deposit:
       type: object
       required: [policyNumber, periods, interestSoFar, awaitingPayee, termsOffered]
@@ -722,6 +740,11 @@ components:
             payeeRef: { type: [string, "null"] }
             recordedBy: { type: string }
             recordedAt: { type: string, format: date-time }
+            method: { type: [string, "null"], enum: [MOBILE_MONEY, EFT, CHEQUE, null], description: "How a pay-out is paid (2026-10-28)" }
+            payeeBank: { type: [string, "null"] }
+            payeeBranch: { type: [string, "null"] }
+            payeeAccountName: { type: [string, "null"] }
+            payeeAccountNumber: { type: [string, "null"] }
         interestSoFar: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         defaultPayeeRef: { type: [string, "null"], description: "The number the deposit was collected from" }
         awaitingPayee: { type: boolean }

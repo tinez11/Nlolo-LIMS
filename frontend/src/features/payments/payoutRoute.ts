@@ -96,6 +96,19 @@ interface RouteLike {
   payeeAccountNumber?: string | null;
 }
 
+/** A form of just the route -- a surrender, a matured deposit's payee. */
+export const payoutRouteSchema = z.object(payoutRouteFields).superRefine(refineRoute);
+
+/** What a request sends for its route. */
+export type RouteBody = ReturnType<typeof routeBody>;
+
+/** The route as a phrase for a sentence: "mobile money to +255…", "bank transfer to CRDB Bank · …", "cheque to …". */
+export function routeWords(r: RouteLike): string {
+  if (r.method === 'EFT') return `bank transfer to ${describeRoute(r)}`;
+  if (r.method === 'CHEQUE') return `cheque to ${r.payeeRef ?? '—'}`;
+  return `mobile money to ${r.payeeRef ?? '—'}`;
+}
+
 /** One line for a row: "+255712…", "CRDB Bank, Kariakoo · Amina Owner · 0150…", "Cheque to Amina Owner". */
 export function describeRoute(r: RouteLike): string {
   if (r.method === 'EFT') {

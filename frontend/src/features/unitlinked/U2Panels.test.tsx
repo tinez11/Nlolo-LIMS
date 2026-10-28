@@ -37,7 +37,7 @@ describe('U2 panels show list-level refusals', () => {
       />,
     );
     fireEvent.change(screen.getByLabelText('Gross amount (TZS)'), { target: { value: '150000' } });
-    fireEvent.change(screen.getByLabelText('Pay to'), { target: { value: '+255700000600' } });
+    fireEvent.change(screen.getByLabelText('Mobile-money number'), { target: { value: '+255700000600' } });
     fireEvent.change(screen.getByLabelText('From EQ1'), { target: { value: '100000' } });
     fireEvent.click(screen.getByRole('button', { name: 'Request withdrawal' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(

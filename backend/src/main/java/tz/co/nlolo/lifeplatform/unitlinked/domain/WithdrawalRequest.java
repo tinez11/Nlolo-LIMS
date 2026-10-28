@@ -49,6 +49,8 @@ public class WithdrawalRequest {
     @Column(name = "policy_number", nullable = false) private String policyNumber;
     @Column(name = "gross_amount", nullable = false) private BigDecimal grossAmount;
     @Column(name = "payee_ref", nullable = false) private String payeeRef;
+    // How it is paid (V4, 2026-10-28): mobile money to payee_ref, or a bank transfer / cheque.
+    @jakarta.persistence.Embedded private tz.co.nlolo.lifeplatform.PayoutRouteColumns route = tz.co.nlolo.lifeplatform.PayoutRouteColumns.mobileMoney();
     @Column(name = "status", nullable = false) private String status;
     @Column(name = "requested_by", nullable = false) private String requestedBy;
     @Column(name = "requested_at", nullable = false) private Instant requestedAt;
@@ -121,6 +123,11 @@ public class WithdrawalRequest {
     public BigDecimal getGrossAmount() { return grossAmount; }
     public List<Named> getNamed() { return List.copyOf(named); }
     public String getPayeeRef() { return payeeRef; }
+
+    /** Paid by this route; its payee becomes payee_ref. */
+    public void payBy(tz.co.nlolo.lifeplatform.PayoutRoute route) { this.payeeRef = route.payee(); this.route = tz.co.nlolo.lifeplatform.PayoutRouteColumns.of(route); }
+
+    public tz.co.nlolo.lifeplatform.PayoutRoute route() { return route.toRoute(payeeRef); }
     public String getStatus() { return status; }
     public String getRequestedBy() { return requestedBy; }
     public Instant getRequestedAt() { return requestedAt; }

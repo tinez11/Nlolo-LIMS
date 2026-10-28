@@ -151,7 +151,7 @@ test.describe('group funeral schemes', () => {
     });
     await asStaff(page, 'e2e/.auth/staff-manager.json', claimUrl, async (manager) => {
       await expect(manager.getByLabel('Approved amount')).toHaveValue('500000.00', { timeout: 30_000 });
-      await manager.getByLabel('Payee reference').fill('+255700000781');
+      await manager.getByLabel('Mobile-money number').fill('+255700000781');
       await manager.getByRole('button', { name: 'Approve claim' }).click();
       await manager.getByRole('button', { name: 'Approve and pay' }).click();
       await expect(manager.getByText(/Settlement requested|Settled/).first()).toBeVisible({ timeout: 60_000 });

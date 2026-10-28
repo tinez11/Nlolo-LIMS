@@ -245,7 +245,7 @@ public class AccumulationController {
                                                 @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                                 @AuthenticationPrincipal Jwt jwt) {
         return DepositResponse.Instruction.from(api.recordMaturityInstruction(policyNumber, body.action(), body.termMonths(),
-            body.payeeRef(), jwt.getSubject(), idempotencyKey));
+            body.route(), jwt.getSubject(), idempotencyKey));
     }
 
     @GetMapping("/deposits/awaiting-payee")
@@ -261,7 +261,7 @@ public class AccumulationController {
     public DepositResponse.Period payOut(@PathVariable String policyNumber, @Valid @RequestBody DepositBodies.Payout body,
                                          @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                          @AuthenticationPrincipal Jwt jwt) {
-        var paid = api.payOutMaturedDeposit(policyNumber, body.payeeRef(), jwt.getSubject(), idempotencyKey);
+        var paid = api.payOutMaturedDeposit(policyNumber, body.route(), jwt.getSubject(), idempotencyKey);
         return DepositResponse.Period.from(paid, api.findAccount(policyNumber).orElseThrow().currency());
     }
 
@@ -288,7 +288,7 @@ public class AccumulationController {
     public TermAccountResponse payOutTermAccount(@PathVariable String policyNumber, @Valid @RequestBody DepositBodies.Payout body,
                                                  @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                                  @AuthenticationPrincipal Jwt jwt) {
-        return TermAccountResponse.from(api.payOutMaturedTermAccount(policyNumber, body.payeeRef(), jwt.getSubject(),
+        return TermAccountResponse.from(api.payOutMaturedTermAccount(policyNumber, body.route(), jwt.getSubject(),
             idempotencyKey));
     }
 }

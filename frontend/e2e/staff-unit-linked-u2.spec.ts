@@ -199,7 +199,7 @@ test.describe('unit-linked U2', () => {
     // ---- A withdrawal from a policy holding nothing is refused, in the server's words.
     const withdrawal = page.getByRole('region', { name: 'Partial withdrawal' });
     await withdrawal.getByLabel('Gross amount (TZS)').fill('50000');
-    await withdrawal.getByLabel('Pay to').fill('+255700000600');
+    await withdrawal.getByLabel('Mobile-money number').fill('+255700000600');
     await withdrawal.getByRole('button', { name: 'Request withdrawal' }).click();
     await expect(withdrawal.getByText('A withdrawal is at least 100,000.00 TZS')).toBeVisible();
     await withdrawal.getByLabel('Gross amount (TZS)').fill('100000');

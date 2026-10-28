@@ -34,6 +34,8 @@ import {
 } from './u2Forms';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { StaffName } from '@/components/StaffName';
+import { PayoutRouteFields } from '@/features/payments/PayoutRouteFields';
+import { BLANK_ROUTE, routeWords } from '@/features/payments/payoutRoute';
 
 /**
  * The U2 actions on a unit-linked policy's Units tab (product step 6): premium redirection, a fund switch, a partial
@@ -225,7 +227,7 @@ export function WithdrawalPanel({
   const form = useForm<WithdrawalValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(withdrawalSchema(minimum, currency)),
-    defaultValues: { grossAmount: '', funds: heldFunds.map((fundCode) => ({ fundCode, amount: '' })), payeeRef: '' },
+    defaultValues: { grossAmount: '', funds: heldFunds.map((fundCode) => ({ fundCode, amount: '' })), ...BLANK_ROUTE },
   });
   const live = (withdrawals?.data ?? []).find((w) => w.status === 'REQUESTED' || w.status === 'APPROVED');
   return (
@@ -247,10 +249,8 @@ export function WithdrawalPanel({
             <FormField label={`Gross amount (${currency})`} error={form.formState.errors.grossAmount?.message}>
               <Input inputSize="sm" inputMode="decimal" {...form.register('grossAmount')} />
             </FormField>
-            <FormField label="Pay to" error={form.formState.errors.payeeRef?.message}>
-              <Input inputSize="sm" placeholder="+255712345678" {...form.register('payeeRef')} />
-            </FormField>
           </div>
+          <PayoutRouteFields form={form} />
           <p className="text-xs text-muted-foreground">From named funds (optional; leave empty to sell from each fund in proportion):</p>
           <div className="flex flex-wrap gap-3">
             {heldFunds.map((code, i) => (
@@ -302,7 +302,7 @@ function WithdrawalCard({
   return (
     <div className="space-y-2 rounded-md border border-border p-3" aria-label="Withdrawal in progress">
       <p className="text-xs">
-        {m(withdrawal.grossAmount)} to {withdrawal.payeeRef}, requested by <StaffName subject={withdrawal.requestedBy} />
+        {m(withdrawal.grossAmount)} by {routeWords(withdrawal)}, requested by <StaffName subject={withdrawal.requestedBy} />
         {withdrawal.approvedBy && <>, approved by <StaffName subject={withdrawal.approvedBy} /> — waiting for its price</>}.
       </p>
       <dl className="grid grid-cols-2 gap-x-4 text-xs sm:grid-cols-4">

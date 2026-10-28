@@ -149,15 +149,19 @@ class UnitLinkedU2AccountingIntegrationTest {
         assertThat(credit(tenant, "5110")).isEqualByComparingTo("0.00");
         assertLiabilityIsTheUnits(tenant);
 
-        // A 200,000 top-up: cash into 2140, then 196,000 of it into units and 4,000 of allocation charge. The mock rail
-        // accepts the collection, so payment confirms it at once; the publish below is a redelivery, posting nothing twice.
+        // A 200,000 top-up: cash into 2140, then 196,000 of it into units and 4,000 of allocation charge. Accepted by the
+        // rail is not paid (a1f77080, 2026-10-27): nothing posts until the money is confirmed -- the publish below is that
+        // confirmation, and publishing it twice posts nothing twice.
         BigDecimal unearned = credit(tenant, "2121");
         var topUp = asTenant(tenant, () -> api.requestTopUp(policy,
             new TopUpInput(new BigDecimal("200000.00"), "+255700000700", List.of()), "staff-one", UUID.randomUUID().toString()));
-        assertThat(credit(tenant, "2121").subtract(unearned)).isEqualByComparingTo("200000.00");
-        fixtures.publish(tenant, "payment.PaymentConfirmed", Map.of("paymentRequestId", UUID.randomUUID(),
+        assertThat(credit(tenant, "2121").subtract(unearned)).isEqualByComparingTo("0.00");
+        Map<String, Object> confirmed = Map.of("paymentRequestId", UUID.randomUUID(),
             "sourceRef", topUp.topUpId().toString(), "purpose", "UL_TOP_UP", "confirmedAt", now.get().toString(),
-            "amount", Map.of("amount", "200000.00", "currencyCode", "TZS")));
+            "amount", Map.of("amount", "200000.00", "currencyCode", "TZS"));
+        fixtures.publish(tenant, "payment.PaymentConfirmed", confirmed);
+        assertThat(credit(tenant, "2121").subtract(unearned)).isEqualByComparingTo("200000.00");
+        fixtures.publish(tenant, "payment.PaymentConfirmed", confirmed);
         assertThat(entries(tenant, "unitlinked.TopUpReceived")).isEqualTo(1);
         priceOn(tenant, TODAY.plusDays(3), "1.000000", "1.000000");
         assertThat(credit(tenant, "2121")).isEqualByComparingTo(unearned);        // in and straight out again

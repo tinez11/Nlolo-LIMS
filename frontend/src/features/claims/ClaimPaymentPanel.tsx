@@ -7,6 +7,8 @@ import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectPayouts, useClaimStore } from '@/store/claimStore';
 import { whatHappensNext } from './payoutNextStep';
+import { methodWords } from '@/features/payments/paymentWords';
+import { describeRoute } from '@/features/payments/payoutRoute';
 
 /**
  * What became of the money once the claim was approved.
@@ -57,13 +59,13 @@ export function ClaimPaymentPanel({ claimId, claimStatus }: { claimId: string; c
             <span className="text-sm font-medium">
               {formatMoney(payout.amount)}{' '}
               <span className="font-normal text-muted-foreground">
-                by {payout.method === 'EFT' ? 'bank transfer' : 'mobile money'}
+                by {methodWords(payout.method).toLowerCase()}
               </span>
             </span>
             <StatusBadge kind="disbursement" value={payout.status} />
           </div>
           <p className="text-xs text-muted-foreground">
-            To <span className="font-medium">{payout.payeeRef}</span> · instructed{' '}
+            To <span className="font-medium">{describeRoute(payout)}</span> · instructed{' '}
             {formatInstant(payout.createdAt)}
             {payout.reference && <> · reference {payout.reference}</>}
           </p>

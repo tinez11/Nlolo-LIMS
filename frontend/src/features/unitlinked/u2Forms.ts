@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { payoutRouteFields, refineRoute, routeBody } from '@/features/payments/payoutRoute';
 import type { FundShare, UnitLinkedOptionsView, SwitchRequestBody, UnitLinkedTopUpRequest, WithdrawalRequestBody } from '@/api/types';
 
 /**
@@ -75,7 +76,7 @@ const namedRow = z.object({ fundCode: z.string(), amount: z.string().trim() });
 
 export function withdrawalSchema(minimum: number | null, currency: string) {
   return z
-    .object({ grossAmount: z.string().trim(), funds: z.array(namedRow), payeeRef: z.string().trim() })
+    .object({ grossAmount: z.string().trim(), funds: z.array(namedRow), ...payoutRouteFields })
     .superRefine((v, ctx) => {
       const gross = Number(v.grossAmount);
       if (!AMOUNT.test(v.grossAmount) || !(gross > 0)) {
@@ -83,7 +84,8 @@ export function withdrawalSchema(minimum: number | null, currency: string) {
       } else if (minimum !== null && gross < minimum) {
         ctx.addIssue({ code: 'custom', path: ['grossAmount'], message: `A withdrawal is at least ${money(minimum)} ${currency}` });
       }
-      if (v.payeeRef === '') ctx.addIssue({ code: 'custom', path: ['payeeRef'], message: 'A withdrawal needs the payee to pay' });
+      // How it is paid (2026-10-28): mobile money, a bank transfer to a named account, or a cheque.
+      refineRoute(v, ctx);
       const named = v.funds.filter((f) => f.amount !== '');
       if (named.length === 0) return;
       if (named.some((f) => !AMOUNT.test(f.amount) || !(Number(f.amount) > 0))) {
@@ -105,7 +107,7 @@ export type WithdrawalValues = z.infer<ReturnType<typeof withdrawalSchema>>;
 export const toWithdrawalRequest = (v: WithdrawalValues): WithdrawalRequestBody => ({
   grossAmount: v.grossAmount,
   funds: v.funds.filter((f) => f.amount !== '').map((f) => ({ fundCode: f.fundCode, amount: f.amount })),
-  payeeRef: v.payeeRef,
+  ...routeBody(v),
 });
 
 // ---- Top-up ----

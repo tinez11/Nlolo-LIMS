@@ -163,7 +163,7 @@ class FuneralClaimIntegrationTest {
 
         asTenant(TENANT, () -> {
             claimsApi.decideSettlement(claim.claimId(), false, null, null, "Died inside the waiting period",
-                ClaimDeclineReason.WITHIN_WAITING_PERIOD, null, null, "claims-manager");
+                ClaimDeclineReason.WITHIN_WAITING_PERIOD, (String) null, null, "claims-manager");
             return null;
         });
         assertThat(status(claim.claimId())).isEqualTo(ClaimStatus.REJECTED);
@@ -183,7 +183,7 @@ class FuneralClaimIntegrationTest {
         assess(claim.claimId());
         asTenant(TENANT, () -> {
             claimsApi.decideSettlement(claim.claimId(), false, null, null, "Died inside the waiting period",
-                ClaimDeclineReason.WITHIN_WAITING_PERIOD, null, null, "claims-manager");
+                ClaimDeclineReason.WITHIN_WAITING_PERIOD, (String) null, null, "claims-manager");
             return null;
         });
 
@@ -209,7 +209,7 @@ class FuneralClaimIntegrationTest {
 
         assertThatThrownBy(() -> asTenant(TENANT, () -> {
             claimsApi.decideSettlement(claim.claimId(), false, null, null, "No", ClaimDeclineReason.WITHIN_WAITING_PERIOD,
-                null, null, "claims-manager");
+                (String) null, null, "claims-manager");
             return null;
         })).isInstanceOf(ClaimValidationException.class).hasMessageContaining("that window was not open");
     }
@@ -268,7 +268,7 @@ class FuneralClaimIntegrationTest {
         ClaimView claim = register(policyNumber, life(policyNumber, "Zawadi").coveredLifeId(), juma, false);
         assess(claim.claimId());
         asTenant(TENANT, () -> {
-            claimsApi.decideSettlement(claim.claimId(), false, null, null, "Not covered: fraud", null, null, null, "claims-manager");
+            claimsApi.decideSettlement(claim.claimId(), false, null, null, "Not covered: fraud", null, (String) null, null, "claims-manager");
             return null;
         });
 

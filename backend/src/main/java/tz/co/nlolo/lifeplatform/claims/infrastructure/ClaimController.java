@@ -263,8 +263,19 @@ public class ClaimController {
         BigDecimal approvedAmount = request.approvedAmount() != null
             ? new BigDecimal(request.approvedAmount().amount()) : null;
         String approvedCurrency = request.approvedAmount() != null ? request.approvedAmount().currencyCode() : null;
+        tz.co.nlolo.lifeplatform.PayoutRoute route = null;
+        boolean anyRoute = request.method() != null || request.payeeBank() != null || request.payeeAccountNumber() != null
+            || (request.payeeRef() != null && !request.payeeRef().isBlank());
+        if (Boolean.TRUE.equals(request.approved()) && anyRoute) {
+            try {
+                route = tz.co.nlolo.lifeplatform.PayoutRoute.of(request.method(), request.payeeRef(), request.payeeBank(),
+                    request.payeeBranch(), request.payeeAccountName(), request.payeeAccountNumber());
+            } catch (IllegalArgumentException e) {
+                throw new tz.co.nlolo.lifeplatform.claims.api.ClaimValidationException(e.getMessage());
+            }
+        }
         claimsApi.decideSettlement(claimId, request.approved(), approvedAmount, approvedCurrency,
-            request.rejectionReason(), request.declineReason(), request.payeeRef(), idempotencyKey, jwt.getSubject());
+            request.rejectionReason(), request.declineReason(), route, idempotencyKey, jwt.getSubject());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(ClaimResponseDto.from(claimsApi.getClaim(claimId)));
     }
 

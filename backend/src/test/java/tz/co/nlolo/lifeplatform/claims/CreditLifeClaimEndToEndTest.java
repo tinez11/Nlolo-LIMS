@@ -161,6 +161,7 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -285,7 +286,7 @@ class CreditLifeClaimEndToEndTest {
 
         assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, false, null, null,
             "assessor believes suicide", ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION,
-            null, null, "assessor.two"))
+            (String) null, null, "assessor.two"))
             .isInstanceOf(ClaimValidationException.class)
             .hasMessageContaining("was not open on");
     }
@@ -298,7 +299,7 @@ class CreditLifeClaimEndToEndTest {
         UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
 
         claimsApi.decideSettlement(claimId, false, null, null, "assessor believes suicide",
-            ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION, null, null, "assessor.two");
+            ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION, (String) null, null, "assessor.two");
 
         ClaimView declined = claimsApi.getClaim(claimId);
         assertThat(declined.status()).isEqualTo(ClaimStatus.REJECTED);
@@ -318,7 +319,7 @@ class CreditLifeClaimEndToEndTest {
 
         assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, false, null, null,
             "assessor believes suicide", ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION,
-            null, null, "assessor.two"))
+            (String) null, null, "assessor.two"))
             .isInstanceOf(ClaimValidationException.class)
             .hasMessageContaining(DISBURSED.toString());
     }
@@ -330,7 +331,7 @@ class CreditLifeClaimEndToEndTest {
         UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
 
         claimsApi.decideSettlement(claimId, false, null, null, "documents were forged",
-            null, null, null, "assessor.two");
+            null, (String) null, null, "assessor.two");
 
         assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.REJECTED);
     }
@@ -343,7 +344,7 @@ class CreditLifeClaimEndToEndTest {
 
         assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true,
             new BigDecimal("1000000.00"), "TZS", null,
-            ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION, null, idem(), "assessor.two"))
+            ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION, (String) null, idem(), "assessor.two"))
             .isInstanceOf(ClaimValidationException.class)
             .hasMessageContaining("APPROVED");
     }
@@ -452,7 +453,7 @@ class CreditLifeClaimEndToEndTest {
         UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
 
         assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true, PRINCIPAL, "TZS",
-            null, null, idem(), "claims.manager"))
+            null, (String) null, idem(), "claims.manager"))
             // The CEILING refused it -- pinned, so a payee rule firing first cannot pass this.
             .isInstanceOf(ClaimValidationException.class)
             .hasMessageContaining("covered for");
@@ -498,12 +499,12 @@ class CreditLifeClaimEndToEndTest {
         // register a second death claim on the same borrower to show it, and one death claim per
         // life now refuses that registration outright.
         assertThatThrownBy(() -> claimsApi.decideSettlement(claim.claimId(), true, ABOVE_FCL, "TZS",
-            null, null, idem(), "claims.manager"))
+            null, (String) null, idem(), "claims.manager"))
             .isInstanceOf(ClaimValidationException.class)
             .hasMessageContaining("covered for");
 
         claimsApi.decideSettlement(claim.claimId(), true, FCL, "TZS", null,
-            null, idem(), "claims.manager");
+            (String) null, idem(), "claims.manager");
         assertThat(claimsApi.getClaim(claim.claimId()).approvedAmount()).isEqualByComparingTo(FCL);
     }
 
@@ -514,7 +515,7 @@ class CreditLifeClaimEndToEndTest {
         assertThat(borrower().openDeathClaimId()).isEqualTo(claimId);
 
         claimsApi.decideSettlement(claimId, false, null, null, "documents were forged",
-            null, null, idem(), "claims.manager");
+            null, (String) null, idem(), "claims.manager");
         assertThat(borrower().openDeathClaimId())
             .as("a rejected claim is not in progress; the borrower reads as a live loan again")
             .isNull();
