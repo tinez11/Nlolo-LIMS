@@ -92,6 +92,9 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-devadmin}
+      # Keycloak emails a person when their password or second factor changes (2026-10-28) -- the notice that tells
+      # them someone else reset it. Not on every failed login, which it also does by default and which would bury it.
+      KC_SPI_EVENTS_LISTENER_EMAIL_EXCLUDE_EVENTS: LOGIN_ERROR
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: postgres

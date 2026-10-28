@@ -74,6 +74,9 @@ services:
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HTTP_ENABLED: "true"
       KC_PROXY_HEADERS: xforwarded
+      # Keycloak emails a person when their password or second factor changes (2026-10-28) -- the notice that tells
+      # them someone else reset it. Not on every failed login, which it also does by default and which would bury it.
+      KC_SPI_EVENTS_LISTENER_EMAIL_EXCLUDE_EVENTS: LOGIN_ERROR
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD}
     ports:
