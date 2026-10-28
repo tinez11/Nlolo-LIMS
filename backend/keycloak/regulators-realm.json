@@ -8,7 +8,7 @@
   "failureFactor": 5,
   "permanentLockout": false,
   "bruteForceProtected": true,
-  "passwordPolicy": "length(10) and notUsername(undefined) and notEmail(undefined) and passwordHistory(3)",
+  "passwordPolicy": "length(8) and notUsername(undefined) and notEmail(undefined) and passwordHistory(3)",
   "defaultLocale": "en",
   "supportedLocales": ["en","sw"],
   "internationalizationEnabled": true,

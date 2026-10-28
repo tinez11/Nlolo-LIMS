@@ -268,7 +268,7 @@
     ]
   },
   "resetPasswordAllowed": true,
-  "passwordPolicy": "length(10) and notUsername(undefined) and notEmail(undefined) and passwordHistory(3)",
+  "passwordPolicy": "length(8) and notUsername(undefined) and notEmail(undefined) and passwordHistory(3)",
   "bruteForceProtected": true,
   "failureFactor": 5,
   "waitIncrementSeconds": 60,

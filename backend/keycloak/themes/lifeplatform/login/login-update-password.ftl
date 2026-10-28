@@ -7,7 +7,7 @@
   what throws out whoever else had the account.
 
   The rules sentence mirrors the realms' password policy (backend/keycloak/*-realm.json and
-  deploy/keycloak/build-realms.mjs): length 10, not the username or email, not one of the last three.
+  deploy/keycloak/build-realms.mjs): length 8 (user decision, 2026-10-28), not the username or email, not one of the last three.
 -->
 <#macro revealButton target>
     <button type="button" class="lp-reveal" data-password-toggle aria-controls="${target}" aria-pressed="false"
