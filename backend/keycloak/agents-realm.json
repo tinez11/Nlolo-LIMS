@@ -2,6 +2,13 @@
   "realm": "agents",
   "displayName": "Agent portal",
   "loginTheme": "lifeplatform",
+  "resetPasswordAllowed": true,
+  "smtpServer": {
+    "host": "mailpit",
+    "port": "1025",
+    "from": "no-reply@nlolo.local",
+    "fromDisplayName": "Nlolo Life"
+  },
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,
