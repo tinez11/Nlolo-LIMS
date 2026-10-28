@@ -93,8 +93,14 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-devadmin}
       # Keycloak emails a person when their password or second factor changes (2026-10-28) -- the notice that tells
-      # them someone else reset it. Not on every failed login, which it also does by default and which would bury it.
-      KC_SPI_EVENTS_LISTENER_EMAIL_EXCLUDE_EVENTS: LOGIN_ERROR
+      # them someone else reset it. Not on every failed login, which it also does by default and which would bury it,
+      # and not twice: Keycloak 26 raises UPDATE_CREDENTIAL beside UPDATE_PASSWORD for one change, so that one is off
+      # (a second factor still has its own UPDATE_TOTP notice).
+      KC_SPI_EVENTS_LISTENER_EMAIL_EXCLUDE_EVENTS: LOGIN_ERROR,UPDATE_CREDENTIAL
+      # The agents' and customers' reset by text (2026-10-28): Keycloak asks the platform, which holds the phone
+      # numbers, to text the code. Signed with a secret the backend holds as PASSWORD_RESET_SMS_SECRET.
+      LP_RESET_SMS_URL: ${LP_RESET_SMS_URL:-http://host.docker.internal:8080/internal/password-reset/sms}
+      LP_RESET_SMS_SECRET: ${PASSWORD_RESET_SMS_SECRET:-dev-only-reset-sms-secret}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: postgres
@@ -115,6 +121,9 @@ services:
       # above. That is harmless: --import-realm reads *.json from the top level
       # of that directory and ignores subdirectories.
       - ../keycloak/themes/lifeplatform:/opt/keycloak/themes/lifeplatform:ro
+      # The platform's Keycloak extensions, built by `./mvnw -f keycloak/extensions/pom.xml package`. start-dev
+      # picks a provider up on start; rebuild the jar and restart this container after changing it.
+      - ../keycloak/extensions/target/lifeplatform-keycloak.jar:/opt/keycloak/providers/lifeplatform-keycloak.jar:ro
     depends_on:
       postgres:
         condition: service_healthy

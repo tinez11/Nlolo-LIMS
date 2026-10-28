@@ -2,6 +2,7 @@
   "realm": "regulators",
   "displayName": "Regulator access",
   "loginTheme": "lifeplatform",
+  "emailTheme": "lifeplatform",
   "maxFailureWaitSeconds": 900,
   "waitIncrementSeconds": 60,
   "failureFactor": 5,

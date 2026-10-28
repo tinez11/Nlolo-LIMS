@@ -182,6 +182,10 @@ public class SecurityConfig {
                 // it is a differently-authenticated one. Scoped to the exact path, never a
                 // prefix wildcard.
                 .requestMatchers(HttpMethod.POST, MobileMoneyHmacFilter.CALLBACK_PATH).permitAll()
+                // Keycloak asking for a password-reset code to be texted (2026-10-28): signed the same way, and checked by
+                // PasswordResetSmsController itself before it does anything -- differently authenticated, not open. The
+                // literal rather than the controller's constant, which would make iam depend on omnichannel internals.
+                .requestMatchers(HttpMethod.POST, "/internal/password-reset/sms").permitAll()
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2
                 .authenticationManagerResolver(issuerAuthenticationManagerResolver))

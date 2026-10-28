@@ -18,6 +18,14 @@
 	# The console calls /api on its own origin and the prefix is stripped here -- exactly what the Vite dev proxy
 	# does, so dev and production differ in no way the code can see. One origin also means no CORS: the backend has
 	# never had a CORS configuration, and this is why it does not need one.
+	# Keycloak's calls into the platform (2026-10-28: texting a reset code) come over the private network. Signed as
+	# they are, they have no business arriving from outside.
+	# A handle, not a bare respond: Caddy runs handle before handle_path, and a bare respond after it, where it would
+	# never be reached.
+	handle /api/internal/* {
+		respond 404
+	}
+
 	handle_path /api/* {
 		reverse_proxy backend:8080
 	}

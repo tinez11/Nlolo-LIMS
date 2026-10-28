@@ -132,6 +132,11 @@ mobile-money:
   callback-hmac-secret: ${MOBILE_MONEY_CALLBACK_HMAC_SECRET:dev-only-placeholder-secret}
   callback-replay-window-seconds: ${MOBILE_MONEY_CALLBACK_REPLAY_WINDOW_SECONDS:300}
 
+# The secret Keycloak signs its "text this person a reset code" requests with (2026-10-28). Keycloak holds the same value
+# as LP_RESET_SMS_SECRET. The dev default is refused in production by ProductionSettingsGuard.
+password-reset:
+  sms-secret: ${PASSWORD_RESET_SMS_SECRET:dev-only-reset-sms-secret}
+
 communication:
   # The SMS aggregator: NextSMS (messaging-service.co.tz) in production. DEFAULTS TO THE LOCAL
   # MOCK (infra/docker-compose.yml's mock-sms-gateway), which is load-bearing rather than a

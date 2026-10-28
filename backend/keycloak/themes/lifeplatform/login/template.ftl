@@ -37,7 +37,7 @@
   3. Base loads its keyboard-menu script on every page. Here it loads only when
      the locale menu is actually rendered.
 -->
-<#macro registrationLayout bodyClass="" displayInfo=false displayMessage=true displayRequiredFields=false pageRealm="" pageNote="">
+<#macro registrationLayout bodyClass="" displayInfo=false displayMessage=true displayRequiredFields=false pageRealm="" pageNote="" hideUsername=false>
 
 <#--
   The realm's human name where the administrator set one, its machine name
@@ -238,7 +238,9 @@
                 <p class="lp-sub">${kcSanitize(msg("lpSigningInTo", pageRealm))?no_esc}</p>
             </#if>
 
-            <#if auth?has_content && auth.showUsername() && !auth.showResetCredentials()>
+            <#-- hideUsername (2026-10-28): the reset code page is not signing anyone in, and naming the account there
+                 would tell a stranger which name they typed matched. -->
+            <#if !hideUsername && auth?has_content && auth.showUsername() && !auth.showResetCredentials()>
                 <#nested "show-username">
                 <div id="kc-username" class="lp-attempted">
                     <span class="lp-attempted__cap">${msg("lpSigningInAs")}</span>
