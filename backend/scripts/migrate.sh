@@ -65,8 +65,9 @@ flyway() {
 
 # Every folder under db-migrations/ except _post-migration (configure-db.sh's). benefitpayout was missing from this
 # list from the day product step 2 created it, so any environment built from nothing came up with no payout schema at
-# all. MigrationScriptCoverageTest now fails the build when a folder is not listed here.
-MODULES="party product underwriting policy policyloan billing claims payment audit distribution reinsurance finaccounting regreporting communication document refdata benefitpayout accumulation bonus annuity unitlinked omnichannel reporting"
+# all. MigrationScriptCoverageTest now fails the build when a folder is not listed here. iam (staff roles and
+# permissions, 2026-10-26) was missing the same way until 2026-10-28.
+MODULES="party product underwriting policy policyloan billing claims payment audit distribution reinsurance finaccounting regreporting communication document refdata benefitpayout accumulation bonus annuity unitlinked omnichannel reporting iam"
 
 applied=0
 for mod in $MODULES; do
