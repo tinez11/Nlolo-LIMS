@@ -100,6 +100,19 @@
   "registrationAllowed": false,
   "clients": [
     {
+      "clientId": "lifeplatform-agents-admin",
+      "name": "Life Platform agent login admin (service account)",
+      "description": "The backend creates, closes and resets agent logins through this service account (manage-users in this realm only) when staff use the Agent login panel on an agent's page. No browser flows.",
+      "enabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "dev-secret-agents-admin"
+    },
+    {
       "clientId": "lifeplatform-app",
       "enabled": true,
       "publicClient": false,
@@ -191,6 +204,17 @@
     }
   ],
   "users": [
+    {
+      "username": "service-account-lifeplatform-agents-admin",
+      "enabled": true,
+      "serviceAccountClientId": "lifeplatform-agents-admin",
+      "clientRoles": {
+        "realm-management": [
+          "manage-users",
+          "view-users"
+        ]
+      }
+    },
     {
       "username": "agent.senior",
       "enabled": true,

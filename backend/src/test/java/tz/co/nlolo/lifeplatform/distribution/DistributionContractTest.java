@@ -202,6 +202,7 @@ class DistributionContractTest {
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
+            "db-migrations/distribution/V8__agent_login.sql",
             // IFRS 17 I3b: a payout reads the commission withholding rate from the accounting policy register.
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
@@ -228,6 +229,9 @@ class DistributionContractTest {
             "db-migrations/payment/V8__benefit_payout_purposes.sql",
             "db-migrations/payment/V9__account_purposes.sql",
             "db-migrations/payment/V17__manual_receipts.sql");
+        // An agent login with no email texts its first password through communication (2026-10-28).
+        MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
+            tz.co.nlolo.lifeplatform.accumulation.DepositTestMigrations.COMMUNICATION);
     }
 
     @AfterAll
@@ -240,6 +244,8 @@ class DistributionContractTest {
     @Autowired private DistributionApi distributionApi;
     @Autowired private CommissionStatementRepository commissionStatementRepository;
     @Autowired private PlatformTransactionManager transactionManager;
+    /** Keycloak's agents realm, as the platform drives it: what is under test is what it is asked to do. */
+    @org.springframework.boot.test.mock.mockito.MockBean private tz.co.nlolo.lifeplatform.distribution.application.AgentLogins agentLogins;
 
     private TransactionTemplate transactionTemplate;
 
@@ -1188,5 +1194,77 @@ class DistributionContractTest {
         mockMvc.perform(post("/agents/{agentId}/reactivate", agent.agentId()).with(financeStaffOf(tenantId)))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.errorCode").value("DISTRIBUTION_INVALID_STATE"));
+    }
+
+    // --- agent logins (2026-10-28) ---------------------------------------------------------------
+
+    /** An agent with only a phone: the login is the phone number, and with no SMS gateway in the test the one-time
+     * password comes back once to hand over, with the reason. */
+    @Test
+    void staffGiveAnActiveAgentALoginAndTheFirstPasswordReachesThem() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Agent agent = onboardAgent(tenantId, "LOGIN-GIVE", null);
+        org.mockito.Mockito.when(agentLogins.create(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(tenantId),
+            org.mockito.ArgumentMatchers.eq(agent.partyId()))).thenReturn("kc-agent-1");
+
+        mockMvc.perform(get("/agents/{agentId}/login", agent.agentId()).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("NONE"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        mockMvc.perform(post("/agents/{agentId}/login", agent.agentId()).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.login.status").value("OPEN"))
+            .andExpect(jsonPath("$.login.username").value(org.hamcrest.Matchers.startsWith("+25576")))
+            .andExpect(jsonPath("$.login.delivery").value("SMS_PASSWORD"))
+            .andExpect(jsonPath("$.temporaryPassword").isNotEmpty())
+            .andExpect(jsonPath("$.notice").value(org.hamcrest.Matchers.startsWith("The text was not sent")))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        org.mockito.Mockito.verify(agentLogins).setTemporaryPassword(org.mockito.ArgumentMatchers.eq("kc-agent-1"),
+            org.mockito.ArgumentMatchers.anyString());
+
+        // One login per agent: a second is a conflict, not a second user.
+        mockMvc.perform(post("/agents/{agentId}/login", agent.agentId()).with(financeStaffOf(tenantId)))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("DISTRIBUTION_INVALID_STATE"));
+        // Someone who cannot manage agents cannot give one.
+        mockMvc.perform(post("/agents/{agentId}/login", agent.agentId()).with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+    }
+
+    /** The login follows the agent: suspended, it is closed and they are signed out; reactivated, it opens again. A
+     * login staff closed themselves stays closed. */
+    @Test
+    void suspendingAnAgentClosesTheirLoginAndReactivatingOpensIt() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Agent agent = onboardAgent(tenantId, "LOGIN-SUSP", null);
+        org.mockito.Mockito.when(agentLogins.create(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(tenantId),
+            org.mockito.ArgumentMatchers.eq(agent.partyId()))).thenReturn("kc-agent-2");
+        mockMvc.perform(post("/agents/{agentId}/login", agent.agentId()).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(post("/agents/{agentId}/suspend", agent.agentId()).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk());
+        mockMvc.perform(get("/agents/{agentId}/login", agent.agentId()).with(financeStaffOf(tenantId)))
+            .andExpect(jsonPath("$.status").value("SUSPENDED"));
+        org.mockito.Mockito.verify(agentLogins).setEnabled("kc-agent-2", false);
+
+        mockMvc.perform(post("/agents/{agentId}/reactivate", agent.agentId()).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk());
+        mockMvc.perform(get("/agents/{agentId}/login", agent.agentId()).with(financeStaffOf(tenantId)))
+            .andExpect(jsonPath("$.status").value("OPEN"));
+        org.mockito.Mockito.verify(agentLogins).setEnabled("kc-agent-2", true);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/agents/{agentId}/login", agent.agentId())
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("CLOSED"))
+            .andExpect(jsonPath("$.closedBy").value("finance-officer"));
+        mockMvc.perform(post("/agents/{agentId}/suspend", agent.agentId()).with(financeStaffOf(tenantId)));
+        mockMvc.perform(post("/agents/{agentId}/reactivate", agent.agentId()).with(financeStaffOf(tenantId)));
+        mockMvc.perform(get("/agents/{agentId}/login", agent.agentId()).with(financeStaffOf(tenantId)))
+            .andExpect(jsonPath("$.status").value("CLOSED"));
     }
 }

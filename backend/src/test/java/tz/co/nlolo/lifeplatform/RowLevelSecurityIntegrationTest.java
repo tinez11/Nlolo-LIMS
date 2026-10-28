@@ -222,6 +222,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
+            "db-migrations/distribution/V8__agent_login.sql",
             // M8 (Task 9) additions. reinsurance/V1 enabled RLS on only ONE of its three tables
             // (reinsurance_treaty) and granted app_role nothing; V2 is what adds both cession's and
             // claim_recovery's policies, plus the grants that let app_role reach the schema at all.

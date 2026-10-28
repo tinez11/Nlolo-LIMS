@@ -173,6 +173,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
+            "db-migrations/distribution/V8__agent_login.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");

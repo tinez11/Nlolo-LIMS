@@ -235,6 +235,7 @@ class ClaimAndCommissionPostingEndToEndTest {
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
+            "db-migrations/distribution/V8__agent_login.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",

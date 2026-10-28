@@ -29,6 +29,7 @@ import {
   useDistributionStore,
 } from '@/store/distributionStore';
 import { useProductStore } from '@/store/productStore';
+import { AgentLoginPanel } from './AgentLoginPanel';
 import { CommissionPlanPanel } from './CommissionPlanPanel';
 import { AgentCommission } from './AgentCommission';
 import { Panel } from '@/components/Panel';
@@ -106,6 +107,11 @@ export function AgentDetailPage() {
       />
 
       <DetailLayout record={renderRecord()}>
+        {/* First (2026-10-28): an agent with no login cannot sign in at all, so a new agent's page opens on it. */}
+        <Panel title="Agent login" subtitle="Signing in to the agent console">
+          <AgentLoginPanel agentId={agentId} />
+        </Panel>
+
         <Panel title="Commission plan" subtitle="Per product — a plan hangs off a product, not this agent.">
           <CommissionPlanPanel agentId={agentId} products={products.data ?? []} canManage={canManage} />
         </Panel>

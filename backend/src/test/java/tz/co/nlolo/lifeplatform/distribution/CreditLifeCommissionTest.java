@@ -188,7 +188,8 @@ class CreditLifeCommissionTest {
             "db-migrations/distribution/V4__partial_reversals.sql",
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
-            "db-migrations/distribution/V7__projection_policyholder.sql");
+            "db-migrations/distribution/V7__projection_policyholder.sql",
+            "db-migrations/distribution/V8__agent_login.sql");
 
         MinioClient minio = MinioClient.builder()
             .endpoint(MINIO.getS3URL())

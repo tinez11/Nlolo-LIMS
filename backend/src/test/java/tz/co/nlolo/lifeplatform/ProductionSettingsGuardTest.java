@@ -17,6 +17,8 @@ class ProductionSettingsGuardTest {
         s.put("minio.access-key", "platform-docs");
         s.put("minio.secret-key", "Lk2-real-object-store-secret");
         s.put("app.portal.keycloak.client-secret", "Pt7-real-portal-secret");
+        s.put("app.staff-admin.keycloak.client-secret", "Sa3-real-staff-admin-secret");
+        s.put("app.agent-logins.keycloak.client-secret", "Ag6-real-agents-admin-secret");
         s.put("mobile-money.callback-hmac-secret", "Hm4-real-hmac-secret");
         s.put("password-reset.sms-secret", "Rs5-real-reset-sms-secret");
         s.put("communication.sms-gateway.live", "true");

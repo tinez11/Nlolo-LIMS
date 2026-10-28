@@ -1,4 +1,4 @@
-import { get, post, put } from '@/lib/http';
+import { del, get, post, put } from '@/lib/http';
 import type { components as DistributionComponents } from '@/types/api/distribution';
 import type { MutationAttempt } from '@/lib/idempotency';
 import type {
@@ -203,4 +203,29 @@ export function requestPayout(
     request,
     { headers: attempt.headers() },
   );
+}
+
+// ---- An agent's login to the agent console (2026-10-28) ----
+
+export type AgentLoginView = DistributionComponents['schemas']['AgentLoginView'];
+export type AgentLoginIssued = DistributionComponents['schemas']['AgentLoginIssued'];
+
+/** `GET /agents/{agentId}/login` -- agents.view. NONE until someone gives one. */
+export function getAgentLogin(agentId: string): Promise<AgentLoginView> {
+  return get<AgentLoginView>(`/agents/${encodeURIComponent(agentId)}/login`);
+}
+
+/** `POST /agents/{agentId}/login` -- agents.manage. Creates the login, or opens a closed one, and sends a password. */
+export function giveAgentLogin(agentId: string): Promise<AgentLoginIssued> {
+  return post<AgentLoginIssued>(`/agents/${encodeURIComponent(agentId)}/login`, {});
+}
+
+/** `POST /agents/{agentId}/login/password` -- agents.manage. A new password for an open login. */
+export function sendAgentPassword(agentId: string): Promise<AgentLoginIssued> {
+  return post<AgentLoginIssued>(`/agents/${encodeURIComponent(agentId)}/login/password`, {});
+}
+
+/** `DELETE /agents/{agentId}/login` -- agents.manage. Closes it and signs the agent out everywhere. */
+export function closeAgentLogin(agentId: string): Promise<AgentLoginView> {
+  return del<AgentLoginView>(`/agents/${encodeURIComponent(agentId)}/login`);
 }

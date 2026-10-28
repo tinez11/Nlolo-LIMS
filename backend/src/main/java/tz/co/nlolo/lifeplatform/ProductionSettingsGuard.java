@@ -23,6 +23,8 @@ public class ProductionSettingsGuard {
         new String[] {"minio.access-key", "minioadmin"},
         new String[] {"minio.secret-key", "minioadmin"},
         new String[] {"app.portal.keycloak.client-secret", "dev-secret-"},
+        new String[] {"app.staff-admin.keycloak.client-secret", "dev-secret-"},
+        new String[] {"app.agent-logins.keycloak.client-secret", "dev-secret-"},
         new String[] {"mobile-money.callback-hmac-secret", "dev-only-placeholder-secret"},
         new String[] {"password-reset.sms-secret", "dev-only-reset-sms-secret"});
 
