@@ -63,6 +63,8 @@ import { CustomerClaimsPage } from '@/features/customer/CustomerClaimsPage';
 import { CustomerReportClaimPage } from '@/features/customer/CustomerReportClaimPage';
 import { CustomerDocumentsPage } from '@/features/customer/CustomerDocumentsPage';
 import { CustomerProductsPage } from '@/features/customer/CustomerProductsPage';
+import { CustomerQuotePage } from '@/features/customer/CustomerQuotePage';
+import { CustomerApplyPage } from '@/features/customer/CustomerApplyPage';
 import { CustomerHomePage } from '@/features/customer/CustomerHomePage';
 import { CustomerMessagesPage } from '@/features/customer/CustomerMessagesPage';
 import { CustomerPayPage } from '@/features/customer/CustomerPayPage';
@@ -883,7 +885,10 @@ const CUSTOMER_SCREENS: Screen[] = [
   { path: 'claims/new', element: <CustomerReportClaimPage />, reach: 'drill-in' },
   { path: 'claims/:claimId', element: <CustomerClaimPage />, reach: 'drill-in' },
   { path: 'documents', element: <CustomerDocumentsPage />, reach: { group: 'my-cover', label: 'Documents', icon: FileText } },
-  { path: 'products', element: <CustomerProductsPage />, reach: { group: 'my-cover', label: 'Products', icon: Package } },
+  // Get cover (2026-10-29): start from a need, price it one question at a time, then apply straight to underwriting.
+  { path: 'products', element: <CustomerProductsPage />, reach: { group: 'my-cover', label: 'Get cover', icon: Package } },
+  { path: 'products/:productId', element: <CustomerQuotePage />, reach: 'drill-in' },
+  { path: 'products/:productId/apply', element: <CustomerApplyPage />, reach: 'drill-in' },
   { path: 'applications', element: <CustomerApplicationsPage />, reach: { group: 'my-cover', label: 'My applications', icon: ScrollText } },
   { path: 'pay', element: <CustomerPayPage />, reach: { group: 'my-cover', label: 'Pay a premium', icon: Wallet } },
   { path: 'messages', element: <CustomerMessagesPage />, reach: { group: 'my-cover', label: 'Messages', icon: MessageSquare } },

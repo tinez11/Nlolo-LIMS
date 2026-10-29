@@ -51,11 +51,12 @@ export function getCustomerProducts(): Promise<CustomerProduct[]> {
   return get<CustomerProduct[]>('/customer/products');
 }
 
+/** What a customer asks to be priced, by what the product is (2026-10-29). */
+export type CustomerQuoteRequest = NonNullable<paths['/customer/products/{productId}/quote']['post']['requestBody']>['content']['application/json'];
+export type CustomerApplicationRequest = NonNullable<paths['/customer/applications']['post']['requestBody']>['content']['application/json'];
+
 /** Step 5: an indicative price on the customer's own details -- not an offer. */
-export function quoteCustomerProduct(
-  productId: string,
-  request: { sumAssured: number; frequency: 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY' },
-): Promise<CustomerQuote> {
+export function quoteCustomerProduct(productId: string, request: CustomerQuoteRequest): Promise<CustomerQuote> {
   return post<CustomerQuote>(`/customer/products/${enc(productId)}/quote`, request);
 }
 
@@ -64,10 +65,11 @@ export function getCustomerApplications(): Promise<CustomerApplication[]> {
   return get<CustomerApplication[]>('/customer/applications');
 }
 
-/** Step 5: ask for a product -- one application per product while it is reviewed (409 for a second). */
-export function applyForProduct(request: {
-  productId: string; sumAssured: number | null; frequency: 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY' | null;
-}): Promise<CustomerApplication> {
+/**
+ * Step 5: ask for a product -- one application per product while it is reviewed (409 for a second). Since 2026-10-29 it
+ * carries who receives the money and the health answers, straight to underwriting.
+ */
+export function applyForProduct(request: CustomerApplicationRequest): Promise<CustomerApplication> {
   return post<CustomerApplication>('/customer/applications', request);
 }
 
