@@ -7,7 +7,6 @@ import type { InvoiceView } from '@/api/types';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
-import { Panel } from '@/components/Panel';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +15,7 @@ import { formatDate } from '@/lib/dates';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { isMobileNumber, owed, payableNow } from './customerPayments';
 import { money } from './customerText';
+import { useWords } from './words';
 
 interface PolicyDue {
   policyNumber: string;
@@ -23,16 +23,13 @@ interface PolicyDue {
   invoices: InvoiceView[];
 }
 
-const LATE_TEXT: Record<string, string> = {
-  OVERDUE: 'Overdue', IN_GRACE: 'In the grace period — pay now to keep your cover', PARTIALLY_PAID: 'Part paid',
-};
-
 /**
  * Pay a premium (2026-10-08, the customer portal design step 6; PRD §26-28). Each policy's late premiums and the next
  * one coming up, paid by mobile money: the customer gives the number, the network asks them to approve on their phone,
  * and the premium shows as paid once the money arrives. Receipts are in Documents.
  */
 export function CustomerPayPage() {
+  const w = useWords().portal.pay;
   const [due, setDue] = useState<PolicyDue[] | null>(null);
   const [phone, setPhone] = useState<string | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
@@ -61,7 +58,7 @@ export function CustomerPayPage() {
 
   const refresh = () => setReload((n) => n + 1);
   const header = (
-    <PageHeader title="Pay a premium" description={<>Pay by mobile money. Your receipts are in <Link className="underline" to="/customers/documents">Documents</Link>.</>} />
+    <PageHeader title={w.title} description={<Link className="underline" to="/customers/documents">{w.lead}</Link>} />
   );
   if (error) return <>{header}<div className="px-4 pt-4 sm:px-6"><ErrorPanel error={error} onRetry={refresh} /></div></>;
   if (!due || phone === null) return <LoadingBlock label="Loading what is due" />;
@@ -69,16 +66,20 @@ export function CustomerPayPage() {
   return (
     <>
       {header}
-      <div className="space-y-4 px-4 pb-8 sm:px-6">
+      <div className="w-full max-w-3xl space-y-4 px-4 pb-10 text-base sm:px-6">
         {due.length === 0 ? (
-          <EmptyState title="Nothing to pay" description="Your premiums are paid up. The next one appears here when it is due." />
+          <EmptyState title={w.nothing} description={w.nothingLead} />
         ) : (
           due.map((p) => (
-            <Panel key={p.policyNumber} title={p.productName ?? p.policyNumber} subtitle={p.policyNumber}>
+            <section key={p.policyNumber} className="rounded-2xl border border-border bg-surface shadow-card">
+              <header className="px-4 pt-4 sm:px-5">
+                <h2 className="text-title">{p.productName ?? p.policyNumber}</h2>
+                <p className="font-mono text-xs text-muted-foreground">{p.policyNumber}</p>
+              </header>
               <ul className="divide-y divide-border">
                 {p.invoices.map((i) => <InvoiceRow key={i.invoiceId} invoice={i} defaultPhone={phone} onRefresh={refresh} />)}
               </ul>
-            </Panel>
+            </section>
           ))
         )}
       </div>
@@ -87,6 +88,7 @@ export function CustomerPayPage() {
 }
 
 function InvoiceRow({ invoice, defaultPhone, onRefresh }: { invoice: InvoiceView; defaultPhone: string; onRefresh: () => void }) {
+  const w = useWords().portal.pay;
   const [paying, setPaying] = useState(false);
   const [number, setNumber] = useState(defaultPhone);
   const [attempt, setAttempt] = useState<MutationAttempt | null>(null);
@@ -112,36 +114,38 @@ function InvoiceRow({ invoice, defaultPhone, onRefresh }: { invoice: InvoiceView
   }
 
   return (
-    <li className="space-y-2 px-4 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-sm">
-          <span className="font-medium tabular-nums">{amount ? money(amount.amount, amount.currency) : '—'}</span>
-          <span className="block text-xs text-muted-foreground">
-            Due {formatDate(invoice.dueDate)}{LATE_TEXT[invoice.status ?? ''] ? ` · ${LATE_TEXT[invoice.status ?? '']}` : ''}
-          </span>
+    <li className="space-y-3 px-4 py-4 sm:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span>
+          <span className="block text-display tabular-nums">{amount ? money(amount.amount, amount.currency) : '—'}</span>
+          <span className="block text-sm text-muted-foreground">{w.due(formatDate(invoice.dueDate))}</span>
+          {w.late[invoice.status ?? ''] && (
+            <span className="mt-1 inline-block rounded-lg bg-status-warning-bg px-2.5 py-0.5 text-sm font-semibold text-status-warning-fg">
+              {w.late[invoice.status ?? '']}
+            </span>
+          )}
         </span>
-        {!paying && !sent && <Button variant="primary" size="sm" onClick={() => setPaying(true)}>Pay</Button>}
+        {!paying && !sent && <Button variant="primary" className="h-12 w-full px-8 text-base sm:w-auto" onClick={() => setPaying(true)}>{w.pay}</Button>}
       </div>
       {sent ? (
-        <div className="rounded-md bg-control px-3 py-2 text-sm" role="status">
-          <Smartphone className="mr-1 inline size-4" aria-hidden />
-          Check your phone and approve the payment of {amount ? money(amount.amount, amount.currency) : 'the premium'}.
-          It shows as paid here once it goes through.
-          <Button variant="ghost" size="sm" className="ml-2" onClick={onRefresh}>Refresh</Button>
+        <div className="flex flex-wrap items-center gap-3 rounded-xl bg-selected px-4 py-3" role="status">
+          <Smartphone className="size-6 shrink-0 text-accent" aria-hidden />
+          <span className="min-w-0 flex-1">{w.checkPhone(amount ? money(amount.amount, amount.currency) : '')}</span>
+          <Button variant="outline" className="h-11" onClick={onRefresh}>{w.refresh}</Button>
         </div>
       ) : paying && (
         <div className="flex flex-wrap items-end gap-2">
-          <FormField label="Mobile money number" hint="M-Pesa, Tigo Pesa, Airtel Money or Halopesa" className="min-w-0 flex-1">
-            <Input inputMode="tel" value={number}
+          <FormField label={w.number} hint={w.numberHint} className="min-w-0 flex-1">
+            <Input inputMode="tel" className="h-12 text-base" value={number}
               onChange={(e) => { setNumber(e.target.value); setAttempt(null); }} placeholder="0754 123 456" />
           </FormField>
-          <Button variant="primary" disabled={!isMobileNumber(number)} pending={sending} onClick={() => void pay()}>
-            Send payment request
+          <Button variant="primary" className="h-12 text-base" disabled={!isMobileNumber(number)} pending={sending} onClick={() => void pay()}>
+            {w.send}
           </Button>
-          <Button variant="ghost" disabled={sending} onClick={() => setPaying(false)}>Cancel</Button>
+          <Button variant="ghost" className="h-12" disabled={sending} onClick={() => setPaying(false)}>{w.cancel}</Button>
         </div>
       )}
-      {error && <InlineError error={error} lead="The payment was not requested" />}
+      {error && <InlineError error={error} lead={w.notRequested} />}
     </li>
   );
 }

@@ -118,7 +118,7 @@ export function CustomerReportClaimPage() {
     return (
       <>
         <PageHeader breadcrumb={breadcrumb} title="Check your claim" description="Nothing is sent until you press Send claim." />
-        <div className="space-y-4 px-4 pb-8 sm:px-6">
+        <div className="w-full max-w-3xl space-y-4 px-4 pb-10 text-base sm:px-6">
           <Panel title="Your claim">
             <dl className="px-4 pb-2">
               <Field label="Policy" value={`${current?.summary.productName ?? ''} ${form.policyNumber}`.trim()} />
@@ -147,7 +147,7 @@ export function CustomerReportClaimPage() {
     <>
       <PageHeader breadcrumb={breadcrumb} title="Report a claim"
         description="Tell us what happened. We will ask for anything else we need." />
-      <div className="space-y-4 px-4 pb-8 sm:px-6">
+      <div className="w-full max-w-3xl space-y-4 px-4 pb-10 text-base sm:px-6">
         <Panel title="Which policy">
           <div className="space-y-3 px-4 py-3">
             <FormField label="Policy">

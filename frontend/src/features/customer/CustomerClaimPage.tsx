@@ -14,7 +14,8 @@ import { Input } from '@/components/ui/input';
 import { toApiError, type ApiError } from '@/lib/apiError';
 import { cn } from '@/lib/cn';
 import { formatDate, formatInstant } from '@/lib/dates';
-import { claimTypeText, money } from './customerText';
+import { money } from './customerText';
+import { useWords } from './words';
 
 import { EVIDENCE_ACCEPT } from './customerText';
 
@@ -24,6 +25,8 @@ import { EVIDENCE_ACCEPT } from './customerText';
  * `/customer/claims/{id}`, which refuses a claim somebody else made and carries nothing only staff should see.
  */
 export function CustomerClaimPage() {
+  const words = useWords().portal;
+  const w = words.claim;
   const { claimId = '' } = useParams();
   const [claim, setClaim] = useState<CustomerClaimView | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
@@ -39,11 +42,11 @@ export function CustomerClaimPage() {
   }, [claimId, reload]);
 
   const refresh = () => setReload((n) => n + 1);
-  const breadcrumb = [{ label: 'My claims', to: '/customers/claims' }];
+  const breadcrumb = [{ label: words.claims.title, to: '/customers/claims' }];
   if (error) {
     return (
       <>
-        <PageHeader breadcrumb={breadcrumb} title="Claim" />
+        <PageHeader breadcrumb={breadcrumb} title={w.details} />
         <div className="px-4 pt-4 sm:px-6"><ErrorPanel error={error} onRetry={refresh} /></div>
       </>
     );
@@ -52,67 +55,68 @@ export function CustomerClaimPage() {
 
   const open = claim.requests.filter((r) => r.status === 'OPEN');
   const settled = claim.status === 'SETTLED';
+  const type = words.claimType[claim.claimType] ?? claim.claimType;
   return (
     <>
-      <PageHeader breadcrumb={breadcrumb} title={`${claimTypeText(claim.claimType)} claim`}
+      <PageHeader breadcrumb={breadcrumb} title={w.claim(type)}
         description={<span>{claim.productName ?? ''} <span className="font-mono text-xs">{claim.policyNumber}</span></span>}
-        status={<span className="rounded-full bg-control px-2 py-0.5 text-xs font-medium">{claim.statusText}</span>} />
-      <div className="space-y-4 px-4 pb-8 sm:px-6">
+        status={<span className="rounded-full bg-control px-2.5 py-0.5 text-sm font-medium">{words.claimStatus[claim.status] ?? claim.statusText}</span>} />
+      <div className="w-full max-w-3xl space-y-4 px-4 pb-10 text-base sm:px-6">
         {open.length > 0 && (
-          <Panel title="We need from you" subtitle="Send each document here. A clear photo or a PDF is fine." emphasis>
+          <Panel title={w.need} subtitle={w.needLead} emphasis>
             <ul className="divide-y divide-border">
               {open.map((r) => (
                 <li key={r.requestId} className="space-y-2 px-4 py-3">
                   <div>
-                    <p className="text-sm font-medium">{r.document}</p>
-                    {r.reason && <p className="text-xs text-muted-foreground">{r.reason}</p>}
-                    <p className="text-xs text-subtle-foreground">Asked {formatInstant(r.requestedAt)}</p>
+                    <p className="font-semibold">{r.document}</p>
+                    {r.reason && <p className="text-sm text-muted-foreground">{r.reason}</p>}
+                    <p className="text-sm text-subtle-foreground">{w.asked(formatInstant(r.requestedAt))}</p>
                   </div>
                   <SendDocument claimId={claim.claimId} requestId={r.requestId} description={r.document} onSent={refresh}
-                    label={`Send ${r.document}`} />
+                    label={w.send(r.document)} />
                 </li>
               ))}
             </ul>
           </Panel>
         )}
 
-        <Panel title="Progress">
+        <Panel title={w.progress}>
           <ol className="space-y-3 px-4 py-3">
             {claim.steps.map((s) => (
               <li key={s.label} className="flex items-start gap-3">
                 <StepIcon state={s.state} />
-                <span className="text-sm">
+                <span>
                   <span className={cn(s.state === 'PENDING' && 'text-muted-foreground', s.state === 'CURRENT' && 'font-medium')}>
                     {s.label}
                   </span>
                   {s.date && s.state !== 'PENDING' && (
-                    <span className="block text-xs text-muted-foreground">{formatInstant(s.date)}</span>
+                    <span className="block text-sm text-muted-foreground">{formatInstant(s.date)}</span>
                   )}
                 </span>
               </li>
             ))}
           </ol>
-          {claim.decision && <p className="border-t border-border px-4 py-3 text-sm">{claim.decision}</p>}
+          {claim.decision && <p className="border-t border-border px-4 py-3">{claim.decision}</p>}
         </Panel>
 
-        <Panel title="Claim">
+        <Panel title={w.details}>
           <dl className="px-4 pb-2">
-            <Field label="Type" value={claimTypeText(claim.claimType)} />
-            <Field label="Date of event" value={formatDate(claim.dateOfEvent)} />
-            {claim.approvedAmount != null && <Field label="Amount approved" value={money(claim.approvedAmount, claim.currency)} emphasis />}
+            <Field label={w.type} value={type} />
+            <Field label={w.date} value={formatDate(claim.dateOfEvent)} />
+            {claim.approvedAmount != null && <Field label={w.approved} value={money(claim.approvedAmount, claim.currency)} emphasis />}
           </dl>
         </Panel>
 
-        <Panel title="Documents you sent">
+        <Panel title={w.sent}>
           {claim.documents.length === 0 ? (
-            <p className="px-4 py-3 text-xs text-muted-foreground">No documents yet.</p>
+            <p className="px-4 py-3 text-muted-foreground">{w.noDocs}</p>
           ) : (
             <ul className="divide-y divide-border">
               {claim.documents.map((d) => (
                 <li key={d.documentRef} className="flex items-center gap-2 px-4 py-2.5 text-sm">
                   <Paperclip className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                   <span className="min-w-0">
-                    <span className="block truncate">{d.description || 'Document'}</span>
+                    <span className="block truncate">{d.description || w.document}</span>
                     <span className="block text-xs text-muted-foreground">{formatInstant(d.uploadedAt)}</span>
                   </span>
                 </li>
@@ -121,7 +125,7 @@ export function CustomerClaimPage() {
           )}
           {!settled && (
             <div className="border-t border-border px-4 py-3">
-              <SendDocument claimId={claim.claimId} onSent={refresh} label="Send another document" withDescription />
+              <SendDocument claimId={claim.claimId} onSent={refresh} label={w.another} withDescription />
             </div>
           )}
         </Panel>
@@ -142,6 +146,7 @@ function StepIcon({ state }: { state: string }) {
 function SendDocument({ claimId, requestId, description, label, withDescription = false, onSent }: {
   claimId: string; requestId?: string; description?: string; label: string; withDescription?: boolean; onSent: () => void;
 }) {
+  const w = useWords().portal.claim;
   const [file, setFile] = useState<File | null>(null);
   const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
@@ -166,17 +171,17 @@ function SendDocument({ claimId, requestId, description, label, withDescription 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-end gap-2">
-        <FormField label={withDescription ? 'File' : label} className="min-w-0 flex-1">
+        <FormField label={withDescription ? w.file : label} className="min-w-0 flex-1">
           <Input type="file" accept={EVIDENCE_ACCEPT} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </FormField>
         {withDescription && (
-          <FormField label="What is it?" className="min-w-0 flex-1">
-            <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Hospital discharge letter" />
+          <FormField label={w.what} className="min-w-0 flex-1">
+            <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder={w.whatPlaceholder} />
           </FormField>
         )}
-        <Button variant="primary" onClick={() => void send()} disabled={!file} pending={sending}>Send</Button>
+        <Button variant="primary" className="h-11" onClick={() => void send()} disabled={!file} pending={sending}>{w.sendBtn}</Button>
       </div>
-      {error && <InlineError error={error} lead="Could not send the document" />}
+      {error && <InlineError error={error} lead={w.failed} />}
     </div>
   );
 }

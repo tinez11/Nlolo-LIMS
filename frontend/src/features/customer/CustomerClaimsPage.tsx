@@ -1,20 +1,22 @@
-import { ChevronRight, Plus } from 'lucide-react';
+import { ChevronRight, FileWarning, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getCustomerClaims, type CustomerClaimSummary } from '@/api/portal';
 import { PageHeader } from '@/components/PageHeader';
-import { Panel } from '@/components/Panel';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { toApiError, type ApiError } from '@/lib/apiError';
 import { formatDate } from '@/lib/dates';
-import { claimTypeText } from './customerText';
+import { useWords } from './words';
 
 /**
- * The claims the customer made (2026-10-08, the customer portal design step 4; PRD §17-21), newest event first. A claim
- * with a document still asked for says so on its row -- that is the one thing on this page the customer must act on.
+ * The claims the customer made (2026-10-08, the customer portal design step 4; PRD §17-21), newest event first, as cards
+ * (2026-10-29). A claim with a document still asked for says so in a tinted line -- the one thing here the customer
+ * must act on.
  */
 export function CustomerClaimsPage() {
+  const words = useWords().portal;
+  const w = words.claims;
   const [claims, setClaims] = useState<CustomerClaimSummary[] | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [reload, setReload] = useState(0);
@@ -29,51 +31,41 @@ export function CustomerClaimsPage() {
   }, [reload]);
 
   const report = (
-    <Button asChild variant="primary">
-      <Link to="/customers/claims/new"><Plus aria-hidden /> Report a claim</Link>
+    <Button asChild variant="primary" className="h-11">
+      <Link to="/customers/claims/new"><Plus aria-hidden /> {w.report}</Link>
     </Button>
   );
   return (
     <>
-      <PageHeader title="My claims" description="Claims you have made, and where each one is." actions={report} />
-      <div className="px-4 pb-8 sm:px-6">
+      <PageHeader title={w.title} description={w.lead} actions={report} />
+      <div className="w-full max-w-3xl space-y-3 px-4 pb-10 text-base sm:px-6">
         {error ? (
           <ErrorPanel error={error} onRetry={() => setReload((n) => n + 1)} />
         ) : !claims ? (
           <LoadingBlock label="Loading your claims" />
+        ) : claims.length === 0 ? (
+          <EmptyState title={w.none} description={w.noneLead} />
         ) : (
-          <Panel title="Claims">
-            {claims.length === 0 ? (
-              <EmptyState title="No claims" description="When you report a claim it appears here, with each step as it happens." />
-            ) : (
-              <ul className="divide-y divide-border">
-                {claims.map((c) => (
-                  <li key={c.claimId}>
-                    <Link to={`/customers/claims/${c.claimId}`}
-                      className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-hover">
-                      <span className="min-w-0">
-                        <span className="block text-sm font-medium">
-                          {claimTypeText(c.claimType)} · {c.productName ?? c.policyNumber}
-                        </span>
-                        <span className="block text-xs text-muted-foreground">
-                          {formatDate(c.dateOfEvent)} · <span className="font-mono">{c.policyNumber}</span>
-                        </span>
-                        {c.actionsRequired > 0 && (
-                          <span className="mt-0.5 block text-xs font-medium text-status-warning-fg">
-                            {c.actionsRequired === 1 ? 'A document is needed from you' : `${c.actionsRequired} documents are needed from you`}
-                          </span>
-                        )}
-                      </span>
-                      <span className="flex shrink-0 items-center gap-1 text-sm">
-                        {c.statusText}
-                        <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
+          claims.map((c) => (
+            <Link key={c.claimId} to={`/customers/claims/${c.claimId}`}
+              className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-4 shadow-card hover:bg-hover">
+              <span className="min-w-0 flex-1 space-y-1">
+                <span className="block text-title">{words.claimType[c.claimType] ?? c.claimType} · {c.productName ?? c.policyNumber}</span>
+                <span className="block text-sm text-muted-foreground">
+                  {formatDate(c.dateOfEvent)} · <span className="font-mono text-xs">{c.policyNumber}</span>
+                </span>
+                <span className="inline-block rounded-full bg-control px-2.5 py-0.5 text-sm font-medium">
+                  {words.claimStatus[c.status] ?? c.statusText}
+                </span>
+                {c.actionsRequired > 0 && (
+                  <span className="flex items-center gap-2 rounded-lg bg-status-warning-bg px-3 py-1.5 text-sm font-semibold text-status-warning-fg">
+                    <FileWarning className="size-4 shrink-0" aria-hidden />{w.docs(c.actionsRequired)}
+                  </span>
+                )}
+              </span>
+              <ChevronRight className="size-5 shrink-0 text-muted-foreground" aria-hidden />
+            </Link>
+          ))
         )}
       </div>
     </>
