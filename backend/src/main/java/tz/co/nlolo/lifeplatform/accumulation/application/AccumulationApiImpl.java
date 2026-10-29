@@ -159,6 +159,15 @@ public class AccumulationApiImpl implements AccumulationApi {
     }
 
     @Override
+    @Transactional
+    public WithdrawalView rejectWithdrawal(UUID withdrawalId, String rejectedBy, String reason) {
+        WithdrawalRequest request = withdrawals.findById(withdrawalId)
+            .orElseThrow(() -> new AccumulationStateException("No withdrawal " + withdrawalId));
+        request.reject(rejectedBy, reason);
+        return toView(withdrawals.save(request));
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<WithdrawalView> listWithdrawals(String policyNumber) {
         return withdrawals.findByPolicyNumberOrderByRequestedAtDesc(policyNumber).stream().map(this::toView).toList();
@@ -234,7 +243,8 @@ public class AccumulationApiImpl implements AccumulationApi {
 
     private WithdrawalView toView(WithdrawalRequest w) {
         return new WithdrawalView(w.getWithdrawalId(), w.getPolicyNumber(), w.getAmount(), w.getCurrency(), w.getPayeeRef(),
-            w.getStatus(), w.getRequestedBy(), w.getRequestedAt(), w.getApprovedBy(), w.getApprovedAt(), w.route());
+            w.getStatus(), w.getRequestedBy(), w.getRequestedAt(), w.getApprovedBy(), w.getApprovedAt(), w.route(),
+            w.getRejectedBy(), w.getRejectedAt(), w.getRejectionReason());
     }
 
     // ---- Top-ups and transfers in (task 6) -----------------------------------------------------

@@ -155,7 +155,8 @@ describe('AccountPanel', () => {
   });
 
   it('records a top-up already received with its reference and day, then closes the form and says it was credited', async () => {
-    grantRoles('CUSTOMER_SERVICE_REP');
+    // Both sides of the counter: the request (customer service) and the money received (finance, 2026-10-29).
+    grantRoles('CUSTOMER_SERVICE_REP', 'FINANCE_OFFICER');
     const topUp = vi.fn(async () => ({
       topUpId: 't-1', policyNumber: 'POL-1', amount: money('25000.00'), payerRef: '—', status: 'COLLECTED' as const,
       requestedBy: 'staff-one', requestedAt: '2026-10-28T08:00:00Z', method: 'CASH' as const, reference: 'RC-104',
@@ -199,15 +200,44 @@ describe('AccountPanel', () => {
     expect(screen.getByText('Give the bank account number')).toBeInTheDocument();
   });
 
-  it('offers finance the transfer in and the adjustment, but not the withdrawal or top-up', () => {
+  it('offers finance the transfer in, the adjustment and money received, but not the withdrawal', async () => {
     render(<AccountPanel policyNumber="POL-1" />);
-    for (const name of ['Record transfer in', 'Propose adjustment']) {
+    for (const name of ['Record transfer in', 'Propose adjustment', 'Request top-up']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
     }
-    // Requesting money movements is customer service's (accounts.transact, 2026-10-26); the server would refuse it.
-    for (const name of ['Request withdrawal', 'Request top-up']) {
-      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
-    }
+    // Requesting a withdrawal is customer service's (accounts.transact, 2026-10-26); the server would refuse it.
+    expect(screen.queryByRole('button', { name: 'Request withdrawal' })).not.toBeInTheDocument();
+    // Finance records money already received; asking a phone for it is customer service's (2026-10-29).
+    await userEvent.click(screen.getByRole('button', { name: 'Request top-up' }));
+    const options = within(screen.getByLabelText('How is it being paid?')).getAllByRole('option').map((o) => o.getAttribute('value'));
+    expect(options).toContain('CASH');
+    expect(options).not.toContain('MOBILE_MONEY');
+  });
+
+  it('lets customer service ask a phone for a top-up, but never say money was received', async () => {
+    grantRoles('CUSTOMER_SERVICE_REP');
+    render(<AccountPanel policyNumber="POL-1" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Request top-up' }));
+    const options = within(screen.getByLabelText('How is it being paid?')).getAllByRole('option').map((o) => o.getAttribute('value'));
+    expect(options).toEqual(['MOBILE_MONEY']);
+    expect(screen.getByText(/recorded by finance/)).toBeInTheDocument();
+  });
+
+  it('lets finance reject a withdrawal, saying why -- never their own request', async () => {
+    const reject = vi.fn(async () => {});
+    const waiting: WithdrawalView = {
+      withdrawalId: 'w-9', policyNumber: 'POL-1', amount: money('40000.00'), payeeRef: '+255700000009', status: 'REQUESTED',
+      requestedBy: 'staff-two', requestedAt: '2026-10-29T08:00:00Z', approvedBy: null, approvedAt: null, method: 'MOBILE_MONEY',
+    };
+    useAccumulationStore.setState({ withdrawals: { 'POL-1': success([waiting]) }, rejectWithdrawal: reject });
+    const user = userEvent.setup();
+    render(<AccountPanel policyNumber="POL-1" />);
+    await user.click(screen.getByRole('button', { name: 'Reject' }));
+    const confirm = screen.getByRole('button', { name: 'Reject withdrawal' });
+    expect(confirm).toBeDisabled();
+    await user.type(screen.getByLabelText('Why is it rejected?'), 'The customer cancelled it');
+    await user.click(confirm);
+    expect(reject).toHaveBeenCalledWith('POL-1', 'w-9', 'The customer cancelled it');
   });
 
   it('offers customer service the withdrawal and top-up, but not the transfer in or the adjustment', () => {

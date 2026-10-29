@@ -106,6 +106,11 @@ export function requestWithdrawal(policyNumber: string, body: WithdrawalBody, at
 }
 
 /** 202: approved and REQUESTED from the rail, not paid. The screen must say so. */
+/** Finance refuses a withdrawal, saying why (2026-10-29). Nothing is posted: the money never left. */
+export function rejectWithdrawal(withdrawalId: string, reason: string): Promise<WithdrawalView> {
+  return post<WithdrawalView>(`/account-withdrawals/${encodeURIComponent(withdrawalId)}/reject`, { reason });
+}
+
 export function approveWithdrawal(withdrawalId: string, attempt: MutationAttempt): Promise<WithdrawalView> {
   return post<WithdrawalView>(`/account-withdrawals/${encodeURIComponent(withdrawalId)}/approve`, undefined, {
     headers: attempt.headers(),
@@ -127,6 +132,11 @@ export interface TopUpBody {
 /** 202: the collection is requested; it is credited only when payment confirms it. */
 export function requestTopUp(policyNumber: string, body: TopUpBody, attempt: MutationAttempt): Promise<TopUpView> {
   return post<TopUpView>(`${account(policyNumber)}/top-ups`, body, { headers: attempt.headers() });
+}
+
+/** Money already received, recorded and credited by finance alone (2026-10-29: collections.manage). */
+export function recordReceivedTopUp(policyNumber: string, body: TopUpBody, attempt: MutationAttempt): Promise<TopUpView> {
+  return post<TopUpView>(`${account(policyNumber)}/top-ups/received`, body, { headers: attempt.headers() });
 }
 
 export interface TransferInBody {

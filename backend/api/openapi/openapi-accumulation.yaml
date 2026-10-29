@@ -334,6 +334,69 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /account-withdrawals/{withdrawalId}/reject:
+    post:
+      summary: Refuse a withdrawal, saying why, by someone other than its requester
+      description: >
+        2026-10-29. FINANCE_OFFICER or ADMIN. Nothing is posted: the money leaves the account only at approval, so a
+        refused request never moved it.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: withdrawalId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: Rejected
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Withdrawal' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused -- the requester rejecting, or not REQUESTED
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/account/top-ups/received:
+    post:
+      summary: Record money already received for the account, and credit it (finance only)
+      description: >
+        2026-10-29. Cash, a bank deposit, a cheque, a Lipa number or TANQR, with the method's own reference and the day
+        it came. Finance alone (collections.manage): customer service may request a mobile-money top-up but cannot say
+        money was received. Credited at once; a reference already recorded under the same method is refused (422).
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 200 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TopUpRequest' }
+      responses:
+        '201':
+          description: Recorded and credited
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TopUp' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Refused -- no reference, a future day, a reference already recorded, or the account cannot take it
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /policies/{policyNumber}/account/top-ups:
     get:
       summary: Every top-up on the account, newest first
@@ -1008,7 +1071,7 @@ components:
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
         amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         payeeRef: { type: string }
-        status: { type: string, enum: [REQUESTED, APPROVED, PAID, FAILED] }
+        status: { type: string, enum: [REQUESTED, APPROVED, PAID, FAILED, REJECTED] }
         requestedBy: { type: string }
         requestedAt: { type: string, format: date-time }
         approvedBy: { type: [string, "null"] }
@@ -1018,13 +1081,15 @@ components:
         payeeBranch: { type: [string, "null"] }
         payeeAccountName: { type: [string, "null"] }
         payeeAccountNumber: { type: [string, "null"] }
+        rejectedBy: { type: [string, "null"] }
+        rejectedAt: { type: [string, "null"], format: date-time }
+        rejectionReason: { type: [string, "null"] }
     TopUpRequest:
       type: object
       description: >
-        A mobile-money request to payerRef's phone (method absent or MOBILE_MONEY), or money already received
-        (2026-10-28): cash, a bank deposit, a cheque, a Lipa number or TANQR, with the method's own reference and the day
-        it came. One person records it; it is credited as soon as payment receipts it. A reference already recorded
-        under the same method is refused (422).
+        A mobile-money request to payerRef's phone (method absent or MOBILE_MONEY) on /top-ups, or money already
+        received on /top-ups/received (finance only, 2026-10-29): cash, a bank deposit, a cheque, a Lipa number or TANQR,
+        with the method's own reference and the day it came. A received method sent to /top-ups is refused (422).
       required: [amount]
       properties:
         amount: { type: string, pattern: '^\d+(\.\d{1,2})?$' }

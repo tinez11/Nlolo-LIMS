@@ -153,13 +153,25 @@ public class AccumulationController {
         return ResponseEntity.accepted().body(WithdrawalResponse.from(api.approveWithdrawal(withdrawalId, jwt.getSubject())));
     }
 
+    /** Finance refuses a withdrawal, saying why (2026-10-29). Nothing is posted: the money never left the account. */
+    @PostMapping("/account-withdrawals/{withdrawalId}/reject")
+    @PreAuthorize("@access.can('accounts.approve')")
+    public WithdrawalResponse rejectWithdrawal(@PathVariable UUID withdrawalId,
+                                               @Valid @RequestBody AccountRequestBodies.Rejection body,
+                                               @AuthenticationPrincipal Jwt jwt) {
+        return WithdrawalResponse.from(api.rejectWithdrawal(withdrawalId, jwt.getSubject(), body.reason()));
+    }
+
     @GetMapping("/policies/{policyNumber}/account/withdrawals")
     @PreAuthorize("@access.can('accounts.view')")
     public List<WithdrawalResponse> listWithdrawals(@PathVariable String policyNumber) {
         return api.listWithdrawals(policyNumber).stream().map(WithdrawalResponse::from).toList();
     }
 
-    /** 202: the collection is REQUESTED from the rail; it is credited only once payment confirms it. */
+    /**
+     * 202: a mobile-money collection is REQUESTED from the payer's phone; it is credited only once finance confirms the
+     * money came. Money already received is not recorded here -- see {@link #recordReceivedTopUp}.
+     */
     @PostMapping("/policies/{policyNumber}/account/top-ups")
     @PreAuthorize("@access.can('accounts.transact')")
     @ResponseStatus(HttpStatus.ACCEPTED)
@@ -167,11 +179,25 @@ public class AccumulationController {
                                       @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                       @AuthenticationPrincipal Jwt jwt) {
         if (body.method() != null && !body.method().isBlank() && !"MOBILE_MONEY".equals(body.method())) {
-            return TopUpResponse.from(api.recordTopUp(policyNumber, new BigDecimal(body.amount()), body.method(),
-                body.reference(), body.receivedOn(), body.payerRef(), jwt.getSubject(), idempotencyKey));
+            throw new AccumulationStateException("Money already received is recorded by finance, who are answerable for it");
         }
         return TopUpResponse.from(api.requestTopUp(policyNumber, new BigDecimal(body.amount()), body.payerRef(), jwt.getSubject(),
             idempotencyKey));
+    }
+
+    /**
+     * 201: money already received -- cash, a bank deposit, a cheque, a Lipa number, TANQR -- recorded and credited by
+     * finance alone (2026-10-29, the user: only the finance officer is answerable for money). Customer service, who may
+     * request a mobile-money top-up, cannot say money was received: whoever holds the cash is not who credits it.
+     */
+    @PostMapping("/policies/{policyNumber}/account/top-ups/received")
+    @PreAuthorize("@access.can('collections.manage')")
+    @ResponseStatus(HttpStatus.CREATED)
+    public TopUpResponse recordReceivedTopUp(@PathVariable String policyNumber, @Valid @RequestBody AccountRequestBodies.TopUp body,
+                                             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+                                             @AuthenticationPrincipal Jwt jwt) {
+        return TopUpResponse.from(api.recordTopUp(policyNumber, new BigDecimal(body.amount()), body.method(),
+            body.reference(), body.receivedOn(), body.payerRef(), jwt.getSubject(), idempotencyKey));
     }
 
     @GetMapping("/policies/{policyNumber}/account/top-ups")

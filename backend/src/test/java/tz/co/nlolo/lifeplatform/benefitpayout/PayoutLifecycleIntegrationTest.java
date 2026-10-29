@@ -109,6 +109,7 @@ class PayoutLifecycleIntegrationTest {
             "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
             "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V9__withdrawal_rejection.sql",
             "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",

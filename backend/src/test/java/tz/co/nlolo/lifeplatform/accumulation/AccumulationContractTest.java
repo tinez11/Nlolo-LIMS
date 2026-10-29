@@ -169,6 +169,54 @@ class AccumulationContractTest {
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 
+    /** 2026-10-29: finance refuses a withdrawal with its reason; nothing moved, and the requester cannot refuse their own. */
+    @Test
+    void aWithdrawalIsRejectedWithItsReasonToSpec() throws Exception {
+        String policy = fundedAccount();
+        String created = mockMvc.perform(post("/policies/" + policy + "/account/withdrawals").header("Idempotency-Key", key())
+                .with(staff("CUSTOMER_SERVICE_REP", "staff-one")).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\":\"40000.00\",\"payeeRef\":\"+255700000001\"}"))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        String id = JsonPath.read(created, "$.withdrawalId");
+
+        mockMvc.perform(post("/account-withdrawals/" + id + "/reject").with(staff("FINANCE_OFFICER", "staff-one"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Customer changed their mind\"}"))
+            .andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(post("/account-withdrawals/" + id + "/reject").with(staff("FINANCE_OFFICER", "finance-two"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Customer changed their mind\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("REJECTED"))
+            .andExpect(jsonPath("$.rejectionReason").value("Customer changed their mind"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        // Nothing left the account.
+        mockMvc.perform(get("/policies/" + policy + "/account").with(staff("CUSTOMER_SERVICE_REP", "uw")))
+            .andExpect(jsonPath("$.balance.amount").value("190000.00"));
+    }
+
+    /**
+     * 2026-10-29, the user: only finance is answerable for money. Customer service may ask a phone for a top-up but
+     * cannot say money was received; finance records it on its own endpoint.
+     */
+    @Test
+    void onlyFinanceRecordsMoneyAlreadyReceived() throws Exception {
+        String policy = fundedAccount();
+        String cash = "{\"amount\":\"5000.00\",\"method\":\"CASH\",\"reference\":\"RC-" + UUID.randomUUID()
+            + "\",\"receivedOn\":\"" + LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")) + "\"}";
+        mockMvc.perform(post("/policies/" + policy + "/account/top-ups").header("Idempotency-Key", key())
+                .with(staff("CUSTOMER_SERVICE_REP", "staff-one")).contentType(MediaType.APPLICATION_JSON).content(cash))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("Money already received is recorded by finance, who are answerable for it"));
+        mockMvc.perform(post("/policies/" + policy + "/account/top-ups/received").header("Idempotency-Key", key())
+                .with(staff("CUSTOMER_SERVICE_REP", "staff-one")).contentType(MediaType.APPLICATION_JSON).content(cash))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/policies/" + policy + "/account/top-ups/received").header("Idempotency-Key", key())
+                .with(staff("FINANCE_OFFICER", "finance-two")).contentType(MediaType.APPLICATION_JSON).content(cash))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.method").value("CASH"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
     @Test
     void theClosingQuoteIsReadToSpec() throws Exception {
         String policy = fundedAccount();

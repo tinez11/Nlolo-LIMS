@@ -125,6 +125,7 @@ class FinaccountingApiIntegrationTest {
             "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
             "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V9__withdrawal_rejection.sql",
             "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",

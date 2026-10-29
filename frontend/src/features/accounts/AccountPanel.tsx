@@ -262,6 +262,8 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
   const isFinance = can('accounts.approve');
   // Requesting a withdrawal or a top-up is customer service's (accounts.transact, 2026-10-26); finance signs.
   const canTransact = can('accounts.transact');
+  // Money already received is finance's to record (2026-10-29, the user: only finance is answerable for money).
+  const canReceive = can('collections.manage');
 
   // Select the stored resource and default OUTSIDE the selector: `?? []` inside it returns a fresh
   // array on every call, which Zustand reads as a change and re-renders forever -- the render loop
@@ -293,7 +295,7 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
       {open && (
         <div className="flex flex-wrap gap-2">
           {canTransact && moneyOut && actionButton('withdraw', 'Request withdrawal', <ArrowUpRight aria-hidden className="size-4" />)}
-          {canTransact && moneyIn && actionButton('topup', 'Request top-up', <ArrowDownLeft aria-hidden className="size-4" />)}
+          {(canTransact || canReceive) && moneyIn && actionButton('topup', 'Request top-up', <ArrowDownLeft aria-hidden className="size-4" />)}
           {/* Finance's: recording a transfer puts money on the account, and an adjustment is a
               correction a second finance user signs. Not offered at all to anyone else, rather than
               a button that would 403. */}
@@ -435,13 +437,13 @@ function PastRequests({ policyNumber }: { policyNumber: string }) {
   type Row = { id: string; at: string; what: string; amount: string; how: string; status: ReactNode };
   const rows: Row[] = [
     ...(withdrawalsResource?.data ?? NONE_WITHDRAWN)
-      .filter((w) => w.status === 'PAID' || w.status === 'FAILED')
+      .filter((w) => w.status === 'PAID' || w.status === 'FAILED' || w.status === 'REJECTED')
       .map((w) => ({
         id: w.withdrawalId,
         at: w.requestedAt,
         what: 'Withdrawal',
         amount: formatMoney(w.amount),
-        how: `${methodWords(w.method)} · ${describeRoute(w)}`,
+        how: w.status === 'REJECTED' ? `Rejected: ${w.rejectionReason ?? ''}` : `${methodWords(w.method)} · ${describeRoute(w)}`,
         status: <StatusBadge kind="accountWithdrawal" value={w.status} />,
       })),
     ...(topUpsResource?.data ?? NONE_TOPPED_UP)
@@ -608,12 +610,22 @@ function TopUpForm({
   onDone: () => void;
   onRecorded: (topUp: TopUpView) => void;
 }) {
+  // Asking a phone for money is customer service's; saying money was received is finance's alone (2026-10-29).
+  const canRequest = can('accounts.transact');
+  const canReceive = can('collections.manage');
   const topUp = useAccumulationStore((s) => s.topUp);
   const acting = useAccumulationStore((s) => s.acting[`topup.${policyNumber}`]);
   const form = useForm<TopUpValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(topUpSchema),
-    defaultValues: { amount: '', method: 'MOBILE_MONEY', payerRef: '', reference: '', receivedOn: todayIso() },
+    // Finance without the right to request opens on a received method; everyone else on the request.
+    defaultValues: {
+      amount: '',
+      method: canRequest ? 'MOBILE_MONEY' : 'BANK_DEPOSIT',
+      payerRef: '',
+      reference: '',
+      receivedOn: todayIso(),
+    },
   });
   const method = useWatch({ control: form.control, name: 'method' });
   const received = method !== 'MOBILE_MONEY' ? RECEIPT_METHODS.find((m) => m.value === method) : undefined;
@@ -643,19 +655,28 @@ function TopUpForm({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <FormField label="How is it being paid?" hint={received?.hint} error={errors.method?.message}>
             <Select {...form.register('method')}>
-              <optgroup label="Ask for it now">
-                <option value="MOBILE_MONEY">Mobile money — send a request to the payer’s phone</option>
-              </optgroup>
-              <optgroup label="Already received — record it">
-                {RECEIPT_METHODS.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </optgroup>
+              {canRequest && (
+                <optgroup label="Ask for it now">
+                  <option value="MOBILE_MONEY">Mobile money — send a request to the payer’s phone</option>
+                </optgroup>
+              )}
+              {canReceive && (
+                <optgroup label="Already received — finance records it">
+                  {RECEIPT_METHODS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </Select>
           </FormField>
           <TextField form={form} name="amount" label="Amount" placeholder="20000.00" inputMode="decimal" />
+          {!canReceive && (
+            <p className="text-xs text-muted-foreground sm:col-span-2">
+              Money already received — cash, a bank deposit, a cheque — is recorded by finance.
+            </p>
+          )}
           {received ? (
             <>
               <FormField label={received.reference} error={errors.reference?.message}>
@@ -769,8 +790,12 @@ export function WithdrawalRow({
   isFinance: boolean;
 }) {
   const approve = useAccumulationStore((s) => s.approveWithdrawal);
+  const reject = useAccumulationStore((s) => s.rejectWithdrawal);
   const acting = useAccumulationStore((s) => s.acting[withdrawal.withdrawalId]);
   const [armed, setArmed] = useState(false);
+  // Refusing, with the reason it needs (2026-10-29): until then a request nobody wanted only waited.
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
   const gates = approveWithdrawalGates(withdrawal, viewerSubject);
   const refused = gates.some((g) => !g.ok && g.hard);
   const to = describeRoute(withdrawal);
@@ -816,10 +841,35 @@ export function WithdrawalRow({
               }}
               onCancel={() => setArmed(false)}
             />
+          ) : rejecting ? (
+            <div className="space-y-2">
+              <FormField label="Why is it rejected?">
+                <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="The customer cancelled it" />
+              </FormField>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={reason.trim() === '' || acting?.status === 'loading'}
+                  onClick={() => void reject(withdrawal.policyNumber, withdrawal.withdrawalId, reason.trim())}
+                >
+                  Reject withdrawal
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
+                  Cancel
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Nothing has left the account, so nothing is reversed.</p>
+            </div>
           ) : (
-            <Button size="sm" variant="primary" disabled={refused} onClick={() => setArmed(true)}>
-              Approve
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="primary" disabled={refused} onClick={() => setArmed(true)}>
+                Approve
+              </Button>
+              <Button size="sm" variant="outline" disabled={viewerSubject === withdrawal.requestedBy} onClick={() => setRejecting(true)}>
+                Reject
+              </Button>
+            </div>
           )}
         </>
       )}

@@ -75,6 +75,9 @@ public interface AccumulationApi {
     /** A second person. Posts the WITHDRAWAL entry and requests the payment; a failed payment is reversed. */
     WithdrawalView approveWithdrawal(java.util.UUID withdrawalId, String approvedBy);
 
+    /** Refused, with a reason, by someone other than the requester. Nothing is posted: the money never left. */
+    WithdrawalView rejectWithdrawal(java.util.UUID withdrawalId, String rejectedBy, String reason);
+
     List<WithdrawalView> listWithdrawals(String policyNumber);
 
     /** Requests the collection from payment; credited, at the contribution rate, when payment confirms it. */

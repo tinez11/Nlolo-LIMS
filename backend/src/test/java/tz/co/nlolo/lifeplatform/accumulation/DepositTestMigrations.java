@@ -48,6 +48,7 @@ public final class DepositTestMigrations {
         "db-migrations/product/V35__product_description.sql",
         "db-migrations/accumulation/V1__create_accumulation_schema.sql",
         "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+        "db-migrations/accumulation/V9__withdrawal_rejection.sql",
         "db-migrations/accumulation/V7__top_up_methods.sql",
         "db-migrations/accumulation/V2__request_keys.sql",
         "db-migrations/accumulation/V3__deposit_periods.sql",

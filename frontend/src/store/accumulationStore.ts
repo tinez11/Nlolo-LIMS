@@ -4,6 +4,8 @@ import {
   approveAdjustment,
   approveRate,
   approveWithdrawal,
+  rejectWithdrawal,
+  recordReceivedTopUp,
   generateStatement,
   getAccount,
   getClosingQuote,
@@ -94,6 +96,7 @@ interface AccumulationState {
   /** Resolves with the request, or undefined when it failed -- the error is on acting[`withdraw.${policyNumber}`]. */
   withdraw: (policyNumber: string, body: WithdrawalBody, attempt: MutationAttempt) => Promise<WithdrawalView | undefined>;
   approveWithdrawal: (policyNumber: string, withdrawalId: string, attempt: MutationAttempt) => Promise<void>;
+  rejectWithdrawal: (policyNumber: string, withdrawalId: string, reason: string) => Promise<void>;
   /** Resolves with the top-up as it stands once reread, or undefined when it failed. */
   topUp: (policyNumber: string, body: TopUpBody, attempt: MutationAttempt) => Promise<TopUpView | undefined>;
   transferIn: (policyNumber: string, body: TransferInBody, attempt: MutationAttempt) => Promise<void>;
@@ -208,9 +211,17 @@ export const useAccumulationStore = create<AccumulationState>((set, getState) =>
         await rereadAccount(policyNumber);
       }),
 
+    rejectWithdrawal: (policyNumber, withdrawalId, reason) =>
+      act(withdrawalId, async () => {
+        await rejectWithdrawal(withdrawalId, reason);
+        await rereadAccount(policyNumber);
+      }),
+
     topUp: (policyNumber, body, attempt) =>
       act(`topup.${policyNumber}`, async () => {
-        const recorded = await requestTopUp(policyNumber, body, attempt);
+        // Money already received is finance's own endpoint (2026-10-29); a mobile-money request is anyone's.
+        const received = body.method !== undefined && body.method !== 'MOBILE_MONEY';
+        const recorded = await (received ? recordReceivedTopUp : requestTopUp)(policyNumber, body, attempt);
         await rereadAccount(policyNumber);
         // The reread list has it as it stands now: a received top-up is already COLLECTED.
         return getState().topUps[policyNumber]?.data?.find((t) => t.topUpId === recorded.topUpId) ?? recorded;

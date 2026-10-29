@@ -114,6 +114,8 @@ export const STATUS_MAPS = {
     APPROVED: 'pending',
     PAID: 'success',
     FAILED: 'danger',
+    // Refused by finance, saying why (2026-10-29): nothing moved.
+    REJECTED: 'neutral',
   },
 
   // accumulation.top_up_request.status. Credited only once COLLECTED.

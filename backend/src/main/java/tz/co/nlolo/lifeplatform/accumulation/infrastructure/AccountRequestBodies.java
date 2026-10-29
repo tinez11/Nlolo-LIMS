@@ -34,6 +34,9 @@ final class AccountRequestBodies {
                  @Size(max = 100) String reference,
                  java.time.LocalDate receivedOn) {}
 
+    /** Why a request is refused. */
+    record Rejection(@NotBlank @Size(max = 500) String reason) {}
+
     record TransferIn(@NotBlank @Pattern(regexp = AMOUNT, message = AMOUNT_MESSAGE) String amount,
                       @NotBlank @Size(max = 200) String sourceScheme,
                       @Size(max = 200) String documentRef) {}
