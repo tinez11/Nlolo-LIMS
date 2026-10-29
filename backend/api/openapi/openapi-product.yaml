@@ -534,6 +534,26 @@ paths:
               schema: { $ref: '#/components/schemas/TermAccountTerms' }
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /products/{productId}/versions/{versionId}/value-terms:
+    get:
+      summary: What a version's policies build up and pay back
+      description: >-
+        2026-10-29. With-profits bonus rules, the cash-value table, the payout schedule, savings-account terms and a
+        fixed-term deposit's rate grid, as published -- for the product screen, which showed none of them. Each part is
+        null (the grid empty) when the version has none. Staff with products.view.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The version's value terms
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VersionValueTerms' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /products/{productId}/versions/{versionId}/account-charges:
     get:
       summary: The Account charges a version takes, in order
@@ -1651,6 +1671,113 @@ components:
         termAccount: { type: boolean, description: "False means an ordinary version; a case names no rate on it." }
         minRatePercent: { type: [number, "null"], description: "The lowest rate a case may name, % a year." }
         maxRatePercent: { type: [number, "null"], description: "The highest rate a case may name, % a year." }
+    VersionValueTerms:
+      type: object
+      additionalProperties: false
+      required: [bonus, cashValue, payouts, account, depositRates]
+      properties:
+        bonus:
+          description: Null on a version that does not share in profits.
+          type: [object, "null"]
+          additionalProperties: false
+          required: [method, paidUpParticipates, surrenderBasis, surrenderRows]
+          properties:
+            method: { type: [string, "null"], enum: [SIMPLE, COMPOUND, null] }
+            paidUpParticipates: { type: boolean }
+            surrenderBasis: { type: [string, "null"], enum: [NONE, SUM_ASSURED_SCALE, OWN_SCALE, null] }
+            surrenderRows:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [fromCompletedYears, perMille]
+                properties:
+                  fromCompletedYears: { type: integer }
+                  perMille: { type: number }
+        cashValue:
+          description: Null on a version with no cash-value table.
+          type: [object, "null"]
+          additionalProperties: false
+          required: [basisReference, basisDate, paidUpBasis, minYearsForValue, rows]
+          properties:
+            basisReference: { type: [string, "null"] }
+            basisDate: { type: [string, "null"], format: date }
+            paidUpBasis: { type: [string, "null"], enum: [PROPORTIONATE, TABLE, null] }
+            minYearsForValue: { type: [integer, "null"] }
+            rows:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [policyYear, ageFrom, ageTo, cashValuePerMille, paidUpPerMille]
+                properties:
+                  policyYear: { type: integer }
+                  ageFrom: { type: [integer, "null"] }
+                  ageTo: { type: [integer, "null"] }
+                  cashValuePerMille: { type: number, description: "Per 1,000 of sum assured" }
+                  paidUpPerMille: { type: [number, "null"] }
+        payouts:
+          description: Null on a version published with no payout terms.
+          type: [object, "null"]
+          additionalProperties: false
+          required: [terms, rows]
+          properties:
+            terms:
+              type: object
+              additionalProperties: false
+              required: [freeLookDays, proofOfLifeIntervalMonths, survivalBenefitsDeductedFromDeath, deathBenefitPremiumPercent]
+              properties:
+                freeLookDays: { type: [integer, "null"] }
+                proofOfLifeIntervalMonths: { type: [integer, "null"] }
+                survivalBenefitsDeductedFromDeath: { type: [boolean, "null"] }
+                deathBenefitPremiumPercent: { type: [number, "null"] }
+            rows:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [kind, fromPolicyYear, toPolicyYear, amountBasis, amountValue, frequency]
+                properties:
+                  kind: { type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM, ANNUITY, COMMUTATION] }
+                  fromPolicyYear: { type: [integer, "null"] }
+                  toPolicyYear: { type: [integer, "null"] }
+                  amountBasis: { type: string, enum: [PERCENT_OF_SA, FIXED, PERCENT_OF_PREMIUMS, ACCOUNT_VALUE] }
+                  amountValue: { type: number }
+                  frequency: { type: [string, "null"], enum: [ANNUAL, SEMI_ANNUAL, QUARTERLY, MONTHLY, null] }
+        account:
+          description: Null on a version valued by a cash-value scale.
+          type: [object, "null"]
+          additionalProperties: false
+          required: [guaranteedRatePercent, minimumBalance, minRatePercent, maxRatePercent, charges, usesAccountCharges]
+          properties:
+            guaranteedRatePercent: { type: [number, "null"], description: "Effective annual floor" }
+            minimumBalance: { type: [number, "null"] }
+            minRatePercent: { type: [number, "null"], description: "A term account's lowest rate, % a year" }
+            maxRatePercent: { type: [number, "null"] }
+            usesAccountCharges: { type: boolean, description: "Charged by Account charges; charges is then empty" }
+            charges:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [fromPolicyYear, toPolicyYear, contributionAllocationPercent, transferAllocationPercent, monthlyPolicyFee]
+                properties:
+                  fromPolicyYear: { type: integer }
+                  toPolicyYear: { type: [integer, "null"] }
+                  contributionAllocationPercent: { type: number }
+                  transferAllocationPercent: { type: number }
+                  monthlyPolicyFee: { type: number }
+        depositRates:
+          description: A fixed-term deposit's grid; empty for every other version. Each rate is for the whole term.
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [minAmount, termMonths, ratePercent]
+            properties:
+              minAmount: { type: number }
+              termMonths: { type: integer }
+              ratePercent: { type: number }
     GroupFuneralQuoteRequest:
       type: object
       properties:

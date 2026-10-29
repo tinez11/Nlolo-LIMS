@@ -1,6 +1,10 @@
-import type { AnnuityTermsView, FuneralTermsView, UnitLinkedTermsView } from '@/api/types';
+import type { AnnuityTermsView, FuneralTermsView, UnitLinkedTermsView, VersionValueTermsView } from '@/api/types';
+import { formatDate } from '@/lib/dates';
 import { FUNERAL_ROLE_LABELS, FUNERAL_ROLES, type FuneralRoleName } from './funeralSchema';
 import { FactorSection, SectionHeading } from './RatingBasis';
+import {
+  BONUS_METHOD, BONUS_ON_SURRENDER, PAID_UP_BASIS, bonusScaleRows, depositGrid, payoutRow, valueKind,
+} from './valueTermsText';
 
 /**
  * A version's own terms, read-only, on the product page (2026-10-08): what a funeral plan pays and charges, what an
@@ -172,7 +176,7 @@ function ages(from: number, to: number | null | undefined): string {
  */
 function BandsShown({ caption, columns, rows }: { caption: string; columns: string[]; rows: string[][] }) {
   return (
-    <div className="px-4">
+    <div className="overflow-x-auto px-4">
       <table className="w-full max-w-xl text-sm">
         <caption className="sr-only">{caption}</caption>
         <thead>
@@ -282,5 +286,171 @@ export function UnitLinkedTermsDetail({ terms }: { terms: UnitLinkedTermsView })
         </section>
       )}
     </div>
+  );
+}
+
+/**
+ * What a version's policies build up and pay back (2026-10-29), each part only where the version has it: a savings
+ * account or deposit, a cash-value table, with-profits bonuses, payouts while the life assured lives, and the
+ * cancelling and death rules. A term life version shows only the last.
+ */
+export function ValueTermsDetail({ terms }: { terms: VersionValueTermsView }) {
+  const kind = valueKind(terms);
+  const payouts = terms.payouts;
+  const policyRows = payouts ? [
+    ...(payouts.terms.freeLookDays != null ? [{ key: 'freelook', label: 'Free look', note: 'cancel for a refund',
+      value: `${payouts.terms.freeLookDays} days from issue` }] : []),
+    ...(payouts.terms.deathBenefitPremiumPercent != null ? [{ key: 'death', label: 'On death pays', note: null,
+      value: `The higher of the sum assured and ${amount(payouts.terms.deathBenefitPremiumPercent)}% of premiums paid` }] : []),
+    ...(payouts.terms.survivalBenefitsDeductedFromDeath != null ? [{ key: 'deduct', label: 'Survival benefits paid',
+      note: null, value: payouts.terms.survivalBenefitsDeductedFromDeath ? 'Come off the death benefit' : 'Do not reduce the death benefit' }] : []),
+    ...(payouts.terms.proofOfLifeIntervalMonths != null ? [{ key: 'proof', label: 'Proof of life', note: 'for an income',
+      value: `Every ${payouts.terms.proofOfLifeIntervalMonths} months` }] : []),
+  ] : [];
+
+  return (
+    <div className="pb-2">
+      {kind === 'DEPOSIT' && <DepositRates rates={terms.depositRates} />}
+      {terms.account && kind !== 'DEPOSIT' && <AccountTerms account={terms.account} termAccount={kind === 'TERM_ACCOUNT'} />}
+      {terms.cashValue && <CashValueTerms table={terms.cashValue} />}
+      {terms.bonus && <BonusTerms bonus={terms.bonus} />}
+
+      {payouts && payouts.rows.length > 0 && (
+        <section>
+          <SectionHeading hint="What the policy pays while the life assured is alive. A yearly amount is split across that year’s instalments.">
+            Payouts
+          </SectionHeading>
+          <BandsShown caption="Payouts while the life assured is alive" columns={['Payout', 'When', 'Amount', 'Paid']}
+            rows={payouts.rows.map(payoutRow)} />
+        </section>
+      )}
+      {policyRows.length > 0 && (
+        <FactorSection title="Cancelling and death" hint="The customer’s right to change their mind, and what death pays."
+          empty="" rows={policyRows} />
+      )}
+    </div>
+  );
+}
+
+type Account = NonNullable<VersionValueTermsView['account']>;
+
+function AccountTerms({ account, termAccount }: { account: Account; termAccount: boolean }) {
+  const charged = account.charges.some((c) =>
+    c.contributionAllocationPercent > 0 || c.transferAllocationPercent > 0 || c.monthlyPolicyFee > 0);
+  return (
+    <>
+      <FactorSection
+        title={termAccount ? 'Term account' : 'Savings account'}
+        hint={termAccount
+          ? 'Contributions earn the rate the policy locks at sale, and nothing is paid out until it matures.'
+          : 'Contributions earn the product’s declared rate, credited monthly and never below the guarantee.'}
+        empty=""
+        rows={[
+          termAccount
+            ? { key: 'band', label: 'Rate offered', note: 'chosen at sale, fixed for the term',
+              value: `${amount(account.minRatePercent)}% to ${amount(account.maxRatePercent)}% a year` }
+            : { key: 'floor', label: 'Guaranteed rate', note: 'the least it ever earns',
+              value: `${amount(account.guaranteedRatePercent)}% a year` },
+          ...(!termAccount ? [{ key: 'min', label: 'Minimum balance', note: 'a withdrawal must leave',
+            value: amount(account.minimumBalance) }] : []),
+          ...(account.usesAccountCharges ? [{ key: 'charges', label: 'Charges', note: null,
+            value: 'The account charges listed above' }]
+            : !charged ? [{ key: 'charges', label: 'Charges', note: null, value: 'None' }] : []),
+        ]}
+      />
+      {!account.usesAccountCharges && charged && (
+        <section>
+          <SectionHeading hint="Kept back from each payment before it reaches the account, and the fee taken every month.">
+            Account charges by year
+          </SectionHeading>
+          <BandsShown caption="Account charges by policy year"
+            columns={['Policy years', 'Of each contribution', 'Of each transfer in', 'Monthly fee']}
+            rows={account.charges.map((c) => [years(c.fromPolicyYear, c.toPolicyYear),
+              `${amount(c.contributionAllocationPercent)}%`, `${amount(c.transferAllocationPercent)}%`,
+              c.monthlyPolicyFee > 0 ? amount(c.monthlyPolicyFee) : 'None'])} />
+        </section>
+      )}
+    </>
+  );
+}
+
+function DepositRates({ rates }: { rates: VersionValueTermsView['depositRates'] }) {
+  const grid = depositGrid(rates);
+  return (
+    <section>
+      <SectionHeading hint="The rate a deposit earns, by its size and term. Each rate is for the whole term, not a year.">
+        Deposit rates
+      </SectionHeading>
+      <BandsShown caption="Deposit rate by amount and term" columns={grid.columns} rows={grid.rows} />
+    </section>
+  );
+}
+
+type CashValue = NonNullable<VersionValueTermsView['cashValue']>;
+
+function CashValueTerms({ table }: { table: CashValue }) {
+  const banded = table.rows.some((r) => r.ageFrom != null);
+  const paidUp = table.rows.some((r) => r.paidUpPerMille != null);
+  const basis = table.paidUpBasis ? PAID_UP_BASIS[table.paidUpBasis] : undefined;
+  return (
+    <>
+      <FactorSection
+        title="Cash value"
+        hint="What the policy is worth if it is surrendered or made paid-up."
+        empty=""
+        rows={[
+          { key: 'from', label: 'Has a value', note: null,
+            value: table.minYearsForValue != null ? `After ${table.minYearsForValue} full years` : '—' },
+          { key: 'paidup', label: 'Made paid-up', note: basis?.note ?? null, value: basis?.label ?? table.paidUpBasis ?? '—' },
+          { key: 'basis', label: 'Actuarial basis', note: table.basisDate ? `signed off ${formatDate(table.basisDate)}` : null,
+            value: table.basisReference ?? '—' },
+        ]}
+      />
+      {table.rows.length > 0 && (
+        <section>
+          <SectionHeading hint="Per 1,000 of sum assured: 350 is 35% of the cover. A year with no row reads the row before it.">
+            Cash-value table
+          </SectionHeading>
+          <BandsShown caption="Cash value per 1,000 of sum assured by policy year"
+            columns={['Policy year', ...(banded ? ['Entry ages'] : []), 'Cash value per 1,000', 'Of the cover',
+              ...(paidUp ? ['Paid-up per 1,000'] : [])]}
+            rows={table.rows.map((r) => [`Year ${r.policyYear}`,
+              ...(banded ? [r.ageFrom == null ? 'Any' : ages(r.ageFrom, r.ageTo).replace('Ages ', '')] : []),
+              amount(r.cashValuePerMille), `${amount(r.cashValuePerMille / 10)}%`,
+              ...(paidUp ? [amount(r.paidUpPerMille)] : [])])} />
+        </section>
+      )}
+    </>
+  );
+}
+
+type Bonus = NonNullable<VersionValueTermsView['bonus']>;
+
+function BonusTerms({ bonus }: { bonus: Bonus }) {
+  const method = bonus.method ? BONUS_METHOD[bonus.method] : undefined;
+  return (
+    <>
+      <FactorSection
+        title="With-profits bonuses"
+        hint="Each declared bonus is added to the policy and paid with the sum assured on death or maturity. Compound bonuses are worked out on the sum assured plus bonuses already added."
+        empty=""
+        rows={[
+          { key: 'method', label: 'Bonus worked out', note: method?.note ?? null, value: method?.label ?? '—' },
+          { key: 'paidup', label: 'Paid-up policies', note: null,
+            value: bonus.paidUpParticipates ? 'Keep receiving bonuses' : 'Stop receiving bonuses' },
+          { key: 'surrender', label: 'Bonuses on surrender', note: bonus.surrenderBasis === 'NONE' ? 'paid only on death or maturity' : null,
+            value: bonus.surrenderBasis ? BONUS_ON_SURRENDER[bonus.surrenderBasis] ?? bonus.surrenderBasis : '—' },
+        ]}
+      />
+      {bonus.surrenderBasis === 'OWN_SCALE' && bonus.surrenderRows.length > 0 && (
+        <section>
+          <SectionHeading hint="What each 1,000 of added bonus is worth on surrender, by years completed.">
+            Bonus surrender scale
+          </SectionHeading>
+          <BandsShown caption="Bonus surrender value by completed years"
+            columns={['Years completed', 'Per 1,000 of bonus', 'Of the bonus']} rows={bonusScaleRows(bonus.surrenderRows)} />
+        </section>
+      )}
+    </>
   );
 }

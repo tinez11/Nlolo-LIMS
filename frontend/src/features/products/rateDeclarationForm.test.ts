@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TokenIdentity } from '@/auth/claims';
+import type { VersionValueTermsView } from '@/api/types';
+import { grantAccess } from '@/test/access';
 import { rateDeclarationSchema, showsRates } from './rateDeclarationForm';
 
 const messages = (r: { success: boolean; error?: { issues: { message: string }[] } }) =>
@@ -27,7 +29,14 @@ describe('rateDeclarationSchema', () => {
 
 describe('showsRates', () => {
   const finance = { realmRoles: ['FINANCE_OFFICER'] } as unknown as TokenIdentity;
-  it('is false off the savings categories', () => {
-    expect(showsRates('TERM_LIFE', finance)).toBe(false);
+  const plain = { bonus: null, cashValue: null, payouts: null, account: null, depositRates: [] } as VersionValueTermsView;
+  const account = (band: number | null) => ({ ...plain, account: { guaranteedRatePercent: 3, minimumBalance: 0,
+    minRatePercent: band, maxRatePercent: band, charges: [], usesAccountCharges: false } }) as VersionValueTermsView;
+  it('shows only where a version is a savings account, the one kind a declaration credits', () => {
+    grantAccess('products.view', 'ledger.view');
+    expect(showsRates([plain], finance)).toBe(false);
+    expect(showsRates([account(5)], finance)).toBe(false);   // a term account earns its locked rate
+    expect(showsRates([{ ...account(null), depositRates: [{ minAmount: 1, termMonths: 12, ratePercent: 9 }] }], finance)).toBe(false);
+    expect(showsRates([plain, account(null)], finance)).toBe(true);
   });
 });

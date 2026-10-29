@@ -18,7 +18,11 @@ vi.mock('react-oidc-context', () => ({ useAuth: () => ({ user: undefined }) }));
 
 /** The page reads its versions from GET /products/{id}/versions (2026-10-08); this product has one, current. */
 // The customer-portal listing panel loads on its own; left pending here, it is not what this file is about.
-vi.mock('@/api/products', () => ({ listProductVersions: vi.fn(), getOnlineListing: vi.fn(() => new Promise(() => undefined)) }));
+vi.mock('@/api/products', () => ({
+  listProductVersions: vi.fn(),
+  getOnlineListing: vi.fn(() => new Promise(() => undefined)),
+  getValueTerms: vi.fn(async () => ({ bonus: null, cashValue: null, payouts: null, account: null, depositRates: [] })),
+}));
 
 /**
  * The PRICED branch of the rating panel cannot be reached through this console:

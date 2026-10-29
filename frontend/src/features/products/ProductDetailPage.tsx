@@ -22,6 +22,9 @@ import { PublishVersionForm } from './PublishVersionForm';
 import { Panel } from '@/components/Panel';
 import { useReturnCrumbs } from '@/lib/returnCrumbs';
 import { DetailLayout } from '@/components/DetailLayout';
+import { humanizeStatus } from '@/lib/status';
+import { useProductValueTerms } from './useProductValueTerms';
+import { valueKindLabel } from './valueTermsText';
 
 /**
  * The "acts" half of drawer-previews-page-acts. Unlike Policies/Claims there is
@@ -46,6 +49,8 @@ export function ProductDetailPage() {
   const loadDrafts = useProductStore((s) => s.loadDrafts);
   // Bumped on a publish here, so the versions list reloads and shows the new one as current.
   const [published, setPublished] = useState(0);
+  // What its versions build up -- which decides the declaration panels and what kind of product it is.
+  const valueTerms = useProductValueTerms(productId, published);
 
   useEffect(() => {
     if (list.data === null) void loadList();
@@ -164,6 +169,8 @@ export function ProductDetailPage() {
     // because narrowing does not survive into a hoisted function, which the compiler
     // must assume could be called at any time.
     if (!product) return null;
+    // "Savings account", or "Cash-value plan; Savings account" when its versions differ.
+    const kinds = valueTerms ? [...new Set(valueTerms.map((v) => valueKindLabel(v, product.category)).filter(Boolean))].join('; ') : '';
 
     return (
       <>
@@ -171,7 +178,8 @@ export function ProductDetailPage() {
           <ProductDescriptionField productId={productId} description={product.description} canEdit={canAuthor}
             onChanged={() => void (product.status === 'DRAFT' ? loadDrafts() : loadList())} />
           <dl className="px-4 pb-2">
-            <Field label="Category" value={product.category?.replace(/_/g, ' ') ?? '—'} />
+            <Field label="Category" value={product.category ? humanizeStatus(product.category) : '—'}
+              {...(kinds ? { note: kinds } : {})} />
             <Field label="Default currency" value={product.defaultCurrency ?? '—'} />
             {canAuthor && product.status === 'DRAFT' && product.productId ? (
               <DraftPortfolioField productId={product.productId} current={product.portfolioCode}
@@ -188,13 +196,13 @@ export function ProductDetailPage() {
           </Panel>
         )}
 
-        {showsRates(product.category, identity) && (
+        {showsRates(valueTerms, identity) && (
           <Panel title="Declared interest rates" subtitle="Credited on every account, never below its own version's guarantee">
             <RateDeclarationsPanel productId={productId} />
           </Panel>
         )}
 
-        {showsBonuses(product.category, identity) && (
+        {showsBonuses(valueTerms, identity) && (
           <Panel title="Bonus declarations" subtitle="Attached to every with-profits policy on this product eligible on the valuation date">
             <BonusDeclarationsPanel productId={productId} />
           </Panel>

@@ -713,6 +713,12 @@ public interface ProductApi {
     Optional<CashValueConfigView> getCashValueConfig(UUID productVersionId);
 
     /**
+     * The whole cash-value table with its sign-off, as published -- {@link CashValuePlan#none()} for a version with
+     * none. For the product screen, which showed a version's values nowhere (2026-10-29).
+     */
+    CashValuePlan resolveCashValuePlan(UUID productVersionId);
+
+    /**
      * The cash value per 1,000 of sum assured at {@code policyYear} for a life entering at
      * {@code ageAtEntry} (null where the scale is not age-banded). Empty when the version has no
      * cash-value table, or no row for that year/age -- a gap the actuary did not price, which the

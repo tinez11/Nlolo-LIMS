@@ -2,8 +2,10 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getAnnuityTerms } from '@/api/annuity';
 import { getFuneralTerms } from '@/api/funeral';
-import { listProductVersions } from '@/api/products';
-import type { AnnuityTermsView, FuneralTermsView, ProductVersionSummaryView, UnitLinkedTermsView } from '@/api/types';
+import { getValueTerms, listProductVersions } from '@/api/products';
+import type {
+  AnnuityTermsView, FuneralTermsView, ProductVersionSummaryView, UnitLinkedTermsView, VersionValueTermsView,
+} from '@/api/types';
 import { getUnitLinkedTerms } from '@/api/unitlinked';
 import { Field } from '@/components/Field';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
@@ -13,7 +15,7 @@ import { bucketLabel, modelLabel } from '@/lib/ifrs17';
 import { selectVersionRating, useProductStore } from '@/store/productStore';
 import { RatingBasis } from './RatingBasis';
 import { funeralSummary, pricedOtherwise } from './versionText';
-import { AnnuityTermsDetail, FuneralTermsDetail, UnitLinkedTermsDetail } from './VersionTerms';
+import { AnnuityTermsDetail, FuneralTermsDetail, UnitLinkedTermsDetail, ValueTermsDetail } from './VersionTerms';
 import { chargeLine } from './chargeText';
 import { useVersionCharges } from './useVersionCharges';
 import { StaffName } from '@/components/StaffName';
@@ -165,6 +167,7 @@ function VersionDetails({ productId, category, version }: {
       {category === 'FUNERAL' && <FuneralTerms productId={productId} versionId={versionId} />}
       {category === 'ANNUITY' && <AnnuityTerms productId={productId} versionId={versionId} />}
       {category === 'UNIT_LINKED' && <UnitLinkedTerms productId={productId} versionId={versionId} />}
+      <ValueTerms productId={productId} versionId={versionId} />
       <RatingBasis rating={rating} versionId={versionId} category={category}
         onRetry={() => void loadRating(productId, versionId)} />
     </div>
@@ -179,6 +182,11 @@ function FuneralTerms({ productId, versionId }: { productId: string; versionId: 
 function AnnuityTerms({ productId, versionId }: { productId: string; versionId: string }) {
   const terms = useTerms<AnnuityTermsView>(getAnnuityTerms, productId, versionId);
   return terms ? <AnnuityTermsDetail terms={terms} /> : null;
+}
+
+function ValueTerms({ productId, versionId }: { productId: string; versionId: string }) {
+  const terms = useTerms<VersionValueTermsView>(getValueTerms, productId, versionId);
+  return terms ? <ValueTermsDetail terms={terms} /> : null;
 }
 
 function UnitLinkedTerms({ productId, versionId }: { productId: string; versionId: string }) {

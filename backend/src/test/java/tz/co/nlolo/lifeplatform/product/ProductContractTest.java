@@ -687,6 +687,27 @@ class ProductContractTest {
         });
         assertThat(productApi.resolveCashValuePerMille(versionId, 3, null)).hasValueSatisfying(
             v -> assertThat(v).isEqualByComparingTo("300"));
+
+        // The product screen reads the whole table back, with no bonus, account or deposit to show.
+        readValueTerms(tenantId, productId, versionId)
+            .andExpect(jsonPath("$.cashValue.basisReference").value("ACT/2026/ENDOW-01"))
+            .andExpect(jsonPath("$.cashValue.paidUpBasis").value("PROPORTIONATE"))
+            .andExpect(jsonPath("$.cashValue.rows[1].policyYear").value(3))
+            .andExpect(jsonPath("$.cashValue.rows[1].cashValuePerMille").value(300))
+            .andExpect(jsonPath("$.payouts.rows[0].kind").value("MATURITY"))
+            .andExpect(jsonPath("$.payouts.terms.freeLookDays").value(15))
+            .andExpect(jsonPath("$.bonus").doesNotExist())
+            .andExpect(jsonPath("$.account").doesNotExist())
+            .andExpect(jsonPath("$.depositRates").isEmpty());
+    }
+
+    private org.springframework.test.web.servlet.ResultActions readValueTerms(UUID tenantId, UUID productId, UUID versionId)
+            throws Exception {
+        return mockMvc.perform(get("/products/" + productId + "/versions/" + versionId + "/value-terms")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 
     @Test
@@ -779,6 +800,14 @@ class ProductContractTest {
         assertThat(plan.chargesFor(7).contributionAllocationPercent()).isEqualByComparingTo("1");
         assertThat(productApi.resolvePayoutPlan(versionId).rows()).singleElement()
             .satisfies(r -> assertThat(r.amountBasis()).isEqualTo(PayoutAmountBasis.ACCOUNT_VALUE));
+
+        readValueTerms(tenantId, productId, versionId)
+            .andExpect(jsonPath("$.account.guaranteedRatePercent").value(3))
+            .andExpect(jsonPath("$.account.minimumBalance").value(50000))
+            .andExpect(jsonPath("$.account.usesAccountCharges").value(false))
+            .andExpect(jsonPath("$.account.charges.length()").value(2))
+            .andExpect(jsonPath("$.account.charges[1].toPolicyYear").isEmpty())
+            .andExpect(jsonPath("$.cashValue").doesNotExist());
     }
 
     @Test
@@ -1091,6 +1120,14 @@ class ProductContractTest {
                 .content(withProfitsVersion("[{\"kind\":\"MATURITY\",\"amountBasis\":\"PERCENT_OF_SA\",\"amountValue\":100}]")))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        TenantContext.set(tenantId);
+        UUID versionId = productApi.getActiveSnapshot(productId, LocalDate.of(2026, 6, 1)).productVersionId();
+        readValueTerms(tenantId, productId, versionId)
+            .andExpect(jsonPath("$.bonus.method").value("COMPOUND"))
+            .andExpect(jsonPath("$.bonus.paidUpParticipates").value(false))
+            .andExpect(jsonPath("$.bonus.surrenderBasis").value("NONE"))
+            .andExpect(jsonPath("$.bonus.surrenderRows").isEmpty());
     }
 
     @Test

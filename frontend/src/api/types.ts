@@ -363,6 +363,7 @@ export type IfrsMeasurementModel = NonNullable<ProductVersionSpec['ifrsMeasureme
 export type VersionRatingView = ProductComponents['schemas']['VersionRatingView'];
 export type CashValueTermsView = ProductComponents['schemas']['CashValueTerms'];
 export type TermAccountTermsView = ProductComponents['schemas']['TermAccountTerms'];
+export type VersionValueTermsView = ProductComponents['schemas']['VersionValueTerms'];
 
 /** A premium quotation and the whole derivation behind it. The ONE authority on a premium (2026-10-16). */
 export type PremiumQuoteView = ProductComponents['schemas']['PremiumQuoteView'];

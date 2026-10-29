@@ -310,6 +310,58 @@ public class ProductController {
     public record TermAccountTermsResponse(boolean termAccount, java.math.BigDecimal minRatePercent,
                                            java.math.BigDecimal maxRatePercent) {}
 
+    /**
+     * What a version's policies build up and pay back (2026-10-29): with-profits bonus rules, the cash-value table, the
+     * payout schedule, savings-account terms and a deposit's rate grid. Each was published with the version and then
+     * shown nowhere -- an endowment's bonus method or surrender table could be read only in the database. Each part is
+     * null (the grid empty) when the version has none, so a term life version answers with nothing at all.
+     */
+    @GetMapping("/products/{productId}/versions/{versionId}/value-terms")
+    @PreAuthorize("@access.can('products.view')")
+    public ValueTermsResponse getValueTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {
+        BonusPlan bonus = productApi.resolveBonusPlan(versionId);
+        CashValuePlan cashValue = productApi.resolveCashValuePlan(versionId);
+        PayoutPlan payouts = productApi.resolvePayoutPlan(versionId);
+        AccumulationPlan account = productApi.resolveAccumulationPlan(versionId);
+        return new ValueTermsResponse(
+            bonus.participating()
+                ? new BonusTerms(bonus.method(), bonus.paidUpParticipates(), bonus.surrenderBasis(), bonus.surrenderRows())
+                : null,
+            cashValue.isPresent()
+                ? new CashValueTable(cashValue.basisReference(), cashValue.basisDate(), cashValue.paidUpBasis(),
+                    cashValue.minYearsForValue(), cashValue.rows())
+                : null,
+            payouts.authored() ? new PayoutTermsResponse(payouts.terms(), payouts.rows()) : null,
+            account.isAccount()
+                ? new AccountTerms(account.guaranteedRatePercent(), account.minimumBalance(), account.minRatePercent(),
+                    account.maxRatePercent(), account.accountChargeIds().isEmpty() ? account.charges() : List.of(),
+                    !account.accountChargeIds().isEmpty())
+                : null,
+            productApi.resolveDepositPlan(versionId).rows());
+    }
+
+    public record ValueTermsResponse(BonusTerms bonus, CashValueTable cashValue, PayoutTermsResponse payouts,
+                                     AccountTerms account,
+                                     List<tz.co.nlolo.lifeplatform.product.api.DepositRateRow> depositRates) {}
+
+    public record BonusTerms(tz.co.nlolo.lifeplatform.product.api.BonusMethod method, boolean paidUpParticipates,
+                             tz.co.nlolo.lifeplatform.product.api.BonusSurrenderBasis surrenderBasis,
+                             List<tz.co.nlolo.lifeplatform.product.api.BonusSurrenderRow> surrenderRows) {}
+
+    public record CashValueTable(String basisReference, LocalDate basisDate, String paidUpBasis, Integer minYearsForValue,
+                                 List<tz.co.nlolo.lifeplatform.product.api.CashValueRowInput> rows) {}
+
+    public record PayoutTermsResponse(PayoutTerms terms, List<tz.co.nlolo.lifeplatform.product.api.PayoutRowInput> rows) {}
+
+    /**
+     * {@code charges} are the version's own charge rows; empty when {@code usesAccountCharges}, whose Account charges
+     * the page already lists.
+     */
+    public record AccountTerms(java.math.BigDecimal guaranteedRatePercent, java.math.BigDecimal minimumBalance,
+                               java.math.BigDecimal minRatePercent, java.math.BigDecimal maxRatePercent,
+                               List<tz.co.nlolo.lifeplatform.product.api.AccumulationChargeRow> charges,
+                               boolean usesAccountCharges) {}
+
     @GetMapping("/products/{productId}/versions/{versionId}/annuity")
     @PreAuthorize("hasRole('REALM_AGENTS') or @access.can('products.view')")
     public ResponseEntity<AnnuityTermsResponse> getAnnuityTerms(@PathVariable UUID productId, @PathVariable UUID versionId) {

@@ -1,6 +1,8 @@
 import { can } from '@/auth/access';
 import { z } from 'zod';
+import type { VersionValueTermsView } from '@/api/types';
 import { canSeeFinance, type TokenIdentity } from '@/auth/claims';
+import { creditsDeclaredRates } from './valueTermsText';
 
 /** The column is NUMERIC(7,4): 0-100 with at most four decimals. */
 export const rateDeclarationSchema = z.object({
@@ -13,7 +15,11 @@ export const rateDeclarationSchema = z.object({
 });
 export type RateDeclarationValues = z.infer<typeof rateDeclarationSchema>;
 
-/** Whether the rates panel belongs on this product page at all. */
-export function showsRates(category: string | undefined, identity: TokenIdentity): boolean {
-  return ['ENDOWMENT', 'WHOLE_LIFE', 'EDUCATION_SAVINGS'].includes(category ?? '') && canSeeFinance(identity) && can('products.view');
+/**
+ * Whether the rates panel belongs on this product page at all: only where a version is a savings account, the one kind
+ * a declaration credits (2026-10-29). It went by category, so a cash-value endowment, a deposit and a term account
+ * offered declarations that touch nothing, and a deferred annuity's account -- which does earn them -- offered none.
+ */
+export function showsRates(versions: readonly VersionValueTermsView[] | null, identity: TokenIdentity): boolean {
+  return versions != null && creditsDeclaredRates(versions) && canSeeFinance(identity) && can('products.view');
 }

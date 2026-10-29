@@ -27,6 +27,7 @@ import type {
   PremiumQuoteView,
   ProductVersionSummaryView,
   VersionRatingView,
+  VersionValueTermsView,
 } from './types';
 
 /**
@@ -121,6 +122,16 @@ export function getCashValueTerms(productId: string, versionId: string): Promise
 export function getTermAccountTerms(productId: string, versionId: string): Promise<TermAccountTermsView> {
   return get<TermAccountTermsView>(
     `/products/${encodeURIComponent(productId)}/versions/${encodeURIComponent(versionId)}/term-account`,
+  );
+}
+
+/**
+ * What a version's policies build up and pay back (2026-10-29): bonus rules, cash-value table, payouts, savings account
+ * and deposit grid, each null (the grid empty) when the version has none. Staff.
+ */
+export function getValueTerms(productId: string, versionId: string): Promise<VersionValueTermsView> {
+  return get<VersionValueTermsView>(
+    `/products/${encodeURIComponent(productId)}/versions/${encodeURIComponent(versionId)}/value-terms`,
   );
 }
 
