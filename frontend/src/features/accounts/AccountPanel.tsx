@@ -759,7 +759,7 @@ function waitingFor(w: WithdrawalView): string {
   return 'taken from the balance; waiting for the mobile-money provider to confirm the payment';
 }
 
-function WithdrawalRow({
+export function WithdrawalRow({
   withdrawal,
   viewerSubject,
   isFinance,
@@ -827,7 +827,7 @@ function WithdrawalRow({
   );
 }
 
-function AdjustmentRow({
+export function AdjustmentRow({
   adjustment,
   viewerSubject,
   isFinance,

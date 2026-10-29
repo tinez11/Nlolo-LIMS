@@ -12,6 +12,7 @@ import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useApprovalsStore } from '@/store/approvalsStore';
 import { approvalLink } from './approvalLinks';
+import { AccountApprovalReview } from './AccountApprovalReview';
 
 /**
  * Everything waiting for the viewer's signature, across every policy (2026-10-27).
@@ -96,8 +97,15 @@ export function ApprovalsPage() {
 /** Rows a kind shows before "Show all": enough to see what is oldest without one long queue burying the rest. */
 const FIRST_ROWS = 5;
 
+/**
+ * Kinds signed right here (2026-10-29, the user: finance should not have to open each policy). Review opens the
+ * policy's facts and the request above the table; everything else still opens the page that owns the act.
+ */
+const REVIEWED_HERE = new Set(['account-withdrawal', 'account-adjustment']);
+
 function GroupCard({ group }: { group: ApprovalGroup }) {
   const [expanded, setExpanded] = useState(false);
+  const [reviewing, setReviewing] = useState<ApprovalRow | null>(null);
   const shown = expanded ? group.rows : group.rows.slice(0, FIRST_ROWS);
   const columns: Column<ApprovalRow>[] = [
     {
@@ -147,6 +155,15 @@ function GroupCard({ group }: { group: ApprovalGroup }) {
       align: 'right',
       className: 'w-40',
       render: (r) => {
+        if (REVIEWED_HERE.has(group.kind) && !r.yours && r.policyNumber) {
+          const open = reviewing?.reference === r.reference;
+          return (
+            <Button size="sm" variant={open ? 'secondary' : 'outline'} aria-expanded={open}
+              onClick={() => setReviewing(open ? null : r)}>
+              Review
+            </Button>
+          );
+        }
         const to = approvalLink(group.kind, r);
         if (!to) return null;
         return (
@@ -178,6 +195,15 @@ function GroupCard({ group }: { group: ApprovalGroup }) {
         </p>
       ) : group.rows.length > 0 ? (
         <>
+          {reviewing?.policyNumber && (
+            <AccountApprovalReview
+              key={reviewing.reference}
+              kind={group.kind as 'account-withdrawal' | 'account-adjustment'}
+              policyNumber={reviewing.policyNumber}
+              reference={reviewing.reference}
+              onClose={() => setReviewing(null)}
+            />
+          )}
           <DataTable columns={columns} rows={shown} rowKey={(r) => r.reference} caption={group.label} />
           {(group.rows.length > FIRST_ROWS || group.total > group.rows.length) && (
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2">
