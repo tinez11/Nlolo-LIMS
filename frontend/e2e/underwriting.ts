@@ -35,7 +35,8 @@ export async function openCaseForAmina(
   await page.getByRole('option', { name: 'Amina Owner' }).click();
   await chooseProduct(page, productLabel);
   await expect(page.getByText('Resolving product version…')).not.toBeVisible();
-  await page.getByLabel('Sum assured').fill(sumAssured);
+  // A savings account names it the opening deposit (2026-10-29): its policy bills exactly this amount.
+  await page.getByLabel(/^(Sum assured|Opening deposit)/).fill(sumAssured);
   await page.getByRole('button', { name: 'Open case' }).click();
   await expect(page).toHaveURL(/\/staff\/underwriting\/[0-9a-f-]{36}$/, { timeout: 15_000 });
   return page.url().split('/').pop() as string;
