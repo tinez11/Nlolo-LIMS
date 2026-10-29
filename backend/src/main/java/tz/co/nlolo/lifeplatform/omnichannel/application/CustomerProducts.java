@@ -94,7 +94,7 @@ public class CustomerProducts {
         LocalDate today = LocalDate.now(DAR);
         ProductSnapshotView version = productApi.getActiveSnapshot(productId, today);
         String kind = kindOf(listing.category(), version.productVersionId());
-        if (!ONLINE.contains(kind)) {
+        if (!toView(listing, today).online()) {
             throw new CustomerRequestRefusedException(listing.productName() + " is priced by an adviser: ask for it and we will"
                 + " contact you with a price");
         }
@@ -199,7 +199,8 @@ public class CustomerProducts {
         }
         LocalDate today = LocalDate.now(DAR);
         UUID versionId = productApi.getActiveSnapshot(request.productId(), today).productVersionId();
-        String kind = kindOf(listing.category(), versionId);
+        // An adviser prices what is not offered here, and asks the health questions then.
+        String kind = toView(listing, today).online() ? kindOf(listing.category(), versionId) : "ADVISER";
         List<BeneficiaryNomination> beneficiaries = nominations(request.beneficiaries());
         List<DisclosureAnswer> answers = answers(kind, request.answers(), request.language());
 
@@ -398,9 +399,14 @@ public class CustomerProducts {
                 new CustomerProductView.Terms(null, null, null, null, List.of(), List.of(), List.of()), List.of());
         }
         String kind = kindOf(l.category(), version.productVersionId());
-        boolean online = ONLINE.contains(kind);
+        // Cover priced from base rates is offered here only when the version has some: one published without a rate
+        // table refuses every quote, and a customer should not answer every question to learn that (2026-10-29, Nlolo
+        // Money-Back 20). It is asked about through an adviser instead.
+        boolean online = ONLINE.contains(kind) && (!("PROTECTION".equals(kind) || "CASH_VALUE".equals(kind))
+            || !productApi.getVersionRating(l.productId(), version.productVersionId()).baseRates().isEmpty());
         return new CustomerProductView(l.productId(), l.productName(), l.category().name(), l.defaultCurrency(),
-            l.summary(), l.benefits(), online, kind, online, terms(kind, version), HealthQuestions.forKind(kind));
+            l.summary(), l.benefits(), online, kind, online, terms(kind, version),
+            online ? HealthQuestions.forKind(kind) : List.of());
     }
 
     private CustomerProductView.Terms terms(String kind, ProductSnapshotView version) {

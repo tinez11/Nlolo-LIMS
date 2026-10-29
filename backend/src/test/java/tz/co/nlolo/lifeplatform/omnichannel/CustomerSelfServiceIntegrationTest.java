@@ -137,6 +137,43 @@ class CustomerSelfServiceIntegrationTest {
     }
 
     /**
+     * Cover published with no base rates refuses every quote (Nlolo Money-Back 20, 2026-10-29): it is offered through an
+     * adviser rather than letting a customer answer every question to learn that, and asking about it needs no answers.
+     */
+    @Test
+    void coverWithNoRatesIsAskedAboutThroughAnAdviser() throws Exception {
+        UUID productId = asTenant(() -> {
+            var product = productApi.createProduct("TERM-NORATE-" + UUID.randomUUID().toString().substring(0, 6),
+                "Unpriced Term", ProductCategory.TERM_LIFE, "TZS", "actuary");
+            productApi.publishVersion(product.productId(), tz.co.nlolo.lifeplatform.product.api.IfrsMeasurementModel.PAA,
+                TODAY.minusDays(1), null,
+                List.of(new ProductApi.RatingFactorInput(tz.co.nlolo.lifeplatform.product.api.FactorType.AGE, "18-60",
+                        BigDecimal.ONE, 18, 60),
+                    new ProductApi.RatingFactorInput(tz.co.nlolo.lifeplatform.product.api.FactorType.SUM_ASSURED_BAND,
+                        "ANY", BigDecimal.ONE, null, null, BigDecimal.ZERO, new BigDecimal("100000000"))),
+                List.of(new ProductApi.BenefitInput(tz.co.nlolo.lifeplatform.product.api.BenefitType.DEATH,
+                    tz.co.nlolo.lifeplatform.product.api.BenefitCalculationMethod.SUM_ASSURED)),
+                null, List.of(), new tz.co.nlolo.lifeplatform.product.api.EligibilityBounds(18, 60, null, null, null, null),
+                tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING, "actuary");
+            productApi.describeOnline(product.productId(), true, "Cover for your family", List.of());
+            return product.productId();
+        });
+        UUID me = funerals.person(TENANT, 35, Sex.MALE);
+
+        mockMvc.perform(customer(get("/customer/products"), me))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$[?(@.productId == '" + productId + "')].online").value(false))
+            .andExpect(jsonPath("$[?(@.productId == '" + productId + "')].questions.length()").value(0));
+        mockMvc.perform(customer(post("/customer/products/" + productId + "/quote"), me)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"sumAssured\":1000000}"))
+            .andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(customer(post("/customer/applications"), me)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"productId\":\"" + productId + "\"}"))
+            .andExpect(status().isCreated());
+    }
+
+    /**
      * A funeral plan is priced for the customer as main member and the family beside them; the application records the
      * family, the beneficiary and the two health questions as asked -- in Swahili when that is what was read.
      */
