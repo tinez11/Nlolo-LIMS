@@ -1,5 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
+import { useAuth } from 'react-oidc-context';
+import { readIdentity } from '@/auth/claims';
 import { type FieldErrors, type UseFormReturn, useForm } from 'react-hook-form';
 import { PayoutRouteFields } from '@/features/payments/PayoutRouteFields';
 import { routeBody, routeWords, type PayoutRouteValues } from '@/features/payments/payoutRoute';
@@ -89,6 +91,10 @@ export function ClaimSettlementPanel({
   // Newest first, so [0] is the most recent assessment -- the one a second
   // assessor wrote after the first, if there were two.
   const latestAssessment = assessmentsResource.data?.[0] ?? null;
+  // Separation of duties, said before anyone presses Approve (2026-10-29): whoever assessed this claim may not decide
+  // it. The server refuses that anyway; offering the form only to have it refused, with a raw id, was the bug.
+  const viewer = readIdentity(useAuth().user?.access_token)?.subject ?? null;
+  const viewerAssessed = viewer !== null && (assessmentsResource.data ?? []).some((a) => a.assessor === viewer);
   const recommended = latestAssessment?.recommendedAmount ?? null;
 
   const form = useForm<SettlementDecisionFormValues>({
@@ -191,6 +197,18 @@ export function ClaimSettlementPanel({
               : 'Disbursement settles asynchronously through the payment rail. The policy is now closed and reopening this claim will not reverse that.'
           }
         />
+      </div>
+    );
+  }
+
+  if (viewerAssessed) {
+    return (
+      <div className="p-4" role="note">
+        <p className="text-sm font-medium">Another claims manager decides this claim</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          You assessed it. Separation of duties keeps the person who weighed the evidence from also approving or
+          rejecting the payment, so the decision is someone else&rsquo;s.
+        </p>
       </div>
     );
   }

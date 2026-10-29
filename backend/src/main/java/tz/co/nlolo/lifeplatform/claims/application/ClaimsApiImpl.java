@@ -690,8 +690,10 @@ public class ClaimsApiImpl implements ClaimsApi {
         // at the controller (@PreAuthorize). This additionally blocks the same *person* from
         // assessing and then deciding, which a role check alone cannot catch.
         if (claimAssessmentRepository.existsByClaimIdAndTenantIdAndAssessor(claimId, tenantId, decidedBy)) {
+            // Addressed to the person, never naming them: decidedBy is an identity-provider subject, and printing it put
+            // a bare uuid in front of the manager who had just pressed Approve (2026-10-29).
             throw new ClaimValidationException(
-                "Separation of duties: " + decidedBy + " assessed this claim and cannot also decide it");
+                "Separation of duties: you assessed this claim, so another claims manager must decide it");
         }
 
         if (approved) {
