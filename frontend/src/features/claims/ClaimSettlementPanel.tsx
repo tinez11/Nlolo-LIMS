@@ -159,7 +159,11 @@ export function ClaimSettlementPanel({
    */
   const [pending, setPending] = useState<SettlementDecisionFormValues | null>(null);
 
+  // Where an approved payment went, for the note that follows: finance (a transfer or cheque) or the provider.
+  const [sentToFinance, setSentToFinance] = useState(false);
+
   async function commit(values: SettlementDecisionFormValues) {
+    setSentToFinance(values.approved && (creditLife || values.method !== 'MOBILE_MONEY'));
     await decideSettlement(claimId, toApiRequest(values, creditLife), attempt);
     if (useClaimStore.getState().decidingSettlement[claimId]?.status === 'success') {
       setPending(null);
@@ -194,7 +198,9 @@ export function ClaimSettlementPanel({
           note={
             decided.status === 'REJECTED'
               ? 'A claims manager can reopen a rejected claim if new evidence arrives.'
-              : 'Disbursement settles asynchronously through the payment rail. The policy is now closed and reopening this claim will not reverse that.'
+              : sentToFinance
+                ? 'Sent to finance under Payments to make: they make the payment and record its reference, and the claim settles then. The policy is now closed and reopening this claim will not reverse that.'
+                : 'Sent to the mobile-money provider; the claim settles when it confirms the payment. The policy is now closed and reopening this claim will not reverse that.'
           }
         />
       </div>
@@ -395,11 +401,11 @@ export function ClaimSettlementPanel({
               <>
                 Pay{' '}
                 <strong>
-                  {pending.approvedCurrency.toUpperCase()} {pending.approvedAmount}
+                  {formatMoney({ amount: pending.approvedAmount, currencyCode: pending.approvedCurrency.toUpperCase() })}
                 </strong>{' '}
-                to{' '}
                 {creditLife ? (
                   <>
+                    to{' '}
                     <strong>
                       {lenderPartyId ? <PartyName partyId={lenderPartyId} /> : 'the lender'}
                     </strong>{' '}
@@ -410,7 +416,12 @@ export function ClaimSettlementPanel({
                     by <strong>{routeWords(routeBody(pending))}</strong>
                   </>
                 )}
-                .
+                .{' '}
+                {/* Who moves the money next (2026-10-29): mobile money goes straight to the provider; a transfer or a
+                    cheque goes to finance, who make it and record its reference. */}
+                {creditLife || pending.method !== 'MOBILE_MONEY'
+                  ? 'It then goes to finance under Payments to make: they make it and record its reference, and the claim settles when they do.'
+                  : 'It is sent to the mobile-money provider now, and the claim settles when the provider confirms it.'}
               </>
             ) : (
               <>

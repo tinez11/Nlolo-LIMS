@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AwaitingEftView } from '@/api/types';
 import { ConfirmAct } from '@/components/ConfirmAct';
+import { Receipt } from '@/components/Receipt';
 import { DataTable, type Column } from '@/components/DataTable';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyName } from '@/components/PartyName';
@@ -62,6 +63,9 @@ export function EftExecutionPage() {
   const [confirming, setConfirming] = useState<AwaitingEftView | null>(null);
   const [bankReference, setBankReference] = useState('');
   const [executingId, setExecutingId] = useState<string | null>(null);
+  // What was just recorded, so finance is told it went through and what it settled (2026-10-29): the row used to
+  // simply vanish from the queue.
+  const [paid, setPaid] = useState<{ row: AwaitingEftView; reference: string } | null>(null);
   const executeState = usePaymentStore(
     selectExecuting(executingId ?? confirming?.disbursementId ?? ''),
   );
@@ -287,9 +291,14 @@ export function EftExecutionPage() {
                 onConfirm={() => {
                   const id = confirming.disbursementId;
                   const reference = bankReference.trim();
+                  const row = confirming;
                   setConfirming(null);
+                  setPaid(null);
                   setExecutingId(id);
-                  void markExecuted(id, reference).finally(() => setExecutingId(null));
+                  void markExecuted(id, reference).finally(() => {
+                    setExecutingId(null);
+                    if (usePaymentStore.getState().executing[id]?.status === 'success') setPaid({ row, reference });
+                  });
                 }}
                 onCancel={() => setConfirming(null)}
               >
@@ -324,6 +333,35 @@ export function EftExecutionPage() {
                   {cheque ? 'A cheque number' : 'A bank reference'} is required before this can be recorded.
                 </p>
               )}
+            </div>
+          )}
+
+          {paid && (
+            <div className="border-b border-border px-3 py-2.5">
+              <Receipt
+                heading="Payment recorded"
+                lines={[
+                  { label: 'Paid', value: formatMoney(paid.row.amount) },
+                  { label: 'To', value: paid.row.payeeRef },
+                  ...(paid.row.method === 'EFT' && paid.row.payeeAccountNumber
+                    ? [{ label: 'Account', value: describeRoute(paid.row) }]
+                    : []),
+                  { label: 'For', value: purposeWords(paid.row.purpose ?? '') },
+                  { label: paid.row.method === 'CHEQUE' ? 'Cheque number' : 'Bank reference', value: paid.reference },
+                ]}
+                note={
+                  paid.row.purpose === 'CLAIM_SETTLEMENT'
+                    ? 'The claim is settled and the expense is booked to the ledger.'
+                    : paid.row.purpose === 'WITHDRAWAL_PAYOUT'
+                      ? 'The withdrawal is marked paid on the policy’s account.'
+                      : 'The payout is marked paid and booked to the ledger.'
+                }
+                onward={
+                  <Button size="sm" variant="ghost" onClick={() => setPaid(null)}>
+                    Done
+                  </Button>
+                }
+              />
             </div>
           )}
 

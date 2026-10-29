@@ -14,7 +14,10 @@ import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { humanizeStatus } from '@/lib/status';
 import { isInitialLoad } from '@/store/createResourceSlice';
-import { selectClaimDetail, useClaimStore } from '@/store/claimStore';
+import { selectAssessments, selectClaimDetail, useClaimStore } from '@/store/claimStore';
+import { ArrowRight, Check, Clock } from 'lucide-react';
+import { cn } from '@/lib/cn';
+import { claimNextStep } from './claimNextStep';
 import { AccidentalDeathField } from './AccidentalDeathField';
 import { ClaimDetailsFields } from './ClaimDetailsFields';
 import { Panel } from '@/components/Panel';
@@ -42,7 +45,14 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
   const breadcrumb = useBreadcrumb([{ label: 'Claims', to: `/${realm}/claims` }]);
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
-  const roles = staffRoles(identity);
+  // What the platform lets this person do (2026-10-29), not the roles their token happens to carry: an administrator
+  // holds claims.assess and claims.settle on the platform with no claims role in Keycloak, and used to see a claim
+  // with no way to act on it -- though the server would have let them.
+  const roles = {
+    ...staffRoles(identity),
+    CLAIMS_ASSESSOR: can('claims.assess'),
+    CLAIMS_MANAGER: can('claims.settle'),
+  };
   const canSeeReinsurance = can('reinsurance.view');
 
   const detail = useClaimStore(selectClaimDetail(claimId));
@@ -53,6 +63,14 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
   }, [claimId, loadDetail]);
 
   const claim = detail.data;
+  // Whether this person assessed it -- then the decision is someone else's, and the page says so up front.
+  const loadAssessments = useClaimStore((s) => s.loadAssessments);
+  const assessments = useClaimStore(selectAssessments(claimId));
+  const seesAssessments = roles.CLAIMS_ASSESSOR || roles.CLAIMS_MANAGER;
+  useEffect(() => {
+    if (claimId && seesAssessments) void loadAssessments(claimId);
+  }, [claimId, seesAssessments, loadAssessments]);
+  const viewerAssessed = (assessments.data ?? []).some((a) => a.assessor === identity?.subject);
 
   const canAssess =
     roles.CLAIMS_ASSESSOR &&
@@ -110,6 +128,10 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
         // where a control goes. They are not interchangeable slots.
         status={claim?.status && <StatusBadge kind="claim" value={claim.status} />}
       />
+
+      {claim && realm === 'staff' && <NextStep step={claimNextStep({
+        claim, canAssess: roles.CLAIMS_ASSESSOR, canDecide: roles.CLAIMS_MANAGER, viewerAssessed,
+      })} />}
 
       {claim && (
         /*
@@ -191,5 +213,29 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
         </DetailLayout>
       )}
     </>
+  );
+}
+
+/**
+ * Who acts next, and whether that is you (2026-10-29): a claim that read only "Registered" left the person who
+ * registered it not knowing an assessor and then a manager had to act. Tone, not colour alone: an arrow when it is
+ * yours to do, a clock when it waits on someone else, a tick when it is finished.
+ */
+function NextStep({ step }: { step: { tone: 'act' | 'wait' | 'done'; text: string } }) {
+  if (!step.text) return null;
+  const Icon = step.tone === 'act' ? ArrowRight : step.tone === 'done' ? Check : Clock;
+  return (
+    <div className="px-6 pt-4">
+      <p
+        role="status"
+        className={cn(
+          'flex items-start gap-2 rounded-lg border px-4 py-2.5 text-sm',
+          step.tone === 'act' ? 'border-border-strong bg-surface font-medium' : 'border-border bg-band text-muted-foreground',
+        )}
+      >
+        <Icon aria-hidden className="mt-0.5 size-4 shrink-0" />
+        {step.text}
+      </p>
+    </div>
   );
 }
