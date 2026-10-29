@@ -15,8 +15,8 @@ import { claimSections } from './claimSections';
  * be chased down before that was obvious.
  *
  * `claimSections` is the piece worth pinning. It is the only real logic the redesign added to
- * this lane -- seven role- and status-gated entries, each pairing a jump-link with the panel
- * that link must land on -- and every one of its failure modes is silent on screen.
+ * this lane -- seven role- and status-gated entries, each a tab and the panels it shows -- and
+ * every one of its failure modes is silent on screen.
  */
 
 const CLAIM = {
@@ -56,55 +56,57 @@ function everySection() {
   });
 }
 
+/** True when the element tree holds a panel with this id. */
+function holdsPanel(node: unknown, id: string): boolean {
+  if (Array.isArray(node)) return node.some((n) => holdsPanel(n, id));
+  if (!isValidElement(node)) return false;
+  const props = node.props as { id?: string; children?: unknown };
+  return props.id === id || holdsPanel(props.children, id);
+}
+
 describe('claimSections', () => {
-  /**
-   * THE INVARIANT THE WHOLE SECTION BAR RESTS ON. The bar renders one link per entry pointing
-   * at `#id`, and the panel it must land on carries that same id. They are written out seven
-   * times by hand, so one typo in either half produces a link that scrolls nowhere -- and a
-   * broken in-page anchor fails completely silently, with no console error and nothing on
-   * screen to notice.
-   */
-  it('gives every section a panel whose id matches the link that targets it', () => {
+  /** Every section draws something, and no two share a tab value -- which would leave one tab unreachable. */
+  it('gives every section content and a tab value of its own', () => {
     const sections = everySection();
     expect(sections.length).toBeGreaterThan(3);
-    for (const section of sections) {
-      expect(isValidElement(section.content)).toBe(true);
-      expect((section.content as { props: { id?: string } }).props.id).toBe(section.id);
-    }
-  });
-
-  it('never repeats an id, which would leave one anchor unreachable', () => {
-    const ids = everySection().map((s) => s.id);
+    for (const section of sections) expect(isValidElement(section.content)).toBe(true);
+    const ids = sections.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
   /**
    * The gate this lane must not have widened. A staff.underwriter holds neither claims role, so
-   * the record is evidence and nothing else -- and one section renders no bar at all, because a
-   * bar with a single link jumps you where you already are.
+   * the record is evidence and nothing else -- and one section renders no tab strip at all.
    */
   it('shows an identity with no claims role only the evidence', () => {
     expect(sectionsFor().map((s) => s.id)).toEqual(['evidence']);
   });
 
-  it('shows an assessor their own form and the history, but never the decision', () => {
-    const ids = sectionsFor({
-      canAssess: true,
-      roles: { CLAIMS_ASSESSOR: true } as Roles,
-    }).map((s) => s.id);
+  /**
+   * Tabbed since 2026-10-29: the assessors' findings ride inside the tab where the person acts, so a manager deciding
+   * reads them beside the decision -- not a tab away. History is its own tab only when there is nothing to act on.
+   */
+  it("puts the history under an assessor's form, and never offers them the decision", () => {
+    const sections = sectionsFor({ canAssess: true, roles: { CLAIMS_ASSESSOR: true } as Roles });
+    const ids = sections.map((s) => s.id);
     expect(ids).toContain('assessment');
-    expect(ids).toContain('assessments');
     expect(ids).not.toContain('settlement');
+    expect(ids).not.toContain('assessments');
+    expect(holdsPanel(sections.find((s) => s.id === 'assessment')!.content, 'assessments')).toBe(true);
   });
 
-  it('shows a manager the decision and the history, but never the assessment form', () => {
-    const ids = sectionsFor({
-      canDecide: true,
-      roles: { CLAIMS_MANAGER: true } as Roles,
-    }).map((s) => s.id);
+  it("puts the history under a manager's decision, and never offers them the assessment form", () => {
+    const sections = sectionsFor({ canDecide: true, roles: { CLAIMS_MANAGER: true } as Roles });
+    const ids = sections.map((s) => s.id);
     expect(ids).toContain('settlement');
-    expect(ids).toContain('assessments');
     expect(ids).not.toContain('assessment');
+    expect(ids).not.toContain('assessments');
+    expect(holdsPanel(sections.find((s) => s.id === 'settlement')!.content, 'assessments')).toBe(true);
+  });
+
+  it('gives the history a tab of its own once there is nothing to act on', () => {
+    const ids = sectionsFor({ roles: { CLAIMS_MANAGER: true } as Roles }).map((s) => s.id);
+    expect(ids).toContain('assessments');
   });
 
   /**

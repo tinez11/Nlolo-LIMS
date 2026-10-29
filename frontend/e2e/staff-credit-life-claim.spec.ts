@@ -149,6 +149,8 @@ test.describe('staff credit-life claim', () => {
     await expect(managerPage.getByText('Settlement requested', { exact: true })).toBeVisible({
       timeout: 30_000,
     });
+    // Where the money is has its own tab (2026-10-29).
+    await managerPage.getByRole('tab', { name: 'Payment' }).click();
     await expect(
       managerPage.getByText(/Waiting for Finance to make this bank transfer and record it/),
     ).toBeVisible({ timeout: 30_000 });

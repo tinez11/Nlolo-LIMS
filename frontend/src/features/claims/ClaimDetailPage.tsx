@@ -1,5 +1,5 @@
 import { can } from '@/auth/access';
-import { Fragment, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useBreadcrumb } from '@/lib/cameFrom';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
@@ -7,7 +7,7 @@ import { readIdentity, staffRoles } from '@/auth/claims';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyName } from '@/components/PartyName';
-import { SectionNav } from '@/components/SectionNav';
+import { RecordTabs } from '@/components/RecordTabs';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { formatDate } from '@/lib/dates';
@@ -31,11 +31,10 @@ import { claimSections } from './claimSections';
  * session (no CLAIMS_ASSESSOR/CLAIMS_MANAGER role) sees none of the panels
  * below; that is correct, not a missing feature.
  *
- * ONE SCROLL, WITH A SECTION BAR -- not tabs, which is what the policy record got. The
- * difference is the job: a policy's registers are separate work done by separate people, so
- * hiding four of them costs nothing, while an assessor reads the evidence WHILE writing the
- * findings that cite it. Tabs would put the death certificate one click away from the form
- * quoting it. The bar only makes the fifth section a jump instead of a drag.
+ * TABS, as the policy record has (2026-10-29, the user: the section bar repeated the panels stacked beneath it). It
+ * used to be one scroll with a jump bar, so an assessor could read the evidence while writing the findings; the
+ * claim's facts stay pinned in the record rail beside every tab, and Evidence is one click away. It opens on the
+ * section the person came to act on -- assessing, deciding, reopening.
  */
 export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents' } = {}) {
   const { claimId = '' } = useParams();
@@ -112,15 +111,6 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
         status={claim?.status && <StatusBadge kind="claim" value={claim.status} />}
       />
 
-      {/* One link is not a bar -- it jumps you where you already are. A staff.underwriter
-          sees only Evidence, so they get no furniture for it. */}
-      {sections.length > 1 && (
-        <SectionNav
-          label="Claim sections"
-          sections={sections.map(({ id, label }) => ({ id, label }))}
-        />
-      )}
-
       {claim && (
         /*
           The record rail is facts only, and pinned -- the claimant's name and the
@@ -189,9 +179,15 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
             </>
           }
         >
-          {sections.map((section) => (
-            <Fragment key={section.id}>{section.content}</Fragment>
-          ))}
+          {/* One section is not a choice: a staff.underwriter sees only Evidence, so it gets no tab strip. */}
+          {sections.length > 1 ? (
+            <RecordTabs
+              label="Claim sections"
+              tabs={sections.map(({ id, label, content }) => ({ value: id, label, content }))}
+            />
+          ) : (
+            sections[0]?.content
+          )}
         </DetailLayout>
       )}
     </>
