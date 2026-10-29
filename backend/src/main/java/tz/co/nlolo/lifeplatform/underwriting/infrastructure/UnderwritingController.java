@@ -101,6 +101,7 @@ public class UnderwritingController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate decidedFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate decidedTo,
             @RequestParam(required = false) UUID applicantPartyId,
+            @RequestParam(required = false) tz.co.nlolo.lifeplatform.underwriting.api.CaseSource source,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int pageSize,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
@@ -114,7 +115,7 @@ public class UnderwritingController {
         Instant from = decidedFrom == null ? null : decidedFrom.atStartOfDay(CIVIL).toInstant();
         Instant to = decidedTo == null ? null : decidedTo.plusDays(1).atStartOfDay(CIVIL).toInstant();
         CaseFilter filter = CaseFilter.status(status).withOutcome(outcome).withReferral(referral)
-            .withDecided(from, to).withApplicant(applicantPartyId).withApplicants(applicantPartyIds);
+            .withDecided(from, to).withApplicant(applicantPartyId).withApplicants(applicantPartyIds).withSource(source);
 
         Pageable pageable = PageRequest.of(page, Math.min(pageSize, 100), Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<UnderwritingCaseView> result = underwritingApi.listCases(filter, pageable);

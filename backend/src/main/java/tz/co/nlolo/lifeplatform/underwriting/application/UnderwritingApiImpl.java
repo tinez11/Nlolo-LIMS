@@ -1249,14 +1249,15 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         // ClaimsApiImpl.searchClaims.
         boolean narrowed = filter.applicantPartyId() != null || filter.applicantPartyIds() != null
             || filter.outcome() != null || filter.referral() != null
-            || filter.decidedFrom() != null || filter.decidedTo() != null;
+            || filter.decidedFrom() != null || filter.decidedTo() != null || filter.source() != null;
         if (narrowed) {
             page = underwritingCaseRepository.search(tenantId,
                 filter.status() == null ? null : filter.status().name(),
                 filter.outcome() == null ? null : filter.outcome().name(),
                 filter.referral() == null ? null : filter.referral().name(),
                 filter.decidedFrom(), filter.decidedTo(),
-                filter.applicantPartyId(), filter.applicantPartyIds(), pageable);
+                filter.applicantPartyId(), filter.applicantPartyIds(),
+                filter.source() == null ? null : filter.source().name(), pageable);
         } else if (filter.status() != null) {
             page = underwritingCaseRepository.findByTenantIdAndStatus(tenantId, filter.status().name(), pageable);
         } else {

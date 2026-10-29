@@ -76,7 +76,18 @@ public interface UnderwritingCaseRepository extends JpaRepository<UnderwritingCa
         + "AND (CAST(:decidedTo AS Instant) IS NULL "
         + "     OR (c.decisionDecidedAt IS NOT NULL AND c.decisionDecidedAt < :decidedTo)) "
         + "AND (:applicantPartyId IS NULL OR c.applicantPartyId = :applicantPartyId) "
-        + "AND (:applicantPartyIds IS NULL OR c.applicantPartyId IN :applicantPartyIds)")
+        + "AND (:applicantPartyIds IS NULL OR c.applicantPartyId IN :applicantPartyIds) "
+        // Where it came from (2026-10-29), as CaseSource.of reads it: the portal with or without an amount, an agent's
+        // quotation or agent of record, or the office.
+        + "AND (:source IS NULL "
+        + "  OR (:source = 'CUSTOMER_ONLINE' AND c.sourceOfBusiness = 'CUSTOMER_PORTAL' AND c.sumAssuredAmount > 0) "
+        + "  OR (:source = 'CALL_BACK' AND c.sourceOfBusiness = 'CUSTOMER_PORTAL' "
+        + "      AND (c.sumAssuredAmount IS NULL OR c.sumAssuredAmount = 0)) "
+        + "  OR (:source = 'AGENT' AND (c.sourceOfBusiness IS NULL OR c.sourceOfBusiness <> 'CUSTOMER_PORTAL') "
+        + "      AND (c.agentOfRecordId IS NOT NULL OR c.sourceOfBusiness = 'Agent quotation')) "
+        + "  OR (:source = 'STAFF' AND (c.sourceOfBusiness IS NULL "
+        + "      OR (c.sourceOfBusiness <> 'CUSTOMER_PORTAL' AND c.sourceOfBusiness <> 'Agent quotation')) "
+        + "      AND c.agentOfRecordId IS NULL))")
     Page<UnderwritingCase> search(@Param("tenantId") UUID tenantId,
                                    @Param("status") String status,
                                    @Param("outcome") String outcome,
@@ -85,6 +96,7 @@ public interface UnderwritingCaseRepository extends JpaRepository<UnderwritingCa
                                    @Param("decidedTo") Instant decidedTo,
                                    @Param("applicantPartyId") UUID applicantPartyId,
                                    @Param("applicantPartyIds") Set<UUID> applicantPartyIds,
+                                   @Param("source") String source,
                                    Pageable pageable);
 
     /**

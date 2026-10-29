@@ -84,6 +84,12 @@ paths:
           in: query
           description: Narrows to one applicant, for a client's underwriting panel.
           schema: { type: string, format: uuid }
+        - name: source
+          in: query
+          description: >-
+            Only the cases that came from here (2026-10-29): applied online by the customer, a customer asking an adviser
+            (no amount -- call them), an agent, or opened in the office.
+          schema: { type: string, enum: [CUSTOMER_ONLINE, CALL_BACK, AGENT, STAFF] }
         - name: page
           in: query
           schema: { type: integer, default: 0 }
@@ -1544,6 +1550,12 @@ components:
         decisionDeclineReason: { type: [string, "null"] }
         decisionDecidedAt: { type: [string, "null"], format: date-time }
         agentOfRecordId: { type: [string, "null"], format: uuid }
+        source:
+          type: string
+          enum: [CUSTOMER_ONLINE, CALL_BACK, AGENT, STAFF]
+          description: >-
+            Where the case came from (2026-10-29): the customer online, a customer asking an adviser with no amount yet
+            (call them before deciding), an agent's quotation or agent of record, or the office.
         sumAssured:
           type: [object, "null"]
           description: >-

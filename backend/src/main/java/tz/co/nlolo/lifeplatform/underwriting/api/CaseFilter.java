@@ -15,10 +15,11 @@ import java.util.UUID;
  * @param decidedFrom inclusive; {@code decidedTo} exclusive, so a month is [first of month, first of next)
  */
 public record CaseFilter(UnderwritingCaseStatus status, DecisionOutcome outcome, ReferralStatus referral,
-                         Instant decidedFrom, Instant decidedTo, UUID applicantPartyId, Set<UUID> applicantPartyIds) {
+                         Instant decidedFrom, Instant decidedTo, UUID applicantPartyId, Set<UUID> applicantPartyIds,
+                         CaseSource source) {
 
     public static CaseFilter none() {
-        return new CaseFilter(null, null, null, null, null, null, null);
+        return new CaseFilter(null, null, null, null, null, null, null, null);
     }
 
     public static CaseFilter status(UnderwritingCaseStatus status) {
@@ -26,26 +27,31 @@ public record CaseFilter(UnderwritingCaseStatus status, DecisionOutcome outcome,
     }
 
     public CaseFilter withStatus(UnderwritingCaseStatus value) {
-        return new CaseFilter(value, outcome, referral, decidedFrom, decidedTo, applicantPartyId, applicantPartyIds);
+        return new CaseFilter(value, outcome, referral, decidedFrom, decidedTo, applicantPartyId, applicantPartyIds, source);
     }
 
     public CaseFilter withOutcome(DecisionOutcome value) {
-        return new CaseFilter(status, value, referral, decidedFrom, decidedTo, applicantPartyId, applicantPartyIds);
+        return new CaseFilter(status, value, referral, decidedFrom, decidedTo, applicantPartyId, applicantPartyIds, source);
     }
 
     public CaseFilter withReferral(ReferralStatus value) {
-        return new CaseFilter(status, outcome, value, decidedFrom, decidedTo, applicantPartyId, applicantPartyIds);
+        return new CaseFilter(status, outcome, value, decidedFrom, decidedTo, applicantPartyId, applicantPartyIds, source);
     }
 
     public CaseFilter withDecided(Instant from, Instant to) {
-        return new CaseFilter(status, outcome, referral, from, to, applicantPartyId, applicantPartyIds);
+        return new CaseFilter(status, outcome, referral, from, to, applicantPartyId, applicantPartyIds, source);
     }
 
     public CaseFilter withApplicant(UUID value) {
-        return new CaseFilter(status, outcome, referral, decidedFrom, decidedTo, value, applicantPartyIds);
+        return new CaseFilter(status, outcome, referral, decidedFrom, decidedTo, value, applicantPartyIds, source);
     }
 
     public CaseFilter withApplicants(Set<UUID> value) {
-        return new CaseFilter(status, outcome, referral, decidedFrom, decidedTo, applicantPartyId, value);
+        return new CaseFilter(status, outcome, referral, decidedFrom, decidedTo, applicantPartyId, value, source);
+    }
+
+    /** Only the cases that came from here (2026-10-29). */
+    public CaseFilter withSource(CaseSource value) {
+        return new CaseFilter(status, outcome, referral, decidedFrom, decidedTo, applicantPartyId, applicantPartyIds, value);
     }
 }

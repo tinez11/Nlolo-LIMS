@@ -134,6 +134,7 @@ class CustomerSelfServiceIntegrationTest {
         assertThat(opened.sumAssuredAmount()).isEqualByComparingTo("1000000");
         assertThat(opened.premiumFrequency()).isEqualTo("SINGLE");
         assertThat(opened.requestedTermMonths()).isEqualTo(12);
+        assertThat(opened.source()).isEqualTo(tz.co.nlolo.lifeplatform.underwriting.api.CaseSource.CUSTOMER_ONLINE);
     }
 
     /**
@@ -171,6 +172,20 @@ class CustomerSelfServiceIntegrationTest {
         mockMvc.perform(customer(post("/customer/applications"), me)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"productId\":\"" + productId + "\"}"))
             .andExpect(status().isCreated());
+
+        // The underwriter sees it as a call back -- no amount, call the customer -- and can list just those.
+        mockMvc.perform(get("/underwriting/cases").param("source", "CALL_BACK").param("applicantPartyId", me.toString())
+                .with(jwt().jwt(b -> b.claim("tenant_id", TENANT.toString()))
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid("api/openapi/openapi-underwriting.yaml"))
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].source").value("CALL_BACK"));
+        mockMvc.perform(get("/underwriting/cases").param("source", "CUSTOMER_ONLINE").param("applicantPartyId", me.toString())
+                .with(jwt().jwt(b -> b.claim("tenant_id", TENANT.toString()))
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(0));
     }
 
     /**

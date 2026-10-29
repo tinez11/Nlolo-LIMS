@@ -27,10 +27,14 @@ import type {
  * opened, or browsing the list below.
  */
 
+export type CaseSource = 'CUSTOMER_ONLINE' | 'CALL_BACK' | 'AGENT' | 'STAFF';
+
 export interface UnderwritingListParams {
   status?: UnderwritingCaseStatus;
   /** One applicant, for a client's underwriting panel. */
   applicantPartyId?: string;
+  /** Where the cases came from (2026-10-29): the customer online, a call back, an agent, or the office. */
+  source?: CaseSource;
   page?: number;
   pageSize?: number;
 }
@@ -58,6 +62,7 @@ export async function listCases(params: UnderwritingListParams = {}): Promise<Pa
     params: {
       ...(params.status ? { status: params.status } : {}),
       ...(params.applicantPartyId ? { applicantPartyId: params.applicantPartyId } : {}),
+      ...(params.source ? { source: params.source } : {}),
       page,
       pageSize,
     },
