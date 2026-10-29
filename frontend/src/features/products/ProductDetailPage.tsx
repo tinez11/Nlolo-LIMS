@@ -20,6 +20,7 @@ import { ProductDescriptionField } from './ProductDescriptionField';
 import { ProductVersionsPanel } from './ProductVersionsPanel';
 import { PublishVersionForm } from './PublishVersionForm';
 import { Panel } from '@/components/Panel';
+import { useReturnCrumbs } from '@/lib/returnCrumbs';
 import { DetailLayout } from '@/components/DetailLayout';
 
 /**
@@ -33,6 +34,8 @@ import { DetailLayout } from '@/components/DetailLayout';
  */
 export function ProductDetailPage() {
   const { productId = '' } = useParams();
+  // Back to the list it was opened from -- Approvals, Payments -- when it was (2026-10-27).
+  const crumbs = useReturnCrumbs([{ label: 'Products', to: '/staff/products' }]);
   const identity = readIdentity(useAuth().user?.access_token);
   const canAuthor = canAuthorProducts(identity);
   const [publishOpen, setPublishOpen] = useState(false);
@@ -83,7 +86,7 @@ export function ProductDetailPage() {
       <>
         {/* The bar renders on the error path too, so a record that fails to load keeps its
             heading and its way out instead of leaving a bare panel. */}
-        <PageHeader breadcrumb={[{ label: 'Products', to: '/staff/products' }]} title="Product" />
+        <PageHeader breadcrumb={crumbs} title="Product" />
         <div className="px-6 pt-6">
           <ErrorPanel error={list.error} onRetry={() => void loadList()} />
         </div>
@@ -108,7 +111,7 @@ export function ProductDetailPage() {
   return (
     <>
       <PageHeader
-        breadcrumb={[{ label: 'Products', to: '/staff/products' }]}
+        breadcrumb={crumbs}
         title={product.productName ?? productId}
         description={
           product.productCode ? <span className="font-mono text-xs">{product.productCode}</span> : undefined

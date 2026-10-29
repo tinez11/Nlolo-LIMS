@@ -19,6 +19,8 @@ import tz.co.nlolo.lifeplatform.billing.domain.PremiumInvoice;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.BillingScheduleRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.FieldReceiptRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.PremiumInvoiceRepository;
+import tz.co.nlolo.lifeplatform.payment.api.ReceiptView;
+import tz.co.nlolo.lifeplatform.payment.application.Receipts;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -133,6 +135,9 @@ class BillingApiIntegrationTest {
             "db-migrations/benefitpayout/V3__withholding.sql",
             "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V9__withdrawal_rejection.sql",
+            "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -167,6 +172,7 @@ class BillingApiIntegrationTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
@@ -187,6 +193,7 @@ class BillingApiIntegrationTest {
             "db-migrations/billing/V10__premium_receipt.sql",
             "db-migrations/billing/V11__premium_in_advance.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             // M5 final-review fix wave: V3's callback resolvers and V4's widened status CHECK
             // (IN_DOUBT). This class drives real payment.PaymentRequestListener chains, so its
@@ -197,7 +204,10 @@ class BillingApiIntegrationTest {
             "db-migrations/payment/V6__disbursement_method.sql",
             "db-migrations/payment/V7__q4_2026_partitions.sql",
             "db-migrations/payment/V8__benefit_payout_purposes.sql",
-            "db-migrations/payment/V9__account_purposes.sql");
+            "db-migrations/payment/V9__account_purposes.sql",
+            "db-migrations/payment/V17__manual_receipts.sql",
+            "db-migrations/payment/V18__payout_routes.sql",
+            "db-migrations/payment/V19__top_up_one_person.sql");
     }
 
     @AfterAll
@@ -234,6 +244,7 @@ class BillingApiIntegrationTest {
 
     @Autowired private PolicyApi policyApi;
     @Autowired private BillingApi billingApi;
+    @Autowired private Receipts receipts;
     @Autowired private tz.co.nlolo.lifeplatform.party.api.PartyApi partyApi;
     @Autowired private tz.co.nlolo.lifeplatform.product.api.ProductApi productApi;
     @Autowired private BillingScheduleRepository billingScheduleRepository;
@@ -635,6 +646,18 @@ class BillingApiIntegrationTest {
         // synchronously and committed -- no await/sleep, same reasoning as
         // LoanDisbursementEndToEndTest's own class-level Javadoc.
         billingApi.requestPaymentForInvoice(invoice.invoiceId(), "MPESA-0712340001", "billing-it-paid-01-attempt-1");
+
+        // Accepted is not paid (2026-10-27): the request waits for finance like any receipt.
+        PremiumInvoice waiting = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoice.invoiceId(), tenantId)
+            .orElseThrow(() -> new AssertionError("expected the invoice to still exist"));
+        assertThat(waiting.getStatus()).isNotEqualTo("PAID");
+        List<ReceiptView> awaiting = receipts.awaitingApproval();
+        assertThat(awaiting).singleElement().satisfies(r -> {
+            assertThat(r.method()).isEqualTo("MOBILE_MONEY");
+            assertThat(r.reference()).isEqualTo("MM-BILLING-PAID-01");
+            assertThat(r.recordedBy()).isEqualTo("system");
+        });
+        receipts.approve(awaiting.get(0).receiptId(), "finance-approver");
 
         PremiumInvoice reloaded = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoice.invoiceId(), tenantId)
             .orElseThrow(() -> new AssertionError("expected the invoice to still exist"));

@@ -12,6 +12,126 @@ info:
 servers:
   - url: https://api.nlolo-lifeplatform.tz/v1
 paths:
+  /payments:
+    get:
+      summary: The payments register -- money in and money out as one list, newest first (collections.view or payouts.view)
+      description: >
+        2026-10-27. Both ledgers through one read: a collection (IN) or a disbursement (OUT). The state filter speaks the
+        work's words -- attention is IN_DOUBT and FAILED, waiting is PENDING and AWAITING_EXECUTION, done is CONFIRMED
+        and COMPLETED. policyNumber is recorded from 2026-10-27 on; older rows and commission carry none.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: direction, in: query, required: false, schema: { type: string, enum: [IN, OUT] } }
+        - { name: state, in: query, required: false, schema: { type: string, enum: [attention, waiting, done, all] } }
+        - { name: policyNumber, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: pageSize, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentRegisterPage' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /receipts:
+    get:
+      summary: The receipts waiting to be confirmed on one invoice, oldest first (collections.view or collections.manage)
+      description: >
+        2026-10-28. What the invoice shows as in flight, so a receipt is visible where it was recorded and not only in
+        somebody else's approvals inbox.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: invoiceId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Receipt' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Record a receipt for premium the gateway did not pull (collections.manage)
+      description: >
+        2026-10-27. Cash, a bank deposit, a cheque, a Lipa-number payment or a TANQR scan, against one invoice. It pays
+        nothing until a second person approves it. Refused (409, RECEIPT_REFUSED) for an invoice already paid or
+        waived, an amount above what is owed, a future date, a reference already on a live receipt, or -- since
+        2026-10-28 -- an amount that, with the receipts already waiting on the invoice, would be more than is owed.
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordReceipt' }
+      responses:
+        '201':
+          description: Recorded, awaiting approval
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Receipt' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /receipts/{receiptId}:
+    get:
+      summary: One recorded receipt (collections.view or collections.manage)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: receiptId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Receipt' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /receipts/{receiptId}/approval:
+    post:
+      summary: Confirm a receipt someone else recorded (collections.approve); the invoice is paid from it
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: receiptId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Confirmed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Receipt' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /receipts/{receiptId}/rejection:
+    post:
+      summary: Refuse a receipt someone else recorded, saying why (collections.approve); it pays nothing
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: receiptId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: Refused
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Receipt' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
   /payments/{paymentRequestId}/status:
     get:
       summary: Get payment status
@@ -225,6 +345,83 @@ paths:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   schemas:
+    ReceiptMethod:
+      type: string
+      enum: [CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR]
+    RecordReceipt:
+      type: object
+      additionalProperties: false
+      required: [invoiceId, method, reference, amount, receivedOn]
+      properties:
+        invoiceId: { type: string, format: uuid }
+        method: { $ref: '#/components/schemas/ReceiptMethod' }
+        reference:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: The method's own reference -- a bank slip, a cheque number, a Lipa or TANQR transaction id.
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        receivedOn: { type: string, format: date }
+        payerRef: { type: [string, 'null'], maxLength: 255 }
+        note: { type: [string, 'null'], maxLength: 500 }
+        fieldReceiptId:
+          type: [string, 'null']
+          format: uuid
+          description: The agent's field receipt this brings in; it is matched when the receipt is approved.
+    Receipt:
+      type: object
+      additionalProperties: false
+      required: [receiptId, method, reference, payerRef, amount, invoiceId, receivedOn, status, recordedBy, recordedAt]
+      properties:
+        receiptId: { type: string, format: uuid }
+        method:
+          type: string
+          enum: [MOBILE_MONEY, CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR]
+          description: How it came in. MOBILE_MONEY is a request to the payer's phone, confirmed like any receipt (2026-10-27).
+        reference: { type: string }
+        payerRef: { type: string }
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        invoiceId: { type: string, format: uuid }
+        policyNumber: { type: [string, 'null'] }
+        receivedOn: { type: [string, 'null'], format: date, description: 'The day it was received; null on a mobile-money request' }
+        note: { type: [string, 'null'] }
+        fieldReceiptId: { type: [string, 'null'], format: uuid }
+        status: { type: string, enum: [AWAITING_APPROVAL, CONFIRMED, REJECTED] }
+        recordedBy: { type: string }
+        recordedAt: { type: string, format: date-time }
+        decidedBy: { type: [string, 'null'] }
+        decidedAt: { type: [string, 'null'], format: date-time }
+        decisionReason: { type: [string, 'null'] }
+    PaymentRegisterPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PaymentRecord' }
+        page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
+    PaymentRecord:
+      type: object
+      additionalProperties: false
+      description: One payment in the register -- a collection (IN) or a disbursement (OUT).
+      required: [id, direction, purpose, method, status, amount, counterparty, sourceRef, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        direction: { type: string, enum: [IN, OUT] }
+        purpose: { type: string }
+        method: { type: string, enum: [MOBILE_MONEY, EFT, CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR] }
+        status:
+          type: string
+          enum: [PENDING, AWAITING_EXECUTION, AWAITING_APPROVAL, IN_DOUBT, CONFIRMED, COMPLETED, FAILED, REJECTED]
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        counterparty: { type: string, description: Who paid (IN) or who is paid (OUT), as recorded. }
+        reference: { type: [string, 'null'], description: The rail's or the bank's reference, once there is one. }
+        sourceRef: { type: string, description: The owning record's id -- an invoice, a claim, an instalment. }
+        policyNumber: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        executedBy: { type: [string, 'null'] }
+        executedAt: { type: [string, 'null'], format: date-time }
     AwaitingEftView:
       type: object
       additionalProperties: false
@@ -233,7 +430,7 @@ components:
         answers "what became of this payment" about a payment the caller already knows about.
         Nothing else on the platform tells a finance officer these exist, so the row carries what
         the act needs: who is paid, what for, how much, and since when.
-      required: [disbursementId, amount, payeeRef, sourceRef, waitingSince]
+      required: [disbursementId, amount, payeeRef, sourceRef, waitingSince, method]
       properties:
         disbursementId: { type: string, format: uuid }
         amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
@@ -254,6 +451,14 @@ components:
             When the instruction was raised. Not decoration: every row here is money the insurer
             owes and has not paid, and on a credit-life claim an ageing row is a lender still
             carrying a dead borrower's loan.
+        method:
+          type: string
+          enum: [MOBILE_MONEY, EFT, CHEQUE]
+          description: EFT is a bank transfer made in the bank's portal; CHEQUE is written by hand.
+        payeeBank: { type: [string, "null"], description: The bank a transfer goes to; null on mobile money and cheques. }
+        payeeBranch: { type: [string, "null"] }
+        payeeAccountName: { type: [string, "null"] }
+        payeeAccountNumber: { type: [string, "null"] }
     DisbursementView:
       type: object
       additionalProperties: false
@@ -265,9 +470,9 @@ components:
         disbursementId: { type: string, format: uuid }
         method:
           type: string
-          enum: [MOBILE_MONEY, EFT]
+          enum: [MOBILE_MONEY, EFT, CHEQUE]
           description: >
-            EFT waits for a finance officer to make the transfer in the bank and record it;
+            EFT and CHEQUE wait for a finance officer to make the transfer in the bank and record it;
             mobile money completes when the gateway calls back.
         status:
           type: string
@@ -284,6 +489,10 @@ components:
           type: [string, "null"]
           format: date-time
           description: When finance recorded an EFT as made. Null otherwise.
+        payeeBank: { type: [string, "null"], description: The bank a transfer goes to; null on mobile money and cheques. }
+        payeeBranch: { type: [string, "null"] }
+        payeeAccountName: { type: [string, "null"] }
+        payeeAccountNumber: { type: [string, "null"] }
     PaymentStatusView:
       type: object
       additionalProperties: false

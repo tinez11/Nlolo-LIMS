@@ -74,10 +74,13 @@ export function buildRealm(realm, staffSpa) {
     if (client.clientId === 'lifeplatform-staff-admin') {
       client.secret = '$(env:STAFF_ADMIN_CLIENT_SECRET)';
     }
+    if (client.clientId === 'lifeplatform-agents-admin') {
+      client.secret = '$(env:AGENTS_ADMIN_CLIENT_SECRET)';
+    }
   }
 
   r.sslRequired = 'external';
-  r.passwordPolicy = 'length(10) and notUsername(undefined) and passwordHistory(3)';
+  r.passwordPolicy = 'length(8) and notUsername(undefined) and notEmail(undefined) and passwordHistory(3)';
   r.bruteForceProtected = true;
   r.permanentLockout = false;        // a locked-out underwriter at month end is its own outage
   r.failureFactor = 5;

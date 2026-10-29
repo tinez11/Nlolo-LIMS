@@ -21,6 +21,7 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { useAnnuityStore } from '@/store/annuityStore';
 import { endRuleSchema, withholdingRuleSchema, type EndRuleValues, type WithholdingRuleValues } from './withholdingRuleForm';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { StaffName } from '@/components/StaffName';
 
 const KIND_LABEL: Record<string, string> = {
   ANNUITY: 'Annuity income',
@@ -99,9 +100,9 @@ function RuleRow({ rule, viewerSubject }: { rule: WithholdingRuleView; viewerSub
         <StatusBadge kind="withholdingRule" value={rule.status} />
         <p className="text-xs text-muted-foreground">
           From {formatDate(rule.effectiveFrom)}
-          {rule.effectiveTo ? ` to ${formatDate(rule.effectiveTo)}` : ''} · {rule.legalReference} · proposed by {rule.proposedBy}
-          {rule.approvedBy ? ` · approved by ${rule.approvedBy}` : ''}
-          {rule.endedBy ? ` · ended by ${rule.endedBy}` : ''}
+          {rule.effectiveTo ? ` to ${formatDate(rule.effectiveTo)}` : ''} · {rule.legalReference} · proposed by <StaffName subject={rule.proposedBy} />
+          {rule.approvedBy && <> · approved by <StaffName subject={rule.approvedBy} /></>}
+          {rule.endedBy && <> · ended by <StaffName subject={rule.endedBy} /></>}
         </p>
       </div>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}

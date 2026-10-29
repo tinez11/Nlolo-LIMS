@@ -380,6 +380,8 @@ public class BillingApiImpl implements BillingApi {
         }
         eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PaymentRequested", tenantId,
             Map.of("invoiceId", invoiceId,
+                   // For the payments register (2026-10-27): which policy this money is for.
+                   "policyNumber", invoice.getPolicyNumber(),
                    "payerRef", payerRef,
                    "amount", Map.of("amount", balance.toPlainString(),
                                     "currencyCode", invoice.getCurrency()),
@@ -400,6 +402,13 @@ public class BillingApiImpl implements BillingApi {
     @Transactional
     public InvoiceView applyConfirmedPayment(UUID invoiceId, BigDecimal amount, String currency, String paymentReference,
                                              String payerRef) {
+        return applyConfirmedPayment(invoiceId, amount, currency, paymentReference, payerRef, null);
+    }
+
+    @Override
+    @Transactional
+    public InvoiceView applyConfirmedPayment(UUID invoiceId, BigDecimal amount, String currency, String paymentReference,
+                                             String payerRef, String method) {
         UUID tenantId = TenantContext.get();
         PremiumInvoice invoice = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoiceId, tenantId)
             .orElseThrow(() -> new InvoiceNotFoundException(invoiceId));
@@ -466,6 +475,9 @@ public class BillingApiImpl implements BillingApi {
             if (payerRef != null && !payerRef.isBlank()) {
                 collected.put("payerRef", payerRef);
             }
+            // How the money came in (2026-10-27): the ledger posts it to the account it reached. Absent is the
+            // gateway's mobile money, as every collection was before receipts.
+            collected.put("receiptMethod", method == null ? "MOBILE_MONEY" : method);
             eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumCollected", tenantId, collected));
         }
         return toView(invoice);

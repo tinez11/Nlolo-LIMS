@@ -1,4 +1,4 @@
-import { useLocation } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 
 export interface Crumb {
   label: string;
@@ -18,6 +18,18 @@ export interface Crumb {
  */
 export function cameFrom(trail: Crumb[]): { cameFrom: Crumb[] } {
   return { cameFrom: trail };
+}
+
+/**
+ * `useSearchParams`, whose setter keeps this page's history state when it rewrites the page's own address -- a tab, a
+ * filter. The trail back lives in that state, and a plain `setSearchParams` writes the new entry without it: a policy
+ * opened from its client lost "Individuals > the client" the moment a tab was clicked (2026-10-29).
+ */
+export function useSearchParamsKeepingTrail() {
+  const [params, setParams] = useSearchParams();
+  const { state } = useLocation();
+  const set: typeof setParams = (next, options) => setParams(next, { ...options, state: options?.state ?? state });
+  return [params, set] as const;
 }
 
 /** The trail this page was opened with, or `where` -- the page's own crumb -- when it carries none. */

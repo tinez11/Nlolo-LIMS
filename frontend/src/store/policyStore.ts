@@ -1,3 +1,4 @@
+import type { RouteBody } from '@/features/payments/payoutRoute';
 import { create } from 'zustand';
 import {
   addSchemeMember,
@@ -166,7 +167,7 @@ interface PolicyState {
   makePaidUp: (policyNumber: string) => Promise<void>;
   loadSurrenderQuote: (policyNumber: string) => Promise<void>;
   loadSurrenderRequest: (policyNumber: string) => Promise<void>;
-  requestSurrender: (policyNumber: string, payeeRef: string) => Promise<void>;
+  requestSurrender: (policyNumber: string, route: RouteBody) => Promise<void>;
   approveSurrender: (policyNumber: string, surrenderRequestId: string) => Promise<void>;
 
   loadScheme: (policyNumber: string) => Promise<void>;
@@ -512,13 +513,13 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
       async () => (await getSurrenderRequest(policyNumber)) || null,
     ),
 
-  requestSurrender: (policyNumber, payeeRef) =>
+  requestSurrender: (policyNumber, route) =>
     track(
       `policy.requestSurrender.${policyNumber}`,
       getState().requestingSurrender[policyNumber] ?? idle<SurrenderRequestView>(),
       (next) => set((s) => ({ requestingSurrender: { ...s.requestingSurrender, [policyNumber]: next } })),
       async () => {
-        const request = await requestSurrender(policyNumber, payeeRef);
+        const request = await requestSurrender(policyNumber, route);
         // The panel renders from the loaded request, so the new one lands there too -- otherwise
         // it would show nothing until a reload.
         set((s) => ({ surrenderRequest: { ...s.surrenderRequest, [policyNumber]: success(request) } }));

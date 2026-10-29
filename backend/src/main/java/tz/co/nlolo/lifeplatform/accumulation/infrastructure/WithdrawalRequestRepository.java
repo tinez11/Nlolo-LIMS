@@ -9,4 +9,7 @@ import java.util.UUID;
 public interface WithdrawalRequestRepository extends JpaRepository<WithdrawalRequest, UUID> {
     List<WithdrawalRequest> findByPolicyNumberOrderByRequestedAtDesc(String policyNumber);
     boolean existsByPolicyNumberAndStatusIn(String policyNumber, List<String> statuses);
+
+    /** Every withdrawal in one status, across the tenant, oldest first: the approvals queue (2026-10-27). */
+    List<WithdrawalRequest> findByStatusOrderByRequestedAtAsc(String status);
 }

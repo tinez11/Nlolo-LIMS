@@ -91,7 +91,14 @@ public class PaymentEventListener {
         BigDecimal paidAmount = new BigDecimal((String) amount.get("amount"));
         String currency = (String) amount.get("currencyCode");
         billingApi.applyConfirmedPayment(invoiceId, paidAmount, currency, (String) payload.get("gatewayReference"),
-            (String) payload.get("payerRef"));
+            (String) payload.get("payerRef"), (String) payload.get("method"));
+        // An agent's cash, recorded as a receipt and approved (2026-10-27): the field receipt it brought in is matched
+        // now, by the money itself, rather than by somebody pressing "Mark matched" against nothing.
+        Object fieldReceiptId = payload.get("fieldReceiptId");
+        if (fieldReceiptId != null) {
+            billingApi.reconcileFieldReceipt(UUID.fromString(fieldReceiptId.toString()),
+                String.valueOf(payload.getOrDefault("approvedBy", "receipt")));
+        }
     }
 
     /** No state change: billing.sweep_billing_state() (Task 5) already escalates unpaid invoices

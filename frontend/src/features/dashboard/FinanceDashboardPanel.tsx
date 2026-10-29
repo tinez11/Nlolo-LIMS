@@ -6,9 +6,11 @@ import { Donut } from '@/components/charts/Donut';
 import { ShareBars } from '@/components/charts/ShareBars';
 import { TrendChart } from '@/components/charts/TrendChart';
 import { Panel } from '@/components/Panel';
+import { can } from '@/auth/access';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { countValue } from '@/lib/counts';
 import { formatMoney, formatMoneyCompact } from '@/lib/money';
+import { useApprovalsStore } from '@/store/approvalsStore';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectFinance, useDashboardStore } from '@/store/dashboardStore';
 import { ActivityFeed } from './ActivityFeed';
@@ -35,11 +37,16 @@ const COLORS = ['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5'] as const;
 export function FinanceDashboardPanel({ range }: PanelProps) {
   const resource = useDashboardStore(selectFinance);
   const load = useDashboardStore((s) => s.load);
+  const signatures = useApprovalsStore((s) => s.approvals);
+  const loadApprovals = useApprovalsStore((s) => s.loadApprovals);
 
   const { from, to } = range;
   useEffect(() => {
     void load('finance', { from, to });
   }, [load, from, to]);
+  useEffect(() => {
+    void loadApprovals();
+  }, [loadApprovals]);
 
   if (isInitialLoad(resource)) return <LoadingBlock label="Reading the ledger" />;
   if (resource.status === 'error' && resource.error && resource.data === null) {
@@ -95,11 +102,18 @@ export function FinanceDashboardPanel({ range }: PanelProps) {
   ];
 
   const working = v.receivables.find((a) => a.currency === 'TZS');
-  const waiting: { n: number | null | undefined; text: string; to?: string; tone: 'warn' | 'calm' }[] = [
-    { n: v.journalsAwaitingApproval, text: 'Journals waiting for approval', tone: 'warn' },
-    { n: v.receiptsOverdue, text: 'Field receipts past their deadline', to: '/staff/field-receipts?status=RECONCILIATION_OVERDUE', tone: 'warn' },
-    { n: v.transfersAwaiting, text: 'Bank transfers not yet made', to: '/staff/bank-transfers', tone: 'calm' },
-    { n: v.arrearsAtLapse, text: 'Policies in arrears at the lapse level', to: '/staff/arrears?minDunningLevel=5', tone: 'warn' },
+  // Only what this viewer can act on (2026-10-27): the signatures waiting for them -- the approvals inbox's own count,
+  // their own requests left out -- in place of every journal waiting for anyone, which showed a finance officer
+  // approvals they cannot give; and each list only to whoever can work it.
+  const waiting: { n: number | null | undefined; text: string; to?: string; tone: 'warn' | 'calm'; show: boolean }[] = [
+    { n: signatures.data?.actionable, text: 'Waiting for your signature', to: '/staff/approvals', tone: 'warn',
+      show: true },
+    { n: v.receiptsOverdue, text: 'Field receipts past their deadline', to: '/staff/field-receipts?status=RECONCILIATION_OVERDUE', tone: 'warn',
+      show: can('collections.manage') },
+    { n: v.transfersAwaiting, text: 'Bank transfers and cheques not yet made', to: '/staff/bank-transfers', tone: 'calm',
+      show: can('payouts.manage') },
+    { n: v.arrearsAtLapse, text: 'Policies in arrears at the lapse level', to: '/staff/arrears?minDunningLevel=5', tone: 'warn',
+      show: can('collections.manage') },
   ];
 
   return (
@@ -191,7 +205,7 @@ export function FinanceDashboardPanel({ range }: PanelProps) {
         <div className="xl:col-span-6">
           <Panel emphasis title="Needs a look" subtitle="Each opens its list, already filtered">
             <ul className="divide-y divide-border">
-              {waiting.map((row) => {
+              {waiting.filter((row) => row.show).map((row) => {
                 const n = countValue(row.n);
                 const chip = (
                   <span className={row.n ? (row.tone === 'warn' ? 'rounded-full bg-status-warning-bg px-2.5 py-0.5 text-xs font-bold text-status-warning-fg'

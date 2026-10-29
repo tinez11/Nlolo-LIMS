@@ -196,7 +196,7 @@ describe('claimGates', () => {
       const gate = find(gates, 'critical illness cover')!;
       expect(gate.ok).toBe(false);
       expect(gate.hard).toBe(true);
-      expect(gate.detail).toContain('DEATH');
+      expect(gate.detail).toBe('The policy covers death, not critical illness');
     });
 
     it('never claims the benefit was in force on the day, only that it is on record', () => {

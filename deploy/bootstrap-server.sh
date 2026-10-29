@@ -56,7 +56,8 @@ if [ ! -f "$P/.env" ]; then
   cp /root/.env.example "$P/.env"
   secret() { openssl rand -base64 36 | tr -d '/+=' | cut -c1-32; }
   for key in POSTGRES_PASSWORD APP_DB_PASSWORD KEYCLOAK_DB_PASSWORD KC_ADMIN_PASSWORD \
-             OBJECT_STORE_SECRET_KEY PORTAL_ADMIN_CLIENT_SECRET STAFF_ADMIN_CLIENT_SECRET MOBILE_MONEY_CALLBACK_HMAC_SECRET; do
+             OBJECT_STORE_SECRET_KEY PORTAL_ADMIN_CLIENT_SECRET STAFF_ADMIN_CLIENT_SECRET AGENTS_ADMIN_CLIENT_SECRET MOBILE_MONEY_CALLBACK_HMAC_SECRET \
+             PASSWORD_RESET_SMS_SECRET; do
     sed -i "s|^$key=.*|$key=$(secret)|" "$P/.env"
   done
   sed -i "s|^PLATFORM_TENANT_ID=.*|PLATFORM_TENANT_ID=$(cat /proc/sys/kernel/random/uuid)|" "$P/.env"

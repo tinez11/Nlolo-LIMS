@@ -30,6 +30,8 @@ import {
   type PayoutReviewValues,
 } from './payoutReviewForm';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { useReturnCrumbs } from '@/lib/returnCrumbs';
+import { StaffName } from '@/components/StaffName';
 
 const BREADCRUMB = [{ label: 'Payouts', to: '/staff/payouts' }];
 
@@ -55,6 +57,8 @@ const KIND_LABEL: Record<PayoutKind, string> = {
  */
 export function PayoutPage() {
   const { instalmentId = '' } = useParams();
+  // Back to the list it was opened from -- Approvals, Payments -- when it was (2026-10-27).
+  const crumbs = useReturnCrumbs(BREADCRUMB);
   const detail = useBenefitPayoutStore((s) => s.instalment[instalmentId]);
   const load = useBenefitPayoutStore((s) => s.loadInstalment);
 
@@ -69,7 +73,7 @@ export function PayoutPage() {
       <>
         {/* The bar renders on the error path too, so a record that fails to load keeps its
             heading and its way out. */}
-        <PageHeader breadcrumb={BREADCRUMB} title="Payout" />
+        <PageHeader breadcrumb={crumbs} title="Payout" />
         <div className="px-6 pt-6">
           <ErrorPanel error={detail.error} onRetry={() => void load(instalmentId)} />
         </div>
@@ -83,7 +87,7 @@ export function PayoutPage() {
   return (
     <>
       <PageHeader
-        breadcrumb={BREADCRUMB}
+        breadcrumb={crumbs}
         title={KIND_LABEL[payout.kind]}
         description={
           <Link to={`/staff/policies/${encodeURIComponent(payout.policyNumber)}`} className="font-mono text-xs underline underline-offset-2">
@@ -98,7 +102,7 @@ export function PayoutPage() {
         </div>
 
         <Panel title="This payout">
-          <dl className="divide-y divide-border">
+          <dl className="px-4 pb-2">
             <Field label="Status" value={<StatusBadge kind="payoutInstalment" value={payout.status} />} />
             <Field label="Due" value={formatDate(payout.dueDate)} />
             <Field
@@ -125,8 +129,8 @@ export function PayoutPage() {
             )}
             {payout.statusReason && <Field label="Why" value={payout.statusReason} />}
             <Field label="Payee" value={payout.payeeRef ?? '—'} />
-            <Field label="Reviewed by" value={payout.reviewedBy ?? '—'} />
-            <Field label="Approved by" value={payout.approvedBy ?? '—'} />
+            <Field label="Reviewed by" value={<StaffName subject={payout.reviewedBy} />} />
+            <Field label="Approved by" value={<StaffName subject={payout.approvedBy} />} />
             <Field label="Payment attempts" value={payout.attempts} />
           </dl>
         </Panel>

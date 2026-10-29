@@ -9,6 +9,7 @@ import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { toApiError, type ApiError } from '@/lib/apiError';
 import { formatInstant } from '@/lib/dates';
+import { StaffName } from '@/components/StaffName';
 
 const STATUS_LABEL: Record<string, string> = {
   NOT_INVITED: 'Not invited',
@@ -87,14 +88,14 @@ export function PortalAccessPanel({ partyId }: { partyId: string }) {
         <Field label="Status" value={STATUS_LABEL[access.status] ?? access.status} />
         {access.username && <Field label="Signs in as" value={access.username} />}
         {access.invitedAt && (
-          <Field label="Invited" value={`${formatInstant(access.invitedAt)}${access.invitedBy ? ` by ${access.invitedBy}` : ''}`} />
+          <Field label="Invited" value={<>{formatInstant(access.invitedAt)}{access.invitedBy && <> by <StaffName subject={access.invitedBy} /></>}</>} />
         )}
         {access.delivery && (
           <Field label="First password" value={DELIVERY_LABEL[access.delivery] ?? access.delivery} />
         )}
         {access.activatedAt && <Field label="First signed in" value={formatInstant(access.activatedAt)} />}
         {access.revokedAt && (
-          <Field label="Revoked" value={`${formatInstant(access.revokedAt)}${access.revokedBy ? ` by ${access.revokedBy}` : ''}`} />
+          <Field label="Revoked" value={<>{formatInstant(access.revokedAt)}{access.revokedBy && <> by <StaffName subject={access.revokedBy} /></>}</>} />
         )}
       </dl>
 

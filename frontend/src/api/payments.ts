@@ -1,5 +1,35 @@
 import { get, post } from '@/lib/http';
+import type { components } from '@/types/api/payment';
 import type { AwaitingEftView, DisbursementView } from './types';
+
+/** One payment in the register (2026-10-27): money that came in or went out. */
+export type PaymentRecord = components['schemas']['PaymentRecord'];
+export type PaymentRegisterPage = components['schemas']['PaymentRegisterPage'];
+
+/** What a person asks the register for, in the work's words. Attention is the stuck and the failed. */
+export type RegisterState = 'attention' | 'waiting' | 'done' | 'all';
+export type PaymentDirection = 'IN' | 'OUT';
+
+export interface PaymentRegisterQuery {
+  state: RegisterState;
+  direction?: PaymentDirection;
+  policyNumber?: string;
+  page: number;
+  pageSize: number;
+}
+
+/** `GET /payments` -- collections.view or payouts.view. Money in and out as one list, newest first. */
+export function listPayments(query: PaymentRegisterQuery): Promise<PaymentRegisterPage> {
+  return get<PaymentRegisterPage>('/payments', {
+    params: {
+      state: query.state,
+      ...(query.direction ? { direction: query.direction } : {}),
+      ...(query.policyNumber ? { policyNumber: query.policyNumber } : {}),
+      page: query.page,
+      pageSize: query.pageSize,
+    },
+  });
+}
 
 /**
  * The EFT rail's human half.

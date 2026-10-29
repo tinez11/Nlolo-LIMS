@@ -1,4 +1,16 @@
 import { useEffect, useState } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import { PayoutRouteFields } from '@/features/payments/PayoutRouteFields';
+import {
+  BLANK_ROUTE,
+  payoutRouteSchema,
+  routeBody,
+  routeWords,
+  type PayoutRouteValues,
+  type RouteBody,
+} from '@/features/payments/payoutRoute';
+import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { useAuth } from 'react-oidc-context';
 import type { PolicyView } from '@/api/types';
 import { readIdentity } from '@/auth/claims';
@@ -18,6 +30,7 @@ import { selectApprovingSurrender, selectRequestingSurrender, selectSurrenderReq
 import { useUnitLinkedStore } from '@/store/unitLinkedStore';
 import { PremiumSplitPanel, StatementsPanel, SwitchForm, TopUpForm, WithdrawalPanel } from './U2Panels';
 import { offers } from './u2Forms';
+import { StaffName } from '@/components/StaffName';
 
 const ENTRY_LABEL: Record<string, string> = {
   ALLOCATION: 'Premium allocated',
@@ -255,7 +268,9 @@ function UnitLinkedSurrender({ policy }: { policy: PolicyView }) {
   const requesting = usePolicyStore(selectRequestingSurrender(policyNumber));
   const approving = usePolicyStore(selectApprovingSurrender(policyNumber));
   const loadUnits = useUnitLinkedStore((s) => s.loadUnits);
-  const [payeeRef, setPayeeRef] = useState('');
+  // How it is paid (2026-10-28): mobile money, a bank transfer to a named account, or a cheque.
+  const routeForm = useForm<PayoutRouteValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(payoutRouteSchema), defaultValues: BLANK_ROUTE });
+  const [route, setRoute] = useState<RouteBody | null>(null);
   const [armed, setArmed] = useState<'request' | 'approve' | null>(null);
 
   useEffect(() => {
@@ -280,8 +295,8 @@ function UnitLinkedSurrender({ policy }: { policy: PolicyView }) {
       </p>
       {current && !awaitingApproval && current.status !== 'FAILED' && (
         <p className="text-xs text-muted-foreground">
-          To {current.payeeRef}, requested by {current.requestedBy}
-          {current.approvedBy ? `, approved by ${current.approvedBy}` : ''}.
+          By {routeWords(current)}, requested by <StaffName subject={current.requestedBy} />
+          {current.approvedBy && <>, approved by <StaffName subject={current.approvedBy} /></>}.
         </p>
       )}
       {requesting.status === 'error' && requesting.error && <InlineError error={requesting.error} />}
@@ -297,7 +312,7 @@ function UnitLinkedSurrender({ policy }: { policy: PolicyView }) {
               consequence={
                 <>
                   Stop cover on <strong>{policyNumber}</strong> and sell every unit at the next approved price, paying the
-                  proceeds to {current?.payeeRef}.
+                  proceeds by {current ? routeWords(current) : '—'}.
                 </>
               }
               reversal="Cover stops immediately and nothing restores it. The value is whatever the next price makes it."
@@ -324,28 +339,32 @@ function UnitLinkedSurrender({ policy }: { policy: PolicyView }) {
           heading="Request this surrender?"
           consequence={
             <>
-              Record a surrender of <strong>{policyNumber}</strong> to {payeeRef}. Cover does <strong>not</strong> stop yet —
-              a second person has to approve it, and the units are valued only then.
+              Record a surrender of <strong>{policyNumber}</strong>, paid by {route ? routeWords(route) : '—'}. Cover does{' '}
+              <strong>not</strong> stop yet — a second person has to approve it, and the units are valued only then.
             </>
           }
           reversal="A request that is never approved leaves the policy exactly as it is."
           confirmLabel="Record surrender request"
           busy={requesting.status === 'loading'}
           onConfirm={() => {
-            void requestSurrender(policyNumber, payeeRef);
+            if (route) void requestSurrender(policyNumber, route);
             setArmed(null);
           }}
           onCancel={() => setArmed(null)}
         />
       ) : (
-        <div className="space-y-2">
-          <FormField label="Payee (mobile money or bank destination)">
-            <Input inputSize="sm" placeholder="+255712345678" value={payeeRef} onChange={(e) => setPayeeRef(e.target.value)} />
-          </FormField>
-          <Button size="sm" disabled={payeeRef.trim() === ''} onClick={() => setArmed('request')}>
+        <form
+          className="space-y-3"
+          onSubmit={routeForm.handleSubmit((v) => {
+            setRoute(routeBody(v));
+            setArmed('request');
+          })}
+        >
+          <PayoutRouteFields form={routeForm} />
+          <Button type="submit" size="sm">
             Request surrender
           </Button>
-        </div>
+        </form>
       )}
     </section>
   );

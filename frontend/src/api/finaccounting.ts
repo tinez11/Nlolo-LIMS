@@ -2,6 +2,7 @@ import { del, get, post, put } from '@/lib/http';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './policies';
 import type {
   AccountingPeriodView,
+  MonthEndView,
   AccountStatus,
   ChartOfAccountView,
   PolicyElectionInput,
@@ -162,6 +163,11 @@ export function getPolicyClassifications(policyNumber: string): Promise<PolicyCl
 /** `GET /finance/periods` -- the periods that have left OPEN at least once, newest first. */
 export function listPeriods(): Promise<AccountingPeriodView[]> {
   return get<AccountingPeriodView[]>('/finance/periods');
+}
+
+/** `GET /finance/periods/{period}/month-end` -- the guide's eight month-end steps, where the month stands (2026-10-27). */
+export function getMonthEnd(period: string): Promise<MonthEndView> {
+  return get<MonthEndView>(`/finance/periods/${encodeURIComponent(period)}/month-end`);
 }
 
 export type PeriodAction = 'closing' | 'lock' | 'reopen-approval';

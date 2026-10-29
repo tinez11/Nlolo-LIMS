@@ -67,7 +67,9 @@ describe('ValueActions surrender', () => {
   it('offers a surrender on a savings policy with value, naming what would be paid', async () => {
     render(<ValueActions policy={policy()} />);
     await waitFor(() => expect(screen.getByText('TZS 90,000.00 would be paid.')).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: 'Request surrender' })).toBeDisabled(); // no payee yet
+    // How it is paid is asked beside the button (2026-10-28); a missing number is refused when it is pressed.
+    expect(screen.getByRole('radio', { name: 'Mobile money' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByLabelText('Mobile-money number')).toBeInTheDocument();
   });
 
   it('refuses a policy with no cash value, and says so rather than failing on submit', async () => {
@@ -86,7 +88,7 @@ describe('ValueActions surrender', () => {
     render(<ValueActions policy={policy()} />);
     await waitFor(() => expect(screen.getByText('TZS 90,000.00 would be paid.')).toBeInTheDocument());
 
-    await user.type(screen.getByLabelText('Payee (mobile money or bank destination)'), '+255712345678');
+    await user.type(screen.getByLabelText('Mobile-money number'), '+255712345678');
     await user.click(screen.getByRole('button', { name: 'Request surrender' }));
 
     const confirm = screen.getByRole('group', { name: 'Request this surrender?' });
@@ -103,7 +105,7 @@ describe('ValueActions surrender', () => {
     await waitFor(() =>
       expect(
         screen.getByText(
-          'A surrender must be approved by someone other than the person who requested it (alice).',
+          'You requested this surrender, so someone else must approve it.',
         ),
       ).toBeInTheDocument(),
     );

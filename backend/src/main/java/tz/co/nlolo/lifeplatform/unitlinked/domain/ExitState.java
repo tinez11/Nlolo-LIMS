@@ -33,6 +33,8 @@ public class ExitState {
     @Column(name = "surrender_charge", nullable = false) private BigDecimal surrenderCharge = BigDecimal.ZERO.setScale(2);
     @Column(name = "status", nullable = false) private String status;
     @Column(name = "payee_ref") private String payeeRef;
+    // How it is paid (V4, 2026-10-28): mobile money to payee_ref, or a bank transfer / cheque.
+    @jakarta.persistence.Embedded private tz.co.nlolo.lifeplatform.PayoutRouteColumns route = tz.co.nlolo.lifeplatform.PayoutRouteColumns.mobileMoney();
     @Column(name = "completed_at") private Instant completedAt;
     @Version @Column(name = "version", nullable = false) private long version;
 
@@ -58,7 +60,12 @@ public class ExitState {
     public void awaitingPayee() { this.status = Status.AWAITING_PAYEE.name(); }
     public void paid(Instant at) { this.status = Status.PAID.name(); this.completedAt = at; }
     public void reversed(Instant at) { this.status = Status.REVERSED.name(); this.completedAt = at; }
-    public void payTo(String payeeRef) { this.payeeRef = payeeRef; }
+    public void payTo(String payeeRef) { this.payeeRef = payeeRef; this.route = tz.co.nlolo.lifeplatform.PayoutRouteColumns.mobileMoney(); }
+
+    /** Paid by this route; its payee becomes payee_ref. */
+    public void payBy(tz.co.nlolo.lifeplatform.PayoutRoute route) { this.payeeRef = route.payee(); this.route = tz.co.nlolo.lifeplatform.PayoutRouteColumns.of(route); }
+
+    public tz.co.nlolo.lifeplatform.PayoutRoute route() { return route.toRoute(payeeRef); }
 
     public UUID getExitId() { return exitId; }
     public UUID getTenantId() { return tenantId; }

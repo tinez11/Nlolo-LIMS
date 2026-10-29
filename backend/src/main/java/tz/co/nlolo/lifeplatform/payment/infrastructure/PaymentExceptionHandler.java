@@ -19,6 +19,12 @@ public class PaymentExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "PAYMENT_NOT_FOUND");
     }
 
+    /** A receipt refused as asked (2026-10-27): said in words, the platform's 409. */
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.payment.api.ReceiptRefusedException.class)
+    public ProblemDetail handleReceiptRefused(tz.co.nlolo.lifeplatform.payment.api.ReceiptRefusedException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "RECEIPT_REFUSED");
+    }
+
     private static ProblemDetail problem(HttpStatus status, String detail, String errorCode) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
         problem.setProperty("errorCode", errorCode);

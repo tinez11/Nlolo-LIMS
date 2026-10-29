@@ -15,6 +15,7 @@ import { useExpenseAllocationStore } from '@/store/expenseAllocationStore';
 import { RUN_STATUS_LABEL, previousMonth } from './enginePeriod';
 import { extractGate } from './expenseAllocation';
 import { ExpenseAllocationSection } from './ExpenseAllocationSection';
+import { StaffName } from '@/components/StaffName';
 
 /**
  * The IFRS 17 engine for one period (IFRS 17 I5a, month-end steps 6 and 7): make the extract the engine is sent, upload
@@ -154,7 +155,7 @@ export function EnginePage() {
                         <span className="ml-1 text-xs text-status-danger-fg">({r.errors.length} errors)</span>
                       )}
                     </td>
-                    <td className="py-1 pr-3 text-xs text-muted-foreground">{formatInstant(r.uploadedAt)} by {r.uploadedBy}</td>
+                    <td className="py-1 pr-3 text-xs text-muted-foreground">{formatInstant(r.uploadedAt)} by <StaffName subject={r.uploadedBy} /></td>
                   </tr>
                 ))}
               </tbody>

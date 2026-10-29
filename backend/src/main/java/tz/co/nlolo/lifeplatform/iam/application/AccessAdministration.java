@@ -179,11 +179,8 @@ public class AccessAdministration {
         detail.put("added", difference(wanted, current.permissions()));
         detail.put("removed", difference(current.permissions(), wanted));
 
-        boolean grantsAdministration = active && current.holders() > 0
-            && wanted.stream().anyMatch(p -> ADMINISTRATION.contains(p) && !current.permissions().contains(p));
-        if (grantsAdministration || (!current.active() && active && wanted.stream().anyMatch(ADMINISTRATION::contains))) {
-            return new Outcome(false, record(tenant, null, roleId, "ROLE_CHANGED", detail, "PENDING", actor));
-        }
+        // Applied at once, Administration included (2026-10-28, user: "no need for" a second administrator). Still
+        // never by someone who holds the role (above), and never leaving the tenant with nobody to manage users.
         applyRole(tenant, roleId, detail);
         ensureSomeoneCanManageUsers(tenant);
         return new Outcome(true, record(tenant, null, roleId, "ROLE_CHANGED", detail, "APPLIED", actor));
@@ -289,11 +286,8 @@ public class AccessAdministration {
         if (found.isEmpty()) throw new AccessChangeRefusedException(NOT_FOUND, "No such change.");
         ChangeView change = found.get(0);
         if (!"PENDING".equals(change.status())) throw new AccessChangeRefusedException(NOT_PENDING, "This change was already decided.");
-        String requestedBy = jdbc.queryForObject("SELECT requested_by FROM iam.access_change WHERE change_id = :change",
-            new MapSqlParameterSource("change", changeId), String.class);
-        if (actor.userId().toString().equals(requestedBy)) {
-            throw new AccessChangeRefusedException(SAME_PERSON_APPROVES, "You asked for this change, so another administrator decides it.");
-        }
+        // No second administrator any more (2026-10-28): a change left waiting from before is decided by any
+        // administrator, the one who asked included.
         if (change.userId() != null) refuseSelf(actor, change.userId());
         if (change.roleId() != null && holds(tenant, actor.userId(), change.roleId())) {
             throw new AccessChangeRefusedException(SELF_CHANGE, "You hold this role, so another administrator decides it.");
@@ -316,7 +310,6 @@ public class AccessAdministration {
 
     private Outcome changeAccess(Actor actor, UUID tenant, UUID userId, List<UUID> roleIds, Set<String> permissions) {
         UserView before = userView(tenant, userId);
-        Set<String> after = effectiveOf(tenant, roleIds, permissions);
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("roleIds", roleIds);
         detail.put("roles", roleCodes(tenant, roleIds));
@@ -325,11 +318,8 @@ public class AccessAdministration {
         detail.put("removedRoles", difference(before.roles().stream().map(RoleRef::code).toList(), roleCodes(tenant, roleIds)));
         detail.put("addedPermissions", difference(permissions, before.extraPermissions()));
         detail.put("removedPermissions", difference(before.extraPermissions(), permissions));
-        boolean grantsAdministration = after.stream()
-            .anyMatch(p -> ADMINISTRATION.contains(p) && !before.effectivePermissions().contains(p));
-        if (grantsAdministration) {
-            return new Outcome(false, record(tenant, userId, null, "ACCESS_CHANGED", detail, "PENDING", actor));
-        }
+        // Applied at once, Administration included (2026-10-28, user: "no need for" a second administrator). Still
+        // never one's own access (refuseSelf), and never leaving the tenant with nobody to manage users.
         applyAccess(tenant, userId, roleIds, permissions);
         ensureSomeoneCanManageUsers(tenant);
         return new Outcome(true, record(tenant, userId, null, "ACCESS_CHANGED", detail, "APPLIED", actor));
@@ -448,9 +438,11 @@ public class AccessAdministration {
     }
 
     private UUID record(UUID tenant, UUID userId, UUID roleId, String type, Map<String, Object> detail, String status, Actor actor) {
+        // clock_timestamp(), not the column's now(): one transaction records several changes -- a person created, then
+        // their access -- and now() gives them all the same instant, so the history came back in no set order.
         return jdbc.queryForObject("INSERT INTO iam.access_change (tenant_id, user_id, role_id, change_type, detail, status, "
-                + "requested_by, requested_by_name) VALUES (:tenant, :user, :role, :type, CAST(:detail AS jsonb), :status, "
-                + ":actor, :name) RETURNING change_id",
+                + "requested_by, requested_by_name, requested_at) VALUES (:tenant, :user, :role, :type, CAST(:detail AS jsonb), "
+                + ":status, :actor, :name, clock_timestamp()) RETURNING change_id",
             new MapSqlParameterSource("tenant", tenant).addValue("user", userId).addValue("role", roleId)
                 .addValue("type", type).addValue("detail", writeDetail(detail)).addValue("status", status)
                 .addValue("actor", actor.userId().toString()).addValue("name", actor.name()), UUID.class);

@@ -17,8 +17,12 @@ public record JournalEntrySearchResponseDto(List<JournalEntryResponseDto> items,
     public record PageMetaDto(int page, int pageSize, int totalElements) {}
 
     public static JournalEntrySearchResponseDto from(Page<JournalEntryView> springPage) {
+        return from(springPage, java.util.Map.of());
+    }
+
+    public static JournalEntrySearchResponseDto from(Page<JournalEntryView> springPage, java.util.Map<String, String> accountNames) {
         return new JournalEntrySearchResponseDto(
-            springPage.getContent().stream().map(JournalEntryResponseDto::from).toList(),
+            springPage.getContent().stream().map(v -> JournalEntryResponseDto.from(v, accountNames)).toList(),
             new PageMetaDto(springPage.getNumber(), springPage.getSize(), (int) springPage.getTotalElements()));
     }
 }

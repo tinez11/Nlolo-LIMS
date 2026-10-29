@@ -12,7 +12,22 @@ public interface PaymentTransactionRepository
         extends JpaRepository<PaymentTransaction, PaymentTransaction.PaymentTransactionId> {
     Optional<PaymentTransaction> findByPaymentTransactionIdAndTenantId(UUID paymentTransactionId, UUID tenantId);
     Optional<PaymentTransaction> findByIdempotencyKeyAndTenantId(String idempotencyKey, UUID tenantId);
+
+    /** One invoice's receipts in one state -- those still waiting for their second signature (2026-10-28). */
+    java.util.List<PaymentTransaction> findByTenantIdAndSourceRefAndStatusOrderByCreatedAtAsc(UUID tenantId, String sourceRef,
+                                                                                            String status);
     Optional<PaymentTransaction> findByGatewayReferenceAndTenantId(String gatewayReference, UUID tenantId);
+
+    // ---- Recorded receipts (2026-10-27) ----
+
+    /** Whether this method's reference -- a bank slip, a cheque, a Lipa transaction -- is already on a live receipt. */
+    boolean existsByTenantIdAndMethodAndGatewayReferenceAndStatusNot(UUID tenantId, String method, String gatewayReference,
+                                                                    String status);
+
+    /** Whether an agent's field receipt is already recorded on a live receipt. */
+    boolean existsByTenantIdAndFieldReceiptIdAndStatusNot(UUID tenantId, UUID fieldReceiptId, String status);
+
+    java.util.List<PaymentTransaction> findByTenantIdAndStatusOrderByCreatedAtAsc(UUID tenantId, String status);
 
     /** Same bootstrap as DisbursementInstructionRepository.resolveTenantByGatewayReference, for
      * the collection (inbound-payment) ledger -- see that method's javadoc and

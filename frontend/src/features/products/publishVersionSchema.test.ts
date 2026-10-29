@@ -1012,6 +1012,28 @@ describe('fixed-term deposit', () => {
     );
   });
 
+  /** 2026-10-28: Ndot0-Clive was published to stop selling on the day it started, so it was never in force. */
+  it('refuses a stop-selling date that is not after the effective date', () => {
+    expect(messages(endowment.safeParse(deposit({ effectiveDate: '2026-10-28', retirementDate: '2026-10-28' }))))
+      .toContain('"Stop selling on" must be after the effective date. Leave it blank to keep selling.');
+    expect(endowment.safeParse(deposit({ effectiveDate: '2026-10-28', retirementDate: '2027-10-28' })).success).toBe(true);
+  });
+
+  /** 2026-10-28: an extra "Add a band" left blank raised five wrong messages, among them the minimum-deposit one on a
+   * grid whose lowest band started at the minimum. A blank row is ignored; a half-filled one is named by its place. */
+  it('ignores a band row left completely empty, and names a half-filled one by its place', () => {
+    const withMinimum = { minSumAssured: '500000' };
+    const blank = { minAmount: '', rates: ['', '', ''] };
+    const ok = endowment.safeParse(deposit({ ...withMinimum, depositBands: [...deposit().depositBands, blank] }));
+    expect(ok.success).toBe(true);
+    expect(toApiRequest(ok.data!).deposit?.rates).toHaveLength(12);
+
+    const halfFilled = { minAmount: '', rates: ['6', '7', '8'] };
+    const result = endowment.safeParse(deposit({ ...withMinimum, depositBands: [...deposit().depositBands, halfFilled] }));
+    expect(messages(result)).toContain('Band 5 needs the deposit it starts at');
+    expect(messages(result)).not.toContain("The lowest deposit band must start at the version's minimum deposit (500000)");
+  });
+
   it('refuses a payout schedule and a frequency loading', () => {
     expect(messages(endowment.safeParse(deposit({ payoutRows: [maturityRow] })))).toContain(
       'A fixed-term deposit matures through its account; it carries no payout schedule',
@@ -1026,7 +1048,7 @@ describe('fixed-term deposit', () => {
       'A TERM_LIFE product cannot be a fixed-term deposit',
     );
     expect(messages(endowment.safeParse(deposit({ minSumAssured: '1000000' })))).toContain(
-      "The lowest deposit band must start at the version's minimum sum assured (1000000)",
+      "The lowest deposit band must start at the version's minimum deposit (1000000)",
     );
   });
 });

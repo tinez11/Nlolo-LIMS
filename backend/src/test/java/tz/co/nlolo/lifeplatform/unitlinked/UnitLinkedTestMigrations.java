@@ -26,6 +26,7 @@ public final class UnitLinkedTestMigrations {
         "db-migrations/policy/V36__unit_linked_policy.sql",
         // U2: switches, withdrawals, top-ups, the split history, statements; the UL_TOP_UP collection purpose.
         "db-migrations/unitlinked/V3__u2.sql",
+        "db-migrations/unitlinked/V4__payout_routes.sql",
         "db-migrations/payment/V14__unit_linked_top_up.sql",
     };
 

@@ -2,14 +2,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import type { TermAccountView } from '@/api/types';
 import { Field } from '@/components/Field';
-import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { formatDate } from '@/lib/dates';
 import { startMutation } from '@/lib/idempotency';
 import { useAccumulationStore } from '@/store/accumulationStore';
-import { payeeSchema, type PayeeValues } from './depositForms';
+import { PayoutRouteFields } from '@/features/payments/PayoutRouteFields';
+import { BLANK_ROUTE, payoutRouteSchema, routeBody, type PayoutRouteValues } from '@/features/payments/payoutRoute';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 const STATUS_LABELS: Record<TermAccountView['status'], string> = {
@@ -51,22 +50,20 @@ export function TermAccountSection({ termAccount, isFinance }: { termAccount: Te
 function PayeePanel({ policyNumber }: { policyNumber: string }) {
   const payOut = useAccumulationStore((s) => s.payOutTermAccount);
   const acting = useAccumulationStore((s) => s.acting[`termAccountPayout.${policyNumber}`]);
-  const form = useForm<PayeeValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(payeeSchema), defaultValues: { payeeRef: '' } });
+  const form = useForm<PayoutRouteValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(payoutRouteSchema), defaultValues: BLANK_ROUTE });
 
   return (
     <form
       className="space-y-3 rounded-md border border-border p-3"
       aria-label="Record payee and pay"
-      onSubmit={form.handleSubmit((values) => void payOut(policyNumber, values.payeeRef, startMutation()))}
+      onSubmit={form.handleSubmit((values) => void payOut(policyNumber, routeBody(values), startMutation()))}
     >
       <p className="text-sm">This account has matured and there is no number to pay it to.</p>
-      <FormField label="Pay to" error={form.formState.errors.payeeRef?.message}>
-        <Input inputSize="sm" {...form.register('payeeRef')} />
-      </FormField>
+      <PayoutRouteFields form={form} />
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       {acting?.status === 'success' && (
         <p className="text-xs text-muted-foreground" role="status">
-          The payment has been requested from the provider.
+          The payment has been requested. A bank transfer or cheque waits under Payments to make.
         </p>
       )}
       <Button type="submit" size="sm" disabled={acting?.status === 'loading'}>

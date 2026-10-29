@@ -145,6 +145,9 @@ class ModuleArchitectureB1EndToEndRaceTest {
             "db-migrations/benefitpayout/V3__withholding.sql",
             "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V9__withdrawal_rejection.sql",
+            "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -183,6 +186,7 @@ class ModuleArchitectureB1EndToEndRaceTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
@@ -304,8 +308,10 @@ class ModuleArchitectureB1EndToEndRaceTest {
         }
     }
 
+    // Staff, not an agent (2026-10-27): an agent originates only on their own book, and this race is about two
+    // originations, not about who may make them.
     private static RequestPostProcessor agentOf(UUID tenantId) {
-        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
             .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
     }
 

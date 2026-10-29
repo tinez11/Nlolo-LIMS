@@ -17,6 +17,10 @@ public class TopUpRequest {
     @Column(nullable = false) private BigDecimal amount;
     @Column(nullable = false) private String currency;
     @Column(name = "payer_ref", nullable = false) private String payerRef;
+    // How it came in (V7, 2026-10-28): a mobile-money request, or money already received by hand with its reference.
+    @Column(nullable = false) private String method = "MOBILE_MONEY";
+    @Column private String reference;
+    @Column(name = "received_on") private java.time.LocalDate receivedOn;
     @Column(nullable = false) private String status = "REQUESTED";
     @Column(name = "requested_by", nullable = false) private String requestedBy;
     @Column(name = "requested_at", nullable = false) private Instant requestedAt = Instant.now();
@@ -31,6 +35,17 @@ public class TopUpRequest {
         this.currency = currency;
         this.payerRef = payerRef;
         this.requestedBy = requestedBy;
+    }
+
+    /** Money already received -- cash, a bank deposit, a cheque, a Lipa number or TANQR -- recorded by one person. */
+    public static TopUpRequest received(UUID tenantId, String policyNumber, BigDecimal amount, String currency,
+                                        String method, String reference, java.time.LocalDate receivedOn, String payerRef,
+                                        String recordedBy) {
+        TopUpRequest t = new TopUpRequest(tenantId, policyNumber, amount, currency, payerRef, recordedBy);
+        t.method = method;
+        t.reference = reference;
+        t.receivedOn = receivedOn;
+        return t;
     }
 
     public boolean markCollected() {
@@ -50,6 +65,9 @@ public class TopUpRequest {
     public BigDecimal getAmount() { return amount; }
     public String getCurrency() { return currency; }
     public String getPayerRef() { return payerRef; }
+    public String getMethod() { return method; }
+    public String getReference() { return reference; }
+    public java.time.LocalDate getReceivedOn() { return receivedOn; }
     public String getStatus() { return status; }
     public String getRequestedBy() { return requestedBy; }
     public Instant getRequestedAt() { return requestedAt; }

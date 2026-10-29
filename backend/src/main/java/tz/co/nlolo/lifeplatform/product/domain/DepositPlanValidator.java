@@ -68,7 +68,7 @@ public final class DepositPlanValidator {
         }
         BigDecimal minimum = bounds != null ? bounds.minSumAssured() : null;
         if (minimum != null && plan.bandStarts().get(0).compareTo(minimum) != 0) {
-            fail("The lowest deposit band must start at the version's minimum sum assured ("
+            fail("The lowest deposit band must start at the version's minimum deposit ("
                 + minimum.stripTrailingZeros().toPlainString() + ")");
         }
     }

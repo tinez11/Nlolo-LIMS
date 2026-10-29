@@ -165,7 +165,7 @@ test.describe('staff claims adjudication', () => {
     await expect(managerPage.getByLabel('Approved amount')).toHaveValue('1500000.00');
     await expect(managerPage.getByText(/TZS 500,000\.00 less than this claim is covered for/))
       .toBeVisible();
-    await managerPage.getByLabel('Payee reference').fill('MOBILE-MONEY-E2E-1');
+    await managerPage.getByLabel('Mobile-money number').fill('MOBILE-MONEY-E2E-1');
     await managerPage.getByRole('button', { name: 'Approve claim' }).click();
 
     // Approving moves money AND closes the policy permanently -- Claim.reopen()'s

@@ -57,6 +57,14 @@ export function formatInstant(iso: string | null | undefined): string {
   }).format(parsed);
 }
 
+/** The day of an instant, in the viewer's own timezone, where the time of day says nothing (2026-10-27). */
+export function formatInstantDay(iso: string | null | undefined): string {
+  if (!iso) return NO_DATE;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(parsed);
+}
+
 /**
  * A calendar date `years` later, by string arithmetic -- as Java's `LocalDate.plusYears`, which the
  * server uses: 29 February in a year with none becomes 28 February.

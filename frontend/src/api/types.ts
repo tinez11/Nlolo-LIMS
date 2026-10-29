@@ -296,6 +296,8 @@ export type LineDimensions = FinaccountingComponents['schemas']['LineDimensions'
 
 /** Accounting periods (IFRS 17 spec §5.4): OPEN → CLOSING → LOCKED, reopened by a second person. */
 export type AccountingPeriodView = FinaccountingComponents['schemas']['AccountingPeriodView'];
+export type MonthEndView = FinaccountingComponents['schemas']['MonthEndView'];
+export type MonthEndStep = FinaccountingComponents['schemas']['MonthEndStep'];
 export type PeriodStatus = FinaccountingComponents['schemas']['PeriodStatus'];
 /** The effective-dated accounting policy register (IFRS 17 spec §3). */
 export type PolicyElectionView = FinaccountingComponents['schemas']['PolicyElectionView'];

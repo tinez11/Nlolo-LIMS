@@ -141,6 +141,7 @@ class PaymentRequestListenerIntegrationTest {
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             // M5 final-review fix wave (C2): V4 widens both ledgers' status CHECK to admit
             // IN_DOUBT. Load-bearing for the two indeterminate-outcome tests below -- without it
@@ -149,7 +150,10 @@ class PaymentRequestListenerIntegrationTest {
             "db-migrations/payment/V6__disbursement_method.sql",
             "db-migrations/payment/V7__q4_2026_partitions.sql",
             "db-migrations/payment/V8__benefit_payout_purposes.sql",
-            "db-migrations/payment/V9__account_purposes.sql");
+            "db-migrations/payment/V9__account_purposes.sql",
+            "db-migrations/payment/V17__manual_receipts.sql",
+            "db-migrations/payment/V18__payout_routes.sql",
+            "db-migrations/payment/V19__top_up_one_person.sql");
     }
 
     @AfterAll

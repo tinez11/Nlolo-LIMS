@@ -31,6 +31,7 @@ public class PaymentApiImpl implements PaymentApi {
 
     private final DisbursementIdempotencyRepository disbursementIdempotencyRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final PaymentRegister register;
     // Task 8 (review fix, Critical 3): a fresh PROPAGATION_REQUIRES_NEW transaction for
     // applyGatewayCallback's mutation, opened only AFTER TenantContext has been set to the
     // resolved tenant. See applyGatewayCallback's javadoc for why this can't just be a plain
@@ -47,7 +48,9 @@ public class PaymentApiImpl implements PaymentApi {
                            PaymentIdempotencyRepository paymentIdempotencyRepository,
                            DisbursementIdempotencyRepository disbursementIdempotencyRepository,
                            ApplicationEventPublisher eventPublisher,
-                           PlatformTransactionManager transactionManager) {
+                           PlatformTransactionManager transactionManager,
+                           PaymentRegister register) {
+        this.register = register;
         this.paymentTransactionRepository = paymentTransactionRepository;
         this.disbursementRepository = disbursementRepository;
         this.payoutBatchRepository = payoutBatchRepository;
@@ -127,8 +130,23 @@ public class PaymentApiImpl implements PaymentApi {
     Optional<UUID> recordDisbursementRequest(UUID tenantId, String idempotencyKey, String payeeRef,
                                               BigDecimal amount, String currency, String purpose,
                                               String sourceRef, DisbursementMethod method) {
+        return recordDisbursementRequest(tenantId, idempotencyKey,
+            new tz.co.nlolo.lifeplatform.PayoutRoute(method.name(), payeeRef, null, null, null, null),
+            amount, currency, purpose, sourceRef);
+    }
+
+    /** A payout by the route the person chose (2026-10-28): mobile money to the gateway; a bank transfer or a cheque to
+     * finance's queue of payments to make by hand, with the bank account it goes to. */
+    @Transactional
+    Optional<UUID> recordDisbursementRequest(UUID tenantId, String idempotencyKey,
+                                              tz.co.nlolo.lifeplatform.PayoutRoute route, BigDecimal amount,
+                                              String currency, String purpose, String sourceRef) {
+        DisbursementMethod method = DisbursementMethod.valueOf(route.method());
+        String payeeRef = route.payee();
         DisbursementInstruction instruction = new DisbursementInstruction(
             tenantId, idempotencyKey, payeeRef, amount, currency, purpose, sourceRef, method);
+        instruction.payTo(route.bank(), route.branch(), route.accountName(), route.accountNumber());
+        instruction.notePolicy(RequestPolicy.current());
         // Claim FIRST, and let the affected-row count decide. An INSERT ... ON CONFLICT DO
         // NOTHING returning 0 is the only race-free way to answer "did I already process this?"
         // -- a findBy...isPresent() check before inserting has a real TOCTOU window that two
@@ -139,8 +157,8 @@ public class PaymentApiImpl implements PaymentApi {
             return Optional.empty();
         }
         disbursementRepository.save(instruction);
-        if (method == DisbursementMethod.EFT) {
-            // An EFT sits unpaid for days while a person finds time to visit the bank. That window
+        if (method != DisbursementMethod.MOBILE_MONEY) {
+            // An EFT (or a cheque, 2026-10-28) sits unpaid for days while a person finds time to visit the bank. That window
             // is the whole reason this event exists: for the mobile-money rail the gap between
             // "approved" and "paid" is milliseconds and the books lose nothing by recognising the
             // expense only on payment, but a multi-million-shilling obligation that is invisible in
@@ -168,6 +186,7 @@ public class PaymentApiImpl implements PaymentApi {
                                             BigDecimal amount, String currency, String sourceRef, String purpose) {
         PaymentTransaction transaction =
             new PaymentTransaction(tenantId, idempotencyKey, payerRef, amount, currency, sourceRef, purpose);
+        transaction.notePolicy(RequestPolicy.current());
         int claimed = paymentIdempotencyRepository.claimKey(tenantId, idempotencyKey, transaction.getPaymentTransactionId());
         if (claimed == 0) {
             return Optional.empty();
@@ -212,6 +231,13 @@ public class PaymentApiImpl implements PaymentApi {
         return disbursementRepository
             .findByTenantIdAndStatusOrderByCreatedAtAsc(TenantContext.get(), "AWAITING_EXECUTION")
             .stream().map(PaymentApiImpl::toView).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<tz.co.nlolo.lifeplatform.payment.api.PaymentRecordView> register(
+            String direction, String state, String policyNumber, org.springframework.data.domain.Pageable pageable) {
+        return register.search(direction, state, policyNumber, pageable);
     }
 
     @Override
@@ -374,6 +400,17 @@ public class PaymentApiImpl implements PaymentApi {
         paymentTransactionRepository.save(transaction);
     }
 
+    /** The rail accepted it; finance confirms it (see {@link PaymentTransaction#awaitApproval}). Publishes nothing:
+     * nothing is paid yet. */
+    @Transactional
+    void awaitApproval(UUID tenantId, UUID paymentTransactionId, String gatewayReference, String requestedBy) {
+        PaymentTransaction transaction = paymentTransactionRepository
+            .findByPaymentTransactionIdAndTenantId(paymentTransactionId, tenantId)
+            .orElseThrow(() -> new PaymentNotFoundException("Payment " + paymentTransactionId + " not found"));
+        transaction.awaitApproval(gatewayReference, requestedBy);
+        paymentTransactionRepository.save(transaction);
+    }
+
     @Transactional
     void confirmCollection(UUID tenantId, UUID paymentTransactionId, String gatewayReference) {
         PaymentTransaction transaction = paymentTransactionRepository
@@ -393,7 +430,48 @@ public class PaymentApiImpl implements PaymentApi {
                    // takes ACCOUNT_TOP_UP. Billing used to parse every sourceRef as an invoice id.
                    "purpose", transaction.getPurpose(),
                    // The number the money came from. A fixed-term deposit pays back to it by default.
-                   "payerRef", transaction.getPayerRef())));
+                   "payerRef", transaction.getPayerRef(),
+                   // How it came in (2026-10-27): the ledger posts it to the account it reached.
+                   "method", transaction.getMethod())));
+    }
+
+    /**
+     * A savings top-up already received by hand (2026-10-28): receipted and confirmed in one step, by the person who
+     * recorded it, and confirmed to accumulation exactly as any collection is -- carrying the method, so the account it
+     * reached is the one debited. A reference already receipted under the same method fails it instead, so one slip is
+     * never credited twice. Empty when the key was already seen.
+     */
+    @Transactional
+    Optional<UUID> recordReceivedTopUp(UUID tenantId, String idempotencyKey, String method, String reference,
+                                       String payerRef, BigDecimal amount, String currency, String topUpId,
+                                       String policyNumber, java.time.LocalDate receivedOn, String recordedBy) {
+        PaymentTransaction transaction = PaymentTransaction.receivedTopUp(tenantId, idempotencyKey, method, reference,
+            payerRef, amount, currency, topUpId, policyNumber, receivedOn, recordedBy);
+        if (paymentIdempotencyRepository.claimKey(tenantId, idempotencyKey, transaction.getPaymentTransactionId()) == 0) {
+            return Optional.empty();
+        }
+        if (paymentTransactionRepository.existsByTenantIdAndMethodAndGatewayReferenceAndStatusNot(tenantId, method,
+                reference, "REJECTED")) {
+            eventPublisher.publishEvent(DomainEventEnvelope.of("payment.PaymentFailed", tenantId,
+                Map.of("paymentRequestId", transaction.getPaymentTransactionId(),
+                       "idempotencyKey", idempotencyKey,
+                       "sourceRef", topUpId,
+                       "reason", "A receipt with this reference (" + reference + ") is already recorded",
+                       "purpose", transaction.getPurpose())));
+            return Optional.empty();
+        }
+        paymentTransactionRepository.save(transaction);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("payment.PaymentConfirmed", tenantId,
+            Map.of("paymentRequestId", transaction.getPaymentTransactionId(),
+                   "idempotencyKey", idempotencyKey,
+                   "sourceRef", topUpId,
+                   "gatewayReference", reference,
+                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency),
+                   "confirmedAt", Instant.now().toString(),
+                   "purpose", transaction.getPurpose(),
+                   "payerRef", payerRef,
+                   "method", method)));
+        return Optional.of(transaction.getPaymentTransactionId());
     }
 
     /** Review fix (I2): same reasoning as {@code failDisbursement} above, for the collection
@@ -675,7 +753,8 @@ public class PaymentApiImpl implements PaymentApi {
         return new DisbursementStatusView(d.getDisbursementId(), d.getIdempotencyKey(),
             DisbursementStatus.valueOf(d.getStatus()), d.getAmount(), d.getCurrency(), d.getPurpose(),
             d.getGatewayReference(), d.getSourceRef(), d.getBatchId(),
-            d.getPayeeRef(), d.getCreatedAt(), d.getMethod(), d.getExecutedAt());
+            d.getPayeeRef(), d.getCreatedAt(), d.getMethod(), d.getExecutedAt(),
+            d.getPayeeBank(), d.getPayeeBranch(), d.getPayeeAccountName(), d.getPayeeAccountNumber());
     }
 
     private static PaymentStatusView toView(PaymentTransaction p) {

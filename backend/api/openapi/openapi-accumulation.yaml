@@ -334,6 +334,69 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /account-withdrawals/{withdrawalId}/reject:
+    post:
+      summary: Refuse a withdrawal, saying why, by someone other than its requester
+      description: >
+        2026-10-29. FINANCE_OFFICER or ADMIN. Nothing is posted: the money leaves the account only at approval, so a
+        refused request never moved it.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: withdrawalId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: Rejected
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Withdrawal' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused -- the requester rejecting, or not REQUESTED
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/account/top-ups/received:
+    post:
+      summary: Record money already received for the account, and credit it (finance only)
+      description: >
+        2026-10-29. Cash, a bank deposit, a cheque, a Lipa number or TANQR, with the method's own reference and the day
+        it came. Finance alone (collections.manage): customer service may request a mobile-money top-up but cannot say
+        money was received. Credited at once; a reference already recorded under the same method is refused (422).
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 200 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TopUpRequest' }
+      responses:
+        '201':
+          description: Recorded and credited
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TopUp' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Refused -- no reference, a future day, a reference already recorded, or the account cannot take it
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /policies/{policyNumber}/account/top-ups:
     get:
       summary: Every top-up on the account, newest first
@@ -692,6 +755,11 @@ components:
         payeeRef: { type: [string, "null"] }
         recordedBy: { type: string }
         recordedAt: { type: string, format: date-time }
+        method: { type: [string, "null"], enum: [MOBILE_MONEY, EFT, CHEQUE, null] }
+        payeeBank: { type: [string, "null"] }
+        payeeBranch: { type: [string, "null"] }
+        payeeAccountName: { type: [string, "null"] }
+        payeeAccountNumber: { type: [string, "null"] }
     MaturityInstructionRequest:
       type: object
       required: [action]
@@ -699,11 +767,24 @@ components:
         action: { type: string, enum: [REINVEST, PAY_OUT] }
         termMonths: { type: integer, minimum: 1, maximum: 120 }
         payeeRef: { type: string, maxLength: 200 }
+        method: { type: string, enum: [MOBILE_MONEY, EFT, CHEQUE], description: "How it is paid (2026-10-28); absent is mobile money" }
+        payeeBank: { type: string, maxLength: 100 }
+        payeeBranch: { type: string, maxLength: 100 }
+        payeeAccountName: { type: string, maxLength: 200 }
+        payeeAccountNumber: { type: string, maxLength: 50 }
     DepositPayoutRequest:
       type: object
-      required: [payeeRef]
+      description: >
+        Who is paid and how (2026-10-28): mobile money to payeeRef (the default), a bank transfer to the account the
+        bank fields name, or a cheque made out to payeeRef. A missing field is a 422 naming it.
       properties:
         payeeRef: { type: string, maxLength: 200 }
+        method: { type: string, enum: [MOBILE_MONEY, EFT, CHEQUE], description: "How it is paid (2026-10-28); absent is mobile money" }
+        payeeBank: { type: string, maxLength: 100 }
+        payeeBranch: { type: string, maxLength: 100 }
+        payeeAccountName: { type: string, maxLength: 200 }
+        payeeAccountNumber: { type: string, maxLength: 50 }
+
     Deposit:
       type: object
       required: [policyNumber, periods, interestSoFar, awaitingPayee, termsOffered]
@@ -722,6 +803,11 @@ components:
             payeeRef: { type: [string, "null"] }
             recordedBy: { type: string }
             recordedAt: { type: string, format: date-time }
+            method: { type: [string, "null"], enum: [MOBILE_MONEY, EFT, CHEQUE, null], description: "How a pay-out is paid (2026-10-28)" }
+            payeeBank: { type: [string, "null"] }
+            payeeBranch: { type: [string, "null"] }
+            payeeAccountName: { type: [string, "null"] }
+            payeeAccountNumber: { type: [string, "null"] }
         interestSoFar: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         defaultPayeeRef: { type: [string, "null"], description: "The number the deposit was collected from" }
         awaitingPayee: { type: boolean }
@@ -918,11 +1004,22 @@ components:
         value: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
     Account:
       type: object
-      required: [policyNumber, status, balance, openedOn, entries]
+      required: [policyNumber, status, balance, openedOn, totals, entries]
       properties:
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
         status: { type: string, enum: [OPEN, CLOSED] }
         balance: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        totals:
+          type: object
+          description: >
+            The ledger summed by what each line did. A reversal counts against the line it reverses;
+            adjustments are in none of the four. paidOut and charges are positive.
+          required: [paidIn, paidOut, interest, charges]
+          properties:
+            paidIn: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+            paidOut: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+            interest: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+            charges: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         openedOn: { type: string, format: date }
         closedReason:
           type: [string, "null"]
@@ -953,32 +1050,56 @@ components:
         approvedBy: { type: [string, "null"] }
     WithdrawalRequest:
       type: object
-      required: [amount, payeeRef]
+      description: >
+        How the money reaches them (2026-10-28): mobile money to payeeRef (the default when method is
+        absent), a bank transfer to the account the bank fields name, or a cheque made out to payeeRef.
+        A transfer or cheque waits for finance to make it by hand. A missing field is a 422 naming it.
+      required: [amount]
       properties:
         amount: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
-        payeeRef: { type: string, maxLength: 200 }
+        payeeRef: { type: string, maxLength: 200, description: The phone number, or the name a cheque is made out to. }
+        method: { type: string, enum: [MOBILE_MONEY, EFT, CHEQUE] }
+        payeeBank: { type: string, maxLength: 100 }
+        payeeBranch: { type: string, maxLength: 100 }
+        payeeAccountName: { type: string, maxLength: 200 }
+        payeeAccountNumber: { type: string, maxLength: 50 }
     Withdrawal:
       type: object
-      required: [withdrawalId, policyNumber, amount, payeeRef, status, requestedBy, requestedAt]
+      required: [withdrawalId, policyNumber, amount, payeeRef, status, requestedBy, requestedAt, method]
       properties:
         withdrawalId: { type: string, format: uuid }
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
         amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         payeeRef: { type: string }
-        status: { type: string, enum: [REQUESTED, APPROVED, PAID, FAILED] }
+        status: { type: string, enum: [REQUESTED, APPROVED, PAID, FAILED, REJECTED] }
         requestedBy: { type: string }
         requestedAt: { type: string, format: date-time }
         approvedBy: { type: [string, "null"] }
         approvedAt: { type: [string, "null"], format: date-time }
+        method: { type: string, enum: [MOBILE_MONEY, EFT, CHEQUE] }
+        payeeBank: { type: [string, "null"] }
+        payeeBranch: { type: [string, "null"] }
+        payeeAccountName: { type: [string, "null"] }
+        payeeAccountNumber: { type: [string, "null"] }
+        rejectedBy: { type: [string, "null"] }
+        rejectedAt: { type: [string, "null"], format: date-time }
+        rejectionReason: { type: [string, "null"] }
     TopUpRequest:
       type: object
-      required: [amount, payerRef]
+      description: >
+        A mobile-money request to payerRef's phone (method absent or MOBILE_MONEY) on /top-ups, or money already
+        received on /top-ups/received (finance only, 2026-10-29): cash, a bank deposit, a cheque, a Lipa number or TANQR,
+        with the method's own reference and the day it came. A received method sent to /top-ups is refused (422).
+      required: [amount]
       properties:
         amount: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
-        payerRef: { type: string, maxLength: 200 }
+        payerRef: { type: string, maxLength: 200, description: The phone to ask on mobile money; who paid, optionally, otherwise. }
+        method: { type: string, enum: [MOBILE_MONEY, CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR] }
+        reference: { type: string, maxLength: 100 }
+        receivedOn: { type: string, format: date }
     TopUp:
       type: object
-      required: [topUpId, policyNumber, amount, payerRef, status, requestedBy, requestedAt]
+      required: [topUpId, policyNumber, amount, payerRef, status, requestedBy, requestedAt, method]
       properties:
         topUpId: { type: string, format: uuid }
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
@@ -987,6 +1108,9 @@ components:
         status: { type: string, enum: [REQUESTED, COLLECTED, FAILED] }
         requestedBy: { type: string }
         requestedAt: { type: string, format: date-time }
+        method: { type: string, enum: [MOBILE_MONEY, CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR] }
+        reference: { type: [string, "null"] }
+        receivedOn: { type: [string, "null"], format: date }
     TransferInRequest:
       type: object
       required: [amount, sourceScheme]

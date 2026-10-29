@@ -22,5 +22,8 @@ public enum DisbursementMethod {
      * the instruction exists, what it is for, and — once finance confirms — that the transfer
      * happened and under which bank reference.
      */
-    EFT
+    EFT,
+
+    /** A cheque finance writes by hand (2026-10-28); made like an EFT, recorded with the cheque number. */
+    CHEQUE
 }

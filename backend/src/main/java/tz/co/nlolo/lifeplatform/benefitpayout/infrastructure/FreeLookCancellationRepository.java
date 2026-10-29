@@ -10,4 +10,7 @@ public interface FreeLookCancellationRepository extends JpaRepository<FreeLookCa
 
     /** The policy's most recent cancellation in any status, so a second person can find one to approve. */
     Optional<FreeLookCancellation> findFirstByPolicyNumberOrderByRequestedAtDesc(String policyNumber);
+
+    /** Every cancellation in one status, across the tenant, oldest first: the approvals queue (2026-10-27). */
+    java.util.List<FreeLookCancellation> findByStatusOrderByRequestedAtAsc(String status);
 }

@@ -9,4 +9,7 @@ import java.util.UUID;
 public interface RateDeclarationRepository extends JpaRepository<RateDeclaration, UUID> {
     List<RateDeclaration> findByProductIdOrderByEffectiveFromDescProposedAtDesc(UUID productId);
     List<RateDeclaration> findByProductIdAndStatusOrderByEffectiveFrom(UUID productId, String status);
+
+    /** Every declaration in one status, across the tenant's products, oldest first: the approvals queue (2026-10-27). */
+    List<RateDeclaration> findByStatusOrderByProposedAtAsc(String status);
 }

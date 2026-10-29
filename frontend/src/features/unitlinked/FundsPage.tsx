@@ -32,6 +32,7 @@ import {
   type ProposePriceValues,
 } from './fundForms';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { StaffName } from '@/components/StaffName';
 
 /** The alert threshold the server applies (refdata UL_PRICE_MOVE_ALERT_PERCENT); the server's own figure decides. */
 const MOVE_ALERT_PERCENT = 10;
@@ -220,8 +221,8 @@ function PriceRow({ price, fund, viewerSubject }: { price: FundPriceView; fund: 
           {price.supersedesPriceId && <span className="ml-1 text-xs text-muted-foreground">correction</span>}
         </td>
         <td className="px-3 py-2 text-xs text-muted-foreground">
-          {price.proposedBy}
-          {price.approvedBy ? ` · ${price.approvedBy}, ${formatInstant(price.approvedAt)}` : ''}
+          <StaffName subject={price.proposedBy} />
+          {price.approvedBy && <> · <StaffName subject={price.approvedBy} />, {formatInstant(price.approvedAt)}</>}
           {price.moveReason ? <span className="block">Move: {price.moveReason}</span> : null}
         </td>
         <td className="px-3 py-2">
@@ -484,7 +485,7 @@ function AdjustmentRow({ adjustment, viewerSubject }: { adjustment: PriceAdjustm
       </p>
       {adjustment.decidedBy && (
         <p className="text-xs text-muted-foreground">
-          {adjustment.status === 'WAIVED' ? 'Waived' : 'Settled'} by {adjustment.decidedBy}, {formatInstant(adjustment.decidedAt)}
+          {adjustment.status === 'WAIVED' ? 'Waived' : 'Settled'} by <StaffName subject={adjustment.decidedBy} />, {formatInstant(adjustment.decidedAt)}
           {adjustment.reason ? ` — ${adjustment.reason}` : ''}
         </p>
       )}

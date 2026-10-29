@@ -124,11 +124,11 @@ test.describe('a payout passes two people', () => {
       .selectOption('IN_PERSON');
     await page.getByRole('button', { name: 'Review', exact: true }).click();
 
-    // The SAME person cannot approve what they reviewed. The gate says so in the server's words
-    // and the button is disabled, rather than letting them meet a 422.
-    await expect(
-      page.getByText(/must be approved by someone other than the person who reviewed it/),
-    ).toBeVisible({ timeout: 15_000 });
+    // The SAME person cannot approve what they reviewed. The gate says so -- to them, as "you", not as their
+    // id (2026-10-27) -- and the button is disabled, rather than letting them meet a 422.
+    await expect(page.getByText('You reviewed this payout, so someone else must approve it.')).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
 
     // A second person releases it.

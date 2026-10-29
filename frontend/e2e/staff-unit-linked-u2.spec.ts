@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { confirmRequestedPayments } from './payments';
 import { asAdmin } from './admin';
 import { dmy, todayIso } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
@@ -170,6 +171,8 @@ test.describe('unit-linked U2', () => {
       await pay.getByRole('button', { name: 'Request payment' }).click();
       await expect(admin.getByLabel('Payer reference')).not.toBeVisible({ timeout: 60_000 });
     });
+    // Paid once a second finance person confirms the money came (2026-10-27).
+    await confirmRequestedPayments(browser, policyUrl.split('/').pop()!);
     await expect(async () => {
       await page.goto(policyUrl);
       await page.getByRole('tab', { name: 'Units' }).click();
@@ -196,7 +199,7 @@ test.describe('unit-linked U2', () => {
     // ---- A withdrawal from a policy holding nothing is refused, in the server's words.
     const withdrawal = page.getByRole('region', { name: 'Partial withdrawal' });
     await withdrawal.getByLabel('Gross amount (TZS)').fill('50000');
-    await withdrawal.getByLabel('Pay to').fill('+255700000600');
+    await withdrawal.getByLabel('Mobile-money number').fill('+255700000600');
     await withdrawal.getByRole('button', { name: 'Request withdrawal' }).click();
     await expect(withdrawal.getByText('A withdrawal is at least 100,000.00 TZS')).toBeVisible();
     await withdrawal.getByLabel('Gross amount (TZS)').fill('100000');

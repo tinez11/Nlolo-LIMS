@@ -11,6 +11,9 @@ public interface SurrenderRequestRepository extends JpaRepository<SurrenderReque
 
     Optional<SurrenderRequest> findBySurrenderRequestIdAndTenantId(UUID surrenderRequestId, UUID tenantId);
 
+    /** Every surrender in one status, across the tenant, oldest first: the approvals queue (2026-10-27). */
+    List<SurrenderRequest> findByTenantIdAndStatusOrderByRequestedAtAsc(UUID tenantId, String status);
+
     List<SurrenderRequest> findByPolicyNumberAndTenantIdAndStatusIn(String policyNumber, UUID tenantId, List<String> statuses);
 
     /** The most recent request for a policy, in any status -- what the policy page shows. */

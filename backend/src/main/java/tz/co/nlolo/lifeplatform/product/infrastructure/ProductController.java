@@ -106,7 +106,7 @@ public class ProductController {
      * blank one clears it. It changes no price and no term, so a draft or an active product alike may be described.
      */
     @PutMapping("/products/{productId}/description")
-    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
+    @PreAuthorize("@access.can('products.manage')")
     public ResponseEntity<ProductSummaryView> describeProduct(@PathVariable UUID productId,
                                                               @Valid @RequestBody DescriptionRequest request) {
         return ResponseEntity.ok(productApi.describeProduct(productId, request.description()));

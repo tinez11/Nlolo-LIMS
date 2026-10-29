@@ -1,8 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useRef, useState } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, useWatch, Controller } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
-import { CLAIM_TYPES, type CoveredLifeView, type GroupFuneralFamilyView, type PolicyMemberView } from '@/api/types';
+import { CLAIM_TYPES, type ClaimType, type CoveredLifeView, type GroupFuneralFamilyView, type PolicyMemberView } from '@/api/types';
 import { getCoveredLives } from '@/api/funeral';
 import { listGroupFuneralFamilies } from '@/api/groupFuneral';
 import { claimableLives, familyOfClaimant, lifeLabel } from './schemeLives';
@@ -82,7 +82,6 @@ export function RegisterClaimPage() {
   const {
     register,
     handleSubmit,
-    watch,
     setValue,
     control,
     formState: { errors, isDirty, isSubmitting },
@@ -107,14 +106,12 @@ export function RegisterClaimPage() {
     },
   });
 
-  // react-hook-form's watch() returns a live-subscribed value the React Compiler
-  // cannot safely memoize -- see BeneficiariesPanel.tsx for the same, inherent
-  // interaction. Correct as written; re-renders exactly when the field changes.
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const claimType = watch('details.claimType');
-  const policyNumber = watch('policyNumber');
-  const claimantPartyId = watch('claimantPartyId');
-  const dateOfEvent = watch('dateOfEvent');
+  // useWatch, not watch(): the React Compiler memoized watch()'s value, so choosing another claim type left the
+  // details of the old one on screen until something else -- pressing Register -- re-rendered the page (2026-10-29).
+  const claimType = useWatch({ control, name: 'details.claimType' });
+  const policyNumber = useWatch({ control, name: 'policyNumber' });
+  const claimantPartyId = useWatch({ control, name: 'claimantPartyId' });
+  const dateOfEvent = useWatch({ control, name: 'dateOfEvent' });
 
   /**
    * The escape hatch, and why it is not just belt-and-braces: `ClaimsApiImpl.registerClaim`
@@ -147,6 +144,28 @@ export function RegisterClaimPage() {
     void loadDetail(policyNumber);
     void loadCoverage(policyNumber);
   }, [policyNumber, loadDetail, loadCoverage]);
+
+  /*
+    The claim types this policy can be claimed for (2026-10-29): its benefits on record, and maturity where it has a
+    maturity date. Until the policy is read, every type -- nothing is known to rule one out. Choosing a type the policy
+    does not carry only to be told so by the coverage check was the bug.
+  */
+  // A policy with no benefit on record at all -- a scheme, whose cover sits with each member -- rules nothing out here;
+  // the coverage check below says what is known.
+  const onRecord = (coverage.data?.activeCoverages ?? []).some((c) => c.benefitType);
+  const claimable: readonly ClaimType[] = coverage.data && policy.data && onRecord
+    ? CLAIM_TYPES.filter((t) =>
+        t === 'MATURITY'
+          ? Boolean(policy.data?.maturityDate)
+          : (coverage.data?.activeCoverages ?? []).some((c) => c.benefitType === t))
+    : CLAIM_TYPES;
+  const claimableKey = claimable.join(',');
+  useEffect(() => {
+    // The type already chosen is not one this policy carries: move to the first it does, with that type's details.
+    const first = claimable[0];
+    if (first && claimType && !claimable.includes(claimType)) setValue('details', blankDetailsFor(first));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- claimableKey stands for claimable
+  }, [claimableKey, claimType, setValue]);
 
   /**
    * A scheme insures many lives, so a claim on one must say which. Loaded only for a scheme,
@@ -483,14 +502,21 @@ export function RegisterClaimPage() {
           })}
         />
 
-        <FormField label="Claim type">
+        <FormField
+          label="Claim type"
+          hint={coverage.data && policy.data && onRecord
+            ? `What this policy covers: ${claimable.map((t) => humanizeStatus(t).toLowerCase()).join(', ')}`
+            : undefined}
+        >
           <Select
             value={claimType}
             onChange={(e) =>
-              setValue('details', blankDetailsFor(e.target.value as ClaimDetailsFormValues['claimType']))
+              setValue('details', blankDetailsFor(e.target.value as ClaimDetailsFormValues['claimType']), {
+                shouldDirty: true,
+              })
             }
           >
-            {CLAIM_TYPES.map((type) => (
+            {claimable.map((type) => (
               <option key={type} value={type}>
                 {humanizeStatus(type)}
               </option>

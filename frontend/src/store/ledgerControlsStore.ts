@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import {
   actOnPeriod,
   approvePolicyElection,
+  getMonthEnd,
   dismissUnpostedEvent,
   getPostingRules,
   listPeriods,
@@ -15,6 +16,7 @@ import {
 } from '@/api/finaccounting';
 import type {
   AccountingPeriodView,
+  MonthEndView,
   PolicyElectionInput,
   PolicyElectionView,
   PostingRulesView,
@@ -33,12 +35,15 @@ type Keyed<T> = Record<string, Resource<T>>;
 
 interface LedgerControlsState {
   periods: Resource<AccountingPeriodView[]>;
+  /** Each month's close as the guide's eight steps, by YYYY-MM. */
+  monthEnd: Keyed<MonthEndView>;
   elections: Resource<PolicyElectionView[]>;
   rules: Resource<PostingRulesView>;
   unposted: Resource<UnpostedEventView[]>;
   acting: Keyed<unknown>;
 
   loadPeriods: () => Promise<void>;
+  loadMonthEnd: (period: string) => Promise<void>;
   actOnPeriod: (period: string, action: PeriodAction) => Promise<boolean>;
   requestReopen: (period: string, reason: string) => Promise<boolean>;
   loadElections: () => Promise<void>;
@@ -66,6 +71,7 @@ export const useLedgerControlsStore = create<LedgerControlsState>((set, getState
 
   return {
     periods: idle(),
+    monthEnd: {},
     elections: idle(),
     rules: idle(),
     unposted: idle(),
@@ -73,6 +79,14 @@ export const useLedgerControlsStore = create<LedgerControlsState>((set, getState
 
     loadPeriods: () =>
       track('ledgerControls.periods', getState().periods, (next) => set({ periods: next }), () => listPeriods()),
+
+    loadMonthEnd: (period) =>
+      track(
+        `ledgerControls.monthEnd.${period}`,
+        getState().monthEnd[period] ?? idle<MonthEndView>(),
+        (next) => set((s) => ({ monthEnd: { ...s.monthEnd, [period]: next } })),
+        () => getMonthEnd(period),
+      ),
 
     actOnPeriod: (period, action) =>
       act(`period.${period}`, async () => {

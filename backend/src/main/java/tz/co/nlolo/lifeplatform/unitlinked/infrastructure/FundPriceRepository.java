@@ -16,6 +16,9 @@ public interface FundPriceRepository extends JpaRepository<FundPrice, UUID> {
 
     Optional<FundPrice> findByTenantIdAndPriceId(UUID tenantId, UUID priceId);
 
+    /** Every price in one status, across the tenant's funds, oldest first: the approvals queue (2026-10-27). */
+    List<FundPrice> findByTenantIdAndStatusOrderByProposedAtAsc(UUID tenantId, String status);
+
     @Query("select p from FundPrice p where p.tenantId = :tenantId and p.fundId = :fundId"
         + " and p.status = 'APPROVED' and p.valuationDate = :date")
     Optional<FundPrice> findApproved(@Param("tenantId") UUID tenantId, @Param("fundId") UUID fundId,

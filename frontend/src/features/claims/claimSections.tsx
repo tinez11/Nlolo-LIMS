@@ -12,7 +12,7 @@ import { DocumentRequestsPanel } from './DocumentRequestsPanel';
 import { EvidencePanel } from './EvidencePanel';
 import { RecoveriesPanel } from '@/features/reinsurance/RecoveriesPanel';
 
-/** One section of the claim record: its jump-link, and the panel that link lands on. */
+/** One section of the claim record: its tab, and the panel the tab shows. */
 export interface Section {
   id: string;
   label: string;
@@ -36,6 +36,7 @@ export function claimSections({
   canDecide,
   canReopen,
   canSeeReinsurance,
+  canAttachEvidence = true,
 }: {
   claim: ClaimView;
   claimId: string;
@@ -44,8 +45,25 @@ export function claimSections({
   canDecide: boolean;
   canReopen: boolean;
   canSeeReinsurance: boolean;
+  /** False for an agent (2026-10-27): they read a claim on their book, and add nothing to it. */
+  canAttachEvidence?: boolean;
 }): Section[] {
   const sections: Section[] = [];
+
+  // What the assessors found -- shown to assessors and managers alike. The manager deciding this claim did not assess
+  // it (the platform forbids it), so this is the only place their colleague's reasoning appears. Since the claim is
+  // tabbed (2026-10-29) it rides INSIDE the tab where the person acts -- under the decision form, or under the
+  // assessment form -- rather than a tab away from the decision it informs; a History tab of its own only when there is
+  // nothing to act on. Labelled "History", not "Assessments": a bar carrying "Assessment" and "Assessments" is two
+  // words apart for a reader and one substring apart for every locator.
+  const seesHistory = roles.CLAIMS_ASSESSOR || roles.CLAIMS_MANAGER;
+  const history = (
+    <Panel id="assessments" title="Assessments" subtitle="What the assessors found, and what they recommended paying">
+      <AssessmentHistoryPanel claimId={claimId} />
+    </Panel>
+  );
+  const historyWithDecision = seesHistory && canDecide;
+  const historyWithAssessment = seesHistory && !canDecide && canAssess;
 
   // Status-gated, so in practice one of the three is present at a time --
   // REGISTERED/UNDER_ASSESSMENT for the first two, REJECTED/SETTLED for the last. Where an
@@ -56,14 +74,17 @@ export function claimSections({
       id: 'assessment',
       label: 'Assessment',
       content: (
-        <Panel
-          id="assessment"
-          emphasis
-          title="Submit an assessment"
-          subtitle="Claims may carry more than one before a decision is made."
-        >
-          <ClaimAssessmentPanel claimId={claimId} />
-        </Panel>
+        <div className="space-y-5">
+          <Panel
+            id="assessment"
+            emphasis
+            title="Submit an assessment"
+            subtitle="Claims may carry more than one before a decision is made."
+          >
+            <ClaimAssessmentPanel claimId={claimId} />
+          </Panel>
+          {historyWithAssessment && history}
+        </div>
       ),
     });
   }
@@ -73,18 +94,21 @@ export function claimSections({
       id: 'settlement',
       label: 'Settlement',
       content: (
-        <Panel
-          id="settlement"
-          emphasis
-          title="Decide settlement"
-          subtitle="Approve or reject — distinct from assessing."
-        >
-          <ClaimSettlementPanel
-            claimId={claimId}
-            policyNumber={claim.policyNumber}
-            onScheme={!!claim.policyMemberId}
-          />
-        </Panel>
+        <div className="space-y-5">
+          <Panel
+            id="settlement"
+            emphasis
+            title="Decide settlement"
+            subtitle="Approve or reject — distinct from assessing."
+          >
+            <ClaimSettlementPanel
+              claimId={claimId}
+              policyNumber={claim.policyNumber}
+              onScheme={!!claim.policyMemberId}
+            />
+          </Panel>
+          {historyWithDecision && history}
+        </div>
       ),
     });
   }
@@ -101,28 +125,9 @@ export function claimSections({
     });
   }
 
-  // Above Evidence, and shown to assessors and managers alike. The manager deciding this claim
-  // did not assess it -- the platform forbids it -- so this is the only place their
-  // colleague's reasoning appears. It sits next to the decision form for that reason, not at
-  // the bottom with the attachments.
-  //
-  // Labelled "History" in the bar, not "Assessments": the bar would otherwise carry both
-  // "Assessment" and "Assessments", which is two words apart for a reader scanning it and one
-  // substring apart for every Playwright locator that looks for either.
-  if (roles.CLAIMS_ASSESSOR || roles.CLAIMS_MANAGER) {
-    sections.push({
-      id: 'assessments',
-      label: 'History',
-      content: (
-        <Panel
-          id="assessments"
-          title="Assessments"
-          subtitle="What the assessors found, and what they recommended paying"
-        >
-          <AssessmentHistoryPanel claimId={claimId} />
-        </Panel>
-      ),
-    });
+  // Its own tab only when it is not already beside a form (see `history` above).
+  if (seesHistory && !historyWithDecision && !historyWithAssessment) {
+    sections.push({ id: 'assessments', label: 'History', content: history });
   }
 
   // Once approved, where the money is. Shown to the claims staff who decided it and to finance
@@ -175,7 +180,7 @@ export function claimSections({
         title="Evidence"
         subtitle="Photos, certificates, and reports attached to this claim"
       >
-        <EvidencePanel claimId={claimId} canAttach={claim.status !== 'SETTLED'} />
+        <EvidencePanel claimId={claimId} canAttach={canAttachEvidence && claim.status !== 'SETTLED'} />
       </Panel>
     ),
   });

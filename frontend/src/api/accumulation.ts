@@ -1,3 +1,4 @@
+import type { RouteBody } from '@/features/payments/payoutRoute';
 import { get, post } from '@/lib/http';
 import type { ApiError } from '@/lib/apiError';
 import type { MutationAttempt } from '@/lib/idempotency';
@@ -91,7 +92,13 @@ export function downloadStatementPdf(statementId: string): Promise<Blob> {
 
 export interface WithdrawalBody {
   amount: string;
-  payeeRef: string;
+  /** Mobile money: the number. Cheque: the name it is made out to. Absent on a bank transfer. */
+  payeeRef?: string;
+  method?: 'MOBILE_MONEY' | 'EFT' | 'CHEQUE';
+  payeeBank?: string;
+  payeeBranch?: string;
+  payeeAccountName?: string;
+  payeeAccountNumber?: string;
 }
 
 export function requestWithdrawal(policyNumber: string, body: WithdrawalBody, attempt: MutationAttempt): Promise<WithdrawalView> {
@@ -99,20 +106,37 @@ export function requestWithdrawal(policyNumber: string, body: WithdrawalBody, at
 }
 
 /** 202: approved and REQUESTED from the rail, not paid. The screen must say so. */
+/** Finance refuses a withdrawal, saying why (2026-10-29). Nothing is posted: the money never left. */
+export function rejectWithdrawal(withdrawalId: string, reason: string): Promise<WithdrawalView> {
+  return post<WithdrawalView>(`/account-withdrawals/${encodeURIComponent(withdrawalId)}/reject`, { reason });
+}
+
 export function approveWithdrawal(withdrawalId: string, attempt: MutationAttempt): Promise<WithdrawalView> {
   return post<WithdrawalView>(`/account-withdrawals/${encodeURIComponent(withdrawalId)}/approve`, undefined, {
     headers: attempt.headers(),
   });
 }
 
+/**
+ * A mobile-money request to payerRef's phone, or (2026-10-28) money already received by hand: its method, the method's
+ * own reference and the day it came -- recorded by one person and credited once payment receipts it.
+ */
 export interface TopUpBody {
   amount: string;
-  payerRef: string;
+  payerRef?: string;
+  method?: 'MOBILE_MONEY' | 'CASH' | 'BANK_DEPOSIT' | 'CHEQUE' | 'LIPA_NUMBER' | 'TANQR';
+  reference?: string;
+  receivedOn?: string;
 }
 
 /** 202: the collection is requested; it is credited only when payment confirms it. */
 export function requestTopUp(policyNumber: string, body: TopUpBody, attempt: MutationAttempt): Promise<TopUpView> {
   return post<TopUpView>(`${account(policyNumber)}/top-ups`, body, { headers: attempt.headers() });
+}
+
+/** Money already received, recorded and credited by finance alone (2026-10-29: collections.manage). */
+export function recordReceivedTopUp(policyNumber: string, body: TopUpBody, attempt: MutationAttempt): Promise<TopUpView> {
+  return post<TopUpView>(`${account(policyNumber)}/top-ups/received`, body, { headers: attempt.headers() });
 }
 
 export interface TransferInBody {
@@ -216,7 +240,13 @@ export async function getDeposit(policyNumber: string): Promise<DepositView | nu
 export interface MaturityInstructionBody {
   action: 'REINVEST' | 'PAY_OUT';
   termMonths?: number;
+  /** A pay-out's route (2026-10-28); none pays the number the deposit came from. */
+  method?: 'MOBILE_MONEY' | 'EFT' | 'CHEQUE';
   payeeRef?: string;
+  payeeBank?: string;
+  payeeBranch?: string;
+  payeeAccountName?: string;
+  payeeAccountNumber?: string;
 }
 
 /** The client's choice for the end of the running term; a new one supersedes the last. */
@@ -248,11 +278,11 @@ export async function getTermAccount(policyNumber: string): Promise<TermAccountV
 }
 
 /** 202: requested from the rail, not paid. Finance's: a matured term account with nobody to pay. */
-export function payOutTermAccount(policyNumber: string, payeeRef: string, attempt: MutationAttempt): Promise<TermAccountView> {
-  return post<TermAccountView>(`${account(policyNumber)}/term-account/payout`, { payeeRef }, { headers: attempt.headers() });
+export function payOutTermAccount(policyNumber: string, route: RouteBody, attempt: MutationAttempt): Promise<TermAccountView> {
+  return post<TermAccountView>(`${account(policyNumber)}/term-account/payout`, route, { headers: attempt.headers() });
 }
 
 /** 202: requested from the rail, not paid. The screen must say so. */
-export function payOutDeposit(policyNumber: string, payeeRef: string, attempt: MutationAttempt): Promise<DepositPeriodView> {
-  return post<DepositPeriodView>(`${account(policyNumber)}/deposit/payout`, { payeeRef }, { headers: attempt.headers() });
+export function payOutDeposit(policyNumber: string, route: RouteBody, attempt: MutationAttempt): Promise<DepositPeriodView> {
+  return post<DepositPeriodView>(`${account(policyNumber)}/deposit/payout`, route, { headers: attempt.headers() });
 }

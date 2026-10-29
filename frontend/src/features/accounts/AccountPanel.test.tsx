@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { grantRoles } from '@/test/access';
-import type { AccountView } from '@/api/types';
+import type { AccountView, WithdrawalView } from '@/api/types';
 import { success } from '@/store/createResourceSlice';
 import { useAccumulationStore } from '@/store/accumulationStore';
 import { AccountPanel } from './AccountPanel';
@@ -20,6 +21,7 @@ const account: AccountView = {
   policyNumber: 'POL-1',
   status: 'OPEN',
   balance: money('94000.00'),
+  totals: { paidIn: money('100000.00'), paidOut: money('0.00'), interest: money('0.00'), charges: money('0.00') },
   openedOn: '2026-01-01',
   closedReason: null,
   closedOn: null,
@@ -49,6 +51,7 @@ beforeEach(() => {
   useAccumulationStore.setState({
     account: { 'POL-1': success(account) },
     withdrawals: {},
+    topUps: {},
     adjustments: {},
     deposit: {},
     termAccount: {},
@@ -94,24 +97,147 @@ describe('AccountPanel on a term account', () => {
 });
 
 describe('AccountPanel', () => {
-  it('shows the balance and every entry in sequence order, a reversal naming what it reverses', () => {
+  it('leads with the balance and what the server summed in and out, then the ledger newest first', () => {
     render(<AccountPanel policyNumber="POL-1" />);
-    expect(screen.getByText('TZS 94,000.00')).toBeInTheDocument();
-    const ledger = screen.getByRole('list', { name: 'Ledger' });
-    expect(ledger).toHaveTextContent('Top-up');
-    expect(ledger).toHaveTextContent('Withdrawal');
-    expect(ledger).toHaveTextContent('reverses #2');
+    const band = screen.getByText('Balance', { selector: 'dt' }).closest('dl')!;
+    expect(band).toHaveTextContent('BalanceTZS 94,000.00');
+    expect(band).toHaveTextContent('Paid inTZS 100,000.00');
+    expect(band).toHaveTextContent('Paid outTZS 0.00');
+    const ledger = screen.getByRole('table', { name: 'Ledger' });
+    const rows = within(ledger).getAllByRole('row');
+    // The header, then #3, #2, #1: the reversal first, naming what it reverses.
+    expect(rows[1]).toHaveTextContent('Reversal');
+    expect(rows[1]).toHaveTextContent('reverses #2');
+    expect(rows[2]).toHaveTextContent('Withdrawal');
+    // Money out in its own column, unsigned.
+    expect(rows[2]).toHaveTextContent('TZS 6,000.00');
+    expect(rows[2]).not.toHaveTextContent('-');
+    expect(rows[3]).toHaveTextContent('Top-up');
   });
 
-  it('offers finance the transfer in and the adjustment, but not the withdrawal or top-up', () => {
+  it('shows what is waiting, says it updates itself, and rereads the account while it waits', () => {
+    vi.useFakeTimers();
+    const loadAccount = vi.fn(async () => {});
+    const waiting: WithdrawalView = {
+      withdrawalId: 'w-1', policyNumber: 'POL-1', amount: money('40000.00'), payeeRef: 'Amina Owner', status: 'APPROVED',
+      requestedBy: 'staff-two', requestedAt: '2026-10-28T08:00:00Z', approvedBy: 'staff-one', approvedAt: '2026-10-28T09:00:00Z',
+      method: 'EFT', payeeBank: 'CRDB Bank', payeeBranch: 'Kariakoo', payeeAccountName: 'Amina Owner', payeeAccountNumber: '0150123',
+    };
+    useAccumulationStore.setState({ withdrawals: { 'POL-1': success([waiting]) }, loadAccount });
+    try {
+      render(<AccountPanel policyNumber="POL-1" />);
+      const strip = screen.getByRole('region', { name: /Waiting/ });
+      expect(strip).toHaveTextContent('Bank transfer to CRDB Bank, Kariakoo · Amina Owner · 0150123');
+      expect(strip).toHaveTextContent('waiting for finance to make the bank transfer');
+      expect(strip).toHaveTextContent('Updates by itself every few seconds');
+      const before = loadAccount.mock.calls.length;
+      vi.advanceTimersByTime(5000);
+      expect(loadAccount.mock.calls.length).toBe(before + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lists a paid withdrawal under past requests with how it was paid, and nothing as waiting', () => {
+    useAccumulationStore.setState({
+      withdrawals: {
+        'POL-1': success([{
+          withdrawalId: 'w-1', policyNumber: 'POL-1', amount: money('6000.00'), payeeRef: '+255700000009', status: 'PAID',
+          requestedBy: 'staff-two', requestedAt: '2026-02-02T08:00:00Z', approvedBy: 'staff-one', approvedAt: null,
+          method: 'MOBILE_MONEY',
+        }]),
+      },
+    });
     render(<AccountPanel policyNumber="POL-1" />);
-    for (const name of ['Record transfer in', 'Propose adjustment']) {
+    expect(screen.queryByRole('region', { name: /Waiting/ })).not.toBeInTheDocument();
+    const past = screen.getByRole('table', { name: 'Past requests' });
+    expect(past).toHaveTextContent('Mobile money · +255700000009');
+  });
+
+  it('records a top-up already received with its reference and day, then closes the form and says it was credited', async () => {
+    // Both sides of the counter: the request (customer service) and the money received (finance, 2026-10-29).
+    grantRoles('CUSTOMER_SERVICE_REP', 'FINANCE_OFFICER');
+    const topUp = vi.fn(async () => ({
+      topUpId: 't-1', policyNumber: 'POL-1', amount: money('25000.00'), payerRef: '—', status: 'COLLECTED' as const,
+      requestedBy: 'staff-one', requestedAt: '2026-10-28T08:00:00Z', method: 'CASH' as const, reference: 'RC-104',
+      receivedOn: '2026-10-28',
+    }));
+    useAccumulationStore.setState({ topUp });
+    const user = userEvent.setup();
+    render(<AccountPanel policyNumber="POL-1" />);
+    await user.click(screen.getByRole('button', { name: 'Request top-up' }));
+    expect(screen.getByLabelText('Collect from')).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('How is it being paid?'), 'CASH');
+    expect(screen.queryByLabelText('Collect from')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Amount'), '25000');
+    await user.type(screen.getByLabelText('Cash receipt number'), 'RC-104');
+    await user.click(screen.getByRole('button', { name: 'Record top-up' }));
+    expect(topUp).toHaveBeenCalledWith(
+      'POL-1',
+      expect.objectContaining({ amount: '25000', method: 'CASH', reference: 'RC-104' }),
+      expect.anything(),
+    );
+    // The form closes and a receipt says what happened (2026-10-28): it used to reset in place, looking like nothing had.
+    const receipt = (await screen.findByText('Top-up credited')).closest('section')!;
+    expect(receipt).toHaveTextContent('Cash · RC-104');
+    expect(screen.queryByRole('button', { name: 'Record top-up' })).not.toBeInTheDocument();
+  });
+
+  it('asks a bank transfer for the bank, branch, account name and number -- and not a phone number', async () => {
+    grantRoles('CUSTOMER_SERVICE_REP');
+    const user = userEvent.setup();
+    render(<AccountPanel policyNumber="POL-1" />);
+    await user.click(screen.getByRole('button', { name: 'Request withdrawal' }));
+    expect(screen.getByLabelText('Mobile-money number')).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: 'Bank transfer' }));
+    expect(screen.queryByLabelText('Mobile-money number')).not.toBeInTheDocument();
+    for (const label of ['Bank', 'Branch (optional)', 'Account name', 'Account number']) {
+      expect(screen.getByLabelText(label)).toBeInTheDocument();
+    }
+    await user.type(screen.getByLabelText(/Amount/), '1000');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText('Give the bank to transfer to')).toBeInTheDocument();
+    expect(screen.getByText('Give the bank account number')).toBeInTheDocument();
+  });
+
+  it('offers finance the transfer in, the adjustment and money received, but not the withdrawal', async () => {
+    render(<AccountPanel policyNumber="POL-1" />);
+    for (const name of ['Record transfer in', 'Propose adjustment', 'Request top-up']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
     }
-    // Requesting money movements is customer service's (accounts.transact, 2026-10-26); the server would refuse it.
-    for (const name of ['Request withdrawal', 'Request top-up']) {
-      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
-    }
+    // Requesting a withdrawal is customer service's (accounts.transact, 2026-10-26); the server would refuse it.
+    expect(screen.queryByRole('button', { name: 'Request withdrawal' })).not.toBeInTheDocument();
+    // Finance records money already received; asking a phone for it is customer service's (2026-10-29).
+    await userEvent.click(screen.getByRole('button', { name: 'Request top-up' }));
+    const options = within(screen.getByLabelText('How is it being paid?')).getAllByRole('option').map((o) => o.getAttribute('value'));
+    expect(options).toContain('CASH');
+    expect(options).not.toContain('MOBILE_MONEY');
+  });
+
+  it('lets customer service ask a phone for a top-up, but never say money was received', async () => {
+    grantRoles('CUSTOMER_SERVICE_REP');
+    render(<AccountPanel policyNumber="POL-1" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Request top-up' }));
+    const options = within(screen.getByLabelText('How is it being paid?')).getAllByRole('option').map((o) => o.getAttribute('value'));
+    expect(options).toEqual(['MOBILE_MONEY']);
+    expect(screen.getByText(/recorded by finance/)).toBeInTheDocument();
+  });
+
+  it('lets finance reject a withdrawal, saying why -- never their own request', async () => {
+    const reject = vi.fn(async () => {});
+    const waiting: WithdrawalView = {
+      withdrawalId: 'w-9', policyNumber: 'POL-1', amount: money('40000.00'), payeeRef: '+255700000009', status: 'REQUESTED',
+      requestedBy: 'staff-two', requestedAt: '2026-10-29T08:00:00Z', approvedBy: null, approvedAt: null, method: 'MOBILE_MONEY',
+    };
+    useAccumulationStore.setState({ withdrawals: { 'POL-1': success([waiting]) }, rejectWithdrawal: reject });
+    const user = userEvent.setup();
+    render(<AccountPanel policyNumber="POL-1" />);
+    await user.click(screen.getByRole('button', { name: 'Reject' }));
+    const confirm = screen.getByRole('button', { name: 'Reject withdrawal' });
+    expect(confirm).toBeDisabled();
+    await user.type(screen.getByLabelText('Why is it rejected?'), 'The customer cancelled it');
+    await user.click(confirm);
+    expect(reject).toHaveBeenCalledWith('POL-1', 'w-9', 'The customer cancelled it');
   });
 
   it('offers customer service the withdrawal and top-up, but not the transfer in or the adjustment', () => {

@@ -93,7 +93,10 @@ class ProductApiIntegrationTest {
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
             "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
-            "db-migrations/accumulation/V1__create_accumulation_schema.sql");
+            "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V9__withdrawal_rejection.sql",
+            "db-migrations/accumulation/V7__top_up_methods.sql");
     }
 
     @BeforeEach
@@ -201,6 +204,21 @@ class ProductApiIntegrationTest {
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, by);
         return productApi.listVersions(productId).get(0).productVersionId();
+    }
+
+    /** 2026-10-28: Ndot0-Clive was published to stop selling on its first day, and so was never in force. */
+    @Test
+    void aVersionThatStopsSellingOnTheDayItStartsIsRefused() {
+        UUID productId = productApi.createProduct("TERM-RET-01", "Term", ProductCategory.TERM_LIFE, "TZS", "actuary").productId();
+        LocalDate today = LocalDate.now();
+        assertThatThrownBy(() -> productApi.publishVersion(productId, null, today, today,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+                null, ANY_FILING, "actuary"))
+            .isInstanceOf(InvalidProductVersionException.class)
+            .hasMessageStartingWith("\"Stop selling on\" (" + today + ") must be after the effective date");
+        assertThat(productApi.listVersions(productId)).isEmpty();
     }
 
     /**

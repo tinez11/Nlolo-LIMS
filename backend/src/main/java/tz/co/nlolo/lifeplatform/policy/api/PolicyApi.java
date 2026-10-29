@@ -841,7 +841,9 @@ public interface PolicyApi {
     /** A surrender in flight. Status is REQUESTED, APPROVED, PAID, FAILED or IN_DOUBT. */
     record SurrenderRequestView(java.util.UUID surrenderRequestId, String policyNumber, String status,
                                 BigDecimal quotedValueAmount, String quotedValueCurrency,
-                                String payeeRef, String requestedBy, String approvedBy) {}
+                                String payeeRef, String requestedBy, String approvedBy,
+                                /* How it is paid (2026-10-28): mobile money, a bank transfer or a cheque. */
+                                tz.co.nlolo.lifeplatform.PayoutRoute route) {}
 
     /**
      * Request a customer surrender: quote the value, check the policy can be surrendered (in force,
@@ -849,6 +851,10 @@ public interface PolicyApi {
      * flight), and record a REQUESTED surrender for a second person to approve. Does not stop cover.
      */
     SurrenderRequestView requestSurrender(String policyNumber, String payeeRef, String requestedBy);
+
+    /** The same, paid by the route the person chose: mobile money, a bank transfer or a cheque (2026-10-28). */
+    SurrenderRequestView requestSurrender(String policyNumber, tz.co.nlolo.lifeplatform.PayoutRoute route,
+                                          String requestedBy);
 
     /**
      * Approve a surrender, by someone other than the requester. Cover stops as of the approval date
@@ -1004,4 +1010,14 @@ public interface PolicyApi {
 
     /** The death claim was rejected. Clears only THAT claim; a no-op if another is recorded. */
     void clearOpenDeathClaim(String policyNumber, UUID policyMemberId, UUID claimId);
+
+    /**
+     * Whether a policy is in an agent's book (2026-10-27): its agent of record is the agent behind {@code agentPartyId}
+     * or someone in their downline -- the rule GET /policies/{n} already applied, here for every module that lets an
+     * agent act on a policy. A policy sold direct is in no agent's book.
+     */
+    boolean inAgentBook(String policyNumber, UUID agentPartyId);
+
+    /** The agent profile behind a signed-in agent's party, if they are one. */
+    java.util.Optional<UUID> agentIdOf(UUID agentPartyId);
 }

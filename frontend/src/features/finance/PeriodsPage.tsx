@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from 'react-oidc-context';
+import { Link } from 'react-router-dom';
 import type { AccountingPeriodView } from '@/api/types';
 import { readIdentity } from '@/auth/claims';
 import { ConfirmAct } from '@/components/ConfirmAct';
@@ -19,6 +20,7 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { useLedgerControlsStore } from '@/store/ledgerControlsStore';
 import { reopenSchema, type ReopenValues } from './registerForms';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { StaffName } from '@/components/StaffName';
 
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -120,12 +122,23 @@ function PeriodRow({ view, viewerSubject }: { view: AccountingPeriodView; viewer
         <span className="font-mono text-sm font-medium">{view.period}</span>
         <StatusBadge kind="accountingPeriod" value={view.status} />
         <span className="text-xs text-muted-foreground">
-          {view.lockedBy && view.status === 'LOCKED' ? `Locked by ${view.lockedBy} ${formatInstant(view.lockedAt)}` : ''}
-          {view.closingStartedBy && view.status === 'CLOSING'
-            ? `Closing since ${formatInstant(view.closingStartedAt)}, by ${view.closingStartedBy}`
-            : ''}
-          {view.status === 'OPEN' && view.reopenedBy ? `Reopened by ${view.reopenedBy}: ${view.reopenReason ?? ''}` : ''}
+          {view.lockedBy && view.status === 'LOCKED' && (
+            <>Locked by <StaffName subject={view.lockedBy} /> {formatInstant(view.lockedAt)}</>
+          )}
+          {view.closingStartedBy && view.status === 'CLOSING' && (
+            <>Closing since {formatInstant(view.closingStartedAt)}, by <StaffName subject={view.closingStartedBy} /></>
+          )}
+          {view.status === 'OPEN' && view.reopenedBy && (
+            <>Reopened by <StaffName subject={view.reopenedBy} />: {view.reopenReason ?? ''}</>
+          )}
         </span>
+        {/* Where the month's close stands, step by step (2026-10-27). */}
+        <Link
+          className="ml-auto text-xs underline hover:text-foreground"
+          to={`/staff/month-end?period=${encodeURIComponent(view.period)}`}
+        >
+          Month-end steps
+        </Link>
       </div>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
 
@@ -168,7 +181,7 @@ function PeriodRow({ view, viewerSubject }: { view: AccountingPeriodView; viewer
       {reopenAwaiting && (
         <>
           <p className="text-xs">
-            Reopening asked by {view.reopenRequestedBy} {formatInstant(view.reopenRequestedAt)}: {view.reopenReason}
+            Reopening asked by <StaffName subject={view.reopenRequestedBy} /> {formatInstant(view.reopenRequestedAt)}: {view.reopenReason}
           </p>
           <GatePanel gates={gates} title="Before approving" />
           {confirming === 'reopen-approval' ? (

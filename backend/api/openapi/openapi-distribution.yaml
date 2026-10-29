@@ -204,6 +204,75 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /agents/{agentId}/login:
+    get:
+      summary: The agent's login to the agent console -- agents.view
+      description: status NONE until someone gives one; then OPEN, CLOSED (by staff) or SUSPENDED (with the agent).
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentLoginView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      summary: Give the agent a login, or open a closed one again, and send the first password -- agents.manage
+      description: >
+        With an email address, Keycloak emails a set-your-password link; otherwise a one-time password is texted to the
+        agent's phone, and only where neither is possible is it returned once, in temporaryPassword, to hand over.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200':
+          description: Login given
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentLoginIssued' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+    delete:
+      summary: Close the agent's login and sign them out everywhere -- agents.manage
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200':
+          description: Login closed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentLoginView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /agents/{agentId}/login/password:
+    post:
+      summary: Send an open login a new password, by the same routes -- agents.manage
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200':
+          description: Password sent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentLoginIssued' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
   /agents/{agentId}/suspend:
     post:
       summary: Suspend an ACTIVE agent's license
@@ -495,6 +564,32 @@ components:
         application/problem+json:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   schemas:
+    AgentLoginView:
+      type: object
+      additionalProperties: false
+      required: [agentId, status]
+      properties:
+        agentId: { type: string, format: uuid }
+        status: { type: string, enum: [NONE, OPEN, CLOSED, SUSPENDED] }
+        username: { type: string, nullable: true }
+        delivery: { type: string, nullable: true, enum: [EMAIL_LINK, SMS_PASSWORD, TEMPORARY_PASSWORD, null] }
+        createdBy: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time, nullable: true }
+        passwordSentAt: { type: string, format: date-time, nullable: true }
+        closedBy: { type: string, nullable: true }
+        closedAt: { type: string, format: date-time, nullable: true }
+    AgentLoginIssued:
+      type: object
+      additionalProperties: false
+      required: [login]
+      properties:
+        login: { $ref: '#/components/schemas/AgentLoginView' }
+        temporaryPassword:
+          type: string
+          nullable: true
+          description: Shown once, only when nothing could carry it to the agent. Never stored.
+        smsSentTo: { type: string, nullable: true }
+        notice: { type: string, nullable: true }
     OnboardAgentRequest:
       type: object
       required: [partyId, licenseNumber, licenseExpiryDate]

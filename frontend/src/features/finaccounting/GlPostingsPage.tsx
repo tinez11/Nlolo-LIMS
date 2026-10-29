@@ -9,6 +9,7 @@ import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
 import { formatInstant } from '@/lib/dates';
+import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useFinaccountingStore } from '@/store/finaccountingStore';
 import { GlPostingDrawer } from './GlPostingDrawer';
@@ -100,32 +101,43 @@ export function GlPostingsPage() {
           : 'in this tenant',
   };
 
+  /*
+   * Read as a ledger (2026-10-27): what the entry records in words, which account it debited and which it credited,
+   * and how much. The list used to show only the source event -- "billing.PremiumInvoiceGenerated" -- and a finance
+   * officer could not tell from 15,000 rows what money had moved where. The event is still on the entry's own page.
+   */
   const columns: Column<JournalEntryView>[] = [
-    {
-      key: 'sourceEvent',
-      header: 'Source event',
-      // Bold, like every other register's first column: what produced an entry is the thing a
-      // person scans a ledger for, and it is the only column here that identifies the row --
-      // period, amount and account all repeat across hundreds of entries.
-      render: (e) => <span className="font-mono text-xs font-medium">{e.sourceEvent}</span>,
-    },
-    {
-      key: 'period',
-      header: 'Period',
-      secondary: true,
-      render: (e) => <span className="text-muted-foreground">{e.period}</span>,
-    },
-    {
-      key: 'policyNumber',
-      header: 'Policy',
-      secondary: true,
-      render: (e) => <span className="font-mono text-xs">{e.policyNumber ?? '—'}</span>,
-    },
     {
       key: 'postedAt',
       header: 'Posted',
+      className: 'w-40',
+      secondary: true,
+      render: (e) => (
+        <span className="flex flex-col gap-0.5 whitespace-nowrap text-muted-foreground">
+          <span>{formatInstant(e.postedAt)}</span>
+          <span className="text-xs">period {e.period}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'description',
+      header: 'What',
+      className: 'w-56',
+      render: (e) => (
+        <span className="flex flex-col gap-0.5">
+          <span className="font-medium">{e.description}</span>
+          {e.policyNumber && <span className="whitespace-nowrap text-xs text-muted-foreground">{e.policyNumber}</span>}
+        </span>
+      ),
+    },
+    { key: 'debit', header: 'Debit', render: (e) => <LegAccounts entry={e} side="DR" /> },
+    { key: 'credit', header: 'Credit', render: (e) => <LegAccounts entry={e} side="CR" /> },
+    {
+      key: 'amount',
+      header: 'Amount',
       align: 'right',
-      render: (e) => <span className="text-muted-foreground">{formatInstant(e.postedAt)}</span>,
+      className: 'w-40',
+      render: (e) => <span className="whitespace-nowrap font-medium">{formatMoney(e.amount)}</span>,
     },
   ];
 
@@ -192,7 +204,7 @@ export function GlPostingsPage() {
     <>
       <PageHeader
         title="GL postings"
-        description="Every journal entry is derived from a domain event. Select one to preview it."
+        description="Every journal entry: what it records, the account it debited and the one it credited, and how much. Select one to see every line."
         count={<CountLine {...count} />}
       />
 
@@ -255,5 +267,24 @@ export function GlPostingsPage() {
 
       <GlPostingDrawer journalEntryId={previewing} onClose={() => setPreviewing(null)} />
     </>
+  );
+}
+
+/**
+ * The accounts one side of an entry touched: the first by code and name, and how many more. A premium with a levy
+ * debits two accounts; the entry's own page lists every line.
+ */
+function LegAccounts({ entry, side }: { entry: JournalEntryView; side: 'DR' | 'CR' }) {
+  const legs = (entry.postings ?? []).filter((p) => p.direction === side);
+  const codes = [...new Set(legs.map((p) => p.accountCode))];
+  const first = legs.find((p) => p.accountCode === codes[0]);
+  if (!first) return <span className="text-subtle-foreground">—</span>;
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span className="line-clamp-2" title={`${first.accountCode} ${first.accountName ?? ''}`}>
+        <span className="font-mono text-xs text-muted-foreground">{first.accountCode}</span> {first.accountName ?? ''}
+      </span>
+      {codes.length > 1 && <span className="text-xs text-muted-foreground">and {codes.length - 1} more</span>}
+    </span>
   );
 }

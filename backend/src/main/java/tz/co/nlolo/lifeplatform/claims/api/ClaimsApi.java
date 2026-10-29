@@ -167,6 +167,14 @@ public interface ClaimsApi {
                            String rejectionReason, ClaimDeclineReason declineReason,
                            String payeeRef, String idempotencyKey, String decidedBy);
 
+    /**
+     * The same, paid by the route the manager chose (2026-10-28): mobile money, a bank transfer to a named account, or
+     * a cheque. Null on a rejection, and on credit life, which always pays its lender by bank transfer.
+     */
+    void decideSettlement(UUID claimId, boolean approved, BigDecimal approvedAmount, String approvedCurrency,
+                           String rejectionReason, ClaimDeclineReason declineReason,
+                           tz.co.nlolo.lifeplatform.PayoutRoute route, String idempotencyKey, String decidedBy);
+
     void reopenClaim(UUID claimId, String reason, String reopenedBy);
 
     /**

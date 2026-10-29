@@ -1,8 +1,11 @@
+import type { RouteBody } from '@/features/payments/payoutRoute';
 import { create } from 'zustand';
 import {
   approveAdjustment,
   approveRate,
   approveWithdrawal,
+  rejectWithdrawal,
+  recordReceivedTopUp,
   generateStatement,
   getAccount,
   getClosingQuote,
@@ -47,6 +50,7 @@ import type {
 } from '@/api/types';
 import type { MutationAttempt } from '@/lib/idempotency';
 import { idle, track, type Resource } from './createResourceSlice';
+import { usePolicyStore } from './policyStore';
 
 /**
  * Savings accounts (product step 3): one policy's account and every list beside it, and one
@@ -85,13 +89,16 @@ interface AccumulationState {
   loadDeposit: (policyNumber: string) => Promise<void>;
   loadAwaiting: () => Promise<void>;
   instruct: (policyNumber: string, body: MaturityInstructionBody, attempt: MutationAttempt) => Promise<void>;
-  payOutDeposit: (policyNumber: string, payeeRef: string, attempt: MutationAttempt) => Promise<void>;
+  payOutDeposit: (policyNumber: string, route: RouteBody, attempt: MutationAttempt) => Promise<void>;
   loadTermAccount: (policyNumber: string) => Promise<void>;
-  payOutTermAccount: (policyNumber: string, payeeRef: string, attempt: MutationAttempt) => Promise<void>;
+  payOutTermAccount: (policyNumber: string, route: RouteBody, attempt: MutationAttempt) => Promise<void>;
 
-  withdraw: (policyNumber: string, body: WithdrawalBody, attempt: MutationAttempt) => Promise<void>;
+  /** Resolves with the request, or undefined when it failed -- the error is on acting[`withdraw.${policyNumber}`]. */
+  withdraw: (policyNumber: string, body: WithdrawalBody, attempt: MutationAttempt) => Promise<WithdrawalView | undefined>;
   approveWithdrawal: (policyNumber: string, withdrawalId: string, attempt: MutationAttempt) => Promise<void>;
-  topUp: (policyNumber: string, body: TopUpBody, attempt: MutationAttempt) => Promise<void>;
+  rejectWithdrawal: (policyNumber: string, withdrawalId: string, reason: string) => Promise<void>;
+  /** Resolves with the top-up as it stands once reread, or undefined when it failed. */
+  topUp: (policyNumber: string, body: TopUpBody, attempt: MutationAttempt) => Promise<TopUpView | undefined>;
   transferIn: (policyNumber: string, body: TransferInBody, attempt: MutationAttempt) => Promise<void>;
   proposeAdjustment: (policyNumber: string, body: AdjustmentBody, attempt: MutationAttempt) => Promise<void>;
   decideAdjustment: (policyNumber: string, adjustmentId: string, approve: boolean, attempt: MutationAttempt) => Promise<void>;
@@ -126,8 +133,16 @@ export const useAccumulationStore = create<AccumulationState>((set, getState) =>
     ).then(() => result);
   };
 
+  /**
+   * The account and every list beside it -- and the policy record, whose Overview shows the account value: it was
+   * read when the page opened and showed the balance from before a top-up until somebody reloaded (2026-10-28).
+   */
   const rereadAccount = async (policyNumber: string) => {
-    await Promise.all([getState().loadAccount(policyNumber), getState().loadMovements(policyNumber)]);
+    await Promise.all([
+      getState().loadAccount(policyNumber),
+      getState().loadMovements(policyNumber),
+      usePolicyStore.getState().loadDetail(policyNumber),
+    ]);
   };
 
   return {
@@ -167,26 +182,27 @@ export const useAccumulationStore = create<AccumulationState>((set, getState) =>
       }),
 
     // Rereads the account too: a payout closes it, and the balance on screen must say so.
-    payOutDeposit: (policyNumber, payeeRef, attempt) =>
+    payOutDeposit: (policyNumber, route, attempt) =>
       act(`depositPayout.${policyNumber}`, async () => {
-        await payOutDeposit(policyNumber, payeeRef, attempt);
-        await Promise.all([getState().loadDeposit(policyNumber), getState().loadAccount(policyNumber)]);
+        await payOutDeposit(policyNumber, route, attempt);
+        await Promise.all([getState().loadDeposit(policyNumber), rereadAccount(policyNumber)]);
       }),
 
     loadTermAccount: (policyNumber) =>
       keyed('termAccount', policyNumber, 'termAccount', () => getTermAccount(policyNumber)),
 
     // Rereads the account too, as a deposit's payout does: a payout closes it.
-    payOutTermAccount: (policyNumber, payeeRef, attempt) =>
+    payOutTermAccount: (policyNumber, route, attempt) =>
       act(`termAccountPayout.${policyNumber}`, async () => {
-        await payOutTermAccount(policyNumber, payeeRef, attempt);
-        await Promise.all([getState().loadTermAccount(policyNumber), getState().loadAccount(policyNumber)]);
+        await payOutTermAccount(policyNumber, route, attempt);
+        await Promise.all([getState().loadTermAccount(policyNumber), rereadAccount(policyNumber)]);
       }),
 
     withdraw: (policyNumber, body, attempt) =>
       act(`withdraw.${policyNumber}`, async () => {
-        await requestWithdrawal(policyNumber, body, attempt);
+        const requested = await requestWithdrawal(policyNumber, body, attempt);
         await rereadAccount(policyNumber);
+        return requested;
       }),
 
     approveWithdrawal: (policyNumber, withdrawalId, attempt) =>
@@ -195,10 +211,20 @@ export const useAccumulationStore = create<AccumulationState>((set, getState) =>
         await rereadAccount(policyNumber);
       }),
 
+    rejectWithdrawal: (policyNumber, withdrawalId, reason) =>
+      act(withdrawalId, async () => {
+        await rejectWithdrawal(withdrawalId, reason);
+        await rereadAccount(policyNumber);
+      }),
+
     topUp: (policyNumber, body, attempt) =>
       act(`topup.${policyNumber}`, async () => {
-        await requestTopUp(policyNumber, body, attempt);
+        // Money already received is finance's own endpoint (2026-10-29); a mobile-money request is anyone's.
+        const received = body.method !== undefined && body.method !== 'MOBILE_MONEY';
+        const recorded = await (received ? recordReceivedTopUp : requestTopUp)(policyNumber, body, attempt);
         await rereadAccount(policyNumber);
+        // The reread list has it as it stands now: a received top-up is already COLLECTED.
+        return getState().topUps[policyNumber]?.data?.find((t) => t.topUpId === recorded.topUpId) ?? recorded;
       }),
 
     transferIn: (policyNumber, body, attempt) =>

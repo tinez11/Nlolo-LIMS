@@ -16,6 +16,8 @@ import { startMutation } from '@/lib/idempotency';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useBenefitPayoutStore } from '@/store/benefitPayoutStore';
+import { useReturnCrumbs } from '@/lib/returnCrumbs';
+import { StaffName } from '@/components/StaffName';
 
 const BREADCRUMB = [{ label: 'Payment runs', to: '/staff/payment-runs' }];
 
@@ -31,6 +33,8 @@ const KIND_LABEL: Record<PayoutKind, string> = {
 /** One day's batch, and the single signature that releases it. */
 export function PaymentRunPage() {
   const { paymentRunId = '' } = useParams();
+  // Back to the list it was opened from -- Approvals, Payments -- when it was (2026-10-27).
+  const crumbs = useReturnCrumbs(BREADCRUMB);
   const runs = useBenefitPayoutStore((s) => s.runs);
   const loadRuns = useBenefitPayoutStore((s) => s.loadRuns);
   const instalments = useBenefitPayoutStore((s) => s.runInstalments[paymentRunId]);
@@ -51,7 +55,7 @@ export function PaymentRunPage() {
   if (runs.status === 'error' && runs.error && runs.data === null) {
     return (
       <>
-        <PageHeader breadcrumb={BREADCRUMB} title="Payment run" />
+        <PageHeader breadcrumb={crumbs} title="Payment run" />
         <div className="px-6 pt-6">
           <ErrorPanel error={runs.error} onRetry={() => void loadRuns()} />
         </div>
@@ -62,7 +66,7 @@ export function PaymentRunPage() {
   if (!run) {
     return (
       <>
-        <PageHeader breadcrumb={BREADCRUMB} title="Payment run" />
+        <PageHeader breadcrumb={crumbs} title="Payment run" />
         <div className="px-6 pt-6">
           <EmptyState
             title="No such payment run"
@@ -76,7 +80,7 @@ export function PaymentRunPage() {
   return (
     <>
       <PageHeader
-        breadcrumb={BREADCRUMB}
+        breadcrumb={crumbs}
         title={`Run of ${formatDate(run.runDate)}`}
         description={`${run.instalmentCount} income instalment${run.instalmentCount === 1 ? '' : 's'}`}
       />
@@ -84,7 +88,7 @@ export function PaymentRunPage() {
       <DetailLayout
         record={
           <Panel title="This run">
-            <dl className="divide-y divide-border">
+            <dl className="px-4 pb-2">
               <Field label="Status" value={<StatusBadge kind="paymentRun" value={run.status} />} />
               <Field label="Run date" value={formatDate(run.runDate)} />
               <Field label="Instalments" value={run.instalmentCount} />
@@ -93,7 +97,7 @@ export function PaymentRunPage() {
                 value={formatMoney(run.total)}
                 note="Computed by the server, not summed from the rows below."
               />
-              <Field label="Released by" value={run.approvedBy ?? '—'} />
+              <Field label="Released by" value={<StaffName subject={run.approvedBy} />} />
             </dl>
           </Panel>
         }
@@ -179,7 +183,7 @@ function ApprovedRunReceipt({ run }: { run: PaymentRunView }) {
       lines={[
         { label: 'Instalments', value: String(run.instalmentCount) },
         { label: 'Total', value: formatMoney(run.total) },
-        { label: 'Released by', value: run.approvedBy ?? '—' },
+        { label: 'Released by', value: <StaffName subject={run.approvedBy} /> },
       ]}
       note="Requested, not yet paid. Each instalment shows PAID once the payment provider confirms it, and one that fails can be tried again from its own page without touching the rest."
     />

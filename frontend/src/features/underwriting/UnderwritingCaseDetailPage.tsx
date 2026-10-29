@@ -57,6 +57,7 @@ import type { AgentQuotation } from '@/api/agentQuotations';
 import { AcceptedQuotationPanel } from './AcceptedQuotationPanel';
 import { ProposalHistoryPanel } from './ProposalHistoryPanel';
 import { ReturnToAgentPanel } from './ReturnToAgentPanel';
+import { StaffName } from '@/components/StaffName';
 
 /**
  * Reached from `OpenUnderwritingCasePage`'s own redirect, the Underwriting queue's drawer, the
@@ -270,7 +271,7 @@ export function UnderwritingCaseDetailPage() {
               {annuityChoice.data.ageEvidenceConfirmedBy && (
                 <Field
                   label="Proof of age"
-                  value={`Confirmed by ${annuityChoice.data.ageEvidenceConfirmedBy}, ${formatInstant(annuityChoice.data.ageEvidenceConfirmedAt)}`}
+                  value={<>Confirmed by <StaffName subject={annuityChoice.data.ageEvidenceConfirmedBy} />, {formatInstant(annuityChoice.data.ageEvidenceConfirmedAt)}</>}
                 />
               )}
             </dl>
@@ -298,7 +299,7 @@ export function UnderwritingCaseDetailPage() {
               {deferredChoice.data.ageEvidenceConfirmedBy && (
                 <Field
                   label="Proof of age"
-                  value={`Confirmed by ${deferredChoice.data.ageEvidenceConfirmedBy}, ${formatInstant(deferredChoice.data.ageEvidenceConfirmedAt)}`}
+                  value={<>Confirmed by <StaffName subject={deferredChoice.data.ageEvidenceConfirmedBy} />, {formatInstant(deferredChoice.data.ageEvidenceConfirmedAt)}</>}
                 />
               )}
             </dl>

@@ -95,9 +95,11 @@ class Withdrawals implements UnitsPricedListener {
         if (input == null || input.grossAmount() == null || input.grossAmount().signum() <= 0) {
             throw new IllegalArgumentException("A withdrawal is a gross amount above zero");
         }
-        if (input.payeeRef() == null || input.payeeRef().isBlank()) {
+        if ((input.method() == null || input.method().isBlank() || !"EFT".equals(input.method()))
+                && (input.payeeRef() == null || input.payeeRef().isBlank())) {
             throw new IllegalArgumentException("A withdrawal needs the payee to pay");
         }
+        tz.co.nlolo.lifeplatform.PayoutRoute route = input.route();
         PolicyView policy = policyApi.getPolicy(policyNumber);
         List<WithdrawalRequest.Named> named = new ArrayList<>();
         if (input.funds() != null) {
@@ -112,8 +114,10 @@ class Withdrawals implements UnitsPricedListener {
             }
         }
         check(policy, input.grossAmount(), named, null);
-        WithdrawalRequest saved = withdrawals.save(new WithdrawalRequest(tenantId, policyNumber, input.grossAmount(), named,
-            input.payeeRef().trim(), by, clock.instant()));
+        WithdrawalRequest request = new WithdrawalRequest(tenantId, policyNumber, input.grossAmount(), named,
+            route.payee(), by, clock.instant());
+        request.payBy(route);
+        WithdrawalRequest saved = withdrawals.save(request);
         return view(saved);
     }
 
@@ -285,7 +289,7 @@ class Withdrawals implements UnitsPricedListener {
             payout.put("sourceRef", ref);
             payout.put("idempotencyKey", "unit-linked:" + SOURCE + ":" + ref);
             payout.put("policyNumber", request.getPolicyNumber());
-            payout.put("payeeRef", request.getPayeeRef());
+            payout.putAll(request.route().toPayload());
             payout.put("amount", Map.of("amount", net.toPlainString(), "currencyCode", policy.premiumCurrency()));
             events.publishEvent(DomainEventEnvelope.of("unitlinked.PayoutRequested", tenantId, payout));
         }
@@ -361,7 +365,8 @@ class Withdrawals implements UnitsPricedListener {
             w.getNamed().stream().map(n -> new WithdrawalView.Named(code(n.getFundId()), n.getAmount())).toList(),
             w.getPayeeRef(), w.getStatus(), percent, estimatedCharge, estimatedNet, estimatedRemaining, newSumAssured,
             w.getProceeds(), w.getSurrenderCharge(), w.getShortfall(), w.getRequestedBy(), w.getRequestedAt(),
-            w.getApprovedBy(), w.getApprovedAt());
+            w.getApprovedBy(), w.getApprovedAt(), w.route().method(), w.route().bank(), w.route().branch(),
+            w.route().accountName(), w.route().accountNumber());
     }
 
     private static BigDecimal annualPremium(PolicyView policy) {

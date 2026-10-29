@@ -52,4 +52,14 @@ public interface PaymentApi {
      * because a failed payout sends the claim back to APPROVED and a re-approval instructs again.
      */
     List<DisbursementStatusView> listDisbursementsFor(String purpose, String sourceRef);
+
+    /**
+     * The payments register (2026-10-27): money in and money out as one list, newest first.
+     *
+     * @param direction IN, OUT, or null for both
+     * @param state     attention (IN_DOUBT, FAILED), waiting, done, or all (null)
+     * @param policyNumber only this policy's payments, or null for every one
+     */
+    org.springframework.data.domain.Page<PaymentRecordView> register(String direction, String state, String policyNumber,
+                                                                    org.springframework.data.domain.Pageable pageable);
 }

@@ -106,6 +106,9 @@ class PolicyContractTest {
             "db-migrations/benefitpayout/V3__withholding.sql",
             "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V9__withdrawal_rejection.sql",
+            "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -157,6 +160,7 @@ class PolicyContractTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");
@@ -691,7 +695,7 @@ class PolicyContractTest {
 
         mockMvc.perform(put("/policies/" + policyNumber + "/beneficiaries")
                 .with(jwt()
-                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -826,7 +830,7 @@ class PolicyContractTest {
         IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-04");
 
         mockMvc.perform(post("/policies/" + issued.policyNumber() + "/endorsements")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -845,7 +849,7 @@ class PolicyContractTest {
         IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-06");
 
         mockMvc.perform(put("/policies/" + issued.policyNumber() + "/beneficiaries")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -862,7 +866,7 @@ class PolicyContractTest {
         IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-07");
 
         mockMvc.perform(put("/policies/" + issued.policyNumber() + "/beneficiaries")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -886,7 +890,7 @@ class PolicyContractTest {
         IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-BOF");
 
         mockMvc.perform(put("/policies/" + issued.policyNumber() + "/beneficiaries")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -1024,7 +1028,7 @@ class PolicyContractTest {
         IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-11");
 
         mockMvc.perform(get("/policies/" + issued.policyNumber() + "/coverage-status")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
@@ -1037,7 +1041,7 @@ class PolicyContractTest {
         IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-12");
 
         mockMvc.perform(get("/policies/" + issued.policyNumber() + "/in-force")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
@@ -1055,7 +1059,7 @@ class PolicyContractTest {
         IssuedPolicy issued = manualIssueOffer(tenantId, "POLICY-CONTRACT-12-OFFER", "TERM_LIFE");
 
         mockMvc.perform(get("/policies/" + issued.policyNumber() + "/in-force")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))

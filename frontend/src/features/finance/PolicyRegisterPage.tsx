@@ -29,6 +29,7 @@ import {
   type RejectionValues,
 } from './registerForms';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { StaffName } from '@/components/StaffName';
 
 const KEY_LABEL: Record<ElectionKey, string> = {
   MEASUREMENT_MODEL: 'Measurement model',
@@ -163,7 +164,7 @@ function ProposedRow({ election, viewerSubject }: { election: PolicyElectionView
       <div>
         <span className="text-sm font-medium">{name}</span> <StatusBadge kind="policyElection" value={election.status} />
         <p className="text-xs text-muted-foreground">
-          From {formatDate(election.effectiveFrom)} · proposed by {election.proposedBy} {formatInstant(election.proposedAt)}
+          From {formatDate(election.effectiveFrom)} · proposed by <StaffName subject={election.proposedBy} /> {formatInstant(election.proposedAt)}
           {election.rationale ? ` · ${election.rationale}` : ''}
         </p>
       </div>

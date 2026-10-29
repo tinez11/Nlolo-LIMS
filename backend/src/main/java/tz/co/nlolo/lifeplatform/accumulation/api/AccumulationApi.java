@@ -68,8 +68,15 @@ public interface AccumulationApi {
      */
     WithdrawalView requestWithdrawal(String policyNumber, java.math.BigDecimal amount, String payeeRef, String requestedBy);
 
+    /** The same, paid by the route the person chose: mobile money, bank transfer or cheque (2026-10-28). */
+    WithdrawalView requestWithdrawal(String policyNumber, java.math.BigDecimal amount,
+                                     tz.co.nlolo.lifeplatform.PayoutRoute route, String requestedBy);
+
     /** A second person. Posts the WITHDRAWAL entry and requests the payment; a failed payment is reversed. */
     WithdrawalView approveWithdrawal(java.util.UUID withdrawalId, String approvedBy);
+
+    /** Refused, with a reason, by someone other than the requester. Nothing is posted: the money never left. */
+    WithdrawalView rejectWithdrawal(java.util.UUID withdrawalId, String rejectedBy, String reason);
 
     List<WithdrawalView> listWithdrawals(String policyNumber);
 
@@ -103,8 +110,19 @@ public interface AccumulationApi {
     WithdrawalView requestWithdrawal(String policyNumber, java.math.BigDecimal amount, String payeeRef, String requestedBy,
                                      String idempotencyKey);
 
+    WithdrawalView requestWithdrawal(String policyNumber, java.math.BigDecimal amount,
+                                     tz.co.nlolo.lifeplatform.PayoutRoute route, String requestedBy, String idempotencyKey);
+
     TopUpView requestTopUp(String policyNumber, java.math.BigDecimal amount, String payerRef, String requestedBy,
                            String idempotencyKey);
+
+    /**
+     * Money already received for the account (2026-10-28, user decision: one person, no second signature): cash, a
+     * bank deposit, a cheque, a Lipa number or TANQR, with the method's own reference and the day it came. Credited
+     * as soon as payment has receipted it.
+     */
+    TopUpView recordTopUp(String policyNumber, java.math.BigDecimal amount, String method, String reference,
+                          java.time.LocalDate receivedOn, String payerRef, String recordedBy, String idempotencyKey);
 
     TransferInView recordTransferIn(String policyNumber, java.math.BigDecimal amount, String sourceScheme,
                                     String documentRef, String recordedBy, String idempotencyKey);
@@ -167,8 +185,15 @@ public interface AccumulationApi {
     MaturityInstructionView recordMaturityInstruction(String policyNumber, MaturityAction action, Integer termMonths,
                                                       String payeeRef, String recordedBy, String idempotencyKey);
 
+    /** The same, a pay-out naming how it is paid (2026-10-28); route null pays the number the deposit came from. */
+    MaturityInstructionView recordMaturityInstruction(String policyNumber, MaturityAction action, Integer termMonths,
+                                                      tz.co.nlolo.lifeplatform.PayoutRoute route, String recordedBy, String idempotencyKey);
+
     /** Finance pays a matured deposit that had no number to go to. Once per key. */
     DepositPeriodView payOutMaturedDeposit(String policyNumber, String payeeRef, String requestedBy, String idempotencyKey);
+
+    /** The same, by the route finance chose: mobile money, a bank transfer or a cheque (2026-10-28). */
+    DepositPeriodView payOutMaturedDeposit(String policyNumber, tz.co.nlolo.lifeplatform.PayoutRoute route, String requestedBy, String idempotencyKey);
 
     /** Matured deposits whose money waits for a payee, longest-waiting first. */
     List<AwaitingPayeeView> listAwaitingPayee();
@@ -180,6 +205,9 @@ public interface AccumulationApi {
 
     /** Finance pays a matured term account that had no number to go to, or whose payment failed. Once per key. */
     TermAccountView payOutMaturedTermAccount(String policyNumber, String payeeRef, String requestedBy, String idempotencyKey);
+
+    /** The same, by the route finance chose: mobile money, a bank transfer or a cheque (2026-10-28). */
+    TermAccountView payOutMaturedTermAccount(String policyNumber, tz.co.nlolo.lifeplatform.PayoutRoute route, String requestedBy, String idempotencyKey);
 
     /** Matured term accounts whose money waits for a payee, longest-waiting first. */
     List<AwaitingPayeeView> listTermAccountsAwaitingPayee();

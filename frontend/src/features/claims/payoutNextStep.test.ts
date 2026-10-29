@@ -17,7 +17,7 @@ const payout = (overrides: Partial<DisbursementView>): DisbursementView => ({
 describe('whatHappensNext', () => {
   it('names who a waiting bank transfer is waiting on, and where they act', () => {
     // The whole reason the panel exists: a credit-life claim sat here and nothing said so.
-    expect(whatHappensNext(payout({}), false)).toMatch(/Finance .* Finance → Bank transfers/);
+    expect(whatHappensNext(payout({}), false)).toMatch(/Finance .* Finance → Payments to make/);
   });
 
   it('says a completed EFT was recorded by finance', () => {

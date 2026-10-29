@@ -189,6 +189,12 @@ public class ExpenseAllocations {
 
     /** The month's allocations, newest first. */
     @Transactional
+    /** Every allocation awaiting its approver, any month, oldest first: the approvals queue (2026-10-27). */
+    public List<ExpenseAllocationView> awaitingApproval() {
+        return jdbc.query("SELECT * FROM finaccounting.expense_allocation WHERE tenant_id = ? AND status = 'PREPARED'"
+                + " ORDER BY prepared_at", this::row, TenantContext.get()).stream().map(this::view).toList();
+    }
+
     public List<ExpenseAllocationView> list(String period) {
         requirePeriod(period);
         return jdbc.query("SELECT * FROM finaccounting.expense_allocation WHERE tenant_id = ? AND period = ?"

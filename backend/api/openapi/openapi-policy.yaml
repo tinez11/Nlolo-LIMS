@@ -400,9 +400,18 @@ paths:
           application/json:
             schema:
               type: object
-              required: [payeeRef]
+              description: >
+                How the surrender is paid (2026-10-28): mobile money to payeeRef (the default), a bank
+                transfer to the account the bank fields name, or a cheque made out to payeeRef. A missing
+                field is a 400 naming it.
               properties:
-                payeeRef: { type: string, description: "Mobile money / bank payout destination" }
+                payeeRef: { type: string, maxLength: 200, description: "The mobile-money number, or who a cheque is made out to" }
+                method: { type: string, enum: [MOBILE_MONEY, EFT, CHEQUE], description: "How it is paid (2026-10-28); absent is mobile money" }
+                payeeBank: { type: string, maxLength: 100 }
+                payeeBranch: { type: string, maxLength: 100 }
+                payeeAccountName: { type: string, maxLength: 200 }
+                payeeAccountNumber: { type: string, maxLength: 50 }
+
       responses:
         '200':
           description: Surrender requested, awaiting approval
@@ -1843,6 +1852,12 @@ components:
         payeeRef: { type: string, description: "Where the payout goes — what the approver checks" }
         requestedBy: { type: [string, "null"] }
         approvedBy: { type: [string, "null"] }
+        method: { type: [string, "null"], enum: [MOBILE_MONEY, EFT, CHEQUE, null] }
+        payeeBank: { type: [string, "null"] }
+        payeeBranch: { type: [string, "null"] }
+        payeeAccountName: { type: [string, "null"] }
+        payeeAccountNumber: { type: [string, "null"] }
+
     ExitSubmissionView:
       type: object
       description: >-

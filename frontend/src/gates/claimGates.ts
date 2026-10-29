@@ -130,7 +130,7 @@ export function claimGates({ policy, coverage, claimType, dateOfEvent }: ClaimGa
       detail: matched
         ? `${formatMoney(matched.sumAssured)} on the current record`
         : active.length > 0
-          ? `The policy carries ${active.map((c) => c.benefitType).join(', ')} — not ${claimType}`
+          ? `The policy covers ${active.map((c) => (c.benefitType ?? '').replace(/_/g, ' ').toLowerCase()).join(', ')}, not ${readable}`
           : 'No benefit of any kind is on record for this policy',
     });
   }

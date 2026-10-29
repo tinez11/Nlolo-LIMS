@@ -104,6 +104,7 @@ class TermAccountLifecycleIntegrationTest {
     private static final BigDecimal CONTRIBUTION = new BigDecimal("50000.00");
     @Autowired private AccumulationTestFixtures fixtures;
     @Autowired private AccumulationApiImpl api;
+    @Autowired private tz.co.nlolo.lifeplatform.payment.application.Receipts receipts;
     @Autowired private PolicyApi policyApi;
     @Autowired private ProductApi productApi;
     @Autowired private UnderwritingApi underwritingApi;
@@ -234,8 +235,10 @@ class TermAccountLifecycleIntegrationTest {
             .hasMessage(locked);
         assertThatThrownBy(() -> asTenant(() -> policyApi.requestSurrender(policy, "+255700000003", "staff-one")))
             .hasMessage(locked);
-        // Money in: a top-up (the test rail confirms it at once, so it is credited) and a transfer in.
+        // Money in: a top-up (credited once a second finance person confirms it) and a transfer in.
         asTenant(() -> api.requestTopUp(policy, new BigDecimal("1000.00"), "+255700000777", "staff-one"));
+        asTenant(() -> receipts.awaitingApproval().stream()
+            .map(r -> receipts.approve(r.receiptId(), "finance-approver")).toList());
         asTenant(() -> api.recordTransferIn(policy, new BigDecimal("2000.00"), "NSSF", null, "finance-one"));
         assertThat(account(policy).balance()).isEqualByComparingTo("53000.00");
         assertThat(entriesOf(policy)).extracting(LedgerEntryView::type)

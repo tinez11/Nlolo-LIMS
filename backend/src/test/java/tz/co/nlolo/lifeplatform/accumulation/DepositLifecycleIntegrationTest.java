@@ -312,7 +312,7 @@ class DepositLifecycleIntegrationTest {
     void reinvestedForANewTermAtTheRateOfTheVersionInForceAtMaturity() {
         String policy = maturedRecently("+255700000777");
         UUID productId = asTenant(() -> api.findAccount(policy)).orElseThrow().productId();
-        asTenant(() -> api.recordMaturityInstruction(policy, MaturityAction.REINVEST, 6, null, "staff-one", key()));
+        asTenant(() -> api.recordMaturityInstruction(policy, MaturityAction.REINVEST, 6, (String) null, "staff-one", key()));
         // New rates published AFTER the first term started; the reinvestment must use them (D3, D8).
         UUID newVersion = fixtures.publishDepositVersion(TENANT, productId, AccumulationTestFixtures.grid(new String[][] {
             {"500000", "9", "10", "11"}, {"5000000.01", "4", "5", "6"}, {"10000000.01", "5", "6", "7"}, {"20000000.01", "6", "7", "8"}}));
@@ -339,7 +339,7 @@ class DepositLifecycleIntegrationTest {
     void aReinvestmentForATermNoLongerOfferedIsPaidOutAndSaysWhy() {
         String policy = maturedRecently("+255700000777");
         UUID productId = asTenant(() -> api.findAccount(policy)).orElseThrow().productId();
-        asTenant(() -> api.recordMaturityInstruction(policy, MaturityAction.REINVEST, 12, null, "staff-one", key()));
+        asTenant(() -> api.recordMaturityInstruction(policy, MaturityAction.REINVEST, 12, (String) null, "staff-one", key()));
         fixtures.publishDepositVersion(TENANT, productId, new DepositPlan(List.of(
             new DepositRateRow(new BigDecimal("500000"), 3, new BigDecimal("3")))));
         runMaturity(policy);
@@ -380,12 +380,12 @@ class DepositLifecycleIntegrationTest {
     @Test
     void anInstructionCanBeChangedUntilMaturityAndTheHistoryIsKept() {
         String policy = paidDeposit(MILLION, 3, LocalDate.now(), "+255700000777");
-        asTenant(() -> api.recordMaturityInstruction(policy, MaturityAction.REINVEST, 6, null, "staff-one", key()));
+        asTenant(() -> api.recordMaturityInstruction(policy, MaturityAction.REINVEST, 6, (String) null, "staff-one", key()));
         asTenant(() -> api.recordMaturityInstruction(policy, MaturityAction.PAY_OUT, null, "+255700000123", "staff-two", key()));
         assertThat(deposit(policy).instruction().action()).isEqualTo(MaturityAction.PAY_OUT);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM accumulation.maturity_instruction WHERE policy_number = ?",
             Integer.class, policy)).isEqualTo(2);
-        assertThatThrownBy(() -> asTenant(() -> api.recordMaturityInstruction(policy, MaturityAction.REINVEST, 9, null, "s", key())))
+        assertThatThrownBy(() -> asTenant(() -> api.recordMaturityInstruction(policy, MaturityAction.REINVEST, 9, (String) null, "s", key())))
             .hasMessageContaining("offers terms of [3, 6, 12] months");
     }
 }

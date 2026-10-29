@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { confirmRequestedPayments } from './payments';
 import { asAdmin } from './admin';
 import { dmy, todayIso } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
@@ -104,6 +105,8 @@ test.describe('group funeral schemes', () => {
       await pay.getByRole('button', { name: 'Request payment' }).click();
       await expect(admin.getByLabel('Payer reference')).not.toBeVisible({ timeout: 60_000 });
     });
+    // Paid once a second finance person confirms the money came (2026-10-27).
+    await confirmRequestedPayments(browser, policyNumber);
 
     // ---- A second member joins: the bill becomes 2 x 3,000 from the next billing date.
     await expect(async () => {
@@ -148,7 +151,7 @@ test.describe('group funeral schemes', () => {
     });
     await asStaff(page, 'e2e/.auth/staff-manager.json', claimUrl, async (manager) => {
       await expect(manager.getByLabel('Approved amount')).toHaveValue('500000.00', { timeout: 30_000 });
-      await manager.getByLabel('Payee reference').fill('+255700000781');
+      await manager.getByLabel('Mobile-money number').fill('+255700000781');
       await manager.getByRole('button', { name: 'Approve claim' }).click();
       await manager.getByRole('button', { name: 'Approve and pay' }).click();
       await expect(manager.getByText(/Settlement requested|Settled/).first()).toBeVisible({ timeout: 60_000 });

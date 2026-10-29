@@ -799,14 +799,20 @@ components:
         amount: { $ref: '#/components/schemas/Decimal' }
     WithdrawalRequest:
       type: object
-      required: [grossAmount, payeeRef]
+      required: [grossAmount]
       properties:
         grossAmount: { $ref: '#/components/schemas/Decimal' }
         funds:
           type: array
           description: Named funds with an amount each, summing to the gross; empty = pro rata by value
           items: { $ref: '#/components/schemas/NamedAmount' }
-        payeeRef: { type: string, minLength: 1 }
+        payeeRef: { type: string, description: "The mobile-money number, or who a cheque is made out to" }
+        method: { type: string, enum: [MOBILE_MONEY, EFT, CHEQUE], description: "How it is paid (2026-10-28); absent is mobile money" }
+        payeeBank: { type: string, maxLength: 100 }
+        payeeBranch: { type: string, maxLength: 100 }
+        payeeAccountName: { type: string, maxLength: 200 }
+        payeeAccountNumber: { type: string, maxLength: 50 }
+
     Withdrawal:
       type: object
       additionalProperties: false
@@ -830,6 +836,11 @@ components:
         requestedAt: { type: string, format: date-time }
         approvedBy: { type: [string, "null"] }
         approvedAt: { type: [string, "null"], format: date-time }
+        method: { type: [string, "null"], enum: [MOBILE_MONEY, EFT, CHEQUE, null] }
+        payeeBank: { type: [string, "null"] }
+        payeeBranch: { type: [string, "null"] }
+        payeeAccountName: { type: [string, "null"] }
+        payeeAccountNumber: { type: [string, "null"] }
     TopUpRequest:
       type: object
       required: [amount, payerRef]

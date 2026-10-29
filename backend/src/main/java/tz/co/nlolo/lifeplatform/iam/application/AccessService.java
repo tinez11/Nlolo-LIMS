@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.iam.api.AccessApi;
 import tz.co.nlolo.lifeplatform.iam.api.Permission;
 
@@ -73,6 +74,28 @@ public class AccessService implements AccessApi {
         AccessView view = tx.execute(status -> load(identity));
         cache.put(key, new Cached(view, now + CACHE_MILLIS));
         return view;
+    }
+
+    @Override
+    public Map<String, String> displayNames(java.util.Collection<String> subjects) {
+        List<UUID> ids = subjects.stream().filter(java.util.Objects::nonNull).distinct().map(AccessService::uuidOrNull)
+            .filter(java.util.Objects::nonNull).toList();
+        if (ids.isEmpty()) return Map.of();
+        Map<String, String> names = new java.util.HashMap<>();
+        tx.executeWithoutResult(status -> jdbc.query(
+            "SELECT user_id, COALESCE(NULLIF(display_name, ''), username) AS name FROM iam.staff_user "
+                + "WHERE tenant_id = :tenant AND user_id IN (:ids)",
+            Map.of("tenant", TenantContext.get(), "ids", ids),
+            rs -> { names.put(rs.getString("user_id"), rs.getString("name")); }));
+        return names;
+    }
+
+    private static UUID uuidOrNull(String subject) {
+        try {
+            return UUID.fromString(subject);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /** Forget what is cached for one person, after a change to their access. */

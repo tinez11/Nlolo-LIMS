@@ -305,10 +305,16 @@ paths:
                 approved: { type: boolean }
                 approvedAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
                 rejectionReason: { type: [string, "null"] }
+                method: { type: string, enum: [MOBILE_MONEY, EFT, CHEQUE], description: "How it is paid (2026-10-28); absent is mobile money" }
+                payeeBank: { type: string, maxLength: 100 }
+                payeeBranch: { type: string, maxLength: 100 }
+                payeeAccountName: { type: string, maxLength: 200 }
+                payeeAccountNumber: { type: string, maxLength: 50 }
                 payeeRef:
                   type: [string, "null"]
                   description: >
-                    Mobile-money destination for the payout. Required when approved is true;
+                    The mobile-money number, or who a cheque is made out to (a bank transfer names the account
+                    in the bank fields instead). Required when approved is true, except on a bank transfer;
                     ignored (may be null) when approved is false. On a CREDIT_LIFE claim it must be
                     ABSENT: the lender is the claimant and the policyholder, so the payout goes to
                     them by bank transfer and the platform names them itself — a supplied value

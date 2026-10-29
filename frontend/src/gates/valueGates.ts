@@ -93,7 +93,7 @@ export function approveSurrenderGates(
       hard: true,
       title: 'Awaiting approval',
       detail: request.status === 'REQUESTED'
-        ? `Requested by ${request.requestedBy}.`
+        ? (sameAsRequester ? 'Requested by you.' : 'Requested by someone else.')
         : `This surrender is ${label(request.status)}, not awaiting approval.`,
     },
     {
@@ -101,7 +101,7 @@ export function approveSurrenderGates(
       hard: true,
       title: 'A second person approves',
       detail: sameAsRequester
-        ? `A surrender must be approved by someone other than the person who requested it (${request.requestedBy}).`
+        ? 'You requested this surrender, so someone else must approve it.'
         : 'You did not request this surrender.',
     },
   ];

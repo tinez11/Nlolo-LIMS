@@ -16,4 +16,7 @@ public interface UnitLinkedWithdrawalRequestRepository extends JpaRepository<Wit
                                                                              Collection<String> statuses);
 
     List<WithdrawalRequest> findByTenantIdAndPolicyNumberOrderByRequestedAtDesc(UUID tenantId, String policyNumber);
+
+    /** Every withdrawal in one status, across the tenant, oldest first: the approvals queue (2026-10-27). */
+    List<WithdrawalRequest> findByTenantIdAndStatusOrderByRequestedAtAsc(UUID tenantId, String status);
 }

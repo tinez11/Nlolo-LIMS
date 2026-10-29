@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatInstant } from '@/lib/dates';
 import { useManualJournalsStore } from '@/store/manualJournalsStore';
+import { useReturnCrumbs } from '@/lib/returnCrumbs';
 import { STATUS_LABEL, autoReversalLabel } from './manualJournalForm';
 
 const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -38,6 +39,8 @@ export function ManualJournalDetailPage() {
 }
 
 function Journal({ journal: j }: { journal: ManualJournalView }) {
+  // Back to the list it was opened from -- Approvals, Payments -- when it was (2026-10-27).
+  const crumbs = useReturnCrumbs([{ label: 'Manual journals', to: '/staff/manual-journals' }]);
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const isPreparer = identity.subject === j.preparer;
@@ -45,7 +48,7 @@ function Journal({ journal: j }: { journal: ManualJournalView }) {
 
   return (
     <>
-      <PageHeader title={j.title} description={`${STATUS_LABEL[j.status] ?? j.status} · period ${j.period}`} />
+      <PageHeader breadcrumb={crumbs} title={j.title} description={`${STATUS_LABEL[j.status] ?? j.status} · period ${j.period}`} />
       <div className="space-y-4 px-6 pb-6">
         <section className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-surface shadow-card p-4 text-sm sm:grid-cols-2"
           aria-label="About this journal">

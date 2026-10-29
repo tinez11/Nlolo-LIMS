@@ -50,6 +50,24 @@ describe('RecordTabs', () => {
     expect(screen.getByTestId('where')).toHaveTextContent('?x=1');
   });
 
+  it('keeps the way back when a tab is chosen -- a policy opened from its client stays under that client', async () => {
+    function Trail() {
+      const state = useLocation().state as { cameFrom?: { label: string }[] } | null;
+      return <output data-testid="trail">{state?.cameFrom?.map((c) => c.label).join(' > ') ?? 'none'}</output>;
+    }
+    const trail = [{ label: 'Individuals', to: '/staff/clients' }, { label: 'Martin Lema', to: '/staff/clients/p-1' }];
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/p', state: { cameFrom: trail } }]}>
+        <RecordTabs tabs={TABS} label="Policy sections" />
+        <Trail />
+      </MemoryRouter>,
+    );
+    await userEvent.click(screen.getByRole('tab', { name: /Billing/ }));
+    expect(screen.getByTestId('trail')).toHaveTextContent('Individuals > Martin Lema');
+    await userEvent.click(screen.getByRole('tab', { name: 'Overview' }));
+    expect(screen.getByTestId('trail')).toHaveTextContent('Individuals > Martin Lema');
+  });
+
   it('says what a count counts', () => {
     renderAt('/p');
     expect(screen.getByRole('tab', { name: 'Billing, 12 items' })).toBeInTheDocument();

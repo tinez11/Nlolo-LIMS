@@ -79,6 +79,11 @@ test.describe('staff claim evidence', () => {
     await page.getByRole('button', { name: 'Register claim' }).click();
     await expect(page).toHaveURL(/\/staff\/claims\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 
+    // The claim is tabbed (2026-10-29) and opens on the section to act on; Evidence is its own tab -- unless it is
+    // the only section this session sees, when there is no tab strip at all.
+    const evidenceTab = page.getByRole('tab', { name: 'Evidence' });
+    await evidenceTab.or(page.getByRole('heading', { level: 2, name: 'Evidence' })).first().waitFor({ timeout: 15_000 });
+    if (await evidenceTab.count()) await evidenceTab.click();
     await expect(page.getByRole('heading', { level: 2, name: 'Evidence' })).toBeVisible();
     await expect(page.getByText('No evidence')).toBeVisible();
 

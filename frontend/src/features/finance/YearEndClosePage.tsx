@@ -15,6 +15,8 @@ import { formatInstant } from '@/lib/dates';
 import { useYearEndStore } from '@/store/yearEndStore';
 import { CLOSE_STATUS_LABEL, canDecideClose, money, resultLabel } from './yearEnd';
 import { YearEndFigures } from './YearEndFigures';
+import { useReturnCrumbs } from '@/lib/returnCrumbs';
+import { StaffName } from '@/components/StaffName';
 
 /**
  * One year-end close (IFRS 17 I6): its figures -- computed now while it awaits a decision, as posted once decided -- and
@@ -38,23 +40,26 @@ export function YearEndClosePage() {
 }
 
 function Close({ close: c }: { close: YearEndCloseView }) {
+  // Back to the list it was opened from -- Approvals, Payments -- when it was (2026-10-27).
+  const crumbs = useReturnCrumbs([{ label: 'Year-end close', to: '/staff/year-end' }]);
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const approver = can('ifrs17.approve');
   return (
     <>
       <PageHeader
+        breadcrumb={crumbs}
         title={`Close of ${c.year}`}
         description={`${CLOSE_STATUS_LABEL[c.status ?? ''] ?? c.status} · ${resultLabel(c.profit)} · dividends ${money(c.dividends)}`}
       />
       <div className="space-y-4 px-6 pb-6">
         <section className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-surface shadow-card p-4 text-sm sm:grid-cols-2"
           aria-label="About this close">
-          <p><span className="text-muted-foreground">Prepared:</span> {c.preparedAt ? formatInstant(c.preparedAt) : ''} by {c.preparedBy}</p>
+          <p><span className="text-muted-foreground">Prepared:</span> {c.preparedAt ? formatInstant(c.preparedAt) : ''} by <StaffName subject={c.preparedBy} /></p>
           {c.decidedAt && (
             <p>
               <span className="text-muted-foreground">{c.status === 'REJECTED' ? 'Rejected' : 'Approved'}:</span>{' '}
-              {formatInstant(c.decidedAt)} by {c.decidedBy}{c.decisionReason ? ` — ${c.decisionReason}` : ''}
+              {formatInstant(c.decidedAt)} by <StaffName subject={c.decidedBy} />{c.decisionReason ? ` — ${c.decisionReason}` : ''}
             </p>
           )}
           {c.replacesId && (

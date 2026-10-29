@@ -1384,3 +1384,35 @@ ul {
     }
   }
 }
+
+/*
+  The forgot-password pages (2026-10-28): login-reset-password.ftl, lp-reset-code.ftl and login-update-password.ftl
+  open with a sentence under the title, carry two forms on the code page, and close on a help line and the way back.
+*/
+#kc-content-wrapper > .instruction {
+  margin: 12px 0 20px;
+  text-align: center;
+}
+
+#kc-content-wrapper > .lp-form + .lp-form {
+  margin-top: 12px;
+}
+
+#kc-content-wrapper > .lp-hint {
+  margin-top: 16px;
+  text-align: center;
+}
+
+#kc-content-wrapper > .lp-hint + .lp-options,
+#kc-reset-password-form .lp-options {
+  justify-content: center;
+  margin-top: 16px;
+}
+
+/* Six digits read better spaced out, and the field is for nothing else. */
+.lp-input--code {
+  font-size: 1.25rem;
+  letter-spacing: 0.3em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}

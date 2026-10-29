@@ -141,3 +141,23 @@ A separation-of-duties rule is only tested if two different users act: keep usin
 `["http://localhost:3000/*", "http://localhost:8080/*"]`: `localhost:3000` was the Next.js portal, deleted when the
 SPA replaced it, and `localhost:8080` covers direct API-side flows. The server's realms get their own origins from
 `deploy/keycloak/build-realms.mjs` (`APP_DOMAIN`), not from these values.
+
+## Forgot password (2026-10-28)
+
+Every realm offers "Forgot your password?". Staff and regulators get Keycloak's emailed link. Agents and customers go
+through the `lifeplatform reset credentials` flow (in their realm files): one request emails the link to the address on
+file and texts a six-digit code to the phone the platform holds, and every name typed sees the same page. The link and
+the code last 15 minutes; at most three texts an hour reach one account.
+
+The text needs the platform's Keycloak extension, `extensions/` here. Build it before starting the stack -- the compose
+file mounts the jar, and a missing one becomes an empty folder Keycloak cannot load:
+
+    ./mvnw -f keycloak/extensions/pom.xml package        # from backend/
+
+Keycloak calls the backend at `LP_RESET_SMS_URL` (dev: `host.docker.internal:8080`), signed with
+`PASSWORD_RESET_SMS_SECRET`. The backend sends through the ordinary SMS gateway, which dev keeps switched off; to see
+codes in dev, run the backend with `SMS_GATEWAY_LIVE=true` and `SMS_GATEWAY_BASE_URL=http://localhost:8083` (the mock)
+and read them at http://localhost:8083/__admin/requests. Emails land in Mailpit, http://localhost:8025.
+
+A realm that already exists keeps its settings: these files are imported only into an empty Keycloak. On a running
+one, apply realm changes with `kcadm.sh` (or `docker compose down -v` for a fresh import).

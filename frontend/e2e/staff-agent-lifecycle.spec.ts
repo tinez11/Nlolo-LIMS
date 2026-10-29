@@ -41,6 +41,32 @@ test.describe('staff agent lifecycle', () => {
     await expect(page.getByRole('button', { name: 'Suspend' })).toBeVisible();
   });
 
+  /** An onboarded agent can sign in only once staff give them a login (2026-10-28); the login follows the agent. */
+  test('gives a new agent a login, which closes while they are suspended and opens again after', async ({ page }) => {
+    await onboardRealAgent(page);
+    const login = page.getByRole('region', { name: 'Agent login' });
+    await expect(page.getByText('No login yet — this agent cannot sign in')).toBeVisible({ timeout: 15_000 });
+
+    await page.getByRole('button', { name: 'Give a login' }).click();
+    await expect(page.getByText('A set-your-password link is on its way to the agent’s email.')).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText('Can sign in to the agent console')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Suspend' }).click();
+    await expect(page.getByRole('button', { name: 'Reactivate' })).toBeVisible({ timeout: 15_000 });
+    await page.reload();
+    await expect(page.getByText('Closed while the agent is suspended — opens again on reactivation')).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await page.getByRole('button', { name: 'Reactivate' }).click();
+    await expect(page.getByRole('button', { name: 'Suspend' })).toBeVisible({ timeout: 15_000 });
+    await page.reload();
+    await expect(page.getByText('Can sign in to the agent console')).toBeVisible({ timeout: 15_000 });
+    void login;
+  });
+
   // The invalid-transition 409 (suspending an already-SUSPENDED agent, or
   // reactivating an already-ACTIVE one) is deliberately NOT exercised here:
   // the UI's own conditional rendering (mirroring the backend's guard) means

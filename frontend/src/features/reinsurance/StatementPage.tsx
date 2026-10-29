@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { formatInstant } from '@/lib/dates';
 import { useReinsuranceStatementsStore } from '@/store/reinsuranceStatementsStore';
 import { ENTRY_LABEL, STATEMENT_STATUS_LABEL, settlementSide } from './statementForm';
+import { StaffName } from '@/components/StaffName';
 
 const money = (amount: string) =>
   Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -67,7 +68,7 @@ function Statement({ statement: s }: { statement: ReinsuranceStatementView }) {
           {s.decidedAt && (
             <p className="sm:col-span-2">
               <span className="text-muted-foreground">{s.status === 'REJECTED' ? 'Rejected' : 'Approved'}:</span>{' '}
-              {formatInstant(s.decidedAt)} by {s.decidedBy}{s.decisionReason ? ` — ${s.decisionReason}` : ''}
+              {formatInstant(s.decidedAt)} by <StaffName subject={s.decidedBy} />{s.decisionReason ? ` — ${s.decisionReason}` : ''}
             </p>
           )}
         </section>

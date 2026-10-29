@@ -2,6 +2,30 @@
   "realm": "regulators",
   "displayName": "Regulator access",
   "loginTheme": "lifeplatform",
+  "emailTheme": "lifeplatform",
+  "maxFailureWaitSeconds": 900,
+  "waitIncrementSeconds": 60,
+  "failureFactor": 5,
+  "permanentLockout": false,
+  "bruteForceProtected": true,
+  "passwordPolicy": "length(8) and notUsername(undefined) and notEmail(undefined) and passwordHistory(3)",
+  "defaultLocale": "en",
+  "supportedLocales": ["en","sw"],
+  "internationalizationEnabled": true,
+  "adminEventsDetailsEnabled": false,
+  "adminEventsEnabled": true,
+  "enabledEventTypes": ["LOGIN","LOGIN_ERROR","LOGOUT","SEND_RESET_PASSWORD","SEND_RESET_PASSWORD_ERROR","RESET_PASSWORD","RESET_PASSWORD_ERROR","UPDATE_PASSWORD","UPDATE_PASSWORD_ERROR","UPDATE_CREDENTIAL","UPDATE_CREDENTIAL_ERROR","EXECUTE_ACTIONS","EXECUTE_ACTION_TOKEN","EXECUTE_ACTION_TOKEN_ERROR","UPDATE_EMAIL","USER_DISABLED_BY_TEMPORARY_LOCKOUT"],
+  "eventsListeners": ["jboss-logging","email"],
+  "eventsExpiration": 7776000,
+  "eventsEnabled": true,
+  "actionTokenGeneratedByUserLifespan": 900,
+  "resetPasswordAllowed": true,
+  "smtpServer": {
+    "host": "mailpit",
+    "port": "1025",
+    "from": "no-reply@nlolo.local",
+    "fromDisplayName": "Nlolo Life"
+  },
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,
@@ -59,7 +83,7 @@
         "providerId": "declarative-user-profile",
         "config": {
           "kc.user.profile.config": [
-            "{\"attributes\":[{\"name\":\"username\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"email\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"firstName\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"lastName\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false}],\"groups\":[],\"unmanagedAttributePolicy\":\"ADMIN_EDIT\"}"
+            "{\"attributes\":[{\"name\":\"username\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"email\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"firstName\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"lastName\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false}],\"groups\":[],\"unmanagedAttributePolicy\":\"ADMIN_EDIT\"}"
           ]
         }
       }

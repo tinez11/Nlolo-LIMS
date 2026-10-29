@@ -150,6 +150,9 @@ class FinaccountingContractTest {
             "db-migrations/benefitpayout/V3__withholding.sql",
             "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V9__withdrawal_rejection.sql",
+            "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
@@ -809,7 +812,7 @@ class FinaccountingContractTest {
         mockMvc.perform(get("/finance/posting-rules").with(financeStaffOf(tenantId)))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
-            .andExpect(jsonPath("$.versionLabel").value("posting-rules v4"))
+            .andExpect(jsonPath("$.versionLabel").value("posting-rules v6"))
             .andExpect(jsonPath("$.rules[?(@.id == 'I-01')].lines[0].account").value("2142"));
         mockMvc.perform(get("/finance/posting-rules").with(underwriterStaffOf(tenantId)))
             .andExpect(status().isForbidden());

@@ -2,13 +2,14 @@ package tz.co.nlolo.lifeplatform.accumulation.domain;
 
 import jakarta.persistence.*;
 import org.hibernate.annotations.UuidGenerator;
+import tz.co.nlolo.lifeplatform.PayoutRoute;
 import tz.co.nlolo.lifeplatform.accumulation.api.AccumulationStateException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/** REQUESTED -> APPROVED -> PAID | FAILED. The money leaves the account at APPROVED (rule 2). */
+/** REQUESTED -> APPROVED -> PAID | FAILED, or REQUESTED -> REJECTED. The money leaves the account at APPROVED (rule 2). */
 @Entity
 @Table(name = "withdrawal_request", schema = "accumulation")
 public class WithdrawalRequest {
@@ -18,12 +19,22 @@ public class WithdrawalRequest {
     @Column(nullable = false) private BigDecimal amount;
     @Column(nullable = false) private String currency;
     @Column(name = "payee_ref", nullable = false) private String payeeRef;
+    // How the money reaches them (V6, 2026-10-28): mobile money to payee_ref, or a bank transfer / cheque.
+    @Column(nullable = false) private String method = PayoutRoute.MOBILE_MONEY;
+    @Column(name = "payee_bank") private String payeeBank;
+    @Column(name = "payee_branch") private String payeeBranch;
+    @Column(name = "payee_account_name") private String payeeAccountName;
+    @Column(name = "payee_account_number") private String payeeAccountNumber;
     @Column(nullable = false) private String status = "REQUESTED";
     @Column(name = "requested_by", nullable = false) private String requestedBy;
     @Column(name = "requested_at", nullable = false) private Instant requestedAt = Instant.now();
     @Column(name = "approved_by") private String approvedBy;
     @Column(name = "approved_at") private Instant approvedAt;
     @Column(name = "disbursement_id") private UUID disbursementId;
+    // Refused by finance (V9, 2026-10-29): who, when and why. Nothing was posted -- the money leaves only at approval.
+    @Column(name = "rejected_by") private String rejectedBy;
+    @Column(name = "rejected_at") private Instant rejectedAt;
+    @Column(name = "rejection_reason") private String rejectionReason;
     @Version private long version;
 
     protected WithdrawalRequest() {}
@@ -38,6 +49,20 @@ public class WithdrawalRequest {
         this.requestedBy = requestedBy;
     }
 
+    public WithdrawalRequest(UUID tenantId, String policyNumber, BigDecimal amount, String currency, PayoutRoute route,
+                             String requestedBy) {
+        this(tenantId, policyNumber, amount, currency, route.payee(), requestedBy);
+        this.method = route.method();
+        this.payeeBank = route.bank();
+        this.payeeBranch = route.branch();
+        this.payeeAccountName = route.accountName();
+        this.payeeAccountNumber = route.accountNumber();
+    }
+
+    public PayoutRoute route() {
+        return new PayoutRoute(method, payeeRef, payeeBank, payeeBranch, payeeAccountName, payeeAccountNumber);
+    }
+
     public void approve(String by) {
         requireStatus("REQUESTED", "approved");
         if (by.equals(requestedBy)) {
@@ -46,6 +71,21 @@ public class WithdrawalRequest {
         this.status = "APPROVED";
         this.approvedBy = by;
         this.approvedAt = Instant.now();
+    }
+
+    /** Refused, with its reason, by someone other than the requester -- the same two people an approval needs. */
+    public void reject(String by, String reason) {
+        requireStatus("REQUESTED", "rejected");
+        if (by.equals(requestedBy)) {
+            throw new AccumulationStateException("A withdrawal must be rejected by someone other than the person who requested it");
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new AccumulationStateException("Say why the withdrawal is rejected");
+        }
+        this.status = "REJECTED";
+        this.rejectedBy = by;
+        this.rejectedAt = Instant.now();
+        this.rejectionReason = reason.trim();
     }
 
     /** False when already settled -- a redelivered disbursement outcome changes nothing. */
@@ -79,4 +119,7 @@ public class WithdrawalRequest {
     public Instant getRequestedAt() { return requestedAt; }
     public String getApprovedBy() { return approvedBy; }
     public Instant getApprovedAt() { return approvedAt; }
+    public String getRejectedBy() { return rejectedBy; }
+    public Instant getRejectedAt() { return rejectedAt; }
+    public String getRejectionReason() { return rejectionReason; }
 }

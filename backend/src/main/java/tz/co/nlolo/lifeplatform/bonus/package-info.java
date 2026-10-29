@@ -5,5 +5,5 @@
  * <p>policy::api for the projection it restates and the policy it reads; product::api for the
  * version's terms. Claims is read by envelope only, never depended on.
  */
-@org.springframework.modulith.ApplicationModule(allowedDependencies = { "policy::api", "product::api" })
+@org.springframework.modulith.ApplicationModule(allowedDependencies = { "policy::api", "product::api", "approvals::api" })
 package tz.co.nlolo.lifeplatform.bonus;

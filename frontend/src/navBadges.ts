@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { getApprovals } from '@/api/approvals';
+import { listPayments } from '@/api/payments';
 import { DUNNING_LEVELS, LAPSE_RECOMMENDATION_LEVEL, searchArrears, searchFieldReceipts } from '@/api/billing';
 import { searchClaims } from '@/api/claims';
 import { PARTY_AREAS, searchParties } from '@/api/party';
@@ -108,6 +110,17 @@ const LOADERS: Record<BadgeKey, { load: () => Promise<number>; title: (n: number
   'eft-awaiting': {
     load: async () => (await listAwaitingEftExecution()).length,
     title: (n) => `${plural(n, 'bank transfer', 'bank transfers')} nobody has made yet`,
+  },
+  /* Every signature waiting on this person (2026-10-27): the server's own count, less their own requests, which wait
+     for somebody else. A group it could not read adds nothing here and says so on the page. */
+  approvals: {
+    load: async () => (await getApprovals()).actionable,
+    title: (n) => `${plural(n, 'item', 'items')} waiting for your signature`,
+  },
+  /* Payments the rail left in doubt or refused (2026-10-27), money in and out: each one somebody has to chase. */
+  'payments-attention': {
+    load: async () => (await listPayments({ state: 'attention', page: 0, pageSize: 1 })).page.totalElements,
+    title: (n) => `${plural(n, 'payment', 'payments')} stuck with the provider or failed`,
   },
   /* An agent's proposals returned or postponed (2026-10-20). Declines are on the list to be read, but are final, so
      they are not counted as something to do. */

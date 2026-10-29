@@ -5,6 +5,8 @@ import {
   CalendarCheck,
   CalendarClock,
   ClipboardCheck,
+  ArrowLeftRight,
+  Stamp,
   FileWarning,
   FileText,
   HandCoins,
@@ -36,6 +38,7 @@ import {
   ListChecks,
   CircleMinus,
   Calculator,
+  ListOrdered,
   Inbox,
   Coins,
   NotebookPen,
@@ -44,6 +47,10 @@ import {
   UserCog,
 } from 'lucide-react';
 import { NewRolePage } from '@/features/admin/NewRolePage';
+import { ApprovalsPage } from '@/features/approvals/ApprovalsPage';
+import { PaymentsPage } from '@/features/payments/PaymentsPage';
+import { NewReceiptPage } from '@/features/receipts/NewReceiptPage';
+import { ReceiptPage } from '@/features/receipts/ReceiptPage';
 import { NewUserPage } from '@/features/admin/NewUserPage';
 import { RoleDetailPage } from '@/features/admin/RoleDetailPage';
 import { RolesPage } from '@/features/admin/RolesPage';
@@ -133,6 +140,7 @@ import {
   ManualJournalEditorPage,
   ManualJournalDetailPage,
   JournalTemplatesPage,
+  MonthEndPage,
   EnginePage,
   EngineRunPage,
   ExpenseAllocationPage,
@@ -200,7 +208,9 @@ export type BadgeKey =
   | 'arrears-at-lapse'
   | 'receipts-overdue'
   | 'eft-awaiting'
-  | 'needs-action';
+  | 'needs-action'
+  | 'approvals'
+  | 'payments-attention';
 
 interface NavPlacement {
   group: NavGroupId;
@@ -344,6 +354,10 @@ export function homeFor(realm: Realm, identity: ReturnType<typeof readIdentity>)
  */
 export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   dashboard: [], today: [],
+  // Anyone who signs anything the inbox lists (2026-10-27); the server keeps each group to its own permission.
+  approvals: ['accounts.approve', 'policies.surrender-approve', 'payouts.approve', 'payouts.manage',
+    'collections.manage', 'funds.approve', 'funds.manage', 'products.declare-approve', 'ledger.approve', 'ledger.manage',
+    'ifrs17.approve', 'reinsurance.approve'],
   policies: ['policies.view'], 'policies/new': ['policies.issue'], 'policies/:policyNumber': ['policies.view'],
   'held-vestings': ['accounts.view'],
   'group-schemes/new': ['schemes.manage'], 'group-funeral-schemes/new': ['schemes.manage'],
@@ -359,7 +373,9 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   underwriting: ['underwriting.view'], 'underwriting/new': ['underwriting.propose'],
   'underwriting/:caseId': ['underwriting.view'],
   agents: ['agents.view'], 'agents/new': ['agents.manage'], 'agents/:agentId': ['agents.view'],
-  arrears: ['collections.view'], 'field-receipts': ['collections.view'], 'bank-transfers': ['collections.view'],
+  payments: ['collections.view', 'payouts.view'],
+  'receipts/new': ['collections.manage'], 'receipts/:receiptId': ['collections.view', 'collections.manage'],
+  arrears: ['collections.view'], 'field-receipts': ['collections.view'], 'bank-transfers': ['payouts.view'],
   payouts: ['payouts.view'], 'payouts/:instalmentId': ['payouts.view'], 'payment-runs': ['payouts.view'],
   'payment-runs/:paymentRunId': ['payouts.view'], 'withholding-rules': ['payouts.view'], maturities: ['payouts.view'],
   funds: ['funds.view'],
@@ -368,7 +384,7 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   'unposted-events': ['ledger.view'], 'manual-journals': ['ledger.view'], 'manual-journals/new': ['ledger.manage'],
   'manual-journals/:id': ['ledger.view'], 'manual-journals/:id/edit': ['ledger.manage'],
   'journal-templates': ['ledger.view'],
-  'ifrs17-engine': ['ifrs17.view'], 'ifrs17-engine/runs/:runId': ['ifrs17.view'],
+  'month-end': ['ledger.view', 'ifrs17.view'], 'ifrs17-engine': ['ifrs17.view'], 'ifrs17-engine/runs/:runId': ['ifrs17.view'],
   'ifrs17-engine/allocations/:allocationId': ['ifrs17.view'], 'year-end': ['ifrs17.view'],
   'year-end/closes/:closeId': ['ifrs17.view'],
   treaties: ['reinsurance.view'], 'treaties/new': ['reinsurance.manage'], 'treaties/:treatyId': ['reinsurance.view'],
@@ -389,6 +405,9 @@ function withPermissions(screens: Screen[]): Screen[] {
 
 const STAFF_SCREENS: Screen[] = [
   { path: 'dashboard', element: <DashboardPage realm="staff" />, reach: { group: 'work', label: 'Dashboard', icon: LayoutDashboard } },
+  // Every signature waiting on this person, across every policy (2026-10-27): finance signed in ~20 places, most of
+  // them findable only by opening the right policy.
+  { path: 'approvals', element: <ApprovalsPage />, reach: { group: 'work', label: 'Approvals', icon: Stamp, badge: 'approvals' } },
   // Retired 2026-10-14 for the dashboard. Kept as a redirect, with its query, for bookmarks and the old landing URL.
   { path: 'today', element: <RedirectPreservingQuery to="../dashboard" />, reach: 'drill-in' },
   {
@@ -617,11 +636,12 @@ const STAFF_SCREENS: Screen[] = [
   // Both its endpoints shipped with credit-life plan 4 and NOTHING called them, so a claim could
   // be approved, valued and instructed and then simply stop, with no screen anywhere admitting
   // the instruction existed. A queue that could only fill.
-  {
-    path: 'bank-transfers',
-    element: <EftExecutionPage />,
-    reach: { group: 'collections', label: 'Bank transfers', icon: Banknote, badge: 'eft-awaiting' },
-  },
+  // Every payment in and out, opening on the stuck and the failed (2026-10-27): before it a payment could be read
+  // only by its id.
+  // A receipt for premium the gateway did not pull, and its confirmation by a second person (2026-10-27).
+  { path: 'receipts/new', element: <NewReceiptPage />, reach: 'drill-in' },
+  { path: 'receipts/:receiptId', element: <ReceiptPage />, reach: 'drill-in' },
+  { path: 'payments', element: <PaymentsPage />, reach: { group: 'collections', label: 'Payments', icon: ArrowLeftRight, badge: 'payments-attention' } },
   // Money owed to LIVING policyholders (product step 2), as distinct from the claims queue, which
   // pays on death. Under finance for the same reason bank transfers are: reviewing and approving a
   // payout both move real money, and the endpoints are FINANCE_OFFICER/ADMIN only.
@@ -637,6 +657,13 @@ const STAFF_SCREENS: Screen[] = [
     reach: { group: 'paying-out', label: 'Payment runs', icon: ListChecks },
   },
   { path: 'payment-runs/:paymentRunId', element: <PaymentRunPage />, reach: 'drill-in' },
+  // Money OUT that someone makes by hand at the bank (2026-10-27): under Paying out, not Collections, and read with
+  // payouts.view -- the permission its list endpoint checks.
+  {
+    path: 'bank-transfers',
+    element: <EftExecutionPage />,
+    reach: { group: 'paying-out', label: 'Payments to make', icon: Banknote, badge: 'eft-awaiting' },
+  },
   // The unit-linked fund register (product step 6): funds, their two-person daily prices, the
   // price-correction adjustments and the 2150 reconciliation. Finance's: it prices the units.
   {
@@ -703,6 +730,12 @@ const STAFF_SCREENS: Screen[] = [
     path: 'journal-templates',
     element: <JournalTemplatesPage />,
     reach: { group: 'ledger', label: 'Journal templates', icon: Files },
+  },
+  // Where a month's close stands (2026-10-27): the guide's eight steps, each opening the page that does it.
+  {
+    path: 'month-end',
+    element: <MonthEndPage />,
+    reach: { group: 'valuation', label: 'Month-end close', icon: ListOrdered },
   },
   // IFRS 17 I5a: month-end steps 6 and 7 -- the engine's extract, its results through 9160, the reconciliation.
   {

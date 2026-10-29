@@ -24,6 +24,32 @@ paths:
               schema: { $ref: '#/components/schemas/MyAccess' }
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /staff-names:
+    get:
+      summary: Staff members' names, by token subject (any active staff member)
+      description: >-
+        2026-10-27. Screens record who reviewed, proposed or approved by subject; this turns those into names. A
+        subject the platform does not know is left out of the answer, and the console keeps showing it as it is. At
+        most 100 ids a call.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string }, maxItems: 100 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StaffName' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /access/permissions:
     get:
       summary: The permission catalogue, grouped by area
@@ -218,6 +244,12 @@ components:
       type: openIdConnect
       openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/staff/.well-known/openid-configuration
   schemas:
+    StaffName:
+      type: object
+      required: [subject, name]
+      properties:
+        subject: { type: string }
+        name: { type: string }
     RoleRef:
       type: object
       required: [code, name]

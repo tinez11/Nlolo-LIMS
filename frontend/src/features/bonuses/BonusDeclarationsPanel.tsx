@@ -20,6 +20,7 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { useBonusStore } from '@/store/bonusStore';
 import { bonusDeclarationSchema, type BonusDeclarationValues } from './bonusDeclarationForm';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { StaffName } from '@/components/StaffName';
 
 /**
  * Bonus declarations for a with-profits product (product step 4).
@@ -89,8 +90,8 @@ function DeclarationRow({
         </span>{' '}
         <StatusBadge kind="bonusDeclaration" value={declaration.status} />
         <p className="text-xs text-muted-foreground">
-          As at {formatDate(declaration.valuationDate)} · proposed by {declaration.proposedBy}
-          {declaration.approvedBy ? ` · approved by ${declaration.approvedBy}` : ''}
+          As at {formatDate(declaration.valuationDate)} · proposed by <StaffName subject={declaration.proposedBy} />
+          {declaration.approvedBy && <> · approved by <StaffName subject={declaration.approvedBy} /></>}
           {declaration.completedAt ? ` · attached ${formatDate(declaration.completedAt)}` : ''}
         </p>
       </div>

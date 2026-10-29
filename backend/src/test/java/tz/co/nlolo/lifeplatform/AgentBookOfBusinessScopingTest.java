@@ -34,6 +34,8 @@ import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -127,6 +129,9 @@ class AgentBookOfBusinessScopingTest {
             "db-migrations/benefitpayout/V3__withholding.sql",
             "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V9__withdrawal_rejection.sql",
+            "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -161,6 +166,7 @@ class AgentBookOfBusinessScopingTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V7__journal_support_document_type.sql",
@@ -179,7 +185,8 @@ class AgentBookOfBusinessScopingTest {
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
-            "db-migrations/distribution/V7__projection_policyholder.sql");
+            "db-migrations/distribution/V7__projection_policyholder.sql",
+            "db-migrations/distribution/V8__agent_login.sql");
 
         MinioClient minioClient = MinioClient.builder()
             .endpoint(MINIO.getS3URL()).credentials(MINIO.getUserName(), MINIO.getPassword()).build();
@@ -537,5 +544,78 @@ class AgentBookOfBusinessScopingTest {
         mockMvc.perform(get("/claims").with(agentOf(book.tenantId(), randomPartyId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.items.length()").value(0));
+    }
+
+    // ============================================================================================
+    // Acting on a policy (2026-10-27): every endpoint an agent reaches by policy number keeps them to their book
+    // ============================================================================================
+
+    @Test
+    void anAgentCannotReadAnotherAgentsCustomersInvoicesLoansOrCover() throws Exception {
+        Book book = buildBook("ACT-READ");
+        var supervisor = agentOf(book.tenantId(), book.supervisor().partyId());
+        for (String path : java.util.List.of("/policies/{n}/invoices", "/policies/{n}/credits", "/policies/{n}/loans",
+                "/policies/{n}/coverage-status", "/policies/{n}/surrender-value", "/policies/{n}/in-force")) {
+            mockMvc.perform(get(path, book.policyOutsideTeam()).with(supervisor))
+                .andExpect(status().isForbidden());
+            mockMvc.perform(get(path, book.policyDirectSold()).with(supervisor))
+                .andExpect(status().isForbidden());
+        }
+    }
+
+    @Test
+    void anAgentCannotChangeAnotherAgentsCustomersBeneficiaries() throws Exception {
+        Book book = buildBook("ACT-BEN");
+        mockMvc.perform(put("/policies/{n}/beneficiaries", book.policyOutsideTeam())
+                .with(agentOf(book.tenantId(), book.supervisor().partyId()))
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("[]"))
+            .andExpect(status().isForbidden());
+    }
+
+    /** One agent level (2026-10-27, user decision): an agent requests payment and registers clients. Changing a
+     * policy, lending on it or registering a claim is staff work -- even on a customer in their own book. */
+    @Test
+    void anAgentChangesNothingOnAPolicyEvenInTheirOwnBook() throws Exception {
+        Book book = buildBook("ACT-NONE");
+        var supervisor = agentOf(book.tenantId(), book.supervisor().partyId());
+        var json = org.springframework.http.MediaType.APPLICATION_JSON;
+        mockMvc.perform(put("/policies/{n}/beneficiaries", book.policyInTeam()).with(supervisor)
+                .contentType(json).content("[]"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/policies/{n}/endorsements", book.policyInTeam()).with(supervisor)
+                .contentType(json).content("{\"endorsementType\":\"ADDRESS_CHANGE\",\"effectiveDate\":\"2026-11-01\",\"changes\":{\"newAddress\":\"Dar es Salaam\"}}"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/policies/{n}/loans", book.policyInTeam()).with(supervisor)
+                .contentType(json).content("{\"requestedAmount\":{\"amount\":\"1000.00\",\"currencyCode\":\"TZS\"},\"payeeRef\":\"+255700000001\"}"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/loans/{l}/repayments", UUID.randomUUID()).with(supervisor)
+                .contentType(json).content("{\"amount\":{\"amount\":\"100.00\",\"currencyCode\":\"TZS\"},\"paymentReference\":\"PAY-AGENT\"}"))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/claims").with(supervisor).header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(json).content("""
+                    {"policyNumber":"%s","claimantPartyId":"%s","claimType":"DEATH","dateOfEvent":"2026-10-01",
+                     "details":{"claimType":"DEATH","causeOfDeath":"Cardiac arrest","placeOfDeath":"Dar es Salaam",
+                     "dateOfDeath":"2026-10-01","attendingPhysician":"Dr. Kessy"}}
+                    """.formatted(book.policyInTeam(), UUID.randomUUID())))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void anAgentFilesFieldReceiptsOnlyAsThemselvesAndOnlyForTheirBook() throws Exception {
+        Book book = buildBook("ACT-FR");
+        String body = "{\"policyNumber\":\"%s\",\"amount\":{\"amount\":\"500.00\",\"currencyCode\":\"TZS\"},"
+            + "\"clientIdempotencyKey\":\"%s\",\"capturedAt\":\"2026-10-27T08:00:00Z\"}";
+        // In another agent's name.
+        mockMvc.perform(post("/agents/{a}/field-receipts", book.outsider().agentId())
+                .with(agentOf(book.tenantId(), book.supervisor().partyId()))
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content(body.formatted(book.policyInTeam(), UUID.randomUUID())))
+            .andExpect(status().isForbidden());
+        // In their own name, for a customer outside their book.
+        mockMvc.perform(post("/agents/{a}/field-receipts", book.supervisor().agentId())
+                .with(agentOf(book.tenantId(), book.supervisor().partyId()))
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content(body.formatted(book.policyOutsideTeam(), UUID.randomUUID())))
+            .andExpect(status().isForbidden());
     }
 }

@@ -6,7 +6,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * One bank transfer somebody has to go and make.
+ * One bank transfer or cheque somebody has to go and make -- with the account to pay into, since 2026-10-28.
  *
  * <p><b>Its own shape rather than {@link PaymentStatusResponseDto}</b>, which is the generic
  * "what is the status of this thing" envelope and carries an id, a kind, a status and an amount.
@@ -23,11 +23,14 @@ import java.util.UUID;
  * still carrying a dead borrower's loan on their own book.
  */
 public record AwaitingEftResponseDto(UUID disbursementId, MoneyDto amount, String payeeRef,
-                                      String purpose, String sourceRef, Instant waitingSince) {
+                                      String purpose, String sourceRef, Instant waitingSince,
+                                      String method, String payeeBank, String payeeBranch,
+                                      String payeeAccountName, String payeeAccountNumber) {
 
     public static AwaitingEftResponseDto from(DisbursementStatusView view) {
         return new AwaitingEftResponseDto(view.disbursementId(),
             new MoneyDto(view.amount().toPlainString(), view.currency()),
-            view.payeeRef(), view.purpose(), view.sourceRef(), view.createdAt());
+            view.payeeRef(), view.purpose(), view.sourceRef(), view.createdAt(), view.method(),
+            view.payeeBank(), view.payeeBranch(), view.payeeAccountName(), view.payeeAccountNumber());
     }
 }

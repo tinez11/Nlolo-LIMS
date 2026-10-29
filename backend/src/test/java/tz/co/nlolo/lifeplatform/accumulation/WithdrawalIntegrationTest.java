@@ -101,6 +101,9 @@ class WithdrawalIntegrationTest {
             "db-migrations/product/V34__version_account_charges.sql",
             "db-migrations/product/V35__product_description.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V9__withdrawal_rejection.sql",
+            "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -143,15 +146,20 @@ class WithdrawalIntegrationTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V6__disbursement_method.sql",
             "db-migrations/payment/V7__q4_2026_partitions.sql",
             "db-migrations/payment/V8__benefit_payout_purposes.sql",
             "db-migrations/payment/V9__account_purposes.sql",
+            "db-migrations/payment/V17__manual_receipts.sql",
+            "db-migrations/payment/V18__payout_routes.sql",
+            "db-migrations/payment/V19__top_up_one_person.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
@@ -272,6 +280,58 @@ class WithdrawalIntegrationTest {
         String policy = funded();
         var requested = asTenant(() -> api.requestWithdrawal(policy, new BigDecimal("40000.00"), "+255700000001", "staff-one"));
         asTenant(() -> api.approveWithdrawal(requested.withdrawalId(), "finance-two"));
+        assertThat(asTenant(() -> api.listWithdrawals(policy))).first()
+            .extracting(WithdrawalView::status).isEqualTo("PAID");
+    }
+
+    @Autowired private tz.co.nlolo.lifeplatform.payment.api.PaymentApi paymentApi;
+    @Autowired private tz.co.nlolo.lifeplatform.payment.application.PaymentApiImpl paymentApiImpl;
+
+    /**
+     * 2026-10-28: staff who meant a bank used to type "bank" as the payee, and the money went by mobile money to that
+     * "number". A bank transfer now names the account, never reaches the gateway, and waits in finance's queue with
+     * the account on the row -- the withdrawal is paid when finance records the bank's reference.
+     */
+    @Test
+    void aBankTransferWithdrawalWaitsForFinanceWithTheAccountAndNeverReachesTheGateway() {
+        String policy = funded();
+        var route = tz.co.nlolo.lifeplatform.PayoutRoute.of("EFT", null, "CRDB Bank", "Kariakoo", "Amina Owner", "0150123456");
+        var requested = asTenant(() -> api.requestWithdrawal(policy, new BigDecimal("40000.00"), route, "staff-one"));
+        assertThat(requested.route()).isEqualTo(route);
+        asTenant(() -> api.approveWithdrawal(requested.withdrawalId(), "finance-two"));
+
+        // Out of the balance at approval, as any withdrawal; paid only once the transfer is recorded.
+        assertThat(asTenant(() -> api.findAccount(policy)).orElseThrow().balance()).isEqualByComparingTo("150000.00");
+        assertThat(asTenant(() -> api.entries(policy))).last()
+            .extracting(LedgerEntryView::reason).isEqualTo("Partial withdrawal to CRDB Bank, Kariakoo -- Amina Owner, 0150123456");
+        assertThat(asTenant(() -> api.listWithdrawals(policy))).first()
+            .extracting(WithdrawalView::status).isEqualTo("APPROVED");
+        wireMock.verify(0, postRequestedFor(urlPathEqualTo("/disburse")));
+
+        var waiting = asTenant(() -> paymentApi.listAwaitingEftExecution()).stream()
+            .filter(d -> d.sourceRef().equals(requested.withdrawalId().toString())).findFirst().orElseThrow();
+        assertThat(waiting.method()).isEqualTo("EFT");
+        assertThat(waiting.payeeRef()).isEqualTo("Amina Owner");
+        assertThat(waiting.payeeBank()).isEqualTo("CRDB Bank");
+        assertThat(waiting.payeeBranch()).isEqualTo("Kariakoo");
+        assertThat(waiting.payeeAccountNumber()).isEqualTo("0150123456");
+
+        asTenant(() -> { paymentApiImpl.markEftExecuted(waiting.disbursementId(), "FT2610280001", "finance-three"); return null; });
+        assertThat(asTenant(() -> api.listWithdrawals(policy))).first()
+            .extracting(WithdrawalView::status).isEqualTo("PAID");
+    }
+
+    @Test
+    void aChequeWithdrawalWaitsForFinanceToo() {
+        String policy = funded();
+        var route = tz.co.nlolo.lifeplatform.PayoutRoute.of("CHEQUE", "Amina Owner", null, null, null, null);
+        var requested = asTenant(() -> api.requestWithdrawal(policy, new BigDecimal("40000.00"), route, "staff-one"));
+        asTenant(() -> api.approveWithdrawal(requested.withdrawalId(), "finance-two"));
+        wireMock.verify(0, postRequestedFor(urlPathEqualTo("/disburse")));
+        var waiting = asTenant(() -> paymentApi.listAwaitingEftExecution()).stream()
+            .filter(d -> d.sourceRef().equals(requested.withdrawalId().toString())).findFirst().orElseThrow();
+        assertThat(waiting.method()).isEqualTo("CHEQUE");
+        asTenant(() -> { paymentApiImpl.markEftExecuted(waiting.disbursementId(), "000451", "finance-three"); return null; });
         assertThat(asTenant(() -> api.listWithdrawals(policy))).first()
             .extracting(WithdrawalView::status).isEqualTo("PAID");
     }

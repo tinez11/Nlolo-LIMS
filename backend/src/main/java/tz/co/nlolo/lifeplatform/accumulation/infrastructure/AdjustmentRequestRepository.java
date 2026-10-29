@@ -8,4 +8,7 @@ import java.util.UUID;
 
 public interface AdjustmentRequestRepository extends JpaRepository<AdjustmentRequest, UUID> {
     List<AdjustmentRequest> findByPolicyNumberOrderByProposedAtDesc(String policyNumber);
+
+    /** Every adjustment in one status, across the tenant, oldest first: the approvals queue (2026-10-27). */
+    List<AdjustmentRequest> findByStatusOrderByProposedAtAsc(String status);
 }

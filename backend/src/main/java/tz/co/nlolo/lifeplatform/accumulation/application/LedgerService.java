@@ -36,7 +36,9 @@ import java.util.UUID;
 public class LedgerService {
 
     /** Where a posting came from. {@code ref} is unique per {@code type} within a tenant. */
-    public record Source(String type, String ref) {
+    /** @param receiptMethod how money coming in arrived, for the GL's bank account; null when nothing came in by a method. */
+    public record Source(String type, String ref, String receiptMethod) {
+        public Source(String type, String ref) { this(type, ref, null); }
         public static Source invoice(UUID invoiceId) { return new Source("invoice", "invoice:" + invoiceId); }
     }
 
@@ -100,7 +102,7 @@ public class LedgerService {
         policyApi.restateAccountValue(policyNumber, account.getBalance());
         // One event per posting (spec §8). Audit records every domain event generically, so this is
         // the ledger's audit trail; and a later GL change can subscribe without touching this module.
-        events.publishEvent(DomainEventEnvelope.of("accumulation.PostingRecorded", tenantId, Map.of(
+        Map<String, Object> recorded = new java.util.HashMap<>(Map.of(
             "postingId", posting.getPostingId().toString(),
             "policyNumber", policyNumber,
             "sourceType", source.type(),
@@ -110,7 +112,10 @@ public class LedgerService {
             "approvedBy", approvedBy != null ? approvedBy : "",
             "entries", written.stream().map(e -> Map.of(
                 "seq", e.seq(), "type", e.type().name(), "amount", e.amount().toPlainString(),
-                "balanceAfter", e.balanceAfter().toPlainString(), "effectiveDate", e.effectiveDate().toString())).toList())));
+                "balanceAfter", e.balanceAfter().toPlainString(), "effectiveDate", e.effectiveDate().toString())).toList()));
+        // How the money came in (2026-10-28): the GL debits the account it reached -- 1120 or the mobile-money wallets.
+        if (source.receiptMethod() != null) recorded.put("receiptMethod", source.receiptMethod());
+        events.publishEvent(DomainEventEnvelope.of("accumulation.PostingRecorded", tenantId, recorded));
         return Optional.of(written);
     }
 }

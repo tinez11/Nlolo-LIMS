@@ -30,10 +30,10 @@ test.describe('staff bank transfers', () => {
   test('a finance officer can reach the queue from the sidebar', async ({ page }) => {
     test.slow();
     await page.goto('/staff');
-    await page.getByRole('link', { name: 'Bank transfers' }).click();
+    await page.getByRole('link', { name: 'Payments to make' }).click();
 
     await expect(page).toHaveURL(/\/staff\/bank-transfers$/, { timeout: 20_000 });
-    await expect(page.getByRole('heading', { name: 'Bank transfers' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: 'Payments to make' })).toBeVisible({
       timeout: 30_000,
     });
 
@@ -43,7 +43,7 @@ test.describe('staff bank transfers', () => {
      * unreachable backend and an empty queue look identical to somebody who has been told a claim
      * was settled, which is exactly why the empty state says what it says.
      */
-    const table = page.getByRole('table', { name: 'Bank transfers awaiting execution' });
+    const table = page.getByRole('table', { name: 'Payments to make by hand' });
     const empty = page.getByText('Nothing is waiting on a transfer');
     await expect(table.or(empty)).toBeVisible({ timeout: 30_000 });
 
@@ -54,7 +54,7 @@ test.describe('staff bank transfers', () => {
   test('a transfer cannot be recorded without the bank reference', async ({ page }) => {
     test.slow();
     await page.goto('/staff/bank-transfers');
-    await expect(page.getByRole('heading', { name: 'Bank transfers' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: 'Payments to make' })).toBeVisible({
       timeout: 30_000,
     });
 
@@ -64,7 +64,7 @@ test.describe('staff bank transfers', () => {
      * the test — which is indistinguishable from an empty queue and is how this spec quietly
      * proved nothing on a tenant that DID have a transfer waiting.
      */
-    const table = page.getByRole('table', { name: 'Bank transfers awaiting execution' });
+    const table = page.getByRole('table', { name: 'Payments to make by hand' });
     const empty = page.getByText('Nothing is waiting on a transfer');
     await expect(table.or(empty)).toBeVisible({ timeout: 30_000 });
 
@@ -111,6 +111,6 @@ test.describe('staff bank transfers, as somebody who is not finance', () => {
     await expect(page.getByRole('link', { name: 'Underwriting' })).toBeVisible({
       timeout: 30_000,
     });
-    await expect(page.getByRole('link', { name: 'Bank transfers' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Payments to make' })).toHaveCount(0);
   });
 });

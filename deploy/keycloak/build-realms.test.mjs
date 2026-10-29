@@ -53,6 +53,9 @@ test('the staff user admin client takes its secret from the environment', () => 
   const admin = realm('staff').clients.find((c) => c.clientId === 'lifeplatform-staff-admin');
   assert.equal(admin.secret, '$(env:STAFF_ADMIN_CLIENT_SECRET)');
   assert.ok(realm('staff').users.some((u) => u.username === 'service-account-lifeplatform-staff-admin'));
+  const agentsAdmin = realm('agents').clients.find((c) => c.clientId === 'lifeplatform-agents-admin');
+  assert.equal(agentsAdmin.secret, '$(env:AGENTS_ADMIN_CLIENT_SECRET)');
+  assert.ok(realm('agents').users.some((u) => u.username === 'service-account-lifeplatform-agents-admin'));
 });
 
 test('the portal admin client takes its secret from the environment', () => {
@@ -64,7 +67,7 @@ test('the portal admin client takes its secret from the environment', () => {
 test('password policy, lockout and SMTP settings on every realm', () => {
   for (const name of REALMS) {
     const r = realm(name);
-    assert.equal(r.passwordPolicy, 'length(10) and notUsername(undefined) and passwordHistory(3)', name);
+    assert.equal(r.passwordPolicy, 'length(8) and notUsername(undefined) and notEmail(undefined) and passwordHistory(3)', name);
     assert.equal(r.bruteForceProtected, true, name);
     assert.equal(r.sslRequired, 'external', name);
     assert.equal(r.resetPasswordAllowed, '$(env:MAIL_ENABLED)', name);

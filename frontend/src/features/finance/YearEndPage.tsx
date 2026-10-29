@@ -11,6 +11,7 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { useYearEndStore } from '@/store/yearEndStore';
 import { CLOSE_STATUS_LABEL, lastYear, resultLabel } from './yearEnd';
 import { YearEndFigures } from './YearEndFigures';
+import { StaffName } from '@/components/StaffName';
 
 /**
  * The year-end close (IFRS 17 I6, guide 5.7): a year's class 4-8 accounts and the journal that closes them to retained
@@ -66,7 +67,7 @@ export function YearEndPage() {
                     </td>
                     <td className="py-1 pr-3">{resultLabel(c.profit)}</td>
                     <td className="py-1 text-xs text-muted-foreground">
-                      {c.preparedAt ? formatInstant(c.preparedAt) : ''} by {c.preparedBy}
+                      {c.preparedAt ? formatInstant(c.preparedAt) : ''} by <StaffName subject={c.preparedBy} />
                     </td>
                   </tr>
                 ))}

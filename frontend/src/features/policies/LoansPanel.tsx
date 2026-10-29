@@ -64,8 +64,11 @@ const REPAYABLE: readonly string[] = ['DISBURSED', 'REPAYING'];
 export function LoansPanel({
   policyNumber,
   cashValue,
+  canChange,
 }: {
   policyNumber: string;
+  /** Staff who manage loans (2026-10-27: an agent reads a loan, and neither takes nor repays one). */
+  canChange: boolean;
   // `| undefined` explicitly, not just optional: this project runs
   // exactOptionalPropertyTypes, so an optional prop does not accept an
   // explicitly-undefined value -- and the caller passes `policy?.cashValue`.
@@ -103,11 +106,13 @@ export function LoansPanel({
               key={loan.loanId ?? JSON.stringify(loan)}
               policyNumber={policyNumber}
               loan={loan}
+              canChange={canChange}
             />
           ))}
         </div>
       )}
 
+      {canChange && (
       <div className="border-t border-border px-4 py-3">
         {/* Hidden while the form is open, for the same reason the invoice actions are:
             "Take a loan" would otherwise label both this toggle and the open form's
@@ -137,11 +142,12 @@ export function LoansPanel({
           <OriginateLoanForm policyNumber={policyNumber} onDone={() => setOriginating(false)} />
         )}
       </div>
+      )}
     </div>
   );
 }
 
-function LoanRow({ policyNumber, loan }: { policyNumber: string; loan: LoanView }) {
+function LoanRow({ policyNumber, loan, canChange }: { policyNumber: string; loan: LoanView; canChange: boolean }) {
   const [repaying, setRepaying] = useState(false);
   const loanId = loan.loanId ?? '';
   const repayable = loan.status !== undefined && REPAYABLE.includes(loan.status);
@@ -169,7 +175,7 @@ function LoanRow({ policyNumber, loan }: { policyNumber: string; loan: LoanView 
         </p>
       )}
 
-      {loanId && repayable && !repaying && (
+      {canChange && loanId && repayable && !repaying && (
         <div className="mt-1.5">
           <Button size="sm" variant="ghost" className="-ml-2" onClick={() => setRepaying(true)}>
             Record repayment

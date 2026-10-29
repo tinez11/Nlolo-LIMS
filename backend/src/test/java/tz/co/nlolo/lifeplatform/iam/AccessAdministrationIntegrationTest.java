@@ -172,29 +172,18 @@ class AccessAdministrationIntegrationTest {
             .andExpect(jsonPath("$.errorCode").value("ACCESS_SELF_CHANGE"));
     }
 
+    /** No second administrator (2026-10-28, user decision): giving someone Administration takes effect at once. */
     @Test
-    void givingSomeoneAdministrationWaitsForASecondAdministratorWhoIsNotTheOneWhoAsked() throws Exception {
+    void givingSomeoneAdministrationTakesEffectAtOnce() throws Exception {
         UUID neema = addUser("neema.admin", "UNDERWRITER");
-        String body = mockMvc.perform(put("/access/users/{id}/access", neema).with(asha())
+        mockMvc.perform(put("/access/users/{id}/access", neema).with(asha())
                 .contentType(MediaType.APPLICATION_JSON).content("{\"roleCodes\":[\"UNDERWRITER\",\"ADMIN\"],\"permissions\":[]}"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.applied").value(false))
-            .andReturn().getResponse().getContentAsString();
-        String changeId = json.readTree(body).get("changeId").asText();
+            .andExpect(jsonPath("$.applied").value(true));
 
-        // Still only an underwriter.
         mockMvc.perform(get("/access/users/{id}", neema).with(asha()))
-            .andExpect(jsonPath("$.user.pendingApproval").value(true))
-            .andExpect(jsonPath("$.user.effectivePermissions", not(hasItem("users.manage"))));
-
-        mockMvc.perform(post("/access/changes/{id}/approval", changeId).with(asha()))
-            .andExpect(status().isForbidden())
-            .andExpect(jsonPath("$.errorCode").value("ACCESS_SAME_PERSON_APPROVES"));
-
-        mockMvc.perform(post("/access/changes/{id}/approval", changeId).with(baraka())).andExpect(status().isNoContent());
-        mockMvc.perform(get("/access/users/{id}", neema).with(asha()))
-            .andExpect(jsonPath("$.user.roles[0].code").value("ADMIN"))
-            .andExpect(jsonPath("$.user.pendingApproval").value(false));
+            .andExpect(jsonPath("$.user.pendingApproval").value(false))
+            .andExpect(jsonPath("$.user.effectivePermissions", hasItem("users.manage")));
     }
 
     @Test

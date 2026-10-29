@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { confirmRequestedPayments } from './payments';
 import { dmy, todayIso } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
 import { asSeniorOnSameCase } from './underwriting';
@@ -133,6 +134,8 @@ test.describe('a pension (deferred annuity)', () => {
     await pay.getByLabel('Payer reference').fill('+255700000778');
     await pay.getByRole('button', { name: 'Request payment' }).click();
     await expect(page.getByLabel('Payer reference')).not.toBeVisible({ timeout: 60_000 });
+    // Paid once a second finance person confirms the money came (2026-10-27).
+    await confirmRequestedPayments(page.context().browser()!, policyUrl.split('/').pop()!);
 
     // ---- Instructed to vest today, with a quarter of the balance as a lump sum.
     await page.goto(policyUrl);

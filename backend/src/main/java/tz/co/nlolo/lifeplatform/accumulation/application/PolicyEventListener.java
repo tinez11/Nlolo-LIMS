@@ -34,7 +34,7 @@ public class PolicyEventListener {
                 api.reopenOnReinstatement((String) p.get("policyNumber")));
             case "policy.AccountSurrenderApproved" -> runner.run(envelope, p -> api.closeForSurrender(
                 (String) p.get("policyNumber"), UUID.fromString((String) p.get("surrenderRequestId")),
-                (String) p.get("payeeRef"), new BigDecimal((String) p.get("surrenderChargePercent")),
+                tz.co.nlolo.lifeplatform.PayoutRoute.fromPayload(p), new BigDecimal((String) p.get("surrenderChargePercent")),
                 (String) p.get("approvedBy"),
                 LocalDate.ofInstant(Instant.parse((String) p.get("approvedAt")), BillingEventListener.CIVIL_ZONE)));
             case "policy.PolicyCancelledFreeLook" -> runner.run(envelope, p ->

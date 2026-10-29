@@ -65,7 +65,8 @@ public class ClaimEvidenceController {
      * to close on every customer-scoped endpoint.
      */
     @PostMapping(value = "/claims/{claimId}/evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.canAny('claims.register', 'claims.assess', 'claims.settle')")
+    // An agent reads the evidence and adds none (2026-10-27, one agent level).
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or @access.canAny('claims.register', 'claims.assess', 'claims.settle')")
     public ResponseEntity<ClaimEvidenceResponseDto> attachEvidence(@PathVariable UUID claimId,
             @RequestPart("file") MultipartFile file,
             @RequestPart(value = "description", required = false) String description,

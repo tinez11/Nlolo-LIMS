@@ -22,6 +22,7 @@ import { useBenefitPayoutStore } from '@/store/benefitPayoutStore';
 import { usePolicyStore } from '@/store/policyStore';
 import { blankDeduction, blankFreeLook, freeLookSchema, type FreeLookValues } from './freeLookForm';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { StaffName } from '@/components/StaffName';
 
 /**
  * Free-look cancellation: the customer changed their mind, and the sale is undone from inception
@@ -250,8 +251,8 @@ function DecidedOrAwaiting({
       ))}
       <Field label="Refund" value={formatMoney(cancellation.refundAmount)} emphasis />
       <Field label="Refund to" value={cancellation.payeeRef} />
-      <Field label="Requested by" value={cancellation.requestedBy} />
-      {cancellation.approvedBy && <Field label="Approved by" value={cancellation.approvedBy} />}
+      <Field label="Requested by" value={<StaffName subject={cancellation.requestedBy} />} />
+      {cancellation.approvedBy && <Field label="Approved by" value={<StaffName subject={cancellation.approvedBy} />} />}
     </dl>
   );
 
@@ -281,7 +282,7 @@ function DecidedOrAwaiting({
       hard: true,
       title: 'A second person approves',
       detail: sameAsRequester
-        ? `A free-look cancellation must be approved by someone other than the person who requested it (${cancellation.requestedBy})`
+        ? 'You prepared this cancellation, so someone else must approve it.'
         : 'You did not prepare this cancellation.',
     },
   ];

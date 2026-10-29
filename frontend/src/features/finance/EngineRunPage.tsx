@@ -13,6 +13,8 @@ import { Input } from '@/components/ui/input';
 import { formatInstant } from '@/lib/dates';
 import { useEngineStore } from '@/store/engineStore';
 import { FIGURE_LABEL, RUN_STATUS_LABEL, canAccept, canDecide, differenceLabel } from './enginePeriod';
+import { useReturnCrumbs } from '@/lib/returnCrumbs';
+import { StaffName } from '@/components/StaffName';
 
 const money = (n: number | null | undefined) =>
   n == null ? '—' : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -40,12 +42,15 @@ export function EngineRunPage() {
 }
 
 function Run({ run: r }: { run: EngineRunView }) {
+  // Back to the list it was opened from -- Approvals, Payments -- when it was (2026-10-27).
+  const crumbs = useReturnCrumbs([{ label: 'IFRS 17 engine', to: '/staff/ifrs17-engine' }]);
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const approver = can('ifrs17.approve');
   return (
     <>
       <PageHeader
+        breadcrumb={crumbs}
         title={`Engine run ${r.engineReference ?? ''}`.trim()}
         description={`${RUN_STATUS_LABEL[r.status] ?? r.status} · period ${r.period ?? '—'} · extract #${r.extractNumber ?? '—'}`}
       />
@@ -53,11 +58,11 @@ function Run({ run: r }: { run: EngineRunView }) {
         <section className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-surface shadow-card p-4 text-sm sm:grid-cols-2"
           aria-label="About this run">
           <p><span className="text-muted-foreground">Engine:</span> {r.engineName ?? '—'} · measured {r.measurementDate ?? '—'}</p>
-          <p><span className="text-muted-foreground">Uploaded:</span> {formatInstant(r.uploadedAt)} by {r.uploadedBy}</p>
+          <p><span className="text-muted-foreground">Uploaded:</span> {formatInstant(r.uploadedAt)} by <StaffName subject={r.uploadedBy} /></p>
           {r.decidedAt && (
             <p>
               <span className="text-muted-foreground">{r.status === 'REJECTED' ? 'Rejected' : 'Approved'}:</span>{' '}
-              {formatInstant(r.decidedAt)} by {r.decidedBy}{r.decisionReason ? ` — ${r.decisionReason}` : ''}
+              {formatInstant(r.decidedAt)} by <StaffName subject={r.decidedBy} />{r.decisionReason ? ` — ${r.decisionReason}` : ''}
             </p>
           )}
           {r.signOffReference && <p><span className="text-muted-foreground">Actuary's sign-off:</span> {r.signOffReference}</p>}
@@ -201,7 +206,7 @@ function ReconciliationRow({ runId, row, viewer, approver }: {
       <td className="py-1 pr-3 text-right tabular-nums">{money(row.engine)}</td>
       <td className="py-1">
         <p className={row.status === 'EXCEPTION' ? 'text-status-danger-fg' : undefined}>{differenceLabel(row)}</p>
-        {row.explanation && <p className="text-xs text-muted-foreground">“{row.explanation}” — {row.explainedBy}</p>}
+        {row.explanation && <p className="text-xs text-muted-foreground">“{row.explanation}” — <StaffName subject={row.explainedBy} /></p>}
         {(row.status === 'EXCEPTION' || row.status === 'EXPLAINED') && (
           <form className="mt-1 flex items-end gap-2" aria-label={`Explain ${row.group} ${row.figure}`}
             onSubmit={(e) => {

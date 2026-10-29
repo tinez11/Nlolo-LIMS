@@ -50,10 +50,10 @@ class MigrationScriptCoverageTest {
         assertThat(listed).containsAll(migrationFolders());
     }
 
+    /** CI keeps no list of its own since it migrates with the real script (b1f0521e): it must keep doing so. */
     @Test
-    void ciAppliesEveryModulesMigrations() throws IOException {
+    void ciMigratesWithTheScript() throws IOException {
         String workflow = Files.readString(Path.of("../.github/workflows/ci-cd.yml"));
-        List<String> listed = modulesIn(workflow, Pattern.compile("for mod in ([a-z ]+); do"));
-        assertThat(listed).containsAll(migrationFolders());
+        assertThat(workflow).contains("./scripts/migrate.sh ci").doesNotContain("for mod in");
     }
 }

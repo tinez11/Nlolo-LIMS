@@ -37,7 +37,7 @@ class PolicyEventListener {
             case "policy.PolicyIssued" -> runner.run(envelope, p -> allocations.recordAtIssue((String) p.get("policyNumber")));
             case "policy.UnitLinkedSurrenderApproved" -> runner.run(envelope, p -> exits.onSurrenderApproved(
                 UUID.fromString(String.valueOf(p.get("surrenderRequestId"))), (String) p.get("policyNumber"),
-                (String) p.get("payeeRef"), Instant.parse(String.valueOf(p.get("approvedAt")))));
+                tz.co.nlolo.lifeplatform.PayoutRoute.fromPayload(p), Instant.parse(String.valueOf(p.get("approvedAt")))));
             case "policy.PolicyLapsed" -> runner.run(envelope, p -> {
                 String policyNumber = (String) p.get("policyNumber");
                 // An arrears lapse carries no reason; an exhaustion lapse is this module's own doing.

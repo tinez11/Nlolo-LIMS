@@ -2,6 +2,87 @@
   "realm": "customers",
   "displayName": "Customer access",
   "loginTheme": "lifeplatform",
+  "emailTheme": "lifeplatform",
+  "resetCredentialsFlow": "lifeplatform reset credentials",
+  "authenticationFlows": [
+    {
+      "alias": "lifeplatform reset credentials",
+      "description": "Forgot password: a reset link to the email on file and a code by text to the phone the platform holds (2026-10-28)",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "reset-credentials-choose-user",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "lifeplatform-reset-delivery",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "reset-password",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 30,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticatorFlow": true,
+          "autheticatorFlow": true,
+          "requirement": "CONDITIONAL",
+          "priority": 40,
+          "flowAlias": "lifeplatform reset - conditional otp",
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "alias": "lifeplatform reset - conditional otp",
+      "description": "Asks for the second factor too, once someone has one; nobody does yet",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "conditional-user-configured",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "reset-otp",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false
+        }
+      ]
+    }
+  ],
+  "permanentLockout": false,
+  "defaultLocale": "en",
+  "supportedLocales": ["en","sw"],
+  "internationalizationEnabled": true,
+  "adminEventsDetailsEnabled": false,
+  "adminEventsEnabled": true,
+  "enabledEventTypes": ["LOGIN","LOGIN_ERROR","LOGOUT","SEND_RESET_PASSWORD","SEND_RESET_PASSWORD_ERROR","RESET_PASSWORD","RESET_PASSWORD_ERROR","UPDATE_PASSWORD","UPDATE_PASSWORD_ERROR","UPDATE_CREDENTIAL","UPDATE_CREDENTIAL_ERROR","EXECUTE_ACTIONS","EXECUTE_ACTION_TOKEN","EXECUTE_ACTION_TOKEN_ERROR","UPDATE_EMAIL","USER_DISABLED_BY_TEMPORARY_LOCKOUT"],
+  "eventsListeners": ["jboss-logging","email"],
+  "eventsExpiration": 7776000,
+  "eventsEnabled": true,
+  "actionTokenGeneratedByUserLifespan": 900,
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,
@@ -180,14 +261,14 @@
         "providerId": "declarative-user-profile",
         "config": {
           "kc.user.profile.config": [
-            "{\"attributes\":[{\"name\":\"username\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"email\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"firstName\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"lastName\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false}],\"groups\":[],\"unmanagedAttributePolicy\":\"ADMIN_EDIT\"}"
+            "{\"attributes\":[{\"name\":\"username\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"email\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"firstName\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"lastName\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false}],\"groups\":[],\"unmanagedAttributePolicy\":\"ADMIN_EDIT\"}"
           ]
         }
       }
     ]
   },
   "resetPasswordAllowed": true,
-  "passwordPolicy": "length(8) and notUsername(undefined)",
+  "passwordPolicy": "length(8) and notUsername(undefined) and notEmail(undefined) and passwordHistory(3)",
   "bruteForceProtected": true,
   "failureFactor": 5,
   "waitIncrementSeconds": 60,

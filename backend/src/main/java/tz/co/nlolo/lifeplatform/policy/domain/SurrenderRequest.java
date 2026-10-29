@@ -44,6 +44,10 @@ public class SurrenderRequest {
     @Column(name = "payee_ref", nullable = false)
     private String payeeRef;
 
+    // How it is paid (V42, 2026-10-28): mobile money to payee_ref, or a bank transfer / cheque.
+    @jakarta.persistence.Embedded
+    private tz.co.nlolo.lifeplatform.PayoutRouteColumns route = tz.co.nlolo.lifeplatform.PayoutRouteColumns.mobileMoney();
+
     @Column(name = "requested_by", nullable = false)
     private String requestedBy;
 
@@ -115,6 +119,15 @@ public class SurrenderRequest {
     public BigDecimal getQuotedValueAmount() { return quotedValueAmount; }
     public String getQuotedValueCurrency() { return quotedValueCurrency; }
     public String getPayeeRef() { return payeeRef; }
+
+    /** Paid by this route; its payee becomes payee_ref. */
+    public void payBy(tz.co.nlolo.lifeplatform.PayoutRoute route) {
+        this.payeeRef = route.payee();
+        this.route = tz.co.nlolo.lifeplatform.PayoutRouteColumns.of(route);
+    }
+
+    public tz.co.nlolo.lifeplatform.PayoutRoute route() { return route.toRoute(payeeRef); }
     public String getRequestedBy() { return requestedBy; }
+    public Instant getRequestedAt() { return requestedAt; }
     public String getApprovedBy() { return approvedBy; }
 }

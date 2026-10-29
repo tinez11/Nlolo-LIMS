@@ -20,6 +20,7 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { useAccumulationStore } from '@/store/accumulationStore';
 import { rateDeclarationSchema, type RateDeclarationValues } from './rateDeclarationForm';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { StaffName } from '@/components/StaffName';
 
 
 /**
@@ -89,8 +90,8 @@ function RateRow({
         <span className="text-sm font-medium">{rate.ratePercent}% a year</span>{' '}
         <StatusBadge kind="rateDeclaration" value={rate.status} />
         <p className="text-xs text-muted-foreground">
-          From {formatDate(rate.effectiveFrom)} · proposed by {rate.proposedBy}
-          {rate.approvedBy ? ` · approved by ${rate.approvedBy}` : ''}
+          From {formatDate(rate.effectiveFrom)} · proposed by <StaffName subject={rate.proposedBy} />
+          {rate.approvedBy && <> · approved by <StaffName subject={rate.approvedBy} /></>}
         </p>
       </div>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}

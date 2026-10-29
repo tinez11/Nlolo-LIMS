@@ -3,5 +3,5 @@
 // DistributionApi.resolveAgentTeam, closing the gap PolicyController's own getPolicy javadoc
 // named as deferred ("no agent/agency data model... to resolve 'is this caller's agent identity
 // the agentOfRecord' against").
-@org.springframework.modulith.ApplicationModule(allowedDependencies = { "underwriting::api", "product::api", "party::api", "document::api", "refdata::api", "distribution::api" })
+@org.springframework.modulith.ApplicationModule(allowedDependencies = { "underwriting::api", "product::api", "party::api", "document::api", "refdata::api", "distribution::api", "approvals::api" })
 package tz.co.nlolo.lifeplatform.policy;

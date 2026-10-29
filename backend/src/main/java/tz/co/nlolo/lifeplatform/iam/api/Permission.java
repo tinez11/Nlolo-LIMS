@@ -61,7 +61,10 @@ public enum Permission {
     LOANS_MANAGE("loans.manage", Area.ACCOUNTS, "Policy loans", "Grant loans, record repayments, review forced lapses."),
 
     COLLECTIONS_VIEW("collections.view", Area.COLLECTIONS, "See collections", "Arrears, field receipts and bank transfers."),
-    COLLECTIONS_MANAGE("collections.manage", Area.COLLECTIONS, "Manage collections", "Reconcile receipts and waive invoices."),
+    COLLECTIONS_MANAGE("collections.manage", Area.COLLECTIONS, "Manage collections",
+        "Record receipts for cash, bank, cheque, Lipa number and TANQR payments, and waive invoices."),
+    COLLECTIONS_APPROVE("collections.approve", Area.COLLECTIONS, "Approve receipts",
+        "Confirm or refuse a receipt someone else recorded; only a confirmed receipt pays an invoice."),
 
     PAYOUTS_VIEW("payouts.view", Area.PAYOUTS, "See payouts", "Payouts, payment runs, disbursements and maturities."),
     PAYOUTS_MANAGE("payouts.manage", Area.PAYOUTS, "Prepare payouts",

@@ -74,6 +74,15 @@ services:
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HTTP_ENABLED: "true"
       KC_PROXY_HEADERS: xforwarded
+      # Keycloak emails a person when their password or second factor changes (2026-10-28) -- the notice that tells
+      # them someone else reset it. Not on every failed login, which it also does by default and which would bury it,
+      # and not twice: Keycloak 26 raises UPDATE_CREDENTIAL beside UPDATE_PASSWORD for one change, so that one is off
+      # (a second factor still has its own UPDATE_TOTP notice).
+      KC_SPI_EVENTS_LISTENER_EMAIL_EXCLUDE_EVENTS: LOGIN_ERROR,UPDATE_CREDENTIAL
+      # The agents' and customers' reset by text (2026-10-28): Keycloak asks the platform, which holds the phone
+      # numbers, to text the code. Signed with a secret the backend holds as PASSWORD_RESET_SMS_SECRET.
+      LP_RESET_SMS_URL: http://backend:8080/internal/password-reset/sms
+      LP_RESET_SMS_SECRET: ${PASSWORD_RESET_SMS_SECRET}
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD}
     ports:
@@ -105,6 +114,7 @@ services:
       APP_DOMAIN: ${APP_DOMAIN}
       PORTAL_ADMIN_CLIENT_SECRET: ${PORTAL_ADMIN_CLIENT_SECRET}
       STAFF_ADMIN_CLIENT_SECRET: ${STAFF_ADMIN_CLIENT_SECRET}
+      AGENTS_ADMIN_CLIENT_SECRET: ${AGENTS_ADMIN_CLIENT_SECRET}
       MAIL_ENABLED: ${MAIL_ENABLED}
       MAIL_HOST: ${MAIL_HOST}
       MAIL_PORT: ${MAIL_PORT}
@@ -139,10 +149,13 @@ services:
       KEYCLOAK_BASE_URL: http://keycloak:8080
       KEYCLOAK_PORTAL_ADMIN_SECRET: ${PORTAL_ADMIN_CLIENT_SECRET}
       KEYCLOAK_STAFF_ADMIN_SECRET: ${STAFF_ADMIN_CLIENT_SECRET}
+      KEYCLOAK_AGENTS_ADMIN_SECRET: ${AGENTS_ADMIN_CLIENT_SECRET}
       STAFF_CONSOLE_URL: https://${APP_DOMAIN}/staff
+      AGENT_CONSOLE_URL: https://${APP_DOMAIN}/agents
       PORTAL_URL: https://${APP_DOMAIN}/customers
       MOBILE_MONEY_GATEWAY_BASE_URL: http://mock-mobile-money:8080
       MOBILE_MONEY_CALLBACK_HMAC_SECRET: ${MOBILE_MONEY_CALLBACK_HMAC_SECRET}
+      PASSWORD_RESET_SMS_SECRET: ${PASSWORD_RESET_SMS_SECRET}
       SMS_GATEWAY_BASE_URL: ${SMS_GATEWAY_BASE_URL}
       SMS_GATEWAY_AUTHORIZATION: ${SMS_GATEWAY_AUTHORIZATION}
       SMS_GATEWAY_SENDER_NAME: ${SMS_GATEWAY_SENDER_NAME}

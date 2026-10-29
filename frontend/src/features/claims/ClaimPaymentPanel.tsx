@@ -7,6 +7,8 @@ import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectPayouts, useClaimStore } from '@/store/claimStore';
 import { whatHappensNext } from './payoutNextStep';
+import { methodWords } from '@/features/payments/paymentWords';
+import { describeRoute } from '@/features/payments/payoutRoute';
 
 /**
  * What became of the money once the claim was approved.
@@ -17,7 +19,7 @@ import { whatHappensNext } from './payoutNextStep';
  * individual business that is invisible because it lasts seconds -- the mobile-money gateway
  * answers and the claim settles itself. On credit life it can last days: the payout is an EFT to
  * the lender, and nothing moves it but a finance officer making the transfer in the bank and
- * recording it under Finance → Bank transfers -- a screen a claims manager cannot open. So the
+ * recording it under Finance → Payments to make -- a screen a claims manager cannot open. So the
  * claim sat there with no sign of who it was waiting on.
  *
  * Reloads when the claim's status changes, so an approval shows its payout without a refresh.
@@ -57,13 +59,13 @@ export function ClaimPaymentPanel({ claimId, claimStatus }: { claimId: string; c
             <span className="text-sm font-medium">
               {formatMoney(payout.amount)}{' '}
               <span className="font-normal text-muted-foreground">
-                by {payout.method === 'EFT' ? 'bank transfer' : 'mobile money'}
+                by {methodWords(payout.method).toLowerCase()}
               </span>
             </span>
             <StatusBadge kind="disbursement" value={payout.status} />
           </div>
           <p className="text-xs text-muted-foreground">
-            To <span className="font-medium">{payout.payeeRef}</span> · instructed{' '}
+            To <span className="font-medium">{describeRoute(payout)}</span> · instructed{' '}
             {formatInstant(payout.createdAt)}
             {payout.reference && <> · reference {payout.reference}</>}
           </p>

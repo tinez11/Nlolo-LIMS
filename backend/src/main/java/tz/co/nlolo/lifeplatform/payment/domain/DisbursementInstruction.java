@@ -83,11 +83,21 @@ public class DisbursementInstruction {
     @Column(nullable = false)
     private String method = DisbursementMethod.MOBILE_MONEY.name();
 
+    /** The account a bank transfer goes to (payment V18, 2026-10-28); null for mobile money and cheques. */
+    @Column(name = "payee_bank") private String payeeBank;
+    @Column(name = "payee_branch") private String payeeBranch;
+    @Column(name = "payee_account_name") private String payeeAccountName;
+    @Column(name = "payee_account_number") private String payeeAccountNumber;
+
     @Column(name = "executed_by")
     private String executedBy;
 
     @Column(name = "executed_at")
     private Instant executedAt;
+
+    /** The policy this money is for, where the request named one (payment V16, 2026-10-27). */
+    @Column(name = "policy_number")
+    private String policyNumber;
 
     @Version
     private long version;
@@ -119,10 +129,23 @@ public class DisbursementInstruction {
         this.purpose = purpose;
         this.sourceRef = sourceRef;
         this.method = method.name();
-        if (method == DisbursementMethod.EFT) {
+        if (method != DisbursementMethod.MOBILE_MONEY) {
             this.status = "AWAITING_EXECUTION";
         }
     }
+
+    /** The bank account a bank transfer goes to. */
+    public void payTo(String bank, String branch, String accountName, String accountNumber) {
+        this.payeeBank = bank;
+        this.payeeBranch = branch;
+        this.payeeAccountName = accountName;
+        this.payeeAccountNumber = accountNumber;
+    }
+
+    public String getPayeeBank() { return payeeBank; }
+    public String getPayeeBranch() { return payeeBranch; }
+    public String getPayeeAccountName() { return payeeAccountName; }
+    public String getPayeeAccountNumber() { return payeeAccountNumber; }
 
     public void markCompleted(String gatewayReference) {
         if ("COMPLETED".equals(status)) {
@@ -197,6 +220,10 @@ public class DisbursementInstruction {
     public String getPurpose() { return purpose; }
     public String getStatus() { return status; }
     public String getMethod() { return method; }
+
+    public String getPolicyNumber() { return policyNumber; }
+
+    public void notePolicy(String policyNumber) { this.policyNumber = policyNumber; }
     public String getExecutedBy() { return executedBy; }
     public java.time.Instant getExecutedAt() { return executedAt; }
 
@@ -213,7 +240,7 @@ public class DisbursementInstruction {
         // payout -- whose status is already COMPLETED -- was silently accepted as "confirming
         // twice" and returned quietly, so a person could claim to have executed a transfer the
         // gateway had made. Idempotency is only ever a property of the SAME operation repeated.
-        if (!DisbursementMethod.EFT.name().equals(method)) {
+        if (DisbursementMethod.MOBILE_MONEY.name().equals(method)) {
             throw new IllegalStateException("Disbursement " + disbursementId + " is a " + method
                 + " payout, which is not awaiting execution by anybody -- the rail completes it");
         }
@@ -225,7 +252,7 @@ public class DisbursementInstruction {
                 + ", not awaiting execution");
         }
         if (bankReference == null || bankReference.isBlank()) {
-            throw new IllegalArgumentException("Recording an executed transfer needs the bank reference for it");
+            throw new IllegalArgumentException("Recording a payment made by hand needs its bank reference or cheque number");
         }
         if (executedBy == null || executedBy.isBlank()) {
             throw new IllegalArgumentException("Recording an executed transfer needs who executed it");

@@ -138,6 +138,14 @@ public interface BillingApi {
     /** As above, with the number the money came from; carried onto billing.PremiumCollected as payerRef. */
     InvoiceView applyConfirmedPayment(UUID invoiceId, BigDecimal amount, String currency, String paymentReference, String payerRef);
 
+    /**
+     * As above, with how the money came in (2026-10-27): MOBILE_MONEY from the gateway, or a recorded receipt's CASH,
+     * BANK_DEPOSIT, CHEQUE, LIPA_NUMBER or TANQR. Carried onto billing.PremiumCollected as receiptMethod, so the ledger
+     * posts the premium to the account the money reached.
+     */
+    InvoiceView applyConfirmedPayment(UUID invoiceId, BigDecimal amount, String currency, String paymentReference,
+                                      String payerRef, String method);
+
     record FieldReceiptResult(UUID receiptId, String status) {}
     FieldReceiptResult captureFieldReceipt(UUID agentId, String policyNumber, BigDecimal amount, String currency,
                                             String clientIdempotencyKey, Instant capturedAtClient);

@@ -1,6 +1,6 @@
 import * as TabsPrimitive from '@radix-ui/react-tabs';
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParamsKeepingTrail } from '@/lib/cameFrom';
 import { revealIfHidden } from '@/lib/reveal';
 
 export interface TabDef {
@@ -33,7 +33,7 @@ export function RecordTabs({
   label: string;
   param?: string;
 }) {
-  const [params, setParams] = useSearchParams();
+  const [params, setParams] = useSearchParamsKeepingTrail();
   const first = tabs[0]?.value ?? '';
   const requested = params.get(param);
   const active = tabs.some((tab) => tab.value === requested) ? (requested as string) : first;

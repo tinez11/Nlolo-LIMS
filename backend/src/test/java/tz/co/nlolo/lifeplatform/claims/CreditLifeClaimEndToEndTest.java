@@ -111,6 +111,9 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/benefitpayout/V3__withholding.sql",
             "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V9__withdrawal_rejection.sql",
+            "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -159,6 +162,7 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -173,6 +177,7 @@ class CreditLifeClaimEndToEndTest {
             // nothing else: no WireMock, no aggregator, no stub. That is the rail being what
             // it claims to be rather than a convenience of the test.
             "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
             "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
@@ -180,6 +185,9 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/payment/V7__q4_2026_partitions.sql",
             "db-migrations/payment/V8__benefit_payout_purposes.sql",
             "db-migrations/payment/V9__account_purposes.sql",
+            "db-migrations/payment/V17__manual_receipts.sql",
+            "db-migrations/payment/V18__payout_routes.sql",
+            "db-migrations/payment/V19__top_up_one_person.sql",
             // regreporting, so the credit-life chain can be asserted all the way into the
             // figure a return is computed from. Its module dependencies are { refdata::api }
             // only, and refdata is already applied above.
@@ -279,7 +287,7 @@ class CreditLifeClaimEndToEndTest {
 
         assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, false, null, null,
             "assessor believes suicide", ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION,
-            null, null, "assessor.two"))
+            (String) null, null, "assessor.two"))
             .isInstanceOf(ClaimValidationException.class)
             .hasMessageContaining("was not open on");
     }
@@ -292,7 +300,7 @@ class CreditLifeClaimEndToEndTest {
         UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
 
         claimsApi.decideSettlement(claimId, false, null, null, "assessor believes suicide",
-            ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION, null, null, "assessor.two");
+            ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION, (String) null, null, "assessor.two");
 
         ClaimView declined = claimsApi.getClaim(claimId);
         assertThat(declined.status()).isEqualTo(ClaimStatus.REJECTED);
@@ -312,7 +320,7 @@ class CreditLifeClaimEndToEndTest {
 
         assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, false, null, null,
             "assessor believes suicide", ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION,
-            null, null, "assessor.two"))
+            (String) null, null, "assessor.two"))
             .isInstanceOf(ClaimValidationException.class)
             .hasMessageContaining(DISBURSED.toString());
     }
@@ -324,7 +332,7 @@ class CreditLifeClaimEndToEndTest {
         UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
 
         claimsApi.decideSettlement(claimId, false, null, null, "documents were forged",
-            null, null, null, "assessor.two");
+            null, (String) null, null, "assessor.two");
 
         assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.REJECTED);
     }
@@ -337,7 +345,7 @@ class CreditLifeClaimEndToEndTest {
 
         assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true,
             new BigDecimal("1000000.00"), "TZS", null,
-            ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION, null, idem(), "assessor.two"))
+            ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION, (String) null, idem(), "assessor.two"))
             .isInstanceOf(ClaimValidationException.class)
             .hasMessageContaining("APPROVED");
     }
@@ -446,7 +454,7 @@ class CreditLifeClaimEndToEndTest {
         UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
 
         assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true, PRINCIPAL, "TZS",
-            null, null, idem(), "claims.manager"))
+            null, (String) null, idem(), "claims.manager"))
             // The CEILING refused it -- pinned, so a payee rule firing first cannot pass this.
             .isInstanceOf(ClaimValidationException.class)
             .hasMessageContaining("covered for");
@@ -492,12 +500,12 @@ class CreditLifeClaimEndToEndTest {
         // register a second death claim on the same borrower to show it, and one death claim per
         // life now refuses that registration outright.
         assertThatThrownBy(() -> claimsApi.decideSettlement(claim.claimId(), true, ABOVE_FCL, "TZS",
-            null, null, idem(), "claims.manager"))
+            null, (String) null, idem(), "claims.manager"))
             .isInstanceOf(ClaimValidationException.class)
             .hasMessageContaining("covered for");
 
         claimsApi.decideSettlement(claim.claimId(), true, FCL, "TZS", null,
-            null, idem(), "claims.manager");
+            (String) null, idem(), "claims.manager");
         assertThat(claimsApi.getClaim(claim.claimId()).approvedAmount()).isEqualByComparingTo(FCL);
     }
 
@@ -508,7 +516,7 @@ class CreditLifeClaimEndToEndTest {
         assertThat(borrower().openDeathClaimId()).isEqualTo(claimId);
 
         claimsApi.decideSettlement(claimId, false, null, null, "documents were forged",
-            null, null, idem(), "claims.manager");
+            null, (String) null, idem(), "claims.manager");
         assertThat(borrower().openDeathClaimId())
             .as("a rejected claim is not in progress; the borrower reads as a live loan again")
             .isNull();

@@ -1,6 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
-import { type FieldErrors, useForm } from 'react-hook-form';
+import { useAuth } from 'react-oidc-context';
+import { readIdentity } from '@/auth/claims';
+import { type FieldErrors, type UseFormReturn, useForm } from 'react-hook-form';
+import { PayoutRouteFields } from '@/features/payments/PayoutRouteFields';
+import { routeBody, routeWords, type PayoutRouteValues } from '@/features/payments/payoutRoute';
 import { Button } from '@/components/ui/button';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { FormField } from '@/components/FormField';
@@ -87,19 +91,24 @@ export function ClaimSettlementPanel({
   // Newest first, so [0] is the most recent assessment -- the one a second
   // assessor wrote after the first, if there were two.
   const latestAssessment = assessmentsResource.data?.[0] ?? null;
+  // Separation of duties, said before anyone presses Approve (2026-10-29): whoever assessed this claim may not decide
+  // it. The server refuses that anyway; offering the form only to have it refused, with a raw id, was the bug.
+  const viewer = readIdentity(useAuth().user?.access_token)?.subject ?? null;
+  const viewerAssessed = viewer !== null && (assessmentsResource.data ?? []).some((a) => a.assessor === viewer);
   const recommended = latestAssessment?.recommendedAmount ?? null;
 
+  const form = useForm<SettlementDecisionFormValues>({
+    ...VALIDATE_ON_TOUCH,
+    resolver: zodResolver(settlementDecisionSchema(cover, !creditLife)),
+    defaultValues: blankApproveDecision(),
+  });
   const {
     register,
     handleSubmit,
     watch,
     reset,
     formState: { errors, isDirty },
-  } = useForm<SettlementDecisionFormValues>({
-    ...VALIDATE_ON_TOUCH,
-    resolver: zodResolver(settlementDecisionSchema(cover, !creditLife)),
-    defaultValues: blankApproveDecision(),
-  });
+  } = form;
 
   // eslint-disable-next-line react-hooks/incompatible-library -- see RegisterClaimPage
   const approved = watch('approved');
@@ -150,7 +159,11 @@ export function ClaimSettlementPanel({
    */
   const [pending, setPending] = useState<SettlementDecisionFormValues | null>(null);
 
+  // Where an approved payment went, for the note that follows: finance (a transfer or cheque) or the provider.
+  const [sentToFinance, setSentToFinance] = useState(false);
+
   async function commit(values: SettlementDecisionFormValues) {
+    setSentToFinance(values.approved && (creditLife || values.method !== 'MOBILE_MONEY'));
     await decideSettlement(claimId, toApiRequest(values, creditLife), attempt);
     if (useClaimStore.getState().decidingSettlement[claimId]?.status === 'success') {
       setPending(null);
@@ -185,9 +198,23 @@ export function ClaimSettlementPanel({
           note={
             decided.status === 'REJECTED'
               ? 'A claims manager can reopen a rejected claim if new evidence arrives.'
-              : 'Disbursement settles asynchronously through the payment rail. The policy is now closed and reopening this claim will not reverse that.'
+              : sentToFinance
+                ? 'Sent to finance under Payments to make: they make the payment and record its reference, and the claim settles then. The policy is now closed and reopening this claim will not reverse that.'
+                : 'Sent to the mobile-money provider; the claim settles when it confirms the payment. The policy is now closed and reopening this claim will not reverse that.'
           }
         />
+      </div>
+    );
+  }
+
+  if (viewerAssessed) {
+    return (
+      <div className="p-4" role="note">
+        <p className="text-sm font-medium">Another claims manager decides this claim</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          You assessed it. Separation of duties keeps the person who weighed the evidence from also approving or
+          rejecting the payment, so the decision is someone else&rsquo;s.
+        </p>
       </div>
     );
   }
@@ -333,13 +360,12 @@ export function ClaimSettlementPanel({
               </p>
               <p className="mt-0.5 text-muted-foreground">
                 Finance makes the transfer to the lender&rsquo;s account and records it under Finance
-                &rarr; Bank transfers.
+                &rarr; Payments to make.
               </p>
             </div>
           ) : (
-            <FormField label="Payee reference" error={fieldError(errors, 'payeeRef')}>
-              <Input placeholder="Mobile-money destination" {...register('payeeRef')} />
-            </FormField>
+            // Only the approval branch renders this, so the route fields are on the form it holds.
+            <PayoutRouteFields form={form as unknown as UseFormReturn<PayoutRouteValues>} />
           )}
         </>
       ) : (
@@ -375,20 +401,27 @@ export function ClaimSettlementPanel({
               <>
                 Pay{' '}
                 <strong>
-                  {pending.approvedCurrency.toUpperCase()} {pending.approvedAmount}
+                  {formatMoney({ amount: pending.approvedAmount, currencyCode: pending.approvedCurrency.toUpperCase() })}
                 </strong>{' '}
-                to{' '}
                 {creditLife ? (
                   <>
+                    to{' '}
                     <strong>
                       {lenderPartyId ? <PartyName partyId={lenderPartyId} /> : 'the lender'}
                     </strong>{' '}
                     by bank transfer
                   </>
                 ) : (
-                  <strong>{pending.payeeRef}</strong>
+                  <>
+                    by <strong>{routeWords(routeBody(pending))}</strong>
+                  </>
                 )}
-                .
+                .{' '}
+                {/* Who moves the money next (2026-10-29): mobile money goes straight to the provider; a transfer or a
+                    cheque goes to finance, who make it and record its reference. */}
+                {creditLife || pending.method !== 'MOBILE_MONEY'
+                  ? 'It then goes to finance under Payments to make: they make it and record its reference, and the claim settles when they do.'
+                  : 'It is sent to the mobile-money provider now, and the claim settles when the provider confirms it.'}
               </>
             ) : (
               <>

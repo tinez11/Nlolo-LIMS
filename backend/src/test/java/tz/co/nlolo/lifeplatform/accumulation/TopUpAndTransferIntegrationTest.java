@@ -102,6 +102,9 @@ class TopUpAndTransferIntegrationTest {
             "db-migrations/product/V34__version_account_charges.sql",
             "db-migrations/product/V35__product_description.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
+            "db-migrations/accumulation/V9__withdrawal_rejection.sql",
+            "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
@@ -144,15 +147,20 @@ class TopUpAndTransferIntegrationTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V6__disbursement_method.sql",
             "db-migrations/payment/V7__q4_2026_partitions.sql",
             "db-migrations/payment/V8__benefit_payout_purposes.sql",
             "db-migrations/payment/V9__account_purposes.sql",
+            "db-migrations/payment/V17__manual_receipts.sql",
+            "db-migrations/payment/V18__payout_routes.sql",
+            "db-migrations/payment/V19__top_up_one_person.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
@@ -196,6 +204,7 @@ class TopUpAndTransferIntegrationTest {
     @Autowired private AccumulationTestFixtures fixtures;
     @Autowired private AccumulationApi api;
     @Autowired private AccumulationApiImpl impl;
+    @Autowired private tz.co.nlolo.lifeplatform.payment.application.Receipts receipts;
 
     private <T> T asTenant(java.util.function.Supplier<T> work) {
         TenantContext.set(TENANT);
@@ -206,7 +215,11 @@ class TopUpAndTransferIntegrationTest {
     void aTopUpIsCollectedThroughPaymentAndCreditedAtTheContributionRate() {
         var issued = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, LocalDate.now());
         var topUp = asTenant(() -> api.requestTopUp(issued.policyNumber(), new BigDecimal("20000.00"), "+255700000002", "staff-one"));
-        // The mock rail confirms synchronously; the confirmation reaches accumulation, not billing.
+        // Accepted is not paid (2026-10-27): nothing is credited until a second finance person confirms the money.
+        assertThat(asTenant(() -> api.entries(issued.policyNumber()))).isEmpty();
+        asTenant(() -> receipts.awaitingApproval().stream()
+            .map(r -> receipts.approve(r.receiptId(), "finance-approver")).toList());
+        // The confirmation reaches accumulation, not billing.
         assertThat(asTenant(() -> api.entries(issued.policyNumber())))
             .extracting(LedgerEntryView::type, e -> e.amount().toPlainString())
             .containsExactly(tuple(EntryType.TOP_UP, "20000.00"), tuple(EntryType.ALLOCATION_CHARGE, "-1000.00"));
@@ -214,6 +227,63 @@ class TopUpAndTransferIntegrationTest {
             .extracting(TopUpView::status).isEqualTo("COLLECTED");
         assertThat(asTenant(() -> api.entries(issued.policyNumber()))).allSatisfy(e ->
             assertThat(e.sourceRef()).isEqualTo("topup:" + topUp.topUpId()));
+    }
+
+    /**
+     * 2026-10-28, user decision: a top-up needs no second person. Money already received by hand is credited as soon as
+     * the person recording it has -- receipted by payment under its method and reference, confirmed by that same person.
+     */
+    @Test
+    void aCashTopUpIsCreditedAtOnceByThePersonWhoRecordsIt() {
+        var issued = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, LocalDate.now());
+        String reference = "RC-" + UUID.randomUUID();
+        var topUp = asTenant(() -> impl.recordTopUp(issued.policyNumber(), new BigDecimal("20000.00"), "CASH", reference,
+            LocalDate.now(), "Amina Owner", "staff-one"));
+        assertThat(asTenant(() -> api.entries(issued.policyNumber())))
+            .extracting(LedgerEntryView::type, e -> e.amount().toPlainString())
+            .containsExactly(tuple(EntryType.TOP_UP, "20000.00"), tuple(EntryType.ALLOCATION_CHARGE, "-1000.00"));
+        // Says how it came in, not "Top-up from —".
+        assertThat(asTenant(() -> api.entries(issued.policyNumber()))).first()
+            .extracting(LedgerEntryView::reason).isEqualTo("Top-up by cash, " + reference + " from Amina Owner");
+        assertThat(asTenant(() -> api.listTopUps(issued.policyNumber()))).first()
+            .satisfies(t -> {
+                assertThat(t.status()).isEqualTo("COLLECTED");
+                assertThat(t.method()).isEqualTo("CASH");
+                assertThat(t.reference()).isEqualTo(reference);
+            });
+        assertThat(ownerQuery("SELECT status || ' ' || method || ' ' || recorded_by || ' ' || decided_by "
+            + "FROM payment.payment_transaction WHERE source_ref = ?", topUp.topUpId().toString()))
+            .isEqualTo("CONFIRMED CASH staff-one staff-one");
+        // Nothing waits for a signature.
+        assertThat(asTenant(() -> receipts.awaitingApproval())).noneMatch(r -> reference.equals(r.reference()));
+    }
+
+    @Test
+    void aReceivedTopUpsReferenceIsCreditedOnlyOnce() {
+        var issued = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, LocalDate.now());
+        String reference = "SLIP-" + UUID.randomUUID();
+        asTenant(() -> impl.recordTopUp(issued.policyNumber(), new BigDecimal("20000.00"), "BANK_DEPOSIT", reference,
+            LocalDate.now(), null, "staff-one"));
+        assertThatThrownBy(() -> asTenant(() -> impl.recordTopUp(issued.policyNumber(), new BigDecimal("20000.00"),
+                "BANK_DEPOSIT", reference, LocalDate.now(), null, "staff-two")))
+            .isInstanceOf(AccumulationStateException.class)
+            .hasMessage("A top-up with this reference (" + reference + ") is already recorded");
+        assertThatThrownBy(() -> asTenant(() -> impl.recordTopUp(issued.policyNumber(), new BigDecimal("20000.00"),
+                "CASH", "RC-1", LocalDate.now().plusDays(1), null, "staff-one")))
+            .isInstanceOf(AccumulationStateException.class)
+            .hasMessage("Say the day the money was received; it cannot be later than today");
+    }
+
+    @Test
+    void aMobileMoneyTopUpMayBeConfirmedByWhoeverAskedForIt() {
+        var issued = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, LocalDate.now());
+        var topUp = asTenant(() -> api.requestTopUp(issued.policyNumber(), new BigDecimal("20000.00"), "+255700000002", "staff-one"));
+        // A receipt's "invoice" is its source: here the top-up.
+        asTenant(() -> receipts.awaitingApproval().stream()
+            .filter(r -> topUp.topUpId().equals(r.invoiceId()))
+            .map(r -> receipts.approve(r.receiptId(), "staff-one")).toList());
+        assertThat(asTenant(() -> api.listTopUps(issued.policyNumber()))).first()
+            .extracting(TopUpView::status).isEqualTo("COLLECTED");
     }
 
     @Test

@@ -33,6 +33,9 @@ import {
   type WithdrawalValues,
 } from './u2Forms';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { StaffName } from '@/components/StaffName';
+import { PayoutRouteFields } from '@/features/payments/PayoutRouteFields';
+import { BLANK_ROUTE, routeWords } from '@/features/payments/payoutRoute';
 
 /**
  * The U2 actions on a unit-linked policy's Units tab (product step 6): premium redirection, a fund switch, a partial
@@ -107,7 +110,7 @@ export function PremiumSplitPanel({ policyNumber, fundCodes }: { policyNumber: s
         <ul aria-label="Split history" className="space-y-0.5 text-xs text-muted-foreground">
           {history?.data?.slice(1).map((h) => (
             <li key={h.splitId}>
-              From {formatInstant(h.effectiveFrom)}: {h.shares.map((s) => `${s.fundCode} ${s.percent}%`).join(', ')} · by {h.recordedBy}
+              From {formatInstant(h.effectiveFrom)}: {h.shares.map((s) => `${s.fundCode} ${s.percent}%`).join(', ')} · by <StaffName subject={h.recordedBy} />
             </li>
           ))}
         </ul>
@@ -224,7 +227,7 @@ export function WithdrawalPanel({
   const form = useForm<WithdrawalValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(withdrawalSchema(minimum, currency)),
-    defaultValues: { grossAmount: '', funds: heldFunds.map((fundCode) => ({ fundCode, amount: '' })), payeeRef: '' },
+    defaultValues: { grossAmount: '', funds: heldFunds.map((fundCode) => ({ fundCode, amount: '' })), ...BLANK_ROUTE },
   });
   const live = (withdrawals?.data ?? []).find((w) => w.status === 'REQUESTED' || w.status === 'APPROVED');
   return (
@@ -246,10 +249,8 @@ export function WithdrawalPanel({
             <FormField label={`Gross amount (${currency})`} error={form.formState.errors.grossAmount?.message}>
               <Input inputSize="sm" inputMode="decimal" {...form.register('grossAmount')} />
             </FormField>
-            <FormField label="Pay to" error={form.formState.errors.payeeRef?.message}>
-              <Input inputSize="sm" placeholder="+255712345678" {...form.register('payeeRef')} />
-            </FormField>
           </div>
+          <PayoutRouteFields form={form} />
           <p className="text-xs text-muted-foreground">From named funds (optional; leave empty to sell from each fund in proportion):</p>
           <div className="flex flex-wrap gap-3">
             {heldFunds.map((code, i) => (
@@ -301,8 +302,8 @@ function WithdrawalCard({
   return (
     <div className="space-y-2 rounded-md border border-border p-3" aria-label="Withdrawal in progress">
       <p className="text-xs">
-        {m(withdrawal.grossAmount)} to {withdrawal.payeeRef}, requested by {withdrawal.requestedBy}
-        {withdrawal.approvedBy ? `, approved by ${withdrawal.approvedBy} — waiting for its price` : ''}.
+        {m(withdrawal.grossAmount)} by {routeWords(withdrawal)}, requested by <StaffName subject={withdrawal.requestedBy} />
+        {withdrawal.approvedBy && <>, approved by <StaffName subject={withdrawal.approvedBy} /> — waiting for its price</>}.
       </p>
       <dl className="grid grid-cols-2 gap-x-4 text-xs sm:grid-cols-4">
         <dt className="text-muted-foreground">Surrender charge ({withdrawal.chargePercent ?? '0'}%)</dt>
@@ -471,7 +472,7 @@ export function StatementsPanel({ policyNumber }: { policyNumber: string }) {
               <span className="text-sm">
                 {formatDate(s.periodFrom)} to {formatDate(s.periodTo)}
                 <span className="ml-2 text-xs text-muted-foreground">
-                  {s.kind === 'ANNUAL' ? 'Annual' : 'On demand'} · by {s.generatedBy}
+                  {s.kind === 'ANNUAL' ? 'Annual' : 'On demand'} · by <StaffName subject={s.generatedBy} />
                 </span>
               </span>
               <Button

@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { confirmRequestedPayments } from './payments';
 import { asAdmin } from './admin';
 import { dmy, todayIso } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
@@ -185,6 +186,8 @@ test.describe('unit-linked', () => {
       await pay.getByRole('button', { name: 'Request payment' }).click();
       await expect(admin.getByLabel('Payer reference')).not.toBeVisible({ timeout: 60_000 });
     });
+    // Paid once a second finance person confirms the money came (2026-10-27).
+    await confirmRequestedPayments(browser, policyUrl.split('/').pop()!);
 
     await expect(async () => {
       await page.goto(policyUrl);
@@ -207,7 +210,7 @@ test.describe('unit-linked', () => {
     // ---- A surrender: requested with no figure, approved by a second person, and the units wait to be sold.
     const surrender = page.getByRole('region', { name: 'Surrender' });
     await expect(surrender.getByText(/No figure is quoted/)).toBeVisible();
-    await surrender.getByLabel('Payee (mobile money or bank destination)').fill('+255700000781');
+    await surrender.getByLabel('Mobile-money number').fill('+255700000781');
     await surrender.getByRole('button', { name: 'Request surrender' }).click();
     await surrender.getByRole('button', { name: 'Record surrender request' }).click();
     await expect(surrender.getByText('Requested', { exact: true })).toBeVisible({ timeout: 15_000 });

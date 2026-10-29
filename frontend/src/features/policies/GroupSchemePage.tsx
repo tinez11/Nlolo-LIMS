@@ -2,7 +2,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, Upload, UserPlus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm, useWatch, Controller } from 'react-hook-form';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
+import { useSearchParamsKeepingTrail } from '@/lib/cameFrom';
 import { DEFAULT_MEMBER_PAGE_SIZE } from '@/api/policies';
 import type { BenefitBasis, GroupSchemeView, MemberStatus, PolicyMemberView } from '@/api/types';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
@@ -58,7 +59,7 @@ import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
  */
 export function GroupSchemePage() {
   const { policyNumber = '' } = useParams();
-  const [params, setParams] = useSearchParams();
+  const [params, setParams] = useSearchParamsKeepingTrail();
   const [addOpen, setAddOpen] = useState(false);
 
   const statusParam = params.get('status');

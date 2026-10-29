@@ -102,15 +102,21 @@ class PaymentContractTest {
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             // Needed for the webhook tests: the SECURITY DEFINER tenant-resolution functions
             // PaymentApiImpl.applyGatewayCallback calls to bootstrap TenantContext from a callback
             // that carries no bearer token at all.
             "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
+            // IN_DOUBT, which the payments register opens on (2026-10-27).
+            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
             "db-migrations/payment/V6__disbursement_method.sql",
             "db-migrations/payment/V7__q4_2026_partitions.sql",
             "db-migrations/payment/V8__benefit_payout_purposes.sql",
-            "db-migrations/payment/V9__account_purposes.sql");
+            "db-migrations/payment/V9__account_purposes.sql",
+            "db-migrations/payment/V17__manual_receipts.sql",
+            "db-migrations/payment/V18__payout_routes.sql",
+            "db-migrations/payment/V19__top_up_one_person.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -533,5 +539,87 @@ class PaymentContractTest {
         DisbursementInstruction untouched = disbursementRepository
             .findByGatewayReferenceAndTenantId(gatewayReference, tenantId).orElseThrow();
         assertThat(untouched.getStatus()).isEqualTo("PENDING");
+    }
+
+    // --- GET /payments: the register (2026-10-27) -----------------------------------------------
+
+    /** A premium that came in for POL-REG-1, left IN_DOUBT by the rail; returns the collection's id. */
+    private UUID seedInDoubtPremium(UUID tenantId) throws Exception {
+        PaymentTransaction transaction = new PaymentTransaction(tenantId, "register-in-" + UUID.randomUUID(),
+            "+255700000101", new BigDecimal("1500.00"), "TZS", "invoice-register-1");
+        transaction.notePolicy("POL-REG-1");
+        paymentTransactionRepository.save(transaction);
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement update = connection.prepareStatement(
+                 "UPDATE payment.payment_transaction SET status = 'IN_DOUBT' WHERE payment_transaction_id = ?")) {
+            update.setObject(1, transaction.getPaymentTransactionId());
+            assertThat(update.executeUpdate()).isEqualTo(1);
+        }
+        return transaction.getPaymentTransactionId();
+    }
+
+    @Test
+    void theRegisterListsMoneyInAndOutAndOpensOnWhatNeedsAttention() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID inDoubt = seedInDoubtPremium(tenantId);
+        seedClaimPayout(tenantId, UUID.randomUUID().toString(), "MOBILE_MONEY", "FAILED");
+        seedClaimPayout(tenantId, UUID.randomUUID().toString(), "EFT", "COMPLETED");
+
+        mockMvc.perform(get("/payments").with(staffOf(tenantId, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "PaymentRegisterPage"))
+            .andExpect(jsonPath("$.page.totalElements").value(3));
+
+        // The stuck and the failed, from both ledgers, and nothing that finished.
+        mockMvc.perform(get("/payments").param("state", "attention").with(staffOf(tenantId, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.page.totalElements").value(2))
+            .andExpect(jsonPath("$.items[?(@.direction == 'IN')].status").value(org.hamcrest.Matchers.contains("IN_DOUBT")))
+            .andExpect(jsonPath("$.items[?(@.direction == 'OUT')].status").value(org.hamcrest.Matchers.contains("FAILED")));
+
+        // One policy's money: the premium recorded with its policy number.
+        mockMvc.perform(get("/payments").param("policyNumber", "POL-REG-1").with(staffOf(tenantId, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.page.totalElements").value(1))
+            .andExpect(jsonPath("$.items[0].id").value(inDoubt.toString()))
+            .andExpect(jsonPath("$.items[0].amount.amount").value("1500.00"))
+            .andExpect(jsonPath("$.items[0].counterparty").value("+255700000101"));
+
+        mockMvc.perform(get("/payments").param("direction", "OUT").with(staffOf(tenantId, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.page.totalElements").value(2));
+    }
+
+    @Test
+    void theRegisterIsRefusedToSomeoneWhoReadsNeitherSideOfTheMoney() throws Exception {
+        mockMvc.perform(get("/payments").with(staffOf(UUID.randomUUID(), "UNDERWRITER")))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void theRegisterNeverShowsAnotherTenantsMoney() throws Exception {
+        UUID mine = UUID.randomUUID();
+        seedInDoubtPremium(UUID.randomUUID());
+        mockMvc.perform(get("/payments").with(staffOf(mine, "FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.page.totalElements").value(0));
+    }
+
+    // --- Receipts (2026-10-27): who may record and who may confirm --------------------------------
+
+    @Test
+    void recordingAReceiptIsFinancesAndConfirmingOneIsTheApprovers() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String body = "{\"invoiceId\":\"" + UUID.randomUUID() + "\",\"method\":\"CASH\",\"reference\":\"CR-1\","
+            + "\"amount\":{\"amount\":\"100.00\",\"currencyCode\":\"TZS\"},\"receivedOn\":\"2026-10-27\"}";
+        mockMvc.perform(post("/receipts").contentType(MediaType.APPLICATION_JSON).content(body)
+                .with(staffOf(tenantId, "UNDERWRITER")))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/receipts/" + UUID.randomUUID() + "/approval").with(staffOf(tenantId, "CUSTOMER_SERVICE_REP")))
+            .andExpect(status().isForbidden());
+        // A finance officer may ask: an unknown receipt is a 404, not a refusal of the role.
+        mockMvc.perform(post("/receipts/" + UUID.randomUUID() + "/approval").with(staffOf(tenantId, "FINANCE_OFFICER")))
+            .andExpect(status().isNotFound());
     }
 }

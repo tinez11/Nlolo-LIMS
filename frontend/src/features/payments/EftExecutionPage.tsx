@@ -2,12 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AwaitingEftView } from '@/api/types';
 import { ConfirmAct } from '@/components/ConfirmAct';
+import { Receipt } from '@/components/Receipt';
 import { DataTable, type Column } from '@/components/DataTable';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyName } from '@/components/PartyName';
 import { humanizeStatus } from '@/lib/status';
 import { transferVerdict } from './transferVerdict';
 import { useTransferContexts } from './useTransferContexts';
+import { describeRoute } from './payoutRoute';
+import { methodWords, purposeWords } from './paymentWords';
 import { CountLine, type Stat } from '@/components/StatCards';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -18,7 +21,8 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectAwaitingEft, selectExecuting, usePaymentStore } from '@/store/paymentStore';
 
 /**
- * Bank transfers waiting on a person.
+ * Payments waiting on a person: bank transfers, and since 2026-10-28 cheques -- every payout the platform cannot make
+ * itself. Each row carries the account to pay into, so nobody goes looking for it in another system.
  *
  * ## Why this screen has to exist
  *
@@ -59,6 +63,9 @@ export function EftExecutionPage() {
   const [confirming, setConfirming] = useState<AwaitingEftView | null>(null);
   const [bankReference, setBankReference] = useState('');
   const [executingId, setExecutingId] = useState<string | null>(null);
+  // What was just recorded, so finance is told it went through and what it settled (2026-10-29): the row used to
+  // simply vanish from the queue.
+  const [paid, setPaid] = useState<{ row: AwaitingEftView; reference: string } | null>(null);
   const executeState = usePaymentStore(
     selectExecuting(executingId ?? confirming?.disbursementId ?? ''),
   );
@@ -68,9 +75,10 @@ export function EftExecutionPage() {
   }, [loadAwaitingEft]);
 
   const rows = useMemo(() => queue.data ?? [], [queue.data]);
+  const cheque = confirming?.method === 'CHEQUE';
 
   const count: Stat = {
-    label: rows.length === 1 ? 'transfer to make' : 'transfers to make',
+    label: rows.length === 1 ? 'payment to make' : 'payments to make',
     value: queue.data ? rows.length : null,
     pending: isInitialLoad(queue),
     hint: queue.status === 'error' && !queue.data ? 'could not load' : 'none of this money has moved',
@@ -101,6 +109,11 @@ export function EftExecutionPage() {
           <span className="inline-flex flex-col gap-0.5">
             <span className="font-medium">
               {verdict?.lenderPartyId ? <PartyName partyId={verdict.lenderPartyId} /> : d.payeeRef}
+            </span>
+            {/* How, and where to: the bank account fields, or the cheque. */}
+            <span className="text-xs text-muted-foreground">
+              {methodWords(d.method)}
+              {d.method === 'EFT' && d.payeeAccountNumber ? ` · ${describeRoute(d)}` : ''}
             </span>
             {verdict?.notes.map((note) => (
               <span key={note} className="text-xs text-status-warning-fg">
@@ -155,7 +168,7 @@ export function EftExecutionPage() {
       header: 'Purpose',
       secondary: true,
       render: (d) =>
-        d.purpose ? humanizeStatus(d.purpose) : <span className="text-subtle-foreground">—</span>,
+        d.purpose ? purposeWords(d.purpose) : <span className="text-subtle-foreground">—</span>,
     },
     {
       key: 'waitingSince',
@@ -208,10 +221,10 @@ export function EftExecutionPage() {
     if (rows.length === 0 && queue.status === 'success') {
       return (
         <EmptyState
-          title="Nothing is waiting on a transfer"
+          title="No payments to make"
           // Said as a fact about the queue, not as congratulation: an empty queue here and an
           // unreachable backend look identical to somebody who has been told a claim was settled.
-          description="Every payout instructed by bank transfer has been recorded as made. A credit-life claim settlement appears here the moment it is approved."
+          description="Every payout by bank transfer or cheque has been recorded as made. One appears here the moment it is approved."
         />
       );
     }
@@ -228,7 +241,7 @@ export function EftExecutionPage() {
           columns={columns}
           rows={rows}
           rowKey={(d) => d.disbursementId}
-          caption="Bank transfers awaiting execution"
+          caption="Payments to make by hand"
         />
       </>
     );
@@ -237,8 +250,8 @@ export function EftExecutionPage() {
   return (
     <>
       <PageHeader
-        title="Bank transfers"
-        description="Payouts instructed by bank transfer, oldest first. The platform cannot make these: make the transfer in the bank, then press Record payment made. That settles the claim, takes the borrower off the scheme dated to their death, updates the scheme's totals and books the expense."
+        title="Payments to make"
+        description="Payouts by bank transfer or cheque, oldest first. The platform cannot make these: make the transfer in the bank or write the cheque, then press Record payment made with its reference. That completes the claim, withdrawal or payout it pays, and books it to the ledger."
         count={<CountLine {...count} />}
       />
 
@@ -250,7 +263,7 @@ export function EftExecutionPage() {
           {confirming && (
             <div className="border-b border-border px-3 py-2.5">
               <ConfirmAct
-                heading="Has this transfer been made?"
+                heading={cheque ? 'Has this cheque been written?' : 'Has this transfer been made?'}
                 // The real values. This is a statement about specific money that has specifically
                 // already left the insurer's account.
                 consequence={
@@ -263,23 +276,29 @@ export function EftExecutionPage() {
                         confirming.payeeRef
                       )}
                     </strong>
-                    . The claim settles; the borrower leaves the scheme, dated to their death; the
-                    scheme&rsquo;s member count and cover drop by them; and the expense is booked
-                    to the ledger.
+                    {cheque ? ' by cheque' : ` into ${describeRoute(confirming)}`}.{' '}
+                    {confirming.purpose === 'CLAIM_SETTLEMENT'
+                      ? 'The claim settles; on a scheme the borrower leaves it, dated to their death, and its member count and cover drop by them; and the expense is booked to the ledger.'
+                      : `The ${purposeWords(confirming.purpose ?? '').toLowerCase()} is marked paid and booked to the ledger.`}
                   </>
                 }
                 // True, and checked: there is no endpoint that un-executes a disbursement.
                 reversal="Nothing here can undo it. If the transfer did not happen, the correction is a manual journal and a new instruction."
-                confirmLabel="Record the transfer"
+                confirmLabel={cheque ? 'Record the cheque' : 'Record the transfer'}
                 tone="danger"
                 busy={executeState.status === 'loading'}
                 confirmDisabled={bankReference.trim() === ''}
                 onConfirm={() => {
                   const id = confirming.disbursementId;
                   const reference = bankReference.trim();
+                  const row = confirming;
                   setConfirming(null);
+                  setPaid(null);
                   setExecutingId(id);
-                  void markExecuted(id, reference).finally(() => setExecutingId(null));
+                  void markExecuted(id, reference).finally(() => {
+                    setExecutingId(null);
+                    if (usePaymentStore.getState().executing[id]?.status === 'success') setPaid({ row, reference });
+                  });
                 }}
                 onCancel={() => setConfirming(null)}
               >
@@ -290,7 +309,7 @@ export function EftExecutionPage() {
                     is also what a screen reader wants: the name is what to type, the description
                     is why. */}
                 <label htmlFor="eft-bank-reference" className="block text-xs font-medium">
-                  Bank reference
+                  {cheque ? 'Cheque number' : 'Bank reference'}
                 </label>
                 <input
                   id="eft-bank-reference"
@@ -301,8 +320,9 @@ export function EftExecutionPage() {
                   autoFocus
                 />
                 <p id="eft-bank-reference-hint" className="mt-1 text-xs text-muted-foreground">
-                  The bank&rsquo;s own reference for the transfer. Without it this is a claim
-                  marked paid that nobody can trace.
+                  {cheque
+                    ? 'The number printed on the cheque. Without it this is a payment marked made that nobody can trace.'
+                    : 'The bank’s own reference for the transfer. Without it this is a payment marked made that nobody can trace.'}
                 </p>
               </ConfirmAct>
               {/* The button is held AND the reason is stated. A disabled control with no
@@ -310,9 +330,38 @@ export function EftExecutionPage() {
                   reference anyway, so this is the same rule said earlier rather than a new one. */}
               {bankReference.trim() === '' && (
                 <p className="mt-1 text-xs text-status-danger-fg">
-                  A bank reference is required before this can be recorded.
+                  {cheque ? 'A cheque number' : 'A bank reference'} is required before this can be recorded.
                 </p>
               )}
+            </div>
+          )}
+
+          {paid && (
+            <div className="border-b border-border px-3 py-2.5">
+              <Receipt
+                heading="Payment recorded"
+                lines={[
+                  { label: 'Paid', value: formatMoney(paid.row.amount) },
+                  { label: 'To', value: paid.row.payeeRef },
+                  ...(paid.row.method === 'EFT' && paid.row.payeeAccountNumber
+                    ? [{ label: 'Account', value: describeRoute(paid.row) }]
+                    : []),
+                  { label: 'For', value: purposeWords(paid.row.purpose ?? '') },
+                  { label: paid.row.method === 'CHEQUE' ? 'Cheque number' : 'Bank reference', value: paid.reference },
+                ]}
+                note={
+                  paid.row.purpose === 'CLAIM_SETTLEMENT'
+                    ? 'The claim is settled and the expense is booked to the ledger.'
+                    : paid.row.purpose === 'WITHDRAWAL_PAYOUT'
+                      ? 'The withdrawal is marked paid on the policy’s account.'
+                      : 'The payout is marked paid and booked to the ledger.'
+                }
+                onward={
+                  <Button size="sm" variant="ghost" onClick={() => setPaid(null)}>
+                    Done
+                  </Button>
+                }
+              />
             </div>
           )}
 

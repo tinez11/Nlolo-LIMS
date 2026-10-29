@@ -1,4 +1,6 @@
+import type { ReactNode } from 'react';
 import { can } from '@/auth/access';
+import { StaffName } from '@/components/StaffName';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useWatch } from 'react-hook-form';
 import type { DepositPeriodView, DepositView } from '@/api/types';
@@ -8,12 +10,20 @@ import { InlineError } from '@/components/InlineError';
 import { DepositScheduleDownload } from '@/features/documents/DepositScheduleDownload';
 import { EmptyState } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { Input, Select } from '@/components/ui/input';
+import { Select } from '@/components/ui/input';
 import { formatDate } from '@/lib/dates';
 import { startMutation } from '@/lib/idempotency';
 import { formatMoney } from '@/lib/money';
 import { useAccumulationStore } from '@/store/accumulationStore';
-import { instructionSchema, payeeSchema, toInstructionBody, type InstructionValues, type PayeeValues } from './depositForms';
+import { instructionSchema, toInstructionBody, type InstructionValues } from './depositForms';
+import { PayoutRouteFields } from '@/features/payments/PayoutRouteFields';
+import {
+  BLANK_ROUTE,
+  payoutRouteSchema,
+  routeBody,
+  routeWords,
+  type PayoutRouteValues,
+} from '@/features/payments/payoutRoute';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
 type DepositSchedule = NonNullable<DepositView['schedule']>;
@@ -134,13 +144,20 @@ export function DepositSection({ deposit, isFinance }: { deposit: DepositView; i
   );
 }
 
-function describeInstruction(deposit: DepositView): string {
+function describeInstruction(deposit: DepositView): ReactNode {
   const fallback = deposit.defaultPayeeRef ?? 'a payee finance records';
   const current = deposit.instruction;
   if (!current) return `No instruction: it will be paid out to ${fallback}.`;
-  return current.action === 'REINVEST'
-    ? `Reinvest for ${current.termMonths} months (recorded by ${current.recordedBy}).`
-    : `Pay out to ${current.payeeRef ?? fallback} (recorded by ${current.recordedBy}).`;
+  return (
+    <>
+      {current.action === 'REINVEST'
+        ? `Reinvest for ${current.termMonths} months`
+        : current.payeeRef
+          ? `Pay out by ${routeWords(current)}`
+          : `Pay out to ${fallback}`}{' '}
+      (recorded by <StaffName subject={current.recordedBy} />).
+    </>
+  );
 }
 
 function MaturityPanel({ deposit }: { deposit: DepositView }) {
@@ -149,7 +166,7 @@ function MaturityPanel({ deposit }: { deposit: DepositView }) {
   const form = useForm<InstructionValues>({
     ...VALIDATE_ON_TOUCH,
     resolver: zodResolver(instructionSchema),
-    defaultValues: { action: 'PAY_OUT', termMonths: '', payeeRef: '' },
+    defaultValues: { action: 'PAY_OUT', termMonths: '', ...BLANK_ROUTE },
   });
   const action = useWatch({ control: form.control, name: 'action' });
   const errors = form.formState.errors;
@@ -162,7 +179,7 @@ function MaturityPanel({ deposit }: { deposit: DepositView }) {
     >
       <p className="text-xs font-medium text-muted-foreground">At maturity</p>
       <p className="text-sm">{describeInstruction(deposit)}</p>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <FormField label="What should happen" error={errors.action?.message}>
           <Select inputSize="sm" {...form.register('action')}>
             <option value="PAY_OUT">Pay out</option>
@@ -180,12 +197,11 @@ function MaturityPanel({ deposit }: { deposit: DepositView }) {
               ))}
             </Select>
           </FormField>
-        ) : (
-          <FormField label="Pay to (blank: the number it came from)" error={errors.payeeRef?.message}>
-            <Input inputSize="sm" {...form.register('payeeRef')} />
-          </FormField>
-        )}
+        ) : null}
       </div>
+      {action === 'PAY_OUT' && (
+        <PayoutRouteFields form={form} numberHint="Leave it blank to pay the number the deposit came from." />
+      )}
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <Button type="submit" size="sm" disabled={acting?.status === 'loading'}>
         Record instruction
@@ -197,22 +213,20 @@ function MaturityPanel({ deposit }: { deposit: DepositView }) {
 function PayeePanel({ policyNumber }: { policyNumber: string }) {
   const payOut = useAccumulationStore((s) => s.payOutDeposit);
   const acting = useAccumulationStore((s) => s.acting[`depositPayout.${policyNumber}`]);
-  const form = useForm<PayeeValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(payeeSchema), defaultValues: { payeeRef: '' } });
+  const form = useForm<PayoutRouteValues>({ ...VALIDATE_ON_TOUCH, resolver: zodResolver(payoutRouteSchema), defaultValues: BLANK_ROUTE });
 
   return (
     <form
       className="space-y-3 rounded-md border border-border p-3"
       aria-label="Record payee and pay"
-      onSubmit={form.handleSubmit((values) => void payOut(policyNumber, values.payeeRef, startMutation()))}
+      onSubmit={form.handleSubmit((values) => void payOut(policyNumber, routeBody(values), startMutation()))}
     >
       <p className="text-sm">This deposit has matured and there is no number to pay it to.</p>
-      <FormField label="Pay to" error={form.formState.errors.payeeRef?.message}>
-        <Input inputSize="sm" {...form.register('payeeRef')} />
-      </FormField>
+      <PayoutRouteFields form={form} />
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       {acting?.status === 'success' && (
         <p className="text-xs text-muted-foreground" role="status">
-          The payment has been requested from the provider.
+          The payment has been requested. A bank transfer or cheque waits under Payments to make.
         </p>
       )}
       <Button type="submit" size="sm" disabled={acting?.status === 'loading'}>

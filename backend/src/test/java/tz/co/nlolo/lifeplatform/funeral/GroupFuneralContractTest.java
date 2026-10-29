@@ -151,8 +151,10 @@ class GroupFuneralContractTest {
             .andExpect(jsonPath("$.status").value("EXITED"))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
 
-        // A family joins on an underwriter's word, as any member does; staff alone may not.
-        mockMvc.perform(as(post("/group-schemes/" + policyNumber + "/families"), "REALM_STAFF")
+        // A family joins on an underwriter's word, as any member does; other staff may not. Customer service sees schemes
+        // but does not manage them (schemes.manage, 2026-10-26). Not a role-less token: the test suite reads access from
+        // the token (pom app.access.source=token), where a staff token naming no known role holds every permission.
+        mockMvc.perform(as(post("/group-schemes/" + policyNumber + "/families"), "REALM_STAFF", "CUSTOMER_SERVICE_REP")
                 .contentType(MediaType.APPLICATION_JSON).content("{\"lives\":[]}"))
             .andExpect(status().isForbidden());
     }

@@ -142,6 +142,12 @@ public class YearEndCloses {
 
     /** The year's closes, newest first. */
     @Transactional
+    /** Every close awaiting its approver, any year, oldest first: the approvals queue (2026-10-27). */
+    public List<YearEndCloseView> awaitingApproval() {
+        return jdbc.query("SELECT * FROM finaccounting.year_end_close WHERE tenant_id = ? AND status = 'PREPARED'"
+            + " ORDER BY prepared_at", this::row, TenantContext.get()).stream().map(this::view).toList();
+    }
+
     public List<YearEndCloseView> list(int year) {
         requireYear(year);
         return jdbc.query("SELECT * FROM finaccounting.year_end_close WHERE tenant_id = ? AND year = ?"

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { confirmRequestedPayments } from './payments';
 import { asAdmin } from './admin';
 import { dmy } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
@@ -91,6 +92,8 @@ test.describe('a fixed-term deposit', () => {
     // 60s, as issuance gets: the request answers only after the whole AFTER_COMMIT chain -- payment,
     // the mock rail's confirmation, billing, and the deposit's credit -- has run on its thread.
     await expect(page.getByLabel('Payer reference')).not.toBeVisible({ timeout: 60_000 });
+    // Paid once a second finance person confirms the money came (2026-10-27).
+    await confirmRequestedPayments(browser, policyNumber);
 
     // Credited once payment confirms it, and the first term opens -- a poll, not a timing guess.
     await expect(async () => {
