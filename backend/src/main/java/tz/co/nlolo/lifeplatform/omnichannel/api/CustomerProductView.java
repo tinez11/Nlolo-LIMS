@@ -82,11 +82,12 @@ public record CustomerProductView(UUID productId, String productName, String cat
      * @param paidByYear what has been paid by each policy year end, on the same terms
      * @param deposit a deposit's answer; null for every other kind
      * @param funeral the family priced person by person; empty for every other kind
+     * @param savings a savings account's rate and minimum; null for every other kind
      */
     public record Quote(UUID productId, String productName, String kind, String currency, BigDecimal sumAssured,
                         String frequency, BigDecimal instalment, BigDecimal yearly, Integer ageAtEntry, Integer termYears,
                         BigDecimal totalOverTerm, List<PaidByYear> paidByYear, DepositAnswer deposit,
-                        List<FuneralLine> funeral) {
+                        List<FuneralLine> funeral, SavingsAnswer savings) {
         public Quote {
             paidByYear = paidByYear != null ? List.copyOf(paidByYear) : List.of();
             funeral = funeral != null ? List.copyOf(funeral) : List.of();
@@ -103,6 +104,12 @@ public record CustomerProductView(UUID productId, String productName, String cat
             offeredTermMonths = offeredTermMonths != null ? List.copyOf(offeredTermMonths) : List.of();
         }
     }
+
+    /**
+     * A savings account's answer (2026-10-29): the rate it earns today -- max(latest approved declaration, the version's
+     * guarantee), the rate the valuer credits -- the guarantee it never falls below, and the balance it must keep.
+     */
+    public record SavingsAnswer(BigDecimal ratePercent, BigDecimal guaranteedRatePercent, BigDecimal minimumBalance) {}
 
     public record FuneralLine(String role, String name, int age, BigDecimal benefit, BigDecimal yearlyPremium) {}
 

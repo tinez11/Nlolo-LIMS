@@ -34,7 +34,7 @@ const annuity: CustomerProduct = {
 const termQuote: CustomerQuote = {
   productId: 'p-term', productName: 'Online Term Cover', kind: 'PROTECTION', currency: 'TZS', sumAssured: 10000000,
   frequency: 'MONTHLY', instalment: 18500, yearly: 222000, ageAtEntry: 30, termYears: 10, totalOverTerm: 2220000,
-  paidByYear: [], deposit: null, funeral: [],
+  paidByYear: [], deposit: null, funeral: [], savings: null,
 };
 
 function renderAt(path: string) {

@@ -16,6 +16,14 @@ describe('the questions a product asks', () => {
     expect(stepsFor(product('FUNERAL'))).toEqual(['plan', 'family', 'frequency']);
   });
 
+  it('asks a savings account how often only when the customer saves regularly', () => {
+    expect(stepsFor(product('SAVINGS_ACCOUNT'))).toEqual(['saveHow', 'amount']);
+    expect(stepsFor(product('SAVINGS_ACCOUNT'), { saveHow: 'REGULAR' })).toEqual(['saveHow', 'amount', 'frequency']);
+    expect(quoteRequest(product('SAVINGS_ACCOUNT'), { saveHow: 'ONCE', amount: 100_000, frequency: 'MONTHLY' }))
+      .toEqual({ amount: 100_000, frequency: null, termYears: null });
+    expect(amountChoices(product('SAVINGS_ACCOUNT', { minAmount: 50_000 }))).toEqual([50_000, 100_000, 500_000, 1_000_000]);
+  });
+
   it('offers amounts and years inside what the version allows', () => {
     expect(amountChoices(product('PROTECTION', { minAmount: 6_000_000, maxAmount: 30_000_000 }))).toEqual([10_000_000, 20_000_000]);
     expect(yearChoices(product('PROTECTION', { minTermYears: 3, maxTermYears: 12 }))).toEqual([5, 10]);

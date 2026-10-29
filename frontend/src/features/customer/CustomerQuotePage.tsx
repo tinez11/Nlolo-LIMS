@@ -65,7 +65,7 @@ export function CustomerQuotePage() {
     );
   }
 
-  const steps = stepsFor(product);
+  const steps = stepsFor(product, answers);
   const step = steps[at]!;
   const set = (patch: Partial<Answers>) => { setAnswers((a) => ({ ...a, ...patch })); setError(null); };
 
@@ -145,8 +145,28 @@ function StepScreen({ step, product, answers, set, w, icon }: {
 }) {
   const currency = product.currency;
   switch (step) {
+    case 'saveHow':
+      return (
+        <Question icon={icon} title={w.saveHow} help={w.saveHowHelp}>
+          <div role="radiogroup" aria-label={w.saveHow} className="grid gap-2.5">
+            {(['ONCE', 'REGULAR'] as const).map((how) => (
+              <Choice key={how} label={w[how][0]} note={w[how][1]} selected={answers.saveHow === how}
+                onSelect={() => set({ saveHow: how })} />
+            ))}
+          </div>
+        </Question>
+      );
     case 'amount': {
       const deposit = product.kind === 'DEPOSIT';
+      if (product.kind === 'SAVINGS_ACCOUNT') {
+        return (
+          <Question icon={icon} title={answers.saveHow === 'REGULAR' ? w.amountSavingsRegular : w.amountSavings}
+            help={w.amountSavingsHelp(money(product.terms.minAmount, currency))}>
+            <AmountAnswer choices={amountChoices(product)} currency={currency} value={answers.amount}
+              onChange={(amount) => set({ amount })} other={w.otherAmount} />
+          </Question>
+        );
+      }
       return (
         <Question icon={icon}
           title={deposit ? w.amountDeposit : product.kind === 'CASH_VALUE' ? w.amountSave : w.amountProtect}
@@ -292,7 +312,13 @@ function Answer({ quote, w }: { quote: CustomerQuote; w: Words['quote'] }) {
         </p>
       ) : (
         <dl className="hero-scope grid grid-cols-1 gap-4 rounded-2xl bg-hero p-5 sm:grid-cols-2" role="status">
-          {quote.kind === 'DEPOSIT' ? (
+          {quote.kind === 'SAVINGS_ACCOUNT' && quote.savings ? (
+            <>
+              <Figure label={w.youPutIn} value={money(quote.instalment, c)} note={often} />
+              <Figure label={w.earns} value={w.perYear(String(quote.savings.ratePercent ?? '—'))}
+                note={quote.savings.guaranteedRatePercent != null ? w.neverLess(String(quote.savings.guaranteedRatePercent)) : ''} />
+            </>
+          ) : quote.kind === 'DEPOSIT' ? (
             <>
               <Figure label={w.youDeposit} value={money(quote.sumAssured, c)} note={often} />
               <Figure label={w.youGetBack} value={money(d?.maturityValue, c)} note={d?.maturityDate ? w.onDate(formatDate(d.maturityDate)) : ''} />

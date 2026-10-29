@@ -1128,7 +1128,7 @@ components:
       type: object
       additionalProperties: false
       required: [productId, productName, kind, currency, sumAssured, frequency, instalment, yearly, ageAtEntry, termYears,
-        totalOverTerm, paidByYear, deposit, funeral]
+        totalOverTerm, paidByYear, deposit, funeral, savings]
       properties:
         productId: { type: string, format: uuid }
         productName: { type: string }
@@ -1175,6 +1175,15 @@ components:
               age: { type: integer }
               benefit: { type: number }
               yearlyPremium: { type: number }
+        savings:
+          description: A savings account's rate and minimum; null for every other kind.
+          type: [object, "null"]
+          additionalProperties: false
+          required: [ratePercent, guaranteedRatePercent, minimumBalance]
+          properties:
+            ratePercent: { type: [number, "null"], description: "Earned today, % a year: the declared rate, never below the guarantee" }
+            guaranteedRatePercent: { type: [number, "null"], description: "The least it ever earns, % a year" }
+            minimumBalance: { type: [number, "null"], description: "The least the account keeps; the first payment must reach it" }
     CustomerApplication:
       type: object
       additionalProperties: false

@@ -79,6 +79,7 @@ class CustomerSelfServiceIntegrationTest {
     @Autowired private UnderwritingApi underwritingApi;
     @Autowired private AccumulationTestFixtures deposits;
     @Autowired private FuneralTestFixtures funerals;
+    @Autowired private tz.co.nlolo.lifeplatform.policy.api.PolicyApi policyApi;
 
     private static <T> T asTenant(Supplier<T> work) {
         TenantContext.set(TENANT);
@@ -135,6 +136,75 @@ class CustomerSelfServiceIntegrationTest {
         assertThat(opened.premiumFrequency()).isEqualTo("SINGLE");
         assertThat(opened.requestedTermMonths()).isEqualTo(12);
         assertThat(opened.source()).isEqualTo(tz.co.nlolo.lifeplatform.underwriting.api.CaseSource.CUSTOMER_ONLINE);
+    }
+
+    /**
+     * A savings account (2026-10-29, the user): opened with one deposit, at least the minimum balance, priced at the rate
+     * it earns -- and, once accepted, billed exactly that deposit once. Before this an account issued from a case was
+     * billed as cover: sum assured x a base rate.
+     */
+    @Test
+    void aSavingsAccountOpensWithOneDepositAndIsBilledExactlyThat() throws Exception {
+        UUID productId = asTenant(() -> {
+            var product = productApi.createProduct("SAVE-ONLINE-" + UUID.randomUUID().toString().substring(0, 6),
+                "Online Savings", ProductCategory.ENDOWMENT, PortfolioCode.SAV, "TZS", "actuary");
+            productApi.publishVersion(product.productId(), tz.co.nlolo.lifeplatform.product.api.IfrsMeasurementModel.GMM,
+                TODAY.minusDays(1), null,
+                List.of(new ProductApi.RatingFactorInput(tz.co.nlolo.lifeplatform.product.api.FactorType.AGE, "18-70",
+                        BigDecimal.ONE, 18, 70),
+                    new ProductApi.RatingFactorInput(tz.co.nlolo.lifeplatform.product.api.FactorType.SUM_ASSURED_BAND,
+                        "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(tz.co.nlolo.lifeplatform.product.api.BenefitType.DEATH,
+                    tz.co.nlolo.lifeplatform.product.api.BenefitCalculationMethod.SUM_ASSURED)),
+                null, List.of(), tz.co.nlolo.lifeplatform.product.api.EligibilityBounds.none(),
+                tz.co.nlolo.lifeplatform.product.api.FrequencyLoading.none(), tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING,
+                tz.co.nlolo.lifeplatform.product.api.CashValuePlan.none(),
+                tz.co.nlolo.lifeplatform.product.api.PayoutPlan.authored(
+                    new tz.co.nlolo.lifeplatform.product.api.PayoutTerms(15, null, null, null),
+                    List.of(new tz.co.nlolo.lifeplatform.product.api.PayoutRowInput(
+                        tz.co.nlolo.lifeplatform.product.api.PayoutKind.MATURITY, null, null,
+                        tz.co.nlolo.lifeplatform.product.api.PayoutAmountBasis.ACCOUNT_VALUE, new BigDecimal("100"), null))),
+                AccumulationTestFixtures.SAVINGS, "actuary");
+            productApi.describeOnline(product.productId(), true, "Put money aside and earn interest", List.of());
+            return product.productId();
+        });
+        UUID me = funerals.person(TENANT, 33, Sex.FEMALE);
+
+        mockMvc.perform(customer(get("/customer/products"), me))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$[?(@.productId == '" + productId + "')].kind").value("SAVINGS_ACCOUNT"))
+            .andExpect(jsonPath("$[?(@.productId == '" + productId + "')].online").value(true))
+            .andExpect(jsonPath("$[?(@.productId == '" + productId + "')].terms.minAmount").value(50000.0));
+
+        // Below the minimum balance: refused in the customer's words.
+        mockMvc.perform(customer(post("/customer/products/" + productId + "/quote"), me)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"amount\":40000}"))
+            .andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(customer(post("/customer/products/" + productId + "/quote"), me)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"amount\":100000}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.kind").value("SAVINGS_ACCOUNT"))
+            .andExpect(jsonPath("$.frequency").value("SINGLE"))
+            .andExpect(jsonPath("$.savings.ratePercent").value(3.0))
+            .andExpect(jsonPath("$.savings.minimumBalance").value(50000.0));
+
+        mockMvc.perform(customer(post("/customer/applications"), me)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"productId\":\"" + productId + "\",\"amount\":100000}"))
+            .andExpect(status().isCreated());
+        UUID caseId = asTenant(() -> underwritingApi.listCases(null, me, null,
+            org.springframework.data.domain.PageRequest.of(0, 5)).getContent().get(0).caseId());
+        asTenant(() -> underwritingApi.submitAssessment(caseId, tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType.FINANCIAL,
+            "Source of funds seen", new BigDecimal("10"), "assessor-one"));
+        asTenant(() -> underwritingApi.decide(caseId, new UnderwritingApi.DecisionInput(
+            tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome.ACCEPT, null, "Savings, no risk to assess", true),
+            "senior-two", true));
+
+        var policy = asTenant(() -> policyApi.searchPolicies(me, null, null, null, null,
+            org.springframework.data.domain.PageRequest.of(0, 5)).getContent().get(0));
+        assertThat(policy.premiumAmount()).isEqualByComparingTo("100000");
+        assertThat(policy.premiumFrequency()).isEqualTo("SINGLE");
     }
 
     /**

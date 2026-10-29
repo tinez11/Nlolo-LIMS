@@ -8,18 +8,25 @@ import type { CustomerApplication, CustomerProduct, CustomerQuote, CustomerQuote
  */
 
 /** The needs a customer starts from, in the order the tiles show them -- one per kind priced online. */
-export const NEEDS = ['PROTECTION', 'CASH_VALUE', 'FUNERAL', 'DEPOSIT'] as const;
+export const NEEDS = ['PROTECTION', 'CASH_VALUE', 'SAVINGS_ACCOUNT', 'FUNERAL', 'DEPOSIT'] as const;
 export type Need = (typeof NEEDS)[number];
 
 export function isNeed(kind: string): kind is Need {
   return (NEEDS as readonly string[]).includes(kind);
 }
 
-export type Step = 'amount' | 'years' | 'frequency' | 'term' | 'plan' | 'family';
+export type Step = 'saveHow' | 'amount' | 'years' | 'frequency' | 'term' | 'plan' | 'family';
 
-/** The questions a product asks before its price, one screen each. */
-export function stepsFor(product: CustomerProduct): Step[] {
+/**
+ * The questions a product asks before its price, one screen each. A savings account asks how often only when the
+ * customer chose to save a fixed amount regularly (2026-10-29: one deposit to open it is the default).
+ */
+export function stepsFor(product: CustomerProduct, answers: Answers = {}): Step[] {
   switch (product.kind) {
+    case 'SAVINGS_ACCOUNT': return [
+      'saveHow', 'amount', ...(answers.saveHow === 'REGULAR' ? ['frequency' as const] : []),
+      ...(yearChoices(product).length > 0 ? ['years' as const] : []),
+    ];
     case 'DEPOSIT': return ['amount', 'term'];
     case 'FUNERAL': return ['plan', 'family', 'frequency'];
     default: return yearChoices(product).length > 0 ? ['amount', 'years', 'frequency'] : ['amount', 'frequency'];
@@ -29,10 +36,12 @@ export function stepsFor(product: CustomerProduct): Step[] {
 const COVER = [5_000_000, 10_000_000, 20_000_000, 50_000_000];
 const SAVING = [2_000_000, 5_000_000, 10_000_000, 20_000_000];
 const DEPOSITS = [1_000_000, 5_000_000, 10_000_000, 20_000_000];
+const SAVINGS = [50_000, 100_000, 500_000, 1_000_000];
 
 /** A few round amounts inside what the product takes; "another amount" covers the rest. */
 export function amountChoices(product: CustomerProduct): number[] {
-  const base = product.kind === 'DEPOSIT' ? DEPOSITS : product.kind === 'CASH_VALUE' ? SAVING : COVER;
+  const base = product.kind === 'DEPOSIT' ? DEPOSITS : product.kind === 'SAVINGS_ACCOUNT' ? SAVINGS
+    : product.kind === 'CASH_VALUE' ? SAVING : COVER;
   const min = product.terms.minAmount ?? 0;
   const max = product.terms.maxAmount ?? Number.POSITIVE_INFINITY;
   return base.filter((a) => a >= min && a <= max);
@@ -51,6 +60,8 @@ export function yearChoices(product: CustomerProduct): number[] {
 
 /** What the customer has answered so far. */
 export interface Answers {
+  /** A savings account: one deposit to open it, or a fixed amount regularly. */
+  saveHow?: 'ONCE' | 'REGULAR' | undefined;
   amount?: number | undefined;
   years?: number | undefined;
   frequency?: 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY' | undefined;
@@ -69,6 +80,7 @@ export interface FamilyMember {
 /** Whether a step's answer is there, so Next can be offered. */
 export function answered(step: Step, a: Answers): boolean {
   switch (step) {
+    case 'saveHow': return a.saveHow != null;
     case 'amount': return a.amount != null && a.amount > 0;
     case 'years': return a.years != null;
     case 'frequency': return a.frequency != null;
@@ -83,6 +95,9 @@ export function quoteRequest(product: CustomerProduct, a: Answers): CustomerQuot
   switch (product.kind) {
     case 'DEPOSIT':
       return { amount: a.amount ?? null, termMonths: a.termMonths ?? null };
+    case 'SAVINGS_ACCOUNT':
+      // No frequency is one deposit: the server reads it as SINGLE.
+      return { amount: a.amount ?? null, frequency: a.saveHow === 'REGULAR' ? a.frequency ?? 'MONTHLY' : null, termYears: a.years ?? null };
     case 'FUNERAL':
       return {
         planCode: a.planCode ?? null, frequency: a.frequency ?? 'MONTHLY',

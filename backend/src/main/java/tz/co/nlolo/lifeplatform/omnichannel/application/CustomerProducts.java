@@ -65,7 +65,7 @@ public class CustomerProducts {
      * What may be priced and asked for here (the user, 2026-10-29). The savings accounts wait on their contribution
      * being what an application bills -- today an account issued from a case is rated as if it were cover.
      */
-    static final Set<String> ONLINE = Set.of("PROTECTION", "CASH_VALUE", "DEPOSIT", "FUNERAL");
+    static final Set<String> ONLINE = Set.of("PROTECTION", "CASH_VALUE", "DEPOSIT", "FUNERAL", "SAVINGS_ACCOUNT");
 
     private static final ZoneId DAR = ZoneId.of("Africa/Dar_es_Salaam");
 
@@ -101,6 +101,7 @@ public class CustomerProducts {
         PartyDetailView me = partyApi.getPartyDetail(customerPartyId);
         return switch (kind) {
             case "DEPOSIT" -> depositQuote(listing, version, request, today);
+            case "SAVINGS_ACCOUNT" -> savingsQuote(listing, version, request, today);
             case "FUNERAL" -> funeralQuote(listing, version, me, request, today);
             default -> premiumQuote(listing, kind, me, request, today);
         };
@@ -132,7 +133,34 @@ public class CustomerProducts {
             frequency.name(), quote.instalmentAmount(), quote.annualAfterFrequencyLoading(), quote.ageAtEntry(),
             request.termYears(), quote.totalOverTerm(),
             quote.paidByYear().stream().map(y -> new CustomerProductView.PaidByYear(y.year(), y.paid())).toList(),
-            null, List.of());
+            null, List.of(), null);
+    }
+
+    /**
+     * A savings account (2026-10-29, the user): one deposit to open it, or -- if the customer wants -- a fixed amount
+     * regularly. Either way the first payment must reach the account's minimum balance.
+     */
+    private CustomerProductView.Quote savingsQuote(OnlineListingView listing, ProductSnapshotView version,
+                                                   CustomerProductView.QuoteRequest request, LocalDate today) {
+        AccumulationPlan plan = productApi.resolveAccumulationPlan(version.productVersionId());
+        BigDecimal amount = savingsAmount(request.amount(), plan, listing.defaultCurrency());
+        String frequency = request.frequency() == null ? PremiumFrequency.SINGLE.name() : frequency(request.frequency()).name();
+        SavingsQuoteView q = accumulationApi.quoteProductSavings(listing.productId(), version.productVersionId(), amount,
+            null, today);
+        return new CustomerProductView.Quote(listing.productId(), listing.productName(), "SAVINGS_ACCOUNT",
+            listing.defaultCurrency(), amount, frequency, amount, null, null, request.termYears(), null, List.of(), null,
+            List.of(), new CustomerProductView.SavingsAnswer(q.ratePercent(), plan.guaranteedRatePercent(), plan.minimumBalance()));
+    }
+
+    /** At least the minimum balance: the first payment opens the account, and no withdrawal may leave less. */
+    private static BigDecimal savingsAmount(BigDecimal given, AccumulationPlan plan, String currency) {
+        BigDecimal amount = positive(given, "Give the amount you want to put in");
+        if (plan.minimumBalance() != null && amount.compareTo(plan.minimumBalance()) < 0) {
+            throw new CustomerRequestRefusedException("The first payment must be at least "
+                + plan.minimumBalance().stripTrailingZeros().toPlainString() + " " + currency
+                + ", the least this account keeps");
+        }
+        return amount;
     }
 
     private CustomerProductView.Quote depositQuote(OnlineListingView listing, ProductSnapshotView version,
@@ -144,7 +172,7 @@ public class CustomerProducts {
             listing.defaultCurrency(), amount, PremiumFrequency.SINGLE.name(), amount, null, null, null, null, List.of(),
             new CustomerProductView.DepositAnswer(q.amount(), q.termMonths(), q.ratePercent(), q.interest(),
                 q.maturityValue(), q.maturityDate(), q.offeredTermMonths(), q.refusal()),
-            List.of());
+            List.of(), null);
     }
 
     private CustomerProductView.Quote funeralQuote(OnlineListingView listing, ProductSnapshotView version, PartyDetailView me,
@@ -155,7 +183,7 @@ public class CustomerProducts {
             listing.defaultCurrency(), q.mainMemberBenefit(), q.frequency().name(), q.instalment(),
             q.totalYearlyPremium(), null, null, null, List.of(), null,
             q.lines().stream().map(l -> new CustomerProductView.FuneralLine(l.role().name(), l.name(), l.age(),
-                l.benefit(), l.yearlyPremium())).toList());
+                l.benefit(), l.yearlyPremium())).toList(), null);
     }
 
     /** The customer is always the main member: their name and date of birth come from their record, never the request. */
@@ -225,6 +253,12 @@ public class CustomerProducts {
                 sumAssured = family.mainMemberBenefit();
                 frequency = family.frequency().name();
                 termMonths = null;
+            }
+            case "SAVINGS_ACCOUNT" -> {
+                sumAssured = savingsAmount(request.amount(), productApi.resolveAccumulationPlan(versionId),
+                    listing.defaultCurrency());
+                frequency = request.frequency() == null ? PremiumFrequency.SINGLE.name() : frequency(request.frequency()).name();
+                termMonths = request.termYears() == null ? null : request.termYears() * 12;
             }
             case "PROTECTION", "CASH_VALUE" -> {
                 sumAssured = positive(request.sumAssured());
@@ -415,6 +449,12 @@ public class CustomerProducts {
         Integer maxYears = bounds == null || bounds.maxTermMonths() == null ? null : bounds.maxTermMonths() / 12;
         BigDecimal minAmount = bounds == null ? null : bounds.minSumAssured();
         BigDecimal maxAmount = bounds == null ? null : bounds.maxSumAssured();
+        if ("SAVINGS_ACCOUNT".equals(kind)) {
+            // The least the first payment may be is the account's minimum balance, not a sum assured.
+            return new CustomerProductView.Terms(minYears, maxYears,
+                productApi.resolveAccumulationPlan(version.productVersionId()).minimumBalance(), null, List.of(), List.of(),
+                List.of());
+        }
         if ("DEPOSIT".equals(kind)) {
             DepositPlan grid = productApi.resolveDepositPlan(version.productVersionId());
             return new CustomerProductView.Terms(null, null, grid.bandStarts().isEmpty() ? null : grid.bandStarts().get(0),
