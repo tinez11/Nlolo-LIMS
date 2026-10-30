@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import * as portalApi from '@/api/portal';
@@ -37,9 +38,12 @@ describe('CustomerPolicyPage', () => {
     renderPolicy();
 
     expect(await screen.findByRole('heading', { name: 'Nuru Funeral Cover' })).toBeInTheDocument();
-    expect(screen.getByText('TZS 100,000.00 a year')).toBeInTheDocument();
+    expect(screen.getByText(/TZS 100,000.00/)).toHaveTextContent('TZS 100,000.00 a year');
     expect(screen.getByText('Who is covered')).toBeInTheDocument();
-    expect(screen.getByText(/Waiting period to/)).toBeInTheDocument();
+    expect(screen.getByText(/Waiting period until/)).toBeInTheDocument();
+    // The payment history folds away until asked for: a table of every premium is wider than a phone.
+    expect(screen.queryByText('payment schedule')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Payment history/ }));
     expect(screen.getByText('payment schedule')).toBeInTheDocument();
     expect(screen.getByText('Amina Kileo')).toBeInTheDocument();
     // Each claim opens on its own page.
@@ -61,7 +65,8 @@ describe('CustomerPolicyPage', () => {
     renderPolicy();
     expect(await screen.findByText('Your deposit')).toBeInTheDocument();
     expect(screen.getByText('3 months, 3% for the term')).toBeInTheDocument();
-    expect(screen.getByText('TZS 1,030,000.00')).toBeInTheDocument();
+    // Leads the page, and is the last line of the deposit card.
+    expect(screen.getAllByText('TZS 1,030,000.00')).toHaveLength(2);
     expect(screen.getByText(/close it early at any time/)).toBeInTheDocument();
   });
 

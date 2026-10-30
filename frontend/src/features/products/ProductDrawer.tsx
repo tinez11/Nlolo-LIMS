@@ -1,4 +1,5 @@
 import { ArrowRight } from 'lucide-react';
+import { humanizeStatus } from '@/lib/status';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Field } from '@/components/Field';
@@ -65,7 +66,7 @@ export function ProductDrawer({
           )}
           {product && (
             <dl className="space-y-0">
-              <Field label="Category" value={product.category?.replace(/_/g, ' ') ?? '—'} />
+              <Field label="Category" value={product.category ? humanizeStatus(product.category) : '—'} />
               <Field label="Default currency" value={product.defaultCurrency ?? '—'} />
 
               {isInitialLoad(snapshot) && (

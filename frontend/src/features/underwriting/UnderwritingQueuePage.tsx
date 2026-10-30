@@ -18,6 +18,9 @@ import { ArrivalsTable } from './ArrivalsTable';
 import { FilterChip } from '@/components/FilterChip';
 import { Badge } from '@/components/ui/badge';
 import { Tip } from '@/components/ui/tooltip';
+import type { CaseSource } from '@/api/underwriting';
+import { CASE_SOURCE_HINT, CASE_SOURCE_LABEL, CASE_SOURCES, isCaseSource } from './caseSource';
+import { CaseSourceBadge } from './CaseSourceBadge';
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -35,6 +38,8 @@ export function UnderwritingQueuePage() {
     statusParam && (UNDERWRITING_CASE_STATUSES as readonly string[]).includes(statusParam)
       ? (statusParam as UnderwritingCaseStatus)
       : undefined;
+  const sourceParam = params.get('source');
+  const source = isCaseSource(sourceParam) ? sourceParam : undefined;
   const page = Math.max(0, Number(params.get('page') ?? '0') || 0);
   // The arrivals views (2026-10-20): what is waiting, most recently arrived first, and what came back from agents.
   const viewParam = params.get('view');
@@ -46,11 +51,12 @@ export function UnderwritingQueuePage() {
 
   useEffect(() => {
     if (view) return;
-    void loadList({ ...(status ? { status } : {}), page, pageSize: DEFAULT_PAGE_SIZE });
-  }, [loadList, status, page, view]);
+    void loadList({ ...(status ? { status } : {}), ...(source ? { source } : {}), page, pageSize: DEFAULT_PAGE_SIZE });
+  }, [loadList, status, source, page, view]);
 
   function update(next: {
     status?: UnderwritingCaseStatus | undefined;
+    source?: CaseSource | undefined;
     page?: number;
     view?: 'arrivals' | 'returned' | null;
   }) {
@@ -59,6 +65,13 @@ export function UnderwritingQueuePage() {
       if (next.view) merged.set('view', next.view);
       else merged.delete('view');
       merged.delete('status');
+      merged.delete('source');
+      merged.delete('page');
+    }
+    if ('source' in next) {
+      if (next.source) merged.set('source', next.source);
+      else merged.delete('source');
+      merged.delete('view');
       merged.delete('page');
     }
     if ('status' in next) {
@@ -115,6 +128,13 @@ export function UnderwritingQueuePage() {
             </span>
           </Tip>
         ),
+    },
+    {
+      key: 'source',
+      header: 'Source',
+      render: (c) => (c.source
+        ? <Tip content={CASE_SOURCE_HINT[c.source]}><span className="inline-flex"><CaseSourceBadge source={c.source} /></span></Tip>
+        : <CaseSourceBadge source={null} />),
     },
     {
       key: 'status',
@@ -198,7 +218,7 @@ export function UnderwritingQueuePage() {
       return (
         <ErrorPanel
           error={list.error}
-          onRetry={() => void loadList({ ...(status ? { status } : {}), page, pageSize: DEFAULT_PAGE_SIZE })}
+          onRetry={() => void loadList({ ...(status ? { status } : {}), ...(source ? { source } : {}), page, pageSize: DEFAULT_PAGE_SIZE })}
         />
       );
     }
@@ -207,16 +227,16 @@ export function UnderwritingQueuePage() {
     if (rows.length === 0 && list.status === 'success') {
       return (
         <EmptyState
-          title={status ? `No ${status.toLowerCase().replace('_', ' ')} cases` : 'No cases yet'}
+          title={status || source ? 'No cases match' : 'No cases yet'}
           description={
-            status
-              ? 'Nothing in this tenant currently has that status.'
+            status || source
+              ? 'Nothing in this tenant matches that filter.'
               : 'Cases appear here once opened.'
           }
-          {...(status
+          {...(status || source
             ? {
                 action: (
-                  <Button size="sm" onClick={() => update({ status: undefined })}>
+                  <Button size="sm" onClick={() => update({ status: undefined, source: undefined })}>
                     Clear filter
                   </Button>
                 ),
@@ -287,6 +307,16 @@ export function UnderwritingQueuePage() {
               />
             ))}
           </div>
+          {/* Where the cases came from (2026-10-29): the customer online, a call back, an agent, or the office. */}
+          {!view && (
+            <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5" role="group" aria-label="Source">
+              <span className="mr-1 text-xs text-muted-foreground">Source</span>
+              <FilterChip label="Any" active={source === undefined} onClick={() => update({ source: undefined })} />
+              {CASE_SOURCES.map((s) => (
+                <FilterChip key={s} label={CASE_SOURCE_LABEL[s]} active={source === s} onClick={() => update({ source: s })} />
+              ))}
+            </div>
+          )}
 
           {view ? (
             <ArrivalsTable

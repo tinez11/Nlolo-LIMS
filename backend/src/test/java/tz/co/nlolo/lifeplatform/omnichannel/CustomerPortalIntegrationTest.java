@@ -229,7 +229,16 @@ class CustomerPortalIntegrationTest {
             .andExpect(jsonPath("$.yearly").value(10000.0))
             .andExpect(jsonPath("$.ageAtEntry").value(30));
 
-        String ask = "{\"productId\":\"" + productId + "\",\"sumAssured\":1000000,\"frequency\":\"MONTHLY\"}";
+        // Cover asks all five health questions (2026-10-29); an application without them is refused.
+        mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/customer/applications"), me)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("{\"productId\":\"" + productId + "\",\"sumAssured\":1000000,\"frequency\":\"MONTHLY\"}"))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("Answer every health question"));
+        String ask = "{\"productId\":\"" + productId + "\",\"sumAssured\":1000000,\"frequency\":\"MONTHLY\",\"answers\":["
+            + "{\"code\":\"GOOD_HEALTH\",\"answer\":\"YES\"},{\"code\":\"SERIOUS_ILLNESS_5Y\",\"answer\":\"NO\"},"
+            + "{\"code\":\"HOSPITAL_12M\",\"answer\":\"NO\"},{\"code\":\"LONG_TERM_MEDICINE\",\"answer\":\"NO\"},"
+            + "{\"code\":\"TOBACCO_12M\",\"answer\":\"NO\"}]}";
         mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/customer/applications"), me)
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content(ask))
             .andExpect(status().isCreated())

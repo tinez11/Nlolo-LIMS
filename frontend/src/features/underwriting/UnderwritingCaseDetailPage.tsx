@@ -18,6 +18,8 @@ import { can } from '@/auth/access';
 import { PageHeader } from '@/components/PageHeader';
 import { Field } from '@/components/Field';
 import { PartyName } from '@/components/PartyName';
+import { CASE_SOURCE_HINT } from './caseSource';
+import { CaseSourceBadge } from './CaseSourceBadge';
 import { ProductName } from '@/components/ProductName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
@@ -552,6 +554,11 @@ export function UnderwritingCaseDetailPage() {
                 }
                 {...(view.proposalNumber ? {} : { note: 'Opened before proposal numbers existed.' })}
               />
+              {/* Where it came from (2026-10-29); a call back has no amount, so the customer is phoned first. */}
+              {view.source && (
+                <Field label="Source" value={<CaseSourceBadge source={view.source} />}
+                  {...(view.source === 'CALL_BACK' || view.source === 'CUSTOMER_ONLINE' ? { note: CASE_SOURCE_HINT[view.source] } : {})} />
+              )}
               <Field
                 label="Applicant"
                 value={

@@ -149,4 +149,10 @@ public record UnderwritingCaseView(UUID caseId, UUID applicantPartyId, UUID prod
         return java.util.Map.of("amount", sumAssuredAmount.setScale(2, java.math.RoundingMode.HALF_EVEN).toPlainString(),
             "currencyCode", sumAssuredCurrency);
     }
+
+    /** Where the case came from, for the queue's Source column (2026-10-29); read from what the case records. */
+    @JsonProperty("source")
+    public CaseSource source() {
+        return CaseSource.of(sourceOfBusiness, sumAssuredAmount, agentOfRecordId);
+    }
 }

@@ -46,7 +46,7 @@ export function CustomerDocumentsPage() {
   return (
     <>
       <PageHeader title="My documents" description="Download your policy documents, premium schedules and receipts." />
-      <div className="space-y-4 px-4 pb-8 sm:px-6">
+      <div className="w-full max-w-3xl space-y-4 px-4 pb-10 text-base sm:px-6">
         {error ? <ErrorPanel error={error} onRetry={() => setReload((n) => n + 1)} />
           : policies === null ? <LoadingBlock label="Loading your documents" />
             : policies.length === 0 ? <EmptyState title="No documents yet" description="Documents appear once you hold a policy." />

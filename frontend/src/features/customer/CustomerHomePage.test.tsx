@@ -29,9 +29,10 @@ describe('CustomerHomePage (dashboard)', () => {
     renderHome();
 
     expect(await screen.findByRole('heading', { name: 'Welcome, Nadine' })).toBeInTheDocument();
-    expect(screen.getByText('Policies in force')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Nuru Funeral Cover/ })).toHaveAttribute('href', '/customers/policies/POL-ABFE4139');
     expect(screen.getByText(/TZS 100,000.00 a year/)).toBeInTheDocument();
+    // Nothing due: the good news leads.
+    expect(screen.getByText('You are all paid up')).toBeInTheDocument();
     expect(screen.getByText('In force')).toBeInTheDocument();
   });
 
@@ -40,8 +41,8 @@ describe('CustomerHomePage (dashboard)', () => {
     renderHome();
     await screen.findByRole('heading', { name: 'Welcome, Nadine' });
     expect(screen.queryByText('Next premium')).not.toBeInTheDocument();
-    expect(screen.queryByText('Claims in progress')).not.toBeInTheDocument();
-    expect(screen.queryByText('Savings and investments')).not.toBeInTheDocument();
+    expect(screen.queryByText(/claim in progress|claims in progress/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Savings and investments/)).not.toBeInTheDocument();
   });
 
   it('shows the next premium, claims in progress and what savings are worth when there are any', async () => {
@@ -52,15 +53,15 @@ describe('CustomerHomePage (dashboard)', () => {
     }));
     renderHome();
     expect(await screen.findByText('TZS 50,000.00')).toBeInTheDocument();
-    expect(screen.getByText(/in the grace period/)).toBeInTheDocument();
-    expect(screen.getByText('Claims in progress')).toBeInTheDocument();
+    expect(screen.getByText(/In the grace period/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '1 claim in progress' })).toHaveAttribute('href', '/customers/claims');
     expect(screen.getByText('TZS 4,850,000.00')).toBeInTheDocument();
-    expect(screen.queryByText('New messages')).not.toBeInTheDocument();
+    expect(screen.queryByText(/new message/)).not.toBeInTheDocument();
   });
 
   it('points to unread messages', async () => {
     vi.mocked(portalApi.getCustomerDashboard).mockResolvedValue(dashboard({ unreadMessages: 2 }));
     renderHome();
-    expect(await screen.findByRole('link', { name: /New messages/ })).toHaveAttribute('href', '/customers/messages');
+    expect(await screen.findByRole('link', { name: '2 new messages' })).toHaveAttribute('href', '/customers/messages');
   });
 });

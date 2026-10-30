@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as funeralApi from '@/api/funeral';
 import * as productsApi from '@/api/products';
-import type { FuneralTermsView, ProductVersionSummaryView, VersionRatingView } from '@/api/types';
+import type { FuneralTermsView, ProductVersionSummaryView, VersionRatingView, VersionValueTermsView } from '@/api/types';
 import { ProductVersionsPanel } from './ProductVersionsPanel';
 
 vi.mock('@/api/products');
@@ -25,9 +25,12 @@ const funeral = (premium: number): FuneralTermsView => ({
   onMainMemberDeath: 'POLICY_ENDS', freeCoverToPaidDate: true, soldAs: 'INDIVIDUAL',
 } as FuneralTermsView);
 
+const NO_VALUE: VersionValueTermsView = { bonus: null, cashValue: null, payouts: null, account: null, depositRates: [] };
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(productsApi.getVersionRating).mockResolvedValue({ baseRates: [], ratingFactors: [], benefitSchedule: [] } as VersionRatingView);
+  vi.mocked(productsApi.getValueTerms).mockResolvedValue(NO_VALUE);
 });
 
 describe('ProductVersionsPanel', () => {
@@ -66,5 +69,39 @@ describe('ProductVersionsPanel', () => {
     expect(screen.queryByRole('list', { name: 'Versions' })).not.toBeInTheDocument();
     // A term product is priced by base rates, so their count -- and its warning at zero -- stays.
     expect(await screen.findByText('Base rate cells')).toBeInTheDocument();
+  });
+
+  it('shows what a with-profits endowment builds up and pays back, in words', async () => {
+    vi.mocked(productsApi.listProductVersions).mockResolvedValue([version('v1', { current: true })]);
+    vi.mocked(productsApi.getValueTerms).mockResolvedValue({
+      ...NO_VALUE,
+      bonus: { method: 'COMPOUND', paidUpParticipates: false, surrenderBasis: 'OWN_SCALE',
+        surrenderRows: [{ fromCompletedYears: 0, perMille: 0 }, { fromCompletedYears: 3, perMille: 500 }] },
+      cashValue: { basisReference: 'ACT/2026/ENDOW-01', basisDate: '2026-01-10', paidUpBasis: 'PROPORTIONATE',
+        minYearsForValue: 2, rows: [{ policyYear: 2, ageFrom: null, ageTo: null, cashValuePerMille: 350, paidUpPerMille: null }] },
+      payouts: { terms: { freeLookDays: 15, proofOfLifeIntervalMonths: null, survivalBenefitsDeductedFromDeath: null,
+        deathBenefitPremiumPercent: null },
+        rows: [{ kind: 'MATURITY', fromPolicyYear: null, toPolicyYear: null, amountBasis: 'PERCENT_OF_SA', amountValue: 100, frequency: null }] },
+    });
+    render(<ProductVersionsPanel productId="p-1" category="ENDOWMENT" refreshKey={0} />);
+
+    expect(await screen.findByText('With-profits bonuses')).toBeInTheDocument();
+    expect(screen.getByText('Compound')).toBeInTheDocument();
+    expect(screen.getByText('Stop receiving bonuses')).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Bonus surrender value by completed years' })).toHaveTextContent('3 or more500');
+    expect(screen.getByRole('table', { name: 'Cash value per 1,000 of sum assured by policy year' })).toHaveTextContent('Year 235035%');
+    expect(screen.getByText('After 2 full years')).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Payouts while the life assured is alive' }))
+      .toHaveTextContent('Maturity benefitAt maturity100% of the sum assuredOnce');
+    expect(screen.getByText('15 days from issue')).toBeInTheDocument();
+  });
+
+  it('shows a term life version no value sections at all', async () => {
+    vi.mocked(productsApi.listProductVersions).mockResolvedValue([version('v1', { current: true })]);
+    render(<ProductVersionsPanel productId="p-1" category="TERM_LIFE" refreshKey={0} />);
+    expect(await screen.findByText('Base rate cells')).toBeInTheDocument();
+    expect(screen.queryByText('With-profits bonuses')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cash value')).not.toBeInTheDocument();
+    expect(screen.queryByText('Savings account')).not.toBeInTheDocument();
   });
 });

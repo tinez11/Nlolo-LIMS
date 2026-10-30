@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TokenIdentity } from '@/auth/claims';
+import type { VersionValueTermsView } from '@/api/types';
+import { grantAccess } from '@/test/access';
 import { bonusDeclarationSchema, showsBonuses } from './bonusDeclarationForm';
 
 const messages = (r: { success: boolean; error?: { issues: { message: string }[] } }) =>
@@ -33,8 +35,12 @@ describe('bonusDeclarationSchema', () => {
 
 describe('showsBonuses', () => {
   const finance = { realmRoles: ['FINANCE_OFFICER'] } as unknown as TokenIdentity;
-  it('is false off the with-profits categories', () => {
-    expect(showsBonuses('TERM_LIFE', finance)).toBe(false);
-    expect(showsBonuses('EDUCATION_SAVINGS', finance)).toBe(false);
+  const plain = { bonus: null, cashValue: null, payouts: null, account: null, depositRates: [] } as VersionValueTermsView;
+  const withProfits = { ...plain, bonus: { method: 'COMPOUND', paidUpParticipates: false, surrenderBasis: 'NONE', surrenderRows: [] } } as VersionValueTermsView;
+  it('shows only where a version shares in profits -- not on every endowment', () => {
+    grantAccess('products.view', 'ledger.view');
+    expect(showsBonuses([plain], finance)).toBe(false);
+    expect(showsBonuses(null, finance)).toBe(false);
+    expect(showsBonuses([plain, withProfits], finance)).toBe(true);
   });
 });

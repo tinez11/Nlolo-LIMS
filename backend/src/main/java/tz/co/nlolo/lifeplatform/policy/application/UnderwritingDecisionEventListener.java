@@ -462,6 +462,26 @@ public class UnderwritingDecisionEventListener {
                         "system:underwriting-decision-listener");
                     return;
                 }
+                // An ordinary savings account is saved into too (2026-10-29, the user). It fell through to the risk
+                // formula below and was billed sum assured x a base rate -- 2,000,000 became 50,000 a month from the
+                // fallback rate on a product with no rate table. The case's amount is what the customer chose: one
+                // opening deposit (SINGLE) or a regular contribution at the case's frequency. The account runs until it
+                // is closed, so it has no term.
+                if (productApi.resolveAccumulationPlan(decidedCase.productVersionId()).isAccount()
+                        && !productApi.resolveDepositPlan(decidedCase.productVersionId()).isDeposit()
+                        && !annuityPlan.annuity()) {
+                    String frequency = decidedCase.premiumFrequency() != null ? decidedCase.premiumFrequency() : "SINGLE";
+                    policyApi.issuePolicy(caseId, new PolicyApi.IssueRequest(
+                        decidedCase.applicantPartyId(), decidedCase.productId(), decidedCase.productVersionId(),
+                        decidedCase.sumAssuredAmount(), decidedCase.sumAssuredCurrency(),
+                        decidedCase.sumAssuredAmount(), decidedCase.sumAssuredCurrency(), frequency,
+                        decidedCase.agentOfRecordId(), nominationsAsBeneficiaries(decidedCase),
+                        "Automatic issuance on underwriting decision " + outcome,
+                        decidedCase.proposedCommencementDate(), decidedCase.requestedTermMonths(), null,
+                        decidedCase.lifeAssuredPartyId()),
+                        "system:underwriting-decision-listener");
+                    return;
+                }
                 // An annuity is bought, not rated (product step 5): its premium is the purchase
                 // price, paid once, and it has no term. The income is priced by the annuity module
                 // when the money arrives -- underwriting already proved it prices at acceptance.

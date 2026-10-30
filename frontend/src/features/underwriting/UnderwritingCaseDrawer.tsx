@@ -3,6 +3,8 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Field } from '@/components/Field';
 import { PartyName } from '@/components/PartyName';
+import { CASE_SOURCE_HINT } from './caseSource';
+import { CaseSourceBadge } from './CaseSourceBadge';
 import { ProductName } from '@/components/ProductName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
@@ -59,6 +61,10 @@ export function UnderwritingCaseDrawer({
 
           {uwCase && (
             <dl className="space-y-0">
+              {uwCase.source && (
+                <Field label="Source" value={<CaseSourceBadge source={uwCase.source} />}
+                  {...(uwCase.source === 'CALL_BACK' ? { note: CASE_SOURCE_HINT.CALL_BACK } : {})} />
+              )}
               <Field
                 label="Applicant"
                 value={

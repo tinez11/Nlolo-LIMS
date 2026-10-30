@@ -16,6 +16,8 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Tip } from './ui/tooltip';
 import { useMyAccess } from '@/store/accessStore';
+import { useLanguage, useLanguageStore } from '@/features/customer/language';
+import { wordsFor } from '@/features/customer/words';
 
 /**
  * The console chrome: sidebar, nav, user block.
@@ -30,7 +32,10 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
   const config = REALM_CONFIG[realm];
 
   const location = useLocation();
-  const groups = navFor(realm, identity);
+  // The customer portal speaks English or Swahili (2026-10-29); the staff and agent consoles stay English.
+  const language = useLanguage();
+  const groups = realm === 'customers' ? customerNav(navFor(realm, identity), language) : navFor(realm, identity);
+  const consoleLine = realm === 'customers' ? wordsFor(language).nav.console : `${config.label} console`;
   const badges = useNavBadges(realm, identity);
   useListKeys();
 
@@ -150,7 +155,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
             </span>
             <div className="min-w-0">
               <p className="truncate font-display text-sm font-semibold">Life Platform</p>
-              <p className="truncate text-xs text-muted-foreground">{config.label} console</p>
+              <p className="truncate text-xs text-muted-foreground">{consoleLine}</p>
             </div>
           </div>
           <Button
@@ -315,7 +320,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
           >
             <Menu />
           </Button>
-          <p className="truncate text-sm font-semibold">{config.label} console</p>
+          <p className="truncate text-sm font-semibold">{consoleLine}</p>
         </div>
 
         {/* tabIndex={-1} so the skip link's target can actually take focus --
@@ -368,6 +373,33 @@ function badgeRole(realm: Realm, identity: ReturnType<typeof readIdentity>, plat
   return held ? humanizeStatus(held) : null;
 }
 
+/** The customer nav in the chosen language: each item by its path, so a label change in English stays one edit. */
+function customerNav(groups: ReturnType<typeof navFor>, language: 'en' | 'sw'): ReturnType<typeof navFor> {
+  const nav = wordsFor(language).nav;
+  const label: Record<string, string> = {
+    home: nav.home, policies: nav.policies, claims: nav.claims, documents: nav.documents, products: nav.products,
+    applications: nav.applications, pay: nav.pay, messages: nav.messages,
+  };
+  return groups.map((g) => ({ label: nav.group, items: g.items.map((i) => ({ ...i, label: label[i.to] ?? i.label })) }));
+}
+
+/** English or Swahili, for the customer portal only. */
+function LanguageSwitch() {
+  const language = useLanguage();
+  const setLanguage = useLanguageStore((s) => s.setLanguage);
+  return (
+    <div role="group" aria-label={wordsFor(language).nav.language} className="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-control p-1">
+      {([['en', 'English'], ['sw', 'Kiswahili']] as const).map(([code, name]) => (
+        <button key={code} type="button" lang={code} aria-pressed={language === code} onClick={() => setLanguage(code)}
+          className={cn('h-8 rounded-md text-xs font-medium pointer-coarse:h-11',
+            language === code ? 'bg-surface text-foreground shadow-raise' : 'text-muted-foreground hover:text-foreground')}>
+          {name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function UserBlock({ identity, realm }: { identity: ReturnType<typeof readIdentity>; realm: Realm }) {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -402,6 +434,7 @@ function UserBlock({ identity, realm }: { identity: ReturnType<typeof readIdenti
         </div>
       </div>
 
+      {realm === 'customers' && <LanguageSwitch />}
       <div className="mt-2.5 flex items-center gap-1">
         <Button
           size="sm"

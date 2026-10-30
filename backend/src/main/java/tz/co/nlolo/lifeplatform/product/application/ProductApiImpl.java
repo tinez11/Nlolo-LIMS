@@ -1584,6 +1584,20 @@ public class ProductApiImpl implements ProductApi {
 
     @Override
     @Transactional(readOnly = true)
+    public CashValuePlan resolveCashValuePlan(UUID productVersionId) {
+        return cashValueConfigRepository.findById(productVersionId)
+            .map(c -> new CashValuePlan(c.getBasisReference(), c.getBasisDate(), c.getPaidUpBasis(), c.getMinYearsForValue(),
+                cashValueEntryRepository.findByProductVersionId(productVersionId).stream()
+                    .sorted(java.util.Comparator.comparingInt(CashValueEntry::getPolicyYear)
+                        .thenComparing(CashValueEntry::getAgeFrom, java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())))
+                    .map(e -> new CashValueRowInput(e.getPolicyYear(), e.getAgeFrom(), e.getAgeTo(),
+                        e.getCashValuePerMille(), e.getPaidUpPerMille()))
+                    .toList()))
+            .orElse(CashValuePlan.none());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Optional<BigDecimal> resolveCashValuePerMille(UUID productVersionId, int policyYear, Integer ageAtEntry) {
         return cashValueEntryRepository.findApplicable(productVersionId, policyYear, ageAtEntry)
             .map(CashValueEntry::getCashValuePerMille);

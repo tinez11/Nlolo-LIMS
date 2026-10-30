@@ -530,8 +530,11 @@ paths:
     post:
       summary: An indicative price on the customer's own details
       description: >-
-        Their age, sex and smoker status as we hold them. Not an offer -- underwriting may load or decline. 422 when the
-        product is priced by an adviser or their details are missing; 404 for a product not offered online.
+        Their age, sex and smoker status as we hold them. Not an offer -- underwriting may load or decline. Priced by
+        what the product is (2026-10-29): cover and cash-value plans from sumAssured, frequency and termYears; a deposit
+        from amount and termMonths; a funeral plan from planCode, frequency and the family beside the customer, who is
+        always the main member. 422 when the product is priced by an adviser, their details are missing, or the plan
+        will not cover someone; 404 for a product not offered online.
       security:
         - customersAuth: [profile]
       parameters:
@@ -545,11 +548,23 @@ paths:
           application/json:
             schema:
               type: object
-              required: [sumAssured]
               properties:
-                sumAssured: { type: number }
+                sumAssured: { type: [number, "null"] }
                 frequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, ANNUALLY, null] }
                 termYears: { type: [integer, "null"] }
+                amount: { type: [number, "null"], description: "A deposit's amount" }
+                termMonths: { type: [integer, "null"], description: "A deposit's term" }
+                planCode: { type: [string, "null"], description: A funeral plan }
+                family:
+                  type: array
+                  items:
+                    type: object
+                    required: [role, name, dateOfBirth]
+                    properties:
+                      role: { type: string, enum: [SPOUSE, CHILD, PARENT, EXTENDED] }
+                      name: { type: string }
+                      dateOfBirth: { type: string, format: date }
+                      student: { type: boolean }
       responses:
         '200':
           description: OK
@@ -579,7 +594,10 @@ paths:
       summary: Ask for a product
       description: >-
         Opens an application (an underwriting case) with the customer as applicant and life insured, on the version on
-        sale today. 409 while one for the same product is still being reviewed.
+        sale today, straight to underwriting. The pricing inputs are the quote's and are priced again here. Carries who
+        receives the money (shares totalling 100) and an answer to every health question the product asks, recorded as
+        asked in the language given. 409 while one for the same product is still being reviewed; 422 for missing
+        answers, shares that do not total 100, or a family the plan will not cover.
       security:
         - customersAuth: [profile]
       requestBody:
@@ -594,6 +612,39 @@ paths:
                 sumAssured: { type: [number, "null"] }
                 frequency: { type: [string, "null"] }
                 termYears: { type: [integer, "null"] }
+                amount: { type: [number, "null"] }
+                termMonths: { type: [integer, "null"] }
+                planCode: { type: [string, "null"] }
+                family:
+                  type: array
+                  items:
+                    type: object
+                    required: [role, name, dateOfBirth]
+                    properties:
+                      role: { type: string, enum: [SPOUSE, CHILD, PARENT, EXTENDED] }
+                      name: { type: string }
+                      dateOfBirth: { type: string, format: date }
+                      student: { type: boolean }
+                beneficiaries:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, sharePercent]
+                    properties:
+                      name: { type: string }
+                      relationship: { type: [string, "null"] }
+                      phone: { type: [string, "null"] }
+                      sharePercent: { type: number }
+                answers:
+                  type: array
+                  items:
+                    type: object
+                    required: [code, answer]
+                    properties:
+                      code: { type: string }
+                      answer: { type: string, enum: ["YES", "NO"] }
+                      notes: { type: [string, "null"] }
+                language: { type: [string, "null"], enum: [EN, SW, null] }
       responses:
         '201':
           description: Asked for
@@ -1017,7 +1068,7 @@ components:
     CustomerProduct:
       type: object
       additionalProperties: false
-      required: [productId, productName, category, currency, summary, benefits, quotable]
+      required: [productId, productName, category, currency, summary, benefits, quotable, kind, online, terms, questions]
       properties:
         productId: { type: string, format: uuid }
         productName: { type: string }
@@ -1025,24 +1076,118 @@ components:
         currency: { type: string }
         summary: { type: [string, "null"] }
         benefits: { type: array, items: { type: string } }
-        quotable: { type: boolean, description: Priced here from a sum assured; otherwise an adviser prices it }
+        quotable: { type: boolean, description: The same as online }
+        kind:
+          type: string
+          enum: [PROTECTION, CASH_VALUE, DEPOSIT, FUNERAL, SAVINGS_ACCOUNT, TERM_ACCOUNT, ANNUITY, UNIT_LINKED, EDUCATION, OTHER]
+          description: What the product is, from what its version carries -- not its category alone
+        online: { type: boolean, description: Priced and asked for here; otherwise an adviser prices it after a request }
+        terms:
+          type: object
+          additionalProperties: false
+          required: [minTermYears, maxTermYears, minAmount, maxAmount, depositTermMonths, funeralPlans, funeralRoles]
+          properties:
+            minTermYears: { type: [integer, "null"] }
+            maxTermYears: { type: [integer, "null"] }
+            minAmount: { type: [number, "null"] }
+            maxAmount: { type: [number, "null"] }
+            depositTermMonths: { type: array, items: { type: integer } }
+            funeralPlans:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [planCode, name, mainMemberBenefit]
+                properties:
+                  planCode: { type: string }
+                  name: { type: string }
+                  mainMemberBenefit: { type: [number, "null"] }
+            funeralRoles:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [role, maxLives, minEntryAge, maxEntryAge]
+                properties:
+                  role: { type: string }
+                  maxLives: { type: integer }
+                  minEntryAge: { type: integer }
+                  maxEntryAge: { type: integer }
+        questions:
+          type: array
+          description: The health questions an application asks, in English and Swahili; empty where none are asked
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, en, sw]
+            properties:
+              code: { type: string }
+              en: { type: string }
+              sw: { type: string }
     CustomerQuote:
       type: object
       additionalProperties: false
-      required: [productId, productName, currency, sumAssured, frequency, instalment, yearly, ageAtEntry]
+      required: [productId, productName, kind, currency, sumAssured, frequency, instalment, yearly, ageAtEntry, termYears,
+        totalOverTerm, paidByYear, deposit, funeral, savings]
       properties:
         productId: { type: string, format: uuid }
         productName: { type: string }
+        kind: { type: string }
         currency: { type: string }
-        sumAssured: { type: number }
+        sumAssured: { type: number, description: "Paid on a death, a deposit's amount, or a funeral plan's main-member benefit" }
         frequency: { type: string }
         instalment: { type: number }
-        yearly: { type: number }
-        ageAtEntry: { type: integer }
+        yearly: { type: [number, "null"] }
+        ageAtEntry: { type: [integer, "null"] }
+        termYears: { type: [integer, "null"] }
+        totalOverTerm: { type: [number, "null"], description: All the premiums over the term; null where it does not total }
+        paidByYear:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [year, paid]
+            properties:
+              year: { type: integer }
+              paid: { type: number }
+        deposit:
+          type: [object, "null"]
+          additionalProperties: false
+          required: [amount, termMonths, ratePercent, interest, maturityValue, maturityDate, offeredTermMonths, refusal]
+          properties:
+            amount: { type: [number, "null"] }
+            termMonths: { type: [integer, "null"] }
+            ratePercent: { type: [number, "null"], description: For the whole term, not a year }
+            interest: { type: [number, "null"] }
+            maturityValue: { type: [number, "null"] }
+            maturityDate: { type: [string, "null"], format: date }
+            offeredTermMonths: { type: array, items: { type: integer } }
+            refusal: { type: [string, "null"] }
+        funeral:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [role, name, age, benefit, yearlyPremium]
+            properties:
+              role: { type: string }
+              name: { type: [string, "null"] }
+              age: { type: integer }
+              benefit: { type: number }
+              yearlyPremium: { type: number }
+        savings:
+          description: A savings account's rate and minimum; null for every other kind.
+          type: [object, "null"]
+          additionalProperties: false
+          required: [ratePercent, guaranteedRatePercent, minimumBalance]
+          properties:
+            ratePercent: { type: [number, "null"], description: "Earned today, % a year: the declared rate, never below the guarantee" }
+            guaranteedRatePercent: { type: [number, "null"], description: "The least it ever earns, % a year" }
+            minimumBalance: { type: [number, "null"], description: "The least the account keeps; the first payment must reach it" }
     CustomerApplication:
       type: object
       additionalProperties: false
-      required: [caseId, proposalNumber, productId, productName, sumAssured, currency, status, statusText]
+      required: [caseId, proposalNumber, productId, productName, sumAssured, currency, status, statusText, stage, decidedAt]
       properties:
         caseId: { type: string, format: uuid }
         proposalNumber: { type: [string, "null"] }
@@ -1052,6 +1197,11 @@ components:
         currency: { type: [string, "null"] }
         status: { type: string }
         statusText: { type: string }
+        stage:
+          type: string
+          enum: [REVIEWING, NEEDS_YOU, ACCEPTED, ISSUED, POSTPONED, DECLINED]
+          description: Where it is, for the progress line
+        decidedAt: { type: [string, "null"], format: date-time }
     CustomerMessage:
       type: object
       additionalProperties: false

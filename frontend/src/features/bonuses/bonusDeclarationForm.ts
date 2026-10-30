@@ -1,6 +1,8 @@
 import { can } from '@/auth/access';
 import { z } from 'zod';
+import type { VersionValueTermsView } from '@/api/types';
 import { canSeeFinance, type TokenIdentity } from '@/auth/claims';
+import { sharesInProfits } from '@/features/products/valueTermsText';
 
 /**
  * Both columns are NUMERIC(7,4): at most four decimals. The ranges and their words are
@@ -21,10 +23,9 @@ export const bonusDeclarationSchema = z.object({
 export type BonusDeclarationValues = z.infer<typeof bonusDeclarationSchema>;
 
 /**
- * Whether the bonus panel belongs on this product page. BonusPlanValidator allows with-profits on
- * ENDOWMENT and WHOLE_LIFE only. No product read says whether a version IS with-profits, so a
- * product in those categories with none is answered by the server's own refusal, as showsRates does.
+ * Whether the bonus panel belongs on this product page: only where a version shares in profits (2026-10-29). It went
+ * by category, so every endowment and whole life product -- with-profits or not -- offered a declaration.
  */
-export function showsBonuses(category: string | undefined, identity: TokenIdentity): boolean {
-  return ['ENDOWMENT', 'WHOLE_LIFE'].includes(category ?? '') && canSeeFinance(identity) && can('products.view');
+export function showsBonuses(versions: readonly VersionValueTermsView[] | null, identity: TokenIdentity): boolean {
+  return versions != null && sharesInProfits(versions) && canSeeFinance(identity) && can('products.view');
 }

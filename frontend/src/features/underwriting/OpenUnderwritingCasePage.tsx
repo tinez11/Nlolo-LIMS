@@ -255,6 +255,8 @@ export function OpenUnderwritingCasePage() {
   // it. Asked only of a savings (SAV) product -- every term account is one.
   const termAccountTerms = useTermAccountTerms(productId, productVersionId, selectedProduct?.portfolioCode);
   const isTermAccount = termAccountTerms !== null;
+  // An ordinary savings account (2026-10-29): its policy bills exactly this amount -- once, or at the frequency below.
+  const isSavingsAccount = selectedProduct?.portfolioCode === 'SAV' && !isTermAccount;
   useEffect(() => {
     setValue('isTermAccount', isTermAccount);
     setValue('termAccountMinRate', termAccountTerms?.minRatePercent != null ? String(termAccountTerms.minRatePercent) : '');
@@ -417,7 +419,8 @@ export function OpenUnderwritingCasePage() {
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <FormField
-            label={isDeferredAnnuity || isTermAccount ? 'Contribution per payment' : isAnnuity ? 'Purchase price'
+            label={isDeferredAnnuity || isTermAccount ? 'Contribution per payment'
+              : isSavingsAccount ? 'Opening deposit, or contribution per payment' : isAnnuity ? 'Purchase price'
               : isFuneral ? "Sum assured (the main member's benefit on the plan)" : 'Sum assured'}
             // A worked-out contribution has nothing to correct by hand: what is missing is what it is worked out from.
             error={isTermAccount && leads === 'target'
@@ -425,7 +428,8 @@ export function OpenUnderwritingCasePage() {
               : errors.sumAssuredAmount?.message}
             hint={isTermAccount && leads === 'target' && contributionSet
               ? 'Worked out from the amount wanted at maturity.'
-              : undefined}
+              : isSavingsAccount ? 'Billed exactly as typed: once if paid once, or each time at the frequency chosen. At least the account’s minimum balance.'
+                : undefined}
           >
             <Input
               placeholder="1500000.00"
