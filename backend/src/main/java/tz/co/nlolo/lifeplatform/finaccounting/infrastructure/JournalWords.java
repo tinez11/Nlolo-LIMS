@@ -21,6 +21,7 @@ final class JournalWords {
         Map.entry("billing.PremiumCollected", "Premium received"),
         Map.entry("billing.InvoiceWaived", "Premium waived"),
         Map.entry("billing.PremiumRefundDue", "Premium credited back"),
+        Map.entry("billing.PremiumRefundPaid", "Premium paid back to the lender"),
         Map.entry("billing.PremiumInvoiceIncreased", "Premium restated upward"),
         Map.entry("billing.PremiumInvoiceReduced", "Premium restated downward"),
         Map.entry("claims.ClaimApproved", "Claim approved"),

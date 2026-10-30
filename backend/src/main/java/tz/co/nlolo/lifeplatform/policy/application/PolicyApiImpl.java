@@ -2522,6 +2522,11 @@ public class PolicyApiImpl implements PolicyApi {
         // Which FILE charged them, so billing can find the one invoice of eleven that this
         // credit belongs against without guessing by date.
         payload.put("enrolmentSubmissionId", enrolmentRow.get().getSubmissionId());
+        // Who the money goes back to when the lender had already paid the file (2026-10-30): billing pays it by bank
+        // transfer and may not look a party up, so the lender is named here, as a claim names it.
+        policyRepository.findByPolicyNumberAndTenantId(scheme.getPolicyNumber(), tenantId)
+            .map(Policy::getPolicyholderPartyId)
+            .ifPresent(lender -> payload.put("lenderName", partyApi.getParty(lender).displayName()));
     }
 
     @Override

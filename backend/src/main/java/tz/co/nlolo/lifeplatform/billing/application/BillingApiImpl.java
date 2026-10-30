@@ -855,7 +855,7 @@ public class BillingApiImpl implements BillingApi {
     @Transactional
     void creditUnearnedPremium(UUID tenantId, String policyNumber, UUID policyMemberId,
                                 UUID enrolmentSubmissionId, BigDecimal amount, String currency,
-                                String exitReason, LocalDate exitDate) {
+                                String exitReason, LocalDate exitDate, String lenderName) {
         if (!premiumCreditRepository.findByTenantIdAndPolicyMemberId(tenantId, policyMemberId).isEmpty()) {
             log.info("Member {} on policy {} has already been credited -- redelivered exit, "
                 + "not refunding twice", policyMemberId, policyNumber);
@@ -875,10 +875,36 @@ public class BillingApiImpl implements BillingApi {
             return;
         }
 
-        PremiumCredit credit = premiumCreditRepository.save(new PremiumCredit(tenantId,
+        // What the lender still owed on the file before this credit. The credit lowers that first; whatever is left the
+        // lender had already paid, and goes back to it by bank transfer (2026-10-30, the user: pay it back). A credit
+        // raised after the file was paid in full used to be recorded and never settled.
+        BigDecimal paid = invoice.get().getAmountPaid() == null ? BigDecimal.ZERO : invoice.get().getAmountPaid();
+        BigDecimal stillOwed = invoice.get().getAmount().subtract(paid).subtract(creditedAgainst(invoice.get()))
+            .max(BigDecimal.ZERO);
+        BigDecimal refund = amount.subtract(stillOwed).max(BigDecimal.ZERO);
+
+        PremiumCredit credit = new PremiumCredit(tenantId,
             policyNumber, policyMemberId, invoice.get().getInvoiceId(), amount, currency,
-            exitReason, exitDate));
+            exitReason, exitDate);
+        String payee = (lenderName == null || lenderName.isBlank() ? "The lender" : lenderName)
+            + " — policyholder of " + policyNumber;
+        if (refund.signum() > 0) {
+            credit.requestRefund(refund, payee);
+        }
+        credit = premiumCreditRepository.save(credit);
         premiumCreditRepository.flush();
+        if (refund.signum() > 0) {
+            // A bank transfer finance makes by hand, as a credit-life claim's is: the insurer deals only with the lender.
+            Map<String, Object> request = new java.util.HashMap<>();
+            request.put("creditId", credit.getCreditId().toString());
+            request.put("idempotencyKey", "credit-refund:" + credit.getCreditId());
+            request.put("policyNumber", policyNumber);
+            request.put("payeeRef", payee);
+            request.put("disbursementMethod", "EFT");
+            request.put("amount", Map.of("amount", refund.toPlainString(), "currencyCode", currency));
+            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumRefundPayoutRequested", tenantId,
+                request));
+        }
 
         // If payments and credits now cover the invoice, nothing more is owed -- otherwise a
         // file whose every borrower left sits DUE and the arrears sweep chases it for nothing.
@@ -1034,6 +1060,40 @@ public class BillingApiImpl implements BillingApi {
     }
 
     /** Everything credited back off one invoice. Zero when nothing was. */
+    /** payment's purpose for a lender's premium paid back (payment V20). */
+    static final String CREDIT_REFUND_PURPOSE = "CREDIT_LIFE_PREMIUM_REFUND";
+
+    /**
+     * The transfer back to the lender was made (2026-10-30): the credit is settled, and the ledger is told the money
+     * left the bank -- on the real transition only, so a redelivery posts nothing twice.
+     */
+    @Transactional
+    public void markCreditRefunded(UUID creditId, UUID disbursementId) {
+        premiumCreditRepository.findById(creditId).ifPresent(credit -> {
+            if (!credit.refundPaid(disbursementId)) {
+                return;
+            }
+            premiumCreditRepository.save(credit);
+            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumRefundPaid", credit.getTenantId(),
+                Map.of("creditId", credit.getCreditId().toString(),
+                       "policyNumber", credit.getPolicyNumber(),
+                       "amount", Map.of("amount", credit.getRefundAmount().toPlainString(),
+                                        "currencyCode", credit.getCurrency()))));
+            log.info("Paid {} {} back to the lender of {} for credit {}", credit.getRefundAmount(),
+                credit.getCurrency(), credit.getPolicyNumber(), creditId);
+        });
+    }
+
+    /** The rail refused the transfer. Left visible as FAILED rather than retried behind anybody's back. */
+    @Transactional
+    public void markCreditRefundFailed(UUID creditId) {
+        premiumCreditRepository.findById(creditId).ifPresent(credit -> {
+            credit.refundFailed();
+            premiumCreditRepository.save(credit);
+            log.warn("The transfer paying credit {} back to the lender of {} failed", creditId, credit.getPolicyNumber());
+        });
+    }
+
     private BigDecimal creditedAgainst(PremiumInvoice invoice) {
         return premiumCreditRepository
             .findByTenantIdAndOriginalInvoiceId(invoice.getTenantId(), invoice.getInvoiceId()).stream()

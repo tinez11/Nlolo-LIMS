@@ -367,9 +367,18 @@ class PostingEngineIntegrationTest {
         // The bank's transfer reached the bank account and cleared the receivable the invoice raised.
         assertThat(legs(tenant, "billing.PremiumCollected", invoiceId.toString()))
             .containsExactlyInAnyOrder("1120 DR 84000.00", "2142 CR 84000.00");
-        // What remains on the receivable is the refund, owed back to the lender after it had paid in full: nothing yet
-        // pays it out or sets it against the next file -- the open question this test records.
+        // The refund was owed back to the lender after it had paid in full ...
         assertThat(balance("2142")).isEqualByComparingTo("-9000.00");
+
+        // ... and finance's bank transfer pays it (2026-10-30, option b): the receivable clears, out of the EFT account.
+        publish(tenant, "payment.DisbursementCompleted", Map.of("disbursementId", UUID.randomUUID(),
+            "purpose", "CREDIT_LIFE_PREMIUM_REFUND", "sourceRef", credit.toString(), "method", "EFT"));
+        publish(tenant, "billing.PremiumRefundPaid", Map.of("creditId", credit.toString(), "policyNumber", scheme,
+            "amount", money("9000.00")));
+        TenantContext.set(tenant);
+        assertThat(legs(tenant, "billing.PremiumRefundPaid", credit.toString()))
+            .containsExactlyInAnyOrder("2142 DR 9000.00", "1130 CR 9000.00");
+        assertThat(balance("2142")).as("nothing left owed either way").isEqualByComparingTo("0.00");
     }
 
     private BigDecimal balance(String account) {

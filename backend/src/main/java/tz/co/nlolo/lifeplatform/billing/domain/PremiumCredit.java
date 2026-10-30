@@ -57,7 +57,57 @@ public class PremiumCredit {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
+    /**
+     * The part of this credit paid back to the lender in money (billing V13, 2026-10-30): what it had already paid of
+     * the file. Null when the credit only lowered what was still owed.
+     */
+    @Column(name = "refund_amount")
+    private BigDecimal refundAmount;
+
+    @Column(name = "refund_payee")
+    private String refundPayee;
+
+    @Column(name = "refund_status")
+    private String refundStatus;
+
+    @Column(name = "refund_disbursement_id")
+    private UUID refundDisbursementId;
+
+    @Column(name = "refund_paid_at")
+    private Instant refundPaidAt;
+
     protected PremiumCredit() {}
+
+    /** Part of this credit goes back to the lender by bank transfer: the part of the file it had already paid. */
+    public void requestRefund(BigDecimal refund, String payee) {
+        if (refund.signum() <= 0 || refund.compareTo(amount) > 0) {
+            throw new IllegalArgumentException("A refund of " + refund + " against a credit of " + amount);
+        }
+        this.refundAmount = refund;
+        this.refundPayee = payee;
+        this.refundStatus = "REQUESTED";
+    }
+
+    /** @return whether this call made it PAID -- false on a redelivery, which must post nothing twice */
+    public boolean refundPaid(UUID disbursementId) {
+        if ("PAID".equals(refundStatus)) {
+            return false;
+        }
+        this.refundStatus = "PAID";
+        this.refundDisbursementId = disbursementId;
+        this.refundPaidAt = Instant.now();
+        return true;
+    }
+
+    public void refundFailed() {
+        if (!"PAID".equals(refundStatus)) {
+            this.refundStatus = "FAILED";
+        }
+    }
+
+    public BigDecimal getRefundAmount() { return refundAmount; }
+    public String getRefundPayee() { return refundPayee; }
+    public String getRefundStatus() { return refundStatus; }
 
     public PremiumCredit(UUID tenantId, String policyNumber, UUID policyMemberId,
                           UUID originalInvoiceId, BigDecimal amount, String currency,

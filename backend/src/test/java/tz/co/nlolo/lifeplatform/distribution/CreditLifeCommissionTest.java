@@ -186,7 +186,20 @@ class CreditLifeCommissionTest {
             "db-migrations/billing/V7__policy_inception_invoice.sql",
             "db-migrations/billing/V8__schedule_premium_paying_until.sql",
             "db-migrations/billing/V10__premium_receipt.sql",
-            "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql",
+            "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql", "db-migrations/billing/V13__credit_refund_payout.sql",
+            // payment: a refund paid back to the lender is a bank transfer (2026-10-30).
+            "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V16__payment_policy_number.sql",
+            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
+            "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
+            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
+            "db-migrations/payment/V6__disbursement_method.sql",
+            "db-migrations/payment/V7__q4_2026_partitions.sql",
+            "db-migrations/payment/V8__benefit_payout_purposes.sql",
+            "db-migrations/payment/V9__account_purposes.sql",
+            "db-migrations/payment/V17__manual_receipts.sql",
+            "db-migrations/payment/V18__payout_routes.sql",
+            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/distribution/V4__partial_reversals.sql",
@@ -631,6 +644,57 @@ class CreditLifeCommissionTest {
     private List<CommissionAccrual> renewals() {
         return commissionAccrualRepository.findByTenantIdAndPolicyNumberAndTierTypeAndReversesAccrualIdIsNull(
             tenantId, scheme, TierType.RENEWAL);
+    }
+
+    // ---- a refund the lender had already paid goes back to it (2026-10-30, option b) ----
+
+    @Autowired private tz.co.nlolo.lifeplatform.payment.application.PaymentApiImpl paymentApiImpl;
+    @Autowired private tz.co.nlolo.lifeplatform.payment.infrastructure.DisbursementInstructionRepository disbursements;
+
+    private java.util.Map<String, Object> creditFor(String borrower) {
+        UUID member = memberNamed(borrower).policyMemberId();
+        return jdbcTemplate.queryForMap("SELECT credit_id, amount, refund_amount, refund_status, refund_payee"
+            + " FROM billing.premium_credit WHERE policy_member_id = ?", member);
+    }
+
+    @Test
+    void aBorrowerRefundedAfterTheLenderPaidIsPaidBackByBankTransfer() {
+        // Amina: 18,000 charged; she settles at month 9 of 18, so 9,000 is unearned -- and the lender paid it.
+        schemeWithBankAsAgent();
+        submitAndAccept(THREE_BORROWERS);
+        policyApi.exitMember(scheme, memberNamed("Amina Hassan Mwinyi").policyMemberId(), LocalDate.of(2027, 5, 3),
+            ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+
+        var credit = creditFor("Amina Hassan Mwinyi");
+        assertThat((BigDecimal) credit.get("refund_amount")).isEqualByComparingTo("9000.00");
+        assertThat(credit.get("refund_status")).isEqualTo("REQUESTED");
+        assertThat((String) credit.get("refund_payee")).contains("policyholder of " + scheme);
+
+        var transfer = disbursements.findByIdempotencyKeyAndTenantId("credit-refund:" + credit.get("credit_id"), tenantId)
+            .orElseThrow(() -> new AssertionError("No transfer was recorded for the refund"));
+        assertThat(transfer.getMethod()).isEqualTo("EFT");
+        assertThat(transfer.getStatus()).isEqualTo("AWAITING_EXECUTION");
+        assertThat(transfer.getAmount()).isEqualByComparingTo("9000.00");
+
+        // Finance makes the transfer and records its bank reference: the credit is settled.
+        paymentApiImpl.markEftExecuted(transfer.getDisbursementId(), "FT26103000123", "finance-officer");
+        assertThat(creditFor("Amina Hassan Mwinyi").get("refund_status")).isEqualTo("PAID");
+    }
+
+    @Test
+    void aBorrowerRefundedBeforeTheLenderPaidOnlyLowersWhatIsOwed() {
+        schemeWithBankAsAgent();
+        acceptOnly(THREE_BORROWERS);
+        policyApi.exitMember(scheme, memberNamed("Amina Hassan Mwinyi").policyMemberId(), LocalDate.of(2027, 5, 3),
+            ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+
+        var credit = creditFor("Amina Hassan Mwinyi");
+        assertThat(credit.get("refund_amount")).isNull();
+        assertThat(credit.get("refund_status")).isNull();
+        // The file now asks 75,000 of its 84,000.
+        var invoice = billingApi.listInvoices(scheme, null).stream()
+            .filter(i -> i.enrolmentSubmissionId() != null).findFirst().orElseThrow();
+        assertThat(invoice.balanceDue()).isEqualByComparingTo("75000.00");
     }
 
     // ---- an unpaid file is collected, never a lapse (2026-10-30) ------------------

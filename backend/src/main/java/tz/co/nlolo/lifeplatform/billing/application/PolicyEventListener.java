@@ -296,7 +296,8 @@ public class PolicyEventListener {
             new BigDecimal((String) unearned.get("amount")),
             (String) unearned.get("currencyCode"),
             (String) payload.get("reason"),
-            LocalDate.parse((String) payload.get("leftOn")));
+            LocalDate.parse((String) payload.get("leftOn")),
+            (String) payload.get("lenderName"));
     }
 
     private void handlePolicyResumed(Map<String, Object> payload) {
