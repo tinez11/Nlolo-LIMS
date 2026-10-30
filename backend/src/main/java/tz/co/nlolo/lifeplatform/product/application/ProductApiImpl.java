@@ -423,6 +423,23 @@ public class ProductApiImpl implements ProductApi {
             product.getDefaultCurrency(), bounds != null ? bounds.minEntryAge() : null, fundDirectory.getIfAvailable(),
             priced || (unitLinkedCategory && !ratingTable.isEmpty()));
 
+        // A CREDIT_LIFE version is not rated either (2026-10-30): every loan is priced by its lender's yearly
+        // agreement, or the scheme's own rate before the first, so a rate table here would be a price nothing reads.
+        // It pays on a borrower's death or disability, the debt they leave, and on nothing else.
+        boolean creditLifeCategory = ProductCategory.CREDIT_LIFE.name().equals(product.getCategory());
+        if (creditLifeCategory) {
+            if (priced) {
+                throw new InvalidProductVersionException("A credit-life version carries no rate table: each lender's"
+                    + " loans are priced by its yearly agreement on the scheme");
+            }
+            benefitSchedule.stream().map(BenefitInput::benefitType)
+                .filter(t -> t != BenefitType.DEATH && t != BenefitType.DISABILITY).findFirst()
+                .ifPresent(t -> {
+                    throw new InvalidProductVersionException("A credit-life version pays on death or disability, the"
+                        + " debt a borrower leaves; " + t + " is not one of its benefits");
+                });
+        }
+
         if (priced) {
             // M13. Age IS rated on a priced version -- it is a key of the base rate
             // table -- so requiring an AGE multiplier as well would demand the one
@@ -445,7 +462,7 @@ public class ProductApiImpl implements ProductApi {
             rejectOverlappingAgeBands(baseRates);
             rejectPricedVersionWithoutEntryAgeBounds(bounds);
             rejectUncoveredEntryAges(baseRates, bounds);
-        } else if (!funeralCategory && !unitLinkedCategory
+        } else if (!funeralCategory && !unitLinkedCategory && !creditLifeCategory
                 && !coveredFactorTypes.containsAll(List.of(FactorType.AGE, FactorType.SUM_ASSURED_BAND))) {
             // Unpriced version: unchanged from M2. Age is rated by multiplier alone.
             throw new InvalidProductVersionException("Rating table must cover at least AGE and SUM_ASSURED_BAND factor types");

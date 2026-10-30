@@ -1223,7 +1223,8 @@ export function publishVersionFormSchema(category: ProductCategory) {
           }
         }
       }
-    } else if (category !== 'FUNERAL' && category !== 'UNIT_LINKED' && (!covered.has('AGE') || !covered.has('SUM_ASSURED_BAND'))) {
+    } else if (category !== 'FUNERAL' && category !== 'UNIT_LINKED' && category !== 'CREDIT_LIFE'
+        && (!covered.has('AGE') || !covered.has('SUM_ASSURED_BAND'))) {
       // A FUNERAL version is priced by its premium table alone (plan R1), so it carries no rating table; a
       // UNIT_LINKED version's cost of insurance is its mortality table (product step 6), so it carries none either.
       ctx.addIssue({
@@ -1325,6 +1326,18 @@ export function blankBaseRateBand(ageFrom = '', ageTo = ''): PublishVersionFormI
     { ...blank, sex: 'FEMALE' },
     { ...blank, sex: 'MALE' },
   ];
+}
+
+/**
+ * What a credit-life version pays (2026-10-30): the debt a borrower leaves on death or disability -- their loan cover,
+ * which declines as they repay. Fixed rather than chosen: the server refuses any other benefit on credit life.
+ */
+export function creditLifeBenefitRows(): PublishVersionFormInput['benefitSchedule'] {
+  return (['DEATH', 'DISABILITY'] as const).map((benefitType) => ({
+    ...blankBenefitRow(),
+    benefitType,
+    calculationMethod: 'SUM_ASSURED' as const,
+  }));
 }
 
 export function blankBenefitRow(): PublishVersionFormInput['benefitSchedule'][number] {

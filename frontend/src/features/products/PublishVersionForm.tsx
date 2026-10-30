@@ -25,6 +25,7 @@ import {
   keepsAccount,
   blankBonusSurrenderRow,
   blankBenefitRow,
+  creditLifeBenefitRows,
   blankDepositBand,
   blankCashValueRow,
   FREE_LOOK_CATEGORIES,
@@ -197,13 +198,16 @@ export function PublishVersionForm({
       effectiveDate: '',
       retirementDate: '',
       // Funeral is priced by its premium grid and unit-linked by its mortality table: no rating rows at all.
-      ratingTable: category === 'FUNERAL' || category === 'UNIT_LINKED' ? [] : neutralRatingRows(),
+      // Credit life is priced by its lenders' agreements, so it carries no rating rows either (2026-10-30).
+      ratingTable: category === 'FUNERAL' || category === 'UNIT_LINKED' || category === 'CREDIT_LIFE'
+        ? [] : neutralRatingRows(),
       baseRates: [],
-      benefitSchedule: [blankBenefitRow()],
+      benefitSchedule: category === 'CREDIT_LIFE' ? creditLifeBenefitRows() : [blankBenefitRow()],
       fundDefinitions: [],
       minEntryAge: '',
       maxEntryAge: '',
-      minTermMonths: '',
+      // Every bank loan starts at a year (the user, 2026-10-30).
+      minTermMonths: category === 'CREDIT_LIFE' ? '12' : '',
       maxTermMonths: '',
       minSumAssured: '',
       maxSumAssured: '',
@@ -283,7 +287,7 @@ export function PublishVersionForm({
   */
   useEffect(() => {
     if (rated || category === 'FUNERAL' || category === 'UNIT_LINKED') return;
-    setValue('ratingTable', neutralRatingRows());
+    setValue('ratingTable', category === 'CREDIT_LIFE' ? [] : neutralRatingRows());
     setValue('baseRates', []);
     setValue('monthlyLoadingPercent', '');
     setValue('quarterlyLoadingPercent', '');
@@ -554,8 +558,12 @@ export function PublishVersionForm({
     return (
       <Section
         title="Who can buy"
-        hint="Leave a limit blank for none."
-        tip="An age or term outside these is refused at sale. An amount outside them is flagged, not refused, so reinsurance can take it."
+        hint={kind === 'CREDIT_LIFE'
+          ? "Used for a lender's scheme until its yearly agreement sets its own oldest borrower and loan terms. Leave a limit blank for none."
+          : 'Leave a limit blank for none.'}
+        tip={kind === 'CREDIT_LIFE'
+          ? "Each borrower's cover is capped by the free cover limit on the lender's scheme, not here."
+          : 'An age or term outside these is refused at sale. An amount outside them is flagged, not refused, so reinsurance can take it.'}
       >
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Minimum entry age" error={errors.minEntryAge?.message}>
@@ -570,12 +578,16 @@ export function PublishVersionForm({
           <FormField label="Maximum term (months)" error={errors.maxTermMonths?.message}>
             <Input inputMode="numeric" placeholder="360" {...register('maxTermMonths')} />
           </FormField>
-          <FormField label={`Minimum ${amount}`} error={errors.minSumAssured?.message}>
-            <Input inputMode="decimal" placeholder="500000.00" {...register('minSumAssured')} />
-          </FormField>
-          <FormField label={`Maximum ${amount}`} error={errors.maxSumAssured?.message}>
-            <Input inputMode="decimal" placeholder="300000000.00" {...register('maxSumAssured')} />
-          </FormField>
+          {kind !== 'CREDIT_LIFE' && (
+            <>
+              <FormField label={`Minimum ${amount}`} error={errors.minSumAssured?.message}>
+                <Input inputMode="decimal" placeholder="500000.00" {...register('minSumAssured')} />
+              </FormField>
+              <FormField label={`Maximum ${amount}`} error={errors.maxSumAssured?.message}>
+                <Input inputMode="decimal" placeholder="300000000.00" {...register('maxSumAssured')} />
+              </FormField>
+            </>
+          )}
         </div>
       </Section>
     );
@@ -825,6 +837,24 @@ export function PublishVersionForm({
   }
 
   function renderPays() {
+    // Credit life pays one thing, on death or disability, and the server refuses any other benefit: shown, not chosen.
+    if (kind === 'CREDIT_LIFE') {
+      return (
+        <Section title="Benefits" hint="What a claim pays: the balance the borrower still owed, never more than their cover.">
+          <dl className="divide-y divide-border rounded-lg border border-border">
+            {(['Death', 'Disability'] as const).map((benefit) => (
+              <div key={benefit} className="flex justify-between gap-4 px-3 py-2 text-sm">
+                <dt>{benefit}</dt>
+                <dd className="text-muted-foreground">The balance still owed</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="text-xs text-muted-foreground">
+            Paid to the lender, from its statement: the principal, with interest where its agreement covers interest.
+          </p>
+        </Section>
+      );
+    }
     return (
       <>
         <Section title="Benefits" hint="What a claim pays.">
@@ -1218,7 +1248,9 @@ function ReviewSummary({ control, kind, category }: { control: Control<PublishVe
     ['TIRA filing', v.tiraReference || 'Not set'],
     ['Entry ages', range(v.minEntryAge, v.maxEntryAge)],
     ['Terms', range(v.minTermMonths, v.maxTermMonths, ' months')],
-    [kind === 'DEPOSIT' ? 'Deposits' : 'Sum assured', range(v.minSumAssured, v.maxSumAssured)],
+    kind === 'CREDIT_LIFE'
+      ? ['Priced by', "Each lender's yearly agreement"]
+      : [kind === 'DEPOSIT' ? 'Deposits' : 'Sum assured', range(v.minSumAssured, v.maxSumAssured)],
   ];
   if (isRatedKind(kind)) {
     rows.push(['Base rates', priced.length ? `${Math.ceil(priced.length / 2)} age band${priced.length > 2 ? 's' : ''}` : 'None — cannot be quoted']);
@@ -1229,7 +1261,9 @@ function ReviewSummary({ control, kind, category }: { control: Control<PublishVe
   if (kind === 'DEPOSIT') rows.push(['Deposit rates', `${(v.depositBands ?? []).length} bands × ${(v.depositTerms ?? []).length} terms`]);
   if (kind === 'SAVINGS_ACCOUNT') rows.push(['Guaranteed rate', v.guaranteedRatePercent ? `${v.guaranteedRatePercent}% a year` : 'Not set']);
   if (kind === 'TERM_ACCOUNT') rows.push(['Rate band', range(v.minRatePercent, v.maxRatePercent, '% a year')]);
-  rows.push(['Benefits', `${(v.benefitSchedule ?? []).length}`]);
+  rows.push(['Benefits', kind === 'CREDIT_LIFE'
+    ? 'Death and disability: the balance still owed'
+    : `${(v.benefitSchedule ?? []).length}`]);
   if ((FREE_LOOK_CATEGORIES.includes(category) || SCHEDULED_CATEGORIES.includes(category)) && v.freeLookDays) {
     rows.push(['Free-look', `${v.freeLookDays} days`]);
   }

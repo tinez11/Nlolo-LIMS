@@ -19,7 +19,8 @@ export type ProductKind =
   | 'TERM_ACCOUNT'
   | 'FUNERAL'
   | 'ANNUITY'
-  | 'UNIT_LINKED';
+  | 'UNIT_LINKED'
+  | 'CREDIT_LIFE';
 
 export const KIND_LABEL: Record<ProductKind, string> = {
   PROTECTION: 'Life cover',
@@ -30,6 +31,7 @@ export const KIND_LABEL: Record<ProductKind, string> = {
   FUNERAL: 'Funeral plan',
   ANNUITY: 'Annuity',
   UNIT_LINKED: 'Unit-linked plan',
+  CREDIT_LIFE: 'Credit life',
 };
 
 /** One line each, for the kind chooser. */
@@ -42,6 +44,7 @@ export const KIND_SUMMARY: Record<ProductKind, string> = {
   FUNERAL: 'Family cover from plans and a premium grid.',
   ANNUITY: 'Buys an income.',
   UNIT_LINKED: 'Premiums buy units in funds.',
+  CREDIT_LIFE: "A lender's borrowers, priced by its yearly agreement.",
 };
 
 /** The savings categories may be any of these four; the choice is the version's value basis. */
@@ -76,6 +79,9 @@ export function kindOf(category: ProductCategory, valueBasis: string): ProductKi
       return 'ANNUITY';
     case 'UNIT_LINKED':
       return 'UNIT_LINKED';
+    // Every loan is priced by its lender's yearly agreement on the scheme (2026-10-30): no rate table to ask for.
+    case 'CREDIT_LIFE':
+      return 'CREDIT_LIFE';
     default:
       if (!asksForKind(category)) return 'PROTECTION';
       return SAVINGS_KINDS.find((k) => k.basis === valueBasis)?.kind ?? 'CASH_VALUE';
@@ -108,7 +114,10 @@ export function stepsFor(category: ProductCategory, kind: ProductKind, hasAccoun
   if (asksForKind(category)) steps.push({ id: 'kind', label: 'Product type' });
   steps.push({ id: 'basics', label: 'Basics' });
   steps.push({ id: 'eligibility', label: 'Who can buy' });
-  steps.push({ id: 'pricing', label: kind === 'DEPOSIT' || isAccountKind(kind) ? 'Rates' : 'Pricing' });
+  // Credit life has nothing to price here: the lender's yearly agreement prices every loan.
+  if (kind !== 'CREDIT_LIFE') {
+    steps.push({ id: 'pricing', label: kind === 'DEPOSIT' || isAccountKind(kind) ? 'Rates' : 'Pricing' });
+  }
   steps.push({ id: 'pays', label: 'What it pays' });
   if (hasAccount) steps.push({ id: 'charges', label: 'Charges' });
   steps.push({ id: 'review', label: 'Review' });
