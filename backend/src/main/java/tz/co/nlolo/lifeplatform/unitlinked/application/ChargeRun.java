@@ -102,8 +102,12 @@ class ChargeRun implements UnitsPricedListener {
     void runFor(String policyNumber, LocalDate chargeDate) {
         UUID tenantId = TenantContext.get();
         String prefix = prefix(policyNumber, chargeDate);
-        if (!orders.findBySourcePrefix(tenantId, CHARGE, prefix).isEmpty()
-                || !entries.findBySourcePrefix(tenantId, CHARGE, prefix).isEmpty()) {
+        // Once a calendar month, read by month rather than by day (2026-10-29): charge dates used to step from the
+        // previous one and slid to the 28th; counted from the issue date now, a month already charged on its old day
+        // must not be charged again on its new one.
+        String month = CHARGE + ":" + policyNumber + ":" + java.time.YearMonth.from(chargeDate) + "-";
+        if (!orders.findBySourcePrefix(tenantId, CHARGE, month).isEmpty()
+                || !entries.findBySourcePrefix(tenantId, CHARGE, month).isEmpty()) {
             return;
         }
         if (ledger.isFrozen(policyNumber)) {

@@ -36,12 +36,13 @@ class ChargeRulesTest {
     }
 
     @Test
-    void chargeDatesStepFromEachDateInTurnAndNeverFallOnIssueDay() {
+    void chargeDatesCountFromTheIssueDayAndNeverFallOnIt() {
+        // The issue date plus whole months (2026-10-29): the 31st returns after February instead of sliding to the 28th.
         LocalDate issued = LocalDate.of(2027, 1, 31);
         assertThat(ChargeDates.between(issued, issued, LocalDate.of(2027, 4, 30)))
-            .containsExactly(LocalDate.of(2027, 2, 28), LocalDate.of(2027, 3, 28), LocalDate.of(2027, 4, 28));
-        assertThat(ChargeDates.between(issued, LocalDate.of(2027, 2, 28), LocalDate.of(2027, 3, 28)))
-            .containsExactly(LocalDate.of(2027, 3, 28));
+            .containsExactly(LocalDate.of(2027, 2, 28), LocalDate.of(2027, 3, 31), LocalDate.of(2027, 4, 30));
+        assertThat(ChargeDates.between(issued, LocalDate.of(2027, 2, 28), LocalDate.of(2027, 3, 31)))
+            .containsExactly(LocalDate.of(2027, 3, 31));
         assertThat(ChargeDates.between(issued, issued, issued)).isEmpty();
     }
 }

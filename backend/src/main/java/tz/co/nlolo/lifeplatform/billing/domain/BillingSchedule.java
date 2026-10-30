@@ -52,6 +52,14 @@ public class BillingSchedule {
      * from then on; one created before keeps billing in arrears -- the period ENDING the day before it falls due -- so
      * nothing already raised, paid or owed moves.
      */
+    /**
+     * The first due date every later one is counted from (billing V12, 2026-10-29): due dates are this plus whole
+     * periods, clamped to the month's end -- never the previous due date plus one, which slid a 31st to the 28th after
+     * February for good.
+     */
+    @Column(name = "anchor_date")
+    private LocalDate anchorDate;
+
     @Column(name = "billed_in_advance", nullable = false)
     private boolean billedInAdvance;
 
@@ -77,6 +85,7 @@ public class BillingSchedule {
         this.premiumAmount = premiumAmount;
         this.premiumCurrency = premiumCurrency;
         this.nextDueDate = nextDueDate;
+        this.anchorDate = nextDueDate;
         this.premiumPayingUntil = premiumPayingUntil;
     }
 
@@ -88,6 +97,54 @@ public class BillingSchedule {
             premiumCurrency, firstDueDate, premiumPayingUntil);
         schedule.billedInAdvance = true;
         return schedule;
+    }
+
+    /**
+     * This schedule at a new premium, from where it stands: the same anchor, paying end and convention. A restated
+     * schedule used to be built afresh, which anchored it on its next due date and billed it in arrears whatever it was.
+     */
+    public BillingSchedule restatedAt(BigDecimal amount) {
+        BillingSchedule next = new BillingSchedule(tenantId, policyNumber, premiumFrequency, amount, premiumCurrency,
+            nextDueDate, premiumPayingUntil);
+        next.billedInAdvance = billedInAdvance;
+        next.anchorDate = anchorDate != null ? anchorDate : nextDueDate;
+        return next;
+    }
+
+    /**
+     * The due date one period after {@code due}, counted from the anchor: the anchor plus whole periods, so 31 January
+     * is followed by 28 February and then 31 March -- not 28 March, as stepping from the previous date gave. The period
+     * {@code due} falls in is read by calendar month, which also returns a schedule that had already drifted to its
+     * anchor day.
+     */
+    public LocalDate periodAfter(LocalDate due) {
+        LocalDate anchor = getAnchorDate();
+        return anchor.plusMonths(monthsFromAnchor(anchor, due) + monthsPerPeriod());
+    }
+
+    /** The due date one period before {@code due}, counted from the anchor the same way. */
+    public LocalDate periodBefore(LocalDate due) {
+        LocalDate anchor = getAnchorDate();
+        return anchor.plusMonths(monthsFromAnchor(anchor, due) - monthsPerPeriod());
+    }
+
+    private static long monthsFromAnchor(LocalDate anchor, LocalDate due) {
+        return java.time.temporal.ChronoUnit.MONTHS.between(java.time.YearMonth.from(anchor), java.time.YearMonth.from(due));
+    }
+
+    private int monthsPerPeriod() {
+        return switch (premiumFrequency) {
+            case "MONTHLY" -> 1;
+            case "QUARTERLY" -> 3;
+            case "ANNUALLY" -> 12;
+            // Reaching here means something tried to schedule a contract that has no next period. Named rather than
+            // silently stepping a year, because the symptom of getting this wrong is a lender being dunned for premium
+            // nobody agreed.
+            case "SINGLE" -> throw new IllegalArgumentException(
+                "A SINGLE premium has no next period; this policy should never have been given a "
+                    + "billing schedule (see billing.PolicyEventListener.handlePolicyIssued)");
+            default -> throw new IllegalArgumentException("Unknown premium frequency: " + premiumFrequency);
+        };
     }
 
     public boolean isBilledInAdvance() { return billedInAdvance; }
@@ -117,6 +174,8 @@ public class BillingSchedule {
     public BigDecimal getPremiumAmount() { return premiumAmount; }
     public String getPremiumCurrency() { return premiumCurrency; }
     public LocalDate getNextDueDate() { return nextDueDate; }
+    /** Null only on a schedule read before V12 ran; the next due date stands in for it. */
+    public LocalDate getAnchorDate() { return anchorDate != null ? anchorDate : nextDueDate; }
     public LocalDate getPremiumPayingUntil() { return premiumPayingUntil; }
     public String getStatus() { return status; }
 }

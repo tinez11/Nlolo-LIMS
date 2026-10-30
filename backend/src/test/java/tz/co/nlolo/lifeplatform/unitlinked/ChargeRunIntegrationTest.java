@@ -126,6 +126,22 @@ class ChargeRunIntegrationTest {
         assertThat(units(s).pending()).filteredOn(o -> o.purpose().equals("CHARGES")).hasSize(4); // fee + coi, two funds
     }
 
+    /**
+     * Charge dates used to step from the previous one and slid to the 28th; counted from the issue date now (2026-10-29),
+     * a month's date can move. A month already charged on its old day is not charged again on its new one.
+     */
+    @Test
+    void aMonthChargedOnItsOldDayIsNotChargedAgainOnItsNewOne() {
+        Sold s = invested();
+        sweep.sweepOne(s.policyNumber(), s.tenant(), FIRST_CHARGE);
+        LocalDate oldDay = FIRST_CHARGE.getDayOfMonth() == 1 ? FIRST_CHARGE.plusDays(1) : FIRST_CHARGE.minusDays(1);
+        jdbc.update("update unitlinked.pending_order set source_ref = replace(source_ref, ?, ?) where source_ref like ?",
+            FIRST_CHARGE.toString(), oldDay.toString(), "%" + s.policyNumber() + ":" + FIRST_CHARGE + ":%");
+
+        sweep.sweepOne(s.policyNumber(), s.tenant(), FIRST_CHARGE);
+        assertThat(units(s).pending()).filteredOn(o -> o.purpose().equals("CHARGES")).hasSize(4);
+    }
+
     @Test
     void aFrozenPolicyIsNotCharged() {
         Sold s = invested();
