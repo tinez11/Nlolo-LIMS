@@ -462,6 +462,11 @@ public class BillingApiImpl implements BillingApi {
             collected.put("amount", Map.of("amount", invoice.getAmount().toPlainString(),
                 "currencyCode", invoice.getCurrency()));
             collected.put("collectedAt", Instant.now().toString());
+            // A credit-life file's invoice names its file (2026-10-30): distribution releases that file's commission,
+            // held since acceptance, and books no renewal on it. Absent on every other invoice.
+            if (invoice.getEnrolmentSubmissionId() != null) {
+                collected.put("enrolmentSubmissionId", invoice.getEnrolmentSubmissionId());
+            }
             // How far premiums are paid, with no gap, from the first due date -- the input a
             // cash-value policy needs to know which policy year it has reached. Billing owns the
             // invoices, so it is the only module that can compute contiguity honestly; null when

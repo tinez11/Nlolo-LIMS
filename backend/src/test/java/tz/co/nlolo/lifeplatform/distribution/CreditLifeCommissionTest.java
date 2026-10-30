@@ -193,7 +193,7 @@ class CreditLifeCommissionTest {
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
-            "db-migrations/distribution/V8__agent_login.sql");
+            "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql");
 
         MinioClient minio = MinioClient.builder()
             .endpoint(MINIO.getS3URL())
@@ -601,12 +601,99 @@ class CreditLifeCommissionTest {
         + "borrower_national_id,borrower_phone,loan_principal_amount,"
         + "loan_term_months,disbursement_date\n";
 
+    /** Accepted AND paid: the lender is paid its commission after it pays the file (2026-10-30). */
     private UUID submitAndAccept(String rows) {
+        UUID submissionId = acceptOnly(rows);
+        payTheFile(submissionId);
+        return submissionId;
+    }
+
+    /** Accepted, with the file's invoice still unpaid -- its commission is held. */
+    private UUID acceptOnly(String rows) {
         var submitted = enrolmentApi.submit(scheme,
             new ByteArrayInputStream((CSV_HEADER + rows).getBytes(StandardCharsets.UTF_8)),
             "lender-file.csv", "staff.proposer");
         enrolmentApi.accept(submitted.submissionId(), "staff.accepter");
         return submitted.submissionId();
+    }
+
+    @Autowired private tz.co.nlolo.lifeplatform.billing.api.BillingApi billingApi;
+
+    /** The lender's transfer for one file, as finance's approved receipt applies it: the invoice's full balance. */
+    private void payTheFile(UUID submissionId) {
+        var invoice = billingApi.listInvoices(scheme, null).stream()
+            .filter(i -> submissionId.equals(i.enrolmentSubmissionId())).findFirst()
+            .orElseThrow(() -> new AssertionError("No invoice was raised for submission " + submissionId));
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), invoice.balanceDue(), invoice.currency(),
+            "BANK-" + submissionId.toString().substring(0, 8));
+    }
+
+    private List<CommissionAccrual> renewals() {
+        return commissionAccrualRepository.findByTenantIdAndPolicyNumberAndTierTypeAndReversesAccrualIdIsNull(
+            tenantId, scheme, TierType.RENEWAL);
+    }
+
+    // ---- an unpaid file is collected, never a lapse (2026-10-30) ------------------
+
+    @Autowired private org.springframework.context.ApplicationEventPublisher events;
+    @Autowired private org.springframework.transaction.PlatformTransactionManager transactions;
+
+    @Test
+    void billingsLapseRecommendationNeverLapsesACreditLifeScheme() {
+        // Five reminders on one late file recommend a lapse. On a scheme that would take every borrower on the book
+        // off cover over one month's invoice; it stays a collections matter with the lender.
+        schemeWithBankAsAgent();
+        new org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult(s ->
+            events.publishEvent(tz.co.nlolo.lifeplatform.DomainEventEnvelope.of("billing.PolicyLapseRecommended",
+                tenantId, java.util.Map.of("policyNumber", scheme, "invoiceId", UUID.randomUUID(),
+                    "recommendedAt", java.time.Instant.now().toString()))));
+
+        assertThat(policyApi.getPolicy(scheme).status()).isEqualTo(PolicyStatus.ACTIVE);
+    }
+
+    // ---- the lender's commission waits for its premium (2026-10-30) ---------------
+
+    @Test
+    void aFileTheLenderHasNotPaidEarnsNoCommissionYet() {
+        // Booked at acceptance before this, so the month-end close made it payable on a file never paid for.
+        schemeWithBankAsAgent();
+        UUID submissionId = acceptOnly(THREE_BORROWERS);
+        assertThat(firstYearAccruals()).isEmpty();
+
+        payTheFile(submissionId);
+
+        assertThat(firstYearAccruals()).singleElement()
+            .satisfies(a -> assertThat(a.getAmount()).isEqualByComparingTo("8400.00"));
+    }
+
+    @Test
+    void everyPaidFileEarnsItsOwnCommissionOnceAndNeverARenewal() {
+        // The second file's invoice was read as a policy's renewal premium, and paid the lender a second time.
+        schemeWithBankAsAgent();
+        submitAndAccept(THREE_BORROWERS);
+        submitAndAccept(",Salum Juma Rashid,1969-01-30,M,,,3600000.00,12,2026-09-02\n");
+        submitAndAccept(",Neema Paulo,1995-11-09,F,,,2400000.00,12,2026-09-03\n");
+
+        assertThat(firstYearAccruals()).hasSize(3);
+        assertThat(renewals()).isEmpty();
+    }
+
+    @Test
+    void aBorrowerRefundedBeforeTheLenderPaysIsReversedTheMomentTheCommissionIsBooked() {
+        // Amina settles at month 9 of 18 while the file is still unpaid: nothing booked to claw back from yet.
+        schemeWithBankAsAgent();
+        UUID submissionId = acceptOnly(THREE_BORROWERS);
+        policyApi.exitMember(scheme, memberNamed("Amina Hassan Mwinyi").policyMemberId(), LocalDate.of(2027, 5, 3),
+            ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+        assertThat(reversals()).isEmpty();
+
+        payTheFile(submissionId);
+
+        // 8,400 booked, and 900 of it (9,000 of the 84,000 premium refunded) reversed with it.
+        assertThat(firstYearAccruals()).singleElement()
+            .satisfies(a -> assertThat(a.getAmount()).isEqualByComparingTo("8400.00"));
+        assertThat(reversals()).singleElement()
+            .satisfies(r -> assertThat(r.getAmount()).isEqualByComparingTo("-900.00"));
     }
 
     /** A scheme whose agent of record is the bank, with a plan that pays 10% first year. */

@@ -182,6 +182,9 @@ function LenderCommissionActions({
                     partyId: policy.policyholderPartyId ?? '',
                     licenseNumber: licenseNumber.trim(),
                     licenseExpiryDate: licenseExpiry ?? '',
+                    // A lender selling its borrowers' cover is bancassurance (2026-10-30): its commission posts to the
+                    // bancassurance payable (2530), not the tied agents' (2510) it fell into as the default channel.
+                    salesChannel: 'BANCASSURANCE',
                   },
                   attempt,
                 ),

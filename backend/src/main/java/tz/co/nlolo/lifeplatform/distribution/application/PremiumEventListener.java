@@ -58,11 +58,15 @@ public class PremiumEventListener {
     private final DistributionApiImpl distributionApiImpl;
     private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate requiresNewTransactionTemplate;
+    /** A credit-life file's commission, released when its invoice is paid (2026-10-30). */
+    private final CreditLifeCommissions creditLifeCommissions;
 
     public PremiumEventListener(PolicyProjectionRepository policyProjectionRepository,
                                  DistributionApiImpl distributionApiImpl,
                                  ApplicationEventPublisher eventPublisher,
-                                 PlatformTransactionManager transactionManager) {
+                                 PlatformTransactionManager transactionManager,
+                                 CreditLifeCommissions creditLifeCommissions) {
+        this.creditLifeCommissions = creditLifeCommissions;
         this.policyProjectionRepository = policyProjectionRepository;
         this.distributionApiImpl = distributionApiImpl;
         this.eventPublisher = eventPublisher;
@@ -123,6 +127,19 @@ public class PremiumEventListener {
         Map<String, Object> amount = (Map<String, Object>) payload.get("amount");
         BigDecimal collectedAmount = new BigDecimal((String) amount.get("amount"));
         String currency = (String) amount.get("currencyCode");
+
+        // A CREDIT-LIFE FILE'S invoice (2026-10-30): the lender has paid, so the commission held since the file was
+        // accepted is booked now. Never a RENEWAL as well -- each file earns its own commission once, and treating the
+        // second file's invoice as a renewal paid the lender twice.
+        Object file = payload.get("enrolmentSubmissionId");
+        if (file != null) {
+            UUID submissionId = file instanceof UUID u ? u : UUID.fromString(file.toString());
+            if (!creditLifeCommissions.release(TenantContext.get(), submissionId)) {
+                log.info("Submission {}'s premium on scheme {} is paid; it held no commission to release",
+                    submissionId, policyNumber);
+            }
+            return;
+        }
 
         Optional<PolicyProjection> maybeProjection = policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber);
         if (maybeProjection.isEmpty()) {
