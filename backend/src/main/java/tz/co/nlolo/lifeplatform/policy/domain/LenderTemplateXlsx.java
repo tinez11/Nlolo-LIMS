@@ -17,7 +17,6 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -49,15 +48,6 @@ import java.util.List;
  * displays, and {@link tz.co.nlolo.lifeplatform.XlsxToCsv} reads it back as ISO.
  */
 public final class LenderTemplateXlsx {
-
-    /**
-     * What a borrower looks like, as the CSV template's example row needs them. The enrolment workbook is
-     * {@link CreditLifeTemplateXlsx} since 2026-10-30, built from the scheme's agreement.
-     */
-    public record EnrolmentExample(String memberReference, String borrowerFullName,
-                                    LocalDate borrowerDateOfBirth, BigDecimal loanPrincipalAmount,
-                                    int loanTermMonths, LocalDate disbursementDate,
-                                    String loanAccountNumber) {}
 
     private LenderTemplateXlsx() {}
 

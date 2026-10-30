@@ -1832,15 +1832,15 @@ components:
       properties:
         validFrom: { type: string, format: date }
         validTo: { type: string, format: date }
-        premiumRatePercent: { type: number, description: "Per year on the loan amount; 0.6 means 0.6%" }
+        premiumRatePercent: { type: string, pattern: '^d+(.d+)?$', description: "Per year on the loan amount; 0.6 means 0.6%" }
         premiumBasis:
           type: string
           enum: [FLAT_ON_PRINCIPAL, PER_ANNUM_ON_PRINCIPAL, ANNUAL_ON_DECLINING_BALANCE, WHOLE_YEARS_ROUNDED_UP]
-        minimumPremium: { type: [number, "null"], description: The least one loan pays }
+        minimumPremium: { type: [string, "null"], pattern: '^d+(.d{1,2})?$', description: The least one loan pays }
         maxAge: { type: integer, minimum: 18, maximum: 100, description: The oldest a borrower may be when the loan starts }
         minTermMonths: { type: integer, minimum: 1 }
         maxTermMonths: { type: integer, maximum: 480 }
-        commissionPercent: { type: [number, "null"], minimum: 0, maximum: 15, description: "The lender's commission; at most 15% (TIRA)" }
+        commissionPercent: { type: [string, "null"], pattern: '^d+(.d+)?$', description: "The lender's commission; at most 15% (TIRA)" }
         coverIncludesInterest: { type: boolean }
     CreditLifeAgreement:
       type: object
@@ -1852,15 +1852,15 @@ components:
         policyNumber: { type: string }
         validFrom: { type: string, format: date }
         validTo: { type: string, format: date }
-        premiumRatePercent: { type: number }
+        premiumRatePercent: { type: string, pattern: '^-?d+(.d+)?$' }
         premiumBasis:
           type: string
           enum: [FLAT_ON_PRINCIPAL, PER_ANNUM_ON_PRINCIPAL, ANNUAL_ON_DECLINING_BALANCE, WHOLE_YEARS_ROUNDED_UP]
-        minimumPremium: { type: number }
+        minimumPremium: { type: string, pattern: '^-?d+(.d+)?$' }
         maxAge: { type: integer }
         minTermMonths: { type: integer }
         maxTermMonths: { type: integer }
-        commissionPercent: { type: number }
+        commissionPercent: { type: string, pattern: '^-?d+(.d+)?$' }
         coverIncludesInterest: { type: boolean }
         createdAt: { type: string, format: date-time }
         createdBy: { type: string }
@@ -2075,13 +2075,13 @@ components:
         policyNumber: { type: string }
         currency: { type: string }
         borrowers: { type: integer }
-        totalLoanAmount: { type: number }
-        premium: { type: number }
-        statedPremium: { type: [number, "null"], description: "The lender's own figure; null when their file had no premium column" }
-        difference: { type: [number, "null"], description: "premium less statedPremium; positive means the lender pays more than they worked out" }
-        commissionPercent: { type: [number, "null"] }
-        commission: { type: number }
-        amountToPay: { type: number }
+        totalLoanAmount: { type: string, pattern: '^-?d+(.d+)?$' }
+        premium: { type: string, pattern: '^-?d+(.d+)?$' }
+        statedPremium: { type: [string, "null"], pattern: '^-?d+(.d+)?$', description: "The lender's own figure; null when their file had no premium column" }
+        difference: { type: [string, "null"], pattern: '^-?d+(.d+)?$', description: "premium less statedPremium; positive means the lender pays more than they worked out" }
+        commissionPercent: { type: [string, "null"], pattern: '^-?d+(.d+)?$' }
+        commission: { type: string, pattern: '^-?d+(.d+)?$' }
+        amountToPay: { type: string, pattern: '^-?d+(.d+)?$' }
         mismatches:
           type: array
           items:
@@ -2091,8 +2091,8 @@ components:
             properties:
               lineNumber: { type: integer }
               borrowerFullName: { type: [string, "null"] }
-              premium: { type: number }
-              statedPremium: { type: number }
+              premium: { type: string, pattern: '^-?d+(.d+)?$' }
+              statedPremium: { type: string, pattern: '^-?d+(.d+)?$' }
     EnrolmentRowView:
       description: >-
         One line of the lender's file and its outcome. ENROLLED_CAPPED is COVER, not a

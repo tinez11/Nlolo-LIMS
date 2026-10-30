@@ -1,12 +1,14 @@
 package tz.co.nlolo.lifeplatform.policy.api;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
 /**
  * A lender's file priced before acceptance (2026-10-30): what the lender pays, what they earn, and where their own
- * figures differ from ours.
+ * figures differ from ours. Amounts are decimal strings on the wire, as all money on this platform travels.
  *
  * @param borrowers the rows that will be covered on acceptance; refused rows are in none of these figures
  * @param statedPremium what the lender's own file said for those rows, or null where it carried no premium column
@@ -22,14 +24,16 @@ public record EnrolmentQuotationView(UUID submissionId,
                                      String policyNumber,
                                      String currency,
                                      int borrowers,
-                                     BigDecimal totalLoanAmount,
-                                     BigDecimal premium,
-                                     BigDecimal statedPremium,
-                                     BigDecimal difference,
-                                     BigDecimal commissionPercent,
-                                     BigDecimal commission,
-                                     BigDecimal amountToPay,
+                                     @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal totalLoanAmount,
+                                     @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal premium,
+                                     @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal statedPremium,
+                                     @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal difference,
+                                     @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal commissionPercent,
+                                     @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal commission,
+                                     @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal amountToPay,
                                      List<Mismatch> mismatches) {
 
-    public record Mismatch(int lineNumber, String borrowerFullName, BigDecimal premium, BigDecimal statedPremium) {}
+    public record Mismatch(int lineNumber, String borrowerFullName,
+                           @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal premium,
+                           @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal statedPremium) {}
 }

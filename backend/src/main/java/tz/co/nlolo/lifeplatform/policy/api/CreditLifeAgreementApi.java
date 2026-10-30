@@ -1,5 +1,7 @@
 package tz.co.nlolo.lifeplatform.policy.api;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -40,14 +42,12 @@ public interface CreditLifeAgreementApi {
                           int minTermMonths, int maxTermMonths, BigDecimal commissionPercent,
                           boolean coverIncludesInterest) {}
 
+    /** Decimals as strings on the wire, as all money on this platform travels: a double cannot hold every decimal. */
     record AgreementView(UUID agreementId, String policyNumber, LocalDate validFrom, LocalDate validTo,
-                         BigDecimal premiumRatePercent, CreditLifePremiumBasis premiumBasis, BigDecimal minimumPremium,
-                         int maxAge, int minTermMonths, int maxTermMonths, BigDecimal commissionPercent,
-                         boolean coverIncludesInterest, Instant createdAt, String createdBy) {
-
-        /** The lender's commission on a premium, to the cent. */
-        public BigDecimal commissionOn(BigDecimal premium) {
-            return premium.multiply(commissionPercent).divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP);
-        }
-    }
+                         @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal premiumRatePercent,
+                         CreditLifePremiumBasis premiumBasis,
+                         @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal minimumPremium,
+                         int maxAge, int minTermMonths, int maxTermMonths,
+                         @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal commissionPercent,
+                         boolean coverIncludesInterest, Instant createdAt, String createdBy) {}
 }

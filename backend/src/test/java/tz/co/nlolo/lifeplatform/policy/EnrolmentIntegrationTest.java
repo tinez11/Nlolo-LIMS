@@ -496,10 +496,10 @@ class EnrolmentIntegrationTest {
                     + "/quotation").with(staff("staff.one")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.borrowers").value(2))
-            .andExpect(jsonPath("$.premium").value(206000.00))
-            .andExpect(jsonPath("$.statedPremium").value(206000.00))
-            .andExpect(jsonPath("$.difference").value(0))
-            .andExpect(jsonPath("$.commission").value(20600.00))
+            .andExpect(jsonPath("$.premium").value("206000.00"))
+            .andExpect(jsonPath("$.statedPremium").value("206000.00"))
+            .andExpect(jsonPath("$.difference").value("0.00"))
+            .andExpect(jsonPath("$.commission").value("20600.00"))
             .andExpect(jsonPath("$.mismatches").isEmpty());
         TenantContext.set(tenantId);
 
@@ -519,12 +519,15 @@ class EnrolmentIntegrationTest {
         mockMvc.perform(post("/group-schemes/" + creditLifeScheme + "/agreements")
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                 .content("""
-                    {"validFrom":"2026-06-01","validTo":"2027-05-31","premiumRatePercent":0.6,
-                     "premiumBasis":"WHOLE_YEARS_ROUNDED_UP","minimumPremium":2000,"maxAge":75,
-                     "minTermMonths":12,"maxTermMonths":120,"commissionPercent":10,"coverIncludesInterest":true}""")
+                    {"validFrom":"2026-06-01","validTo":"2027-05-31","premiumRatePercent":"0.6",
+                     "premiumBasis":"WHOLE_YEARS_ROUNDED_UP","minimumPremium":"2000.00","maxAge":75,
+                     "minTermMonths":12,"maxTermMonths":120,"commissionPercent":"10","coverIncludesInterest":true}""")
                 .with(staff("staff.one")))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.maxAge").value(75));
+            .andExpect(jsonPath("$.maxAge").value(75))
+            // Decimals as strings, as money travels on this platform.
+            .andExpect(jsonPath("$.minimumPremium").value("2000.00"))
+            .andExpect(jsonPath("$.premiumRatePercent").value("0.6"));
 
         mockMvc.perform(get("/group-schemes/" + creditLifeScheme + "/agreements").with(staff("staff.one")))
             .andExpect(status().isOk())

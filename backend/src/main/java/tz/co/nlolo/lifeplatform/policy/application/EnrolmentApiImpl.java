@@ -46,7 +46,6 @@ import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import tz.co.nlolo.lifeplatform.policy.domain.LenderTemplateXlsx;
 import tz.co.nlolo.lifeplatform.policy.domain.PolicyMember;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
@@ -371,7 +370,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
                 stated = stated == null ? theirs : stated.add(theirs);
                 if (theirs.compareTo(ours) != 0) {
                     mismatches.add(new EnrolmentQuotationView.Mismatch(row.getLineNumber(),
-                        row.getBorrowerFullName(), ours, theirs));
+                        row.getBorrowerFullName(), cents(ours), cents(theirs)));
                 }
             }
         }
@@ -379,8 +378,13 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         BigDecimal percent = commissionByAgreement.size() == 1 ? commissionByAgreement.keySet().iterator().next()
             : null;
         return new EnrolmentQuotationView(submissionId, submission.getPolicyNumber(), scheme.getCurrency(), borrowers,
-            loans, premium, stated, stated == null ? null : premium.subtract(stated), percent, commission, premium,
-            List.copyOf(mismatches));
+            cents(loans), cents(premium), cents(stated), stated == null ? null : cents(premium.subtract(stated)),
+            percent, cents(commission), cents(premium), List.copyOf(mismatches));
+    }
+
+    /** To the cent, as money is shown: a lender's own figure arrives as "204000" and reads as 204000.00 beside ours. */
+    private static BigDecimal cents(BigDecimal amount) {
+        return amount == null ? null : amount.setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
     @Override
@@ -493,41 +497,6 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         }
         return new CreditLifeTemplateXlsx.Terms(lender, policyNumber, scheme.getCurrency(), null, null,
             scheme.getPremiumRatePercent(), scheme.getPremiumBasis(), null, null, null, null, null);
-    }
-
-    /**
-     * The scheme's earliest active borrower, as an example, or null if it has none to show.
-     *
-     * <p>Shared by both templates. Split out when the spreadsheet arrived rather than duplicated,
-     * because a CSV and an XLSX that demonstrated DIFFERENT borrowers would be the same class of
-     * defect the generated header was introduced to prevent.
-     */
-    private LenderTemplateXlsx.EnrolmentExample exampleRowFor(String policyNumber) {
-        UUID tenantId = TenantContext.get();
-        Pageable earliest = PageRequest.of(0, 1, Sort.by(Sort.Direction.ASC, "joinedOn")
-            .and(Sort.by(Sort.Direction.ASC, "policyMemberId")));
-        for (PolicyMember member : policyMemberRepository
-                .findByTenantIdAndPolicyNumberAndStatus(tenantId, policyNumber, "ACTIVE", earliest)
-                .getContent()) {
-            LoanTerms terms = member.getLoanTerms();
-            if (terms == null) {
-                continue;
-            }
-            String name = member.getMemberName();
-            LocalDate born = member.getMemberDateOfBirth();
-            if ((name == null || born == null) && member.getMemberPartyId() != null) {
-                PartyDetailView party = partyApi.getPartyDetail(member.getMemberPartyId());
-                name = name != null ? name : party.displayName();
-                born = born != null ? born : party.dateOfBirth();
-            }
-            if (name == null || born == null) {
-                continue;
-            }
-            return new LenderTemplateXlsx.EnrolmentExample(member.getMemberReference(), name, born,
-                terms.principalAmount(), terms.termMonths(), terms.disbursementDate(),
-                member.getLoanAccountNumber());
-        }
-        return null;
     }
 
     /**
