@@ -120,7 +120,8 @@ test.describe('staff credit-life scheme', () => {
 
     // "Would be", not "Enrolled". The count is an intention until somebody accepts.
     await expect(page.getByText('Would be enrolled')).toBeVisible();
-    await expect(page.getByText('Refused')).toBeVisible();
+    // Exact: the file's quotation also says "Refused rows are in none of these figures".
+    await expect(page.getByText('Refused', { exact: true })).toBeVisible();
 
     /*
      * THE REASONS ARE ON SCREEN, unclicked. The newest file opens by itself precisely so that the
@@ -156,10 +157,9 @@ test.describe('staff credit-life scheme', () => {
 
     // The columns are explained where somebody can read them out to a lender.
     await page.getByRole('button', { name: 'What goes in it' }).first().click();
-    await expect(page.getByText(/cover starts on it/).first()).toBeVisible();
-    // This scheme HAS a borrower, so the guide promises the example that really is in the file.
-    // Its mirror — a scheme with nobody on it — is asserted in the set-up test below.
-    await expect(page.getByText(/carries one of this scheme/)).toBeVisible();
+    await expect(page.getByText(/cover starts on it/i).first()).toBeVisible();
+    // The spreadsheet is built from the agreement (2026-10-30), and the guide says what that puts in it.
+    await expect(page.getByText(/The spreadsheet carries this scheme/)).toBeVisible();
 
     /*
      * NO EMPLOYER-SCHEME FURNITURE. A credit-life scheme has no grades and no salary multiple:
@@ -378,13 +378,13 @@ test.describe('staff credit-life scheme', () => {
     expect(templateText.trim().split('\n')).toHaveLength(1);
 
     /*
-     * AND THE GUIDE SAYS SO. It promised a worked example unconditionally, which was true while
-     * every scheme was forced to open with a typed borrower and became a lie the day they
-     * stopped -- sending somebody to look for a row that is not in the file.
+     * AND THE GUIDE DESCRIBES WHAT IS IN THE FILE. Since 2026-10-30 the spreadsheet is built from the scheme's
+     * agreement and carries no example row at all, so the guide must promise none -- it once promised one
+     * unconditionally, sending somebody to look for a row that was not there.
      */
     await page.getByRole('button', { name: 'What goes in it' }).first().click();
-    await expect(page.getByText(/the column headings alone/)).toBeVisible();
-    await expect(page.getByText(/carries one of this scheme/)).toHaveCount(0);
+    await expect(page.getByText(/The spreadsheet carries this scheme/)).toBeVisible();
+    await expect(page.getByText(/worked example/)).toHaveCount(0);
   });
 
   test('a file that is neither CSV nor XLSX is refused before the network', async ({ page }) => {

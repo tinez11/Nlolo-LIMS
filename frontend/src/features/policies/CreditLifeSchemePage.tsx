@@ -42,6 +42,9 @@ import {
 import { selectDetail, selectScheme, usePolicyStore } from '@/store/policyStore';
 import { ProductName } from '@/components/ProductName';
 import { CommissionPanel } from './CommissionPanel';
+import { AgreementInForce, CreditLifeAgreementsPanel } from './CreditLifeAgreementsPanel';
+import { EnrolmentQuotation } from './EnrolmentQuotation';
+import { isPositive } from './creditLifeAgreementForm';
 import { FreeCoverLimitEditor } from './FreeCoverLimitEditor';
 import { SubmissionsPanel, type SubmissionRow } from './SubmissionsPanel';
 import { Tip } from '@/components/ui/tooltip';
@@ -141,12 +144,16 @@ export function CreditLifeSchemePage() {
     void loadDetail(policyNumber);
     void store.loadEnrolments(policyNumber);
     void store.loadExits(policyNumber);
+    void store.loadAgreements(policyNumber);
     // The store actions are stable zustand references; re-running on them would refetch forever.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [policyNumber]);
 
   useEffect(() => {
-    if (openEnrolment) void store.loadEnrolmentRows(policyNumber, openEnrolment);
+    if (openEnrolment) {
+      void store.loadEnrolmentRows(policyNumber, openEnrolment);
+      void store.loadQuotation(policyNumber, openEnrolment);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [policyNumber, openEnrolment]);
 
@@ -193,6 +200,8 @@ export function CreditLifeSchemePage() {
   }
 
   const data = scheme.data;
+  const currency = data?.totalCovered?.currencyCode ?? data?.fcl?.currencyCode ?? 'TZS';
+  const openEnrolmentStatus = enrolments.data?.find((s) => s.submissionId === openEnrolment)?.status;
 
   return (
     <>
@@ -231,6 +240,10 @@ export function CreditLifeSchemePage() {
             {/* The terms a person needs in view while judging a file, and nothing that belongs
                 to a different benefit basis. No grades, no salary multiple: this product has
                 neither, and an empty grade table would be furniture. */}
+            {/* The year in force, beside the files it prices. Facts only: the year is added in the work column. */}
+            <Panel title="Agreement" subtitle="With the lender, in force today">
+              <AgreementInForce policyNumber={policyNumber} currency={currency} />
+            </Panel>
             <Panel title="Terms" subtitle="What this scheme covers">
               {/* px-4 pb-2, the same as every other Field list on this platform. This had no
                   padding and a divide-y: the rows ran edge to edge into the panel border, and the
@@ -315,6 +328,13 @@ export function CreditLifeSchemePage() {
           </>
         }
       >
+        <Panel
+          title="Yearly agreement"
+          subtitle="The rate, the limits and the lender's commission, agreed once a year. Each loan is priced on the year it started in."
+        >
+          <CreditLifeAgreementsPanel policyNumber={policyNumber} currency={currency} />
+        </Panel>
+
         <SubmissionsPanel
           kind="enrolment"
           title="Borrowers joining"
@@ -357,11 +377,27 @@ export function CreditLifeSchemePage() {
               enrolmentTemplateFileName(policyNumber),
             )
           }
-          // Whether the template actually HAS a worked example, which depends on whether this
-          // scheme has anybody on it yet. A new scheme has nobody, and the guide must not promise
-          // a row that is not in the file.
-          columnGuide={<EnrolmentColumns hasExample={(data?.activeMemberCount ?? 0) > 0} />}
+          columnGuide={<EnrolmentColumns />}
+          // The confirmation states what accepting does in this file's own figures, from its quotation.
+          acceptConsequence={(id) => {
+            const q = useCreditLifeStore.getState().quotations[id]?.data;
+            if (!q) return null;
+            const amount = (value: string) => formatMoney({ amount: value, currencyCode: q.currency });
+            return (
+              <>
+                <strong>
+                  {q.borrowers} {q.borrowers === 1 ? 'borrower is' : 'borrowers are'} enrolled
+                </strong>{' '}
+                and the lender is invoiced <strong>{amount(q.amountToPay)}</strong>
+                {isPositive(q.commission) ? <>; their commission of {amount(q.commission)} is paid after it is received</> : null}
+                . Refused rows are not covered, and the lender learns which from the report.
+              </>
+            );
+          }}
         >
+          {openEnrolment && openEnrolmentStatus && (
+            <EnrolmentQuotation submissionId={openEnrolment} status={openEnrolmentStatus} />
+          )}
           <EnrolmentRows
             rows={enrolmentRows.data ?? []}
             loading={isInitialLoad(enrolmentRows)}
@@ -412,89 +448,52 @@ export function CreditLifeSchemePage() {
 }
 
 /**
- * What goes in the blank file, in the words somebody repeats to a lender.
+ * What goes in the lender's spreadsheet, in the words somebody repeats to a lender (2026-10-30).
  *
- * <p>The columns are generated into the template by the parser that reads them, so the file and
- * the rules cannot drift; what a CSV header cannot carry is which columns are compulsory, what a
- * date has to look like, and why `member_reference` is blank the first time. That is this table,
- * and it is what makes the download usable by the person who has to explain it.
+ * <p>The spreadsheet is built from the scheme's agreement: its price, its limits and a Check column that names what
+ * is wrong with a row as it is typed. These are its own column names, so the person explaining it and the lender
+ * filling it read the same words. The CSV carries the same columns under their system names.
  *
- * <p>Kept deliberately short of restating the whole judgement. Every rule that rejects a row is
- * applied server-side and comes back as a reason on that row; duplicating them here would create
- * a second statement of the rules that goes stale.
+ * <p>Kept short of restating the whole judgement: every rule that refuses a row is applied by the server and comes
+ * back as a reason on that row.
  */
-function EnrolmentColumns({ hasExample }: { hasExample: boolean }) {
+function EnrolmentColumns() {
   return (
     <dl className="grid gap-x-4 gap-y-1.5 text-xs sm:grid-cols-[auto_1fr]">
-      {/* Said first, because it changes what the download IS -- and it has to match what is
-          actually in the file.
-
-          This claimed a worked example unconditionally, which was true while every scheme was
-          forced to open with a typed borrower and became a lie the day they stopped. A scheme set
-          up today has nobody on it, so its template is the header alone, and a person told to look
-          for an example row would go looking for something that is not there. The example is one
-          of the LENDER'S OWN borrowers; there is none until the first file is accepted. */}
       <p className="sm:col-span-2 mb-1 text-xs text-muted-foreground">
-        {hasExample ? (
-          <>
-            The template carries one of this scheme&rsquo;s own borrowers as a worked example, so
-            the lender can see a real row before filling their own. Leaving it in is harmless —
-            that loan is already on cover, so the row comes back refused as already enrolled rather
-            than insuring anybody twice.
-          </>
-        ) : (
-          <>
-            The template is the column headings alone. Nobody is on this scheme yet, and the worked
-            example is one of the lender&rsquo;s own borrowers — so it appears once their first
-            file has been accepted.
-          </>
-        )}
+        The spreadsheet carries this scheme&rsquo;s agreement: the price in words, totals at the top, and grey columns
+        that fill themselves &mdash; the loan&rsquo;s end date, its premium and a Check that says OK or what is wrong.
+        A row whose Check is not OK is refused when the file is sent back.
       </p>
-      {/* The single most useful sentence on this page. Two real files were refused entire because
-          of it, and the second was sent AFTER being told the format -- because the advice was to
-          type YYYY-MM-DD, and Excel rewrites it anyway. */}
       <p className="sm:col-span-2 mb-1 text-xs text-status-warning-fg">
-        Send the spreadsheet, not the CSV, to anyone who works in Excel. Excel rewrites dates when
-        it opens a CSV and again when it saves one — 2000-09-01 comes back as 9/1/2000 and the row
-        is refused. In a spreadsheet a date is a real date and survives.
+        Send the spreadsheet, not the CSV, to anyone who works in Excel. Excel rewrites dates in a CSV and the row is
+        refused; in a spreadsheet a date stays a date.
       </p>
-      <Column name="member_reference" required={false}>
-        Blank for a new borrower — the insurer mints it and returns it on the report. The lender
-        quotes it back on any later file about that same loan.
+      <Column name="Borrower's full name" required>
+        As on the loan agreement. No client record is created for them.
       </Column>
-      <Column name="borrower_full_name" required>
-        The person insured. No client record is created for them.
+      <Column name="Date of birth" required>
+        Typed as Excel takes a date. The agreement&rsquo;s oldest borrower is checked against it.
       </Column>
-      <Column name="borrower_date_of_birth" required>
-        YYYY-MM-DD. The product&rsquo;s entry-age bounds are checked against it.
+      <Column name="Loan amount" required>
+        What was lent. The premium is charged on this, and cover starts here and declines.
       </Column>
-      <Column name="loan_principal_amount" required>
-        What they borrowed, e.g. 1200000.00. The premium is charged on this, and cover starts here
-        and declines.
+      <Column name="Loan term (months)" required>
+        Whole months, within the agreement&rsquo;s shortest and longest loan.
       </Column>
-      <Column name="loan_term_months" required>
-        A whole number of months.
+      <Column name="Loan start date" required>
+        The day the money was paid out. <strong>Cover starts on it</strong>, so it cannot be in the future.
       </Column>
-      <Column name="disbursement_date" required>
-        YYYY-MM-DD, and <strong>cover starts on it</strong> — so it cannot be in the future.
-      </Column>
-      <Column name="borrower_sex" required={false}>
+      <Column name="Sex" required={false}>
         M or F. Not priced on; kept for the regulatory return.
       </Column>
-      <Column name="borrower_national_id" required={false}>
-        Eases identifying them if a claim is ever made.
-      </Column>
-      <Column name="borrower_phone" required={false}>
-        Optional. The insurer never contacts the borrower.
-      </Column>
-      <Column name="loan_account_number" required={false}>
-        Read and echoed back if the lender has one. Neither real lender does, which is why the
-        insurer mints the reference instead.
+      <Column name="Loan account no., National ID, Phone" required={false}>
+        Help identify the borrower if a claim is ever made.
       </Column>
       <p className="sm:col-span-2 mt-1 text-xs text-muted-foreground">
-        Extra columns are ignored, not refused — a lender&rsquo;s own export carries plenty we do
-        not use. A row repeating the name, date of birth, disbursement date and principal of a
-        loan already on cover is refused as a duplicate rather than insuring it twice.
+        A lender&rsquo;s own spreadsheet is read too: its header may sit below a title, behind a Summary sheet, and in
+        its own words (CLIENT NAME, SUM ASSURED, POLICY TERM, START DATE); TOTAL rows and extra columns are ignored.
+        A row repeating a loan already on cover is refused rather than insuring it twice.
       </p>
     </dl>
   );

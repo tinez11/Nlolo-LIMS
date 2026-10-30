@@ -35,7 +35,8 @@ export type SubmissionKind = 'enrolment' | 'exits';
  * exposed to the identical failure, having simply not been reached yet.
  */
 const EXTENSIONS: Record<SubmissionKind, readonly string[]> = {
-  enrolment: ['.csv', '.xlsx'],
+  // .xlsm: the lenders' own template is macro-enabled (2026-10-30). Read as cells; its macros never run.
+  enrolment: ['.csv', '.xlsx', '.xlsm'],
   exits: ['.csv', '.xlsx'],
 };
 
@@ -62,7 +63,7 @@ export function submissionUploadSchema(kind: SubmissionKind) {
         message:
           kind === 'exits'
             ? 'An exits file must be a CSV or an XLSX'
-            : 'An enrolment schedule must be a CSV or an XLSX',
+            : 'An enrolment schedule must be an Excel file (.xlsx or .xlsm) or a CSV',
       }),
   });
 }

@@ -356,9 +356,15 @@ public class EnrolmentApiImpl implements EnrolmentApi {
                 rowRepository.findByTenantIdAndSubmissionIdOrderByLineNumberAsc(tenantId, submissionId)) {
             if (row.getOutcome() == RowOutcome.REJECTED) continue;
             EnrolmentSubmissionRow.LoanTermsSource judged = row.getJudgedLoan();
-            Priced priced = price(judged, scheme, schemeAgreements, submission.getPolicyNumber());
-            // Once accepted, what the borrower WAS charged; until then, what acceptance will charge.
-            BigDecimal ours = row.getPremiumAmount() != null ? row.getPremiumAmount() : priced.premium();
+            // Once accepted, what the borrower WAS charged -- never re-priced, so an agreement added since, which
+            // does not cover this older loan, cannot make a settled file unquotable. Until then, what acceptance
+            // will charge.
+            Priced priced = row.getPremiumAmount() != null
+                ? new Priced(row.getPremiumAmount(), schemeAgreements.stream()
+                    .filter(a -> a.covers(judged.disbursementDate())).findFirst()
+                    .map(CreditLifeAgreement::getCommissionPercent).orElse(null))
+                : price(judged, scheme, schemeAgreements, submission.getPolicyNumber());
+            BigDecimal ours = priced.premium();
             borrowers++;
             loans = loans.add(judged.loanPrincipalAmount());
             premium = premium.add(ours);

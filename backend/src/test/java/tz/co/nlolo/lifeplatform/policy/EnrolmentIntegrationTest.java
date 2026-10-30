@@ -377,6 +377,19 @@ class EnrolmentIntegrationTest {
     }
 
     @Test
+    void anAcceptedFileStillQuotesWhatItWasChargedAfterALaterAgreementIsAdded() {
+        // Accepted on the scheme's own rate, before any agreement: 8,500,000 x 0.5% x 4 years = 170,000.
+        var june = enrolmentApi.submit(creditLifeScheme, csv(ONE_GOOD_ROW), "june.csv", "staff.one");
+        enrolmentApi.accept(june.submissionId(), "staff.two");
+        // A year agreed from August does not cover June's loan -- and must not make June unquotable.
+        agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 8, 1), "10"), "staff-setup");
+
+        var quote = enrolmentApi.quotation(june.submissionId());
+        assertThat(quote.premium()).isEqualByComparingTo("170000.00");
+        assertThat(quote.commission()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
     void theQuotationNamesEveryRowWhoseOwnPremiumIsNotOurs() {
         agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 6, 1), "10"), "staff-setup");
         // The lender worked Grace out on the old 0.4% -- 4,000 where the agreement says 6,000.

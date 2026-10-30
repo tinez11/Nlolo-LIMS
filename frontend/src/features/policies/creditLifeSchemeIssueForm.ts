@@ -52,6 +52,8 @@ export const CREDIT_LIFE_PREMIUM_BASES = [
   'FLAT_ON_PRINCIPAL',
   'PER_ANNUM_ON_PRINCIPAL',
   'ANNUAL_ON_DECLINING_BALANCE',
+  // The lenders' own template (2026-10-30): a year's rate for every year the loan runs, part of a year counted whole.
+  'WHOLE_YEARS_ROUNDED_UP',
 ] as const;
 
 export const CREDIT_LIFE_PREMIUM_BASIS_LABELS: Record<
@@ -61,6 +63,7 @@ export const CREDIT_LIFE_PREMIUM_BASIS_LABELS: Record<
   FLAT_ON_PRINCIPAL: 'Flat on the disbursed amount, whatever the term',
   PER_ANNUM_ON_PRINCIPAL: 'Per year, on the disbursed amount',
   ANNUAL_ON_DECLINING_BALANCE: 'Per year, on the balance still outstanding',
+  WHOLE_YEARS_ROUNDED_UP: 'Per year, a part year counted whole',
 };
 
 /**

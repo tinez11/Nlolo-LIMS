@@ -252,7 +252,8 @@ export function IssueCreditLifeSchemePage() {
                 */}
                 <p className="mt-1 text-xs text-subtle-foreground">
                   On a 10,400,000 loan over 18 months at 0.5%: flat charges 52,000, per year on
-                  the disbursed amount 78,000, and per year on the outstanding balance 69,333.33.
+                  the disbursed amount 78,000, per year on the outstanding balance 69,333.33, and
+                  per year with a part year counted whole 104,000.
                   Check the lender's own schedule — this is what they agreed, not a preference.
                 </p>
               </FormField>

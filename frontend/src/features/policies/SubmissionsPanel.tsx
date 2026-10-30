@@ -80,6 +80,11 @@ interface Props {
   onDownloadTemplateCsv?: () => Promise<void>;
   /** The columns the lender must fill, and the formats. Rendered beside the template. */
   columnGuide: React.ReactNode;
+  /**
+   * What accepting this file does, in its real figures -- the borrowers and the amount invoiced -- where the page
+   * has priced it (the enrolment quotation). Null falls back to the general sentence.
+   */
+  acceptConsequence?: (submissionId: string) => React.ReactNode | null;
   /** Rendered under the selected submission: the rows and their reasons. */
   children?: React.ReactNode;
 }
@@ -105,6 +110,7 @@ export function SubmissionsPanel({
   onDownloadTemplate,
   onDownloadTemplateCsv,
   columnGuide,
+  acceptConsequence,
   children,
 }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
@@ -181,7 +187,7 @@ export function SubmissionsPanel({
             ? 'A file is already waiting for a decision. Accept or withdraw it first.'
             : kind === 'exits'
               ? 'CSV. Takes nobody off cover until someone accepts it.'
-              : 'CSV or XLSX. Enrols nobody until someone accepts it.'}
+              : 'Excel or CSV. Enrols nobody until someone accepts it.'}
         </p>
       </div>
 
@@ -408,7 +414,7 @@ export function SubmissionsPanel({
                         heading={confirming.act === 'accept' ? 'Accept this file?' : 'Withdraw this file?'}
                         consequence={
                           confirming.act === 'accept' ? (
-                            <>
+                            acceptConsequence?.(confirming.id) ?? <>
                               The rows that passed will be <strong>{appliedNoun}</strong>. Refused
                               rows are not, and the lender learns which from the report.
                             </>

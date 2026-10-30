@@ -1,5 +1,8 @@
 import { get, post } from '@/lib/http';
 import type {
+  CreditLifeAgreement,
+  CreditLifeAgreementInput,
+  EnrolmentQuotationView,
   EnrolmentRowView,
   EnrolmentSubmissionView,
   ExitRowView,
@@ -60,6 +63,20 @@ export function listEnrolmentRows(
   );
 }
 
+/**
+ * `GET .../enrolments/{submissionId}/quotation` — what the file costs before anybody accepts it: the borrowers who
+ * will be covered, the premium, the lender's own figure, their commission and the amount to pay. Priced exactly as
+ * acceptance prices it, so it is the invoice.
+ */
+export function getEnrolmentQuotation(
+  policyNumber: string,
+  submissionId: string,
+): Promise<EnrolmentQuotationView> {
+  return get<EnrolmentQuotationView>(
+    `/credit-life-schemes/${encodeURIComponent(policyNumber)}/enrolments/${encodeURIComponent(submissionId)}/quotation`,
+  );
+}
+
 /** `POST .../enrolments/{submissionId}/acceptance` — the act that creates cover. */
 export function acceptEnrolmentSubmission(
   policyNumber: string,
@@ -80,6 +97,24 @@ export function withdrawEnrolmentSubmission(
     `/credit-life-schemes/${encodeURIComponent(policyNumber)}/enrolments/${encodeURIComponent(submissionId)}/withdrawal`,
     {},
   );
+}
+
+/* ----------------------------------------------------------------- agreements */
+
+/** `GET /group-schemes/{policyNumber}/agreements` — the lender's yearly agreements, earliest first. */
+export function listAgreements(policyNumber: string): Promise<CreditLifeAgreement[]> {
+  return get<CreditLifeAgreement[]>(`/group-schemes/${encodeURIComponent(policyNumber)}/agreements`);
+}
+
+/**
+ * `POST /group-schemes/{policyNumber}/agreements` — a new year. Never edited once made: borrowers already on cover
+ * were charged on it. Refused for an overlapping period and for commission above 15% (TIRA).
+ */
+export function addAgreement(
+  policyNumber: string,
+  input: CreditLifeAgreementInput,
+): Promise<CreditLifeAgreement> {
+  return post<CreditLifeAgreement>(`/group-schemes/${encodeURIComponent(policyNumber)}/agreements`, input);
 }
 
 /* ---------------------------------------------------------------------- exits */
