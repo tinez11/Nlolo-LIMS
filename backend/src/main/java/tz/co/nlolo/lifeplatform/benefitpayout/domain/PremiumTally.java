@@ -75,9 +75,11 @@ public class PremiumTally {
         LocalDate limit = premiumPayingUntil != null && premiumPayingUntil.isBefore(payoutDate)
             ? premiumPayingUntil : payoutDate;
         int months = 12 / frequency.instalmentsPerYear();
+        // Counted from the issue date, as billing counts (billing V12, 2026-10-29) -- not stepped from the last date,
+        // which slid a 31st to the 28th after February.
         LocalDate last = null;
-        for (LocalDate d = issueDate.plusMonths(months); !d.isAfter(limit); d = d.plusMonths(months)) {
-            last = d;
+        for (int k = 1; !issueDate.plusMonths((long) k * months).isAfter(limit); k++) {
+            last = issueDate.plusMonths((long) k * months);
         }
         return last;
     }

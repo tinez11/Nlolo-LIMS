@@ -8,10 +8,10 @@ import java.time.Period;
  * date" -- when an added life's cover starts, a removal takes effect, a restated premium is first due -- is
  * the first one strictly after a given day.
  *
- * <p>Stepped exactly as billing steps: one period from the issue date, then one period from each due date
- * in turn ({@code BillingApiImpl.nextPeriodStart} over a cursor). So a policy issued on 31 January falls due
- * on 28 February and then 28 March -- not 31 March -- and these dates must agree with that, or an added
- * life's cover would start on a day no invoice falls on.
+ * <p>Counted as billing counts them (billing V12, 2026-10-29): the issue date plus whole periods, so a policy issued on
+ * 31 January falls due on 28 February and then 31 March. Both used to step from the previous date -- 28 February, then
+ * 28 March for good -- and these dates must agree with billing's, or an added life's cover would start on a day no
+ * invoice falls on.
  */
 public final class InstalmentDates {
 
@@ -19,10 +19,11 @@ public final class InstalmentDates {
 
     /** The first instalment date strictly after {@code day}, counted from {@code issueDate}. */
     public static LocalDate nextAfter(LocalDate issueDate, String frequency, LocalDate day) {
-        Period step = step(frequency);
-        LocalDate next = issueDate.plus(step);
+        int months = (int) step(frequency).toTotalMonths();
+        int k = 1;
+        LocalDate next = issueDate.plusMonths(months);
         while (!next.isAfter(day)) {
-            next = next.plus(step);
+            next = issueDate.plusMonths((long) ++k * months);
         }
         return next;
     }

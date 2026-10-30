@@ -29,7 +29,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.Period;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -626,8 +625,7 @@ public class BillingApiImpl implements BillingApi {
         }
         active.terminate();
         billingScheduleRepository.saveAndFlush(active);
-        billingScheduleRepository.save(new BillingSchedule(tenantId, policyNumber, active.getPremiumFrequency(), amount,
-            active.getPremiumCurrency(), active.getNextDueDate(), active.getPremiumPayingUntil()));
+        billingScheduleRepository.save(active.restatedAt(amount));
     }
 
     /**
@@ -979,10 +977,10 @@ public class BillingApiImpl implements BillingApi {
         while ((schedule.isBilledInAdvance() ? cursor.isBefore(horizon) : !cursor.isAfter(horizon))
                 && schedule.dueWithinPayingTerm(cursor)) {
             LocalDate graceEnd = cursor.plusDays(snapshot.gracePeriodDays());
-            LocalDate next = nextPeriodStart(cursor, schedule.getPremiumFrequency());
+            LocalDate next = schedule.periodAfter(cursor);
             // The period it pays for, stored on it: from its due date in advance, ending the day before in arrears.
             LocalDate coversFrom = schedule.isBilledInAdvance() ? cursor
-                : previousPeriodStart(cursor, schedule.getPremiumFrequency());
+                : schedule.periodBefore(cursor);
             LocalDate coversTo = schedule.isBilledInAdvance() ? next.minusDays(1) : cursor.minusDays(1);
             toCreate.add(new PremiumInvoice(tenantId, schedule.getBillingScheduleId(), schedule.getPolicyNumber(),
                 cursor, schedule.getPremiumAmount(), schedule.getPremiumCurrency(), graceEnd, coversFrom, coversTo));
@@ -1005,31 +1003,6 @@ public class BillingApiImpl implements BillingApi {
     private static Map<String, Object> cover(LocalDate from, LocalDate to, BigDecimal amount) {
         return Map.of("memberRef", "", "coversFrom", from.toString(), "coversTo", to.toString(),
             "amount", amount.toPlainString());
-    }
-
-    private LocalDate previousPeriodStart(LocalDate due, String frequency) {
-        return switch (frequency) {
-            case "MONTHLY" -> due.minusMonths(1);
-            case "QUARTERLY" -> due.minusMonths(3);
-            case "ANNUALLY" -> due.minusYears(1);
-            default -> throw new IllegalArgumentException("Unknown premium frequency: " + frequency);
-        };
-    }
-
-    private LocalDate nextPeriodStart(LocalDate from, String frequency) {
-        Period step = switch (frequency) {
-            case "MONTHLY" -> Period.ofMonths(1);
-            case "QUARTERLY" -> Period.ofMonths(3);
-            case "ANNUALLY" -> Period.ofYears(1);
-            // Reaching here means something tried to schedule a contract that has no next
-            // period. Named rather than silently stepping a year, because the symptom of
-            // getting this wrong is a lender being dunned for premium nobody agreed.
-            case "SINGLE" -> throw new IllegalArgumentException(
-                "A SINGLE premium has no next period; this policy should never have been given a "
-                    + "billing schedule (see billing.PolicyEventListener.handlePolicyIssued)");
-            default -> throw new IllegalArgumentException("Unknown premium frequency: " + frequency);
-        };
-        return from.plus(step);
     }
 
     /** Single-invoice reads, which resolve their own dunning level -- one lookup for one row. */

@@ -31,10 +31,11 @@ class InstalmentDatesTest {
     }
 
     @Test
-    void aMonthEndIssueDriftsAsBillingsDatesDo() {
-        // Billing steps from each due date: 31 Jan, 28 Feb, 28 Mar.
+    void aMonthEndIssueKeepsItsDayAsBillingsDatesDo() {
+        // Billing counts from its anchor (billing V12, 2026-10-29): 31 Jan, 28 Feb, 31 Mar -- no longer 28 Mar.
         LocalDate monthEnd = LocalDate.of(2026, 1, 31);
-        assertThat(InstalmentDates.nextAfter(monthEnd, "MONTHLY", LocalDate.of(2026, 3, 1))).isEqualTo(LocalDate.of(2026, 3, 28));
+        assertThat(InstalmentDates.nextAfter(monthEnd, "MONTHLY", LocalDate.of(2026, 3, 1))).isEqualTo(LocalDate.of(2026, 3, 31));
+        assertThat(InstalmentDates.nextAfter(monthEnd, "MONTHLY", LocalDate.of(2026, 2, 1))).isEqualTo(LocalDate.of(2026, 2, 28));
     }
 
     @Test
