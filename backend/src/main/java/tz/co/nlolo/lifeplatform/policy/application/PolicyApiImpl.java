@@ -91,6 +91,8 @@ public class PolicyApiImpl implements PolicyApi {
     /** A funeral policy's lives (family funeral cover); touched only once the product says FUNERAL. */
     private final CoveredLives coveredLives;
     private final GroupFuneralFamilies groupFuneralFamilies;
+    /** Credit life's yearly agreements: whether a borrower's claim pays the lender's interest too (2026-10-30). */
+    private final CreditLifeAgreements creditLifeAgreements;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
@@ -106,12 +108,14 @@ public class PolicyApiImpl implements PolicyApi {
                           AnnuityVestingRepository annuityVestingRepository,
                           CoveredLives coveredLives,
                           GroupFuneralFamilies groupFuneralFamilies,
+                          CreditLifeAgreements creditLifeAgreements,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
                           DistributionApi distributionApi, UnderwritingApi underwritingApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
         this.policyRepository = policyRepository;
         this.coveredLives = coveredLives;
         this.groupFuneralFamilies = groupFuneralFamilies;
+        this.creditLifeAgreements = creditLifeAgreements;
         this.annuityVestingRepository = annuityVestingRepository;
         this.policyBonusRepository = policyBonusRepository;
         this.policyAccountRepository = policyAccountRepository;
@@ -2133,9 +2137,15 @@ public class PolicyApiImpl implements PolicyApi {
                     + "AMORTISING_LOAN scheme with no loan terms; "
                     + "chk_policy_member_loan_complete should have made this impossible");
             }
+            BigDecimal loanCover = covered;
+            // Whether the year's agreement in force when this loan started covers interest (2026-10-30): a claim then
+            // pays the interest on the lender's statement as well as the principal. No agreement, no interest.
+            boolean interest = creditLifeAgreements.entityInForce(policyNumber, terms.disbursementDate())
+                .map(CreditLifeAgreement::isCoverIncludesInterest).orElse(false);
             covered = AmortisationCalculator
                 .outstandingPrincipalAt(terms, scheme.get().getInterestMethod(), asOf)
                 .min(covered);
+            return new ClaimableCoverView(covered, scheme.get().getCurrency(), policyMemberId, loanCover, interest);
         }
 
         return new ClaimableCoverView(covered, scheme.get().getCurrency(), policyMemberId);

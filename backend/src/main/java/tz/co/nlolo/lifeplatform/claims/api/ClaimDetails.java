@@ -26,4 +26,14 @@ public sealed interface ClaimDetails
     /** The claim type this details payload is valid for -- checked against the claim's own type at
      * registration so a DEATH claim can never carry DisabilityClaimDetails. */
     ClaimType claimType();
+
+    /**
+     * On credit life, what the borrower still owed the lender on the day, from the lender's statement (2026-10-30).
+     * Death and disability carry one; every other claim type answers null. Not serialised from here: the records that
+     * carry it do so as their own component. Deliberately not annotated: Jackson merges annotations from an
+     * interface method into its overrides, so ignoring it here would drop the real component from the wire too.
+     */
+    default LoanStatement loanStatement() {
+        return null;
+    }
 }

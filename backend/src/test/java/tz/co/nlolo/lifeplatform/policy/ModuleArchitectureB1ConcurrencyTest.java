@@ -138,7 +138,7 @@ class ModuleArchitectureB1ConcurrencyTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
-            "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V43__credit_life_agreement.sql");
+            "db-migrations/policy/V42__surrender_payout_route.sql");
     }
 
     @Autowired private PartyApi partyApi;

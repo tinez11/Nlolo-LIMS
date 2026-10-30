@@ -30,7 +30,14 @@ import java.time.LocalDate;
  * stored JSON carries the string form too and round-trips back to {@link BigDecimal} on read.
  */
 public record DisabilityClaimDetails(String disabilityType, LocalDate onsetDate, boolean permanent,
-                                      @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal impairmentPercent)
+                                      @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal impairmentPercent,
+                                      LoanStatement loanStatement)
         implements ClaimDetails {
+    /** Every disability claim but a credit-life borrower's, which carries the lender's statement (2026-10-30). */
+    public DisabilityClaimDetails(String disabilityType, LocalDate onsetDate, boolean permanent,
+                                  BigDecimal impairmentPercent) {
+        this(disabilityType, onsetDate, permanent, impairmentPercent, null);
+    }
+
     @Override public ClaimType claimType() { return ClaimType.DISABILITY; }
 }

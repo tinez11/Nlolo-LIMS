@@ -33,6 +33,7 @@ class PolicyApiImplSurrenderChargeTest {
         null,                               // annuity vesting (product step 5 D2)
         null,                               // covered lives (family funeral cover)
         null,                               // group funeral families
+        null,                               // credit-life agreements
         null, null, null, null, null, null, // party, product, refdata, distribution, underwriting, events
         new ObjectMapper());
 

@@ -15,6 +15,7 @@ import tz.co.nlolo.lifeplatform.policy.api.ExclusionPeriodsView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimStatus;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
 import tz.co.nlolo.lifeplatform.claims.api.DeathClaimDetails;
+import tz.co.nlolo.lifeplatform.claims.api.LoanStatement;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimValidationException;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimsApi;
@@ -276,6 +277,11 @@ public class ClaimsApiImpl implements ClaimsApi {
         if (claimable.amount() == null || claimable.amount().signum() <= 0) {
             throw new ClaimValidationException("Policy " + request.policyNumber()
                 + " has no positive cover to claim against on " + request.dateOfEvent());
+        }
+        // A CREDIT-LIFE BORROWER (2026-10-30): dies or is disabled, and the lender is paid what they were still owed
+        // that day, from the lender's own statement -- so the statement comes with the claim.
+        if (claimable.isLoanCover()) {
+            refuseUnlessALendersClaim(request);
         }
         // A FAMILY'S CLAIM (family funeral cover): policy has already required the life and checked it was
         // covered on the date; who may file for a dependant is the version's rule (plan R9).
@@ -622,7 +628,35 @@ public class ClaimsApiImpl implements ClaimsApi {
         return claim.getDetails() instanceof DeathClaimDetails d ? d.deceasedPartyId() : null;
     }
 
+    /**
+     * A credit-life claim is a death or a disability, and carries what the borrower still owed: the lender's statement
+     * is what it pays (2026-10-30). Refused rather than valued on the schedule, because the schedule is the insurer's
+     * estimate and the statement is the debt.
+     */
+    private static void refuseUnlessALendersClaim(RegisterClaimRequest request) {
+        if (request.claimType() != ClaimType.DEATH && request.claimType() != ClaimType.DISABILITY) {
+            throw new ClaimValidationException("A credit-life borrower is covered for death and disability; "
+                + request.claimType() + " is not a claim on " + request.policyNumber());
+        }
+        LoanStatement statement = request.details().loanStatement();
+        if (statement == null || statement.principalOutstanding() == null) {
+            throw new ClaimValidationException("Give what the borrower still owed on " + request.dateOfEvent()
+                + ", from the lender's statement: the claim pays the lender that balance");
+        }
+        if (statement.principalOutstanding().signum() < 0
+                || (statement.interestOutstanding() != null && statement.interestOutstanding().signum() < 0)) {
+            throw new ClaimValidationException("A balance owed cannot be negative");
+        }
+    }
+
     private BigDecimal ceilingFor(Claim claim, ClaimableCoverView claimable) {
+        // A credit-life borrower's claim with the lender's statement on it (2026-10-30): what was still owed that day --
+        // the principal, and the interest where the lender's agreement covers it -- never more than the borrower's
+        // cover. A claim registered before statements were asked for keeps the schedule's figure below.
+        LoanStatement statement = claim.getDetails().loanStatement();
+        if (claimable.isLoanCover() && statement != null) {
+            return statement.owed(Boolean.TRUE.equals(claimable.coverIncludesInterest())).min(claimable.loanCover());
+        }
         // An annuity's death (product step 5) pays the capital-protection refund on the last death,
         // or nothing: the annuity module, which holds the contract, values it as at the death. A
         // deferred annuity still saving (D2) is an account policy, so the account is the ceiling.

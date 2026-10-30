@@ -491,7 +491,8 @@ class CreditLifeClaimEndToEndTest {
 
         ClaimView claim = claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(
             bigScheme, member, bankPartyId, ClaimType.DEATH, DISBURSED,
-            new DeathClaimDetails("Natural causes", "Dar es Salaam", DISBURSED, "Dr Mwakalinga")),
+            new DeathClaimDetails("Natural causes", "Dar es Salaam", DISBURSED, "Dr Mwakalinga", null,
+                new LoanStatement(ABOVE_FCL, null))),
             idem(), "claims.clerk");
         claimsApi.submitAssessment(claim.claimId(), "verified", null, null, false, "assessor.one", null);
 
@@ -538,6 +539,84 @@ class CreditLifeClaimEndToEndTest {
         assertThatThrownBy(() -> assessedClaimAt(DISBURSED.plusMonths(6)))
             .isInstanceOf(ClaimValidationException.class)
             .hasMessageContaining(first.toString());
+    }
+
+    // ---- the lender's statement is what is paid (2026-10-30) -------------------
+
+    @Autowired private CreditLifeAgreementApi agreementApi;
+
+    private void agreeInterest(boolean coverIncludesInterest) {
+        agreementApi.add(scheme, new CreditLifeAgreementApi.AgreementInput(DISBURSED.minusMonths(1),
+            DISBURSED.plusMonths(11), new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL, null,
+            75, 12, 120, new BigDecimal("10"), coverIncludesInterest), "staff-setup");
+    }
+
+    private UUID decidable(LoanStatement statement) {
+        return assessedClaimAt(DISBURSED.plusMonths(6), statement);
+    }
+
+    @Test
+    void theClaimPaysTheBalanceOnTheLendersStatementNotTheSchedule() {
+        // The borrower fell behind: the statement shows 1,750,000 still owed where the schedule says 1,600,000.
+        UUID claimId = decidable(new LoanStatement(new BigDecimal("1750000.00"), null));
+
+        assertThat(claimsApi.claimableCover(claimId).amount()).isEqualByComparingTo("1750000.00");
+    }
+
+    @Test
+    void interestIsPaidOnlyWhereTheAgreementCoversIt() {
+        agreeInterest(true);
+        UUID claimId = decidable(new LoanStatement(new BigDecimal("1600000.00"), new BigDecimal("96000.00")));
+
+        assertThat(claimsApi.claimableCover(claimId).amount()).isEqualByComparingTo("1696000.00");
+    }
+
+    @Test
+    void interestOnTheStatementIsNotPaidWhenTheAgreementLeavesItOut() {
+        agreeInterest(false);
+        UUID claimId = decidable(new LoanStatement(new BigDecimal("1600000.00"), new BigDecimal("96000.00")));
+
+        assertThat(claimsApi.claimableCover(claimId).amount()).isEqualByComparingTo("1600000.00");
+    }
+
+    @Test
+    void aStatementAboveTheLoanIsPaidOnlyUpToTheBorrowersCover() {
+        agreeInterest(true);
+        // Arrears and interest past what was lent: the cover is the loan, never more.
+        UUID claimId = decidable(new LoanStatement(new BigDecimal("2300000.00"), new BigDecimal("500000.00")));
+
+        assertThat(claimsApi.claimableCover(claimId).amount()).isEqualByComparingTo(PRINCIPAL);
+    }
+
+    @Test
+    void aCreditLifeClaimWithoutTheLendersStatementIsRefused() {
+        assertThatThrownBy(() -> claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(
+                scheme, borrowerMemberId, bankPartyId, ClaimType.DEATH, DISBURSED.plusMonths(6),
+                new DeathClaimDetails("Natural causes", "Dar es Salaam", DISBURSED.plusMonths(6), "Dr Mwakalinga")),
+                idem(), "claims.clerk"))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining("lender's statement");
+    }
+
+    @Test
+    void aBorrowersDisabilityIsAClaimForWhatTheyOwed() {
+        ClaimView claim = claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(
+                scheme, borrowerMemberId, bankPartyId, ClaimType.DISABILITY, DISBURSED.plusMonths(6),
+                new DisabilityClaimDetails("Spinal injury", DISBURSED.plusMonths(6), true, new BigDecimal("100.00"),
+                    new LoanStatement(new BigDecimal("1600000.00"), null))),
+            idem(), "claims.clerk");
+
+        assertThat(claimsApi.claimableCover(claim.claimId()).amount()).isEqualByComparingTo("1600000.00");
+    }
+
+    @Test
+    void aBorrowerIsNotCoveredForCriticalIllness() {
+        assertThatThrownBy(() -> claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(
+                scheme, borrowerMemberId, bankPartyId, ClaimType.CRITICAL_ILLNESS, DISBURSED.plusMonths(6),
+                new CriticalIllnessClaimDetails("Stroke", DISBURSED.plusMonths(6), "I64")),
+                idem(), "claims.clerk"))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining("death and disability");
     }
 
     // ---- and then the loan comes off cover -----------------------------------
@@ -587,9 +666,21 @@ class CreditLifeClaimEndToEndTest {
     }
 
     private UUID assessedClaimAt(LocalDate dateOfEvent) {
+        return assessedClaimAt(dateOfEvent, new LoanStatement(onTheSchedule(dateOfEvent), null));
+    }
+
+    /** What the lender's statement says on the straight-line schedule: 2,400,000 over 18 months. */
+    private static BigDecimal onTheSchedule(LocalDate day) {
+        long months = java.time.temporal.ChronoUnit.MONTHS.between(DISBURSED, day);
+        return PRINCIPAL.multiply(BigDecimal.valueOf(18 - months))
+            .divide(BigDecimal.valueOf(18), 2, java.math.RoundingMode.HALF_UP);
+    }
+
+    private UUID assessedClaimAt(LocalDate dateOfEvent, LoanStatement statement) {
         ClaimView claim = claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(
             scheme, borrowerMemberId, bankPartyId, ClaimType.DEATH, dateOfEvent,
-            new DeathClaimDetails("Under investigation", "Dar es Salaam", dateOfEvent, "Dr Mwakalinga")),
+            new DeathClaimDetails("Under investigation", "Dar es Salaam", dateOfEvent, "Dr Mwakalinga", null,
+                statement)),
             idem(), "claims.clerk");
         claimsApi.submitAssessment(claim.claimId(), "investigating", null, null, false, "assessor.one", null);
         return claim.claimId();
@@ -619,7 +710,7 @@ class CreditLifeClaimEndToEndTest {
 
     private ClaimDetails deathDetails() {
         return new DeathClaimDetails("Natural causes", "Dar es Salaam",
-            DISBURSED.plusMonths(6), "Dr Mwakalinga");
+            DISBURSED.plusMonths(6), "Dr Mwakalinga", null, new LoanStatement(new BigDecimal("1600000.00"), null));
     }
 
     private record GroupProduct(UUID productId, UUID productVersionId) {}

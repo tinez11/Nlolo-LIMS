@@ -25,6 +25,7 @@ import { useClaimStore } from '@/store/claimStore';
 import { selectCoverage, selectDetail, selectMembers, usePolicyStore } from '@/store/policyStore';
 import {
   blankDetailsFor,
+  CREDIT_LIFE_CLAIM_TYPES,
   registerClaimFormSchema,
   toApiRequest,
   type ClaimDetailsFormValues,
@@ -103,6 +104,8 @@ export function RegisterClaimPage() {
       details: blankDetailsFor('DEATH'),
       coveredLifeId: '',
       accidental: false,
+      loanPrincipalOutstanding: '',
+      loanInterestOutstanding: '',
     },
   });
 
@@ -153,7 +156,10 @@ export function RegisterClaimPage() {
   // A policy with no benefit on record at all -- a scheme, whose cover sits with each member -- rules nothing out here;
   // the coverage check below says what is known.
   const onRecord = (coverage.data?.activeCoverages ?? []).some((c) => c.benefitType);
-  const claimable: readonly ClaimType[] = coverage.data && policy.data && onRecord
+  // A credit-life borrower is claimable for death and disability only (2026-10-30), whatever the scheme carries.
+  const claimable: readonly ClaimType[] = policy.data?.productCategory === 'CREDIT_LIFE'
+    ? CREDIT_LIFE_CLAIM_TYPES
+    : coverage.data && policy.data && onRecord
     ? CLAIM_TYPES.filter((t) =>
         t === 'MATURITY'
           ? Boolean(policy.data?.maturityDate)
@@ -631,6 +637,28 @@ export function RegisterClaimPage() {
           )}
         </div>
         </Panel>
+        )}
+
+        {/* What the borrower still owed the lender on the day: the figure a credit-life claim pays (2026-10-30). */}
+        {policy.data?.productCategory === 'CREDIT_LIFE' && claimType && (
+          <Panel
+            outline
+            title="Lender's statement"
+            subtitle="What the borrower still owed on the date of the event. The claim pays this, never more than the borrower's cover."
+          >
+            <div className="grid gap-3 p-4 sm:grid-cols-2">
+              <FormField label="Principal still owed" error={errors.loanPrincipalOutstanding?.message}>
+                <Input inputMode="decimal" placeholder="1600000.00" {...register('loanPrincipalOutstanding')} />
+              </FormField>
+              <FormField
+                label="Interest owed (optional)"
+                error={errors.loanInterestOutstanding?.message}
+                hint="Paid only where the lender's agreement covers interest."
+              >
+                <Input inputMode="decimal" placeholder="96000.00" {...register('loanInterestOutstanding')} />
+              </FormField>
+            </div>
+          </Panel>
         )}
 
         {/* A 422 here (e.g. "Policy POL-X was not in force on <date>") is a real,

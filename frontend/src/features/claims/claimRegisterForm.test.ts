@@ -254,3 +254,36 @@ describe('toApiRequest', () => {
     expect(api.details).toEqual(build().details);
   });
 });
+
+describe("a credit-life claim carries the lender's statement (2026-10-30)", () => {
+  const creditLife = registerClaimFormSchema({ productCategory: 'CREDIT_LIFE' });
+  const borrowerDeath = (statement: { loanPrincipalOutstanding?: string; loanInterestOutstanding?: string }) => ({
+    ...death(),
+    policyMemberId: MEMBER_ID,
+    ...statement,
+  });
+
+  it('is refused without the principal still owed', () => {
+    const result = creditLife.safeParse(borrowerDeath({ loanPrincipalOutstanding: '' }));
+    expect(result.success).toBe(false);
+    expect(result.success ? [] : result.error.issues.map((i) => i.path.join('.'))).toContain('loanPrincipalOutstanding');
+  });
+
+  it('sends the statement inside the details, and leaves out interest nobody gave', () => {
+    const parsed = creditLife.parse(borrowerDeath({ loanPrincipalOutstanding: '1600000.00', loanInterestOutstanding: '' }));
+    expect(toApiRequest(parsed).details).toMatchObject({ loanStatement: { principalOutstanding: '1600000.00' } });
+    expect(toApiRequest(parsed).details).not.toHaveProperty('loanStatement.interestOutstanding');
+  });
+
+  it('carries the interest when the statement shows some', () => {
+    const parsed = creditLife.parse(borrowerDeath({ loanPrincipalOutstanding: '1600000.00', loanInterestOutstanding: '96000.00' }));
+    expect(toApiRequest(parsed).details).toMatchObject({
+      loanStatement: { principalOutstanding: '1600000.00', interestOutstanding: '96000.00' },
+    });
+  });
+
+  it('sends no statement on any other product', () => {
+    const parsed = registerClaimFormSchema().parse(death());
+    expect(toApiRequest(parsed).details).not.toHaveProperty('loanStatement');
+  });
+});
