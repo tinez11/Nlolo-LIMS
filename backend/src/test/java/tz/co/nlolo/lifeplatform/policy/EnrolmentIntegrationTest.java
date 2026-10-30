@@ -420,6 +420,52 @@ class EnrolmentIntegrationTest {
     }
 
     @Test
+    void theAgreementsTemplateFilledInAndSentBackReconcilesToTheCent() throws Exception {
+        agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 6, 1), "10"), "staff-setup");
+
+        byte[] template = mockMvc.perform(get("/credit-life-schemes/" + creditLifeScheme + "/template.xlsx")
+                .with(staff("staff.one")))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsByteArray();
+        // The request's filter clears the tenant on this same thread when it finishes.
+        TenantContext.set(tenantId);
+
+        byte[] filled;
+        try (var workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook(new ByteArrayInputStream(template))) {
+            var sheet = workbook.getSheet("Borrowers");
+            assertThat(sheet.getRow(2).getCell(0).getStringCellValue()).contains("0.6%").contains("TZS 2,000");
+            var amina = sheet.getRow(7);
+            amina.getCell(0).setCellValue("Amina Hassan Mwinyi");
+            amina.getCell(1).setCellValue(LocalDate.of(1988, 3, 14));
+            amina.getCell(3).setCellValue(8500000);
+            amina.getCell(4).setCellValue(48);
+            amina.getCell(5).setCellValue(LocalDate.of(2026, 6, 30));
+            var grace = sheet.getRow(8);
+            grace.getCell(0).setCellValue("Grace Shirima");
+            grace.getCell(1).setCellValue(LocalDate.of(1992, 6, 21));
+            grace.getCell(3).setCellValue(100000);
+            grace.getCell(4).setCellValue(18);
+            grace.getCell(5).setCellValue(LocalDate.of(2026, 7, 6));
+            var out = new java.io.ByteArrayOutputStream();
+            workbook.write(out);
+            filled = out.toByteArray();
+        }
+
+        var submission = enrolmentApi.submit(creditLifeScheme, new ByteArrayInputStream(filled), "july.xlsx",
+            "staff.one");
+        assertThat(submission.rejectedCount()).isZero();
+        enrolmentApi.accept(submission.submissionId(), "staff.two");
+
+        // The workbook's own figures were the platform's: nothing to reconcile.
+        var rows = enrolmentApi.listRows(submission.submissionId());
+        assertThat(rows).extracting(EnrolmentRowView::lineNumber).containsExactly(8, 9);
+        assertThat(rows.get(0).premiumAmount()).isEqualByComparingTo("204000.00");
+        assertThat(rows.get(1).premiumAmount()).isEqualByComparingTo("2000.00");
+        assertThat(enrolmentApi.getSubmission(submission.submissionId()).premiumVariance())
+            .isEqualByComparingTo("0");
+    }
+
+    @Test
     void anAgreementIsAddedAndReadOverHttp() throws Exception {
         mockMvc.perform(post("/group-schemes/" + creditLifeScheme + "/agreements")
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON)

@@ -50,70 +50,16 @@ import java.util.List;
  */
 public final class LenderTemplateXlsx {
 
-    /** What a borrower looks like, as the sheet needs them: typed, not text. */
+    /**
+     * What a borrower looks like, as the CSV template's example row needs them. The enrolment workbook is
+     * {@link CreditLifeTemplateXlsx} since 2026-10-30, built from the scheme's agreement.
+     */
     public record EnrolmentExample(String memberReference, String borrowerFullName,
                                     LocalDate borrowerDateOfBirth, BigDecimal loanPrincipalAmount,
                                     int loanTermMonths, LocalDate disbursementDate,
                                     String loanAccountNumber) {}
 
     private LenderTemplateXlsx() {}
-
-    /**
-     * The enrolment schedule.
-     *
-     * @param example one of the lender's OWN borrowers, or null when the scheme has none yet.
-     *     Safe to leave in the returned file: the judge refuses a row matching a loan already on
-     *     cover, so it comes back ALREADY_ENROLLED rather than insuring anybody twice.
-     */
-    public static byte[] enrolment(EnrolmentExample example) {
-        try (Workbook workbook = new XSSFWorkbook();
-             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-
-            Sheet sheet = workbook.createSheet("Borrowers");
-            Styles styles = new Styles(workbook);
-            String[] headers = EnrolmentCsvParser.templateCsv().strip().split(",");
-            writeHeader(sheet, headers, styles);
-
-            if (example != null) {
-                Row row = sheet.createRow(1);
-                text(row, 0, example.memberReference());
-                text(row, 1, example.borrowerFullName());
-                date(row, 2, example.borrowerDateOfBirth(), styles);
-                if (example.loanPrincipalAmount() != null) {
-                    row.createCell(6).setCellValue(example.loanPrincipalAmount().doubleValue());
-                }
-                row.createCell(7).setCellValue(example.loanTermMonths());
-                date(row, 8, example.disbursementDate(), styles);
-                text(row, 9, example.loanAccountNumber());
-            }
-
-            /*
-             * Validation over the rows a lender will actually fill, not the whole column: a rule
-             * applied to all 1,048,576 rows makes a file Excel is visibly slow to open, and the
-             * lender files this product was built for are hundreds of rows, not hundreds of
-             * thousands.
-             */
-            int lastRow = 5000;
-            DataValidationHelper helper = sheet.getDataValidationHelper();
-            dateRule(sheet, helper, 2, lastRow, "Date of birth",
-                "A date, typed as 2000-09-01. Leave it as a date -- do not format this column as text.");
-            dateRule(sheet, helper, 8, lastRow, "Disbursement date",
-                "The day the lender paid the money out. Cover starts on it, so it cannot be in the future.");
-            listRule(sheet, helper, 3, lastRow, new String[] { "M", "F" }, "Sex",
-                "M or F. Optional -- leave it blank if the lender's system does not hold it.");
-            wholeNumberRule(sheet, helper, 7, lastRow, "Term",
-                "A whole number of months, e.g. 24.");
-            decimalRule(sheet, helper, 6, lastRow, "Amount borrowed",
-                "The principal, e.g. 1200000.00. Numbers only -- no currency symbol and no thousands separator.");
-
-            instructions(workbook, ENROLMENT_GUIDANCE, styles);
-            autoSize(sheet, headers.length);
-            workbook.write(out);
-            return out.toByteArray();
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not build the enrolment template", e);
-        }
-    }
 
     /**
      * The monthly exits file.
@@ -168,34 +114,6 @@ public final class LenderTemplateXlsx {
      * two descriptions that drift apart is how a lender ends up told one thing and judged by
      * another.
      */
-    private static final List<String[]> ENROLMENT_GUIDANCE = List.of(
-        new String[] { "", "Fill in the Borrowers sheet. One row per LOAN, not per person:"
-            + " two loans to the same borrower are two rows." },
-        new String[] { "", "" },
-        new String[] { "Required", "borrower_full_name, borrower_date_of_birth,"
-            + " loan_principal_amount, loan_term_months, disbursement_date" },
-        new String[] { "Optional", "member_reference, borrower_sex, borrower_national_id,"
-            + " borrower_phone, loan_account_number" },
-        new String[] { "", "" },
-        new String[] { "member_reference", "LEAVE BLANK for a new borrower. The insurer creates it"
-            + " and returns it on the report; quote it back on any later file about that same loan." },
-        new String[] { "Dates", "Typed as 2000-09-01. The date columns are already formatted for"
-            + " you -- type a date and leave it as a date. Do NOT save this as a CSV: Excel rewrites"
-            + " dates when it opens and saves one, and the row is then refused." },
-        new String[] { "Amounts", "Numbers only: 1200000.00. No currency symbol, no thousands"
-            + " separator." },
-        new String[] { "disbursement_date", "The day the money went out. COVER STARTS ON IT, so it"
-            + " cannot be in the future." },
-        new String[] { "Extra columns", "Anything else in the file is ignored, not refused. Send the"
-            + " export you already have." },
-        new String[] { "", "" },
-        new String[] { "What happens next", "Every row is checked and the file is reviewed before"
-            + " anybody is covered. A row that cannot be accepted comes back on a report with the"
-            + " reason -- and a refused row means THAT BORROWER IS NOT COVERED." },
-        new String[] { "The example row", "If there is a row already filled in, it is one of your own"
-            + " borrowers, shown as an example. Leaving it in is harmless: it is already on cover,"
-            + " so it comes back marked as already enrolled." });
-
     private static final List<String[]> EXITS_GUIDANCE = List.of(
         new String[] { "", "Fill in the Loans ending sheet. One row per loan that ENDED this"
             + " month." },
@@ -303,13 +221,6 @@ public final class LenderTemplateXlsx {
     private static void listRule(Sheet sheet, DataValidationHelper helper, int column, int lastRow,
                                   String[] allowed, String title, String message) {
         apply(sheet, helper.createExplicitListConstraint(allowed),
-            new CellRangeAddressList(1, lastRow, column, column), title, message);
-    }
-
-    private static void wholeNumberRule(Sheet sheet, DataValidationHelper helper, int column,
-                                         int lastRow, String title, String message) {
-        apply(sheet, helper.createIntegerConstraint(
-                DataValidationConstraint.OperatorType.GREATER_OR_EQUAL, "1", null),
             new CellRangeAddressList(1, lastRow, column, column), title, message);
     }
 

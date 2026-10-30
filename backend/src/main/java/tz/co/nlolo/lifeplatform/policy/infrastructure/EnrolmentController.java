@@ -39,6 +39,8 @@ public class EnrolmentController {
     private static final String XLSX =
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
+    private static final String MACRO_WORKBOOK = "application/vnd.ms-excel.sheet.macroEnabled.12";
+
     private final EnrolmentApi enrolmentApi;
 
     public EnrolmentController(EnrolmentApi enrolmentApi) {
@@ -53,7 +55,10 @@ public class EnrolmentController {
                                                            @AuthenticationPrincipal Jwt jwt) {
         String contentType;
         try {
-            contentType = AllowedDocumentContentTypes.normalizeOrThrow(file.getContentType());
+            // A lender's macro-enabled workbook (.xlsm) is read as a workbook here, and only here: its cells are read
+            // and its macros never run. Not added to the platform-wide allowlist, which other uploads share.
+            contentType = MACRO_WORKBOOK.equalsIgnoreCase(String.valueOf(file.getContentType())) ? XLSX
+                : AllowedDocumentContentTypes.normalizeOrThrow(file.getContentType());
         } catch (IllegalArgumentException e) {
             throw new InvalidPolicyStateException(e.getMessage());
         }

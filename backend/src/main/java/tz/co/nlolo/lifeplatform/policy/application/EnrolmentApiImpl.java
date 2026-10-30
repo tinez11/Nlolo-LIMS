@@ -13,6 +13,8 @@ import tz.co.nlolo.lifeplatform.document.api.DocumentType;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.policy.domain.CreditLifeAgreement;
 import tz.co.nlolo.lifeplatform.policy.domain.CreditLifePremium;
+import tz.co.nlolo.lifeplatform.policy.domain.CreditLifeTemplateXlsx;
+import tz.co.nlolo.lifeplatform.policy.api.CreditLifeAgreementApi.AgreementView;
 import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentCsvParser;
 import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentReportRenderer;
 import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentSubmission;
@@ -136,9 +138,16 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         try {
             // Converted ONCE, here, so validation, judging, the report and every test
             // downstream see exactly one shape.
+            // The borrowers' table wherever it is: below the title and totals of our template, or behind the Summary
+            // sheet a lender's own workbook opens on.
             String csv = workbook
-                ? XlsxToCsv.convert(new ByteArrayInputStream(bytes))
+                ? XlsxToCsv.convertSchedule(new ByteArrayInputStream(bytes), EnrolmentCsvParser::looksLikeHeader)
                 : new String(bytes, StandardCharsets.UTF_8);
+            if (csv == null) {
+                throw new EnrolmentCsvParser.MalformedScheduleException("No sheet in this workbook has the borrowers'"
+                    + " column headings: name, date of birth, loan amount, term in months and loan start date."
+                    + " Use the scheme's template.");
+            }
             parsed = EnrolmentCsvParser.parse(new java.io.StringReader(csv));
         } catch (EnrolmentCsvParser.MalformedScheduleException e) {
             // A FILE problem. Nothing is written and nothing is stored: there would be
@@ -437,9 +446,33 @@ public class EnrolmentApiImpl implements EnrolmentApi {
     @Override
     @Transactional(readOnly = true)
     public byte[] renderTemplateXlsx(String policyNumber) {
-        // Built from the same example the CSV template uses, so the two cannot describe different
-        // borrowers -- and parsed back by the same reader either way.
-        return LenderTemplateXlsx.enrolment(exampleRowFor(policyNumber));
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicy(policyNumber, tenantId);
+        GroupScheme scheme = findScheme(policyNumber, tenantId);
+        String lender = policy.getPolicyholderPartyId() == null ? null
+            : partyApi.getPartyDetail(policy.getPolicyholderPartyId()).displayName();
+        return CreditLifeTemplateXlsx.build(templateTerms(policyNumber, lender, scheme, LocalDate.now()));
+    }
+
+    /**
+     * What the lender's file is built from: the agreement in force today, else the next one to start, else the most
+     * recent -- a file is often made up just before a new year's agreement begins. A scheme with no agreements gets
+     * its own rate, with the product's limits left to the platform.
+     */
+    private CreditLifeTemplateXlsx.Terms templateTerms(String policyNumber, String lender, GroupScheme scheme,
+                                                       LocalDate today) {
+        List<CreditLifeAgreement> all = agreements.entities(policyNumber);
+        Optional<CreditLifeAgreement> chosen = all.stream().filter(a -> a.covers(today)).findFirst()
+            .or(() -> all.stream().filter(a -> a.getValidFrom().isAfter(today)).findFirst())
+            .or(() -> all.isEmpty() ? Optional.empty() : Optional.of(all.get(all.size() - 1)));
+        if (chosen.isPresent()) {
+            AgreementView a = chosen.get().toView();
+            return new CreditLifeTemplateXlsx.Terms(lender, policyNumber, scheme.getCurrency(), a.validFrom(),
+                a.validTo(), a.premiumRatePercent(), a.premiumBasis(), a.minimumPremium(), a.maxAge(),
+                a.minTermMonths(), a.maxTermMonths(), a.commissionPercent());
+        }
+        return new CreditLifeTemplateXlsx.Terms(lender, policyNumber, scheme.getCurrency(), null, null,
+            scheme.getPremiumRatePercent(), scheme.getPremiumBasis(), null, null, null, null, null);
     }
 
     /**

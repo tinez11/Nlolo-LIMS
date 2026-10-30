@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.policy.domain;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
+import tz.co.nlolo.lifeplatform.XlsxToCsv;
 import tz.co.nlolo.lifeplatform.policy.api.EnrolmentRejection;
 import tz.co.nlolo.lifeplatform.policy.api.EnrolmentRow;
 
@@ -106,6 +107,61 @@ public final class EnrolmentCsvParser {
             DISBURSEMENT_DATE, LOAN_ACCOUNT_NUMBER, LENDER_PREMIUM_AMOUNT) + "\n";
     }
 
+    /**
+     * The other names a column goes by (2026-10-30): the insurer's own template's ("Borrower's full name") and the
+     * lenders' ("CLIENT NAME", "SUM ASSURED (TZS)", "POLICY TERM (MONTHS)", "START DATE"). Compared after
+     * {@link #simplified}, so case, brackets, apostrophes and the currency don't matter.
+     */
+    private static final Map<String, String> ALIASES = aliases(
+        BORROWER_FULL_NAME, "borrower s full name", "borrower full name", "borrower name", "client name",
+            "full name", "name", "member name", "customer name",
+        BORROWER_DATE_OF_BIRTH, "date of birth", "dob", "birth date", "birthdate",
+        BORROWER_SEX, "sex", "gender",
+        BORROWER_NATIONAL_ID, "national id", "nida", "nida number", "id number",
+        BORROWER_PHONE, "phone", "phone number", "mobile", "mobile number",
+        LOAN_PRINCIPAL_AMOUNT, "loan amount", "sum assured", "amount borrowed", "principal", "loan principal",
+            "disbursed amount",
+        LOAN_TERM_MONTHS, "loan term months", "policy term months", "term months", "loan term", "term",
+            "tenure months", "tenor months",
+        DISBURSEMENT_DATE, "loan start date", "start date", "disbursement date", "date disbursed",
+        LOAN_ACCOUNT_NUMBER, "loan account no", "loan account number", "account number", "loan number",
+        LENDER_PREMIUM_AMOUNT, "premium", "premium amount", "lender premium",
+        MEMBER_REFERENCE, "member reference", "our reference",
+        XlsxToCsv.SHEET_ROW);
+
+    private static Map<String, String> aliases(String... columnsThenNames) {
+        Map<String, String> aliases = new HashMap<>();
+        String column = null;
+        for (String entry : columnsThenNames) {
+            if (entry.contains("_")) {
+                column = entry;
+                aliases.put(simplified(entry), entry);
+            } else {
+                aliases.put(entry, column);
+            }
+        }
+        return aliases;
+    }
+
+    /** Lower case, words only: "SUM ASSURED (TZS)" and "sum_assured" both read "sum assured". */
+    static String simplified(String header) {
+        String words = header.toLowerCase(Locale.ROOT).replaceAll("\\(\\s*(tzs|tsh|tshs|usd)\\s*\\)", " ")
+            .replaceAll("[^a-z0-9]+", " ").strip();
+        return words.replaceAll("\\b(tzs|tshs|tsh)$", "").strip();
+    }
+
+    /** The column a header names, or the header itself simplified when it names none of ours (and is ignored). */
+    static String columnFor(String header) {
+        String simple = simplified(header);
+        return ALIASES.getOrDefault(simple, simple);
+    }
+
+    /** Whether a spreadsheet row is the header: it names at least three of the five a lender must send. */
+    public static boolean looksLikeHeader(List<String> cells) {
+        return cells.stream().map(EnrolmentCsvParser::columnFor).filter(REQUIRED_COLUMNS::contains).distinct()
+            .count() >= 3;
+    }
+
     /** The five a lender must fill, for a console that has to say which they are. */
     public static List<String> requiredColumns() {
         return REQUIRED_COLUMNS;
@@ -135,12 +191,16 @@ public final class EnrolmentCsvParser {
             int lineNumber = 1;
             for (CSVRecord record : parser) {
                 lineNumber++;
-                if (isEntirelyBlank(record)) {
+                if (isEntirelyBlank(record) || isTotalsRow(record, headers)) {
                     // The real LOLC sheet carries ~200 rows of formula residue below its
                     // data. Rejecting those would bury the real rejections under noise.
                     continue;
                 }
-                readRow(record, lineNumber, headers, firstSeenAt)
+                // A spreadsheet's own row number when the reader supplied it, so a refusal names the row the lender
+                // can see rather than a count of the rows that were not blank.
+                String sheetRow = cell(record, headers, XlsxToCsv.SHEET_ROW);
+                int line = sheetRow == null ? lineNumber : Integer.parseInt(sheetRow);
+                readRow(record, line, headers, firstSeenAt)
                     .ifLeft(rows::add)
                     .ifRight(errors::add);
             }
@@ -338,10 +398,22 @@ public final class EnrolmentCsvParser {
         Map<String, Integer> normalised = new HashMap<>();
         raw.forEach((name, index) -> {
             if (name != null && !name.isBlank()) {
-                normalised.put(name.strip().toLowerCase(Locale.ROOT), index);
+                // The first column to claim a name keeps it: a file with both "Name" and "Client name" is read from
+                // whichever comes first, not the last one the map happened to see.
+                normalised.merge(columnFor(name), index, Math::min);
             }
         });
         return normalised;
+    }
+
+    /** A totals row at the foot of a lender's sheet: it says TOTAL somewhere and is nobody's date of birth. */
+    private static boolean isTotalsRow(CSVRecord record, Map<String, Integer> headers) {
+        if (cell(record, headers, BORROWER_DATE_OF_BIRTH) != null) return false;
+        for (String value : record) {
+            String word = value == null ? "" : value.strip().toLowerCase(Locale.ROOT);
+            if (word.equals("total") || word.equals("totals") || word.equals("grand total")) return true;
+        }
+        return false;
     }
 
     private static void requireEveryColumn(Map<String, Integer> headers) {
