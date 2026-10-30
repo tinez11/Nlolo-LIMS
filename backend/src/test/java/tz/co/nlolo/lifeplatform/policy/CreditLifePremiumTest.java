@@ -166,6 +166,32 @@ class CreditLifePremiumTest {
     }
 
     @Test
+    void wholeYearsRoundedUpChargesAPartYearAsAFullOne() {
+        // The lender's template (2026-10-30): sum assured x 0.6% x ROUNDUP(months / 12).
+        BigDecimal rate = new BigDecimal("0.6000");
+        BigDecimal loan = new BigDecimal("10000000.00");
+        CreditLifePremiumBasis basis = CreditLifePremiumBasis.WHOLE_YEARS_ROUNDED_UP;
+
+        assertThat(CreditLifePremium.forLoan(loan, 12, rate, basis)).isEqualByComparingTo("60000.00");
+        assertThat(CreditLifePremium.forLoan(loan, 13, rate, basis)).isEqualByComparingTo("120000.00");
+        assertThat(CreditLifePremium.forLoan(loan, 18, rate, basis)).isEqualByComparingTo("120000.00");
+        assertThat(CreditLifePremium.forLoan(loan, 36, rate, basis)).isEqualByComparingTo("180000.00");
+    }
+
+    @Test
+    void aSmallLoanPaysTheAgreedMinimumAndALargerOneItsOwnPremium() {
+        BigDecimal rate = new BigDecimal("0.6000");
+        BigDecimal minimum = new BigDecimal("2000.00");
+        CreditLifePremiumBasis basis = CreditLifePremiumBasis.WHOLE_YEARS_ROUNDED_UP;
+
+        // 100,000 x 0.6% = 600, below the minimum.
+        assertThat(CreditLifePremium.forLoan(new BigDecimal("100000.00"), 12, rate, basis, minimum))
+            .isEqualByComparingTo("2000.00");
+        assertThat(CreditLifePremium.forLoan(new BigDecimal("1000000.00"), 12, rate, basis, minimum))
+            .isEqualByComparingTo("6000.00");
+    }
+
+    @Test
     void thePremiumIsOnTheOriginalPrincipalEvenThoughCoverDeclines() {
         // Cover falls straight-line, but premium does not follow it down: the client charges
         // on the disbursed amount, and the rate they negotiated was negotiated against it.

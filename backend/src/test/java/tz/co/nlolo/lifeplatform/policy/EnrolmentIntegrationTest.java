@@ -178,7 +178,7 @@ class EnrolmentIntegrationTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
-            "db-migrations/policy/V42__surrender_payout_route.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V43__credit_life_agreement.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
@@ -332,6 +332,109 @@ class EnrolmentIntegrationTest {
             // assertion -- a bare BigDecimal serialises as 42500 and would fail it.
             .andExpect(jsonPath("$[0].premiumAmount.amount").value(matchesPattern("\\d+\\.\\d{2}")))
             .andExpect(jsonPath("$[0].premiumAmount.currencyCode").value("TZS"));
+    }
+
+    // ---- the year's agreement with the lender (V43) ----------------------------
+
+    @Autowired private CreditLifeAgreementApi agreementApi;
+
+    private CreditLifeAgreementApi.AgreementInput yearFrom(LocalDate from, String commission) {
+        return new CreditLifeAgreementApi.AgreementInput(from, from.plusYears(1).minusDays(1),
+            new BigDecimal("0.6000"), CreditLifePremiumBasis.WHOLE_YEARS_ROUNDED_UP, new BigDecimal("2000.00"),
+            65, 12, 120, new BigDecimal(commission), false);
+    }
+
+    @Test
+    void aFileIsPricedOnTheAgreementInForceWhenEachLoanStarted() {
+        agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 6, 1), "10"), "staff-setup");
+
+        var submission = enrolmentApi.submit(creditLifeScheme, csv(
+            // 8,500,000 x 0.6% x 4 years
+            "LN-A,Amina Hassan Mwinyi,1988-03-14,F,,,8500000.00,48,2026-06-30\n"
+            // 100,000 x 0.6% x 2 years = 1,200, so the 2,000 minimum
+            + "LN-B,Grace Shirima,1992-06-21,F,,,100000.00,18,2026-07-06\n"),
+            "june.csv", "staff.one");
+        assertThat(submission.rejectedCount()).isZero();
+        enrolmentApi.accept(submission.submissionId(), "staff.two");
+
+        var rows = enrolmentApi.listRows(submission.submissionId());
+        assertThat(rows.get(0).premiumAmount()).isEqualByComparingTo("204000.00");
+        assertThat(rows.get(1).premiumAmount()).isEqualByComparingTo("2000.00");
+    }
+
+    @Test
+    void theAgreementsLimitsDecideWhoIsCovered() {
+        agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 6, 1), "10"), "staff-setup");
+
+        var submission = enrolmentApi.submit(creditLifeScheme, csv(
+            // 66 when the loan starts, over the agreement's 65
+            "LN-OLD,Old Borrower,1960-01-01,M,,,1000000.00,12,2026-07-01\n"
+            // every loan starts at a year
+            + "LN-SHORT,Short Loan,1990-01-01,F,,,1000000.00,6,2026-07-01\n"),
+            "june.csv", "staff.one");
+
+        var rows = enrolmentApi.listRows(submission.submissionId());
+        assertThat(rows).allSatisfy(r ->
+            assertThat(r.reasonCode()).isEqualTo(EnrolmentRejection.ENTRY_AGE_OR_TERM_OUT_OF_BOUNDS));
+        assertThat(rows.get(0).reason()).contains("up to 65");
+        assertThat(rows.get(1).reason()).contains("12 months");
+    }
+
+    @Test
+    void aLoanNoAgreementCoversIsRefusedRatherThanPricedOnTheSchemesOldRate() {
+        agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 7, 1), "10"), "staff-setup");
+
+        var submission = enrolmentApi.submit(creditLifeScheme,
+            csv("LN-JUNE,June Borrower,1990-01-01,F,,,1000000.00,12,2026-06-15\n"), "june.csv", "staff.one");
+
+        assertThat(enrolmentApi.listRows(submission.submissionId()).get(0).reasonCode())
+            .isEqualTo(EnrolmentRejection.NO_AGREEMENT_IN_FORCE);
+    }
+
+    @Test
+    void twoAgreementsMayNotCoverTheSameDay() {
+        agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 6, 1), "10"), "staff-setup");
+
+        assertThatThrownBy(() -> agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2027, 1, 1), "10"),
+                "staff-setup"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("already runs");
+        assertThatCode(() -> agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2027, 6, 1), "12"),
+            "staff-setup")).doesNotThrowAnyException();
+        assertThat(agreementApi.agreements(creditLifeScheme)).hasSize(2);
+    }
+
+    @Test
+    void aLendersCommissionAboveTheTiraCapIsRefused() {
+        assertThatThrownBy(() -> agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 6, 1), "15.01"),
+                "staff-setup"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("15%");
+    }
+
+    @Test
+    void anEmployerSchemeHasNoAgreements() {
+        assertThatThrownBy(() -> agreementApi.add(employerScheme, yearFrom(LocalDate.of(2026, 6, 1), "10"),
+                "staff-setup"))
+            .isInstanceOf(InvalidPolicyStateException.class);
+    }
+
+    @Test
+    void anAgreementIsAddedAndReadOverHttp() throws Exception {
+        mockMvc.perform(post("/group-schemes/" + creditLifeScheme + "/agreements")
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("""
+                    {"validFrom":"2026-06-01","validTo":"2027-05-31","premiumRatePercent":0.6,
+                     "premiumBasis":"WHOLE_YEARS_ROUNDED_UP","minimumPremium":2000,"maxAge":75,
+                     "minTermMonths":12,"maxTermMonths":120,"commissionPercent":10,"coverIncludesInterest":true}""")
+                .with(staff("staff.one")))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.maxAge").value(75));
+
+        mockMvc.perform(get("/group-schemes/" + creditLifeScheme + "/agreements").with(staff("staff.one")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].premiumBasis").value("WHOLE_YEARS_ROUNDED_UP"))
+            .andExpect(jsonPath("$[0].coverIncludesInterest").value(true));
     }
 
     // ---- submitting judges, and enrols nobody --------------------------------

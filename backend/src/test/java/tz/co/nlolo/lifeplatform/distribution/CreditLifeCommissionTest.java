@@ -171,7 +171,7 @@ class CreditLifeCommissionTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
-            "db-migrations/policy/V42__surrender_payout_route.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V43__credit_life_agreement.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
@@ -398,6 +398,31 @@ class CreditLifeCommissionTest {
             .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         assertThat(clawedBack.abs()).isEqualByComparingTo(accrued);
+    }
+
+    // ---- the year's agreement states the commission (policy V43) -------------
+
+    @Autowired private CreditLifeAgreementApi agreementApi;
+
+    /** The agreement's 12% is paid, not the 10% plan: 24,000 + 6,000 + 60,000 at 0.5% per started year is
+     * 90,000, and 12% of it is 10,800. Its refund still claws back pro rata from that accrual. */
+    @Test
+    void theAgreementsCommissionIsPaidRatherThanThePlans() {
+        schemeWithBankAsAgent();
+        agreementApi.add(scheme, new CreditLifeAgreementApi.AgreementInput(LocalDate.of(2026, 8, 1),
+            LocalDate.of(2027, 7, 31), new BigDecimal("0.5000"), CreditLifePremiumBasis.WHOLE_YEARS_ROUNDED_UP,
+            null, 75, 12, 120, new BigDecimal("12"), false), "staff-setup");
+
+        submitAndAccept(THREE_BORROWERS);
+
+        assertThat(firstYearAccruals()).singleElement()
+            .satisfies(a -> assertThat(a.getAmount()).isEqualByComparingTo("10800.00"));
+
+        // Amina: 24,000 charged over 18 months, 9 unexpired at month 9 -> 12,000 back, 12% of it.
+        policyApi.exitMember(scheme, memberNamed("Amina Hassan Mwinyi").policyMemberId(), LocalDate.of(2027, 5, 3),
+            ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+        assertThat(reversals()).singleElement()
+            .satisfies(r -> assertThat(r.getAmount()).isEqualByComparingTo("-1440.00"));
     }
 
     // ---- the lender's own rate, and who earns it ---------------------------

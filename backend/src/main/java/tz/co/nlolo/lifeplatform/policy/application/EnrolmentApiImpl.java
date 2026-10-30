@@ -11,6 +11,7 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
 import tz.co.nlolo.lifeplatform.document.api.DocumentType;
 import tz.co.nlolo.lifeplatform.policy.api.*;
+import tz.co.nlolo.lifeplatform.policy.domain.CreditLifeAgreement;
 import tz.co.nlolo.lifeplatform.policy.domain.CreditLifePremium;
 import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentCsvParser;
 import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentReportRenderer;
@@ -38,6 +39,7 @@ import java.time.Period;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -72,6 +74,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
     private final ProductApi productApi;
     private final DocumentApi documentApi;
     private final ApplicationEventPublisher eventPublisher;
+    private final CreditLifeAgreements agreements;
 
     public EnrolmentApiImpl(EnrolmentSubmissionRepository submissionRepository,
                              EnrolmentSubmissionRowRepository rowRepository,
@@ -80,7 +83,9 @@ public class EnrolmentApiImpl implements EnrolmentApi {
                              PolicyMemberRepository policyMemberRepository,
                              PolicyApi policyApi, ProductApi productApi, DocumentApi documentApi,
                              PartyApi partyApi,
-                             ApplicationEventPublisher eventPublisher) {
+                             ApplicationEventPublisher eventPublisher,
+                             CreditLifeAgreements agreements) {
+        this.agreements = agreements;
         this.submissionRepository = submissionRepository;
         this.rowRepository = rowRepository;
         this.groupSchemeRepository = groupSchemeRepository;
@@ -200,6 +205,10 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         // What each borrower's premium pays for: their own loan, from disbursement to its last day. The ledger earns a
         // PAA premium over exactly this (IFRS 17 I3a), so a file's premium is earned borrower by borrower.
         List<Map<String, Object>> covers = new ArrayList<>();
+        // Premium priced under an agreement, by that agreement's commission percent: a file whose
+        // loans straddle two years pays each year's commission on its own loans.
+        Map<BigDecimal, BigDecimal> commissionByAgreement = new java.util.TreeMap<>();
+        List<CreditLifeAgreement> schemeAgreements = agreements.entities(submission.getPolicyNumber());
         for (EnrolmentSubmissionRow row :
                 rowRepository.findByTenantIdAndSubmissionIdOrderByLineNumberAsc(tenantId, submissionId)) {
             // ENROLLED_CAPPED is cover, not a refusal: a capped borrower is insured up
@@ -222,12 +231,27 @@ public class EnrolmentApiImpl implements EnrolmentApi {
             // insurer will PAY, not what the lender borrowed, and the rate they negotiated is
             // a rate on the loan. Charging the capped amount would quietly discount exactly
             // the borrowers whose excess risk sent them to underwriting.
-            BigDecimal memberPremium = CreditLifePremium.forLoan(
-                judged.loanPrincipalAmount(), judged.loanTermMonths(), scheme.getPremiumRatePercent(),
-                // The scheme's own basis, never a default. Two lenders read the same percentage
-                // differently, and the difference is invisible on a twelve-month loan and large
-                // on any other.
-                scheme.getPremiumBasis());
+            //
+            // The year's agreement in force on the day the loan started, when the scheme has
+            // them (V43): a loan is priced on the terms the lender had agreed when it lent.
+            Optional<CreditLifeAgreement> agreement = schemeAgreements.stream()
+                .filter(a -> a.covers(judged.disbursementDate())).findFirst();
+            if (agreement.isEmpty() && !schemeAgreements.isEmpty()) {
+                // Judged at submit, so only an agreement added since could cause this -- and
+                // agreements are never edited or removed. Refused rather than priced on a guess.
+                throw new InvalidPolicyStateException("No agreement covers " + judged.disbursementDate()
+                    + " on " + submission.getPolicyNumber() + "; withdraw this file and send it again");
+            }
+            BigDecimal memberPremium = agreement.isPresent()
+                ? agreement.get().premiumFor(judged.loanPrincipalAmount(), judged.loanTermMonths())
+                : CreditLifePremium.forLoan(
+                    judged.loanPrincipalAmount(), judged.loanTermMonths(), scheme.getPremiumRatePercent(),
+                    // The scheme's own basis, never a default. Two lenders read the same percentage
+                    // differently, and the difference is invisible on a twelve-month loan and large
+                    // on any other.
+                    scheme.getPremiumBasis());
+            agreement.ifPresent(a -> commissionByAgreement.merge(a.getCommissionPercent(), memberPremium,
+                BigDecimal::add));
             row.becameMember(member.policyMemberId(), member.memberReference(), memberPremium);
             premiumTotal = premiumTotal.add(memberPremium);
             covers.add(Map.of("memberRef", member.policyMemberId().toString(),
@@ -274,7 +298,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         // credit-life scheme (spec 2.8) -- distribution may not read policy to find out.
         UUID lenderPartyId = policyRepository.findByPolicyNumberAndTenantId(submission.getPolicyNumber(), tenantId)
             .map(Policy::getPolicyholderPartyId).orElseThrow();
-        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.EnrolmentAccepted", tenantId,
+        Map<String, Object> payload = new java.util.HashMap<>(
             Map.of("submissionId", submission.getSubmissionId(),
                    "policyNumber", submission.getPolicyNumber(),
                    "policyholderPartyId", lenderPartyId,
@@ -286,7 +310,14 @@ public class EnrolmentApiImpl implements EnrolmentApi {
                    "acceptedAt", submission.getAcceptedAt().toString(),
                    "premium", Map.of("amount", premiumTotal.toPlainString(),
                                      "currencyCode", scheme.getCurrency()),
-                   "covers", covers)));
+                   "covers", covers));
+        // The lender's commission as its agreement states it, so distribution pays exactly that
+        // rather than a commission plan's figure. Absent when the scheme has no agreements.
+        if (!commissionByAgreement.isEmpty()) {
+            payload.put("lenderCommission", Map.of("amount", lenderCommission(commissionByAgreement).toPlainString(),
+                "currencyCode", scheme.getCurrency()));
+        }
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.EnrolmentAccepted", tenantId, payload));
 
         return toView(submission);
     }
@@ -507,9 +538,11 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         private final LocalDate today = LocalDate.now();
         private final UUID tenantId;
         private final String policyNumber;
+        private final List<CreditLifeAgreement> schemeAgreements;
 
         Judge(Policy policy, GroupScheme scheme, UUID tenantId, String policyNumber) {
             this.scheme = scheme;
+            this.schemeAgreements = agreements.entities(policyNumber);
             this.tenantId = tenantId;
             this.policyNumber = policyNumber;
             this.commencement = policy.getCommencementDate();
@@ -544,7 +577,19 @@ public class EnrolmentApiImpl implements EnrolmentApi {
                     "disbursement_date " + row.disbursementDate() + " is before this scheme"
                         + " commenced on " + commencement + ".");
             }
-            String ageOrTerm = ageOrTermRefusal(row);
+            String ageOrTerm;
+            if (!schemeAgreements.isEmpty()) {
+                Optional<CreditLifeAgreement> agreement = schemeAgreements.stream()
+                    .filter(a -> a.covers(row.disbursementDate())).findFirst();
+                if (agreement.isEmpty()) {
+                    return refused(EnrolmentRejection.NO_AGREEMENT_IN_FORCE,
+                        "No agreement with the lender covers a loan that started on " + row.disbursementDate()
+                            + ", so it has no agreed price.");
+                }
+                ageOrTerm = agreementRefusal(row, agreement.get());
+            } else {
+                ageOrTerm = ageOrTermRefusal(row);
+            }
             if (ageOrTerm != null) {
                 return refused(EnrolmentRejection.ENTRY_AGE_OR_TERM_OUT_OF_BOUNDS, ageOrTerm);
             }
@@ -590,6 +635,27 @@ public class EnrolmentApiImpl implements EnrolmentApi {
                 detail + " " + EnrolmentReportRenderer.NOT_COVERED);
         }
 
+        /**
+         * The agreement's own limits, in place of the product's: the lender agreed these for the year, and a
+         * product bound the agreement contradicts would refuse borrowers the lender was promised.
+         */
+        private String agreementRefusal(EnrolmentRow row, CreditLifeAgreement agreement) {
+            int age = row.entryAge();
+            if (age > agreement.getMaxAge()) {
+                return "The borrower is " + age + " when the loan starts; the agreement covers borrowers up to "
+                    + agreement.getMaxAge() + ".";
+            }
+            if (row.loanTermMonths() < agreement.getMinTermMonths()) {
+                return "A loan of " + row.loanTermMonths() + " months is shorter than the agreement's shortest, "
+                    + agreement.getMinTermMonths() + " months.";
+            }
+            if (row.loanTermMonths() > agreement.getMaxTermMonths()) {
+                return "A loan of " + row.loanTermMonths() + " months is longer than the agreement's longest, "
+                    + agreement.getMaxTermMonths() + " months.";
+            }
+            return null;
+        }
+
         private String ageOrTermRefusal(EnrolmentRow row) {
             if (bounds == null) return null;
             int entryAge = row.entryAge();
@@ -617,6 +683,16 @@ public class EnrolmentApiImpl implements EnrolmentApi {
             }
             return null;
         }
+    }
+
+    /** Each agreement's percent of the premium priced under it, rounded once per agreement. */
+    static BigDecimal lenderCommission(Map<BigDecimal, BigDecimal> premiumByCommissionPercent) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (Map.Entry<BigDecimal, BigDecimal> e : premiumByCommissionPercent.entrySet()) {
+            total = total.add(e.getValue().multiply(e.getKey())
+                .divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP));
+        }
+        return total;
     }
 
     // ---- plumbing ------------------------------------------------------------

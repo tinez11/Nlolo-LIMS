@@ -417,6 +417,25 @@ public class PolicyEventListener {
             }
         }
 
+        // The year's agreement with the lender states its commission (policy V43): that figure is what the
+        // lender was promised, so it is paid as stated and no commission plan is consulted.
+        @SuppressWarnings("unchecked")
+        Map<String, Object> agreed = (Map<String, Object>) payload.get("lenderCommission");
+        if (agreed != null) {
+            BigDecimal amount = new BigDecimal((String) agreed.get("amount"));
+            if (amount.signum() == 0) {
+                log.info("Submission {}'s agreement pays the lender no commission", submissionId);
+                return;
+            }
+            distributionApiImpl.persistAccrual(tenantId, agentId, policyNumber, TierType.FIRST_YEAR, amount,
+                    (String) agreed.get("currencyCode"), currentPeriod(), submissionId.toString(), null,
+                    "system:policy.EnrolmentAccepted")
+                .ifPresent(booked -> log.info("Accrued the agreed {} {} commission to lender {} for enrolment "
+                    + "submission {} on scheme {}", booked.getAmount(), booked.getCurrency(), agentId, submissionId,
+                    policyNumber));
+            return;
+        }
+
         CommissionCalculator.AgentWithPlan seller = distributionApiImpl.resolveAgentWithPlan(
             tenantId, agentId, maybeProjection.get().getProductId());
         if (seller == null) {

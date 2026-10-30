@@ -998,6 +998,57 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /group-schemes/{policyNumber}/agreements:
+    get:
+      summary: A credit-life scheme's yearly agreements with its lender
+      description: >-
+        2026-10-30. One per year: the rate and how it is applied, the least a loan pays, the oldest borrower, the
+        shortest and longest loan, the lender's commission and whether cover includes interest. A borrower is priced on
+        the agreement in force on the day their loan started.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The agreements, earliest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CreditLifeAgreement' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: Not a credit-life scheme
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    post:
+      summary: Add a year's agreement
+      description: >-
+        Refused for a period that overlaps an agreement already made, and for commission above 15% of premium (TIRA).
+        Never edited once made: borrowers already on cover were charged on it.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreditLifeAgreementInput' }
+      responses:
+        '201':
+          description: Agreed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreditLifeAgreement' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: Overlapping, out of bounds, or not a credit-life scheme
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /group-schemes/{policyNumber}/agent-of-record:
     post:
       summary: Correct who earns commission on a scheme, from now on (staff -- FINANCE_OFFICER or ADMIN)
@@ -1749,6 +1800,44 @@ paths:
 
 components:
   schemas:
+    CreditLifeAgreementInput:
+      type: object
+      required: [validFrom, validTo, premiumRatePercent, premiumBasis, maxAge, minTermMonths, maxTermMonths]
+      properties:
+        validFrom: { type: string, format: date }
+        validTo: { type: string, format: date }
+        premiumRatePercent: { type: number, description: "Per year on the loan amount; 0.6 means 0.6%" }
+        premiumBasis:
+          type: string
+          enum: [FLAT_ON_PRINCIPAL, PER_ANNUM_ON_PRINCIPAL, ANNUAL_ON_DECLINING_BALANCE, WHOLE_YEARS_ROUNDED_UP]
+        minimumPremium: { type: [number, "null"], description: The least one loan pays }
+        maxAge: { type: integer, minimum: 18, maximum: 100, description: The oldest a borrower may be when the loan starts }
+        minTermMonths: { type: integer, minimum: 1 }
+        maxTermMonths: { type: integer, maximum: 480 }
+        commissionPercent: { type: [number, "null"], minimum: 0, maximum: 15, description: "The lender's commission; at most 15% (TIRA)" }
+        coverIncludesInterest: { type: boolean }
+    CreditLifeAgreement:
+      type: object
+      additionalProperties: false
+      required: [agreementId, policyNumber, validFrom, validTo, premiumRatePercent, premiumBasis, minimumPremium, maxAge,
+        minTermMonths, maxTermMonths, commissionPercent, coverIncludesInterest, createdAt, createdBy]
+      properties:
+        agreementId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        validFrom: { type: string, format: date }
+        validTo: { type: string, format: date }
+        premiumRatePercent: { type: number }
+        premiumBasis:
+          type: string
+          enum: [FLAT_ON_PRINCIPAL, PER_ANNUM_ON_PRINCIPAL, ANNUAL_ON_DECLINING_BALANCE, WHOLE_YEARS_ROUNDED_UP]
+        minimumPremium: { type: number }
+        maxAge: { type: integer }
+        minTermMonths: { type: integer }
+        maxTermMonths: { type: integer }
+        commissionPercent: { type: number }
+        coverIncludesInterest: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        createdBy: { type: string }
     GroupFuneralLifeInput:
       type: object
       properties:
@@ -1969,7 +2058,7 @@ components:
           nullable: true
           enum: [MISSING_REQUIRED_FIELD, MALFORMED_VALUE, DUPLICATE_LOAN_ACCOUNT_NUMBER,
                  DISBURSEMENT_DATE_IN_FUTURE, ENTRY_AGE_OR_TERM_OUT_OF_BOUNDS,
-                 LOAN_BEFORE_SCHEME_COMMENCED, ALREADY_ENROLLED, null]
+                 LOAN_BEFORE_SCHEME_COMMENCED, ALREADY_ENROLLED, DUPLICATE_LOAN, NO_AGREEMENT_IN_FORCE, null]
         reason: { type: string, nullable: true }
         policyMemberId:
           type: string
@@ -2350,7 +2439,7 @@ components:
             No default. The three agree exactly on a twelve-month loan and diverge on every
             other term, so a wrong basis is silent on an annual book and large on a short one.
           type: [string, "null"]
-          enum: [FLAT_ON_PRINCIPAL, PER_ANNUM_ON_PRINCIPAL, ANNUAL_ON_DECLINING_BALANCE, null]
+          enum: [FLAT_ON_PRINCIPAL, PER_ANNUM_ON_PRINCIPAL, ANNUAL_ON_DECLINING_BALANCE, WHOLE_YEARS_ROUNDED_UP, null]
         underwritingCaseId:
           description: >-
             The group case this scheme is issued on. REQUIRED for a GROUP_LIFE (employer)

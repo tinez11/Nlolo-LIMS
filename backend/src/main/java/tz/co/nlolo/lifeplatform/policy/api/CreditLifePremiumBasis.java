@@ -40,5 +40,12 @@ public enum CreditLifePremiumBasis {
      * Those columns are how the total is arrived at, not an instruction to invoice annually:
      * the whole figure is charged at enrolment like every other basis (client, 2026-09-29).
      */
-    ANNUAL_ON_DECLINING_BALANCE
+    ANNUAL_ON_DECLINING_BALANCE,
+
+    /**
+     * The rate per annum on the disbursed amount, for every year the loan runs, a part year counted whole -- 12 months
+     * is one year, 18 months two. The user's new template (2026-10-30), with a minimum premium beside it on the
+     * lender's agreement.
+     */
+    WHOLE_YEARS_ROUNDED_UP
 }
