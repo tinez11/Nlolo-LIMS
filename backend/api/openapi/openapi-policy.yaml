@@ -1520,6 +1520,32 @@ paths:
               schema: { $ref: '#/components/schemas/EnrolmentSubmissionView' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
 
+  /credit-life-schemes/{policyNumber}/enrolments/{submissionId}/quotation:
+    get:
+      summary: What the file will cost before anybody accepts it
+      description: >-
+        2026-10-30. The borrowers who will be covered, the premium priced exactly as acceptance prices it, the
+        lender's own figure beside it, the lender's commission and the amount to pay (the full premium). Refused rows
+        are in none of the figures.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The quotation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnrolmentQuotationView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+
   /credit-life-schemes/{policyNumber}/enrolments/{submissionId}/rows:
     get:
       summary: Every line of the file and what happened to it
@@ -2039,6 +2065,34 @@ components:
             whole month over a disagreement would be worse than invoicing and saying so.
           type: [number, "null"]
 
+    EnrolmentQuotationView:
+      type: object
+      additionalProperties: false
+      required: [submissionId, policyNumber, currency, borrowers, totalLoanAmount, premium, commission, amountToPay,
+        mismatches]
+      properties:
+        submissionId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        currency: { type: string }
+        borrowers: { type: integer }
+        totalLoanAmount: { type: number }
+        premium: { type: number }
+        statedPremium: { type: [number, "null"], description: "The lender's own figure; null when their file had no premium column" }
+        difference: { type: [number, "null"], description: "premium less statedPremium; positive means the lender pays more than they worked out" }
+        commissionPercent: { type: [number, "null"] }
+        commission: { type: number }
+        amountToPay: { type: number }
+        mismatches:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [lineNumber, premium, statedPremium]
+            properties:
+              lineNumber: { type: integer }
+              borrowerFullName: { type: [string, "null"] }
+              premium: { type: number }
+              statedPremium: { type: number }
     EnrolmentRowView:
       description: >-
         One line of the lender's file and its outcome. ENROLLED_CAPPED is COVER, not a

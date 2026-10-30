@@ -355,11 +355,47 @@ class EnrolmentIntegrationTest {
             + "LN-B,Grace Shirima,1992-06-21,F,,,100000.00,18,2026-07-06\n"),
             "june.csv", "staff.one");
         assertThat(submission.rejectedCount()).isZero();
+
+        // The quotation, before anybody accepts: what the lender pays and earns. No premium column, nothing to compare.
+        var quote = enrolmentApi.quotation(submission.submissionId());
+        assertThat(quote.borrowers()).isEqualTo(2);
+        assertThat(quote.totalLoanAmount()).isEqualByComparingTo("8600000.00");
+        assertThat(quote.premium()).isEqualByComparingTo("206000.00");
+        assertThat(quote.commissionPercent()).isEqualByComparingTo("10");
+        assertThat(quote.commission()).isEqualByComparingTo("20600.00");
+        assertThat(quote.amountToPay()).isEqualByComparingTo("206000.00");
+        assertThat(quote.statedPremium()).isNull();
+        assertThat(quote.difference()).isNull();
+
         enrolmentApi.accept(submission.submissionId(), "staff.two");
+        // Accepted, it quotes what was charged -- the same figures.
+        assertThat(enrolmentApi.quotation(submission.submissionId()).premium()).isEqualByComparingTo("206000.00");
 
         var rows = enrolmentApi.listRows(submission.submissionId());
         assertThat(rows.get(0).premiumAmount()).isEqualByComparingTo("204000.00");
         assertThat(rows.get(1).premiumAmount()).isEqualByComparingTo("2000.00");
+    }
+
+    @Test
+    void theQuotationNamesEveryRowWhoseOwnPremiumIsNotOurs() {
+        agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 6, 1), "10"), "staff-setup");
+        // The lender worked Grace out on the old 0.4% -- 4,000 where the agreement says 6,000.
+        var submission = enrolmentApi.submit(creditLifeScheme, new ByteArrayInputStream((
+            "borrower_full_name,borrower_date_of_birth,loan_principal_amount,loan_term_months,disbursement_date,"
+                + "lender_premium_amount\n"
+                + "Amina Hassan Mwinyi,1988-03-14,8500000.00,48,2026-06-30,204000.00\n"
+                + "Grace Shirima,1992-06-21,1000000.00,12,2026-07-06,4000.00\n")
+            .getBytes(StandardCharsets.UTF_8)), "july.csv", "staff.one");
+
+        var quote = enrolmentApi.quotation(submission.submissionId());
+        assertThat(quote.premium()).isEqualByComparingTo("210000.00");
+        assertThat(quote.statedPremium()).isEqualByComparingTo("208000.00");
+        assertThat(quote.difference()).isEqualByComparingTo("2000.00");
+        assertThat(quote.mismatches()).singleElement().satisfies(m -> {
+            assertThat(m.borrowerFullName()).isEqualTo("Grace Shirima");
+            assertThat(m.premium()).isEqualByComparingTo("6000.00");
+            assertThat(m.statedPremium()).isEqualByComparingTo("4000.00");
+        });
     }
 
     @Test
@@ -454,6 +490,19 @@ class EnrolmentIntegrationTest {
         var submission = enrolmentApi.submit(creditLifeScheme, new ByteArrayInputStream(filled), "july.xlsx",
             "staff.one");
         assertThat(submission.rejectedCount()).isZero();
+
+        // The quotation over HTTP, as the console reads it: the workbook's premiums are ours, row by row.
+        mockMvc.perform(get("/credit-life-schemes/" + creditLifeScheme + "/enrolments/" + submission.submissionId()
+                    + "/quotation").with(staff("staff.one")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.borrowers").value(2))
+            .andExpect(jsonPath("$.premium").value(206000.00))
+            .andExpect(jsonPath("$.statedPremium").value(206000.00))
+            .andExpect(jsonPath("$.difference").value(0))
+            .andExpect(jsonPath("$.commission").value(20600.00))
+            .andExpect(jsonPath("$.mismatches").isEmpty());
+        TenantContext.set(tenantId);
+
         enrolmentApi.accept(submission.submissionId(), "staff.two");
 
         // The workbook's own figures were the platform's: nothing to reconcile.

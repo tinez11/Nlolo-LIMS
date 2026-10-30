@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import tz.co.nlolo.lifeplatform.AllowedDocumentContentTypes;
 import tz.co.nlolo.lifeplatform.policy.api.EnrolmentApi;
+import tz.co.nlolo.lifeplatform.policy.api.EnrolmentQuotationView;
 import tz.co.nlolo.lifeplatform.policy.api.EnrolmentRowView;
 import tz.co.nlolo.lifeplatform.policy.api.EnrolmentSubmissionView;
 import tz.co.nlolo.lifeplatform.policy.api.InvalidPolicyStateException;
@@ -118,6 +119,13 @@ public class EnrolmentController {
     public EnrolmentSubmissionView getSubmission(@PathVariable String policyNumber,
                                                   @PathVariable UUID submissionId) {
         return enrolmentApi.getSubmission(submissionId);
+    }
+
+    /** What the file will cost before anybody accepts it: the quotation the lender pays on (2026-10-30). */
+    @GetMapping("/credit-life-schemes/{policyNumber}/enrolments/{submissionId}/quotation")
+    @PreAuthorize("@access.can('schemes.view')")
+    public EnrolmentQuotationView quotation(@PathVariable String policyNumber, @PathVariable UUID submissionId) {
+        return enrolmentApi.quotation(submissionId);
     }
 
     @GetMapping("/credit-life-schemes/{policyNumber}/enrolments/{submissionId}/rows")

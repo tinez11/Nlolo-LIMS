@@ -226,41 +226,17 @@ public class EnrolmentApiImpl implements EnrolmentApi {
             if (row.getOutcome() == RowOutcome.REJECTED) continue;
 
             EnrolmentSubmissionRow.LoanTermsSource judged = row.getJudgedLoan();
+            Priced priced = price(judged, scheme, schemeAgreements, submission.getPolicyNumber());
+            BigDecimal memberPremium = priced.premium();
+            if (priced.commissionPercent() != null) {
+                commissionByAgreement.merge(priced.commissionPercent(), memberPremium, BigDecimal::add);
+            }
             PolicyMemberView member = policyApi.addMember(submission.getPolicyNumber(),
                 PolicyApi.MemberInput.borrower(row.getBorrowerFullName(),
                     judged.borrowerDateOfBirth(), row.getLoanAccountNumber(),
                     loanTermsFor(judged, scheme)),
                 acceptedBy);
 
-            // Priced from this borrower's OWN loan against the scheme's own rate, and summed
-            // here rather than re-derived later: a total recomputed from the members would
-            // drift the moment one of them exits.
-            //
-            // On the full principal even for a CAPPED borrower. Capping limits what the
-            // insurer will PAY, not what the lender borrowed, and the rate they negotiated is
-            // a rate on the loan. Charging the capped amount would quietly discount exactly
-            // the borrowers whose excess risk sent them to underwriting.
-            //
-            // The year's agreement in force on the day the loan started, when the scheme has
-            // them (V43): a loan is priced on the terms the lender had agreed when it lent.
-            Optional<CreditLifeAgreement> agreement = schemeAgreements.stream()
-                .filter(a -> a.covers(judged.disbursementDate())).findFirst();
-            if (agreement.isEmpty() && !schemeAgreements.isEmpty()) {
-                // Judged at submit, so only an agreement added since could cause this -- and
-                // agreements are never edited or removed. Refused rather than priced on a guess.
-                throw new InvalidPolicyStateException("No agreement covers " + judged.disbursementDate()
-                    + " on " + submission.getPolicyNumber() + "; withdraw this file and send it again");
-            }
-            BigDecimal memberPremium = agreement.isPresent()
-                ? agreement.get().premiumFor(judged.loanPrincipalAmount(), judged.loanTermMonths())
-                : CreditLifePremium.forLoan(
-                    judged.loanPrincipalAmount(), judged.loanTermMonths(), scheme.getPremiumRatePercent(),
-                    // The scheme's own basis, never a default. Two lenders read the same percentage
-                    // differently, and the difference is invisible on a twelve-month loan and large
-                    // on any other.
-                    scheme.getPremiumBasis());
-            agreement.ifPresent(a -> commissionByAgreement.merge(a.getCommissionPercent(), memberPremium,
-                BigDecimal::add));
             row.becameMember(member.policyMemberId(), member.memberReference(), memberPremium);
             premiumTotal = premiumTotal.add(memberPremium);
             covers.add(Map.of("memberRef", member.policyMemberId().toString(),
@@ -361,6 +337,50 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         return submissionRepository
             .findByTenantIdAndPolicyNumberOrderBySubmittedAtDesc(TenantContext.get(), policyNumber)
             .stream().map(EnrolmentApiImpl::toView).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public EnrolmentQuotationView quotation(UUID submissionId) {
+        UUID tenantId = TenantContext.get();
+        EnrolmentSubmission submission = findSubmission(submissionId, tenantId);
+        GroupScheme scheme = findScheme(submission.getPolicyNumber(), tenantId);
+        List<CreditLifeAgreement> schemeAgreements = agreements.entities(submission.getPolicyNumber());
+
+        int borrowers = 0;
+        BigDecimal loans = BigDecimal.ZERO;
+        BigDecimal premium = BigDecimal.ZERO;
+        BigDecimal stated = null;
+        Map<BigDecimal, BigDecimal> commissionByAgreement = new java.util.TreeMap<>();
+        List<EnrolmentQuotationView.Mismatch> mismatches = new ArrayList<>();
+        for (EnrolmentSubmissionRow row :
+                rowRepository.findByTenantIdAndSubmissionIdOrderByLineNumberAsc(tenantId, submissionId)) {
+            if (row.getOutcome() == RowOutcome.REJECTED) continue;
+            EnrolmentSubmissionRow.LoanTermsSource judged = row.getJudgedLoan();
+            Priced priced = price(judged, scheme, schemeAgreements, submission.getPolicyNumber());
+            // Once accepted, what the borrower WAS charged; until then, what acceptance will charge.
+            BigDecimal ours = row.getPremiumAmount() != null ? row.getPremiumAmount() : priced.premium();
+            borrowers++;
+            loans = loans.add(judged.loanPrincipalAmount());
+            premium = premium.add(ours);
+            if (priced.commissionPercent() != null) {
+                commissionByAgreement.merge(priced.commissionPercent(), ours, BigDecimal::add);
+            }
+            BigDecimal theirs = row.getStatedPremiumAmount();
+            if (theirs != null) {
+                stated = stated == null ? theirs : stated.add(theirs);
+                if (theirs.compareTo(ours) != 0) {
+                    mismatches.add(new EnrolmentQuotationView.Mismatch(row.getLineNumber(),
+                        row.getBorrowerFullName(), ours, theirs));
+                }
+            }
+        }
+        BigDecimal commission = lenderCommission(commissionByAgreement);
+        BigDecimal percent = commissionByAgreement.size() == 1 ? commissionByAgreement.keySet().iterator().next()
+            : null;
+        return new EnrolmentQuotationView(submissionId, submission.getPolicyNumber(), scheme.getCurrency(), borrowers,
+            loans, premium, stated, stated == null ? null : premium.subtract(stated), percent, commission, premium,
+            List.copyOf(mismatches));
     }
 
     @Override
@@ -716,6 +736,40 @@ public class EnrolmentApiImpl implements EnrolmentApi {
             }
             return null;
         }
+    }
+
+    /** One borrower's premium, and the commission percent of the agreement it was priced under (null for none). */
+    private record Priced(BigDecimal premium, BigDecimal commissionPercent) {}
+
+    /** The ONE place a lender's loan is priced: acceptance and the quotation both come here, so they cannot differ. */
+    private static Priced price(EnrolmentSubmissionRow.LoanTermsSource judged, GroupScheme scheme,
+                                List<CreditLifeAgreement> schemeAgreements, String policyNumber) {
+        // Priced from this borrower's OWN loan.
+        //
+        // On the full principal even for a CAPPED borrower. Capping limits what the
+        // insurer will PAY, not what the lender borrowed, and the rate they negotiated is
+        // a rate on the loan. Charging the capped amount would quietly discount exactly
+        // the borrowers whose excess risk sent them to underwriting.
+        //
+        // The year's agreement in force on the day the loan started, when the scheme has
+        // them (V43): a loan is priced on the terms the lender had agreed when it lent.
+        Optional<CreditLifeAgreement> agreement = schemeAgreements.stream()
+            .filter(a -> a.covers(judged.disbursementDate())).findFirst();
+        if (agreement.isEmpty() && !schemeAgreements.isEmpty()) {
+            // Judged at submit, so only an agreement added since could cause this -- and
+            // agreements are never edited or removed. Refused rather than priced on a guess.
+            throw new InvalidPolicyStateException("No agreement covers " + judged.disbursementDate()
+                + " on " + policyNumber + "; withdraw this file and send it again");
+        }
+        BigDecimal premium = agreement.isPresent()
+            ? agreement.get().premiumFor(judged.loanPrincipalAmount(), judged.loanTermMonths())
+            : CreditLifePremium.forLoan(
+                judged.loanPrincipalAmount(), judged.loanTermMonths(), scheme.getPremiumRatePercent(),
+                // The scheme's own basis, never a default. Two lenders read the same percentage
+                // differently, and the difference is invisible on a twelve-month loan and large
+                // on any other.
+                scheme.getPremiumBasis());
+        return new Priced(premium, agreement.map(CreditLifeAgreement::getCommissionPercent).orElse(null));
     }
 
     /** Each agreement's percent of the premium priced under it, rounded once per agreement. */
