@@ -51,7 +51,18 @@ public class SettlementDecision {
     @Column(name = "decided_at", nullable = false)
     private Instant decidedAt = Instant.now();
 
+    /** Why a credit-life claim was approved above the repayment schedule's balance (claims V13); null otherwise. */
+    @Column(name = "approval_note")
+    private String approvalNote;
+
     protected SettlementDecision() {}
+
+    public SettlementDecision(UUID tenantId, UUID claimId, String decidedBy, boolean approved,
+                               BigDecimal approvedAmount, String approvedCurrency, String rejectionReason,
+                               String payeeRef, String approvalNote) {
+        this(tenantId, claimId, decidedBy, approved, approvedAmount, approvedCurrency, rejectionReason, payeeRef);
+        this.approvalNote = approvalNote;
+    }
 
     public SettlementDecision(UUID tenantId, UUID claimId, String decidedBy, boolean approved,
                                BigDecimal approvedAmount, String approvedCurrency, String rejectionReason,
@@ -76,4 +87,5 @@ public class SettlementDecision {
     public String getRejectionReason() { return rejectionReason; }
     public String getPayeeRef() { return payeeRef; }
     public Instant getDecidedAt() { return decidedAt; }
+    public String getApprovalNote() { return approvalNote; }
 }

@@ -84,7 +84,7 @@ interface ClaimState {
   resetDecideSettlement: (claimId: string) => void;
   reopenClaim: (claimId: string, request: ReopenClaimRequest) => Promise<void>;
   resetReopenClaim: (claimId: string) => void;
-  attachEvidence: (claimId: string, file: File, description?: string) => Promise<void>;
+  attachEvidence: (claimId: string, file: File, description?: string, kind?: 'LOAN_STATEMENT') => Promise<void>;
   resetAttachEvidence: (claimId: string) => void;
 }
 
@@ -229,7 +229,7 @@ export const useClaimStore = create<ClaimState>((set, getState) => ({
       return { reopening: rest };
     }),
 
-  attachEvidence: (claimId, file, description) =>
+  attachEvidence: (claimId, file, description, kind) =>
     track(
       `claim.attachEvidence.${claimId}`,
       getState().attachingEvidence[claimId] ?? idle<true>(),
@@ -237,7 +237,7 @@ export const useClaimStore = create<ClaimState>((set, getState) => ({
       // Explicit Promise<true>: see policyStore.saveBeneficiaries for why the
       // annotation is required to stop TypeScript widening the literal to boolean.
       async (): Promise<true> => {
-        await attachClaimEvidence(claimId, file, description);
+        await attachClaimEvidence(claimId, file, description, undefined, kind);
         await getState().loadEvidence(claimId);
         return true;
       },

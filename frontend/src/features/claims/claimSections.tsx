@@ -105,6 +105,7 @@ export function claimSections({
               claimId={claimId}
               policyNumber={claim.policyNumber}
               onScheme={!!claim.policyMemberId}
+              policyMemberId={claim.policyMemberId ?? null}
             />
           </Panel>
           {historyWithDecision && history}
@@ -180,7 +181,11 @@ export function claimSections({
         title="Evidence"
         subtitle="Photos, certificates, and reports attached to this claim"
       >
-        <EvidencePanel claimId={claimId} canAttach={canAttachEvidence && claim.status !== 'SETTLED'} />
+        <EvidencePanel
+          claimId={claimId}
+          canAttach={canAttachEvidence && claim.status !== 'SETTLED'}
+          lendersClaim={Boolean(claim.details && 'loanStatement' in claim.details && claim.details.loanStatement)}
+        />
       </Panel>
     ),
   });

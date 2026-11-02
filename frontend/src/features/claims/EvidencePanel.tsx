@@ -11,6 +11,7 @@ import { formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectAttachingEvidence, selectEvidence, useClaimStore } from '@/store/claimStore';
 import { Input } from '@/components/ui/input';
+import { CheckboxField } from '@/components/ui/checkbox';
 
 /**
  * `POST /claims/{claimId}/evidence` + `GET .../evidence` + `GET .../evidence/{ref}`
@@ -30,7 +31,12 @@ import { Input } from '@/components/ui/input';
  * that for no benefit. The blob URL is revoked only on tab close (the browser's
  * own job), not here -- revoking it immediately would race the new tab's own load.
  */
-export function EvidencePanel({ claimId, canAttach }: { claimId: string; canAttach: boolean }) {
+export function EvidencePanel({ claimId, canAttach, lendersClaim = false }: {
+  claimId: string;
+  canAttach: boolean;
+  /** A credit-life claim, which is approved only with the lender's loan statement on it (2026-11-02). */
+  lendersClaim?: boolean;
+}) {
   const evidence = useClaimStore(selectEvidence(claimId));
   const loadEvidence = useClaimStore((s) => s.loadEvidence);
 
@@ -41,7 +47,7 @@ export function EvidencePanel({ claimId, canAttach }: { claimId: string; canAtta
   return (
     <div className="space-y-3">
       {canAttach ? (
-        <UploadForm claimId={claimId} />
+        <UploadForm claimId={claimId} lendersClaim={lendersClaim} />
       ) : (
         <p className="px-4 pt-3 text-xs text-muted-foreground">
           This claim is settled — reopen it before attaching new evidence.
@@ -65,7 +71,14 @@ export function EvidencePanel({ claimId, canAttach }: { claimId: string; canAtta
         {rows.map((item) => (
           <li key={item.claimEvidenceId} className="flex items-center justify-between gap-3 px-4 py-2.5">
             <div className="min-w-0">
-              <p className="truncate text-sm">{item.description || 'No description'}</p>
+              <p className="flex min-w-0 items-center gap-2 text-sm">
+                <span className="truncate">{item.description || 'No description'}</span>
+                {item.kind === 'LOAN_STATEMENT' && (
+                  <span className="shrink-0 rounded-full bg-control px-2 text-xs text-muted-foreground">
+                    Loan statement
+                  </span>
+                )}
+              </p>
               <p className="text-xs text-muted-foreground">
                 {/* The name captured from the uploader's token -- never `uploadedBy`, which is
                     their Keycloak subject. Evidence attached before the name was captured has
@@ -99,11 +112,12 @@ const ACCEPTED_EVIDENCE_TYPES = {
   'application/pdf': ['.pdf'],
 };
 
-function UploadForm({ claimId }: { claimId: string }) {
+function UploadForm({ claimId, lendersClaim }: { claimId: string; lendersClaim: boolean }) {
   const attachEvidence = useClaimStore((s) => s.attachEvidence);
   const resetAttachEvidence = useClaimStore((s) => s.resetAttachEvidence);
   const attaching = useClaimStore(selectAttachingEvidence(claimId));
   const [description, setDescription] = useState('');
+  const [isStatement, setIsStatement] = useState(false);
 
   useEffect(() => {
     resetAttachEvidence(claimId);
@@ -132,9 +146,12 @@ function UploadForm({ claimId }: { claimId: string }) {
   });
 
   async function submit(file: File) {
-    await attachEvidence(claimId, file, description.trim() || undefined);
+    const statement = lendersClaim && isStatement;
+    await attachEvidence(claimId, file, description.trim() || (statement ? 'Loan statement' : undefined),
+      statement ? 'LOAN_STATEMENT' : undefined);
     if (useClaimStore.getState().attachingEvidence[claimId]?.status === 'success') {
       setDescription('');
+      setIsStatement(false);
     }
   }
 
@@ -148,6 +165,13 @@ function UploadForm({ claimId }: { claimId: string }) {
           onChange={(e) => setDescription(e.target.value)}
         />
       </FormField>
+      {lendersClaim && (
+        <CheckboxField
+          label="This is the lender's loan statement"
+          checked={isStatement}
+          onChange={(e) => setIsStatement(e.target.checked)}
+        />
+      )}
 
       <div
         {...getRootProps()}

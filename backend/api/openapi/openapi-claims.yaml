@@ -327,6 +327,13 @@ paths:
                     period. Refused (422) on an approval, and refused when its window was not open on the
                     date of event. On a funeral plan, approval of a natural death inside the named life's
                     waiting period is itself refused (409) -- decline it with WITHIN_WAITING_PERIOD.
+                approvalNote:
+                  type: [string, "null"]
+                  description: >
+                    Credit life (2026-11-02): why the claim is approved above the balance the repayment
+                    schedule says was still owed. Required then (422 without it) and kept on the decision;
+                    ignored otherwise. A credit-life claim is also approved only with the lender's loan
+                    statement attached as evidence of kind LOAN_STATEMENT (422 without it).
       responses:
         '202':
           description: >
@@ -420,6 +427,12 @@ paths:
                   description: >-
                     The open document request this file answers. It is checked before the file is
                     stored (422 when not open on this claim) and marked RECEIVED once attached.
+                kind:
+                  type: [string, "null"]
+                  enum: [LOAN_STATEMENT, null]
+                  description: >-
+                    What the document is, where the platform needs to know: LOAN_STATEMENT is the lender's
+                    loan statement, which a credit-life claim must carry before it is approved (2026-11-02).
       responses:
         '201':
           description: Evidence attached
@@ -706,6 +719,21 @@ components:
             The most this claim may pay. On credit life this is the outstanding loan balance on
             the date of event and therefore declines every month — a figure quoted last week is
             not the figure today.
+        scheduledBalance:
+          oneOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
+          description: Credit life (2026-11-02) -- what the repayment schedule says was still owed on the date of event.
+        statementOwed:
+          oneOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
+          description: Credit life -- what the lender's statement says was owed, before the cover caps it.
+        loanAmount:
+          oneOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
+          description: Credit life -- what was lent.
     ClaimDocumentRequest:
       type: object
       required: [requestId, claimId, document, reason, requestedByName, requestedAt, status, claimEvidenceId, receivedAt]
@@ -738,6 +766,10 @@ components:
             The uploader's display name, captured from their token at upload — the claimant,
             their agent, or staff. NULL on evidence attached before it was captured.
         uploadedAt: { type: string, format: date-time }
+        kind:
+          type: [string, "null"]
+          enum: [LOAN_STATEMENT, null]
+          description: LOAN_STATEMENT for the lender's loan statement on a credit-life claim; null otherwise.
     ClaimView:
       type: object
       required: [claimId, policyNumber, claimantPartyId, claimType, status, dateOfEvent, details, requiresContestabilityReview]

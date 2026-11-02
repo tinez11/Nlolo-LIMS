@@ -69,7 +69,8 @@ class BonusExitIntegrationTest {
             "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
             "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
             "db-migrations/claims/V11__claim_document_request.sql",
-            "db-migrations/claims/V12__claim_settled_at.sql"};
+            "db-migrations/claims/V12__claim_settled_at.sql",
+            "db-migrations/claims/V13__credit_life_statement_evidence.sql"};
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             Stream.concat(Stream.of(DepositTestMigrations.ALL), Stream.of(claims)).toArray(String[]::new));
     }

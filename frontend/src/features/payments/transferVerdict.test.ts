@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ClaimView, PolicyMemberView, PolicyView } from '@/api/types';
+import type { ClaimView, InvoiceView, PolicyMemberView, PolicyView } from '@/api/types';
 import { transferVerdict } from './transferVerdict';
 
 const claim = (overrides: Partial<ClaimView> = {}) =>
@@ -39,6 +39,24 @@ describe('transferVerdict', () => {
     const verdict = transferVerdict({ claimId: 'c-1', payeeRef: '0712', claim: claim(),
       policy: { policyNumber: 'POL-1', productCategory: 'TERM_LIFE', status: 'SURRENDERED' } as PolicyView, member: null });
     expect(verdict.payable).toBe(false);
+  });
+
+  // The user's choice B (2026-11-02): a borrower's claim waits for the lender to pay the file they joined on.
+  const fileInvoice = (status: InvoiceView['status']) =>
+    ({ status, dueDate: '2026-12-02', amount: { amount: '2503200.00', currencyCode: 'TZS' },
+      balanceDue: { amount: '2503200.00', currencyCode: 'TZS' } }) as InvoiceView;
+
+  it('holds a borrower’s claim while the lender has not paid the file they joined on', () => {
+    const verdict = transferVerdict({ claimId: 'c-1', payeeRef: lenderPayee, claim: claim(), policy: creditLifePolicy,
+      member: member(), fileInvoice: fileInvoice('DUE') });
+    expect(verdict.payable).toBe(false);
+    expect(verdict.reasons.join(' ')).toContain('TZS 2,503,200.00');
+  });
+
+  it('pays once that file is paid', () => {
+    const verdict = transferVerdict({ claimId: 'c-1', payeeRef: lenderPayee, claim: claim(), policy: creditLifePolicy,
+      member: member(), fileInvoice: fileInvoice('PAID') });
+    expect(verdict.payable).toBe(true);
   });
 
   it('asks nothing of a mobile-money payee on individual business', () => {

@@ -1,5 +1,8 @@
 import { ChevronDown, Download, FileSpreadsheet, Upload } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
+import { useAuth } from 'react-oidc-context';
+import { can } from '@/auth/access';
+import { readIdentity } from '@/auth/claims';
 import type { SubmissionStatus } from '@/api/types';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Panel } from '@/components/Panel';
@@ -108,6 +111,10 @@ export function SubmissionsPanel({
   const [confirming, setConfirming] = useState<{ id: string; act: 'accept' | 'withdraw' } | null>(null);
 
   const pending = submissions.find((s) => s.status === 'PENDING') ?? null;
+  // Acceptance must be a second person: the one who sent the file is told so up front, not refused after a click.
+  const viewer = readIdentity(useAuth().user?.access_token).subject;
+  const sentByViewer = pending != null && viewer != null && pending.submittedBy === viewer;
+  const mayDecide = can('schemes.enrolments');
   const earlier = submissions.filter((s) => s !== pending);
   const fileWord = kind === 'exits' ? 'loans-ending file' : 'joining file';
 
@@ -206,7 +213,10 @@ export function SubmissionsPanel({
       </div>
       {(blockedBy || pending) && (
         <p className="border-b border-border bg-status-warning-bg px-4 py-2 text-sm text-status-warning-fg">
-          {blockedBy ?? 'Accept or withdraw the file below before sending another.'}
+          {blockedBy ??
+            (sentByViewer
+              ? 'Your file below is waiting for a colleague to accept it. The next file can be sent once it is decided.'
+              : 'A file below is waiting for acceptance. The next file can be sent once it is decided.')}
         </p>
       )}
       {guideOpen && <div className="border-b border-border px-4 py-3">{columnGuide}</div>}
@@ -256,16 +266,19 @@ export function SubmissionsPanel({
                   Sent {formatInstant(pending.submittedAt)} by <StaffName subject={pending.submittedBy} />
                 </p>
               </div>
+              {mayDecide && (
               <div className="flex shrink-0 flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="primary"
-                  disabled={deciding}
-                  onClick={() => setConfirming({ id: pending.submissionId, act: 'accept' })}
-                >
-                  Accept
-                </Button>
+                {!sentByViewer && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="primary"
+                    disabled={deciding}
+                    onClick={() => setConfirming({ id: pending.submissionId, act: 'accept' })}
+                  >
+                    Accept
+                  </Button>
+                )}
                 <Button
                   type="button"
                   size="sm"
@@ -276,10 +289,13 @@ export function SubmissionsPanel({
                   Withdraw
                 </Button>
               </div>
+              )}
             </div>
             <Outcome row={pending} appliedNoun={appliedNoun} />
             <p className="text-sm text-status-pending-fg">
-              Nobody is {appliedNoun} until a second person accepts this file.
+              {sentByViewer
+                ? `You sent this file, so a colleague must accept it. Nobody is ${appliedNoun} until they do.`
+                : `Nobody is ${appliedNoun} until a second person accepts this file.`}
             </p>
             <div className="-ml-3">{reportButton(pending)}</div>
             {confirming?.id === pending.submissionId && (

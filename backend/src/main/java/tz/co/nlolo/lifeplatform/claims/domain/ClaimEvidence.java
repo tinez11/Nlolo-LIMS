@@ -44,16 +44,29 @@ public class ClaimEvidence {
     @Column(name = "uploaded_at", nullable = false)
     private Instant uploadedAt = Instant.now();
 
+    /** What the document IS, where the platform needs to know (claims V13): {@link #LOAN_STATEMENT}, or null. */
+    @Column
+    private String kind;
+
+    /** The lender's own loan statement: a credit-life claim is approved only with one on it (2026-11-02). */
+    public static final String LOAN_STATEMENT = "LOAN_STATEMENT";
+
     protected ClaimEvidence() {}
 
     public ClaimEvidence(UUID tenantId, UUID claimId, String documentRef, String description, String uploadedBy,
                          String uploadedByName) {
+        this(tenantId, claimId, documentRef, description, uploadedBy, uploadedByName, null);
+    }
+
+    public ClaimEvidence(UUID tenantId, UUID claimId, String documentRef, String description, String uploadedBy,
+                         String uploadedByName, String kind) {
         this.tenantId = tenantId;
         this.claimId = claimId;
         this.documentRef = documentRef;
         this.description = description;
         this.uploadedBy = uploadedBy;
         this.uploadedByName = uploadedByName;
+        this.kind = kind;
     }
 
     public UUID getClaimEvidenceId() { return claimEvidenceId; }
@@ -64,4 +77,5 @@ public class ClaimEvidence {
     public String getUploadedBy() { return uploadedBy; }
     public String getUploadedByName() { return uploadedByName; }
     public Instant getUploadedAt() { return uploadedAt; }
+    public String getKind() { return kind; }
 }

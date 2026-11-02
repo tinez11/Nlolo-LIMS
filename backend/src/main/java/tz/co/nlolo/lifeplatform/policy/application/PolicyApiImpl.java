@@ -2145,7 +2145,8 @@ public class PolicyApiImpl implements PolicyApi {
             covered = AmortisationCalculator
                 .outstandingPrincipalAt(terms, scheme.get().getInterestMethod(), asOf)
                 .min(covered);
-            return new ClaimableCoverView(covered, scheme.get().getCurrency(), policyMemberId, loanCover, interest);
+            return new ClaimableCoverView(covered, scheme.get().getCurrency(), policyMemberId, loanCover, interest,
+                terms.principalAmount());
         }
 
         return new ClaimableCoverView(covered, scheme.get().getCurrency(), policyMemberId);

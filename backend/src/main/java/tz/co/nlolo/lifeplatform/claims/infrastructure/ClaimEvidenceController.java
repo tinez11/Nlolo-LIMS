@@ -71,6 +71,8 @@ public class ClaimEvidenceController {
             @RequestPart("file") MultipartFile file,
             @RequestPart(value = "description", required = false) String description,
             @RequestPart(value = "requestId", required = false) String requestId,
+            // LOAN_STATEMENT marks the lender's loan statement on a credit-life claim (2026-11-02); absent otherwise.
+            @RequestPart(value = "kind", required = false) String kind,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ClaimView claim = claimsApi.getClaim(claimId);
         ClaimController.enforceCustomerOwnClaimOnly(claim, jwt, authentication);
@@ -95,7 +97,7 @@ public class ClaimEvidenceController {
         }
 
         ClaimEvidenceView evidence = claimsApi.attachEvidence(claimId, documentRef, description, jwt.getSubject(),
-            ClaimController.displayName(jwt));
+            ClaimController.displayName(jwt), kind == null || kind.isBlank() ? null : kind.trim());
         if (answering != null) {
             journeyApi.fulfil(claimId, answering, evidence.claimEvidenceId());
         }

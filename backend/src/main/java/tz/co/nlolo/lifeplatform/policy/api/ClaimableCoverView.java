@@ -25,13 +25,15 @@ import java.util.UUID;
  *     up to this. Null on every other product.
  * @param coverIncludesInterest credit life only: whether the lender's agreement in force when the loan
  *     started covers interest, so the statement's interest is paid too. Null on every other product.
+ * @param loanPrincipal credit life only (2026-11-02): what was lent. The principal a lender says is still owed can
+ *     never be more, so a statement claiming more is refused at registration. Null on every other product.
  */
 public record ClaimableCoverView(BigDecimal amount, String currencyCode, UUID policyMemberId,
-                                 BigDecimal loanCover, Boolean coverIncludesInterest) {
+                                 BigDecimal loanCover, Boolean coverIncludesInterest, BigDecimal loanPrincipal) {
 
     /** Every product but credit life. */
     public ClaimableCoverView(BigDecimal amount, String currencyCode, UUID policyMemberId) {
-        this(amount, currencyCode, policyMemberId, null, null);
+        this(amount, currencyCode, policyMemberId, null, null, null);
     }
 
     /** Whether this is a credit-life borrower's cover, which a lender's statement may value. */

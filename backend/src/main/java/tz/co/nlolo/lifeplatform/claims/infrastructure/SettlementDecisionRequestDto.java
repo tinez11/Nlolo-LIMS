@@ -21,4 +21,6 @@ public record SettlementDecisionRequestDto(
     String payeeAccountNumber,
     // A policy-term reason for a decline (ClaimDeclineReason): an exclusion window, or a funeral plan's
     // waiting period. Refused on an approval, and refused when its window was not open on the date of event.
-    tz.co.nlolo.lifeplatform.claims.api.ClaimDeclineReason declineReason) {}
+    tz.co.nlolo.lifeplatform.claims.api.ClaimDeclineReason declineReason,
+    // Why a credit-life claim is approved above the repayment schedule's balance (2026-11-02). Required then.
+    String approvalNote) {}

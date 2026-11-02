@@ -67,13 +67,6 @@ export function ClaimDrawer({ claimId, onClose }: { claimId: string | null; onCl
               {claim.approvedAmount && (
                 <Field label="Approved amount" value={formatMoney(claim.approvedAmount)} emphasis />
               )}
-              {claim.requiresContestabilityReview && (
-                <Field
-                  label="Contestability"
-                  value="Requires review"
-                  note="Falls inside the policy's contestability window"
-                />
-              )}
               <ClaimDetailsFields details={claim.details} />
               <Field label="Claimant" value={<PartyName partyId={claim.claimantPartyId} />} />
             </dl>
