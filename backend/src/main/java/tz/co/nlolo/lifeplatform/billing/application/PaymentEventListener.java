@@ -46,10 +46,13 @@ public class PaymentEventListener {
     private static final Logger log = LoggerFactory.getLogger(PaymentEventListener.class);
 
     private final BillingApi billingApi;
+    private final BillingApiImpl billingApiImpl;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
-    public PaymentEventListener(BillingApi billingApi, PlatformTransactionManager transactionManager) {
+    public PaymentEventListener(BillingApi billingApi, BillingApiImpl billingApiImpl,
+                                PlatformTransactionManager transactionManager) {
         this.billingApi = billingApi;
+        this.billingApiImpl = billingApiImpl;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
@@ -59,7 +62,26 @@ public class PaymentEventListener {
         switch (envelope.eventType()) {
             case "payment.PaymentConfirmed" -> withTenant(envelope, this::handleConfirmed);
             case "payment.PaymentFailed" -> withTenant(envelope, this::handleFailed);
+            // A lender's premium paid back (2026-10-30): the transfer finance made, or the rail's refusal of it.
+            case "payment.DisbursementCompleted", "payment.DisbursementFailed" -> {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> p = (Map<String, Object>) envelope.payload();
+                if (BillingApiImpl.CREDIT_REFUND_PURPOSE.equals(p.get("purpose"))) {
+                    boolean completed = "payment.DisbursementCompleted".equals(envelope.eventType());
+                    withTenant(envelope, payload -> handleCreditRefund(payload, completed));
+                }
+            }
             default -> { /* not billing-relevant */ }
+        }
+    }
+
+    private void handleCreditRefund(Map<String, Object> payload, boolean completed) {
+        UUID creditId = UUID.fromString(String.valueOf(payload.get("sourceRef")));
+        if (completed) {
+            Object id = payload.get("disbursementId");
+            billingApiImpl.markCreditRefunded(creditId, id instanceof UUID u ? u : UUID.fromString(String.valueOf(id)));
+        } else {
+            billingApiImpl.markCreditRefundFailed(creditId);
         }
     }
 

@@ -326,6 +326,66 @@ class PostingEngineIntegrationTest {
             .containsExactlyInAnyOrder("2510 DR 240000.00", "1140 CR 228000.00", "2610 CR 12000.00");
     }
 
+    /**
+     * One lender's file through the ledger, in the order it now happens (2026-10-30): invoiced at acceptance, paid by
+     * the bank's transfer, the lender's commission booked once the premium arrived, a borrower refunded and that
+     * commission clawed back, then the statement paid. Every journal balances, the receivable clears, and the
+     * bancassurance payable ends at nothing.
+     */
+    @Test
+    void aCreditLifeFileReconcilesThroughTheLedger() {
+        UUID tenant = UUID.randomUUID();
+        String scheme = "POL-ENG-CLF";
+        issue(tenant, scheme, "CRL", "PAA", "BANCASSURANCE", "DSM");
+        UUID invoiceId = invoice(tenant, scheme, "84000.00", "m-1|2026-08-03|2028-02-02|84000.00");
+        publish(tenant, "billing.PremiumCollected", Map.of("invoiceId", invoiceId, "policyNumber", scheme,
+            "amount", money("84000.00"), "receiptMethod", "BANK_DEPOSIT"));
+        UUID accrual = UUID.randomUUID();
+        UUID statement = UUID.randomUUID();
+        publish(tenant, "distribution.CommissionAccrued", Map.of("accrualId", accrual, "statementId", statement,
+            "agentId", UUID.randomUUID(), "policyNumber", scheme, "tierType", "FIRST_YEAR",
+            "salesChannel", "BANCASSURANCE", "amount", money("8400.00")));
+        UUID credit = UUID.randomUUID();
+        publish(tenant, "billing.PremiumRefundDue", Map.of("creditId", credit, "originalInvoiceId", invoiceId,
+            "policyMemberId", "m-1", "policyNumber", scheme, "amount", money("9000.00")));
+        UUID claw = UUID.randomUUID();
+        publish(tenant, "distribution.CommissionAccrued", Map.of("accrualId", claw, "statementId", statement,
+            "agentId", UUID.randomUUID(), "policyNumber", scheme, "tierType", "FIRST_YEAR", "reversesAccrualId", accrual,
+            "salesChannel", "BANCASSURANCE", "amount", money("-900.00")));
+        publish(tenant, "distribution.CommissionPaid", Map.of("statementId", statement, "amount", money("7500.00"),
+            "withheldAmount", "0", "paidAmount", "7500.00", "salesChannel", "BANCASSURANCE"));
+
+        assertThat(open(tenant)).as("nothing queued: every event had a rule").isEmpty();
+        TenantContext.set(tenant);
+        // Every journal balances.
+        assertThat(jdbc.queryForList("SELECT source_ref FROM finaccounting.gl_posting GROUP BY journal_entry_id,"
+            + " source_ref HAVING SUM(CASE WHEN direction = 'DR' THEN amount ELSE -amount END) <> 0")).isEmpty();
+        // The lender's commission went to the bancassurance payable, and paying the statement cleared it.
+        assertThat(balance("2530")).isEqualByComparingTo("0.00");
+        assertThat(legs(tenant, "distribution.CommissionAccrued", accrual.toString()))
+            .containsExactlyInAnyOrder("2123 DR 8400.00", "2530 CR 8400.00");
+        // The bank's transfer reached the bank account and cleared the receivable the invoice raised.
+        assertThat(legs(tenant, "billing.PremiumCollected", invoiceId.toString()))
+            .containsExactlyInAnyOrder("1120 DR 84000.00", "2142 CR 84000.00");
+        // The refund was owed back to the lender after it had paid in full ...
+        assertThat(balance("2142")).isEqualByComparingTo("-9000.00");
+
+        // ... and finance's bank transfer pays it (2026-10-30, option b): the receivable clears, out of the EFT account.
+        publish(tenant, "payment.DisbursementCompleted", Map.of("disbursementId", UUID.randomUUID(),
+            "purpose", "CREDIT_LIFE_PREMIUM_REFUND", "sourceRef", credit.toString(), "method", "EFT"));
+        publish(tenant, "billing.PremiumRefundPaid", Map.of("creditId", credit.toString(), "policyNumber", scheme,
+            "amount", money("9000.00")));
+        TenantContext.set(tenant);
+        assertThat(legs(tenant, "billing.PremiumRefundPaid", credit.toString()))
+            .containsExactlyInAnyOrder("2142 DR 9000.00", "1130 CR 9000.00");
+        assertThat(balance("2142")).as("nothing left owed either way").isEqualByComparingTo("0.00");
+    }
+
+    private BigDecimal balance(String account) {
+        return jdbc.queryForObject("SELECT COALESCE(SUM(CASE WHEN direction = 'DR' THEN amount ELSE -amount END), 0)"
+            + " FROM finaccounting.gl_posting WHERE account_code = ?", BigDecimal.class, account);
+    }
+
     @Test
     void thePremiumLevyPostsOnlyOnceFinanceHasApprovedARate() {
         UUID tenant = UUID.randomUUID();

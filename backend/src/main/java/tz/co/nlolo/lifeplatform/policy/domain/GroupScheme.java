@@ -155,19 +155,17 @@ public class GroupScheme {
                     throw new IllegalArgumentException(
                         "A credit-life scheme must state how often its lender's loans repay");
                 }
-                if (premiumRatePercent == null || premiumRatePercent.signum() <= 0) {
+                // No rate of its own since 2026-11-01: every loan is priced on the lender's yearly
+                // agreement. A scheme set up before that keeps the rate it was written on, and a
+                // rate is still never without what it means -- the two real lenders read the same
+                // number differently, and a default would price one on the other's agreement.
+                if (premiumRatePercent != null && premiumRatePercent.signum() <= 0) {
                     throw new IllegalArgumentException(
-                        "A credit-life scheme must state the premium rate its lender agreed");
+                        "A credit-life scheme's rate, where it states one, must be above zero");
                 }
-                // A rate without a basis does not say what to do with itself, and the two real
-                // lenders read the same number differently: one charges it flat on the disbursed
-                // amount whatever the term, the other once per policy year on the balance still
-                // outstanding. Refused rather than defaulted -- a default would price one
-                // lender on another's agreement, in silence, and be out by half on a short loan.
-                if (premiumBasis == null) {
+                if ((premiumRatePercent == null) != (premiumBasis == null)) {
                     throw new IllegalArgumentException(
-                        "A credit-life scheme must state how its rate is charged: flat on the "
-                            + "disbursed amount, per annum on it, or per year on the declining balance");
+                        "A credit-life scheme's rate and how it is charged come together: give both or neither");
                 }
             }
             case FUNERAL_PLAN -> {

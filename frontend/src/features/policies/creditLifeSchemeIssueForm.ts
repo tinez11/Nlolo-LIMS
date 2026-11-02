@@ -36,13 +36,18 @@ import { CURRENCY_PATTERN, ISO_DATE_PATTERN, UUID_PATTERN } from '@/lib/patterns
  *
  * A lender's existing book is a MIGRATION, which is both true and the basis that puts the scheme
  * on risk immediately.
+ *
+ * ## What it no longer asks (2026-11-01)
+ *
+ * A rate and how it is charged, how the loans repay, and a premium of its own. Every loan is priced
+ * on the lender's yearly agreement, added on the scheme page before the first file; a claim pays the
+ * balance on the lender's statement, so the repayment schedule values nothing; and each accepted file
+ * is invoiced, so the contract's own premium was billed to nobody. The server records the loans as
+ * flat and monthly and the premium as nil.
  */
 
-export const INTEREST_METHODS = ['FLAT_RATE', 'REDUCING_BALANCE'] as const;
-export const LOAN_REPAYMENT_FREQUENCIES = ['MONTHLY', 'QUARTERLY'] as const;
-
 /**
- * How a lender's agreed rate turns into money. Ordered with the commonest real basis first.
+ * How a lender's agreed rate turns into money -- on the yearly agreement. Ordered with the commonest real basis first.
  *
  * The three agree exactly on a twelve-month loan and diverge on every other term, which is
  * why the labels carry a worked example rather than a name: picking the wrong one is silent
@@ -52,6 +57,8 @@ export const CREDIT_LIFE_PREMIUM_BASES = [
   'FLAT_ON_PRINCIPAL',
   'PER_ANNUM_ON_PRINCIPAL',
   'ANNUAL_ON_DECLINING_BALANCE',
+  // The lenders' own template (2026-10-30): a year's rate for every year the loan runs, part of a year counted whole.
+  'WHOLE_YEARS_ROUNDED_UP',
 ] as const;
 
 export const CREDIT_LIFE_PREMIUM_BASIS_LABELS: Record<
@@ -61,6 +68,7 @@ export const CREDIT_LIFE_PREMIUM_BASIS_LABELS: Record<
   FLAT_ON_PRINCIPAL: 'Flat on the disbursed amount, whatever the term',
   PER_ANNUM_ON_PRINCIPAL: 'Per year, on the disbursed amount',
   ANNUAL_ON_DECLINING_BALANCE: 'Per year, on the balance still outstanding',
+  WHOLE_YEARS_ROUNDED_UP: 'Per year, a part year counted whole',
 };
 
 /**
@@ -78,12 +86,6 @@ export interface CreditLifeSchemeIssueFormValues {
   productVersionId: string;
   currency: string;
   fclAmount: string;
-  interestMethod: (typeof INTEREST_METHODS)[number];
-  repaymentFrequency: (typeof LOAN_REPAYMENT_FREQUENCIES)[number];
-  premiumRatePercent: string;
-  premiumBasis: (typeof CREDIT_LIFE_PREMIUM_BASES)[number];
-  premiumAmount: string;
-  premiumCurrency: string;
   commencementDate: string;
   /** A basis, OFFER for an ordinary offer, or '' while the underwriter has not chosen yet. */
   issuanceBasis: (typeof IN_FORCE_ISSUANCE_BASES)[number] | 'OFFER' | '';
@@ -97,14 +99,6 @@ export function blankCreditLifeSchemeIssueForm(): CreditLifeSchemeIssueFormValue
     productVersionId: '',
     currency: 'TZS',
     fclAmount: '',
-    interestMethod: 'FLAT_RATE',
-    repaymentFrequency: 'MONTHLY',
-    premiumRatePercent: '',
-    // No default that prices anybody: the lender's own agreement decides this, and the
-    // three bases are indistinguishable on a twelve-month loan.
-    premiumBasis: 'FLAT_ON_PRINCIPAL',
-    premiumAmount: '',
-    premiumCurrency: 'TZS',
     commencementDate: '',
     // NO DEFAULT. It used to be MIGRATION, which is true only of a lender whose book already
     // runs elsewhere; a brand-new lender set up in a hurry went on record as a migration. The
@@ -135,21 +129,6 @@ export function creditLifeSchemeIssueFormSchema(today: string = todayIso()) {
           'Free cover limit must be an amount like 600000000.00',
         )
         .refine((v) => v === '' || Number(v) >= 0.01, 'Free cover limit must be at least 0.01'),
-      interestMethod: z.enum(INTEREST_METHODS),
-      repaymentFrequency: z.enum(LOAN_REPAYMENT_FREQUENCIES),
-      premiumBasis: z.enum(CREDIT_LIFE_PREMIUM_BASES),
-      premiumRatePercent: z
-        .string()
-        .trim()
-        .min(1, 'The rate the lender is charged, as a percent of each loan')
-        .refine((v) => /^\d+(\.\d{1,4})?$/.test(v), 'Must be a percent like 0.5 or 0.5000')
-        .refine((v) => Number(v) >= 0.0001, 'Must be at least 0.0001'),
-      premiumAmount: z
-        .string()
-        .trim()
-        .regex(AMOUNT_PATTERN, 'Must be an amount like 52000.00')
-        .refine((v) => Number(v) >= 0.01, 'Must be at least 0.01'),
-      premiumCurrency: z.string().trim().regex(CURRENCY_PATTERN, 'Must be a 3-letter code like TZS'),
       /*
        * REQUIRED here, unlike on the employer-scheme form where it may be omitted.
        *
@@ -204,26 +183,19 @@ export function toIssueRequest(
     benefitBasis: 'AMORTISING_LOAN',
     ...(values.fclAmount ? { fclAmount: values.fclAmount.trim() } : {}),
     currency: values.currency.trim().toUpperCase(),
-    interestMethod: values.interestMethod,
-    repaymentFrequency: values.repaymentFrequency,
-    premiumRatePercent: Number(values.premiumRatePercent),
-    premiumBasis: values.premiumBasis,
     /*
      * NO OPENING SCHEDULE, and the empty array is deliberate rather than an omission.
      *
-     * A credit-life scheme is an agreement with a lender -- the rate, the free cover limit, the
-     * interest method -- and it exists before any borrower does. The book arrives monthly by file
-     * and never stops arriving, so requiring one borrower at set-up made somebody type a life
-     * they then met again on the member roll without recognising them.
+     * A credit-life scheme is an agreement with a lender and it exists before any borrower does.
+     * The book arrives monthly by file and never stops arriving, so requiring one borrower at
+     * set-up made somebody type a life they then met again on the member roll without
+     * recognising them.
      *
      * The service permits an empty schedule on AMORTISING_LOAN and only there; an employer
      * scheme's schedule IS its contract and still cannot be empty.
      */
     openingSchedule: [],
-    premium: {
-      amount: values.premiumAmount.trim(),
-      currencyCode: values.premiumCurrency.trim().toUpperCase(),
-    },
+    // No premium, rate or repayment terms: the yearly agreement prices every file (see above).
     premiumFrequency: 'SINGLE',
     ...(values.commencementDate ? { commencementDate: values.commencementDate } : {}),
     // OFFER is the console's word for "no basis": the endpoint says ordinary offer by omission.

@@ -178,7 +178,7 @@ class EnrolmentIntegrationTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
-            "db-migrations/policy/V42__surrender_payout_route.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V43__credit_life_agreement.sql", "db-migrations/policy/V44__credit_life_agreement_first.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
@@ -234,7 +234,24 @@ class EnrolmentIntegrationTest {
         tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
         creditLifeScheme = issueScheme(ProductCategory.CREDIT_LIFE, BenefitBasis.AMORTISING_LOAN);
+        agreeAsTheSchemeRateDid(creditLifeScheme);
         employerScheme = issueScheme(ProductCategory.GROUP_LIFE, BenefitBasis.FLAT);
+    }
+
+    /**
+     * The year every scheme here is agreed on, as a scheme needs before its first file (2026-11-01): 0.5% a year on
+     * each loan -- what the scheme's own rate used to charge, so every figure below is unchanged -- with no minimum, no
+     * commission, and ages and terms wide enough for every fixture's borrower.
+     */
+    private void agreeAsTheSchemeRateDid(String policyNumber) {
+        agreementApi.add(policyNumber, new CreditLifeAgreementApi.AgreementInput(LocalDate.of(2026, 6, 1),
+            LocalDate.of(2027, 5, 31), new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL, null,
+            18, 100, 1, 480, null, false), "staff-setup");
+    }
+
+    /** A credit-life scheme with no agreement yet, for the tests that agree its year themselves. */
+    private String schemeWithoutAgreement() {
+        return issueScheme(ProductCategory.CREDIT_LIFE, BenefitBasis.AMORTISING_LOAN);
     }
 
     @AfterEach
@@ -332,6 +349,290 @@ class EnrolmentIntegrationTest {
             // assertion -- a bare BigDecimal serialises as 42500 and would fail it.
             .andExpect(jsonPath("$[0].premiumAmount.amount").value(matchesPattern("\\d+\\.\\d{2}")))
             .andExpect(jsonPath("$[0].premiumAmount.currencyCode").value("TZS"));
+    }
+
+    // ---- the year's agreement with the lender (V43) ----------------------------
+
+    @Autowired private CreditLifeAgreementApi agreementApi;
+
+    private CreditLifeAgreementApi.AgreementInput yearFrom(LocalDate from, String commission) {
+        return new CreditLifeAgreementApi.AgreementInput(from, from.plusYears(1).minusDays(1),
+            new BigDecimal("0.6000"), CreditLifePremiumBasis.WHOLE_YEARS_ROUNDED_UP, new BigDecimal("2000.00"),
+            18, 65, 1, 120, new BigDecimal(commission), false);
+    }
+
+    @Test
+    void aSchemeTakesNoFileAndHandsOutNoTemplateUntilItHasAnAgreement() throws Exception {
+        // Agreement first (2026-11-01): a loan is priced only on the lender's yearly agreement, so with none there is
+        // no price to give -- refused whole, rather than priced on the scheme's set-up rate as it used to be.
+        creditLifeScheme = schemeWithoutAgreement();
+
+        assertThatThrownBy(() -> enrolmentApi.submit(creditLifeScheme, csv(ONE_GOOD_ROW), "june.csv", "staff.one"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("agreement");
+        assertThat(enrolmentApi.listSubmissions(creditLifeScheme)).isEmpty();
+        mockMvc.perform(get("/credit-life-schemes/" + creditLifeScheme + "/template.xlsx").with(staff("staff.one")))
+            .andExpect(status().isConflict());
+        TenantContext.set(tenantId);
+
+        agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 6, 1), "10"), "staff-setup");
+        assertThat(enrolmentApi.submit(creditLifeScheme, csv(ONE_GOOD_ROW), "june.csv", "staff.one").rejectedCount())
+            .isZero();
+    }
+
+    @Test
+    void aFileIsPricedOnTheAgreementInForceWhenEachLoanStarted() {
+        creditLifeScheme = schemeWithoutAgreement();
+        agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 6, 1), "10"), "staff-setup");
+
+        var submission = enrolmentApi.submit(creditLifeScheme, csv(
+            // 8,500,000 x 0.6% x 4 years
+            "LN-A,Amina Hassan Mwinyi,1988-03-14,F,,,8500000.00,48,2026-06-30\n"
+            // 100,000 x 0.6% x 2 years = 1,200, so the 2,000 minimum
+            + "LN-B,Grace Shirima,1992-06-21,F,,,100000.00,18,2026-07-06\n"),
+            "june.csv", "staff.one");
+        assertThat(submission.rejectedCount()).isZero();
+
+        // The quotation, before anybody accepts: what the lender pays and earns. No premium column, nothing to compare.
+        var quote = enrolmentApi.quotation(submission.submissionId());
+        assertThat(quote.borrowers()).isEqualTo(2);
+        assertThat(quote.totalLoanAmount()).isEqualByComparingTo("8600000.00");
+        assertThat(quote.premium()).isEqualByComparingTo("206000.00");
+        assertThat(quote.commissionPercent()).isEqualByComparingTo("10");
+        assertThat(quote.commission()).isEqualByComparingTo("20600.00");
+        assertThat(quote.amountToPay()).isEqualByComparingTo("206000.00");
+        assertThat(quote.statedPremium()).isNull();
+        assertThat(quote.difference()).isNull();
+
+        enrolmentApi.accept(submission.submissionId(), "staff.two");
+        // Accepted, it quotes what was charged -- the same figures.
+        assertThat(enrolmentApi.quotation(submission.submissionId()).premium()).isEqualByComparingTo("206000.00");
+
+        var rows = enrolmentApi.listRows(submission.submissionId());
+        assertThat(rows.get(0).premiumAmount()).isEqualByComparingTo("204000.00");
+        assertThat(rows.get(1).premiumAmount()).isEqualByComparingTo("2000.00");
+    }
+
+    @Test
+    void anAcceptedFileStillQuotesWhatItWasChargedAfterALaterAgreementIsAdded() {
+        // Accepted on the first year's 0.5% a year, with no commission: 8,500,000 x 0.5% x 4 years = 170,000.
+        var june = enrolmentApi.submit(creditLifeScheme, csv(ONE_GOOD_ROW), "june.csv", "staff.one");
+        enrolmentApi.accept(june.submissionId(), "staff.two");
+        // The next year's agreement does not cover June's loan -- and must not re-price it.
+        agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2027, 6, 1), "10"), "staff-setup");
+
+        var quote = enrolmentApi.quotation(june.submissionId());
+        assertThat(quote.premium()).isEqualByComparingTo("170000.00");
+        assertThat(quote.commission()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void theQuotationNamesEveryRowWhoseOwnPremiumIsNotOurs() {
+        creditLifeScheme = schemeWithoutAgreement();
+        agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 6, 1), "10"), "staff-setup");
+        // The lender worked Grace out on the old 0.4% -- 4,000 where the agreement says 6,000.
+        var submission = enrolmentApi.submit(creditLifeScheme, new ByteArrayInputStream((
+            "borrower_full_name,borrower_date_of_birth,loan_principal_amount,loan_term_months,disbursement_date,"
+                + "lender_premium_amount\n"
+                + "Amina Hassan Mwinyi,1988-03-14,8500000.00,48,2026-06-30,204000.00\n"
+                + "Grace Shirima,1992-06-21,1000000.00,12,2026-07-06,4000.00\n")
+            .getBytes(StandardCharsets.UTF_8)), "july.csv", "staff.one");
+
+        var quote = enrolmentApi.quotation(submission.submissionId());
+        assertThat(quote.premium()).isEqualByComparingTo("210000.00");
+        assertThat(quote.statedPremium()).isEqualByComparingTo("208000.00");
+        assertThat(quote.difference()).isEqualByComparingTo("2000.00");
+        assertThat(quote.mismatches()).singleElement().satisfies(m -> {
+            assertThat(m.borrowerFullName()).isEqualTo("Grace Shirima");
+            assertThat(m.premium()).isEqualByComparingTo("6000.00");
+            assertThat(m.statedPremium()).isEqualByComparingTo("4000.00");
+        });
+    }
+
+    @Test
+    void theAgreementsLimitsDecideWhoIsCovered() {
+        creditLifeScheme = schemeWithoutAgreement();
+        agreementApi.add(creditLifeScheme, new CreditLifeAgreementApi.AgreementInput(LocalDate.of(2026, 6, 1),
+            LocalDate.of(2027, 5, 31), new BigDecimal("0.6000"), CreditLifePremiumBasis.WHOLE_YEARS_ROUNDED_UP, null,
+            21, 65, 3, 120, null, false), "staff-setup");
+
+        var submission = enrolmentApi.submit(creditLifeScheme, csv(
+            // 66 when the loan starts, over the agreement's 65
+            "LN-OLD,Old Borrower,1960-01-01,M,,,1000000.00,12,2026-07-01\n"
+            // 19 when the loan starts, under its 21
+            + "LN-YOUNG,Young Borrower,2007-01-01,F,,,1000000.00,12,2026-07-01\n"
+            // two months, under its shortest of three
+            + "LN-SHORT,Short Loan,1990-01-01,F,,,1000000.00,2,2026-07-01\n"
+            // four months is taken, and charged as a year: "they all start with one year"
+            + "LN-DHARURA,Emergency Loan,1970-05-12,M,,,1500000.00,4,2026-07-05\n"),
+            "july.csv", "staff.one");
+
+        var rows = enrolmentApi.listRows(submission.submissionId());
+        assertThat(rows.subList(0, 3)).allSatisfy(r ->
+            assertThat(r.reasonCode()).isEqualTo(EnrolmentRejection.ENTRY_AGE_OR_TERM_OUT_OF_BOUNDS));
+        assertThat(rows.get(0).reason()).contains("up to 65");
+        assertThat(rows.get(1).reason()).contains("from 21");
+        assertThat(rows.get(2).reason()).contains("3 months");
+        assertThat(rows.get(3).reasonCode()).isNull();
+        // 1,500,000 x 0.6% x 1 year
+        assertThat(enrolmentApi.quotation(submission.submissionId()).premium()).isEqualByComparingTo("9000.00");
+    }
+
+    /**
+     * The BUMACO May file's four-month loan, on a product set up with a twelve-month shortest loan (2026-11-02). The
+     * file was judged by the agreement and passed -- then acceptance added each borrower against the PRODUCT's limits
+     * and refused the whole file. The agreement's limits are the ones that count, at both steps.
+     */
+    @Test
+    void aShortLoanTheAgreementTakesIsAcceptedWhateverTheProductsShortestLoan() {
+        String code = "CL-" + SEQ.incrementAndGet();
+        ProductSummaryView product = productApi.createProduct(code, "Credit life " + code, ProductCategory.CREDIT_LIFE,
+            "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null, List.of(),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)), null, null,
+            new EligibilityBounds(18, 70, 12, 120, null, null), ANY_FILING, "actuary");
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+        creditLifeScheme = policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(person("Bumaco"),
+            product.productId(), snapshot.productVersionId(), null, BenefitBasis.AMORTISING_LOAN, null, null, null,
+            "TZS", null, List.of(), null, null, null, LocalDate.of(2026, 5, 1), null, null, IssuanceBasis.MIGRATION,
+            null, null, null, null), "staff-setup").policyNumber();
+        agreementApi.add(creditLifeScheme, new CreditLifeAgreementApi.AgreementInput(LocalDate.of(2026, 5, 1),
+            LocalDate.of(2027, 4, 30), new BigDecimal("0.6000"), CreditLifePremiumBasis.FLAT_ON_PRINCIPAL, null,
+            18, 70, 1, 120, new BigDecimal("15"), false), "staff-setup");
+
+        var submission = enrolmentApi.submit(creditLifeScheme, csv(
+            "LN-DHARURA,Julius Mbashango Malunde,1960-05-12,M,,,1500000.00,4,2026-05-18\n"), "may.csv", "staff.one");
+        assertThat(submission.rejectedCount()).isZero();
+
+        var accepted = enrolmentApi.accept(submission.submissionId(), "staff.two");
+        assertThat(accepted.enrolledCount()).isEqualTo(1);
+        // 1,500,000 x 0.6%, as BUMACO's own sheet charges it.
+        assertThat(enrolmentApi.listRows(submission.submissionId()).get(0).premiumAmount())
+            .isEqualByComparingTo("9000.00");
+    }
+
+    @Test
+    void aLoanNoAgreementCoversIsRefusedRatherThanPricedOnTheSchemesOldRate() {
+        creditLifeScheme = schemeWithoutAgreement();
+        agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 7, 1), "10"), "staff-setup");
+
+        var submission = enrolmentApi.submit(creditLifeScheme,
+            csv("LN-JUNE,June Borrower,1990-01-01,F,,,1000000.00,12,2026-06-15\n"), "june.csv", "staff.one");
+
+        assertThat(enrolmentApi.listRows(submission.submissionId()).get(0).reasonCode())
+            .isEqualTo(EnrolmentRejection.NO_AGREEMENT_IN_FORCE);
+    }
+
+    @Test
+    void twoAgreementsMayNotCoverTheSameDay() {
+        creditLifeScheme = schemeWithoutAgreement();
+        agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 6, 1), "10"), "staff-setup");
+
+        assertThatThrownBy(() -> agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2027, 1, 1), "10"),
+                "staff-setup"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("already runs");
+        assertThatCode(() -> agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2027, 6, 1), "12"),
+            "staff-setup")).doesNotThrowAnyException();
+        assertThat(agreementApi.agreements(creditLifeScheme)).hasSize(2);
+    }
+
+    @Test
+    void aLendersCommissionAboveTheTiraCapIsRefused() {
+        assertThatThrownBy(() -> agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 6, 1), "15.01"),
+                "staff-setup"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("15%");
+    }
+
+    @Test
+    void anEmployerSchemeHasNoAgreements() {
+        assertThatThrownBy(() -> agreementApi.add(employerScheme, yearFrom(LocalDate.of(2026, 6, 1), "10"),
+                "staff-setup"))
+            .isInstanceOf(InvalidPolicyStateException.class);
+    }
+
+    @Test
+    void theAgreementsTemplateFilledInAndSentBackReconcilesToTheCent() throws Exception {
+        creditLifeScheme = schemeWithoutAgreement();
+        agreementApi.add(creditLifeScheme, yearFrom(LocalDate.of(2026, 6, 1), "10"), "staff-setup");
+
+        byte[] template = mockMvc.perform(get("/credit-life-schemes/" + creditLifeScheme + "/template.xlsx")
+                .with(staff("staff.one")))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsByteArray();
+        // The request's filter clears the tenant on this same thread when it finishes.
+        TenantContext.set(tenantId);
+
+        byte[] filled;
+        try (var workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook(new ByteArrayInputStream(template))) {
+            var sheet = workbook.getSheet("Borrowers");
+            assertThat(sheet.getRow(2).getCell(0).getStringCellValue()).contains("0.6%").contains("TZS 2,000");
+            var amina = sheet.getRow(7);
+            amina.getCell(0).setCellValue("Amina Hassan Mwinyi");
+            amina.getCell(1).setCellValue(LocalDate.of(1988, 3, 14));
+            amina.getCell(3).setCellValue(8500000);
+            amina.getCell(4).setCellValue(48);
+            amina.getCell(5).setCellValue(LocalDate.of(2026, 6, 30));
+            var grace = sheet.getRow(8);
+            grace.getCell(0).setCellValue("Grace Shirima");
+            grace.getCell(1).setCellValue(LocalDate.of(1992, 6, 21));
+            grace.getCell(3).setCellValue(100000);
+            grace.getCell(4).setCellValue(18);
+            grace.getCell(5).setCellValue(LocalDate.of(2026, 7, 6));
+            var out = new java.io.ByteArrayOutputStream();
+            workbook.write(out);
+            filled = out.toByteArray();
+        }
+
+        var submission = enrolmentApi.submit(creditLifeScheme, new ByteArrayInputStream(filled), "july.xlsx",
+            "staff.one");
+        assertThat(submission.rejectedCount()).isZero();
+
+        // The quotation over HTTP, as the console reads it: the workbook's premiums are ours, row by row.
+        mockMvc.perform(get("/credit-life-schemes/" + creditLifeScheme + "/enrolments/" + submission.submissionId()
+                    + "/quotation").with(staff("staff.one")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.borrowers").value(2))
+            .andExpect(jsonPath("$.premium").value("206000.00"))
+            .andExpect(jsonPath("$.statedPremium").value("206000.00"))
+            .andExpect(jsonPath("$.difference").value("0.00"))
+            .andExpect(jsonPath("$.commission").value("20600.00"))
+            .andExpect(jsonPath("$.mismatches").isEmpty());
+        TenantContext.set(tenantId);
+
+        enrolmentApi.accept(submission.submissionId(), "staff.two");
+
+        // The workbook's own figures were the platform's: nothing to reconcile.
+        var rows = enrolmentApi.listRows(submission.submissionId());
+        assertThat(rows).extracting(EnrolmentRowView::lineNumber).containsExactly(8, 9);
+        assertThat(rows.get(0).premiumAmount()).isEqualByComparingTo("204000.00");
+        assertThat(rows.get(1).premiumAmount()).isEqualByComparingTo("2000.00");
+        assertThat(enrolmentApi.getSubmission(submission.submissionId()).premiumVariance())
+            .isEqualByComparingTo("0");
+    }
+
+    @Test
+    void anAgreementIsAddedAndReadOverHttp() throws Exception {
+        creditLifeScheme = schemeWithoutAgreement();
+        mockMvc.perform(post("/group-schemes/" + creditLifeScheme + "/agreements")
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("""
+                    {"validFrom":"2026-06-01","validTo":"2027-05-31","premiumRatePercent":"0.6",
+                     "premiumBasis":"WHOLE_YEARS_ROUNDED_UP","minimumPremium":"2000.00","minAge":21,"maxAge":75,
+                     "minTermMonths":1,"maxTermMonths":120,"commissionPercent":"10","coverIncludesInterest":true}""")
+                .with(staff("staff.one")))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.minAge").value(21))
+            .andExpect(jsonPath("$.maxAge").value(75))
+            // Decimals as strings, as money travels on this platform.
+            .andExpect(jsonPath("$.minimumPremium").value("2000.00"))
+            .andExpect(jsonPath("$.premiumRatePercent").value("0.6"));
+
+        mockMvc.perform(get("/group-schemes/" + creditLifeScheme + "/agreements").with(staff("staff.one")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].premiumBasis").value("WHOLE_YEARS_ROUNDED_UP"))
+            .andExpect(jsonPath("$[0].coverIncludesInterest").value(true));
     }
 
     // ---- submitting judges, and enrols nobody --------------------------------
@@ -474,7 +775,7 @@ class EnrolmentIntegrationTest {
 
         assertThatThrownBy(() -> enrolmentApi.accept(submission.submissionId(), "staff.one"))
             .isInstanceOf(InvalidPolicyStateException.class)
-            .hasMessageContaining("cannot accept a submission they uploaded");
+            .hasMessageContaining("cannot accept a submission you uploaded");
 
         // And nobody was enrolled on the way to finding that out.
         assertThat(policyApi.getGroupScheme(creditLifeScheme).activeMemberCount()).isEqualTo(1);
@@ -609,6 +910,7 @@ class EnrolmentIntegrationTest {
         // already hold. That is true of the upload flow and false of anybody arriving at a
         // scheme cold, so without this a page that opens on a scheme has nothing to render.
         String otherScheme = issueScheme(ProductCategory.CREDIT_LIFE, BenefitBasis.AMORTISING_LOAN);
+        agreeAsTheSchemeRateDid(otherScheme);
 
         UUID first = enrolmentApi.submit(creditLifeScheme, csv(ONE_GOOD_ROW),
             "august.csv", "staff.one").submissionId();
@@ -725,16 +1027,12 @@ class EnrolmentIntegrationTest {
             new BigDecimal("25000000.00"), "TZS", null,
             // The empty schedule this whole nested class is about.
             List.of(),
-            // A premium is still required: chk_premium_amount_positive forbids zero on the master
-            // policy. On a credit-life scheme it is never billed -- billing returns early on
-            // SINGLE and the real premium arrives file by file -- so this is a recorded figure
-            // rather than a charge, which is what the console's label now says.
-            new BigDecimal("52000.00"), "TZS", loan ? "SINGLE" : "ANNUALLY",
+            // A credit-life scheme is set up as the console sets it up (2026-11-01): no premium, rate or repayment
+            // terms of its own -- each file is invoiced on the lender's agreement. An employer scheme's premium is
+            // its contract.
+            loan ? null : new BigDecimal("52000.00"), loan ? null : "TZS", loan ? null : "ANNUALLY",
             LocalDate.of(2026, 6, 1), null, "onboarding", IssuanceBasis.MIGRATION,
-            loan ? InterestMethod.FLAT_RATE : null,
-            loan ? RepaymentFrequency.MONTHLY : null,
-            loan ? new BigDecimal("0.5000") : null,
-            loan ? CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL : null), "staff-setup").policyNumber();
+            null, null, null, null), "staff-setup").policyNumber();
     }
 
     private PolicyMemberView onlyMemberOf(String policyNumber) {
@@ -777,7 +1075,8 @@ class EnrolmentIntegrationTest {
             // and totalCovered coalesces for a scheme with no members.
             assertThat(scheme.totalCoveredAmount()).isEqualByComparingTo("0");
 
-            // And it takes a file like any other scheme, which is the whole point.
+            // And once the lender's year is agreed it takes a file like any other scheme, which is the whole point.
+            agreeAsTheSchemeRateDid(policyNumber);
             EnrolmentSubmissionView submitted = enrolmentApi.submit(policyNumber,
                 csv(ONE_GOOD_ROW), "january.csv", "staff-one");
             enrolmentApi.accept(submitted.submissionId(), "staff-two");

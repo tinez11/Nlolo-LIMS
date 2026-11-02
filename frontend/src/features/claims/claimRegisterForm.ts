@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import type { RegisterClaimRequest } from '@/api/types';
 import { ISO_DATE_PATTERN, POLICY_NUMBER_PATTERN, UUID_PATTERN } from '@/lib/patterns';
+import { AMOUNT_PATTERN } from '@/lib/money';
+
+/**
+ * What a credit-life borrower is claimable for (2026-10-30): death and disability, nothing else. The server refuses
+ * the rest too; offering them here would only let somebody choose a claim that cannot be made.
+ */
+export const CREDIT_LIFE_CLAIM_TYPES = ['DEATH', 'DISABILITY'] as const;
 
 /**
  * Zod schema for the claim registration form, mirroring `ClaimsApiImpl` and the
@@ -117,12 +124,32 @@ export function registerClaimFormSchema(context: RegisterClaimFormContext = {}) 
       details: claimDetailsSchema,
       // Family funeral cover: who died, and whether by accident (it may waive the waiting period).
       coveredLifeId: z.string().trim().optional(),
+      // Credit life (2026-10-30): what the borrower still owed the lender on the day, from the lender's statement.
+      // The claim pays it, capped at the borrower's cover. Blank everywhere else.
+      loanPrincipalOutstanding: z.string().trim().optional(),
+      loanInterestOutstanding: z.string().trim().optional(),
       accidental: z.boolean().optional(),
     })
     .superRefine((values, ctx) => {
       // A funeral plan covers a family, so a claim on one names the life -- the server refuses it too.
       if (context.productCategory === 'FUNERAL' && !values.coveredLifeId) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['coveredLifeId'], message: 'Choose who died' });
+      }
+      // A credit-life claim pays what the lender's statement says was still owed; the server refuses one without it.
+      if (context.productCategory === 'CREDIT_LIFE') {
+        const principal = values.loanPrincipalOutstanding ?? '';
+        if (principal === '') {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['loanPrincipalOutstanding'],
+            message: "Give the principal still owed, from the lender's statement" });
+        } else if (!AMOUNT_PATTERN.test(principal) || principal.startsWith('-')) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['loanPrincipalOutstanding'],
+            message: 'An amount like 1600000.00' });
+        }
+        const interest = values.loanInterestOutstanding ?? '';
+        if (interest !== '' && (!AMOUNT_PATTERN.test(interest) || interest.startsWith('-'))) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['loanInterestOutstanding'],
+            message: 'An amount like 96000.00, or blank for none' });
+        }
       }
       // A scheme insures many lives, so a claim on one must say which. The server refuses it
       // too (409 from PolicyApi.claimableCover) -- this is here so the person filing finds out
@@ -172,6 +199,18 @@ export function blankDetailsFor(claimType: ClaimDetailsFormValues['claimType']):
   }
 }
 
+/** A credit-life death or disability carries the lender's statement inside its details, as the server reads it. */
+function withLoanStatement(values: RegisterClaimFormValues): RegisterClaimRequest['details'] {
+  const principal = values.loanPrincipalOutstanding ?? '';
+  const { details } = values;
+  if (principal === '' || (details.claimType !== 'DEATH' && details.claimType !== 'DISABILITY')) return details;
+  const interest = values.loanInterestOutstanding ?? '';
+  return {
+    ...details,
+    loanStatement: { principalOutstanding: principal, ...(interest !== '' ? { interestOutstanding: interest } : {}) },
+  };
+}
+
 /** Convert validated form values into exactly what `POST /claims` expects. */
 export function toApiRequest(values: RegisterClaimFormValues): RegisterClaimRequest {
   return {
@@ -183,7 +222,7 @@ export function toApiRequest(values: RegisterClaimFormValues): RegisterClaimRequ
     // Derived from details, never a separate field -- see the module doc above.
     claimType: values.details.claimType,
     dateOfEvent: values.dateOfEvent,
-    details: values.details,
+    details: withLoanStatement(values),
     // Only on a funeral plan's claim; every other claim names no covered life.
     ...(values.coveredLifeId ? { coveredLifeId: values.coveredLifeId, accidental: values.accidental ?? false } : {}),
   };

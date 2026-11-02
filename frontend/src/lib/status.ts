@@ -318,6 +318,14 @@ export const STATUS_MAPS = {
     WITHDRAWN: 'neutral', // nothing happened, deliberately; the corrected file is the next one
   },
 
+  // A lender's yearly credit-life agreement (policy V43), placed by its dates against today -- not a backend
+  // status, like DEATH_CLAIM_IN_PROGRESS below. The one in force prices every loan that starts today.
+  agreementPeriod: {
+    IN_FORCE: 'active',
+    STARTS_LATER: 'pending',
+    ENDED: 'neutral', // still prices the loans that started within it
+  },
+
   member: {
     ACTIVE: 'active',
     EXITED: 'neutral', // left the employer; the row stays, because claims arrive late

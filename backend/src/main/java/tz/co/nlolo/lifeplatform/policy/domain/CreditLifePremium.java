@@ -121,7 +121,23 @@ public final class CreditLifePremium {
                 }
                 yield total.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
             }
+
+            // A year's rate for every year the loan runs, a part year counted whole: 12 months is one year, 13 to 24
+            // two. The user's new template, 2026-10-30: MAX(minimum, sum assured x rate x ROUNDUP(months / 12)).
+            case WHOLE_YEARS_ROUNDED_UP -> principal.multiply(rate).multiply(new BigDecimal((termMonths + 11) / 12))
+                .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
         };
+    }
+
+    /**
+     * The same, never below {@code minimumPremium} -- what a lender's agreement charges a small loan (2026-10-30: the
+     * template's MAX(2000, ...)). A null or zero minimum charges the formula alone.
+     */
+    public static BigDecimal forLoan(BigDecimal principal, int termMonths, BigDecimal ratePercent,
+                                      CreditLifePremiumBasis basis, BigDecimal minimumPremium) {
+        BigDecimal premium = forLoan(principal, termMonths, ratePercent, basis);
+        return minimumPremium != null && premium.compareTo(minimumPremium) < 0
+            ? minimumPremium.setScale(MONEY_SCALE, RoundingMode.HALF_UP) : premium;
     }
 
     /**

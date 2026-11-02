@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.policy.api;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 
 /**
@@ -17,6 +18,8 @@ import java.util.UUID;
  * @param premiumAmount what THIS borrower was charged, written at acceptance beside
  *     {@code policyMemberId} and null in the same two cases. Per row rather than only as a
  *     file total, because a refund follows the money that was actually taken for this loan.
+ * @param loanAmount, loanStartDate, loanTermMonths the loan as the lender's file stated it (2026-11-02): what a
+ *     person reading the file needs to see of each borrower. Null where the row could not be read.
  */
 public record EnrolmentRowView(int lineNumber,
                                 String loanAccountNumber,
@@ -28,4 +31,16 @@ public record EnrolmentRowView(int lineNumber,
                                 String memberReference,
                                 BigDecimal premiumAmount,
                                 /** The scheme's currency, so the premium can reach the wire as money. */
-                                String currency) {}
+                                String currency,
+                                BigDecimal loanAmount,
+                                LocalDate loanStartDate,
+                                Integer loanTermMonths) {
+
+    /** A row without its loan, for callers that only render outcomes (the lender's report). */
+    public EnrolmentRowView(int lineNumber, String loanAccountNumber, String borrowerFullName, RowOutcome outcome,
+                            EnrolmentRejection reasonCode, String reason, UUID policyMemberId, String memberReference,
+                            BigDecimal premiumAmount, String currency) {
+        this(lineNumber, loanAccountNumber, borrowerFullName, outcome, reasonCode, reason, policyMemberId,
+            memberReference, premiumAmount, currency, null, null, null);
+    }
+}

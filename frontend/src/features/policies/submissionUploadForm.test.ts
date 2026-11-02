@@ -43,7 +43,7 @@ describe('submissionUploadForm', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.issues[0]?.message).toBe(
-        'An enrolment schedule must be a CSV or an XLSX',
+        'An enrolment schedule must be an Excel file (.xlsx or .xlsm) or a CSV',
       );
     }
   });
@@ -82,7 +82,7 @@ describe('submissionUploadForm', () => {
   });
 
   it('advertises the right formats to the file picker for each kind', () => {
-    expect(acceptAttribute('enrolment')).toBe('.csv,.xlsx');
+    expect(acceptAttribute('enrolment')).toBe('.csv,.xlsx,.xlsm');
     expect(acceptAttribute('exits')).toBe('.csv,.xlsx');
   });
 });

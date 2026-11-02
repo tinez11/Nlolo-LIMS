@@ -13,4 +13,10 @@ public interface GroupSchemeRepository extends JpaRepository<GroupScheme, String
      * cross-tenant policy number reads as absent rather than as somebody else's scheme.
      */
     Optional<GroupScheme> findByPolicyNumberAndTenantId(String policyNumber, UUID tenantId);
+
+    /** The scheme row, locked for this transaction: adding a yearly agreement checks for an overlap under it. */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select g from GroupScheme g where g.policyNumber = :policyNumber and g.tenantId = :tenantId")
+    Optional<GroupScheme> lockScheme(@org.springframework.data.repository.query.Param("policyNumber") String policyNumber,
+                                     @org.springframework.data.repository.query.Param("tenantId") UUID tenantId);
 }

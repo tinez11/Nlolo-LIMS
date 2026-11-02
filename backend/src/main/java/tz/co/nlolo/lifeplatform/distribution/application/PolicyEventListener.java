@@ -22,7 +22,6 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Period;
@@ -92,6 +91,8 @@ public class PolicyEventListener {
     private final ApplicationEventPublisher eventPublisher;
     private final MeterRegistry meterRegistry;
     private final TransactionTemplate requiresNewTransactionTemplate;
+    /** A credit-life file's commission, held until the lender pays the file (2026-10-30). */
+    private final CreditLifeCommissions creditLifeCommissions;
 
     public PolicyEventListener(PolicyProjectionRepository policyProjectionRepository,
                                 AgentProfileRepository agentProfileRepository,
@@ -100,7 +101,9 @@ public class PolicyEventListener {
                                 ReferenceDataApi referenceDataApi,
                                 ApplicationEventPublisher eventPublisher,
                                 MeterRegistry meterRegistry,
-                                PlatformTransactionManager transactionManager) {
+                                PlatformTransactionManager transactionManager,
+                                CreditLifeCommissions creditLifeCommissions) {
+        this.creditLifeCommissions = creditLifeCommissions;
         this.policyProjectionRepository = policyProjectionRepository;
         this.agentProfileRepository = agentProfileRepository;
         this.commissionAccrualRepository = commissionAccrualRepository;
@@ -381,7 +384,6 @@ public class PolicyEventListener {
         @SuppressWarnings("unchecked")
         Map<String, Object> premium = (Map<String, Object>) payload.get("premium");
         BigDecimal premiumAmount = new BigDecimal((String) premium.get("amount"));
-        String currency = (String) premium.get("currencyCode");
 
         if (premiumAmount.signum() == 0) {
             log.info("Enrolment submission {} enrolled nobody -- no commission to accrue", submissionId);
@@ -417,27 +419,19 @@ public class PolicyEventListener {
             }
         }
 
-        CommissionCalculator.AgentWithPlan seller = distributionApiImpl.resolveAgentWithPlan(
-            tenantId, agentId, maybeProjection.get().getProductId());
-        if (seller == null) {
-            log.info("Scheme {}'s agent {} does not resolve to an agent with a plan -- no "
-                + "commission accrued on submission {}", policyNumber, agentId, submissionId);
+        // The year's agreement with the lender states its commission (policy V43): that figure is what the lender was
+        // promised, so it is paid as stated. Every file is priced on an agreement (2026-11-01), so it is the only source
+        // of a lender's commission: no commission plan, and no rate set on the lender's agent, is consulted.
+        @SuppressWarnings("unchecked")
+        Map<String, Object> agreed = (Map<String, Object>) payload.get("lenderCommission");
+        BigDecimal amount = agreed == null ? BigDecimal.ZERO : new BigDecimal((String) agreed.get("amount"));
+        if (amount.signum() == 0) {
+            log.info("Submission {}'s agreement pays the lender no commission", submissionId);
             return;
         }
-
-        // No ancestors: overrides on a bancassurance scheme wait for the broker/bancassurance
-        // discriminator M7 deferred, and one corporate agent does not justify it (spec 2.8).
-        List<CommissionCalculator.Accrual> accruals = CommissionCalculator.calculate(
-            seller, List.of(), TierType.FIRST_YEAR, premiumAmount, currency);
-
-        for (CommissionCalculator.Accrual accrual : accruals) {
-            distributionApiImpl.persistAccrual(tenantId, accrual.agentId(), policyNumber,
-                    accrual.tierType(), accrual.amount(), accrual.currency(), currentPeriod(),
-                    submissionId.toString(), null, "system:policy.EnrolmentAccepted")
-                .ifPresent(booked -> log.info("Accrued {} {} of {} commission to agent {} for "
-                    + "enrolment submission {} on scheme {}", booked.getAmount(), booked.getCurrency(),
-                    booked.getTierType(), booked.getAgentId(), submissionId, policyNumber));
-        }
+        // Held, not booked: the lender is paid its commission after it pays the file (2026-10-30).
+        creditLifeCommissions.hold(tenantId, submissionId, policyNumber, agentId, amount,
+            (String) agreed.get("currencyCode"), premiumAmount);
     }
 
     /**
@@ -478,39 +472,22 @@ public class PolicyEventListener {
             .stream().filter(a -> submissionId.toString().equals(a.getSourceRef())).toList();
 
         if (forThisFile.isEmpty()) {
+            // The lender has not paid this file yet, so its commission is still held (2026-10-30): the refund is
+            // remembered and reversed from the commission when the premium arrives.
+            if (creditLifeCommissions.rememberEarlyRefund(tenantId, submissionId, policyMemberId, refunded)) {
+                return;
+            }
             log.info("Premium of {} refunded on policy {} but enrolment submission {} accrued no "
                 + "commission -- nothing to claw back", refunded.toPlainString(), policyNumber,
                 submissionId);
             return;
         }
 
-        String currentPeriod = currentPeriod();
         for (CommissionAccrual original : forThisFile) {
-            // Scaled by the refunded SHARE of that file's premium. Rounded once, at the end, and
-            // capped at the accrual: rounding across four hundred borrowers must never reverse
-            // more than was ever booked, or a statement goes negative and is paid as a debt owed
-            // BY the bank.
-            BigDecimal share = refunded.divide(filePremium, 10, RoundingMode.HALF_UP);
-            BigDecimal reversal = original.getAmount().multiply(share)
-                .setScale(2, RoundingMode.HALF_UP)
-                .min(original.getAmount());
-
-            if (reversal.signum() <= 0) {
-                // A refund so small that a cent of commission does not round out of it. Logged
-                // rather than skipped in silence: "no reversal appeared" must never be a state
-                // with no explanation anywhere.
-                log.info("Refund of {} against submission {} on policy {} rounds to no commission "
-                    + "reversal of accrual {} -- nothing clawed back", refunded.toPlainString(),
-                    submissionId, policyNumber, original.getAccrualId());
-                continue;
-            }
-            // sourceRef is the departing MEMBER, not the accrual being reversed. One file's
-            // accrual is reversed once per borrower who settles early, so the member is what
-            // makes each partial reversal distinct -- and what makes a redelivered exit find
-            // its own reversal already booked rather than the first borrower's.
-            distributionApiImpl.persistAccrual(tenantId, original.getAgentId(), policyNumber,
-                    TierType.FIRST_YEAR, reversal.negate(), original.getCurrency(), currentPeriod,
-                    policyMemberId.toString(), original.getAccrualId(),
+            // Scaled by the refunded SHARE of that file's premium, rounded once and never more than was booked --
+            // a statement driven negative by rounding would be paid as a debt owed BY the bank. sourceRef is the
+            // departing MEMBER, so each borrower's share reverses once and a redelivered exit finds its own.
+            creditLifeCommissions.clawBack(tenantId, original, policyMemberId, refunded, filePremium,
                     "system:billing.PremiumRefundDue")
                 .ifPresent(booked -> {
                     meterRegistry.counter(CLAWBACK_COUNTER).increment();

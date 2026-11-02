@@ -120,6 +120,10 @@ public class PaymentRequestListener {
             case "distribution.CommissionPayoutRequested" -> withTenant(envelope, this::handleCommissionPayout);
             case "policy.SurrenderPayoutRequested" -> withTenant(envelope, this::handleSurrenderPayout);
             case "benefitpayout.PayoutRequested" -> withTenant(envelope, this::handleBenefitPayout);
+            // A credit-life lender's premium paid back for a loan that ended early (2026-10-30): an EFT finance makes.
+            case "billing.PremiumRefundPayoutRequested" -> withTenant(envelope, payload -> payOut(TenantContext.get(),
+                requireKey(payload), payload, "CREDIT_LIFE_PREMIUM_REFUND", (String) payload.get("creditId"),
+                "PremiumRefundPayoutRequested"));
             case "accumulation.PayoutRequested" -> withTenant(envelope, this::handleAccountPayout);
             // Unit-linked (product step 6): the same shape -- purpose, sourceRef, idempotencyKey, payee, amount.
             case "unitlinked.PayoutRequested" -> withTenant(envelope, this::handleAccountPayout);

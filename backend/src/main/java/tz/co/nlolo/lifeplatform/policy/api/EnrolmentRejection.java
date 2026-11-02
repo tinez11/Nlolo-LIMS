@@ -33,5 +33,11 @@ public enum EnrolmentRejection {
     LOAN_BEFORE_SCHEME_COMMENCED,
 
     /** Already an active member of this scheme, from an earlier accepted file. */
-    ALREADY_ENROLLED
+    ALREADY_ENROLLED,
+
+    /**
+     * The scheme has yearly agreements with its lender and none covers the day this loan
+     * started, so nothing says what it costs (policy V43).
+     */
+    NO_AGREEMENT_IN_FORCE
 }

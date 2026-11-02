@@ -29,6 +29,8 @@ const PURPOSES: Record<string, string> = {
   LAPSE_SURRENDER_PAYOUT: 'Lapse surrender',
   TOP_UP_REFUND: 'Top-up refund',
   TERM_ACCOUNT_MATURITY_PAYOUT: 'Term account maturity',
+  // A credit-life lender's premium paid back for a loan that ended early (2026-10-30).
+  CREDIT_LIFE_PREMIUM_REFUND: 'Credit-life premium refund',
 };
 
 const METHODS: Record<string, string> = {

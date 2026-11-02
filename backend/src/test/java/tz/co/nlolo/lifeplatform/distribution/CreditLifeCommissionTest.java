@@ -171,7 +171,7 @@ class CreditLifeCommissionTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
-            "db-migrations/policy/V42__surrender_payout_route.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V43__credit_life_agreement.sql", "db-migrations/policy/V44__credit_life_agreement_first.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
@@ -186,14 +186,27 @@ class CreditLifeCommissionTest {
             "db-migrations/billing/V7__policy_inception_invoice.sql",
             "db-migrations/billing/V8__schedule_premium_paying_until.sql",
             "db-migrations/billing/V10__premium_receipt.sql",
-            "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql",
+            "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql", "db-migrations/billing/V13__credit_refund_payout.sql",
+            // payment: a refund paid back to the lender is a bank transfer (2026-10-30).
+            "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V16__payment_policy_number.sql",
+            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
+            "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
+            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
+            "db-migrations/payment/V6__disbursement_method.sql",
+            "db-migrations/payment/V7__q4_2026_partitions.sql",
+            "db-migrations/payment/V8__benefit_payout_purposes.sql",
+            "db-migrations/payment/V9__account_purposes.sql",
+            "db-migrations/payment/V17__manual_receipts.sql",
+            "db-migrations/payment/V18__payout_routes.sql",
+            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/distribution/V4__partial_reversals.sql",
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
-            "db-migrations/distribution/V8__agent_login.sql");
+            "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql");
 
         MinioClient minio = MinioClient.builder()
             .endpoint(MINIO.getS3URL())
@@ -400,13 +413,37 @@ class CreditLifeCommissionTest {
         assertThat(clawedBack.abs()).isEqualByComparingTo(accrued);
     }
 
+    // ---- the year's agreement states the commission (policy V43) -------------
+
+    @Autowired private CreditLifeAgreementApi agreementApi;
+
+    /** The agreement's 12% is paid, not the 10% plan: 24,000 + 6,000 + 60,000 at 0.5% per started year is
+     * 90,000, and 12% of it is 10,800. Its refund still claws back pro rata from that accrual. */
+    @Test
+    void theAgreementsCommissionIsPaidRatherThanThePlans() {
+        schemeWithBankAsAgent(false);
+        agreementApi.add(scheme, new CreditLifeAgreementApi.AgreementInput(LocalDate.of(2026, 8, 1),
+            LocalDate.of(2027, 7, 31), new BigDecimal("0.5000"), CreditLifePremiumBasis.WHOLE_YEARS_ROUNDED_UP,
+            null, 18, 75, 12, 120, new BigDecimal("12"), false), "staff-setup");
+
+        submitAndAccept(THREE_BORROWERS);
+
+        assertThat(firstYearAccruals()).singleElement()
+            .satisfies(a -> assertThat(a.getAmount()).isEqualByComparingTo("10800.00"));
+
+        // Amina: 24,000 charged over 18 months, 9 unexpired at month 9 -> 12,000 back, 12% of it.
+        policyApi.exitMember(scheme, memberNamed("Amina Hassan Mwinyi").policyMemberId(), LocalDate.of(2027, 5, 3),
+            ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+        assertThat(reversals()).singleElement()
+            .satisfies(r -> assertThat(r.getAmount()).isEqualByComparingTo("-1440.00"));
+    }
+
     // ---- the lender's own rate, and who earns it ---------------------------
 
-    /** The rate is agreed per lender (client answer 3.1). With no product-wide plan at all, the
-     * lender's own rate is what its files earn -- 12.5% of 84,000 is 10,500. Before, nothing could
-     * attach a rate to an agent, so a scheme with no product plan earned nothing, silently. */
+    /** Agreement first (2026-11-01): a rate set on the lender's own agent no longer decides what its files earn. The
+     * year's agreement does -- its 10% of 84,000 is 8,400, not the agent's 12.5%. */
     @Test
-    void aLendersOwnRateIsWhatItsFilesEarn() {
+    void theAgreementsCommissionIsPaidWhateverRateTheLendersAgentCarries() {
         GroupProduct product = creditLifeProduct();
         UUID lenderAgent = onboardAgent("Lender Rate");
         distributionApi.setAgentCommissionRate(lenderAgent, product.productId(), new BigDecimal("12.5"), "finance");
@@ -416,8 +453,21 @@ class CreditLifeCommissionTest {
 
         assertThat(firstYearAccruals()).singleElement().satisfies(a -> {
             assertThat(a.getAgentId()).isEqualTo(lenderAgent);
-            assertThat(a.getAmount()).isEqualByComparingTo("10500.00");
+            assertThat(a.getAmount()).isEqualByComparingTo("8400.00");
         });
+    }
+
+    /** An agreement that pays the lender nothing earns it nothing, whatever plan the product carries. */
+    @Test
+    void anAgreementWithNoCommissionEarnsTheLenderNothing() {
+        schemeWithBankAsAgent(false);
+        agreementApi.add(scheme, new CreditLifeAgreementApi.AgreementInput(LocalDate.of(2026, 6, 1),
+            LocalDate.of(2027, 5, 31), new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL,
+            null, 18, 100, 1, 480, null, false), "staff-setup");
+
+        submitAndAccept(THREE_BORROWERS);
+
+        assertThat(firstYearAccruals()).isEmpty();
     }
 
     /** A rate is a percentage above 0 and at most 100, to two places -- never a fraction typed as
@@ -576,7 +626,15 @@ class CreditLifeCommissionTest {
         + "borrower_national_id,borrower_phone,loan_principal_amount,"
         + "loan_term_months,disbursement_date\n";
 
+    /** Accepted AND paid: the lender is paid its commission after it pays the file (2026-10-30). */
     private UUID submitAndAccept(String rows) {
+        UUID submissionId = acceptOnly(rows);
+        payTheFile(submissionId);
+        return submissionId;
+    }
+
+    /** Accepted, with the file's invoice still unpaid -- its commission is held. */
+    private UUID acceptOnly(String rows) {
         var submitted = enrolmentApi.submit(scheme,
             new ByteArrayInputStream((CSV_HEADER + rows).getBytes(StandardCharsets.UTF_8)),
             "lender-file.csv", "staff.proposer");
@@ -584,8 +642,146 @@ class CreditLifeCommissionTest {
         return submitted.submissionId();
     }
 
-    /** A scheme whose agent of record is the bank, with a plan that pays 10% first year. */
+    @Autowired private tz.co.nlolo.lifeplatform.billing.api.BillingApi billingApi;
+
+    /** The lender's transfer for one file, as finance's approved receipt applies it: the invoice's full balance. */
+    private void payTheFile(UUID submissionId) {
+        var invoice = billingApi.listInvoices(scheme, null).stream()
+            .filter(i -> submissionId.equals(i.enrolmentSubmissionId())).findFirst()
+            .orElseThrow(() -> new AssertionError("No invoice was raised for submission " + submissionId));
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), invoice.balanceDue(), invoice.currency(),
+            "BANK-" + submissionId.toString().substring(0, 8));
+    }
+
+    private List<CommissionAccrual> renewals() {
+        return commissionAccrualRepository.findByTenantIdAndPolicyNumberAndTierTypeAndReversesAccrualIdIsNull(
+            tenantId, scheme, TierType.RENEWAL);
+    }
+
+    // ---- a refund the lender had already paid goes back to it (2026-10-30, option b) ----
+
+    @Autowired private tz.co.nlolo.lifeplatform.payment.application.PaymentApiImpl paymentApiImpl;
+    @Autowired private tz.co.nlolo.lifeplatform.payment.infrastructure.DisbursementInstructionRepository disbursements;
+
+    private java.util.Map<String, Object> creditFor(String borrower) {
+        UUID member = memberNamed(borrower).policyMemberId();
+        return jdbcTemplate.queryForMap("SELECT credit_id, amount, refund_amount, refund_status, refund_payee"
+            + " FROM billing.premium_credit WHERE policy_member_id = ?", member);
+    }
+
+    @Test
+    void aBorrowerRefundedAfterTheLenderPaidIsPaidBackByBankTransfer() {
+        // Amina: 18,000 charged; she settles at month 9 of 18, so 9,000 is unearned -- and the lender paid it.
+        schemeWithBankAsAgent();
+        submitAndAccept(THREE_BORROWERS);
+        policyApi.exitMember(scheme, memberNamed("Amina Hassan Mwinyi").policyMemberId(), LocalDate.of(2027, 5, 3),
+            ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+
+        var credit = creditFor("Amina Hassan Mwinyi");
+        assertThat((BigDecimal) credit.get("refund_amount")).isEqualByComparingTo("9000.00");
+        assertThat(credit.get("refund_status")).isEqualTo("REQUESTED");
+        assertThat((String) credit.get("refund_payee")).contains("policyholder of " + scheme);
+
+        var transfer = disbursements.findByIdempotencyKeyAndTenantId("credit-refund:" + credit.get("credit_id"), tenantId)
+            .orElseThrow(() -> new AssertionError("No transfer was recorded for the refund"));
+        assertThat(transfer.getMethod()).isEqualTo("EFT");
+        assertThat(transfer.getStatus()).isEqualTo("AWAITING_EXECUTION");
+        assertThat(transfer.getAmount()).isEqualByComparingTo("9000.00");
+
+        // Finance makes the transfer and records its bank reference: the credit is settled.
+        paymentApiImpl.markEftExecuted(transfer.getDisbursementId(), "FT26103000123", "finance-officer");
+        assertThat(creditFor("Amina Hassan Mwinyi").get("refund_status")).isEqualTo("PAID");
+    }
+
+    @Test
+    void aBorrowerRefundedBeforeTheLenderPaidOnlyLowersWhatIsOwed() {
+        schemeWithBankAsAgent();
+        acceptOnly(THREE_BORROWERS);
+        policyApi.exitMember(scheme, memberNamed("Amina Hassan Mwinyi").policyMemberId(), LocalDate.of(2027, 5, 3),
+            ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+
+        var credit = creditFor("Amina Hassan Mwinyi");
+        assertThat(credit.get("refund_amount")).isNull();
+        assertThat(credit.get("refund_status")).isNull();
+        // The file now asks 75,000 of its 84,000.
+        var invoice = billingApi.listInvoices(scheme, null).stream()
+            .filter(i -> i.enrolmentSubmissionId() != null).findFirst().orElseThrow();
+        assertThat(invoice.balanceDue()).isEqualByComparingTo("75000.00");
+    }
+
+    // ---- an unpaid file is collected, never a lapse (2026-10-30) ------------------
+
+    @Autowired private org.springframework.context.ApplicationEventPublisher events;
+    @Autowired private org.springframework.transaction.PlatformTransactionManager transactions;
+
+    @Test
+    void billingsLapseRecommendationNeverLapsesACreditLifeScheme() {
+        // Five reminders on one late file recommend a lapse. On a scheme that would take every borrower on the book
+        // off cover over one month's invoice; it stays a collections matter with the lender.
+        schemeWithBankAsAgent();
+        new org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult(s ->
+            events.publishEvent(tz.co.nlolo.lifeplatform.DomainEventEnvelope.of("billing.PolicyLapseRecommended",
+                tenantId, java.util.Map.of("policyNumber", scheme, "invoiceId", UUID.randomUUID(),
+                    "recommendedAt", java.time.Instant.now().toString()))));
+
+        assertThat(policyApi.getPolicy(scheme).status()).isEqualTo(PolicyStatus.ACTIVE);
+    }
+
+    // ---- the lender's commission waits for its premium (2026-10-30) ---------------
+
+    @Test
+    void aFileTheLenderHasNotPaidEarnsNoCommissionYet() {
+        // Booked at acceptance before this, so the month-end close made it payable on a file never paid for.
+        schemeWithBankAsAgent();
+        UUID submissionId = acceptOnly(THREE_BORROWERS);
+        assertThat(firstYearAccruals()).isEmpty();
+
+        payTheFile(submissionId);
+
+        assertThat(firstYearAccruals()).singleElement()
+            .satisfies(a -> assertThat(a.getAmount()).isEqualByComparingTo("8400.00"));
+    }
+
+    @Test
+    void everyPaidFileEarnsItsOwnCommissionOnceAndNeverARenewal() {
+        // The second file's invoice was read as a policy's renewal premium, and paid the lender a second time.
+        schemeWithBankAsAgent();
+        submitAndAccept(THREE_BORROWERS);
+        submitAndAccept(",Salum Juma Rashid,1969-01-30,M,,,3600000.00,12,2026-09-02\n");
+        submitAndAccept(",Neema Paulo,1995-11-09,F,,,2400000.00,12,2026-09-03\n");
+
+        assertThat(firstYearAccruals()).hasSize(3);
+        assertThat(renewals()).isEmpty();
+    }
+
+    @Test
+    void aBorrowerRefundedBeforeTheLenderPaysIsReversedTheMomentTheCommissionIsBooked() {
+        // Amina settles at month 9 of 18 while the file is still unpaid: nothing booked to claw back from yet.
+        schemeWithBankAsAgent();
+        UUID submissionId = acceptOnly(THREE_BORROWERS);
+        policyApi.exitMember(scheme, memberNamed("Amina Hassan Mwinyi").policyMemberId(), LocalDate.of(2027, 5, 3),
+            ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+        assertThat(reversals()).isEmpty();
+
+        payTheFile(submissionId);
+
+        // 8,400 booked, and 900 of it (9,000 of the 84,000 premium refunded) reversed with it.
+        assertThat(firstYearAccruals()).singleElement()
+            .satisfies(a -> assertThat(a.getAmount()).isEqualByComparingTo("8400.00"));
+        assertThat(reversals()).singleElement()
+            .satisfies(r -> assertThat(r.getAmount()).isEqualByComparingTo("-900.00"));
+    }
+
+    /** A scheme whose agent of record is the bank, with its year's agreement paying it 10%. */
     private void schemeWithBankAsAgent() {
+        schemeWithBankAsAgent(true);
+    }
+
+    /**
+     * The same, its product carrying a plan that also pays 10% first year -- which the agreement, not the plan,
+     * decides. Without {@code agreed}, the test adds the scheme's agreement itself.
+     */
+    private void schemeWithBankAsAgent(boolean agreed) {
         GroupProduct product = creditLifeProduct();
         distributionApi.createCommissionPlan(product.productId(), List.of(
             new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, FIRST_YEAR_RATE, null, null)),
@@ -600,7 +796,7 @@ class CreditLifeCommissionTest {
         bankAgentId = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
             bankParty, "LIC-CL-" + tag, LocalDate.now().plusYears(1), null), "staff-1").agentId();
 
-        scheme = issueScheme(bankAgentId, product);
+        scheme = issueSchemeFor(bankParty, bankAgentId, product, agreed);
     }
 
     private String issueScheme(UUID agentOfRecordId) {
@@ -625,6 +821,19 @@ class CreditLifeCommissionTest {
     }
 
     private String issueSchemeFor(UUID lenderParty, UUID agentOfRecordId, GroupProduct product) {
+        return issueSchemeFor(lenderParty, agentOfRecordId, product, true);
+    }
+
+    /**
+     * With {@code agreed}, the lender's year from 1 June 2026 is added too, as every scheme needs before its first file
+     * (2026-11-01): 0.5% a year on each loan, the lender's commission 10% -- so every figure here is a tenth of a
+     * premium.
+     *
+     * <p>Set up as the console sets one up (2026-11-02): no premium, rate or repayment terms of its own, so the contract
+     * records a nil premium. Distribution's projection once refused that, losing the agent every file's commission is
+     * paid to -- and every test here would then earn nothing.
+     */
+    private String issueSchemeFor(UUID lenderParty, UUID agentOfRecordId, GroupProduct product, boolean agreed) {
         scheme = policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
             lenderParty,
             product.productId(), product.productVersionId(), agentOfRecordId,
@@ -633,10 +842,15 @@ class CreditLifeCommissionTest {
                 LocalDate.of(1988, 3, 14), null,
                 new LoanTerms(new BigDecimal("8500000.00"), BigDecimal.ZERO, 48,
                     RepaymentFrequency.MONTHLY, LocalDate.of(2026, 8, 3), LocalDate.of(2026, 9, 3)))),
-            new BigDecimal("52000.00"), "TZS", "SINGLE",
+            null, null, null,
             LocalDate.of(2026, 6, 1), null, "credit life onboarding", IssuanceBasis.MIGRATION,
-            InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY, new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL),
+            null, null, null, null),
             "staff-1").policyNumber();
+        if (agreed) {
+            agreementApi.add(scheme, new CreditLifeAgreementApi.AgreementInput(LocalDate.of(2026, 6, 1),
+                LocalDate.of(2027, 5, 31), new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL,
+                null, 18, 100, 1, 480, new BigDecimal("10"), false), "staff-setup");
+        }
         return scheme;
     }
 

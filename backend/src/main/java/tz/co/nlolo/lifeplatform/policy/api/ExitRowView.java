@@ -12,9 +12,11 @@ import java.util.UUID;
  *     reason: a lender who thinks a loan came off cover stops expecting to be charged for it.
  * @param policyMemberId the member this row took off cover, written at acceptance. Null while
  *     the file is pending, and null forever on a rejected row.
+ * @param loanAccountNumber the lender's own number for the loan, where the row named it that way (V44)
  */
 public record ExitRowView(int lineNumber,
                            String memberReference,
+                           String loanAccountNumber,
                            LocalDate exitDate,
                            ExitReason exitReason,
                            BigDecimal outstandingBalanceAtExit,

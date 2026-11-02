@@ -142,6 +142,54 @@ class ProductApiIntegrationTest {
             String.class, product.productId()));
     }
 
+    // ---- a credit-life version is not rated (2026-10-30) ----
+    //
+    // Every loan is priced by its lender's yearly agreement on the scheme, so the version carries no rate table and
+    // no rating factors -- before this it had to carry AGE and SUM_ASSURED_BAND multipliers nothing ever read.
+
+    @Test
+    void aCreditLifeVersionPublishesWithNoRatesAndPaysOnDeathAndDisability() {
+        ProductSummaryView product = productApi.createProduct("CREDIT-LIFE-02", "Credit life",
+            ProductCategory.CREDIT_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null, List.of(),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED),
+                    new ProductApi.BenefitInput(BenefitType.DISABILITY, BenefitCalculationMethod.SUM_ASSURED)),
+            null, null, ANY_FILING, "actuary@nlolo.co.tz");
+
+        assertEquals(1, productApi.listVersions(product.productId()).size());
+    }
+
+    @Test
+    void aCreditLifeVersionRefusesARateTable() {
+        ProductSummaryView product = productApi.createProduct("CREDIT-LIFE-03", "Credit life",
+            ProductCategory.CREDIT_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        assertThatThrownBy(() -> productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA,
+                LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+                null,
+                List.of(new ProductApi.BaseRateInput(30, 39, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("1.0000"))),
+                ANY_FILING, "actuary@nlolo.co.tz"))
+            .isInstanceOf(InvalidProductVersionException.class)
+            .hasMessageContaining("yearly agreement");
+    }
+
+    @Test
+    void aCreditLifeVersionRefusesABenefitABorrowerCannotClaim() {
+        ProductSummaryView product = productApi.createProduct("CREDIT-LIFE-04", "Credit life",
+            ProductCategory.CREDIT_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        assertThatThrownBy(() -> productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA,
+                LocalDate.now(), null, List.of(),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED),
+                        new ProductApi.BenefitInput(BenefitType.CRITICAL_ILLNESS, BenefitCalculationMethod.SUM_ASSURED)),
+                null, null, ANY_FILING, "actuary@nlolo.co.tz"))
+            .isInstanceOf(InvalidProductVersionException.class)
+            .hasMessageContaining("CRITICAL_ILLNESS");
+    }
+
     // ---- IFRS 17 I2: classification at sale (product V27) ----
 
     @Test

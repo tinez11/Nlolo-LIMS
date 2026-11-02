@@ -281,3 +281,30 @@ describe('PublishVersionForm product type', () => {
     expect(screen.queryByText('Cash value (optional)')).not.toBeInTheDocument();
   });
 });
+
+describe('PublishVersionForm credit life (2026-10-30)', () => {
+  it('asks nothing about pricing: each lender is priced by its yearly agreement', () => {
+    renderForm('CREDIT_LIFE');
+    const steps = within(screen.getByRole('list', { name: 'Steps' }));
+    expect(steps.queryByRole('button', { name: /^Pricing/ })).not.toBeInTheDocument();
+    expect(steps.getByRole('button', { name: /^What it pays/ })).toBeInTheDocument();
+  });
+
+  it('starts loans at a year and leaves the cap to the scheme', async () => {
+    const user = userEvent.setup();
+    renderForm('CREDIT_LIFE');
+    await step(user, 'Who can buy');
+    expect(screen.getByLabelText('Minimum term (months)')).toHaveValue('12');
+    expect(screen.queryByLabelText('Minimum sum assured')).not.toBeInTheDocument();
+  });
+
+  it('pays on death and disability, shown rather than chosen', async () => {
+    const user = userEvent.setup();
+    renderForm('CREDIT_LIFE');
+    await step(user, 'What it pays');
+    expect(screen.getByText('Death')).toBeInTheDocument();
+    expect(screen.getByText('Disability')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Add benefit/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Free-look days')).not.toBeInTheDocument();
+  });
+});

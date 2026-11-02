@@ -18,8 +18,6 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectIssuingScheme, usePolicyStore } from '@/store/policyStore';
 import { selectProductSnapshot, useProductStore } from '@/store/productStore';
 import {
-  CREDIT_LIFE_PREMIUM_BASES,
-  CREDIT_LIFE_PREMIUM_BASIS_LABELS,
   IN_FORCE_ISSUANCE_BASES,
   blankCreditLifeSchemeIssueForm,
   creditLifeSchemeIssueFormSchema,
@@ -38,9 +36,9 @@ import { UnsavedGuard } from '@/components/UnsavedGuard';
  * `creditLifeSchemeIssueForm` for why this is a separate page on a separate endpoint rather than
  * a fourth option on that form.
  *
- * <p><b>The form is short on purpose, and it collects no borrowers at all.</b> A credit-life
- * scheme is an agreement with a lender — the rate, the free cover limit, the interest method —
- * and it exists before any borrower does. The book arrives monthly by file and never stops
+ * <p><b>The form is short on purpose, and it collects no borrowers and no price.</b> A credit-life
+ * scheme is an agreement with a lender -- its free cover limit and when it started -- and it exists
+ * before any borrower does; the price is the lender's yearly agreement, added on the scheme page. The book arrives monthly by file and never stops
  * arriving, which is why this page's last act is to hand over to the page that reads them.
  *
  * <p>It used to demand one opening borrower, because the service demanded a non-empty schedule —
@@ -153,7 +151,7 @@ export function IssueCreditLifeSchemePage() {
       <PageHeader
         breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title="Set up a credit-life scheme"
-        description="A lender's book. The terms are agreed once here; the borrowers arrive every month on a file."
+        description="A lender's book. Set up once here, priced by the lender's yearly agreement; the borrowers arrive every month on a file."
       />
 
       {!canUnderwrite && <NoAccess what="Setting up a credit-life scheme" who="underwriters" />}
@@ -183,8 +181,8 @@ export function IssueCreditLifeSchemePage() {
             {lenderPartyId && lenderAgentKnown && (
               <p className="mt-1 text-xs text-muted-foreground">
                 {lenderAgentId
-                  ? 'Commission: paid to the lender, a registered agent. Its rate is set on the scheme page.'
-                  : 'Commission: the lender is not a registered agent yet, so the scheme starts direct. Register it and set its rate on the scheme page.'}
+                  ? 'Commission: paid to the lender, a registered agent, at the rate its yearly agreement states.'
+                  : 'Commission: the lender is not a registered agent yet, so the scheme starts direct. Register it on the scheme page.'}
               </p>
             )}
           </FormField>
@@ -225,54 +223,14 @@ export function IssueCreditLifeSchemePage() {
               Scheme terms
             </legend>
             <p className="mb-2.5 text-xs text-muted-foreground">
-              Agreed once, per lender. There is no benefit basis to choose: a borrower is covered
-              for what they still owe, which falls as they repay.
+              Agreed once, per lender. The price &mdash; the rate, the borrowers&rsquo; ages, the loan lengths and the
+              lender&rsquo;s commission &mdash; is the yearly agreement, added on the scheme page next. A borrower is
+              covered for what they still owe.
             </p>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <FormField label="Premium rate (% of each loan)" error={errors.premiumRatePercent?.message}>
-                <Input placeholder="0.5" {...register('premiumRatePercent')} />
-                <p className="mt-1 text-xs text-subtle-foreground">
-                  Charged once per borrower on what they borrowed, not on the declining balance.
-                </p>
-              </FormField>
-
-              <FormField label="How the rate is charged" error={errors.premiumBasis?.message}>
-                <Select {...register('premiumBasis')}>
-                  {CREDIT_LIFE_PREMIUM_BASES.map((b) => (
-                    <option key={b} value={b}>
-                      {CREDIT_LIFE_PREMIUM_BASIS_LABELS[b]}
-                    </option>
-                  ))}
-                </Select>
-                {/*
-                  A worked example, not a restatement of the label. The three bases agree
-                  exactly on a twelve-month loan and diverge on every other term, so the only
-                  way to tell them apart on this screen is to price the same loan three ways.
-                */}
-                <p className="mt-1 text-xs text-subtle-foreground">
-                  On a 10,400,000 loan over 18 months at 0.5%: flat charges 52,000, per year on
-                  the disbursed amount 78,000, and per year on the outstanding balance 69,333.33.
-                  Check the lender's own schedule — this is what they agreed, not a preference.
-                </p>
-              </FormField>
-
               <FormField label="Currency" error={errors.currency?.message}>
                 <Input className="uppercase" {...register('currency')} />
-              </FormField>
-
-              <FormField label="Interest method" error={errors.interestMethod?.message}>
-                <Select {...register('interestMethod')}>
-                  <option value="FLAT_RATE">Flat rate — interest on the original principal</option>
-                  <option value="REDUCING_BALANCE">Reducing balance</option>
-                </Select>
-              </FormField>
-
-              <FormField label="Repayment frequency" error={errors.repaymentFrequency?.message}>
-                <Select {...register('repaymentFrequency')}>
-                  <option value="MONTHLY">Monthly</option>
-                  <option value="QUARTERLY">Quarterly</option>
-                </Select>
               </FormField>
 
               <FormField label="Free cover limit (optional)" error={errors.fclAmount?.message}>
@@ -280,15 +238,6 @@ export function IssueCreditLifeSchemePage() {
                 <p className="mt-1 text-xs text-subtle-foreground">
                   Leave blank for a scheme with no limit. Blank is not zero — a limit of zero
                   would send every borrower to underwriting.
-                </p>
-              </FormField>
-
-              <FormField label="Premium recorded on the contract" error={errors.premiumAmount?.message}>
-                <Input placeholder="52000.00" {...register('premiumAmount')} />
-                <p className="mt-1 text-xs text-subtle-foreground">
-                  Not what the lender is billed. A credit-life premium is charged per accepted file
-                  at the rate above; this figure sits on the master policy, which the database
-                  requires to carry a positive one.
                 </p>
               </FormField>
 
@@ -351,7 +300,8 @@ export function IssueCreditLifeSchemePage() {
               Set up the scheme
             </Button>
             <p className="text-xs text-muted-foreground">
-              Lands on the scheme&rsquo;s monthly files, ready for the first enrolment.
+              Lands on the scheme&rsquo;s page, where the lender&rsquo;s yearly agreement is added before the first
+              file.
             </p>
           </div>
         </form>

@@ -89,6 +89,13 @@ public interface PolicyMemberRepository extends JpaRepository<PolicyMember, UUID
         UUID tenantId, String policyNumber, String loanAccountNumber, String status);
 
     /**
+     * Every loan on a scheme with this account number, the lender's own name for it -- how a lender's exits file
+     * names a loan (V44). At most one is on cover ({@code ux_policy_member_active_loan}); the rest already left.
+     */
+    List<PolicyMember> findByTenantIdAndPolicyNumberAndLoanAccountNumber(
+        UUID tenantId, String policyNumber, String loanAccountNumber);
+
+    /**
      * The next member reference number.
      *
      * <p>A sequence rather than a counter column on the scheme: a counter would be a

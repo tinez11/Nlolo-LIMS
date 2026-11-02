@@ -209,5 +209,8 @@ public class EnrolmentSubmissionRow {
     public UUID getPolicyMemberId() { return policyMemberId; }
     public String getMemberReference() { return memberReference; }
     public BigDecimal getPremiumAmount() { return premiumAmount; }
+    public BigDecimal getLoanPrincipalAmount() { return loanPrincipalAmount; }
+    public Integer getLoanTermMonths() { return loanTermMonths; }
+    public LocalDate getDisbursementDate() { return disbursementDate; }
     public BigDecimal getStatedPremiumAmount() { return statedPremiumAmount; }
 }

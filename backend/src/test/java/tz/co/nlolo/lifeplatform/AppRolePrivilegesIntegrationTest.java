@@ -236,7 +236,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/billing/V7__policy_inception_invoice.sql",
             "db-migrations/billing/V8__schedule_premium_paying_until.sql",
             "db-migrations/billing/V10__premium_receipt.sql",
-            "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql",
+            "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql", "db-migrations/billing/V13__credit_refund_payout.sql",
             // M6 (Task 1) additions: appRoleCanReadWriteAndUpdateAClaim below needs claims' own
             // schema/grants -- V1 alone had zero GRANT statements anywhere in the file (again),
             // the exact M1/M5 failure mode this class exists to catch, and RLS on only 1 of its
@@ -274,7 +274,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/payment/V9__account_purposes.sql",
             "db-migrations/payment/V17__manual_receipts.sql",
             "db-migrations/payment/V18__payout_routes.sql",
-            "db-migrations/payment/V19__top_up_one_person.sql",
+            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql",
             // M7 (Task 10) additions: distribution appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap claims had entering M6.
             // distribution/V1 has zero GRANT statements (the recurring V1 pattern this class
@@ -287,7 +287,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
-            "db-migrations/distribution/V8__agent_login.sql",
+            "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
             // M8 (Task 9) additions: reinsurance appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap distribution had entering
             // M7. reinsurance/V1 has zero GRANT statements (the recurring V1 pattern this class
@@ -298,7 +298,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql",
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql",
             // M9 (Task 9) additions: finaccounting appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap reinsurance had entering
             // M8. finaccounting/V1 has zero GRANT statements and ends with a REVOKE UPDATE, DELETE

@@ -4,8 +4,10 @@ import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.CellValue;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.DateUtil;
+import org.apache.poi.ss.usermodel.FormulaEvaluator;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -19,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * Converts a lender's workbook to CSV text, once, at the edge.
@@ -73,6 +76,86 @@ public final class XlsxToCsv {
             throw new UncheckedIOException("Could not read the workbook", e);
         }
         return out.toString();
+    }
+
+    /** The column {@link #convertSchedule} adds, carrying each row's own number as Excel shows it. */
+    public static final String SHEET_ROW = "sheet_row";
+
+    /**
+     * The first table in the workbook whose header row {@code isHeader} recognises, as CSV text (2026-10-30).
+     *
+     * <p>A lender's real file does not start at A1: the insurer's own template has a title, the rate and the totals
+     * above the header, and the lender's has a Summary sheet first. So every sheet is searched, the first
+     * {@value #HEADER_SEARCH_ROWS} rows of each, and whatever is above the header is left out.
+     *
+     * <p>Formula cells are worked out here when they can be -- the premium column of a template nobody has opened in
+     * Excel has no saved value -- and fall back to what Excel last saved when they cannot. Nothing in the file is ever
+     * run: a workbook with macros is read as cells.
+     *
+     * <p>Each row carries its own number in {@link #SHEET_ROW}, so a refusal names the row the lender sees.
+     *
+     * @return null when no sheet has a recognisable header
+     */
+    public static String convertSchedule(InputStream xlsx, Predicate<List<String>> isHeader) {
+        StringWriter out = new StringWriter();
+        try (Workbook workbook = new XSSFWorkbook(xlsx);
+             CSVPrinter printer = new CSVPrinter(out, CSVFormat.DEFAULT)) {
+            DataFormatter formatter = new DataFormatter();
+            FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
+            for (Sheet sheet : workbook) {
+                int headerRow = -1;
+                for (Row row : sheet) {
+                    if (row.getRowNum() >= HEADER_SEARCH_ROWS) break;
+                    if (isHeader.test(values(row, formatter, evaluator))) {
+                        headerRow = row.getRowNum();
+                        break;
+                    }
+                }
+                if (headerRow < 0) continue;
+                for (Row row : sheet) {
+                    if (row.getRowNum() < headerRow) continue;
+                    List<String> values = values(row, formatter, evaluator);
+                    if (values.stream().allMatch(String::isBlank)) continue;
+                    List<String> record = new ArrayList<>();
+                    record.add(row.getRowNum() == headerRow ? SHEET_ROW : String.valueOf(row.getRowNum() + 1));
+                    record.addAll(values);
+                    printer.printRecord(record);
+                }
+                printer.flush();
+                return out.toString();
+            }
+            return null;
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read the workbook", e);
+        }
+    }
+
+    private static final int HEADER_SEARCH_ROWS = 30;
+
+    private static List<String> values(Row row, DataFormatter formatter, FormulaEvaluator evaluator) {
+        List<String> values = new ArrayList<>();
+        for (int column = 0; column < Math.max(row.getLastCellNum(), 0); column++) {
+            values.add(evaluated(row.getCell(column), formatter, evaluator));
+        }
+        return values;
+    }
+
+    private static String evaluated(Cell cell, DataFormatter formatter, FormulaEvaluator evaluator) {
+        if (cell == null || cell.getCellType() != CellType.FORMULA) return read(cell, formatter);
+        try {
+            CellValue value = evaluator.evaluate(cell);
+            return switch (value.getCellType()) {
+                case NUMERIC -> DateUtil.isCellDateFormatted(cell)
+                    ? DateUtil.getLocalDateTime(value.getNumberValue()).toLocalDate().format(ISO)
+                    : BigDecimal.valueOf(value.getNumberValue()).stripTrailingZeros().toPlainString();
+                case STRING -> value.getStringValue().strip();
+                case BOOLEAN -> String.valueOf(value.getBooleanValue());
+                default -> "";
+            };
+        } catch (RuntimeException e) {
+            // A function POI cannot work out: what Excel last saved is the answer.
+            return read(cell, formatter);
+        }
     }
 
     private static String read(Cell cell, DataFormatter formatter) {

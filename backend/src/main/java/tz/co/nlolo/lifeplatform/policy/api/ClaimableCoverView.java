@@ -14,9 +14,28 @@ import java.util.UUID;
  *
  * @param amount on a group scheme, the member's {@code covered_amount} in force on the date of
  *     event — already capped at the free cover limit wherever the limit bit, so it must NOT be
- *     capped again by a reader. On individual business, the policy's sum assured.
+ *     capped again by a reader. On individual business, the policy's sum assured. On credit life,
+ *     the loan's principal still owed by the scheme's own schedule: the figure a claim pays when the
+ *     lender's statement is not on it.
  * @param currencyCode the scheme's currency, or the policy's. An amount travelling without one
  *     is how a figure ends up rendered as the wrong money somewhere downstream.
  * @param policyMemberId echoed back on a group scheme, null on individual business.
+ * @param loanCover credit life only (2026-10-30): the most a claim on this borrower can pay — their
+ *     cover before it declines, already capped at the free cover limit. The lender's statement is paid
+ *     up to this. Null on every other product.
+ * @param coverIncludesInterest credit life only: whether the lender's agreement in force when the loan
+ *     started covers interest, so the statement's interest is paid too. Null on every other product.
  */
-public record ClaimableCoverView(BigDecimal amount, String currencyCode, UUID policyMemberId) {}
+public record ClaimableCoverView(BigDecimal amount, String currencyCode, UUID policyMemberId,
+                                 BigDecimal loanCover, Boolean coverIncludesInterest) {
+
+    /** Every product but credit life. */
+    public ClaimableCoverView(BigDecimal amount, String currencyCode, UUID policyMemberId) {
+        this(amount, currencyCode, policyMemberId, null, null);
+    }
+
+    /** Whether this is a credit-life borrower's cover, which a lender's statement may value. */
+    public boolean isLoanCover() {
+        return loanCover != null;
+    }
+}

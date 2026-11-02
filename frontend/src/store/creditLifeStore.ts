@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import {
   acceptEnrolmentSubmission,
   acceptExitSubmission,
+  addAgreement,
+  getEnrolmentQuotation,
+  listAgreements,
   listEnrolmentRows,
   listEnrolmentSubmissions,
   listExitRows,
@@ -12,6 +15,9 @@ import {
   withdrawExitSubmission,
 } from '@/api/creditLife';
 import type {
+  CreditLifeAgreement,
+  CreditLifeAgreementInput,
+  EnrolmentQuotationView,
   EnrolmentRowView,
   EnrolmentSubmissionView,
   ExitRowView,
@@ -36,6 +42,12 @@ interface CreditLifeState {
   exits: Keyed<ExitSubmissionView[]>;
   enrolmentRows: Keyed<EnrolmentRowView[]>;
   exitRows: Keyed<ExitRowView[]>;
+  /** The lender's yearly agreements, by scheme (policy V43). */
+  agreements: Keyed<CreditLifeAgreement[]>;
+  /** One slot per scheme: adding a year is one act at a time. */
+  addingAgreement: Keyed<CreditLifeAgreement>;
+  /** What a file costs before acceptance, by submission. */
+  quotations: Keyed<EnrolmentQuotationView>;
 
   /** One slot per scheme per kind: a scheme permits only one submission in flight, so there is
    * never a second upload to track. */
@@ -53,6 +65,9 @@ interface CreditLifeState {
   withdrawEnrolment: (policyNumber: string, submissionId: string) => Promise<void>;
   acceptExits: (policyNumber: string, submissionId: string) => Promise<void>;
   withdrawExits: (policyNumber: string, submissionId: string) => Promise<void>;
+  loadAgreements: (policyNumber: string) => Promise<void>;
+  addAgreement: (policyNumber: string, input: CreditLifeAgreementInput) => Promise<void>;
+  loadQuotation: (policyNumber: string, submissionId: string) => Promise<void>;
   clearDecision: (submissionId: string) => void;
   clearUpload: (key: string) => void;
 }
@@ -64,6 +79,9 @@ export const useCreditLifeStore = create<CreditLifeState>((set, getState) => ({
   exits: {},
   enrolmentRows: {},
   exitRows: {},
+  agreements: {},
+  addingAgreement: {},
+  quotations: {},
   uploading: {},
   deciding: {},
 
@@ -163,6 +181,35 @@ export const useCreditLifeStore = create<CreditLifeState>((set, getState) => ({
     await getState().loadExits(policyNumber);
   },
 
+  loadAgreements: (policyNumber) =>
+    track(
+      `creditLife.agreements.${policyNumber}`,
+      getState().agreements[policyNumber] ?? idle<CreditLifeAgreement[]>(),
+      (next) => set((s) => ({ agreements: { ...s.agreements, [policyNumber]: next } })),
+      () => listAgreements(policyNumber),
+    ),
+
+  addAgreement: async (policyNumber, input) => {
+    await track(
+      `creditLife.addAgreement.${policyNumber}`,
+      getState().addingAgreement[policyNumber] ?? idle<CreditLifeAgreement>(),
+      (next) => set((s) => ({ addingAgreement: { ...s.addingAgreement, [policyNumber]: next } })),
+      () => addAgreement(policyNumber, input),
+    );
+    // Only on success: a refused year leaves the list as it was, and the refusal on the slot.
+    if (getState().addingAgreement[policyNumber]?.status === 'success') {
+      await getState().loadAgreements(policyNumber);
+    }
+  },
+
+  loadQuotation: (policyNumber, submissionId) =>
+    track(
+      `creditLife.quotation.${submissionId}`,
+      getState().quotations[submissionId] ?? idle<EnrolmentQuotationView>(),
+      (next) => set((s) => ({ quotations: { ...s.quotations, [submissionId]: next } })),
+      () => getEnrolmentQuotation(policyNumber, submissionId),
+    ),
+
   clearDecision: (submissionId) =>
     set((s) => {
       const { [submissionId]: _removed, ...rest } = s.deciding;
@@ -184,6 +231,15 @@ export const selectExits = (policyNumber: string) => (s: CreditLifeState) =>
 
 export const selectEnrolmentRows = (submissionId: string | null) => (s: CreditLifeState) =>
   (submissionId ? s.enrolmentRows[submissionId] : undefined) ?? idle<EnrolmentRowView[]>();
+
+export const selectAgreements = (policyNumber: string) => (s: CreditLifeState) =>
+  s.agreements[policyNumber] ?? idle<CreditLifeAgreement[]>();
+
+export const selectAddingAgreement = (policyNumber: string) => (s: CreditLifeState) =>
+  s.addingAgreement[policyNumber] ?? idle<CreditLifeAgreement>();
+
+export const selectQuotation = (submissionId: string | null) => (s: CreditLifeState) =>
+  (submissionId ? s.quotations[submissionId] : undefined) ?? idle<EnrolmentQuotationView>();
 
 export const selectExitRows = (submissionId: string | null) => (s: CreditLifeState) =>
   (submissionId ? s.exitRows[submissionId] : undefined) ?? idle<ExitRowView[]>();

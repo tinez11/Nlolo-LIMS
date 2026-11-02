@@ -60,6 +60,14 @@ public class PolicyLapseRecommendedEventListener {
             requiresNewTransactionTemplate.executeWithoutResult(status -> {
                 // Billing still raises the invoice and still reminds the customer; it is only the
                 // lapse it recommends that does not apply to an account-valued policy.
+                // A CREDIT-LIFE SCHEME is never lapsed for an unpaid file (2026-10-30). The invoice is one lender's
+                // monthly file, and lapsing the master policy would take every borrower on the book off cover over
+                // it: a collections matter with the lender, which the arrears case and its reminders still pursue.
+                if ("CREDIT_LIFE".equals(policyApi.getPolicy(policyNumber).productCategory())) {
+                    log.warn("Not lapsing credit-life scheme {} on billing's recommendation: an unpaid file is"
+                        + " collected from the lender, not a lapse of its borrowers' cover", policyNumber);
+                    return;
+                }
                 UUID versionId = policyApi.getPolicy(policyNumber).productVersionId();
                 if (productApi.resolveAccumulationPlan(versionId).isAccount()) {
                     log.info("Not lapsing policy {} on billing's recommendation: it is valued by its account", policyNumber);

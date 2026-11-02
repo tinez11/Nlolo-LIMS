@@ -62,6 +62,8 @@ async function submitDeathClaim(page: Page, policyNumber: string, lenderName: st
   await page.getByLabel('Place of death').fill('Dar es Salaam');
   await page.getByLabel('Date of death').fill(dmy(today));
   await page.getByLabel('Attending physician').fill('Dr E2E');
+  // What the borrower still owed, from the lender's statement: what a credit-life claim pays (2026-10-30).
+  await page.getByLabel('Principal still owed').fill('1000000.00');
 
   await page.getByRole('button', { name: 'Register claim' }).click();
 }

@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import tz.co.nlolo.lifeplatform.AllowedDocumentContentTypes;
 import tz.co.nlolo.lifeplatform.policy.api.EnrolmentApi;
+import tz.co.nlolo.lifeplatform.policy.api.EnrolmentQuotationView;
 import tz.co.nlolo.lifeplatform.policy.api.EnrolmentRowView;
 import tz.co.nlolo.lifeplatform.policy.api.EnrolmentSubmissionView;
 import tz.co.nlolo.lifeplatform.policy.api.InvalidPolicyStateException;
@@ -39,6 +40,8 @@ public class EnrolmentController {
     private static final String XLSX =
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
+    private static final String MACRO_WORKBOOK = "application/vnd.ms-excel.sheet.macroEnabled.12";
+
     private final EnrolmentApi enrolmentApi;
 
     public EnrolmentController(EnrolmentApi enrolmentApi) {
@@ -53,7 +56,10 @@ public class EnrolmentController {
                                                            @AuthenticationPrincipal Jwt jwt) {
         String contentType;
         try {
-            contentType = AllowedDocumentContentTypes.normalizeOrThrow(file.getContentType());
+            // A lender's macro-enabled workbook (.xlsm) is read as a workbook here, and only here: its cells are read
+            // and its macros never run. Not added to the platform-wide allowlist, which other uploads share.
+            contentType = MACRO_WORKBOOK.equalsIgnoreCase(String.valueOf(file.getContentType())) ? XLSX
+                : AllowedDocumentContentTypes.normalizeOrThrow(file.getContentType());
         } catch (IllegalArgumentException e) {
             throw new InvalidPolicyStateException(e.getMessage());
         }
@@ -113,6 +119,13 @@ public class EnrolmentController {
     public EnrolmentSubmissionView getSubmission(@PathVariable String policyNumber,
                                                   @PathVariable UUID submissionId) {
         return enrolmentApi.getSubmission(submissionId);
+    }
+
+    /** What the file will cost before anybody accepts it: the quotation the lender pays on (2026-10-30). */
+    @GetMapping("/credit-life-schemes/{policyNumber}/enrolments/{submissionId}/quotation")
+    @PreAuthorize("@access.can('schemes.view')")
+    public EnrolmentQuotationView quotation(@PathVariable String policyNumber, @PathVariable UUID submissionId) {
+        return enrolmentApi.quotation(submissionId);
     }
 
     @GetMapping("/credit-life-schemes/{policyNumber}/enrolments/{submissionId}/rows")

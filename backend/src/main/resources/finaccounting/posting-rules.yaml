@@ -117,6 +117,30 @@ rules:
     description: An IFRS 9 contract's credit -- nothing was billed to the ledger
     post: false
 
+  # A credit-life lender's premium paid back (2026-10-30): the credit above left it owed on the receivable once the
+  # lender had paid the file; the transfer clears it, out of the account the money left by.
+  - id: PLAT-A18-PAID
+    event: billing.PremiumRefundPaid
+    models: [GMM, VFA]
+    description: Premium paid back to the lender
+    lines:
+      - {dr: "2122", amount: amount, movement: PRM_REN}
+      - {cr: BANK, amount: amount}
+
+  - id: PLAT-A18-PAA-PAID
+    event: billing.PremiumRefundPaid
+    models: [PAA]
+    description: PAA premium paid back to the lender
+    lines:
+      - {dr: "2142", amount: amount, movement: PRM_REN}
+      - {cr: BANK, amount: amount}
+
+  - id: G-REFUND-PAID
+    event: billing.PremiumRefundPaid
+    models: [IFRS9]
+    description: An IFRS 9 contract's refund -- nothing was billed to the ledger
+    post: false
+
   - id: PLAT-A06-UP
     event: billing.PremiumInvoiceIncreased
     models: [GMM, VFA]

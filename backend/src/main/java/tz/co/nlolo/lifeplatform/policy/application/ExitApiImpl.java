@@ -12,7 +12,8 @@ import tz.co.nlolo.lifeplatform.policy.domain.ExitSubmission;
 import tz.co.nlolo.lifeplatform.policy.domain.ExitSubmissionRow;
 import tz.co.nlolo.lifeplatform.policy.domain.GroupScheme;
 import tz.co.nlolo.lifeplatform.policy.domain.PolicyMember;
-import tz.co.nlolo.lifeplatform.policy.domain.LenderTemplateXlsx;
+import tz.co.nlolo.lifeplatform.policy.domain.CreditLifeExitsTemplateXlsx;
+import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.XlsxToCsv;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.ExitSubmissionRepository;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.ExitSubmissionRowRepository;
@@ -54,18 +55,20 @@ public class ExitApiImpl implements ExitApi {
     private final PolicyMemberRepository policyMemberRepository;
     private final PolicyApi policyApi;
     private final DocumentApi documentApi;
+    private final PartyApi partyApi;
 
     public ExitApiImpl(ExitSubmissionRepository submissionRepository,
                         ExitSubmissionRowRepository rowRepository,
                         GroupSchemeRepository groupSchemeRepository,
                         PolicyMemberRepository policyMemberRepository,
-                        PolicyApi policyApi, DocumentApi documentApi) {
+                        PolicyApi policyApi, DocumentApi documentApi, PartyApi partyApi) {
         this.submissionRepository = submissionRepository;
         this.rowRepository = rowRepository;
         this.groupSchemeRepository = groupSchemeRepository;
         this.policyMemberRepository = policyMemberRepository;
         this.policyApi = policyApi;
         this.documentApi = documentApi;
+        this.partyApi = partyApi;
     }
 
     @Override
@@ -99,9 +102,16 @@ public class ExitApiImpl implements ExitApi {
 
         ExitCsvParser.ParsedExits parsed;
         try {
+            // The loans' table wherever it is: below the title of our template, or on whichever sheet of the lender's
+            // own workbook carries it.
             String csv = workbook
-                ? XlsxToCsv.convert(new ByteArrayInputStream(bytes))
+                ? XlsxToCsv.convertSchedule(new ByteArrayInputStream(bytes), ExitCsvParser::looksLikeHeader)
                 : new String(bytes, StandardCharsets.UTF_8);
+            if (csv == null) {
+                throw new ExitCsvParser.MalformedExitsFileException("No sheet in this workbook has the column"
+                    + " headings for loans that ended: the loan account number, the date the loan ended and why."
+                    + " Use the scheme's loans-ending template.");
+            }
             parsed = ExitCsvParser.parse(new java.io.StringReader(csv));
         } catch (ExitCsvParser.MalformedExitsFileException e) {
             // A FILE problem. Nothing is written and nothing is stored: there would be nothing
@@ -130,7 +140,8 @@ public class ExitApiImpl implements ExitApi {
         for (ExitCsvParser.RowError error : parsed.errors()) {
             rows.add(ExitSubmissionRow.rejected(tenantId, submissionId, error.lineNumber(),
                 error.memberReference(), error.reason(),
-                error.detail() + " " + ExitReportRenderer.STILL_ON_COVER));
+                error.detail() + " " + ExitReportRenderer.STILL_ON_COVER)
+                .forLoanAccount(error.loanAccountNumber()));
         }
 
         // References already claimed by an ACTIONABLE row of this file, accumulated AS the rows
@@ -144,7 +155,8 @@ public class ExitApiImpl implements ExitApi {
         Set<String> claimed = new HashSet<>();
 
         for (ExitRow row : parsed.rows()) {
-            ExitSubmissionRow judged = judge(row, submissionId, tenantId, policyNumber, claimed);
+            ExitSubmissionRow judged = judge(row, submissionId, tenantId, policyNumber, claimed)
+                .forLoanAccount(row.loanAccountNumber());
             if (!judged.isRejected()) {
                 claimed.add(judged.getMemberReference());
             }
@@ -166,28 +178,47 @@ public class ExitApiImpl implements ExitApi {
      */
     private ExitSubmissionRow judge(ExitRow row, UUID submissionId, UUID tenantId,
                                      String policyNumber, Set<String> claimed) {
-        Optional<PolicyMember> found = policyMemberRepository
-            .findByTenantIdAndMemberReference(tenantId, row.memberReference());
-
-        // Not merely "does this reference exist" but "is it on THIS scheme". Two lenders in one
-        // tenant, and a reference from the other one names a real member we must not touch.
-        if (found.isEmpty() || !found.get().getPolicyNumber().equals(policyNumber)) {
-            return ExitSubmissionRow.rejected(tenantId, submissionId, row.lineNumber(),
-                row.memberReference(), ExitRejection.UNKNOWN_MEMBER_REFERENCE,
-                "No borrower on this scheme carries the reference " + row.memberReference()
-                    + ". Check it against the enrolment report that issued it. "
-                    + ExitReportRenderer.STILL_ON_COVER);
+        Optional<PolicyMember> found;
+        if (row.memberReference() != null) {
+            // Not merely "does this reference exist" but "is it on THIS scheme". Two lenders in one
+            // tenant, and a reference from the other one names a real member we must not touch.
+            found = policyMemberRepository.findByTenantIdAndMemberReference(tenantId, row.memberReference())
+                .filter(m -> m.getPolicyNumber().equals(policyNumber));
+            if (found.isEmpty()) {
+                return ExitSubmissionRow.rejected(tenantId, submissionId, row.lineNumber(),
+                    row.memberReference(), ExitRejection.UNKNOWN_MEMBER_REFERENCE,
+                    "No borrower on this scheme carries the reference " + row.memberReference()
+                        + ". Check it against the enrolment report that issued it. "
+                        + ExitReportRenderer.STILL_ON_COVER);
+            }
+        } else {
+            // The lender's own number for the loan (V44). At most one loan with it is on cover; one that already
+            // left is found too, so the report can say so rather than call the number unknown.
+            List<PolicyMember> loans = policyMemberRepository.findByTenantIdAndPolicyNumberAndLoanAccountNumber(
+                tenantId, policyNumber, row.loanAccountNumber());
+            found = loans.stream().filter(m -> !MemberStatus.EXITED.name().equals(m.getStatus())).findFirst()
+                .or(() -> loans.stream().findFirst());
+            if (found.isEmpty()) {
+                return ExitSubmissionRow.rejected(tenantId, submissionId, row.lineNumber(),
+                    null, ExitRejection.UNKNOWN_LOAN_ACCOUNT,
+                    "No loan on this scheme carries the account number " + row.loanAccountNumber()
+                        + ". Check it against the file that enrolled the loan. "
+                        + ExitReportRenderer.STILL_ON_COVER);
+            }
         }
 
         PolicyMember member = found.get();
+        String reference = member.getMemberReference();
+        // The loan as the lender named it, so the report reads beside their file.
+        String loan = row.memberReference() != null ? row.memberReference() : "Loan account " + row.loanAccountNumber();
 
         if (MemberStatus.EXITED.name().equals(member.getStatus())) {
             // Already off cover, by an earlier file or by a settled claim. Not an error the
             // lender caused, and exitMember would silently no-op -- but reporting it is how
             // they learn their file and our roll disagree.
             return ExitSubmissionRow.rejected(tenantId, submissionId, row.lineNumber(),
-                row.memberReference(), ExitRejection.ALREADY_EXITED,
-                row.memberReference() + " already left cover on " + member.getLeftOn()
+                reference, ExitRejection.ALREADY_EXITED,
+                loan + " already left cover on " + member.getLeftOn()
                     + " (" + member.getExitReason() + "). No further action was taken.");
         }
 
@@ -196,27 +227,28 @@ public class ExitApiImpl implements ExitApi {
             // leaves cover. Worded for the LENDER, who reads this on the report: in practice this
             // is them reporting a death we already know about, by the only channel they have.
             return ExitSubmissionRow.rejected(tenantId, submissionId, row.lineNumber(),
-                row.memberReference(), ExitRejection.DEATH_CLAIM_IN_PROGRESS,
-                row.memberReference() + " has a death claim in progress. They come off cover when the"
+                reference, ExitRejection.DEATH_CLAIM_IN_PROGRESS,
+                loan + " has a death claim in progress. They come off cover when the"
                     + " claim is paid, dated to the date of death, so no exit is needed for this loan.");
         }
 
-        if (claimed.contains(row.memberReference())) {
+        // By the member it resolved to: one row may name a loan by its reference and another by its account.
+        if (claimed.contains(reference)) {
             return ExitSubmissionRow.rejected(tenantId, submissionId, row.lineNumber(),
-                row.memberReference(), ExitRejection.DUPLICATE_REFERENCE,
-                row.memberReference() + " is already being exited by an earlier row of this file. "
+                reference, ExitRejection.DUPLICATE_REFERENCE,
+                loan + " is already being exited by an earlier row of this file. "
                     + ExitReportRenderer.STILL_ON_COVER);
         }
 
         if (row.exitDate().isBefore(member.getJoinedOn())) {
             return ExitSubmissionRow.rejected(tenantId, submissionId, row.lineNumber(),
-                row.memberReference(), ExitRejection.EXIT_BEFORE_COVER_STARTED,
-                "exit_date " + row.exitDate() + " is before cover started on "
+                reference, ExitRejection.EXIT_BEFORE_COVER_STARTED,
+                "The loan ended on " + row.exitDate() + ", before cover started on "
                     + member.getJoinedOn() + ". " + ExitReportRenderer.STILL_ON_COVER);
         }
 
         return ExitSubmissionRow.actionable(tenantId, submissionId, row.lineNumber(),
-            row.memberReference(), row.exitDate(), row.exitReason(),
+            reference, row.exitDate(), row.exitReason(),
             row.outstandingBalanceAtExit());
     }
 
@@ -303,7 +335,7 @@ public class ExitApiImpl implements ExitApi {
         return rowRepository.findByTenantIdAndSubmissionIdOrderByLineNumberAsc(tenantId, submissionId)
             .stream()
             .map(row -> new ExitRowView(row.getLineNumber(), row.getMemberReference(),
-                row.getExitDate(), row.getExitReason(), row.getOutstandingBalanceAtExit(),
+                row.getLoanAccountNumber(), row.getExitDate(), row.getExitReason(), row.getOutstandingBalanceAtExit(),
                 row.getOutcome(), row.getReasonCode(), row.getReason(), row.getPolicyMemberId(),
                 currency))
             .toList();
@@ -319,27 +351,21 @@ public class ExitApiImpl implements ExitApi {
     @Transactional(readOnly = true)
     public String renderTemplate(String policyNumber) {
         /*
-         * An example reference the sequence can NEVER have minted: member references run from
-         * 000001, so 000000 names nobody on any scheme, ever.
-         *
-         * That is the whole safety argument, and it is why this template differs from the
-         * enrolment one. There a REAL borrower can be shown, because returning the row unchanged
-         * duplicates a covered loan and is refused. Here a real reference with a real date would
-         * take a living borrower off cover, refund their premium and claw back the commission --
-         * and every one of those is a correct-looking consequence of a row nobody meant to send.
+         * The header alone, and no example row. A loan is named by the lender's own account number now (V44), and
+         * no example account can be guaranteed to name nobody: a row returned unchanged would take a living borrower
+         * off cover, refund their premium and claw back the commission -- every one of them a correct-looking
+         * consequence of a row nobody meant to send.
          */
-        String example = "CL-" + policyNumber.replace("GRP-", "") + "-000000";
-        return ExitCsvParser.templateCsv()
-            + String.join(",", example, LocalDate.now().toString(), "SETTLED_EARLY", "") + "\n";
+        return ExitCsvParser.templateCsv();
     }
 
     @Override
     @Transactional(readOnly = true)
     public byte[] renderTemplateXlsx(String policyNumber) {
-        // The same synthetic reference as the CSV above, so the two templates cannot describe
-        // different things -- and neither of them names a real member.
-        return LenderTemplateXlsx.exits(
-            "CL-" + policyNumber.replace("GRP-", "") + "-000000", LocalDate.now());
+        GroupScheme scheme = findScheme(policyNumber, TenantContext.get());
+        UUID lender = policyApi.getPolicy(policyNumber).policyholderPartyId();
+        return CreditLifeExitsTemplateXlsx.build(lender == null ? null : partyApi.getPartyDetail(lender).displayName(),
+            policyNumber, scheme.getCurrency());
     }
 
     private ExitSubmission findSubmission(UUID submissionId, UUID tenantId) {

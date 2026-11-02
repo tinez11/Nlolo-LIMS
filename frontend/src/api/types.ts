@@ -84,6 +84,12 @@ export type EnrolmentSubmissionView = PolicyComponents['schemas']['EnrolmentSubm
 export type EnrolmentRowView = PolicyComponents['schemas']['EnrolmentRowView'];
 export type ExitSubmissionView = PolicyComponents['schemas']['ExitSubmissionView'];
 export type ExitRowView = PolicyComponents['schemas']['ExitRowView'];
+/** A lender's file priced before acceptance (2026-10-30). Every amount is a decimal string. */
+export type EnrolmentQuotationView = PolicyComponents['schemas']['EnrolmentQuotationView'];
+/** One year's agreement with a credit-life scheme's lender (policy V43). */
+export type CreditLifeAgreement = PolicyComponents['schemas']['CreditLifeAgreement'];
+export type CreditLifeAgreementInput = PolicyComponents['schemas']['CreditLifeAgreementInput'];
+export type CreditLifePremiumBasis = CreditLifeAgreement['premiumBasis'];
 /** PENDING / ACCEPTED / WITHDRAWN. PENDING is the one that matters: it means NOTHING has happened yet. */
 export type SubmissionStatus = NonNullable<EnrolmentSubmissionView['status']>;
 export type MemberStatus = NonNullable<PolicyMemberView['status']>;

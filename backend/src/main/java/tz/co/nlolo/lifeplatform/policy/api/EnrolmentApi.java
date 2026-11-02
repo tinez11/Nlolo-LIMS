@@ -49,6 +49,13 @@ public interface EnrolmentApi {
     List<EnrolmentRowView> listRows(UUID submissionId);
 
     /**
+     * What the file will cost, before anybody accepts it (2026-10-30): the borrowers who will be covered, the
+     * premium, the lender's own figure beside it, the lender's commission and the amount to pay. Priced exactly as
+     * acceptance prices it, so the quotation is the invoice.
+     */
+    EnrolmentQuotationView quotation(UUID submissionId);
+
+    /**
      * Every submission this scheme has had, newest first.
      *
      * <p>Exists because every other operation on this interface takes a {@code submissionId} the

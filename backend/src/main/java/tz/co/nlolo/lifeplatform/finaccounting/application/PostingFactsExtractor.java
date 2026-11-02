@@ -41,6 +41,8 @@ final class PostingFactsExtractor {
         Map.entry("billing.PremiumCollected", new EventShape(Set.of(AMOUNT, "levy"), Set.of())),
         Map.entry("billing.InvoiceWaived", amount()),
         Map.entry("billing.PremiumRefundDue", amount()),
+        // A credit-life lender's premium paid back (2026-10-30): the bank side of the refund above.
+        Map.entry("billing.PremiumRefundPaid", amount()),
         Map.entry("billing.PremiumInvoiceIncreased", amount()),
         Map.entry("billing.PremiumInvoiceReduced", amount()),
         // IFRS 17 I3b: money out is two steps (guide B, C, D, H) -- the payable when it is decided, the bank when paid.
@@ -130,6 +132,9 @@ final class PostingFactsExtractor {
                 putIfPresent(attrs, "memberRef", p.get("policyMemberId"));
                 yield List.of(money(type, string(p.get("creditId")), policy, p.get("amount"), today, attrs));
             }
+            // Keyed on the CREDIT, as the refund it pays; the transfer's rail decides the bank account (1130 for EFT).
+            case "billing.PremiumRefundPaid" -> List.of(money(type, string(p.get("creditId")), policy, p.get("amount"),
+                today, paid("CREDIT", p.get("creditId"))));
             // Keyed on the RESTATEMENT: one instalment can be restated more than once.
             case "billing.PremiumInvoiceIncreased", "billing.PremiumInvoiceReduced" -> {
                 Map<String, String> attrs = new HashMap<>(Map.of("refType", "RESTATEMENT"));

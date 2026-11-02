@@ -45,27 +45,27 @@ export function SchemeCoverPanel({ policyNumber, category, groupFuneral }: {
     : `/staff/group-schemes/${encodeURIComponent(policyNumber)}`;
   const listName = creditLife ? 'borrowers and monthly files' : groupFuneral ? 'families' : 'member schedule';
 
+  // One compact row (2026-11-02): the counts and the way to the list, so the policy's figures above stay in view.
   return (
-    <Panel title="Who is covered" subtitle={creditLife ? "The lender's borrowers, enrolled file by file"
-      : groupFuneral ? "The association's members and their families" : "The employer's members"}>
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 px-4 py-3 text-sm sm:grid-cols-3">
-        <div>
-          <dt className="text-xs text-muted-foreground">{creditLife ? 'Borrowers covered' : 'Members'}</dt>
-          <dd className="text-title">{data?.activeMemberCount ?? '—'}</dd>
-        </div>
-        {groupFuneral && (
-          <div>
-            <dt className="text-xs text-muted-foreground">Lives (members and their families)</dt>
-            <dd className="text-title">{lives ?? '—'}</dd>
+    <Panel title="Who is covered">
+      <div className="flex flex-wrap items-center gap-x-8 gap-y-2 px-4 pb-3">
+        <dl className="flex flex-wrap items-baseline gap-x-8 gap-y-1 text-sm">
+          <div className="flex items-baseline gap-2">
+            <dt className="text-xs text-muted-foreground">{creditLife ? 'Borrowers' : 'Members'}</dt>
+            <dd className="font-semibold tabular-nums">{data?.activeMemberCount ?? '—'}</dd>
           </div>
-        )}
-        <div>
-          <dt className="text-xs text-muted-foreground">Total covered</dt>
-          <dd className="text-title">{data ? formatMoney(data.totalCovered) : '—'}</dd>
-        </div>
-      </dl>
-      <div className="px-4 pb-3">
-        <Button asChild size="sm" variant="ghost" className="-ml-2">
+          {groupFuneral && (
+            <div className="flex items-baseline gap-2">
+              <dt className="text-xs text-muted-foreground">Lives</dt>
+              <dd className="font-semibold tabular-nums">{lives ?? '—'}</dd>
+            </div>
+          )}
+          <div className="flex items-baseline gap-2">
+            <dt className="text-xs text-muted-foreground">Total covered</dt>
+            <dd className="font-semibold tabular-nums">{data ? formatMoney(data.totalCovered) : '—'}</dd>
+          </div>
+        </dl>
+        <Button asChild size="sm" variant="outline" className="ml-auto">
           <Link to={to}>Open the {listName}</Link>
         </Button>
       </div>

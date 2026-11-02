@@ -76,15 +76,7 @@ test('the May file invoices the lender exactly what their own sheet says', async
     const agent = await agentResponse.json();
     console.log(`lender agent ${agent.agentId}`);
 
-    // 0.1500, NOT 15. The rate is a FRACTION -- CommissionCalculator does
-    // `premium.multiply(rule.getRate())` -- so a 15 here would accrue 1,665,000 on this file.
-    const plan = await http.post(`${API}/commission-plans`, {
-      headers: { Authorization: `Bearer ${token}` },
-      data: { productId, rules: [{ tierType: 'FIRST_YEAR', rate: '0.1500' }] },
-    });
-    expect(plan.ok(), `plan -> ${plan.status()} ${await plan.text()}`).toBeTruthy();
-
-    // The scheme as Bumaco's terms actually are: 0.6%, charged flat on what was disbursed.
+    // The scheme as the console sets it up: no price of its own.
     const schemeResponse = await http.post(`${API}/group-schemes`, {
       headers: { Authorization: `Bearer ${token}` },
       data: {
@@ -95,20 +87,34 @@ test('the May file invoices the lender exactly what their own sheet says', async
         benefitBasis: 'AMORTISING_LOAN',
         currency: 'TZS',
         openingSchedule: [],
-        premium: { amount: '1.00', currencyCode: 'TZS' },
-        premiumFrequency: 'SINGLE',
         commencementDate: '2026-05-05',
         reasonForManualIssue: 'Bumaco May file, basis verification',
         issuanceBasis: 'MIGRATION',
-        interestMethod: 'FLAT_RATE',
-        repaymentFrequency: 'MONTHLY',
-        premiumRatePercent: '0.6000',
-        premiumBasis: 'FLAT_ON_PRINCIPAL',
       },
     });
     expect(schemeResponse.ok(), `issue -> ${schemeResponse.status()} ${await schemeResponse.text()}`)
       .toBeTruthy();
     const policyNumber = (await schemeResponse.json()).policyNumber as string;
+
+    // Bumaco's year as their terms actually are: 0.6%, charged flat on what was disbursed, and 15% commission to the
+    // lender -- the agreement prices every loan and states the commission (2026-11-01). Their two-month loan is
+    // taken and charged like any other: the agreement's shortest loan is a month.
+    const agreement = await http.post(`${API}/group-schemes/${policyNumber}/agreements`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: {
+        validFrom: '2026-05-05',
+        validTo: '2027-05-04',
+        premiumRatePercent: '0.6',
+        premiumBasis: 'FLAT_ON_PRINCIPAL',
+        minAge: 18,
+        maxAge: 100,
+        minTermMonths: 1,
+        maxTermMonths: 480,
+        commissionPercent: '15',
+        coverIncludesInterest: false,
+      },
+    });
+    expect(agreement.ok(), `agreement -> ${agreement.status()} ${await agreement.text()}`).toBeTruthy();
     console.log(`\nscheme ${policyNumber} at 0.6% FLAT_ON_PRINCIPAL`);
 
     const upload = await http.post(`${API}/credit-life-schemes/${policyNumber}/enrolments`, {
@@ -154,20 +160,23 @@ test('the May file invoices the lender exactly what their own sheet says', async
     /*
      * And the OTHER number on it: 111,000 gross, 16,650 commission, 94,350 net.
      *
-     * The invoice stays GROSS and the commission accrues separately -- the lender owes the whole
+     * The invoice stays GROSS and the commission is paid separately -- the lender owes the whole
      * premium and earns its commission as an agent, which are two movements rather than one net
      * figure. Their sheet nets them, so the insurer's invoice and the lender's remittance advice
      * will not match on their face; that is an accounting shape to agree, not a defect.
+     *
+     * Read off the file's quotation: the commission is earned only once the lender pays the file
+     * (2026-10-30), so nothing has accrued yet.
      */
-    const accruals = await (
-      await http.get(`${API}/commission-accruals?policyNumber=${policyNumber}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+    const quotation = await (
+      await http.get(
+        `${API}/credit-life-schemes/${policyNumber}/enrolments/${submission.submissionId}/quotation`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      )
     ).json();
-    console.log(`accruals: ${JSON.stringify(accruals)}`);
-    const accrued = accruals as { amount: { amount: string } }[];
-    const total = accrued.reduce((sum, a) => sum + Number(a.amount.amount ?? a.amount), 0);
-    expect(total).toBeCloseTo(16650, 2);
+    console.log(`quotation: ${JSON.stringify(quotation)}`);
+    expect(quotation.commission).toBe('16650.00');
+    expect(quotation.amountToPay).toBe('111000.00');
   } finally {
     await http.dispose();
   }

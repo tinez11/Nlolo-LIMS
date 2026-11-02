@@ -1,9 +1,11 @@
-import { AlertTriangle, Check, Download, Upload, X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { ChevronDown, Download, FileSpreadsheet, Upload } from 'lucide-react';
+import { useRef, useState, type ReactNode } from 'react';
 import type { SubmissionStatus } from '@/api/types';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Panel } from '@/components/Panel';
+import { StaffName } from '@/components/StaffName';
 import { StatusBadge } from '@/components/StatusBadge';
+import { InlineError } from '@/components/InlineError';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
@@ -12,26 +14,15 @@ import type { ApiError } from '@/lib/apiError';
 import { acceptAttribute, submissionUploadSchema, type SubmissionKind } from './submissionUploadForm';
 
 /**
- * One lender's file, whichever direction it runs in.
+ * A lender's monthly files, whichever direction they run in (simplified 2026-11-02).
  *
- * The enrolment and exits views are structurally identical and differ in exactly one field —
- * `enrolledCount` where the other has `exitedCount` — so this panel takes the noun and the
- * accessor rather than being written twice. Anything that is genuinely different between the two
- * (what acceptance *does*, which formats are allowed) arrives as a prop, so the next divergence
- * between them is a new prop rather than a fork.
- *
- * **The composition is built around one sentence: a PENDING submission has changed nothing.**
- * The counts row therefore leads with what was refused rather than what succeeded, the accepted
- * count is rendered as an intention until acceptance rather than an achievement, and the act that
- * changes cover is a confirmation with its consequence spelled out, never a bare button.
+ * One toolbar -- upload, the template, what goes in it -- then the file waiting for a decision, if there is one, and
+ * the files before it. Each file says what it did as a bar and two counts rather than a paragraph: how many rows went
+ * through and how many were refused. A PENDING file has changed nothing, so its count reads "would be"; the act that
+ * changes cover is a confirmation with its consequence in the file's own figures.
  */
 
-/**
- * The busy key for the blank file, which has no submission id of its own.
- *
- * A uuid can never collide with it, which is what lets one `downloading` slot serve both the
- * template and every report on the panel.
- */
+/** Busy keys for the blank files, which have no submission id of their own. */
 const TEMPLATE = 'template';
 const TEMPLATE_CSV = 'template-csv';
 
@@ -51,7 +42,6 @@ export interface SubmissionRow {
 interface Props {
   kind: SubmissionKind;
   title: string;
-  subtitle: string;
   /** "enrolled" / "exited" — the verb this file performs on acceptance. */
   appliedNoun: string;
   submissions: SubmissionRow[];
@@ -66,28 +56,27 @@ interface Props {
   onAccept: (submissionId: string) => void;
   onWithdraw: (submissionId: string) => void;
   deciding: boolean;
+  /** Why the last accept or withdraw was refused -- the uploader accepting their own file, most often. */
+  decisionError?: ApiError | null;
   /** Fetches the lender's report and saves it. Rejects if the request fails. */
   onDownloadReport: (submissionId: string) => Promise<void>;
-  /** Fetches the template to send the lender. Spreadsheet where there is one, CSV otherwise. */
+  /** Fetches the spreadsheet template to send the lender. */
   onDownloadTemplate: () => Promise<void>;
-  /**
-   * The CSV form of the same template, offered second.
-   *
-   * Absent on the exits panel, which has only a CSV. Present on enrolment, where the spreadsheet
-   * leads because a CSV cannot survive Excel — see `downloadEnrolmentTemplateXlsx` — and the CSV
-   * stays for a lender whose loan system exports one and never opens it in a spreadsheet.
-   */
+  /** The CSV form of the same template, offered second and quieter: Excel rewrites the dates in a CSV. */
   onDownloadTemplateCsv?: () => Promise<void>;
-  /** The columns the lender must fill, and the formats. Rendered beside the template. */
-  columnGuide: React.ReactNode;
-  /** Rendered under the selected submission: the rows and their reasons. */
-  children?: React.ReactNode;
+  /** The columns the lender must fill. Folded away until asked for. */
+  columnGuide: ReactNode;
+  /** What accepting this file does, in its real figures, where the page has priced it. */
+  acceptConsequence?: (submissionId: string) => ReactNode | null;
+  /** Why no file can be sent yet -- a credit-life scheme takes none until its yearly agreement prices it. */
+  blockedBy?: string | null;
+  /** Rendered under the open file: its price and its rows. */
+  children?: ReactNode;
 }
 
 export function SubmissionsPanel({
   kind,
   title,
-  subtitle,
   appliedNoun,
   submissions,
   loading,
@@ -101,26 +90,26 @@ export function SubmissionsPanel({
   onAccept,
   onWithdraw,
   deciding,
+  decisionError = null,
   onDownloadReport,
   onDownloadTemplate,
   onDownloadTemplateCsv,
   columnGuide,
+  acceptConsequence,
+  blockedBy = null,
   children,
 }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [fileError, setFileError] = useState<string | null>(null);
-  // Which report is in flight, and whether the last one failed. A download that silently does
-  // nothing is the worst available outcome here -- the person assumes they have the file.
+  // A download that silently does nothing is the worst outcome here -- the person assumes they have the file.
   const [downloading, setDownloading] = useState<string | null>(null);
-  const [reportError, setReportError] = useState<string | null>(null);
-  // The format guide is collapsed by default: somebody running this month's file already knows
-  // the columns, and somebody onboarding a lender needs them once.
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
-  const [confirming, setConfirming] = useState<{ id: string; act: 'accept' | 'withdraw' } | null>(
-    null,
-  );
+  const [confirming, setConfirming] = useState<{ id: string; act: 'accept' | 'withdraw' } | null>(null);
 
   const pending = submissions.find((s) => s.status === 'PENDING') ?? null;
+  const earlier = submissions.filter((s) => s !== pending);
+  const fileWord = kind === 'exits' ? 'loans-ending file' : 'joining file';
 
   function chooseFile(file: File | undefined) {
     if (!file) return;
@@ -133,29 +122,36 @@ export function SubmissionsPanel({
     onUpload(file);
   }
 
-  /**
-   * One busy slot and one error line for every file this panel hands out.
-   *
-   * `key` is a submission id for a report and the TEMPLATE sentinel for the blank file, so two
-   * downloads cannot both claim the spinner and a failure lands under the thing that failed.
-   */
   async function download(key: string, fetch: () => Promise<void>, what: string) {
-    setReportError(null);
+    setDownloadError(null);
     setDownloading(key);
     try {
       await fetch();
     } catch {
-      setReportError(`That ${what} could not be downloaded. Try again, or reload the page.`);
+      setDownloadError(`The ${what} could not be downloaded. Try again.`);
     } finally {
       setDownloading(null);
     }
   }
 
+  const reportButton = (s: SubmissionRow) => (
+    // A button, not a link: the report is behind the same bearer token as the rest of the page.
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      disabled={downloading === s.submissionId}
+      onClick={() => void download(s.submissionId, () => onDownloadReport(s.submissionId), 'report')}
+    >
+      <Download className="size-4" aria-hidden />
+      {downloading === s.submissionId ? 'Preparing…' : 'Report for the lender'}
+    </Button>
+  );
+
   return (
-    <Panel title={title} subtitle={subtitle} emphasis={Boolean(pending)}>
-      {/* The upload bar. Disabled while a file is already awaiting a decision, because the
-          scheme permits only one in flight -- saying so here is kinder than a 409 afterwards. */}
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
+    <Panel title={title}>
+      {/* The toolbar: send a file, give the lender the blank one, see its columns. */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
         <input
           ref={fileInput}
           type="file"
@@ -168,74 +164,69 @@ export function SubmissionsPanel({
         />
         <Button
           type="button"
-          variant="outline"
           size="sm"
-          disabled={uploading || Boolean(pending)}
+          variant={pending || blockedBy ? 'outline' : 'primary'}
+          disabled={uploading || Boolean(pending) || Boolean(blockedBy)}
           onClick={() => fileInput.current?.click()}
         >
           <Upload className="size-4" aria-hidden />
-          {uploading ? 'Uploading…' : `Upload ${kind === 'exits' ? 'exits file' : 'schedule'}`}
+          {uploading ? 'Uploading…' : `Upload ${fileWord}`}
         </Button>
-        <p className="text-xs text-muted-foreground">
-          {pending
-            ? 'A file is already waiting for a decision. Accept or withdraw it first.'
-            : kind === 'exits'
-              ? 'CSV. Takes nobody off cover until someone accepts it.'
-              : 'CSV or XLSX. Enrols nobody until someone accepts it.'}
-        </p>
-      </div>
-
-      {/* THE BLANK FILE THE LENDER FILLS IN, and the columns spelled out beside it.
-          The platform used to refuse a malformed file with "use the template at
-          credit-life-enrolment-sample.csv" and serve no such thing -- that file exists only in
-          the repository, so the format reached a lender only because somebody described it in an
-          email, and a column nobody agreed on is a file that bounces. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-2">
-        <button
+        <Button
           type="button"
-          className="text-xs underline underline-offset-2 hover:text-foreground disabled:opacity-50"
-          disabled={downloading === TEMPLATE}
+          size="sm"
+          variant="outline"
+          disabled={downloading === TEMPLATE || Boolean(blockedBy)}
           onClick={() => void download(TEMPLATE, onDownloadTemplate, 'template')}
         >
-          <Download className="mr-1 inline size-3.5" aria-hidden />
-          {downloading === TEMPLATE
-            ? 'Preparing the template…'
-            : `${kind === 'exits' ? 'Exits file' : 'Schedule'} template to send the lender`}
-        </button>
-        {/* The CSV second, and quieter. The spreadsheet is the one to send: a CSV opened in Excel
-            comes back with every date rewritten, which refused two real files in a row. */}
+          <FileSpreadsheet className="size-4" aria-hidden />
+          {downloading === TEMPLATE ? 'Preparing…' : 'Download template'}
+        </Button>
         {onDownloadTemplateCsv && (
           <button
             type="button"
-            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-50"
-            disabled={downloading === TEMPLATE_CSV}
+            className="px-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-50"
+            disabled={downloading === TEMPLATE_CSV || Boolean(blockedBy)}
             onClick={() => void download(TEMPLATE_CSV, onDownloadTemplateCsv, 'template')}
           >
-            {downloading === TEMPLATE_CSV ? 'Preparing…' : 'or as a CSV'}
+            {downloading === TEMPLATE_CSV ? 'Preparing…' : 'CSV'}
           </button>
         )}
-        <button
+        <Button
           type="button"
-          className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          size="sm"
+          variant="ghost"
+          className="ml-auto"
           aria-expanded={guideOpen}
           onClick={() => setGuideOpen((open) => !open)}
         >
-          {guideOpen ? 'Hide the columns' : 'What goes in it'}
-        </button>
+          What goes in it
+          <ChevronDown className={cn('size-4 transition-transform', guideOpen && 'rotate-180')} aria-hidden />
+        </Button>
       </div>
+      {(blockedBy || pending) && (
+        <p className="border-b border-border bg-status-warning-bg px-4 py-2 text-sm text-status-warning-fg">
+          {blockedBy ?? 'Accept or withdraw the file below before sending another.'}
+        </p>
+      )}
       {guideOpen && <div className="border-b border-border px-4 py-3">{columnGuide}</div>}
 
-      {fileError && (
-        <p role="alert" className="border-b border-border px-4 py-2 text-xs text-status-danger-fg">
-          {fileError}
+      {(fileError || downloadError) && (
+        <p role="alert" className="border-b border-border px-4 py-2 text-sm text-status-danger-fg">
+          {fileError ?? downloadError}
         </p>
       )}
-      {reportError && (
-        <p role="alert" className="border-b border-border px-4 py-2 text-xs text-status-danger-fg">
-          {reportError}
-        </p>
+      {/* InlineError: these are refused ACTS, and their 409s carry the server's reason. */}
+      {uploadError && (
+        <div className="border-b border-border px-4 py-3">
+          <InlineError error={uploadError} lead="The file was not uploaded" />
+        </div>
       )}
-      {uploadError && <ErrorPanel error={uploadError} />}
+      {decisionError && (
+        <div className="border-b border-border px-4 py-3">
+          <InlineError error={decisionError} lead="The file was not decided" />
+        </div>
+      )}
 
       {loading && <TableSkeleton rows={3} columns={4} />}
       {error && !loading && <ErrorPanel error={error} onRetry={onRetry} />}
@@ -245,264 +236,213 @@ export function SubmissionsPanel({
           title="No files yet"
           description={
             kind === 'exits'
-              ? "Upload the lender's monthly exits file to take repaid loans off cover."
-              : "Upload the lender's schedule to put borrowers on cover."
+              ? 'Upload the lender’s loans-ending file to take finished loans off cover.'
+              : 'Upload the lender’s joining file to put borrowers on cover.'
           }
         />
       )}
 
-      {!loading && !error && submissions.length > 0 && (
-        <ul className="divide-y divide-border">
-          {submissions.map((s) => {
-            const selected = s.submissionId === selectedId;
-            const isPending = s.status === 'PENDING';
+      {/* THE FILE WAITING FOR A DECISION, first and open: it blocks the next upload and covers nobody yet. */}
+      {!loading && !error && pending && (
+        <section aria-label="Waiting for acceptance" className="border-b border-border">
+          <div className="space-y-3 bg-status-pending-bg/40 px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="flex flex-wrap items-center gap-2">
+                  <span className="truncate text-sm font-semibold">{pending.fileName}</span>
+                  <StatusBadge kind="submission" value={pending.status} />
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Sent {formatInstant(pending.submittedAt)} by <StaffName subject={pending.submittedBy} />
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="primary"
+                  disabled={deciding}
+                  onClick={() => setConfirming({ id: pending.submissionId, act: 'accept' })}
+                >
+                  Accept
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={deciding}
+                  onClick={() => setConfirming({ id: pending.submissionId, act: 'withdraw' })}
+                >
+                  Withdraw
+                </Button>
+              </div>
+            </div>
+            <Outcome row={pending} appliedNoun={appliedNoun} />
+            <p className="text-sm text-status-pending-fg">
+              Nobody is {appliedNoun} until a second person accepts this file.
+            </p>
+            <div className="-ml-3">{reportButton(pending)}</div>
+            {confirming?.id === pending.submissionId && (
+              <ConfirmAct
+                heading={confirming.act === 'accept' ? 'Accept this file?' : 'Withdraw this file?'}
+                consequence={
+                  confirming.act === 'accept' ? (
+                    acceptConsequence?.(confirming.id) ?? (
+                      <>
+                        The rows that passed are <strong>{appliedNoun}</strong>. Refused rows are not, and the report
+                        tells the lender which.
+                      </>
+                    )
+                  ) : (
+                    <>Nothing on this file takes effect, and a corrected file can be sent.</>
+                  )
+                }
+                reversal={
+                  confirming.act === 'accept'
+                    ? kind === 'exits'
+                      ? 'To undo an exit, enrol the borrower again on a later file.'
+                      : 'To undo an enrolment, exit the borrower on a later file.'
+                    : 'A withdrawn file cannot be accepted later; upload the corrected file instead.'
+                }
+                confirmLabel={confirming.act === 'accept' ? 'Accept' : 'Withdraw'}
+                tone={confirming.act === 'accept' ? 'primary' : 'danger'}
+                busy={deciding}
+                onConfirm={() => {
+                  if (confirming.act === 'accept') onAccept(confirming.id);
+                  else onWithdraw(confirming.id);
+                  setConfirming(null);
+                }}
+                onCancel={() => setConfirming(null)}
+              />
+            )}
+          </div>
+          {selectedId === pending.submissionId ? (
+            children
+          ) : (
+            <button
+              type="button"
+              className="w-full border-t border-border px-4 py-2 text-left text-sm underline underline-offset-2 hover:bg-hover"
+              onClick={() => onSelect(pending.submissionId)}
+            >
+              Show the price and every row
+            </button>
+          )}
+        </section>
+      )}
+
+      {/* THE FILES BEFORE IT: one line each, opened on a click. Withdrawn files stay, dimmed: they are the record of
+          what the lender sent and what was refused. */}
+      {!loading && !error && earlier.length > 0 && (
+        <ul className="divide-y divide-border" aria-label={pending ? 'Earlier files' : 'Files'}>
+          {earlier.map((s) => {
+            const open = s.submissionId === selectedId;
             return (
               <li key={s.submissionId}>
                 <div
                   className={cn(
-                    'px-4 py-3',
-                    selected && 'bg-selected',
-                    !selected && 'hover:bg-hover',
-                    // Dimmed, not hidden. A file that took effect and a file that did not should
-                    // not read with the same weight in a list somebody scans -- but it is still
-                    // a record, and it opens on a click like any other.
-                    s.status === 'WITHDRAWN' && !selected && 'opacity-60',
+                    'grid grid-cols-1 items-center gap-x-4 gap-y-2 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_16rem_auto]',
+                    open ? 'bg-selected' : 'hover:bg-hover',
+                    s.status === 'WITHDRAWN' && !open && 'opacity-60',
                   )}
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <button
-                      type="button"
-                      className="min-w-0 flex-1 text-left"
-                      aria-expanded={selected}
-                      onClick={() => onSelect(selected ? null : s.submissionId)}
-                    >
+                  <button
+                    type="button"
+                    className="flex min-w-0 items-center gap-2 text-left"
+                    aria-expanded={open}
+                    onClick={() => onSelect(open ? null : s.submissionId)}
+                  >
+                    <ChevronDown
+                      className={cn('size-4 shrink-0 text-muted-foreground transition-transform', !open && '-rotate-90')}
+                      aria-hidden
+                    />
+                    <span className="min-w-0">
                       <span className="flex flex-wrap items-center gap-2">
                         <span className="truncate text-sm font-medium">{s.fileName}</span>
                         <StatusBadge kind="submission" value={s.status} />
                       </span>
-                      <span className="mt-1 block text-xs text-muted-foreground">
-                        {s.rowCount} {s.rowCount === 1 ? 'row' : 'rows'} ·{' '}
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
                         {formatInstant(s.submittedAt)}
                       </span>
-                      <Handlers submittedBy={s.submittedBy} acceptedBy={s.acceptedBy ?? null} />
-                    </button>
-
-                    {isPending && (
-                      <div className="flex shrink-0 gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={deciding}
-                          onClick={() => setConfirming({ id: s.submissionId, act: 'accept' })}
-                        >
-                          <Check className="size-4" aria-hidden />
-                          Accept
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={deciding}
-                          onClick={() => setConfirming({ id: s.submissionId, act: 'withdraw' })}
-                        >
-                          <X className="size-4" aria-hidden />
-                          Withdraw
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* The counts. Refused leads, because a refused row is a person without
-                      insurance their lender may believe is covered -- it is the output of an
-                      upload, not an error beside it. */}
-                  <dl className="mt-2 flex flex-wrap items-baseline gap-x-6 gap-y-1">
-                    <div className="flex items-baseline gap-1.5">
-                      <dt className="text-xs text-muted-foreground">Refused</dt>
-                      <dd
-                        className={cn(
-                          'text-sm font-semibold tabular-nums',
-                          s.rejectedCount > 0 && 'text-status-danger-fg',
-                        )}
-                      >
-                        {s.rejectedCount}
-                      </dd>
-                      {s.rejectedCount > 0 && (
-                        <AlertTriangle className="size-3.5 text-status-danger-fg" aria-hidden />
-                      )}
-                      {/* A count on its own does not tell anybody anything they can act on. The
-                          reasons are per row and live in the table below, so when a file with
-                          refusals is collapsed this says so and opens it -- rather than leaving
-                          somebody to discover that the number was clickable. */}
-                      {s.rejectedCount > 0 && !selected && (
-                        <button
-                          type="button"
-                          className="text-xs text-status-danger-fg underline underline-offset-2"
-                          onClick={() => onSelect(s.submissionId)}
-                        >
-                          See why
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex items-baseline gap-1.5">
-                      <dt className="text-xs text-muted-foreground">
-                        {isPending
-                          ? `Would be ${appliedNoun}`
-                          : appliedNoun.charAt(0).toUpperCase() + appliedNoun.slice(1)}
-                      </dt>
-                      <dd className="text-sm font-semibold tabular-nums">{s.appliedCount}</dd>
-                    </div>
-                    {/* A button, not a link. The report is behind the same bearer token as
-                        everything else on this page, and an anchor carries none -- see
-                        `downloadEnrolmentReport` for what that actually produced. */}
-                    <button
-                      type="button"
-                      className="text-xs underline underline-offset-2 hover:text-foreground disabled:opacity-50"
-                      disabled={downloading === s.submissionId}
-                      onClick={() =>
-                        void download(s.submissionId, () => onDownloadReport(s.submissionId), 'report')
-                      }
-                    >
-                      <Download className="mr-1 inline size-3.5" aria-hidden />
-                      {downloading === s.submissionId
-                        ? 'Preparing the report…'
-                        : 'Report for the lender'}
-                    </button>
-                  </dl>
-
-                  {isPending && (
-                    <p className="mt-2 text-xs text-status-pending-fg">
-                      Nothing has happened yet. {s.rowCount}{' '}
-                      {s.rowCount === 1 ? 'row was' : 'rows were'} judged and recorded; a second
-                      person must accept this file before anyone is {appliedNoun}.
-                    </p>
-                  )}
-
-                  {/* WHY A WITHDRAWN FILE IS STILL HERE, said rather than left to be inferred.
-                      It changed nothing, so it is easy to read as clutter worth deleting -- and
-                      deleting it would throw away the only record that the lender sent that file
-                      and that these borrowers were judged. The rejection report for it exists and
-                      may already have been sent; if a refused borrower later dies uninsured, this
-                      row and its reasons are the evidence of what the lender was told and when.
-                      Kept, stated, and out of the way. */}
-                  {s.status === 'WITHDRAWN' && (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Nothing on this file took effect. Kept as the record of what the lender sent
-                      and what was refused &mdash; the report for it still stands.
-                    </p>
-                  )}
-                  {/* THE CONFIRMATION LIVES IN THE ROW, under the button that armed it.
-
-                      It used to render after the whole list, which put it below the expanded rows
-                      table of whichever file was open -- and the newest file opens by itself. So
-                      clicking Withdraw scrolled nothing, changed nothing visible, and read as a
-                      dead button; the only way to find the confirmation was to scroll past every
-                      row of the file. A person with one bad file and no way to clear it is stuck
-                      on a scheme that accepts only one submission at a time.
-
-                      Still not inside the button's own flex row: a heading, a consequence, a
-                      reversal and two buttons do not fit beside a right-aligned pair, which is
-                      the mistake the field-receipts queue records making. */}
-                  {confirming?.id === s.submissionId && (
-                    <div className="mt-3">
-                      <ConfirmAct
-                        heading={confirming.act === 'accept' ? 'Accept this file?' : 'Withdraw this file?'}
-                        consequence={
-                          confirming.act === 'accept' ? (
-                            <>
-                              The rows that passed will be <strong>{appliedNoun}</strong>. Refused
-                              rows are not, and the lender learns which from the report.
-                            </>
-                          ) : (
-                            <>
-                              Nothing on this file takes effect, and the scheme is free to receive a
-                              corrected one.
-                            </>
-                          )
-                        }
-                        reversal={
-                          confirming.act === 'accept'
-                            ? kind === 'exits'
-                              ? 'Reversing an exit means re-enrolling the borrower on a later file.'
-                              : 'Reversing an enrolment means exiting the borrower on a later file.'
-                            : 'A withdrawn file cannot be accepted afterwards; upload the corrected file instead.'
-                        }
-                        confirmLabel={confirming.act === 'accept' ? 'Accept' : 'Withdraw'}
-                        tone={confirming.act === 'accept' ? 'primary' : 'danger'}
-                        busy={deciding}
-                        onConfirm={() => {
-                          if (confirming.act === 'accept') onAccept(confirming.id);
-                          else onWithdraw(confirming.id);
-                          setConfirming(null);
-                        }}
-                        onCancel={() => setConfirming(null)}
-                      />
-                    </div>
-                  )}
+                    </span>
+                  </button>
+                  <Outcome row={s} appliedNoun={appliedNoun} compact />
+                  <div className="justify-self-start lg:justify-self-end">{reportButton(s)}</div>
                 </div>
-
-                {selected && children}
+                {open && (
+                  <>
+                    <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
+                      <Handlers submittedBy={s.submittedBy} acceptedBy={s.acceptedBy ?? null} />
+                    </p>
+                    {children}
+                  </>
+                )}
               </li>
             );
           })}
         </ul>
       )}
-
     </Panel>
   );
 }
 
-
 /**
- * Who handled this file, and whether that was two different people.
- *
- * <p><b>The raw identifiers are shown short and monospaced rather than resolved to names,
- * because the platform cannot resolve them.</b> These are Keycloak subjects; there is no
- * staff-name lookup anywhere on this platform, and the audit log itself has no actor column.
- * Inventing a name here would be the one thing this console refuses to do. The house treatment
- * for an identifier is monospace — see `DisclosurePanel`'s `recordedBy` — and the full value is
- * on the title attribute for anyone who needs to paste it into a support ticket.
- *
- * <p><b>What this actually answers is the separation-of-duties question</b>, which is the only
- * reason either field exists: acceptance is what creates cover, and it must be a different person
- * from the one who uploaded the file. Two 36-character UUIDs side by side answer that terribly —
- * a reader has to diff them by eye — so the comparison is made here and stated in words. The
- * backend refuses a same-person acceptance, so the mismatch branch should be unreachable; it is
- * rendered loudly rather than omitted, because a control that has silently stopped working is
- * exactly the thing a person needs told.
+ * What a file did, drawn: rows that went through and rows refused, as one bar and two counts. A pending file's count
+ * is an intention ("would be"), never an achievement.
  */
-function Handlers({
-  submittedBy,
-  acceptedBy,
-}: {
-  submittedBy: string;
-  acceptedBy: string | null;
-}) {
-  const short = (id: string) => (id.length > 8 ? id.slice(0, 8) : id);
-  const samePerson = acceptedBy != null && acceptedBy === submittedBy;
+function Outcome({ row, appliedNoun, compact = false }: { row: SubmissionRow; appliedNoun: string; compact?: boolean }) {
+  const pending = row.status === 'PENDING';
+  const withdrawn = row.status === 'WITHDRAWN';
+  // The applied count is filled at acceptance, so an undecided file's passing rows are the rows not refused.
+  const applied = pending || withdrawn ? Math.max(0, row.rowCount - row.rejectedCount) : row.appliedCount;
+  const total = applied + row.rejectedCount;
+  const passed = total === 0 ? 0 : (applied / total) * 100;
+  const passedLabel = pending ? `would be ${appliedNoun}` : withdrawn ? 'passed' : appliedNoun;
 
   return (
-    <span className="mt-1 block text-xs text-muted-foreground">
-      Uploaded by{' '}
-      <span className="font-mono" title={submittedBy}>
-        {short(submittedBy)}
-      </span>
-      {acceptedBy ? (
+    <div className={cn('min-w-0', !compact && 'max-w-md')}>
+      <div className="flex h-2 overflow-hidden rounded-full bg-control" aria-hidden>
+        {applied > 0 && (
+          <span
+            className={cn(
+              'h-full',
+              withdrawn ? 'bg-muted-foreground/50' : pending ? 'bg-status-pending-fg' : 'bg-status-success-fg',
+            )}
+            style={{ width: `${passed}%` }}
+          />
+        )}
+        {row.rejectedCount > 0 && <span className="h-full flex-1 bg-status-danger-fg" />}
+      </div>
+      <p className="mt-1.5 flex flex-wrap gap-x-3 text-xs">
+        <span>
+          <span className="font-semibold tabular-nums">{applied}</span>{' '}
+          <span className="text-muted-foreground">{passedLabel}</span>
+        </span>
+        <span className={cn(row.rejectedCount > 0 && 'text-status-danger-fg')}>
+          <span className="font-semibold tabular-nums">{row.rejectedCount}</span> refused
+        </span>
+        {!compact && <span className="text-muted-foreground">of {row.rowCount} rows</span>}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Who handled the file, and whether that was two people -- acceptance creates cover and must be a second person. The
+ * backend refuses a same-person acceptance, so that branch should be unreachable; it is said loudly if it ever is not.
+ */
+function Handlers({ submittedBy, acceptedBy }: { submittedBy: string; acceptedBy: string | null }) {
+  const samePerson = acceptedBy != null && acceptedBy === submittedBy;
+  return (
+    <>
+      Sent by <StaffName subject={submittedBy} />
+      {acceptedBy && (
         <>
-          , accepted by{' '}
-          <span className="font-mono" title={acceptedBy}>
-            {short(acceptedBy)}
-          </span>
-          {samePerson ? (
-            <span className="ml-1.5 text-status-danger-fg">
-              — the same person. Acceptance is meant to need a second.
-            </span>
-          ) : (
-            <span className="ml-1.5">— two people, as it should be.</span>
+          {' · '}accepted by <StaffName subject={acceptedBy} />
+          {samePerson && (
+            <span className="ml-1.5 text-status-danger-fg">— the same person; acceptance needs a second.</span>
           )}
         </>
-      ) : (
-        <span className="ml-1.5">— awaiting a second person.</span>
       )}
-    </span>
+    </>
   );
 }

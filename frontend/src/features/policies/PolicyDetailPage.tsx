@@ -348,8 +348,17 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     // never work for this session" discipline the deferred surrender action already follows.
     // A scheme's overview says who it covers (audit 2026-10-07), not only the total. Staff only, as the member
     // reads are.
+    // On a scheme the policy's own figures lead (2026-11-02): the cover counts are one compact row under them, and
+    // the benefits list follows, so the policy number's figures are seen first rather than two panels down.
     if (isStaff && policy && isScheme) {
-      overview.unshift(
+      const policyAt = overview.findIndex((node) => (node as { key?: string } | null)?.key === 'policy');
+      if (policyAt > 0) {
+        const [policyNode] = overview.splice(policyAt, 1);
+        overview.unshift(policyNode);
+      }
+      overview.splice(
+        policyAt >= 0 ? 1 : 0,
+        0,
         <SchemeCoverPanel key="who" policyNumber={policyNumber} category={policy.productCategory} groupFuneral={isGroupFuneral} />,
       );
     }

@@ -91,6 +91,8 @@ public class PolicyApiImpl implements PolicyApi {
     /** A funeral policy's lives (family funeral cover); touched only once the product says FUNERAL. */
     private final CoveredLives coveredLives;
     private final GroupFuneralFamilies groupFuneralFamilies;
+    /** Credit life's yearly agreements: whether a borrower's claim pays the lender's interest too (2026-10-30). */
+    private final CreditLifeAgreements creditLifeAgreements;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
@@ -106,12 +108,14 @@ public class PolicyApiImpl implements PolicyApi {
                           AnnuityVestingRepository annuityVestingRepository,
                           CoveredLives coveredLives,
                           GroupFuneralFamilies groupFuneralFamilies,
+                          CreditLifeAgreements creditLifeAgreements,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
                           DistributionApi distributionApi, UnderwritingApi underwritingApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
         this.policyRepository = policyRepository;
         this.coveredLives = coveredLives;
         this.groupFuneralFamilies = groupFuneralFamilies;
+        this.creditLifeAgreements = creditLifeAgreements;
         this.annuityVestingRepository = annuityVestingRepository;
         this.policyBonusRepository = policyBonusRepository;
         this.policyAccountRepository = policyAccountRepository;
@@ -2133,9 +2137,15 @@ public class PolicyApiImpl implements PolicyApi {
                     + "AMORTISING_LOAN scheme with no loan terms; "
                     + "chk_policy_member_loan_complete should have made this impossible");
             }
+            BigDecimal loanCover = covered;
+            // Whether the year's agreement in force when this loan started covers interest (2026-10-30): a claim then
+            // pays the interest on the lender's statement as well as the principal. No agreement, no interest.
+            boolean interest = creditLifeAgreements.entityInForce(policyNumber, terms.disbursementDate())
+                .map(CreditLifeAgreement::isCoverIncludesInterest).orElse(false);
             covered = AmortisationCalculator
                 .outstandingPrincipalAt(terms, scheme.get().getInterestMethod(), asOf)
                 .min(covered);
+            return new ClaimableCoverView(covered, scheme.get().getCurrency(), policyMemberId, loanCover, interest);
         }
 
         return new ClaimableCoverView(covered, scheme.get().getCurrency(), policyMemberId);
@@ -2512,6 +2522,11 @@ public class PolicyApiImpl implements PolicyApi {
         // Which FILE charged them, so billing can find the one invoice of eleven that this
         // credit belongs against without guessing by date.
         payload.put("enrolmentSubmissionId", enrolmentRow.get().getSubmissionId());
+        // Who the money goes back to when the lender had already paid the file (2026-10-30): billing pays it by bank
+        // transfer and may not look a party up, so the lender is named here, as a claim names it.
+        policyRepository.findByPolicyNumberAndTenantId(scheme.getPolicyNumber(), tenantId)
+            .map(Policy::getPolicyholderPartyId)
+            .ifPresent(lender -> payload.put("lenderName", partyApi.getParty(lender).displayName()));
     }
 
     @Override
@@ -2812,11 +2827,32 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("maturityDate", policy.getMaturityDate() != null ? policy.getMaturityDate().toString() : null);
     }
 
+    /**
+     * What a credit-life scheme's set-up no longer asks (2026-11-01), filled in. A claim pays the balance on the
+     * lender's statement, so how the loans repay values nothing: they are recorded flat and monthly, the shape every
+     * real lender file has had. The contract carries no premium of its own -- each accepted file is invoiced -- so it
+     * records nil rather than a figure nobody agreed.
+     */
+    private static IssueGroupSchemeRequest withCreditLifeDefaults(IssueGroupSchemeRequest r) {
+        if (r.benefitBasis() != BenefitBasis.AMORTISING_LOAN) return r;
+        return new IssueGroupSchemeRequest(r.policyholderPartyId(), r.productId(), r.productVersionId(),
+            r.agentOfRecordId(), r.benefitBasis(), r.flatBenefitAmount(), r.salaryMultiple(), r.fclAmount(),
+            r.currency(), r.grades(), r.openingSchedule(),
+            r.premiumAmount() == null ? BigDecimal.ZERO : r.premiumAmount(),
+            r.premiumCurrency() == null ? r.currency() : r.premiumCurrency(),
+            r.premiumFrequency() == null ? "SINGLE" : r.premiumFrequency(),
+            r.commencementDate(), r.policyTermMonths(), r.reasonForManualIssue(), r.issuanceBasis(),
+            r.interestMethod() == null ? InterestMethod.FLAT_RATE : r.interestMethod(),
+            r.repaymentFrequency() == null ? RepaymentFrequency.MONTHLY : r.repaymentFrequency(),
+            r.premiumRatePercent(), r.premiumBasis());
+    }
+
     @Override
     @Transactional
     public GroupSchemeView issueGroupScheme(IssueGroupSchemeRequest request, String issuedBy,
                                             UUID underwritingCaseId, String issuedByName) {
         UUID tenantId = TenantContext.get();
+        request = withCreditLifeDefaults(request);
         // One case, one scheme -- as issuePolicy has always enforced for a single life. A scheme
         // used to record no case at all, so a decided group case could be issued twice and no
         // scheme could be traced back to the decision that put it on risk.
@@ -2866,43 +2902,21 @@ public class PolicyApiImpl implements PolicyApi {
                 "The AMORTISING_LOAN basis needs a CREDIT_LIFE product; loan cover on an "
                     + "employer product is cover nobody priced");
         }
-        // Checked HERE rather than left to the GroupScheme constructor, which runs after
-        // the whole opening schedule has been valued. A scheme missing its interest
-        // method would otherwise be reported as whatever its first member happened to be
-        // wrong about, which sends the reader to the wrong row entirely.
-        if (loanBasis && request.interestMethod() == null) {
-            throw new InvalidPolicyStateException(
-                "A credit-life scheme must state how its lender's loans repay principal");
-        }
-        if (loanBasis && request.repaymentFrequency() == null) {
-            throw new InvalidPolicyStateException(
-                "A credit-life scheme must state how often its lender's loans repay");
-        }
         if (!loanBasis && (request.interestMethod() != null || request.repaymentFrequency() != null
                 || request.premiumRatePercent() != null || request.premiumBasis() != null)) {
             throw new InvalidPolicyStateException(
                 "An interest method, a repayment cadence and a premium rate belong only on a "
                     + "credit-life scheme");
         }
-        // The rate a lender agreed, and there is no default: client answer 3.1 is that it is
-        // negotiated per lender (0.4% for one, 0.5% for another). A scheme that reached its
-        // first accepted file without one could not price a single member, and the failure
-        // would surface as a whole lender's month bouncing rather than as a setup mistake.
-        if (loanBasis && request.premiumRatePercent() == null) {
+        // No rate is required any more (2026-11-01): a loan is priced only on the lender's yearly agreement, so a scheme
+        // states none at set-up. One that does state a rate must still say what it means, because a rate alone does
+        // not -- and a scheme set up before agreements is read with both.
+        if (loanBasis && (request.premiumRatePercent() == null) != (request.premiumBasis() == null)) {
             throw new InvalidPolicyStateException(
-                "A credit-life scheme must state the premium rate its lender agreed; the rate is "
-                    + "negotiated per lender, so there is no default to fall back on");
+                "A credit-life scheme's rate and how it is charged come together: give both or neither");
         }
-        // And what that rate MEANS, which it does not say by itself. Both real lenders price on
-        // the full disbursed amount and agree about nothing else: one charges the rate flat
-        // whatever the term, the other once per policy year on the balance still outstanding.
-        // A default here would price one lender on the other's agreement in silence -- and be
-        // out by two thirds on a two-month loan, which is the shape of error nobody reads a
-        // spreadsheet closely enough to catch.
-        if (loanBasis && request.premiumBasis() == null) {
-            throw new InvalidPolicyStateException(
-                "A credit-life scheme must state how its rate is charged: flat on the disbursed "
-                    + "amount, per annum on it, or per year on the declining balance");
+        if (!loanBasis && request.premiumAmount() == null) {
+            throw new InvalidPolicyStateException("A scheme's premium is required");
         }
         // Checked here and not only in the GroupScheme constructor because the consequence is
         // in a different module: billing reacts to PolicyIssued by generating a schedule and a
@@ -3059,7 +3073,7 @@ public class PolicyApiImpl implements PolicyApi {
                     + " cannot join on " + joinedOn + ", before the scheme commenced on "
                     + commencement);
             }
-            requireEligible(snapshot.eligibility(), v.input(), joinedOn);
+            requireEligible(policyNumber, snapshot.eligibility(), v.input(), joinedOn);
             persistMember(tenantId, policyNumber, v.input(), v.valuation(), joinedOn, issuedBy);
         }
 
@@ -3437,7 +3451,8 @@ public class PolicyApiImpl implements PolicyApi {
             scheme.getFlatBenefitAmount(), scheme.getSalaryMultiple(), scheme.getFclAmount(),
             gradeTableFor(tenantId, policyNumber, scheme.getBenefitBasis()), member);
 
-        requireEligible(productApi.getSnapshotByVersionId(policy.getProductVersionId()).eligibility(), member, joinedOn);
+        requireEligible(policyNumber, productApi.getSnapshotByVersionId(policy.getProductVersionId()).eligibility(),
+            member, joinedOn);
         PolicyMember saved = persistMember(tenantId, policyNumber, member, valuation, joinedOn, addedBy);
 
         // Flush so the derived total below sees the row just written, then restate the
@@ -3735,8 +3750,23 @@ public class PolicyApiImpl implements PolicyApi {
      * truncated (credit-life design 2.7): a loan insured for part of its life is worse than one
      * openly refused. A limit the product does not set is no limit. An employer's member may
      * carry no date of birth at all, and is then not age-checked -- there is nothing to check.
+     *
+     * <p>A borrower's loan is judged by the lender's yearly agreement in force when it started, where there is one
+     * (2026-11-02): the agreement's ages and terms replace the product's, exactly as the file was judged when it was
+     * sent -- a four-month loan the agreement takes was refused here at acceptance by the product's twelve.
      */
-    private void requireEligible(EligibilityBounds bounds, MemberInput input, LocalDate joinedOn) {
+    private void requireEligible(String policyNumber, EligibilityBounds productBounds, MemberInput input,
+                                 LocalDate joinedOn) {
+        EligibilityBounds bounds = productBounds;
+        if (input.loanTerms() != null) {
+            Optional<CreditLifeAgreement> agreed =
+                creditLifeAgreements.entityInForce(policyNumber, input.loanTerms().disbursementDate());
+            if (agreed.isPresent()) {
+                CreditLifeAgreement a = agreed.get();
+                bounds = new EligibilityBounds(a.getMinAge(), a.getMaxAge(), a.getMinTermMonths(),
+                    a.getMaxTermMonths(), null, null);
+            }
+        }
         if (bounds == null) return;
         LocalDate born = input.memberDateOfBirth();
         if (born == null && input.memberPartyId() != null
