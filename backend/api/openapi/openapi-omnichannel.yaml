@@ -9,6 +9,34 @@ info:
 servers:
   - url: https://api.nlolo-lifeplatform.tz/v1
 paths:
+  /credit-life-schemes/{policyNumber}/enrolments/{submissionId}/quotation.pdf:
+    get:
+      summary: The quotation a lender is sent for one monthly file
+      description: >
+        Drawn like every customer document (2026-11-02): the lender, the scheme and the file in two columns, a line
+        per borrower who will be covered with their loan and premium, the premium to pay and the lender's commission,
+        and signature lines for the lender and an authorised officer. The file's own quotation -- priced exactly as
+        acceptance prices it, so it is what the lender will be invoiced. 422 for a withdrawn file, or one whose every
+        row was refused.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { type: string } }
+        - { name: submissionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The lender's quotation
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: A withdrawn file, or one with nobody to cover
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /quotations/scheme/pdf:
     post:
       summary: A group funeral scheme quotation an association can sign and keep, before the scheme is proposed

@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.policy.api;
 import com.fasterxml.jackson.annotation.JsonFormat;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -19,6 +20,8 @@ import java.util.UUID;
  * @param commission what the lender earns on this file, paid after the premium is received; zero with no agreement
  * @param amountToPay the full premium: the lender pays it all and is paid the commission afterwards
  * @param mismatches the rows whose stated premium is not ours, so the lender can be told which
+ * @param lines every borrower who will be covered, with their loan and premium (2026-11-02): the quotation the lender
+ *     is sent lists them, and the file's rows show the premium before acceptance
  */
 public record EnrolmentQuotationView(UUID submissionId,
                                      String policyNumber,
@@ -31,9 +34,16 @@ public record EnrolmentQuotationView(UUID submissionId,
                                      @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal commissionPercent,
                                      @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal commission,
                                      @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal amountToPay,
-                                     List<Mismatch> mismatches) {
+                                     List<Mismatch> mismatches,
+                                     List<Line> lines) {
 
     public record Mismatch(int lineNumber, String borrowerFullName,
                            @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal premium,
                            @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal statedPremium) {}
+
+    /** One borrower to be covered: the line in the lender's file, the loan, and its premium. */
+    public record Line(int lineNumber, String borrowerFullName,
+                       @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal loanAmount,
+                       LocalDate loanStartDate, Integer loanTermMonths,
+                       @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal premium) {}
 }

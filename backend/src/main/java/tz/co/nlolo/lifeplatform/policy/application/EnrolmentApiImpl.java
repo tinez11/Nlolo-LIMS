@@ -347,6 +347,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         BigDecimal stated = null;
         Map<BigDecimal, BigDecimal> commissionByAgreement = new java.util.TreeMap<>();
         List<EnrolmentQuotationView.Mismatch> mismatches = new ArrayList<>();
+        List<EnrolmentQuotationView.Line> lines = new ArrayList<>();
         for (EnrolmentSubmissionRow row :
                 rowRepository.findByTenantIdAndSubmissionIdOrderByLineNumberAsc(tenantId, submissionId)) {
             if (row.getOutcome() == RowOutcome.REJECTED) continue;
@@ -360,6 +361,8 @@ public class EnrolmentApiImpl implements EnrolmentApi {
                     .map(CreditLifeAgreement::getCommissionPercent).orElse(null))
                 : price(judged, schemeAgreements, submission.getPolicyNumber());
             BigDecimal ours = priced.premium();
+            lines.add(new EnrolmentQuotationView.Line(row.getLineNumber(), row.getBorrowerFullName(),
+                cents(judged.loanPrincipalAmount()), judged.disbursementDate(), judged.loanTermMonths(), cents(ours)));
             borrowers++;
             loans = loans.add(judged.loanPrincipalAmount());
             premium = premium.add(ours);
@@ -380,7 +383,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
             : null;
         return new EnrolmentQuotationView(submissionId, submission.getPolicyNumber(), scheme.getCurrency(), borrowers,
             cents(loans), cents(premium), cents(stated), stated == null ? null : cents(premium.subtract(stated)),
-            percent, cents(commission), cents(premium), List.copyOf(mismatches));
+            percent, cents(commission), cents(premium), List.copyOf(mismatches), List.copyOf(lines));
     }
 
     /** To the cent, as money is shown: a lender's own figure arrives as "204000" and reads as 204000.00 beside ours. */

@@ -3,12 +3,14 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useBreadcrumb, useSearchParamsKeepingTrail } from '@/lib/cameFrom';
 import { Link, useParams } from 'react-router-dom';
 import {
+  downloadEnrolmentQuotation,
   downloadEnrolmentReport,
   downloadEnrolmentTemplate,
   downloadEnrolmentTemplateXlsx,
   downloadExitsReport,
   downloadExitsTemplate,
   downloadExitsTemplateXlsx,
+  enrolmentQuotationFileName,
   enrolmentReportFileName,
   enrolmentTemplateFileName,
   enrolmentTemplateXlsxFileName,
@@ -40,6 +42,7 @@ import {
   selectEnrolments,
   selectExitRows,
   selectExits,
+  selectQuotation,
   selectUploading,
   useCreditLifeStore,
 } from '@/store/creditLifeStore';
@@ -108,6 +111,7 @@ export function CreditLifeSchemePage() {
   const openExits = chosenExits !== undefined ? chosenExits : defaultOpenSubmission(exits.data);
 
   const enrolmentRows = useCreditLifeStore(selectEnrolmentRows(openEnrolment));
+  const openQuotation = useCreditLifeStore(selectQuotation(openEnrolment ?? ''));
   const exitRows = useCreditLifeStore(selectExitRows(openExits));
   const enrolmentUpload = useCreditLifeStore(selectUploading(policyNumber, 'enrolment'));
   const exitsUpload = useCreditLifeStore(selectUploading(policyNumber, 'exits'));
@@ -357,6 +361,9 @@ export function CreditLifeSchemePage() {
             onDownloadReport={async (id) =>
               saveBlob(await downloadEnrolmentReport(policyNumber, id), enrolmentReportFileName(id))
             }
+            onDownloadQuotation={async (id) =>
+              saveBlob(await downloadEnrolmentQuotation(policyNumber, id), enrolmentQuotationFileName(policyNumber, id))
+            }
             // The spreadsheet leads: Excel rewrites the dates in a CSV, and the row is refused.
             onDownloadTemplate={async () =>
               saveBlob(await downloadEnrolmentTemplateXlsx(policyNumber), enrolmentTemplateXlsxFileName(policyNumber))
@@ -387,6 +394,7 @@ export function CreditLifeSchemePage() {
             )}
             <EnrolmentRows
               decided={openEnrolmentStatus === 'ACCEPTED'}
+              quotedLines={openQuotation.data?.lines ?? []}
               rows={enrolmentRows.data ?? []}
               loading={isInitialLoad(enrolmentRows)}
               error={enrolmentRows.error}
@@ -656,13 +664,16 @@ function ColumnTable({ tip, columns }: { tip: string; columns: [string, boolean,
  * The rows of one joining file. Refused rows first: a refused row is a borrower with no insurance whose lender may
  * believe otherwise. The reference leads after the name because the lender quotes it on every later file.
  */
-function EnrolmentRows({ rows, loading, error, decided }: {
+function EnrolmentRows({ rows, loading, error, decided, quotedLines }: {
   rows: EnrolmentRowView[];
   loading: boolean;
   error: ApiError | null;
   /** Only an accepted file enrolled anybody; until then a passing row reads as passing, not enrolled. */
   decided: boolean;
+  /** The file's quotation, line by line: a row's premium before acceptance writes it (2026-11-02). */
+  quotedLines: { lineNumber: number; premium: string }[];
 }) {
+  const quoted = useMemo(() => new Map(quotedLines.map((l) => [l.lineNumber, l.premium])), [quotedLines]);
   const ordered = useMemo(
     () => [...rows].sort((a, b) => Number(b.outcome === 'REJECTED') - Number(a.outcome === 'REJECTED')),
     [rows],
@@ -711,9 +722,12 @@ function EnrolmentRows({ rows, loading, error, decided }: {
                 <td className="px-4 py-2 align-top text-right tabular-nums whitespace-nowrap">
                   {r.loanTermMonths != null ? `${r.loanTermMonths} mo` : NO_VALUE}
                 </td>
-                {/* Written at acceptance; before then the quotation above prices the file. */}
+                {/* Written at acceptance; before then the file's quotation prices each row the same way. */}
                 <td className="px-4 py-2 align-top text-right tabular-nums whitespace-nowrap">
-                  {r.premiumAmount ? formatMoney(r.premiumAmount) : <span className="text-subtle-foreground">{NO_VALUE}</span>}
+                  {r.premiumAmount ? formatMoney(r.premiumAmount)
+                    : !refused && quoted.has(r.lineNumber) && r.loanAmount
+                      ? formatMoney({ amount: quoted.get(r.lineNumber) ?? '0', currencyCode: r.loanAmount.currencyCode })
+                      : <span className="text-subtle-foreground">{NO_VALUE}</span>}
                 </td>
                 {/* Minted at acceptance, so a pending row has none yet. */}
                 <td className="px-4 py-2 align-top whitespace-nowrap font-mono text-xs">
