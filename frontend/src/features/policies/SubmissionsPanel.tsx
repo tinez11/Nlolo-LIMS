@@ -1,4 +1,4 @@
-import { ChevronDown, Download, FileSpreadsheet, Upload } from 'lucide-react';
+import { ChevronDown, Download, FileSpreadsheet, FileText, Upload } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { useAuth } from 'react-oidc-context';
 import { can } from '@/auth/access';
@@ -63,6 +63,8 @@ interface Props {
   decisionError?: ApiError | null;
   /** Fetches the lender's report and saves it. Rejects if the request fails. */
   onDownloadReport: (submissionId: string) => Promise<void>;
+  /** The quotation the lender is sent for a file, as a PDF (joining files only, 2026-11-02). */
+  onDownloadQuotation?: (submissionId: string) => Promise<void>;
   /** Fetches the spreadsheet template to send the lender. */
   onDownloadTemplate: () => Promise<void>;
   /** The CSV form of the same template, offered second and quieter: Excel rewrites the dates in a CSV. */
@@ -95,6 +97,7 @@ export function SubmissionsPanel({
   deciding,
   decisionError = null,
   onDownloadReport,
+  onDownloadQuotation,
   onDownloadTemplate,
   onDownloadTemplateCsv,
   columnGuide,
@@ -141,18 +144,35 @@ export function SubmissionsPanel({
     }
   }
 
+  const quoteKey = (s: SubmissionRow) => `quotation-${s.submissionId}`;
   const reportButton = (s: SubmissionRow) => (
-    // A button, not a link: the report is behind the same bearer token as the rest of the page.
-    <Button
-      type="button"
-      size="sm"
-      variant="ghost"
-      disabled={downloading === s.submissionId}
-      onClick={() => void download(s.submissionId, () => onDownloadReport(s.submissionId), 'report')}
-    >
-      <Download className="size-4" aria-hidden />
-      {downloading === s.submissionId ? 'Preparing…' : 'Report for the lender'}
-    </Button>
+    <span className="flex flex-wrap gap-1">
+      {/* The quotation the lender signs, like an individual's (2026-11-02). None on a withdrawn file: it charges
+          nothing. */}
+      {onDownloadQuotation && s.status !== 'WITHDRAWN' && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={downloading === quoteKey(s)}
+          onClick={() => void download(quoteKey(s), () => onDownloadQuotation(s.submissionId), 'quotation')}
+        >
+          <FileText className="size-4" aria-hidden />
+          {downloading === quoteKey(s) ? 'Preparing…' : 'Quotation'}
+        </Button>
+      )}
+      {/* A button, not a link: the report is behind the same bearer token as the rest of the page. */}
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        disabled={downloading === s.submissionId}
+        onClick={() => void download(s.submissionId, () => onDownloadReport(s.submissionId), 'report')}
+      >
+        <Download className="size-4" aria-hidden />
+        {downloading === s.submissionId ? 'Preparing…' : 'Report for the lender'}
+      </Button>
+    </span>
   );
 
   return (

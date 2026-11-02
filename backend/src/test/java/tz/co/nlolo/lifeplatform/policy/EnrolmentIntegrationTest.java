@@ -204,6 +204,7 @@ class EnrolmentIntegrationTest {
     @Autowired private ProductApi productApi;
     @Autowired private PolicyApi policyApi;
     @Autowired private EnrolmentApi enrolmentApi;
+    @Autowired private tz.co.nlolo.lifeplatform.omnichannel.application.LenderQuotations lenderQuotations;
 
     private static final AtomicInteger SEQ = new AtomicInteger(5000);
 
@@ -403,6 +404,25 @@ class EnrolmentIntegrationTest {
         assertThat(quote.amountToPay()).isEqualByComparingTo("206000.00");
         assertThat(quote.statedPremium()).isNull();
         assertThat(quote.difference()).isNull();
+        // And each borrower, with the loan and the premium, before acceptance (2026-11-02): what the lender is sent.
+        assertThat(quote.lines()).hasSize(2);
+        assertThat(quote.lines().get(0)).satisfies(line -> {
+            assertThat(line.borrowerFullName()).isEqualTo("Amina Hassan Mwinyi");
+            assertThat(line.loanAmount()).isEqualByComparingTo("8500000.00");
+            assertThat(line.loanStartDate()).isEqualTo(LocalDate.of(2026, 6, 30));
+            assertThat(line.loanTermMonths()).isEqualTo(48);
+            assertThat(line.premium()).isEqualByComparingTo("204000.00");
+        });
+        assertThat(quote.lines().get(1).premium()).isEqualByComparingTo("2000.00");
+
+        // The lender's quotation document carries the same lines and totals, and renders as a PDF.
+        var document = lenderQuotations.fileQuotation(creditLifeScheme, submission.submissionId());
+        assertThat(document.title()).isEqualTo("Credit life quotation");
+        assertThat(document.rows()).hasSize(2);
+        assertThat(document.totals()).extracting(tz.co.nlolo.lifeplatform.omnichannel.domain.CustomerDocument.Field::label)
+            .contains("Borrowers covered", "Premium to pay", "Lender's commission (10%)");
+        byte[] pdf = tz.co.nlolo.lifeplatform.omnichannel.domain.DocumentPdf.render(document);
+        assertThat(new String(pdf, 0, 4, StandardCharsets.US_ASCII)).isEqualTo("%PDF");
 
         enrolmentApi.accept(submission.submissionId(), "staff.two");
         // Accepted, it quotes what was charged -- the same figures.

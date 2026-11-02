@@ -2074,7 +2074,7 @@ components:
       type: object
       additionalProperties: false
       required: [submissionId, policyNumber, currency, borrowers, totalLoanAmount, premium, commission, amountToPay,
-        mismatches]
+        mismatches, lines]
       properties:
         submissionId: { type: string, format: uuid }
         policyNumber: { type: string }
@@ -2098,6 +2098,22 @@ components:
               borrowerFullName: { type: [string, "null"] }
               premium: { type: string, pattern: '^-?\d+(\.\d+)?$' }
               statedPremium: { type: string, pattern: '^-?\d+(\.\d+)?$' }
+        lines:
+          description: >-
+            Every borrower who will be covered, with their loan and premium (2026-11-02) -- what the lender's
+            quotation lists, and the premium a file's rows show before acceptance.
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [lineNumber, premium]
+            properties:
+              lineNumber: { type: integer }
+              borrowerFullName: { type: [string, "null"] }
+              loanAmount: { type: [string, "null"], pattern: '^-?\d+(\.\d+)?$' }
+              loanStartDate: { type: [string, "null"], format: date }
+              loanTermMonths: { type: [integer, "null"] }
+              premium: { type: string, pattern: '^-?\d+(\.\d+)?$' }
     EnrolmentRowView:
       description: >-
         One line of the lender's file and its outcome. ENROLLED_CAPPED is COVER, not a

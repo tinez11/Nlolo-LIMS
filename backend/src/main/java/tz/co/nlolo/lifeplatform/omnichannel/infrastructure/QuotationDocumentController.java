@@ -16,10 +16,13 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import tz.co.nlolo.lifeplatform.omnichannel.api.CustomerRequestRefusedException;
+import tz.co.nlolo.lifeplatform.omnichannel.application.LenderQuotations;
 import tz.co.nlolo.lifeplatform.omnichannel.application.QuotationDocuments;
 import tz.co.nlolo.lifeplatform.omnichannel.domain.DocumentPdf;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
@@ -49,10 +52,13 @@ public class QuotationDocumentController {
 
     private final QuotationDocuments quotations;
     private final PartyApi partyApi;
+    private final LenderQuotations lenderQuotations;
 
-    public QuotationDocumentController(QuotationDocuments quotations, PartyApi partyApi) {
+    public QuotationDocumentController(QuotationDocuments quotations, PartyApi partyApi,
+                                       LenderQuotations lenderQuotations) {
         this.quotations = quotations;
         this.partyApi = partyApi;
+        this.lenderQuotations = lenderQuotations;
     }
 
     /**
@@ -162,6 +168,21 @@ public class QuotationDocumentController {
                 "attachment; filename=\"scheme-quotation-" + body.productVersionId().toString().substring(0, 8) + ".pdf\"")
             .contentType(MediaType.APPLICATION_PDF)
             .body(DocumentPdf.render(quotations.schemeQuotation(body.toRequest())));
+    }
+
+    /**
+     * The quotation a lender is sent for one monthly file (2026-11-02): each borrower's loan and premium, what the
+     * lender pays and earns, and the signatures -- the file's own quotation, so it is what acceptance will invoice.
+     */
+    @GetMapping(value = "/credit-life-schemes/{policyNumber}/enrolments/{submissionId}/quotation.pdf",
+        produces = MediaType.APPLICATION_PDF_VALUE)
+    @PreAuthorize("@access.can('schemes.view')")
+    public ResponseEntity<byte[]> lenderQuotation(@PathVariable String policyNumber, @PathVariable UUID submissionId) {
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"quotation-" + policyNumber + "-" + submissionId.toString().substring(0, 8) + ".pdf\"")
+            .contentType(MediaType.APPLICATION_PDF)
+            .body(DocumentPdf.render(lenderQuotations.fileQuotation(policyNumber, submissionId)));
     }
 
     /** As {@code CustomerProductsController} answers it: a request this product cannot meet, in its own words. */

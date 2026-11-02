@@ -208,6 +208,21 @@ export function enrolmentReportFileName(submissionId: string): string {
   return `enrolment-report-${submissionId}.csv`;
 }
 
+/**
+ * The quotation the lender is sent for one joining file (2026-11-02): each borrower's loan and premium, what the lender
+ * pays and earns, and the signatures. Accept: application/pdf, as the endpoint produces nothing else.
+ */
+export function downloadEnrolmentQuotation(policyNumber: string, submissionId: string): Promise<Blob> {
+  return get<Blob>(
+    `/credit-life-schemes/${encodeURIComponent(policyNumber)}/enrolments/${encodeURIComponent(submissionId)}/quotation.pdf`,
+    { responseType: 'blob', headers: { Accept: 'application/pdf' } },
+  );
+}
+
+export function enrolmentQuotationFileName(policyNumber: string, submissionId: string): string {
+  return `quotation-${policyNumber}-${submissionId.slice(0, 8)}.pdf`;
+}
+
 export function downloadExitsReport(policyNumber: string, submissionId: string): Promise<Blob> {
   return get<Blob>(
     `/credit-life-schemes/${encodeURIComponent(policyNumber)}/exits/${encodeURIComponent(submissionId)}/report`,
