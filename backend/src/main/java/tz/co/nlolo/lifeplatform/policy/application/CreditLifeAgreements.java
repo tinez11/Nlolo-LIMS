@@ -101,8 +101,12 @@ public class CreditLifeAgreements implements CreditLifeAgreementApi {
         if (input.minimumPremium() != null && input.minimumPremium().signum() < 0) {
             throw new InvalidPolicyStateException("The minimum premium cannot be negative");
         }
-        if (input.maxAge() < 18 || input.maxAge() > 100) {
-            throw new InvalidPolicyStateException("The oldest borrower must be between 18 and 100");
+        if (input.minAge() < 18) {
+            throw new InvalidPolicyStateException("The youngest borrower must be at least 18");
+        }
+        if (input.maxAge() < input.minAge() || input.maxAge() > 100) {
+            throw new InvalidPolicyStateException("The oldest borrower must be no younger than the youngest, and at"
+                + " most 100");
         }
         if (input.minTermMonths() < 1 || input.maxTermMonths() < input.minTermMonths() || input.maxTermMonths() > 480) {
             throw new InvalidPolicyStateException("The shortest loan must be at least a month and the longest no shorter"

@@ -106,8 +106,9 @@ public class ExitSubmission {
             throw new IllegalArgumentException("Accepting an exits file needs the accepter's identity");
         }
         if (acceptedBy.equals(submittedBy)) {
-            throw new IllegalStateException(acceptedBy + " cannot accept an exits file they"
-                + " uploaded themselves; a second person must review it");
+            // In words, not the person's id: this is read on the screen by the person it names.
+            throw new IllegalStateException("You uploaded this file, so you cannot accept an exits file you"
+                + " uploaded yourself: a second person must review it and accept it");
         }
     }
 

@@ -171,7 +171,7 @@ class CreditLifeCommissionTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
-            "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V43__credit_life_agreement.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V43__credit_life_agreement.sql", "db-migrations/policy/V44__credit_life_agreement_first.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
@@ -206,7 +206,7 @@ class CreditLifeCommissionTest {
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
-            "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql");
+            "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql");
 
         MinioClient minio = MinioClient.builder()
             .endpoint(MINIO.getS3URL())
@@ -421,10 +421,10 @@ class CreditLifeCommissionTest {
      * 90,000, and 12% of it is 10,800. Its refund still claws back pro rata from that accrual. */
     @Test
     void theAgreementsCommissionIsPaidRatherThanThePlans() {
-        schemeWithBankAsAgent();
+        schemeWithBankAsAgent(false);
         agreementApi.add(scheme, new CreditLifeAgreementApi.AgreementInput(LocalDate.of(2026, 8, 1),
             LocalDate.of(2027, 7, 31), new BigDecimal("0.5000"), CreditLifePremiumBasis.WHOLE_YEARS_ROUNDED_UP,
-            null, 75, 12, 120, new BigDecimal("12"), false), "staff-setup");
+            null, 18, 75, 12, 120, new BigDecimal("12"), false), "staff-setup");
 
         submitAndAccept(THREE_BORROWERS);
 
@@ -440,11 +440,10 @@ class CreditLifeCommissionTest {
 
     // ---- the lender's own rate, and who earns it ---------------------------
 
-    /** The rate is agreed per lender (client answer 3.1). With no product-wide plan at all, the
-     * lender's own rate is what its files earn -- 12.5% of 84,000 is 10,500. Before, nothing could
-     * attach a rate to an agent, so a scheme with no product plan earned nothing, silently. */
+    /** Agreement first (2026-11-01): a rate set on the lender's own agent no longer decides what its files earn. The
+     * year's agreement does -- its 10% of 84,000 is 8,400, not the agent's 12.5%. */
     @Test
-    void aLendersOwnRateIsWhatItsFilesEarn() {
+    void theAgreementsCommissionIsPaidWhateverRateTheLendersAgentCarries() {
         GroupProduct product = creditLifeProduct();
         UUID lenderAgent = onboardAgent("Lender Rate");
         distributionApi.setAgentCommissionRate(lenderAgent, product.productId(), new BigDecimal("12.5"), "finance");
@@ -454,8 +453,21 @@ class CreditLifeCommissionTest {
 
         assertThat(firstYearAccruals()).singleElement().satisfies(a -> {
             assertThat(a.getAgentId()).isEqualTo(lenderAgent);
-            assertThat(a.getAmount()).isEqualByComparingTo("10500.00");
+            assertThat(a.getAmount()).isEqualByComparingTo("8400.00");
         });
+    }
+
+    /** An agreement that pays the lender nothing earns it nothing, whatever plan the product carries. */
+    @Test
+    void anAgreementWithNoCommissionEarnsTheLenderNothing() {
+        schemeWithBankAsAgent(false);
+        agreementApi.add(scheme, new CreditLifeAgreementApi.AgreementInput(LocalDate.of(2026, 6, 1),
+            LocalDate.of(2027, 5, 31), new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL,
+            null, 18, 100, 1, 480, null, false), "staff-setup");
+
+        submitAndAccept(THREE_BORROWERS);
+
+        assertThat(firstYearAccruals()).isEmpty();
     }
 
     /** A rate is a percentage above 0 and at most 100, to two places -- never a fraction typed as
@@ -760,8 +772,16 @@ class CreditLifeCommissionTest {
             .satisfies(r -> assertThat(r.getAmount()).isEqualByComparingTo("-900.00"));
     }
 
-    /** A scheme whose agent of record is the bank, with a plan that pays 10% first year. */
+    /** A scheme whose agent of record is the bank, with its year's agreement paying it 10%. */
     private void schemeWithBankAsAgent() {
+        schemeWithBankAsAgent(true);
+    }
+
+    /**
+     * The same, its product carrying a plan that also pays 10% first year -- which the agreement, not the plan,
+     * decides. Without {@code agreed}, the test adds the scheme's agreement itself.
+     */
+    private void schemeWithBankAsAgent(boolean agreed) {
         GroupProduct product = creditLifeProduct();
         distributionApi.createCommissionPlan(product.productId(), List.of(
             new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, FIRST_YEAR_RATE, null, null)),
@@ -776,7 +796,7 @@ class CreditLifeCommissionTest {
         bankAgentId = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
             bankParty, "LIC-CL-" + tag, LocalDate.now().plusYears(1), null), "staff-1").agentId();
 
-        scheme = issueScheme(bankAgentId, product);
+        scheme = issueSchemeFor(bankParty, bankAgentId, product, agreed);
     }
 
     private String issueScheme(UUID agentOfRecordId) {
@@ -801,6 +821,19 @@ class CreditLifeCommissionTest {
     }
 
     private String issueSchemeFor(UUID lenderParty, UUID agentOfRecordId, GroupProduct product) {
+        return issueSchemeFor(lenderParty, agentOfRecordId, product, true);
+    }
+
+    /**
+     * With {@code agreed}, the lender's year from 1 June 2026 is added too, as every scheme needs before its first file
+     * (2026-11-01): 0.5% a year on each loan, the lender's commission 10% -- so every figure here is a tenth of a
+     * premium.
+     *
+     * <p>Set up as the console sets one up (2026-11-02): no premium, rate or repayment terms of its own, so the contract
+     * records a nil premium. Distribution's projection once refused that, losing the agent every file's commission is
+     * paid to -- and every test here would then earn nothing.
+     */
+    private String issueSchemeFor(UUID lenderParty, UUID agentOfRecordId, GroupProduct product, boolean agreed) {
         scheme = policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
             lenderParty,
             product.productId(), product.productVersionId(), agentOfRecordId,
@@ -809,10 +842,15 @@ class CreditLifeCommissionTest {
                 LocalDate.of(1988, 3, 14), null,
                 new LoanTerms(new BigDecimal("8500000.00"), BigDecimal.ZERO, 48,
                     RepaymentFrequency.MONTHLY, LocalDate.of(2026, 8, 3), LocalDate.of(2026, 9, 3)))),
-            new BigDecimal("52000.00"), "TZS", "SINGLE",
+            null, null, null,
             LocalDate.of(2026, 6, 1), null, "credit life onboarding", IssuanceBasis.MIGRATION,
-            InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY, new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL),
+            null, null, null, null),
             "staff-1").policyNumber();
+        if (agreed) {
+            agreementApi.add(scheme, new CreditLifeAgreementApi.AgreementInput(LocalDate.of(2026, 6, 1),
+                LocalDate.of(2027, 5, 31), new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL,
+                null, 18, 100, 1, 480, new BigDecimal("10"), false), "staff-setup");
+        }
         return scheme;
     }
 

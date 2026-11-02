@@ -287,7 +287,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
-            "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql",
+            "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
             // M8 (Task 9) additions: reinsurance appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap distribution had entering
             // M7. reinsurance/V1 has zero GRANT statements (the recurring V1 pattern this class
@@ -298,7 +298,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql",
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql",
             // M9 (Task 9) additions: finaccounting appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap reinsurance had entering
             // M8. finaccounting/V1 has zero GRANT statements and ends with a REVOKE UPDATE, DELETE

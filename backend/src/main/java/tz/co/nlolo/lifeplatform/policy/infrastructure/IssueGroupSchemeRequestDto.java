@@ -70,7 +70,11 @@ public record IssueGroupSchemeRequestDto(
      */
     List<@Valid GroupMemberInputDto> openingSchedule,
 
-    @NotNull @Valid MoneyDto premium,
+    /**
+     * Required on every scheme but credit life, whose contract carries no premium of its own: each accepted file is
+     * invoiced (2026-11-01). The service refuses it missing anywhere else.
+     */
+    @Valid MoneyDto premium,
     String premiumFrequency,
     LocalDate commencementDate,
     /** Null for the usual annually renewable scheme. */
@@ -90,17 +94,9 @@ public record IssueGroupSchemeRequestDto(
     IssuanceBasis issuanceBasis,
 
     /**
-     * The three terms a credit-life scheme needs and no other benefit basis has.
-     *
-     * <p>All three were absent from this DTO entirely until 2026-09-23, which made
-     * AMORTISING_LOAN unreachable over HTTP however complete the domain behind it was: the
-     * service requires an interest method and a premium rate to value a schedule, and neither
-     * had a wire field to arrive in.
-     *
-     * <p>Not {@code @NotNull}, for the same reason {@code flatBenefitAmount} and
-     * {@code salaryMultiple} are not: which fields a scheme requires depends on its
-     * {@code benefitBasis}, Bean Validation cannot express that, and the service refuses with a
-     * message that names the basis -- which is what somebody fixing a request needs to read.
+     * The terms only a credit-life scheme may carry, all optional since 2026-11-01: a loan is priced on the lender's
+     * yearly agreement and a claim pays the lender's statement, so the console no longer asks for them. Left out,
+     * the loans are recorded flat and monthly and the scheme states no rate of its own. Refused on any other basis.
      */
     InterestMethod interestMethod,
     RepaymentFrequency repaymentFrequency,
@@ -128,8 +124,9 @@ public record IssueGroupSchemeRequestDto(
             benefitBasis, decimal(flatBenefitAmount), salaryMultiple, decimal(fclAmount), currency,
             grades != null ? grades.stream().map(GroupSchemeGradeInputDto::toApiInput).toList() : null,
             openingSchedule.stream().map(GroupMemberInputDto::toApiInput).toList(),
-            new BigDecimal(premium.amount()), premium.currencyCode(),
-            premiumFrequency != null && !premiumFrequency.isBlank() ? premiumFrequency : "ANNUALLY",
+            premium == null ? null : new BigDecimal(premium.amount()), premium == null ? null : premium.currencyCode(),
+            premiumFrequency != null && !premiumFrequency.isBlank() ? premiumFrequency
+                : benefitBasis == BenefitBasis.AMORTISING_LOAN ? "SINGLE" : "ANNUALLY",
             commencementDate, policyTermMonths, reasonForManualIssue, issuanceBasis,
             interestMethod, repaymentFrequency, premiumRatePercent, premiumBasis);
     }

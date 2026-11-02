@@ -33,6 +33,9 @@ public enum ExitRejection {
     /** No member of this scheme carries that reference. */
     UNKNOWN_MEMBER_REFERENCE,
 
+    /** No loan on this scheme carries that account number (V44): the lender's own number for it. */
+    UNKNOWN_LOAN_ACCOUNT,
+
     /** The loan is already off cover — an earlier file, or a settled claim, took it off. */
     ALREADY_EXITED,
 

@@ -14,8 +14,6 @@ function valid(overrides: Partial<CreditLifeSchemeIssueFormValues> = {}) {
     policyholderPartyId: '18a95bce-d0fa-4aef-90db-3e34acbce71e',
     productId: 'f1b2c3d4-0000-4000-8000-000000000001',
     productVersionId: 'f1b2c3d4-0000-4000-8000-000000000002',
-    premiumRatePercent: '0.5',
-    premiumAmount: '52000.00',
     commencementDate: '2026-06-01',
     issuanceBasis: 'MIGRATION' as const,
     ...overrides,
@@ -40,48 +38,10 @@ function errorsFor(values: CreditLifeSchemeIssueFormValues): Record<string, stri
   return first;
 }
 
-describe('the premium basis', () => {
-  /**
-   * The rate does not say what to do with itself, and the two real lenders read the same
-   * percentage differently. Bumaco charges it flat on the disbursed amount — their May
-   * schedule prices a two-month loan exactly as it prices a twelve-month one — while LOLC
-   * charges it once per policy year on the balance still outstanding.
-   */
-  it('carries the basis to the request, since the rate alone does not price anything', () => {
-    const parsed = creditLifeSchemeIssueFormSchema(TODAY).safeParse({
-      ...valid(),
-      premiumRatePercent: '0.6',
-      premiumBasis: 'FLAT_ON_PRINCIPAL' as const,
-    });
-    expect(parsed.success).toBe(true);
-    if (parsed.success) {
-      expect(toIssueRequest(parsed.data).premiumBasis).toBe('FLAT_ON_PRINCIPAL');
-    }
-  });
-
-  it('accepts every basis the contract declares', () => {
-    for (const premiumBasis of [
-      'FLAT_ON_PRINCIPAL',
-      'PER_ANNUM_ON_PRINCIPAL',
-      'ANNUAL_ON_DECLINING_BALANCE',
-    ] as const) {
-      expect(
-        creditLifeSchemeIssueFormSchema(TODAY).safeParse({ ...valid(), premiumBasis }).success,
-      ).toBe(true);
-    }
-  });
-
-  it('refuses a basis that is not one of them, rather than passing it to the server', () => {
-    expect(
-      creditLifeSchemeIssueFormSchema(TODAY).safeParse({ ...valid(), premiumBasis: 'FLAT' }).success,
-    ).toBe(false);
-  });
-});
-
 describe('creditLifeSchemeIssueFormSchema', () => {
-  it('accepts a lender and terms, with no borrowers at all', () => {
-    // The shape a lender relationship actually starts in: the rate, the limit and the interest
-    // method are agreed, and the book arrives later by file.
+  it('accepts a lender and terms, with no borrowers and no price at all', () => {
+    // The shape a lender relationship actually starts in: the limit and the start are set, the year's
+    // price is agreed on the scheme page, and the book arrives later by file.
     expect(errorsFor(valid())).toEqual({});
   });
 
@@ -90,12 +50,6 @@ describe('creditLifeSchemeIssueFormSchema', () => {
     // But zero is refused rather than reinterpreted: a limit of zero would send every
     // borrower to underwriting, which is a different scheme.
     expect(errorsFor(valid({ fclAmount: '0.00' })).fclAmount).toMatch(/at least 0.01/);
-  });
-
-  it('requires the premium rate the lender is charged', () => {
-    expect(errorsFor(valid({ premiumRatePercent: '' })).premiumRatePercent).toMatch(
-      /percent of each loan/,
-    );
   });
 
   it('requires a commencement date, and refuses a future one', () => {
@@ -141,12 +95,13 @@ describe('toIssueRequest', () => {
     expect(toIssueRequest(valid()).premiumFrequency).toBe('SINGLE');
   });
 
-  it('carries the scheme terms no other benefit basis has', () => {
-    const request = toIssueRequest(valid({ interestMethod: 'REDUCING_BALANCE' }));
+  it('sends no price, repayment terms or premium of its own: the yearly agreement prices every file', () => {
+    // 2026-11-01. The server records the loans flat and monthly and the contract's premium as nil.
+    const request = toIssueRequest(valid());
     expect(request.benefitBasis).toBe('AMORTISING_LOAN');
-    expect(request.interestMethod).toBe('REDUCING_BALANCE');
-    expect(request.premiumRatePercent).toBe(0.5);
-    expect(request.repaymentFrequency).toBe('MONTHLY');
+    for (const field of ['premiumRatePercent', 'premiumBasis', 'interestMethod', 'repaymentFrequency', 'premium']) {
+      expect(field in request, field).toBe(false);
+    }
   });
 
   it('omits blank optionals rather than sending empty strings', () => {

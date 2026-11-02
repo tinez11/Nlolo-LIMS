@@ -1,28 +1,23 @@
 import { can } from '@/auth/access';
-import { useEffect, useState } from 'react';
-import { getAgent, getApplicablePlan, listAgents, listPolicyAccruals, onboardAgent, setCommissionRate } from '@/api/distribution';
-import { changeSchemeAgentOfRecord, getPolicy } from '@/api/policies';
-import type { AgentView, CommissionAccrualView, CommissionPlanView, PolicyView } from '@/api/types';
+import { useState } from 'react';
+import { onboardAgent } from '@/api/distribution';
+import { changeSchemeAgentOfRecord } from '@/api/policies';
+import type { AgentView, PolicyView } from '@/api/types';
 import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
+import { Panel } from '@/components/Panel';
 import { PartyName } from '@/components/PartyName';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { ApiError } from '@/lib/apiError';
 import { startMutation } from '@/lib/idempotency';
 import { formatMoney } from '@/lib/money';
-import { commissionStanding, ratePercentLabel, firstYearRate } from './commissionStanding';
-
-interface Loaded {
-  policy: PolicyView | null;
-  agent: AgentView | null;
-  lenderAgent: AgentView | null;
-  plan: CommissionPlanView | null;
-  accruals: CommissionAccrualView[];
-}
+import { commissionStanding } from './commissionStanding';
+import { isPositive, trimZeros } from './creditLifeAgreementForm';
+import type { CommissionFacts } from './useCommission';
 
 /**
- * Who earns commission on this scheme, at what rate, and what it has earned.
+ * Who earns commission on this scheme, at what rate, and what it has earned -- facts only, for the record rail.
  *
  * ## Why this exists
  *
@@ -32,44 +27,23 @@ interface Loaded {
  * lender, no credit-life product had a plan, and the month-end close that makes commission payable
  * was never installed. Every file earned exactly zero, with nothing on any screen to say so.
  *
- * The rate is agreed per lender (client answer 3.1), so it is set on the lender's own agent rather
- * than on the product. Every change here is forward only: nothing already earned moves.
+ * The rate is the yearly agreement's (2026-11-01), so it is read from the agreement in force, never from a plan or a
+ * rate set on the lender's agent. Setting the lender up to be paid is an act, so it is in the work column
+ * ({@link CommissionEarnerPanel}), not here (the Record-Rail Rule).
  */
-export function CommissionPanel({ policyNumber }: { policyNumber: string }) {
-  const isFinance = can('agents.view');
-  const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const [reload, setReload] = useState(0);
+export function CommissionPanel({ facts, agreedCommissionPercent }: {
+  facts: CommissionFacts | null;
+  /** The agreement in force today's commission; null when none covers today. */
+  agreedCommissionPercent: string | null;
+}) {
+  if (!facts) return <p className="px-4 py-3 text-xs text-muted-foreground">Loading commission…</p>;
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const policy = await getPolicy(policyNumber).catch(() => null);
-      const agentId = policy?.agentOfRecordId ?? null;
-      const [agent, lenderAgents, accruals] = await Promise.all([
-        agentId ? getAgent(agentId).catch(() => null) : Promise.resolve(null),
-        policy?.policyholderPartyId
-          ? listAgents({ partyId: policy.policyholderPartyId }).catch(() => null)
-          : Promise.resolve(null),
-        listPolicyAccruals(policyNumber).catch(() => [] as CommissionAccrualView[]),
-      ]);
-      const plan =
-        agentId && policy?.productId
-          ? await getApplicablePlan(agentId, policy.productId).catch(() => null)
-          : null;
-      if (!cancelled) {
-        setLoaded({ policy, agent, lenderAgent: lenderAgents?.items[0] ?? null, plan, accruals });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [policyNumber, reload]);
-
-  if (!loaded) return <p className="px-4 py-3 text-xs text-muted-foreground">Loading commission…</p>;
-
-  const { policy, agent, lenderAgent, plan, accruals } = loaded;
-  const standing = commissionStanding({ agentOfRecordId: policy?.agentOfRecordId, lenderAgent, plan });
-  const refresh = () => setReload((n) => n + 1);
+  const { policy, agent, lenderAgent, accruals } = facts;
+  const standing = commissionStanding({
+    agentOfRecordId: policy?.agentOfRecordId,
+    lenderAgent,
+    agreedCommissionPercent,
+  });
 
   return (
     <div className="space-y-3 px-4 py-3 text-sm">
@@ -79,11 +53,11 @@ export function CommissionPanel({ policyNumber }: { policyNumber: string }) {
         }
       >
         {standing.kind === 'earning' &&
-          `The lender earns ${standing.ratePercent} of each accepted file's premium, clawed back pro rata when a borrower repays early.`}
+          `The lender earns ${standing.ratePercent} of each paid file's premium, clawed back pro rata when a borrower repays early.`}
         {standing.kind === 'no-agent' && 'No commission will accrue: this scheme has no agent of record.'}
         {standing.kind === 'not-the-lender' &&
           'Commission would go to someone who is not the lender. On credit life the lender earns it (spec 2.8).'}
-        {standing.kind === 'no-rate' && 'No commission will accrue: no rate has been set for the lender.'}
+        {standing.kind === 'no-commission' && 'No commission will accrue: no agreement in force pays the lender any.'}
       </p>
 
       <dl className="space-y-1 text-xs">
@@ -97,18 +71,18 @@ export function CommissionPanel({ policyNumber }: { policyNumber: string }) {
         </div>
         <div className="flex justify-between gap-2">
           <dt className="text-muted-foreground">Rate</dt>
-          <dd>{ratePercentLabel(firstYearRate(plan)) ?? 'Not set'}</dd>
+          <dd>
+            {agreedCommissionPercent && isPositive(agreedCommissionPercent)
+              ? `${trimZeros(agreedCommissionPercent)}%, as agreed`
+              : 'None agreed'}
+          </dd>
         </div>
       </dl>
-
-      {isFinance && policy && (
-        <LenderCommissionActions policy={policy} lenderAgent={lenderAgent} onChanged={refresh} />
-      )}
 
       <div>
         <p className="text-xs font-medium">Earned on this scheme</p>
         {accruals.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Nothing yet. Commission accrues when a file is accepted.</p>
+          <p className="text-xs text-muted-foreground">Nothing yet. Commission is earned when the lender pays a file.</p>
         ) : (
           <ul className="mt-1 space-y-0.5 text-xs">
             {accruals.map((a) => (
@@ -126,7 +100,28 @@ export function CommissionPanel({ policyNumber }: { policyNumber: string }) {
   );
 }
 
-/** The three finance actions, in the order the lender needs them: become an agent, earn a rate, be the earner. */
+/**
+ * Making the lender the one paid its commission, in the work column: register it as an agent, then make it the
+ * scheme's earner. Shown to finance only while one of the two is still to do, and gone once the lender earns.
+ */
+export function CommissionEarnerPanel({ facts, onChanged }: { facts: CommissionFacts | null; onChanged: () => void }) {
+  const isFinance = can('agents.view');
+  if (!isFinance || !facts?.policy) return null;
+  const { policy, lenderAgent } = facts;
+  const isEarner = !!lenderAgent && lenderAgent.agentId === policy.agentOfRecordId;
+  if (isEarner) return null;
+
+  return (
+    <Panel
+      title="Who is paid the commission"
+      subtitle="The lender is paid the commission its agreement states, as the insurer's agent on this scheme."
+    >
+      <LenderCommissionActions policy={policy} lenderAgent={lenderAgent} onChanged={onChanged} />
+    </Panel>
+  );
+}
+
+/** The two finance actions, in the order the lender needs them: become an agent, be the earner. */
 function LenderCommissionActions({
   policy,
   lenderAgent,
@@ -138,7 +133,6 @@ function LenderCommissionActions({
 }) {
   const [licenseNumber, setLicenseNumber] = useState('');
   const [licenseExpiry, setLicenseExpiry] = useState<string | null>(null);
-  const [ratePercent, setRatePercent] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [attempt] = useState(() => startMutation());
@@ -157,14 +151,12 @@ function LenderCommissionActions({
     }
   }
 
-  const isEarner = !!lenderAgent && lenderAgent.agentId === policy.agentOfRecordId;
-
   return (
-    <div className="space-y-2 rounded-md border border-border p-3">
+    <div className="space-y-3 p-4">
       {!lenderAgent ? (
         <>
-          <p className="text-xs">The lender is not registered as an agent yet, so it cannot earn commission.</p>
-          <div className="grid grid-cols-2 gap-2">
+          <p className="text-sm">The lender is not registered as an agent yet, so it cannot be paid commission.</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <FormField label="Lender's licence number">
               <Input value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} />
             </FormField>
@@ -174,6 +166,7 @@ function LenderCommissionActions({
           </div>
           <Button
             size="sm"
+            variant="primary"
             disabled={busy || !licenseNumber.trim() || !licenseExpiry || !policy.policyholderPartyId}
             onClick={() =>
               void run(() =>
@@ -196,43 +189,25 @@ function LenderCommissionActions({
         </>
       ) : (
         <>
-          <div className="flex items-end gap-2">
-            <FormField label="Commission rate (%)" className="flex-1">
-              <Input
-                inputMode="decimal"
-                placeholder="e.g. 10 or 12.5"
-                value={ratePercent}
-                onChange={(e) => setRatePercent(e.target.value)}
-              />
-            </FormField>
-            <Button
-              size="sm"
-              disabled={busy || !/^\d{1,3}(\.\d{1,2})?$/.test(ratePercent.trim()) || !policy.productId}
-              onClick={() =>
-                void run(() => setCommissionRate(lenderAgent.agentId ?? '', policy.productId ?? '', ratePercent.trim()))
-              }
-            >
-              Set the lender&rsquo;s rate
-            </Button>
-          </div>
-          {!isEarner && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() =>
-                void run(() =>
-                  changeSchemeAgentOfRecord(
-                    policy.policyNumber ?? '',
-                    lenderAgent.agentId ?? null,
-                    'The lender earns commission on credit life (spec 2.8)',
-                  ),
-                )
-              }
-            >
-              Make the lender the commission earner
-            </Button>
-          )}
+          <p className="text-sm">
+            The lender is an agent, but not this scheme&rsquo;s commission earner yet.
+          </p>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={busy}
+            onClick={() =>
+              void run(() =>
+                changeSchemeAgentOfRecord(
+                  policy.policyNumber ?? '',
+                  lenderAgent.agentId ?? null,
+                  'The lender earns commission on credit life (spec 2.8)',
+                ),
+              )
+            }
+          >
+            Make the lender the commission earner
+          </Button>
           <p className="text-xs text-muted-foreground">
             From now on only — commission already earned stays where it was booked.
           </p>

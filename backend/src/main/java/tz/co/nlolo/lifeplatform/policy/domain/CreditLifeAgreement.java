@@ -49,6 +49,9 @@ public class CreditLifeAgreement {
     @Column(name = "minimum_premium", nullable = false)
     private BigDecimal minimumPremium;
 
+    @Column(name = "min_age", nullable = false)
+    private int minAge;
+
     @Column(name = "max_age", nullable = false)
     private int maxAge;
 
@@ -80,6 +83,7 @@ public class CreditLifeAgreement {
         this.premiumRatePercent = input.premiumRatePercent();
         this.premiumBasis = input.premiumBasis();
         this.minimumPremium = input.minimumPremium() == null ? BigDecimal.ZERO : input.minimumPremium();
+        this.minAge = input.minAge();
         this.maxAge = input.maxAge();
         this.minTermMonths = input.minTermMonths();
         this.maxTermMonths = input.maxTermMonths();
@@ -103,13 +107,14 @@ public class CreditLifeAgreement {
 
     public AgreementView toView() {
         return new AgreementView(agreementId, policyNumber, validFrom, validTo, premiumRatePercent, premiumBasis,
-            minimumPremium, maxAge, minTermMonths, maxTermMonths, commissionPercent, coverIncludesInterest, createdAt,
+            minimumPremium, minAge, maxAge, minTermMonths, maxTermMonths, commissionPercent, coverIncludesInterest, createdAt,
             createdBy);
     }
 
     public UUID getAgreementId() { return agreementId; }
     public LocalDate getValidFrom() { return validFrom; }
     public LocalDate getValidTo() { return validTo; }
+    public int getMinAge() { return minAge; }
     public int getMaxAge() { return maxAge; }
     public int getMinTermMonths() { return minTermMonths; }
     public int getMaxTermMonths() { return maxTermMonths; }

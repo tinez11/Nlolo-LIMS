@@ -212,14 +212,19 @@ export async function seedCreditLifeFixtures(
 }
 
 /**
- * Creates a lender, a CREDIT_LIFE product, a scheme with one opening borrower, and uploads a
- * pending enrolment file against it.
+ * Creates a lender, a CREDIT_LIFE product, a scheme with one opening borrower and its year's
+ * agreement, and uploads a pending enrolment file against it.
  *
  * Authors its own product rather than looking for a seeded one, the same choice
  * `staff-group-schemes.spec.ts` makes and for the same reason: a spec that hunted for "some
  * credit-life product" would pass vacuously on a tenant that had none.
+ *
+ * `commissionPercent` is the lender's commission in that agreement -- the only place a lender's
+ * commission comes from (2026-11-01). None by default.
  */
-export async function seedCreditLifeScheme(): Promise<CreditLifeScheme> {
+export async function seedCreditLifeScheme(
+  options: { commissionPercent?: string } = {},
+): Promise<CreditLifeScheme> {
   const http = await apiRequest.newContext();
   try {
     const token = await staffToken(http, 'staff.admin');
@@ -228,11 +233,9 @@ export async function seedCreditLifeScheme(): Promise<CreditLifeScheme> {
 
 
     /*
-     * The scheme itself. Two things here are credit-life specific and were unreachable over HTTP
-     * until 2026-09-23: `benefitBasis: AMORTISING_LOAN` with `loanTerms` on the member, and the
-     * scheme-level `interestMethod` / `repaymentFrequency` / `premiumRatePercent`. The request DTO
-     * described employer schemes only, so no credit-life scheme could be created through the API
-     * at all however complete the domain behind it was.
+     * The scheme itself, as the console sets one up since 2026-11-01: the lender, the product, the
+     * free cover limit and when it started -- no rate, repayment terms or premium of its own. The
+     * opening borrower is the API's alone; the console sends none.
      *
      * MIGRATION, for the reason `issueRealPolicy` documents at length: everything this spec does
      * needs a scheme IN FORCE, and this console has no action that accepts an offer.
@@ -259,29 +262,32 @@ export async function seedCreditLifeScheme(): Promise<CreditLifeScheme> {
           },
         },
       ],
-      premium: { amount: '52000.00', currencyCode: 'TZS' },
-      premiumFrequency: 'SINGLE',
       commencementDate: '2026-06-01',
       reasonForManualIssue: 'E2E credit-life console fixture',
       issuanceBasis: 'MIGRATION',
-      interestMethod: 'FLAT_RATE',
-      repaymentFrequency: 'MONTHLY',
-      premiumRatePercent: '0.5000',
-      /*
-        A rate and what that rate MEANS are two different things, and the server refuses one
-        without the other (policy V25's chk_group_scheme_premium_basis_iff_rate). Omitted here,
-        every credit-life spec died on the same 409 at its first line -- so the whole credit-life
-        console suite was dead from the commit that added the rule.
-
-        PER_ANNUM_ON_PRINCIPAL specifically, because that is what these specs' figures were
-        computed under: it is the basis V25 backfilled onto every scheme that predates the column,
-        and the one `CreditLifePremium.forLoan`'s legacy overload still assumes. FLAT_ON_PRINCIPAL
-        drops the term multiplier -- 0.5% of 2,400,000 once rather than over 18 months -- which
-        silently rewrites every premium, invoice and commission figure downstream.
-      */
-      premiumBasis: 'PER_ANNUM_ON_PRINCIPAL',
     });
     const policyNumber = scheme.policyNumber as string;
+
+    /*
+     * The lender's year, which every loan is priced on: no file is taken without one.
+     *
+     * PER_ANNUM_ON_PRINCIPAL at 0.5% specifically, because that is what these specs' figures were
+     * computed under -- the 65,000 the fixture file charges. Any other rule silently rewrites every
+     * premium, invoice and commission figure downstream. Ages and terms wide enough for every row
+     * the file means to pass, including its six-month loan.
+     */
+    await postJson(http, token, `/group-schemes/${policyNumber}/agreements`, {
+      validFrom: '2026-06-01',
+      validTo: '2027-05-31',
+      premiumRatePercent: '0.5',
+      premiumBasis: 'PER_ANNUM_ON_PRINCIPAL',
+      minAge: 18,
+      maxAge: 100,
+      minTermMonths: 1,
+      maxTermMonths: 480,
+      ...(options.commissionPercent ? { commissionPercent: options.commissionPercent } : {}),
+      coverIncludesInterest: false,
+    });
 
     const upload = await http.post(`${API}/credit-life-schemes/${policyNumber}/enrolments`, {
       headers: { Authorization: `Bearer ${token}` },

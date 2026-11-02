@@ -98,7 +98,7 @@ test.describe('staff credit-life scheme', () => {
     // of the <dt> matches too.
     const livesOnCover = page
       .locator('div')
-      .filter({ has: page.locator('dt', { hasText: /^Lives on cover$/ }) })
+      .filter({ has: page.locator('dt', { hasText: /^Borrowers on cover$/ }) })
       .last()
       .locator('dd')
       .first();
@@ -107,21 +107,21 @@ test.describe('staff credit-life scheme', () => {
      * AND THE LIMIT CAN BE CORRECTED. It is a number typed once, and a wrong one insures every
      * borrower for a fraction of their loan and opens an underwriting case for each -- which is
      * exactly what happened on the first scheme somebody set up this way. Until this control
-     * existed the only remedy was a second scheme.
+     * existed the only remedy was a second scheme. It lives on Scheme details (2026-11-02).
      */
+    await page.getByRole('tab', { name: 'Scheme details' }).click();
     await expect(page.getByRole('button', { name: 'Change the free cover limit' })).toBeVisible();
+    await page.getByRole('tab', { name: 'Monthly files' }).click();
 
-    // The file is there, and it says outright that nothing has happened.
+    // The file is there, waiting, and it says outright that nobody is covered by it yet.
     await expect(page.getByText('january-schedule.csv')).toBeVisible();
     await expect(page.getByText('Pending', { exact: true })).toBeVisible();
-    await expect(page.getByText(/Nothing has happened yet/)).toBeVisible();
-    await expect(page.getByText(/a second person must accept this file/)).toBeVisible();
-    await expect(page.getByText(/awaiting a second person/)).toBeVisible();
+    await expect(page.getByText(/Nobody is enrolled until a second person accepts this file/)).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Waiting for acceptance' })).toContainText(/Sent .* by/);
 
     // "Would be", not "Enrolled". The count is an intention until somebody accepts.
-    await expect(page.getByText('Would be enrolled')).toBeVisible();
-    // Exact: the file's quotation also says "Refused rows are in none of these figures".
-    await expect(page.getByText('Refused', { exact: true })).toBeVisible();
+    await expect(page.getByText('would be enrolled')).toBeVisible();
+    await expect(page.getByText(/^\d+ refused$/).first()).toBeVisible();
 
     /*
      * THE REASONS ARE ON SCREEN, unclicked. The newest file opens by itself precisely so that the
@@ -158,8 +158,8 @@ test.describe('staff credit-life scheme', () => {
     // The columns are explained where somebody can read them out to a lender.
     await page.getByRole('button', { name: 'What goes in it' }).first().click();
     await expect(page.getByText(/cover starts on it/i).first()).toBeVisible();
-    // The spreadsheet is built from the agreement (2026-10-30), and the guide says what that puts in it.
-    await expect(page.getByText(/The spreadsheet carries this scheme/)).toBeVisible();
+    // The guide says to send the spreadsheet, whose Check column names what is wrong with a row.
+    await expect(page.getByText(/Send the spreadsheet, not the CSV/)).toBeVisible();
 
     /*
      * NO EMPLOYER-SCHEME FURNITURE. A credit-life scheme has no grades and no salary multiple:
@@ -174,20 +174,19 @@ test.describe('staff credit-life scheme', () => {
      * staff.underwriter. The backend refuses a same-person acceptance, so a spec that did both
      * as one identity would fail here -- and if it ever passes, that control has stopped working.
      */
-    await page.getByRole('button', { name: 'Accept' }).first().click();
+    // Exact: the journey's step "A file waits for acceptance" is a button too.
+    await page.getByRole('button', { name: 'Accept', exact: true }).first().click();
     const confirmation = page.getByRole('group', { name: 'Accept this file?' });
     await expect(confirmation).toBeVisible();
     await expect(confirmation).toContainText('Refused rows are not');
     await confirmation.getByRole('button', { name: 'Accept' }).click();
 
     await expect(page.getByText('Accepted', { exact: true })).toBeVisible({ timeout: 20_000 });
-    // Two different people handled it, said in words rather than as two uuids to diff by eye.
-    await expect(page.getByText(/two people, as it should be/)).toBeVisible();
-    // The intention became a fact: "Enrolled", not "Would be enrolled".
-    await expect(page.getByText('Would be enrolled')).toHaveCount(0);
-    // `first()`: every row that passed also carries an "Enrolled" outcome badge in the table
-    // below, so the label is not unique on this page -- which is the point of it changing.
-    await expect(page.getByText('Enrolled', { exact: true }).first()).toBeVisible();
+    // Two people handled it: who sent it, and who accepted it.
+    await expect(page.getByText(/accepted by/)).toBeVisible();
+    // The intention became a fact: "enrolled", not "would be enrolled".
+    await expect(page.getByText('would be enrolled')).toHaveCount(0);
+    await expect(page.getByText('enrolled', { exact: true }).first()).toBeVisible();
 
     // Refused rows were NOT enrolled by the acceptance. Three of five passed.
     await expect(livesOnCover).toHaveText(String(1 + ENROLMENT_PASSING), { timeout: 20_000 });
@@ -198,7 +197,8 @@ test.describe('staff credit-life scheme', () => {
      * loan amounts and got back a handle minted by the insurer, which they quote on every later
      * file and which an exits file names a departing borrower by.
      */
-    await page.getByRole('link', { name: 'The member roll' }).click();
+    await page.getByRole('tab', { name: 'Scheme details' }).click();
+    await page.getByRole('link', { name: 'Find a borrower' }).click();
     await expect(page).toHaveURL(rollPage, { timeout: 15_000 });
     await expect(page.getByText('Juma Rajabu Kimaro')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(/^CL-[A-Z0-9]+-\d{6}$/).first()).toBeVisible();
@@ -234,9 +234,9 @@ test.describe('staff credit-life scheme', () => {
      * next file found no upload and nothing saying where the upload was.
      */
     await expect(page.getByRole('button', { name: 'Add member' })).toHaveCount(0);
-    await page.getByRole('link', { name: 'Upload a file' }).click();
+    await page.getByRole('link', { name: 'Monthly files' }).click();
     await expect(page).toHaveURL(schemePage, { timeout: 15_000 });
-    await expect(page.getByRole('button', { name: 'Upload schedule' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Upload joining file' })).toBeVisible();
   });
 
   test('a credit-life scheme can be set up from the console at all', async ({ page }) => {
@@ -268,9 +268,19 @@ test.describe('staff credit-life scheme', () => {
     // form, which is the version of this that wastes somebody's afternoon.
     await chooseProduct(page, fixtures.productLabel);
 
-    await page.getByLabel('Premium rate (% of each loan)').fill('0.5');
+    // NO PRICE HERE (2026-11-01): the rate, the ages, the loan lengths and the commission are the lender's yearly
+    // agreement, added on the scheme page; how the loans repay values nothing once a claim pays the lender's
+    // statement; and the contract carries no premium of its own.
+    for (const gone of [
+      'Premium rate (% of each loan)',
+      'How the rate is charged',
+      'Interest method',
+      'Repayment frequency',
+      'Premium recorded on the contract',
+    ]) {
+      await expect(page.getByLabel(gone)).toHaveCount(0);
+    }
     await page.getByLabel('Free cover limit (optional)').fill('600000000.00');
-    await page.getByLabel('Premium recorded on the contract').fill('52000.00');
     // Before the opening borrower's loan. A book being onboarded always has loans older than
     // today, and a member cannot join a scheme that did not exist yet -- the form asks for this
     // rather than letting the server refuse the whole submission over a date it never showed.
@@ -308,17 +318,19 @@ test.describe('staff credit-life scheme', () => {
     // In force on arrival, and therefore able to take a file — which is the whole point of the
     // issuance-basis default above.
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Borrowers joining' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Joining files' })).toBeVisible();
     // The underwriter of record, by name, with the basis they gave -- no case stands behind a
     // credit-life scheme, so this is its compliance record. staff.underwriter set it up.
+    await page.getByRole('tab', { name: 'Scheme details' }).click();
     await expect(page.getByText('Set up by')).toBeVisible();
     // In the page, not the sidebar -- which shows the signed-in user's own name too.
     await expect(page.locator('#main').getByText('Halima Underwriter')).toBeVisible({ timeout: 20_000 });
+    await page.getByRole('tab', { name: 'Monthly files' }).click();
 
     // One life on cover: the opening borrower, and nobody the form invented.
     const livesOnCover = page
       .locator('div')
-      .filter({ has: page.locator('dt', { hasText: /^Lives on cover$/ }) })
+      .filter({ has: page.locator('dt', { hasText: /^Borrowers on cover$/ }) })
       .last()
       .locator('dd')
       .first();
@@ -326,6 +338,38 @@ test.describe('staff credit-life scheme', () => {
     // because the form made somebody type a borrower -- a life they then met again on the
     // member roll without recognising them.
     await expect(livesOnCover).toHaveText('0');
+
+    /*
+     * AGREEMENT FIRST. With no agreement there is no price, so the lender's file and its template wait for one --
+     * said where the upload would be, rather than a refusal after the round trip.
+     */
+    const joiningPanel = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Joining files' }) });
+    await expect(joiningPanel.getByText(/Add the lender.s yearly agreement first/)).toBeVisible({ timeout: 20_000 });
+    await expect(joiningPanel.getByRole('button', { name: 'Upload joining file' })).toBeDisabled();
+    await expect(joiningPanel.getByRole('button', { name: 'Download template' })).toBeDisabled();
+
+    // The next step says what to do, and takes you there.
+    await page.getByRole('button', { name: 'Add the agreement' }).click();
+    const agreementPanel = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Yearly agreements' }) });
+    await agreementPanel.getByRole('button', { name: 'Add the agreement' }).click();
+    // A first year starts today and takes adults, and a loan of any length from a month: a four-month loan is
+    // charged as a year by the rule, not refused.
+    await expect(agreementPanel.getByLabel('Youngest borrower')).toHaveValue('18');
+    await expect(agreementPanel.getByLabel('Shortest loan (months)')).toHaveValue('1');
+    await agreementPanel.getByLabel('Premium rate (% a year)').fill('0.6');
+    await agreementPanel.getByLabel('Oldest borrower').fill('70');
+    await agreementPanel.getByLabel('Longest loan (months)').fill('120');
+    await agreementPanel.getByLabel(/Lender's commission/).fill('10');
+    await agreementPanel.getByRole('button', { name: 'Add the agreement' }).click();
+    await expect(agreementPanel.getByText(/borrowers aged 18 to 70 when the loan starts/)).toBeVisible({
+      timeout: 20_000,
+    });
+    await page.getByRole('tab', { name: 'Monthly files' }).click();
+    await expect(joiningPanel.getByRole('button', { name: 'Upload joining file' })).toBeEnabled();
 
     /*
      * AND THE TEMPLATE COMES BACK WITH THAT BORROWER IN IT.
@@ -346,7 +390,7 @@ test.describe('staff credit-life scheme', () => {
      * example had been rewritten too. A date in a spreadsheet is a typed cell and round-trips.
      */
     const xlsxDownload = page.waitForEvent('download');
-    await page.getByRole('button', { name: /Schedule template to send the lender/ }).click();
+    await joiningPanel.getByRole('button', { name: 'Download template' }).click();
     const xlsx = await xlsxDownload;
     expect(xlsx.suggestedFilename()).toMatch(/^enrolment-template-GRP-[A-Z0-9]+\.xlsx$/);
     // A real workbook, not an error page rendered as one: every xlsx is a zip.
@@ -359,8 +403,8 @@ test.describe('staff credit-life scheme', () => {
     // takes a workbook too, so the bare name resolves to two buttons.
     const joining = page
       .locator('section')
-      .filter({ has: page.getByRole('heading', { name: 'Borrowers joining' }) });
-    await joining.getByRole('button', { name: 'or as a CSV' }).click();
+      .filter({ has: page.getByRole('heading', { name: 'Joining files' }) });
+    await joining.getByRole('button', { name: 'CSV', exact: true }).click();
     const template = await templateDownload;
     expect(template.suggestedFilename()).toMatch(/^enrolment-template-GRP-[A-Z0-9]+\.csv$/);
     const templateText = readFileSync(await template.path(), 'utf8');
@@ -383,7 +427,7 @@ test.describe('staff credit-life scheme', () => {
      * unconditionally, sending somebody to look for a row that was not there.
      */
     await page.getByRole('button', { name: 'What goes in it' }).first().click();
-    await expect(page.getByText(/The spreadsheet carries this scheme/)).toBeVisible();
+    await expect(page.getByText(/Grey columns fill themselves/)).toBeVisible();
     await expect(page.getByText(/worked example/)).toHaveCount(0);
   });
 
@@ -397,9 +441,11 @@ test.describe('staff credit-life scheme', () => {
 
     // No exits file has ever been sent for this scheme, and the panel says so in the lender's
     // terms rather than showing an empty table.
+    // The switch, not the journey's step of the same name.
+    await page.getByRole('group', { name: 'Which file' }).getByRole('button', { name: /^Loans ending/ }).click();
     const exits = page
       .locator('section')
-      .filter({ has: page.getByRole('heading', { name: 'Loans ending' }) });
+      .filter({ has: page.getByRole('heading', { name: 'Loans-ending files' }) });
     await expect(exits.getByText('No files yet')).toBeVisible();
 
     /*
@@ -416,7 +462,7 @@ test.describe('staff credit-life scheme', () => {
     });
 
     const chooser = page.waitForEvent('filechooser');
-    await exits.getByRole('button', { name: 'Upload exits file' }).click();
+    await exits.getByRole('button', { name: 'Upload loans-ending file' }).click();
     await (
       await chooser
     ).setFiles({

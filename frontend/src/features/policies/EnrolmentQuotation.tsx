@@ -1,6 +1,7 @@
 import type { SubmissionStatus } from '@/api/types';
 import { Field } from '@/components/Field';
-import { ErrorPanel, LoadingBlock } from '@/components/states';
+import { InlineError } from '@/components/InlineError';
+import { LoadingBlock } from '@/components/states';
 import { formatMoney, NO_VALUE } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectQuotation, useCreditLifeStore } from '@/store/creditLifeStore';
@@ -20,7 +21,15 @@ export function EnrolmentQuotation({ submissionId, status }: { submissionId: str
 
   if (status === 'WITHDRAWN') return null;
   if (isInitialLoad(quotation)) return <LoadingBlock label="Pricing this file" />;
-  if (quotation.error && !quotation.data) return <ErrorPanel error={quotation.error} />;
+  // InlineError, not ErrorPanel: a refused price is a 409 with the server's reason ("no agreement covers this loan"),
+  // which ErrorPanel would misread as somebody else's concurrent edit.
+  if (quotation.error && !quotation.data) {
+    return (
+      <div className="border-t border-border p-4">
+        <InlineError sticky error={quotation.error} lead="This file could not be priced" />
+      </div>
+    );
+  }
   const q = quotation.data;
   if (!q) return null;
 

@@ -384,7 +384,6 @@ public class PolicyEventListener {
         @SuppressWarnings("unchecked")
         Map<String, Object> premium = (Map<String, Object>) payload.get("premium");
         BigDecimal premiumAmount = new BigDecimal((String) premium.get("amount"));
-        String currency = (String) premium.get("currencyCode");
 
         if (premiumAmount.signum() == 0) {
             log.info("Enrolment submission {} enrolled nobody -- no commission to accrue", submissionId);
@@ -420,41 +419,19 @@ public class PolicyEventListener {
             }
         }
 
-        // The year's agreement with the lender states its commission (policy V43): that figure is what the
-        // lender was promised, so it is paid as stated and no commission plan is consulted.
+        // The year's agreement with the lender states its commission (policy V43): that figure is what the lender was
+        // promised, so it is paid as stated. Every file is priced on an agreement (2026-11-01), so it is the only source
+        // of a lender's commission: no commission plan, and no rate set on the lender's agent, is consulted.
         @SuppressWarnings("unchecked")
         Map<String, Object> agreed = (Map<String, Object>) payload.get("lenderCommission");
-        if (agreed != null) {
-            BigDecimal amount = new BigDecimal((String) agreed.get("amount"));
-            if (amount.signum() == 0) {
-                log.info("Submission {}'s agreement pays the lender no commission", submissionId);
-                return;
-            }
-            // Held, not booked: the lender is paid its commission after it pays the file (2026-10-30).
-            creditLifeCommissions.hold(tenantId, submissionId, policyNumber, agentId, amount,
-                (String) agreed.get("currencyCode"), premiumAmount);
+        BigDecimal amount = agreed == null ? BigDecimal.ZERO : new BigDecimal((String) agreed.get("amount"));
+        if (amount.signum() == 0) {
+            log.info("Submission {}'s agreement pays the lender no commission", submissionId);
             return;
         }
-
-        CommissionCalculator.AgentWithPlan seller = distributionApiImpl.resolveAgentWithPlan(
-            tenantId, agentId, maybeProjection.get().getProductId());
-        if (seller == null) {
-            log.info("Scheme {}'s agent {} does not resolve to an agent with a plan -- no "
-                + "commission accrued on submission {}", policyNumber, agentId, submissionId);
-            return;
-        }
-
-        // No ancestors: overrides on a bancassurance scheme wait for the broker/bancassurance
-        // discriminator M7 deferred, and one corporate agent does not justify it (spec 2.8).
-        List<CommissionCalculator.Accrual> accruals = CommissionCalculator.calculate(
-            seller, List.of(), TierType.FIRST_YEAR, premiumAmount, currency);
-
-        // Held, not booked: the lender is paid its commission after it pays the file (2026-10-30). The seller is the
-        // only line here -- no ancestors -- so there is at most one.
-        for (CommissionCalculator.Accrual accrual : accruals) {
-            creditLifeCommissions.hold(tenantId, submissionId, policyNumber, accrual.agentId(), accrual.amount(),
-                accrual.currency(), premiumAmount);
-        }
+        // Held, not booked: the lender is paid its commission after it pays the file (2026-10-30).
+        creditLifeCommissions.hold(tenantId, submissionId, policyNumber, agentId, amount,
+            (String) agreed.get("currencyCode"), premiumAmount);
     }
 
     /**

@@ -28,7 +28,7 @@ public final class ExitReportRenderer {
     public static final String STILL_ON_COVER = "THIS LOAN IS STILL ON COVER.";
 
     private static final String[] HEADER = {
-        "row_number", "member_reference", "exit_date", "exit_reason",
+        "row_number", "loan_account_number", "member_reference", "exit_date", "exit_reason",
         "outstanding_balance_at_exit", "outcome", "reason_code", "reason"
     };
 
@@ -41,6 +41,7 @@ public final class ExitReportRenderer {
             for (ExitRowView row : rows) {
                 printer.printRecord(
                     row.lineNumber(),
+                    row.loanAccountNumber() == null ? "" : row.loanAccountNumber(),
                     row.memberReference() == null ? "" : row.memberReference(),
                     row.exitDate() == null ? "" : row.exitDate().toString(),
                     row.exitReason() == null ? "" : row.exitReason().name(),

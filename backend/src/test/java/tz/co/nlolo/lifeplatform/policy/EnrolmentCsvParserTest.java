@@ -308,8 +308,19 @@ class EnrolmentCsvParserTest {
     }
 
     @Test
+    void aDateKeptAsTextIsReadDayFirstAsTheLendersSheetsWriteIt() {
+        // A block pasted from a bank's own sheet keeps its dates as text (2026-11-02): 14/03/1988 is the 14th of March.
+        var parsed = parse("LN-1,Amina Hassan Mwinyi,14/03/1988,F,,,8500000.00,48,18-05-2026\n");
+
+        assertThat(parsed.errors()).isEmpty();
+        assertThat(parsed.rows().get(0).borrowerDateOfBirth()).isEqualTo(LocalDate.of(1988, 3, 14));
+        assertThat(parsed.rows().get(0).disbursementDate()).isEqualTo(LocalDate.of(2026, 5, 18));
+    }
+
+    @Test
     void anyOtherUnreadableDateSaysWhatExcelDidAndWhatToTypeInstead() {
-        var parsed = parse("LN-1,Amina Hassan Mwinyi,03/08/2026,F,,,8500000.00,48,2026-08-03\n");
+        // Month first, as an American Excel writes it: the 31st month is no month, and is refused rather than swapped.
+        var parsed = parse("LN-1,Amina Hassan Mwinyi,08/31/1988,F,,,8500000.00,48,2026-08-03\n");
 
         assertThat(parsed.errors()).hasSize(1);
         assertThat(parsed.errors().get(0).detail()).contains("Set the column format to Text");

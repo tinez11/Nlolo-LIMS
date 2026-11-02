@@ -5,7 +5,6 @@ import { Controller, useForm } from 'react-hook-form';
 import type { CreditLifeAgreement } from '@/api/types';
 import { can } from '@/auth/access';
 import { DatePicker } from '@/components/DatePicker';
-import { Field } from '@/components/Field';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { StaffName } from '@/components/StaffName';
@@ -21,7 +20,6 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectAddingAgreement, selectAgreements, useCreditLifeStore } from '@/store/creditLifeStore';
 import {
   agreementFormSchema,
-  agreementOn,
   COMMISSION_CAP_PERCENT,
   defaultAgreementValues,
   isPositive,
@@ -35,10 +33,12 @@ import { CREDIT_LIFE_PREMIUM_BASES, CREDIT_LIFE_PREMIUM_BASIS_LABELS } from './c
 /**
  * The lender's yearly agreements on a credit-life scheme (policy V43, 2026-10-30).
  *
- * One a year: the rate and how it is applied, the least a loan pays, the oldest borrower, the shortest and longest
- * loan, the lender's commission and whether cover includes interest. Each borrower is priced on the agreement in force
- * the day their loan started, so a new year never re-prices anybody already covered -- which is why an agreement is
- * never edited once made, and why the next year is ADDED here rather than changed.
+ * One a year: the rate and how it is applied, the least a loan pays, the youngest and oldest borrower, the shortest and
+ * longest loan, the lender's commission and whether cover includes interest. Each borrower is priced on the agreement
+ * in force the day their loan started, so a new year never re-prices anybody already covered -- which is why an
+ * agreement is never edited once made, and why the next year is ADDED here rather than changed.
+ *
+ * Agreement first (2026-11-01): a scheme takes no file, and gives out no template, until it has one.
  *
  * In the work column, not the record rail: adding a year is an act, and the rail holds facts (the Record-Rail Rule).
  * The rail shows the year in force through {@link AgreementInForce}.
@@ -62,7 +62,7 @@ export function CreditLifeAgreementsPanel({ policyNumber, currency }: { policyNu
       {rows.length === 0 ? (
         <EmptyState
           title="No agreement yet"
-          description="Loans are priced on the scheme's own rate until the lender's yearly agreement is added. The template the lender fills in carries whatever is agreed here."
+          description="Every loan is priced on it, so the lender's template and first file wait for it."
         />
       ) : (
         <div className="divide-y divide-border rounded-md border border-border" role="list" aria-label="Agreements">
@@ -74,7 +74,7 @@ export function CreditLifeAgreementsPanel({ policyNumber, currency }: { policyNu
       )}
 
       {canManage && !adding && (
-        <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
+        <Button size="sm" variant={rows.length === 0 ? 'primary' : 'outline'} onClick={() => setAdding(true)}>
           <Plus className="size-4" aria-hidden />
           {rows.length === 0 ? 'Add the agreement' : 'Add the next year'}
         </Button>
@@ -130,7 +130,7 @@ function termsInWords(a: CreditLifeAgreement, currency: string): string {
   return [
     minimum,
     `loans of ${a.minTermMonths} to ${a.maxTermMonths} months`,
-    `borrowers up to ${a.maxAge} when the loan starts`,
+    `borrowers aged ${a.minAge} to ${a.maxAge} when the loan starts`,
     commission,
     a.coverIncludesInterest ? 'a claim pays the balance with its interest' : 'a claim pays the principal still owed',
   ].join(' · ');
@@ -196,8 +196,8 @@ function AddAgreementForm({ policyNumber, currency, previous, onDone }: {
           </Select>
         </FormField>
 
-        <FormField label={`Least a loan pays (${currency}, optional)`} error={errors.minimumPremium?.message}>
-          <Input inputMode="decimal" placeholder="2000" {...form.register('minimumPremium')} />
+        <FormField label="Youngest borrower (age when the loan starts)" error={errors.minAge?.message}>
+          <Input inputMode="numeric" {...form.register('minAge')} />
         </FormField>
         <FormField label="Oldest borrower (age when the loan starts)" error={errors.maxAge?.message}>
           <Input inputMode="numeric" placeholder="75" {...form.register('maxAge')} />
@@ -210,6 +210,9 @@ function AddAgreementForm({ policyNumber, currency, previous, onDone }: {
           <Input inputMode="numeric" placeholder="120" {...form.register('maxTermMonths')} />
         </FormField>
 
+        <FormField label={`Least a loan pays (${currency}, optional)`} error={errors.minimumPremium?.message}>
+          <Input inputMode="decimal" placeholder="2000" {...form.register('minimumPremium')} />
+        </FormField>
         <FormField
           label={`Lender's commission (% of premium, at most ${COMMISSION_CAP_PERCENT})`}
           error={errors.commissionPercent?.message}
@@ -235,45 +238,3 @@ function AddAgreementForm({ policyNumber, currency, previous, onDone }: {
   );
 }
 
-/**
- * The year in force, for the record rail: facts only, beside the files they price.
- *
- * Says so plainly when there is none, because then the scheme's own rate prices every loan.
- */
-export function AgreementInForce({ policyNumber, currency }: { policyNumber: string; currency: string }) {
-  const agreements = useCreditLifeStore(selectAgreements(policyNumber));
-  if (isInitialLoad(agreements) || !agreements.data) return null;
-  const current = agreementOn(agreements.data);
-  if (!current) {
-    return (
-      <p className="px-4 pb-3 text-xs text-muted-foreground">
-        No agreement covers today. {agreements.data.length === 0
-          ? "Loans are priced on the scheme's own rate."
-          : "Loans that start today would be refused; add this year's agreement."}
-      </p>
-    );
-  }
-  return (
-    <dl className="px-4 pb-2">
-      <Field label="Runs" value={`${formatDate(current.validFrom)} to ${formatDate(current.validTo)}`} />
-      <Field label="Price" value={`${trimZeros(current.premiumRatePercent)}% a year`} note={pricingRuleInWords(current)} />
-      <Field
-        label="Least a loan pays"
-        value={isPositive(current.minimumPremium)
-          ? formatMoney({ amount: current.minimumPremium, currencyCode: currency })
-          : 'No minimum'}
-      />
-      <Field label="Loans" value={`${current.minTermMonths} to ${current.maxTermMonths} months`} />
-      <Field label="Oldest borrower" value={`${current.maxAge} when the loan starts`} />
-      <Field
-        label="Lender's commission"
-        value={isPositive(current.commissionPercent) ? `${trimZeros(current.commissionPercent)}%` : 'None'}
-        note="Paid to the lender after the premium is received."
-      />
-      <Field
-        label="A claim pays"
-        value={current.coverIncludesInterest ? 'Balance with interest' : 'Principal still owed'}
-      />
-    </dl>
-  );
-}

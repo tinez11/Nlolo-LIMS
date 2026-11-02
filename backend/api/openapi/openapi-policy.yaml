@@ -1828,39 +1828,41 @@ components:
   schemas:
     CreditLifeAgreementInput:
       type: object
-      required: [validFrom, validTo, premiumRatePercent, premiumBasis, maxAge, minTermMonths, maxTermMonths]
+      required: [validFrom, validTo, premiumRatePercent, premiumBasis, minAge, maxAge, minTermMonths, maxTermMonths]
       properties:
         validFrom: { type: string, format: date }
         validTo: { type: string, format: date }
-        premiumRatePercent: { type: string, pattern: '^d+(.d+)?$', description: "Per year on the loan amount; 0.6 means 0.6%" }
+        premiumRatePercent: { type: string, pattern: '^\d+(\.\d+)?$', description: "Per year on the loan amount; 0.6 means 0.6%" }
         premiumBasis:
           type: string
           enum: [FLAT_ON_PRINCIPAL, PER_ANNUM_ON_PRINCIPAL, ANNUAL_ON_DECLINING_BALANCE, WHOLE_YEARS_ROUNDED_UP]
-        minimumPremium: { type: [string, "null"], pattern: '^d+(.d{1,2})?$', description: The least one loan pays }
+        minimumPremium: { type: [string, "null"], pattern: '^\d+(\.\d{1,2})?$', description: The least one loan pays }
+        minAge: { type: integer, minimum: 18, maximum: 100, description: The youngest a borrower may be when the loan starts }
         maxAge: { type: integer, minimum: 18, maximum: 100, description: The oldest a borrower may be when the loan starts }
-        minTermMonths: { type: integer, minimum: 1 }
+        minTermMonths: { type: integer, minimum: 1, description: "A loan shorter than a year is taken, and priced by the rule" }
         maxTermMonths: { type: integer, maximum: 480 }
-        commissionPercent: { type: [string, "null"], pattern: '^d+(.d+)?$', description: "The lender's commission; at most 15% (TIRA)" }
+        commissionPercent: { type: [string, "null"], pattern: '^\d+(\.\d+)?$', description: "The lender's commission; at most 15% (TIRA)" }
         coverIncludesInterest: { type: boolean }
     CreditLifeAgreement:
       type: object
       additionalProperties: false
-      required: [agreementId, policyNumber, validFrom, validTo, premiumRatePercent, premiumBasis, minimumPremium, maxAge,
-        minTermMonths, maxTermMonths, commissionPercent, coverIncludesInterest, createdAt, createdBy]
+      required: [agreementId, policyNumber, validFrom, validTo, premiumRatePercent, premiumBasis, minimumPremium, minAge,
+        maxAge, minTermMonths, maxTermMonths, commissionPercent, coverIncludesInterest, createdAt, createdBy]
       properties:
         agreementId: { type: string, format: uuid }
         policyNumber: { type: string }
         validFrom: { type: string, format: date }
         validTo: { type: string, format: date }
-        premiumRatePercent: { type: string, pattern: '^-?d+(.d+)?$' }
+        premiumRatePercent: { type: string, pattern: '^-?\d+(\.\d+)?$' }
         premiumBasis:
           type: string
           enum: [FLAT_ON_PRINCIPAL, PER_ANNUM_ON_PRINCIPAL, ANNUAL_ON_DECLINING_BALANCE, WHOLE_YEARS_ROUNDED_UP]
-        minimumPremium: { type: string, pattern: '^-?d+(.d+)?$' }
+        minimumPremium: { type: string, pattern: '^-?\d+(\.\d+)?$' }
+        minAge: { type: integer }
         maxAge: { type: integer }
         minTermMonths: { type: integer }
         maxTermMonths: { type: integer }
-        commissionPercent: { type: string, pattern: '^-?d+(.d+)?$' }
+        commissionPercent: { type: string, pattern: '^-?\d+(\.\d+)?$' }
         coverIncludesInterest: { type: boolean }
         createdAt: { type: string, format: date-time }
         createdBy: { type: string }
@@ -2004,7 +2006,10 @@ components:
         lineNumber:
           type: integer
           description: The line in the lender's own file. 1 is the header.
-        memberReference: { type: [string, 'null'] }
+        memberReference: { type: [string, 'null'], description: "The member the row named or resolved to" }
+        loanAccountNumber:
+          type: [string, 'null']
+          description: The lender's own number for the loan, where the row named it that way (V44).
         exitDate: { type: [string, 'null'], format: date }
         exitReason:
           type: [string, 'null']
@@ -2014,7 +2019,7 @@ components:
         outcome: { type: string, enum: [EXITED, REJECTED] }
         reasonCode:
           type: [string, 'null']
-          enum: [MISSING_REQUIRED_FIELD, MALFORMED_VALUE, UNKNOWN_MEMBER_REFERENCE, DUPLICATE_REFERENCE, ALREADY_EXITED, EXIT_BEFORE_COVER_STARTED, UNKNOWN_EXIT_REASON, DEATH_CLAIM_IN_PROGRESS, null]
+          enum: [MISSING_REQUIRED_FIELD, MALFORMED_VALUE, UNKNOWN_MEMBER_REFERENCE, UNKNOWN_LOAN_ACCOUNT, DUPLICATE_REFERENCE, ALREADY_EXITED, EXIT_BEFORE_COVER_STARTED, UNKNOWN_EXIT_REASON, DEATH_CLAIM_IN_PROGRESS, null]
           description: Why this row was refused. Absent on a row that will exit.
         reason:
           type: [string, 'null']
@@ -2075,13 +2080,13 @@ components:
         policyNumber: { type: string }
         currency: { type: string }
         borrowers: { type: integer }
-        totalLoanAmount: { type: string, pattern: '^-?d+(.d+)?$' }
-        premium: { type: string, pattern: '^-?d+(.d+)?$' }
-        statedPremium: { type: [string, "null"], pattern: '^-?d+(.d+)?$', description: "The lender's own figure; null when their file had no premium column" }
-        difference: { type: [string, "null"], pattern: '^-?d+(.d+)?$', description: "premium less statedPremium; positive means the lender pays more than they worked out" }
-        commissionPercent: { type: [string, "null"], pattern: '^-?d+(.d+)?$' }
-        commission: { type: string, pattern: '^-?d+(.d+)?$' }
-        amountToPay: { type: string, pattern: '^-?d+(.d+)?$' }
+        totalLoanAmount: { type: string, pattern: '^-?\d+(\.\d+)?$' }
+        premium: { type: string, pattern: '^-?\d+(\.\d+)?$' }
+        statedPremium: { type: [string, "null"], pattern: '^-?\d+(\.\d+)?$', description: "The lender's own figure; null when their file had no premium column" }
+        difference: { type: [string, "null"], pattern: '^-?\d+(\.\d+)?$', description: "premium less statedPremium; positive means the lender pays more than they worked out" }
+        commissionPercent: { type: [string, "null"], pattern: '^-?\d+(\.\d+)?$' }
+        commission: { type: string, pattern: '^-?\d+(\.\d+)?$' }
+        amountToPay: { type: string, pattern: '^-?\d+(\.\d+)?$' }
         mismatches:
           type: array
           items:
@@ -2091,8 +2096,8 @@ components:
             properties:
               lineNumber: { type: integer }
               borrowerFullName: { type: [string, "null"] }
-              premium: { type: string, pattern: '^-?d+(.d+)?$' }
-              statedPremium: { type: string, pattern: '^-?d+(.d+)?$' }
+              premium: { type: string, pattern: '^-?\d+(\.\d+)?$' }
+              statedPremium: { type: string, pattern: '^-?\d+(\.\d+)?$' }
     EnrolmentRowView:
       description: >-
         One line of the lender's file and its outcome. ENROLLED_CAPPED is COVER, not a
@@ -2136,6 +2141,18 @@ components:
           oneOf:
             - $ref: 'openapi-common.yaml#/components/schemas/Money'
           nullable: true
+        loanAmount:
+          description: What was lent, as the lender's file stated it. Null where the row could not be read.
+          oneOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
+        loanStartDate:
+          description: The day the loan was paid out; cover starts on it.
+          type: [string, "null"]
+          format: date
+        loanTermMonths:
+          description: The loan's term in whole months.
+          type: [integer, "null"]
 
     BeneficiaryOfView:
       description: >-
@@ -2405,9 +2422,15 @@ components:
             Schema cannot condition on here; the service refuses with a message naming the basis.
           type: array
           items: { $ref: '#/components/schemas/GroupMemberInput' }
-        premium: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        premium:
+          description: >-
+            Required on every basis but AMORTISING_LOAN, whose contract carries no premium of its own: each
+            accepted file is invoiced, so a credit-life scheme omits it and records nil (2026-11-01).
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
         premiumFrequency:
           description: >-
+            Omitted on an AMORTISING_LOAN scheme, it is SINGLE.
             SINGLE is REQUIRED on an AMORTISING_LOAN scheme and refused on every other basis,
             and its absence here was not cosmetic: a credit-life premium is charged once per
             borrower when their loan is written, the service refuses any cycle outright
@@ -2451,25 +2474,25 @@ components:
             credit life unreachable over HTTP however complete the domain behind it was.
 
 
-            FLAT_RATE is the answer for both real lender files. Cover declines straight-line, so
-            the method is never read to value a claim, but the scheme records what it was
-            written on.
+            FLAT_RATE is the answer for both real lender files. Optional since 2026-11-01, and
+            FLAT_RATE when omitted: a claim pays the balance on the lender's statement, so the
+            method values nothing; the scheme records what it was written on.
           type: [string, "null"]
           enum: [FLAT_RATE, REDUCING_BALANCE, null]
         repaymentFrequency:
           description: >-
-            How often the borrower repays -- the schedule the declining cover follows. Only
-            MONTHLY and QUARTERLY exist; SEMI_ANNUALLY and ANNUALLY were listed here and are
+            How often the borrower repays. Optional since 2026-11-01, and MONTHLY when omitted.
+            Only MONTHLY and QUARTERLY exist; SEMI_ANNUALLY and ANNUALLY were listed here and are
             not values of policy/api/RepaymentFrequency, so a client following this contract
             would have been refused by the enum converter.
           type: [string, "null"]
           enum: [MONTHLY, QUARTERLY, null]
         premiumRatePercent:
           description: >-
-            Per-lender and negotiable; 0.5% and 0.6% are the two the real schedules carry.
-            Charged once per borrower, always on the amount they borrowed rather than on a
-            declining balance — what varies between lenders is not the base but how the rate
-            is applied to it, which `premiumBasis` states.
+            Optional since 2026-11-01, and best omitted: every loan is priced on the lender's
+            yearly agreement (POST /group-schemes/{policyNumber}/agreements), and a scheme takes
+            no file until it has one. A scheme set up before agreements keeps the rate it was
+            written on. Given, it comes with `premiumBasis`.
           type: [number, "null"]
           minimum: 0.0001
         premiumBasis:
@@ -2506,7 +2529,7 @@ components:
       # The three above are not in this list for the same reason flatBenefitAmount and
       # salaryMultiple are not: which fields a scheme requires depends on its benefitBasis,
       # OpenAPI cannot express that here, and the service refuses with a message naming the basis.
-      required: [policyholderPartyId, productVersionId, benefitBasis, currency, openingSchedule, premium]
+      required: [policyholderPartyId, productVersionId, benefitBasis, currency, openingSchedule]
     GroupSchemeGradeInput:
       type: object
       properties:

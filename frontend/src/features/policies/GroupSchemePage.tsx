@@ -12,7 +12,7 @@ import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyName } from '@/components/PartyName';
 import { PartyPicker } from '@/components/PartyPicker';
-import { StatCards, type Stat } from '@/components/StatCards';
+import { RecordTabs } from '@/components/RecordTabs';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, LoadingBlock, TableSkeleton } from '@/components/states';
 import { FormField } from '@/components/FormField';
@@ -153,45 +153,51 @@ export function GroupSchemePage() {
     );
   }
 
-  // Counts only, per StatCards' own rule: the platform has no analytics endpoint,
-  // and the total covered is money rather than a count, so it belongs in the
-  // summary panel beside the basis that produced it.
-  const stats: Stat[] = funeralScheme ? [
-    {
-      label: 'Members',
-      value: data?.activeMemberCount ?? null,
-      pending: isInitialLoad(scheme),
-      hint: 'what the bill counts',
-    },
-    {
-      label: 'Lives',
-      value: funeralLives,
-      pending: funeralLives === null,
-      hint: 'members and their families',
-    },
-  ] : [
-    {
-      label: 'Members',
-      value: data?.activeMemberCount ?? null,
-      pending: isInitialLoad(scheme),
-      hint: 'people currently covered',
-    },
-    {
-      label: 'Awaiting evidence',
-      value: data?.membersRequiringEvidence ?? null,
-      pending: isInitialLoad(scheme),
-      hint:
-        (data?.membersRequiringEvidence ?? 0) > 0
-          ? 'over the free cover limit'
-          : 'nobody is over the limit',
-    },
-  ];
+  // Laid out like the policy record (2026-11-02): the scheme's figures on the figures band, every one the server's
+  // (a funeral scheme's lives are counted from the families the server returned), then the work in tabs.
+  const evidence = data?.membersRequiringEvidence ?? 0;
+  const figures = (
+    <dl className="hero-scope grid grid-cols-1 gap-x-8 gap-y-4 rounded-2xl bg-hero p-6 sm:grid-cols-3">
+      <Field
+        stacked
+        label="Members"
+        value={data?.activeMemberCount != null ? String(data.activeMemberCount) : NO_VALUE}
+        note={funeralScheme ? 'What the bill counts' : 'People covered today'}
+      />
+      {funeralScheme ? (
+        <Field stacked label="Lives" value={funeralLives != null ? String(funeralLives) : NO_VALUE} note="Members and their families" />
+      ) : (
+        <Field
+          stacked
+          label="Total sum insured"
+          value={data?.totalCovered ? formatMoney(data.totalCovered) : NO_VALUE}
+          note="Every active member’s cover"
+        />
+      )}
+      {funeralScheme ? (
+        <Field
+          stacked
+          label="Total covered"
+          value={data?.totalCovered ? formatMoney(data.totalCovered) : NO_VALUE}
+          note="Every active life’s benefit"
+        />
+      ) : (
+        <Field
+          stacked
+          label="Awaiting evidence"
+          value={data?.membersRequiringEvidence != null ? String(evidence) : NO_VALUE}
+          note={evidence > 0 ? 'Over the free cover limit' : 'Nobody is over the limit'}
+        />
+      )}
+    </dl>
+  );
 
   return (
     <>
       <PageHeader
         breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title={policyNumber}
+        status={data?.status ? <StatusBadge kind="policy" value={data.status} /> : undefined}
         description={
           data?.policyholderPartyId ? (
             <>
@@ -212,7 +218,6 @@ export function GroupSchemePage() {
         }
         actions={
           <>
-            {data?.status && <StatusBadge kind="policy" value={data.status} />}
             {/* A credit-life scheme gets a LINK here, not the add-member form, and the form is
                 not merely inappropriate on it -- it cannot work. It collects a party, a grade and
                 a salary; a credit-life member is a loan, needs terms this form has no fields for,
@@ -223,11 +228,23 @@ export function GroupSchemePage() {
               <Button asChild size="sm" variant="primary">
                 <Link to={`/staff/credit-life-schemes/${encodeURIComponent(policyNumber)}`}>
                   <Upload />
-                  Upload a file
+                  Monthly files
                 </Link>
               </Button>
             ) : (
-              <Button size="sm" variant="primary" onClick={() => setAddOpen(true)}>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => {
+                  setAddOpen(true);
+                  // The form opens on the Members tab, so go there from wherever the button was pressed.
+                  if (params.get('tab')) {
+                    const next = new URLSearchParams(params);
+                    next.delete('tab');
+                    setParams(next, { replace: true });
+                  }
+                }}
+              >
                 <UserPlus />
                 Add member
               </Button>
@@ -236,13 +253,28 @@ export function GroupSchemePage() {
         }
       />
 
-      <StatCards stats={stats} />
+      <DetailLayout>
+        <div className="space-y-6">
+          {figures}
+          <RecordTabs
+            label="Scheme sections"
+            tabs={[
+              {
+                value: 'members',
+                label: funeralScheme ? 'Families' : 'Members',
+                content: <div className="space-y-6 pt-4">{renderWork()}</div>,
+              },
+              { value: 'scheme', label: 'Scheme details', content: <div className="space-y-6 pt-4">{renderRecord()}</div> },
+            ]}
+          />
+        </div>
+      </DetailLayout>
+    </>
+  );
 
-      {/* The add-member panel leads but takes no `emphasis`: this is the one screen
-          that keeps a real stat row, and a 1rem panel heading beside a 1.5rem stat
-          figure and a 1.25rem page title would be a third size above body -- the
-          Two-Peaks Rule, broken by the fix for something else. */}
-      <DetailLayout record={renderRecord()}>
+  function renderWork() {
+    return (
+      <>
         {addOpen && data && (
           <Panel title="Add a member" subtitle="Values them against the scheme and tests the free cover limit">
             <AddMemberForm scheme={data} onDone={() => setAddOpen(false)} />
@@ -325,9 +357,9 @@ export function GroupSchemePage() {
           {renderMembers()}
         </Panel>
         )}
-      </DetailLayout>
-    </>
-  );
+      </>
+    );
+  }
 
   function renderRecord() {
     return (
@@ -335,12 +367,6 @@ export function GroupSchemePage() {
         <Panel title="Scheme">
           {data && (
             <dl className="px-4 pb-2">
-              <Field
-                label="Total sum insured"
-                value={formatMoney(data.totalCovered)}
-                emphasis
-                note="The total of what every active member is covered for — not a figure anyone types."
-              />
               <Field label="Benefit basis" value={describeBasis(data)} />
               <Field
                 label="Free cover limit"
@@ -408,10 +434,7 @@ export function GroupSchemePage() {
         {data?.benefitBasis === 'AMORTISING_LOAN' && (
           <Panel title="Monthly files">
             <div className="px-4 pb-4 pt-1">
-              <p className="text-xs text-muted-foreground">
-                Borrowers join and loans end by file, not one at a time. Uploading the lender&rsquo;s
-                schedule, reading what was refused and accepting it all happen there.
-              </p>
+              <p className="text-xs text-muted-foreground">Borrowers join and loans end by the lender&rsquo;s monthly file.</p>
               <Button asChild size="sm" variant="ghost" className="mt-2 -ml-2">
                 <Link to={`/staff/credit-life-schemes/${encodeURIComponent(policyNumber)}`}>
                   Open the monthly files

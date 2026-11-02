@@ -84,7 +84,7 @@ class ExitCsvParserTest {
         assertThat(parsed.errors()).hasSize(1);
         assertThat(parsed.errors().get(0).reason())
             .isEqualTo(ExitRejection.MISSING_REQUIRED_FIELD);
-        assertThat(parsed.errors().get(0).detail()).contains("member_reference");
+        assertThat(parsed.errors().get(0).detail()).contains("loan account number");
         assertThat(parsed.errors().get(0).lineNumber()).isEqualTo(3);
     }
 
@@ -98,7 +98,7 @@ class ExitCsvParserTest {
         assertThat(parsed.rows()).isEmpty();
         assertThat(parsed.errors().get(0).reason()).isEqualTo(ExitRejection.UNKNOWN_EXIT_REASON);
         assertThat(parsed.errors().get(0).detail()).contains("PAID OFF")
-            .contains("SETTLED_EARLY");
+            .contains("Settled early");
     }
 
     @Test
@@ -123,7 +123,7 @@ class ExitCsvParserTest {
 
         assertThat(parsed.rows()).isEmpty();
         assertThat(parsed.errors().get(0).reason()).isEqualTo(ExitRejection.MALFORMED_VALUE);
-        assertThat(parsed.errors().get(0).detail()).contains("exit_date").contains("46203");
+        assertThat(parsed.errors().get(0).detail()).contains("date the loan ended").contains("46203");
     }
 
     @Test
@@ -134,7 +134,7 @@ class ExitCsvParserTest {
         assertThat(parsed.rows()).isEmpty();
         assertThat(parsed.errors().get(0).reason()).isEqualTo(ExitRejection.MALFORMED_VALUE);
         assertThat(parsed.errors().get(0).detail())
-            .contains("outstanding_balance_at_exit").contains("4.18E+06");
+            .contains("balance").contains("4.18E+06");
     }
 
     @Test
@@ -154,7 +154,7 @@ class ExitCsvParserTest {
 
         assertThat(parsed.rows()).hasSize(1);
         assertThat(parsed.errors().get(0).reason()).isEqualTo(ExitRejection.DUPLICATE_REFERENCE);
-        assertThat(parsed.errors().get(0).detail()).contains("line 2");
+        assertThat(parsed.errors().get(0).detail()).contains("row 2");
     }
 
     @Test
@@ -218,7 +218,7 @@ class ExitCsvParserTest {
         assertThatThrownBy(() -> ExitCsvParser.parse(new StringReader(
             "member_reference,exit_date\nCL-A-000001,2026-09-15\n")))
             .isInstanceOf(ExitCsvParser.MalformedExitsFileException.class)
-            .hasMessageContaining("exit_reason");
+            .hasMessageContaining("Why it ended");
     }
 
     @Test
@@ -234,7 +234,7 @@ class ExitCsvParserTest {
     @Test
     void theTemplateWeGiveTheLenderParses() {
         String filled = ExitCsvParser.templateCsv()
-            + "CL-4F8DF58B-000417,2026-09-01,SETTLED_EARLY,450000.00\n";
+            + ",CL-4F8DF58B-000417,2026-09-01,SETTLED_EARLY,450000.00\n";
 
         var parsed = ExitCsvParser.parse(new StringReader(filled));
 

@@ -28,14 +28,15 @@ import java.util.UUID;
  * <p>The number came from an XLSX numeric cell, read correctly all the way through the parser and
  * the judge, and lost its type only on the way out.
  */
-public record ExitRowResponseDto(int lineNumber, String memberReference, LocalDate exitDate,
+public record ExitRowResponseDto(int lineNumber, String memberReference, String loanAccountNumber,
+                                  LocalDate exitDate,
                                   ExitReason exitReason, MoneyDto outstandingBalanceAtExit,
                                   String outcome, ExitRejection reasonCode, String reason,
                                   UUID policyMemberId) {
 
     public static ExitRowResponseDto from(ExitRowView view) {
-        return new ExitRowResponseDto(view.lineNumber(), view.memberReference(), view.exitDate(),
-            view.exitReason(), money(view.outstandingBalanceAtExit(), view.currency()),
+        return new ExitRowResponseDto(view.lineNumber(), view.memberReference(), view.loanAccountNumber(),
+            view.exitDate(), view.exitReason(), money(view.outstandingBalanceAtExit(), view.currency()),
             view.outcome(), view.reasonCode(), view.reason(), view.policyMemberId());
     }
 

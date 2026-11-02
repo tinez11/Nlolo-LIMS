@@ -228,7 +228,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
-            "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql",
+            "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
             // M8 (Task 9) additions. reinsurance/V1 enabled RLS on only ONE of its three tables
             // (reinsurance_treaty) and granted app_role nothing; V2 is what adds both cession's and
             // claim_recovery's policies, plus the grants that let app_role reach the schema at all.
@@ -240,7 +240,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql",
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql",
             // M9 (Task 9) additions. finaccounting/V1 enabled RLS on NONE of its five original
             // tables and granted app_role nothing at all (worse: it REVOKEs UPDATE/DELETE on
             // gl_posting from a role that never held anything); V2 is what adds both RLS and the

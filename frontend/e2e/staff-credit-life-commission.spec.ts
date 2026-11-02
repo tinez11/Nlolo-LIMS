@@ -11,9 +11,10 @@ const API = 'http://localhost:8080';
  * other five carried an individual who had merely registered the lender, no credit-life product
  * had a plan, and the month-end close that makes commission payable was never installed. Each
  * file earned zero and nothing on any screen said it. Spec 2.8: the lender is the agent; client
- * answer 3.1: the rate is agreed per lender.
+ * answer 3.1: the rate is agreed per lender -- in its yearly agreement, the only place a lender's
+ * commission comes from (2026-11-01).
  *
- * 12.5% of the fixture file's 65,000 of premium is 8,125.
+ * 12.5% of the fixture file's 65,000 of premium is 8,125, earned once the lender pays the file.
  */
 async function verifyLenderKyc(http: APIRequestContext, lenderPartyId: string) {
   // An agent must be KYC-verified before they can be onboarded -- a corporate lender included.
@@ -58,9 +59,9 @@ async function lenderPartyOf(http: APIRequestContext, policyNumber: string): Pro
 test.describe('staff credit-life commission', () => {
   test.use({ storageState: 'e2e/.auth/staff-finance.json' });
 
-  test('finance makes the lender the earner at its own rate, and the next file earns it', async ({ page }) => {
+  test('finance makes the lender the earner, and its file earns the agreement’s rate', async ({ page }) => {
     test.setTimeout(300_000);
-    const { policyNumber, submissionId } = await seedCreditLifeScheme();
+    const { policyNumber, submissionId } = await seedCreditLifeScheme({ commissionPercent: '12.5' });
     const http = await apiRequest.newContext();
     try {
       await verifyLenderKyc(http, await lenderPartyOf(http, policyNumber));
@@ -68,26 +69,34 @@ test.describe('staff credit-life commission', () => {
       await http.dispose();
     }
 
-    await page.goto(`/staff/credit-life-schemes/${policyNumber}`);
-    const commission = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Commission' }) });
+    // Commission is its own tab (2026-11-02).
+    await page.goto(`/staff/credit-life-schemes/${policyNumber}?tab=commission`);
+    // The facts, in the record rail.
+    // Exact: "Who is paid the commission" would match too, and two sections are not one.
+    const commission = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Commission', exact: true }) });
+    // The acts, in the work column (the Record-Rail Rule).
+    const earner = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Who is paid the commission' }) });
 
-    // SAID, where it used to be silently zero.
+    // SAID, where it used to be silently zero -- and the rate is the agreement's, shown before anyone earns it.
     await expect(commission).toContainText('No commission will accrue', { timeout: 30_000 });
-    // And reinsurance is said, not assumed.
-    await expect(page.getByText('Not reinsured')).toBeVisible();
+    await expect(commission).toContainText('12.5%, as agreed');
 
-    await commission.getByLabel("Lender's licence number").fill(`LIC-LENDER-${Date.now()}`);
-    await commission.getByLabel('Licence expiry').fill(dmy('2030-12-31'));
-    await commission.getByRole('button', { name: 'Register the lender as an agent' }).click();
-
-    await commission.getByLabel('Commission rate (%)').fill('12.5', { timeout: 30_000 });
-    await commission.getByRole('button', { name: /Set the lender.s rate/ }).click();
-    await commission.getByRole('button', { name: 'Make the lender the commission earner' }).click();
+    await earner.getByLabel("Lender's licence number").fill(`LIC-LENDER-${Date.now()}`);
+    await earner.getByLabel('Licence expiry').fill(dmy('2030-12-31'));
+    await earner.getByRole('button', { name: 'Register the lender as an agent' }).click();
+    await earner.getByRole('button', { name: 'Make the lender the commission earner' }).click({ timeout: 30_000 });
 
     await expect(commission).toContainText('The lender earns 12.5%', { timeout: 30_000 });
     await expect(commission).toContainText('Nothing yet');
+    // Nothing left to set up, so the panel that set it up is gone.
+    await expect(earner).toHaveCount(0);
 
-    // The next file earns it -- forward from here, as the business chose.
+    // The next file is priced with it -- forward from here, as the business chose -- and earned once the lender
+    // pays: its quotation states the commission, and nothing is earned before the money arrives.
     const http2 = await apiRequest.newContext();
     try {
       await acceptEnrolment(http2, policyNumber, submissionId);
@@ -95,7 +104,12 @@ test.describe('staff credit-life commission', () => {
       await http2.dispose();
     }
     await page.reload();
-    await expect(commission).toContainText('earned', { timeout: 30_000 });
-    await expect(commission).toContainText('TZS 8,125.00');
+    await expect(commission).toContainText('Nothing yet', { timeout: 30_000 });
+    // The file's quotation, on the Monthly files tab, states the commission it earns.
+    await page.getByRole('tab', { name: 'Monthly files' }).click();
+    await expect(page.getByText('TZS 8,125.00').first()).toBeVisible({ timeout: 30_000 });
+    // And reinsurance is said, not assumed.
+    await page.getByRole('tab', { name: 'Scheme details' }).click();
+    await expect(page.getByText('Not reinsured')).toBeVisible();
   });
 });

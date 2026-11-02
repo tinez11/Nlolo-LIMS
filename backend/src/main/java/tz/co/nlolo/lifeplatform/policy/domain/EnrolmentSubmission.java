@@ -139,8 +139,9 @@ public class EnrolmentSubmission {
             throw new IllegalArgumentException("Accepting a submission needs the accepter's identity");
         }
         if (acceptedBy.equals(submittedBy)) {
-            throw new IllegalStateException(acceptedBy + " cannot accept a submission they"
-                + " uploaded themselves; a second person must review it");
+            // In words, not the person's id: this is read on the screen by the person it names.
+            throw new IllegalStateException("You uploaded this file, so you cannot accept a submission you"
+                + " uploaded yourself: a second person must review it and accept it");
         }
     }
 

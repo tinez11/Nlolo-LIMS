@@ -8,8 +8,9 @@ import { CREDIT_LIFE_PREMIUM_BASES } from './creditLifeSchemeIssueForm';
  * A year's agreement with a credit-life scheme's lender (policy V43, 2026-10-30).
  *
  * The bank lends on its own terms; what it agrees with the insurer, once a year, is the rate and how it is applied,
- * the least a loan pays, the oldest borrower, the shortest and longest loan, its commission and whether cover includes
- * the loan's interest. Every rule here is also the server's; this form only says so before the round trip.
+ * the least a loan pays, the youngest and oldest borrower, the shortest and longest loan, its commission and whether
+ * cover includes the loan's interest. Every rule here is also the server's; this form only says so before the round
+ * trip.
  */
 
 /** TIRA's cap on a lender's credit-life commission. The server refuses above it too. */
@@ -25,6 +26,7 @@ export interface AgreementFormValues {
   premiumRatePercent: string;
   premiumBasis: (typeof CREDIT_LIFE_PREMIUM_BASES)[number];
   minimumPremium: string;
+  minAge: string;
   maxAge: string;
   minTermMonths: string;
   maxTermMonths: string;
@@ -43,9 +45,12 @@ export function defaultAgreementValues(previous: CreditLifeAgreement | null, tod
     premiumRatePercent: previous?.premiumRatePercent ?? '',
     premiumBasis: previous?.premiumBasis ?? 'WHOLE_YEARS_ROUNDED_UP',
     minimumPremium: previous?.minimumPremium ?? '',
+    // An adult: the youngest a person can contract a loan.
+    minAge: previous ? String(previous.minAge) : '18',
     maxAge: previous ? String(previous.maxAge) : '',
-    // Every loan starts at a year (the user, 2026-10-30).
-    minTermMonths: previous ? String(previous.minTermMonths) : '12',
+    // A short loan is taken and charged by the rule -- "they all start with one year" is how it is priced (the
+    // lender's own file carries four-month loans charged a year), not a loan refused.
+    minTermMonths: previous ? String(previous.minTermMonths) : '1',
     maxTermMonths: previous ? String(previous.maxTermMonths) : '',
     commissionPercent: previous?.commissionPercent ?? '',
     coverIncludesInterest: previous?.coverIncludesInterest ?? false,
@@ -67,6 +72,11 @@ export function agreementFormSchema() {
         .string()
         .trim()
         .refine((v) => v === '' || AMOUNT_PATTERN.test(v), 'An amount like 2000, or blank for none'),
+      minAge: z
+        .string()
+        .trim()
+        .regex(WHOLE, 'A whole number of years')
+        .refine((v) => Number(v) >= 18 && Number(v) <= 100, 'Between 18 and 100'),
       maxAge: z
         .string()
         .trim()
@@ -88,6 +98,9 @@ export function agreementFormSchema() {
       if (ISO_DATE.test(v.validFrom) && ISO_DATE.test(v.validTo) && v.validTo < v.validFrom) {
         ctx.addIssue({ code: 'custom', path: ['validTo'], message: 'Ends before it starts' });
       }
+      if (WHOLE.test(v.minAge) && WHOLE.test(v.maxAge) && Number(v.maxAge) < Number(v.minAge)) {
+        ctx.addIssue({ code: 'custom', path: ['maxAge'], message: 'Younger than the youngest borrower' });
+      }
       if (WHOLE.test(v.minTermMonths) && WHOLE.test(v.maxTermMonths)
           && Number(v.maxTermMonths) < Number(v.minTermMonths)) {
         ctx.addIssue({ code: 'custom', path: ['maxTermMonths'], message: 'Shorter than the shortest loan' });
@@ -103,6 +116,7 @@ export function toAgreementInput(v: AgreementFormValues): CreditLifeAgreementInp
     premiumRatePercent: v.premiumRatePercent.trim(),
     premiumBasis: v.premiumBasis,
     ...(v.minimumPremium.trim() ? { minimumPremium: v.minimumPremium.trim() } : {}),
+    minAge: Number(v.minAge),
     maxAge: Number(v.maxAge),
     minTermMonths: Number(v.minTermMonths),
     maxTermMonths: Number(v.maxTermMonths),

@@ -181,7 +181,7 @@ class ExitFileIntegrationTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
-            "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V43__credit_life_agreement.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V43__credit_life_agreement.sql", "db-migrations/policy/V44__credit_life_agreement_first.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
@@ -466,7 +466,7 @@ class ExitFileIntegrationTest {
             new ByteArrayInputStream("member_reference,exit_date\nCL-A,2026-11-03\n"
                 .getBytes(StandardCharsets.UTF_8)), "broken.csv", "staff.one"))
             .isInstanceOf(InvalidPolicyStateException.class)
-            .hasMessageContaining("exit_reason");
+            .hasMessageContaining("Why it ended");
 
         // Nothing was stored, so the corrected file the lender is about to send is not blocked
         // by a pending row nobody can accept.
@@ -487,7 +487,7 @@ class ExitFileIntegrationTest {
         String report = exitApi.renderReport(submitted.submissionId());
 
         assertThat(report.lines().findFirst().orElseThrow())
-            .isEqualTo("row_number,member_reference,exit_date,exit_reason,"
+            .isEqualTo("row_number,loan_account_number,member_reference,exit_date,exit_reason,"
                 + "outstanding_balance_at_exit,outcome,reason_code,reason");
         assertThat(report).contains("UNKNOWN_MEMBER_REFERENCE");
         assertThat(report).contains("THIS LOAN IS STILL ON COVER.");
@@ -496,12 +496,93 @@ class ExitFileIntegrationTest {
             .doesNotContain("STILL ON COVER");
     }
 
+    // ---- the lender's own account number names the loan (V44) ---------------
+
+    private static ByteArrayInputStream file(String csv) {
+        return new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void aLoanIsNamedByTheLendersOwnAccountNumber() {
+        // The lender knows its loans by account, not by the reference our report gave back; the reasons in the words
+        // the template's list offers them.
+        ExitSubmissionView submitted = exitApi.submit(scheme, file(
+            "Loan account no.,Borrower's full name,Date the loan ended,Why it ended,Balance still owed\n"
+                + "LN-AMINA,Amina Hassan Mwinyi,2026-11-03,Settled early,\n"
+                + "LN-JOSEPH,Joseph Mkenda,2026-11-04,Refinanced,500000\n"),
+            "november-exits.csv", "staff.one");
+        assertThat(submitted.rejectedCount()).isZero();
+
+        List<ExitRowView> rows = exitApi.listRows(submitted.submissionId());
+        assertThat(rows.get(0).loanAccountNumber()).isEqualTo("LN-AMINA");
+        assertThat(rows.get(0).memberReference()).isEqualTo(reference(0));
+        assertThat(rows.get(1).exitReason()).isEqualTo(ExitReason.REFINANCED);
+
+        exitApi.accept(submitted.submissionId(), "staff.two");
+        assertThat(statusOf(0)).isEqualTo(MemberStatus.EXITED);
+        assertThat(statusOf(1)).isEqualTo(MemberStatus.EXITED);
+        assertThat(statusOf(2)).isEqualTo(MemberStatus.ACTIVE);
+    }
+
+    @Test
+    void anAccountNumberNoLoanOnTheSchemeCarriesIsRefusedAndSaysTheLoanIsStillCovered() {
+        ExitSubmissionView submitted = exitApi.submit(scheme, file(
+            "loan_account_number,exit_date,exit_reason\nLN-NOBODY,2026-11-03,SETTLED_EARLY\n"),
+            "november-exits.csv", "staff.one");
+
+        ExitRowView row = exitApi.listRows(submitted.submissionId()).get(0);
+        assertThat(row.reasonCode()).isEqualTo(ExitRejection.UNKNOWN_LOAN_ACCOUNT);
+        assertThat(row.loanAccountNumber()).isEqualTo("LN-NOBODY");
+        assertThat(row.reason()).contains("LN-NOBODY").contains("STILL ON COVER");
+    }
+
+    @Test
+    void oneLoanNamedTwiceByAccountAndByReferenceLeavesOnce() {
+        ExitSubmissionView submitted = exitApi.submit(scheme, file(
+            "loan_account_number,member_reference,exit_date,exit_reason\n"
+                + "LN-AMINA,,2026-11-03,SETTLED_EARLY\n"
+                + "," + reference(0) + ",2026-11-03,SETTLED_EARLY\n"),
+            "november-exits.csv", "staff.one");
+
+        assertThat(exitApi.listRows(submitted.submissionId()).get(1).reasonCode())
+            .isEqualTo(ExitRejection.DUPLICATE_REFERENCE);
+    }
+
+    @Test
+    void theLoansEndingTemplateFilledInAndSentBackTakesTheLoanOffCover() throws Exception {
+        byte[] template = exitApi.renderTemplateXlsx(scheme);
+        byte[] filled;
+        try (var workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook(new ByteArrayInputStream(template))) {
+            var sheet = workbook.getSheet("Loans ending");
+            assertThat(sheet.getRow(6).getCell(0).getStringCellValue()).isEqualTo("Loan account no.");
+            var grace = sheet.getRow(7);
+            grace.getCell(0).setCellValue("LN-GRACE");
+            grace.getCell(1).setCellValue("Grace Shirima");
+            grace.getCell(2).setCellValue(LocalDate.of(2026, 11, 5));
+            grace.getCell(3).setCellValue("Written off");
+            var out = new java.io.ByteArrayOutputStream();
+            workbook.write(out);
+            filled = out.toByteArray();
+        }
+
+        ExitSubmissionView submitted = exitApi.submit(scheme, new ByteArrayInputStream(filled), "november.xlsx",
+            "staff.one");
+        assertThat(submitted.rowCount()).isEqualTo(1);
+        assertThat(submitted.rejectedCount()).isZero();
+        // The row the lender sees in Excel.
+        assertThat(exitApi.listRows(submitted.submissionId()).get(0).lineNumber()).isEqualTo(8);
+
+        exitApi.accept(submitted.submissionId(), "staff.two");
+        assertThat(statusOf(2)).isEqualTo(MemberStatus.EXITED);
+    }
+
     // ---- fixtures -----------------------------------------------------------
 
     private record GroupProduct(UUID productId, UUID productVersionId) {}
 
+    /** A borrower whose loan the lender numbers LN- and their first name: Amina's is LN-AMINA. */
     private PolicyApi.MemberInput borrower(String name, LocalDate dateOfBirth) {
-        return PolicyApi.MemberInput.borrower(name, dateOfBirth, null,
+        return PolicyApi.MemberInput.borrower(name, dateOfBirth, "LN-" + name.split(" ")[0].toUpperCase(),
             new LoanTerms(new BigDecimal("2400000.00"), BigDecimal.ZERO, 18,
                 RepaymentFrequency.MONTHLY, DISBURSED, DISBURSED.plusMonths(1)));
     }

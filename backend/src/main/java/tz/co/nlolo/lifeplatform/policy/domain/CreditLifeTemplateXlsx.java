@@ -52,11 +52,11 @@ import java.util.Locale;
  */
 public final class CreditLifeTemplateXlsx {
 
-    /** What the file is built from: the agreement in force, or the scheme's own rate when it has none. */
+    /** What the file is built from: the scheme's agreement with the lender. */
     public record Terms(String lenderName, String policyNumber, String currency,
                         LocalDate validFrom, LocalDate validTo,
                         BigDecimal ratePercent, CreditLifePremiumBasis basis, BigDecimal minimumPremium,
-                        Integer maxAge, Integer minTermMonths, Integer maxTermMonths,
+                        Integer minAge, Integer maxAge, Integer minTermMonths, Integer maxTermMonths,
                         BigDecimal commissionPercent) {}
 
     public static final String SHEET = "Borrowers";
@@ -78,6 +78,13 @@ public final class CreditLifeTemplateXlsx {
 
     private static final int A = 0, B = 1, C = 2, D = 3, E = 4, F = 5, G = 6, H = 7, I = 8, J = 9, K = 10, L = 11;
     private static final int LAST_COLUMN = L;
+    /**
+     * Hidden helpers past the Check (2026-11-02): the start date and the date of birth as dates, whether Excel stored
+     * them as dates or kept them as the lender's own text. A block pasted from a bank's sheet brings its dates as text
+     * like 18/05/2026 -- day first, as dates are written here -- which no date formula reads, so every formula reads
+     * these instead.
+     */
+    private static final int M = 12, N = 13;
 
     /** Row 7 in Excel: room above for the title, the price and the totals. */
     public static final int HEADER_ROW = 6;
@@ -111,14 +118,10 @@ public final class CreditLifeTemplateXlsx {
             sheet.setFitToPage(true);
             sheet.setRepeatingRows(new CellRangeAddress(HEADER_ROW, HEADER_ROW, -1, -1));
 
-            // Locks the grey columns against an accidental overwrite. No password: this protects a formula from a
-            // slip, not a secret from anybody, and the server prices every row again whatever the file says.
-            sheet.protectSheet("");
-            sheet.lockFormatColumns(false);
-            sheet.lockFormatRows(false);
-            sheet.lockFormatCells(false);
-            sheet.lockSelectLockedCells(false);
-            sheet.lockSelectUnlockedCells(false);
+            // NOT protected (2026-11-02). A block pasted from the lender's own sheet carries that sheet's formatting,
+            // which marks every cell locked -- so under protection the rows somebody had just pasted could no longer
+            // be corrected. The grey columns are said to fill themselves, and the server prices every row again
+            // whatever the file says.
 
             guide(workbook, terms, styles);
             workbook.setActiveSheet(0);
@@ -171,16 +174,21 @@ public final class CreditLifeTemplateXlsx {
     }
 
     private static void band(XSSFSheet sheet, int rowIndex, String text, CellStyle style, float height) {
+        band(sheet, rowIndex, text, style, height, LAST_COLUMN);
+    }
+
+    /** A full-width line of the top: the title, the price, a hint. Shared with the loans-ending file. */
+    static void band(XSSFSheet sheet, int rowIndex, String text, CellStyle style, float height, int lastColumn) {
         Row row = sheet.createRow(rowIndex);
         row.setHeightInPoints(height);
-        for (int c = A; c <= LAST_COLUMN; c++) {
+        for (int c = A; c <= lastColumn; c++) {
             row.createCell(c).setCellStyle(style);
         }
         row.getCell(A).setCellValue(text);
-        sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, A, LAST_COLUMN));
+        sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, A, lastColumn));
     }
 
-    private static void card(XSSFSheet sheet, Row labels, Row values, int column, String label, String formula,
+    static void card(XSSFSheet sheet, Row labels, Row values, int column, String label, String formula,
                              CellStyle valueStyle, Styles styles) {
         for (int c = column; c <= column + 1; c++) {
             labels.createCell(c).setCellStyle(styles.cardLabel);
@@ -229,8 +237,11 @@ public final class CreditLifeTemplateXlsx {
             row.createCell(H).setCellStyle(styles.inputText);
             row.createCell(I).setCellStyle(styles.inputText);
 
+            row.createCell(M).setCellFormula(dateRead("F").replace("#", String.valueOf(n)));
+            row.createCell(N).setCellFormula(dateRead("B").replace("#", String.valueOf(n)));
+
             Cell end = row.createCell(J);
-            end.setCellFormula(("IF(OR(F#=\"\",E#=\"\"),\"\",EDATE(F#,E#)-1)").replace("#", String.valueOf(n)));
+            end.setCellFormula(("IF(OR(M#=\"\",E#=\"\"),\"\",EDATE(M#,E#)-1)").replace("#", String.valueOf(n)));
             end.setCellStyle(styles.filledDate);
             Cell price = row.createCell(K);
             price.setCellFormula(premium.replace("#", String.valueOf(n)));
@@ -264,24 +275,46 @@ public final class CreditLifeTemplateXlsx {
         return "IF(OR(D#=\"\",E#=\"\"),\"\"," + rounded + ")";
     }
 
+    /**
+     * Column {@code c} of row {@code #} as a date: the date itself, or its text read day first -- 18/05/2026, 18-05-2026
+     * or 18.05.2026, a four-digit year -- or blank when it is neither. The upload reads text dates the same way.
+     */
+    static String dateRead(String c) {
+        String t = "SUBSTITUTE(SUBSTITUTE(TRIM(" + c + "#),\"-\",\"/\"),\".\",\"/\")";
+        String first = "FIND(\"/\"," + t + ")";
+        String second = "FIND(\"/\"," + t + "," + first + "+1)";
+        String parsed = "DATE(VALUE(MID(" + t + "," + second + "+1,4)),VALUE(MID(" + t + "," + first + "+1," + second
+            + "-" + first + "-1)),VALUE(LEFT(" + t + "," + first + "-1)))";
+        return "IF(" + c + "#=\"\",\"\",IF(ISNUMBER(" + c + "#)," + c + "#,IFERROR(IF(LEN(" + t + ")-" + second
+            + "=4," + parsed + ",\"\"),\"\")))";
+    }
+
     /** What is wrong with row {@code #}, first thing first, or OK -- the same order the platform judges in. */
     static String checkFormula(Terms terms) {
         List<String[]> tests = new ArrayList<>();
         tests.add(new String[] { "OR(A#=\"\",B#=\"\",D#=\"\",E#=\"\",F#=\"\")",
             "Fill in name, date of birth, amount, term and start date" });
-        tests.add(new String[] { "F#>TODAY()", "The loan has not started yet" });
+        // M and N are the two dates as read (see dateRead): blank there means the text is not a date.
+        tests.add(new String[] { "N#=\"\"", "Date of birth is not a date: write it like 14/03/1988" });
+        tests.add(new String[] { "M#=\"\"", "Loan start date is not a date: write it like 18/05/2026" });
+        tests.add(new String[] { "M#>TODAY()", "The loan has not started yet" });
         if (terms.validFrom() != null) {
-            tests.add(new String[] { "F#<" + excelDate(terms.validFrom()),
+            tests.add(new String[] { "M#<" + excelDate(terms.validFrom()),
                 "Started before the agreement (" + DAY.format(terms.validFrom()) + ")" });
         }
         if (terms.validTo() != null) {
-            tests.add(new String[] { "F#>" + excelDate(terms.validTo()),
+            tests.add(new String[] { "M#>" + excelDate(terms.validTo()),
                 "Started after the agreement ended (" + DAY.format(terms.validTo()) + ")" });
         }
+        // Whole years at the loan's start, as the platform counts them: a birthday not yet reached that year takes one
+        // off. Not DATEDIF, which the upload's reader cannot work out.
+        String age = "YEAR(M#)-YEAR(N#)-IF(DATE(YEAR(M#),MONTH(N#),DAY(N#))>M#,1,0)";
+        if (terms.minAge() != null) {
+            tests.add(new String[] { age + "<" + terms.minAge(),
+                "Younger than " + terms.minAge() + " when the loan started" });
+        }
         if (terms.maxAge() != null) {
-            // Whole years at the loan's start, as the platform counts them: a birthday not yet reached that year takes
-            // one off. Not DATEDIF, which the upload's reader cannot work out.
-            tests.add(new String[] { "YEAR(F#)-YEAR(B#)-IF(DATE(YEAR(F#),MONTH(B#),DAY(B#))>F#,1,0)>" + terms.maxAge(),
+            tests.add(new String[] { age + ">" + terms.maxAge(),
                 "Older than " + terms.maxAge() + " when the loan started" });
         }
         if (terms.minTermMonths() != null) {
@@ -300,7 +333,7 @@ public final class CreditLifeTemplateXlsx {
         return formula.toString();
     }
 
-    private static String excelDate(LocalDate day) {
+    static String excelDate(LocalDate day) {
         return "DATE(" + day.getYear() + "," + day.getMonthValue() + "," + day.getDayOfMonth() + ")";
     }
 
@@ -362,6 +395,9 @@ public final class CreditLifeTemplateXlsx {
         for (int c = 0; c < chars.length; c++) {
             sheet.setColumnWidth(c, chars[c] * 256);
         }
+        // The dates as read: working cells, never typed in or looked at.
+        sheet.setColumnHidden(M, true);
+        sheet.setColumnHidden(N, true);
     }
 
     /* ------------------------------------------------------------- the guide */
@@ -456,7 +492,10 @@ public final class CreditLifeTemplateXlsx {
             words.append(" Loans of ").append(terms.minTermMonths()).append(" to ").append(terms.maxTermMonths())
                 .append(" months.");
         }
-        if (terms.maxAge() != null) {
+        if (terms.minAge() != null && terms.maxAge() != null) {
+            words.append(" Borrowers aged ").append(terms.minAge()).append(" to ").append(terms.maxAge())
+                .append(" when the loan starts.");
+        } else if (terms.maxAge() != null) {
             words.append(" Borrowers up to ").append(terms.maxAge()).append(" years old when the loan starts.");
         }
         return words.toString();
@@ -470,14 +509,14 @@ public final class CreditLifeTemplateXlsx {
         return new DecimalFormat("#,##0.##").format(value.setScale(2, RoundingMode.HALF_UP));
     }
 
-    private static String nonBlank(String value, String fallback) {
+    static String nonBlank(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
     }
 
     /* ---------------------------------------------------------------- styles */
 
     /** The console's own colours (index.css), so the file looks like the system it came from. */
-    private static final class Styles {
+    static final class Styles {
         final XSSFColor navy, teal, ink, muted, ground, tint, line, okInk, okGround, badInk, badGround;
         final CellStyle title, subtitle, rule, hint, cardLabel, cardCount, cardMoney, cardRate, header, headerFilled;
         final CellStyle inputText, inputCentre, inputDate, inputMoney, inputWhole;

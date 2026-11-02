@@ -342,10 +342,31 @@ public final class EnrolmentCsvParser {
         try {
             return LocalDate.parse(value);
         } catch (java.time.format.DateTimeParseException e) {
+            LocalDate dayFirst = dayFirst(value);
+            if (dayFirst != null) return dayFirst;
             throw new UnreadableValue(column + " \"" + value + "\" is not a date in YYYY-MM-DD"
                 + " form. " + dateHint(value));
         }
     }
+
+    /**
+     * A date a lender's sheet kept as text, day first as dates are written here: 18/05/2026, 18-05-2026 or 18.05.2026
+     * (2026-11-02). A block pasted from a bank's own sheet arrives this way, and the template reads it the same way.
+     * The year must have four digits -- a two-digit one is a century apart on a date of birth and is not guessed -- and
+     * a day or month that cannot be one is refused rather than swapped.
+     */
+    static LocalDate dayFirst(String value) {
+        java.util.regex.Matcher m = DAY_FIRST.matcher(value.strip());
+        if (!m.matches()) return null;
+        try {
+            return LocalDate.of(Integer.parseInt(m.group(3)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(1)));
+        } catch (java.time.DateTimeException e) {
+            return null;
+        }
+    }
+
+    private static final java.util.regex.Pattern DAY_FIRST =
+        java.util.regex.Pattern.compile("(\\d{1,2})[/.-](\\d{1,2})[/.-](\\d{4})");
 
     /**
      * What actually went wrong with this value, rather than one guess for every shape.

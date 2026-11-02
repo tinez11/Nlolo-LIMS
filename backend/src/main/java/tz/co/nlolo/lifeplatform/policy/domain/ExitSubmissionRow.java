@@ -39,6 +39,10 @@ public class ExitSubmissionRow {
     @Column(name = "member_reference")
     private String memberReference;
 
+    /** The lender's own number for the loan, where the row gave one (V44), so the report reads beside their file. */
+    @Column(name = "loan_account_number")
+    private String loanAccountNumber;
+
     @Column(name = "exit_date")
     private LocalDate exitDate;
 
@@ -108,6 +112,12 @@ public class ExitSubmissionRow {
             "REJECTED", reasonCode, reason);
     }
 
+    /** The same row, carrying the lender's account number for the loan as their file gave it. */
+    public ExitSubmissionRow forLoanAccount(String loanAccountNumber) {
+        this.loanAccountNumber = loanAccountNumber;
+        return this;
+    }
+
     public void becameExit(UUID policyMemberId) {
         this.policyMemberId = policyMemberId;
     }
@@ -118,6 +128,7 @@ public class ExitSubmissionRow {
     public UUID getSubmissionId() { return submissionId; }
     public int getLineNumber() { return lineNumber; }
     public String getMemberReference() { return memberReference; }
+    public String getLoanAccountNumber() { return loanAccountNumber; }
     public LocalDate getExitDate() { return exitDate; }
     public ExitReason getExitReason() { return exitReason; }
     public BigDecimal getOutstandingBalanceAtExit() { return outstandingBalanceAtExit; }

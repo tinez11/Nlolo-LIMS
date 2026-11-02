@@ -186,7 +186,7 @@ class SinglePremiumIntegrationTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
-            "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V43__credit_life_agreement.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V43__credit_life_agreement.sql", "db-migrations/policy/V44__credit_life_agreement_first.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
@@ -374,13 +374,37 @@ class SinglePremiumIntegrationTest {
     // ---------------------------------------------------------------------------------
 
     @Test
-    void aCreditLifeSchemeMustStateItsRate() {
-        // Client answer 3.1, 2026-09-22: the rate is negotiated per lender -- 0.4% for one,
-        // 0.5% for another -- so there is no default to fall back on. Finding that out at the
-        // first accepted file would bounce a lender's whole month.
-        assertThatThrownBy(() -> issueCreditLifeScheme(null))
+    void aCreditLifeSchemeStatesNoRateButTakesNoFileUntilItsLenderHasAnAgreement() {
+        // 2026-11-01: a loan is priced only on the lender's yearly agreement, so the set-up states no rate, no
+        // repayment terms and no premium of its own -- and the scheme refuses a file until there is an agreement,
+        // rather than pricing it on nothing.
+        GroupProduct product = creditLifeProduct();
+        GroupSchemeView scheme = policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(person("Lender Co"),
+            product.productId(), product.productVersionId(), null, BenefitBasis.AMORTISING_LOAN, null, null, null,
+            "TZS", null, List.of(), null, null, null, LocalDate.of(2026, 6, 1), null, null, IssuanceBasis.MIGRATION,
+            null, null, null, null), "staff-1");
+
+        assertThat(policyApi.getPolicy(scheme.policyNumber()).premiumAmount()).isEqualByComparingTo("0");
+        assertThatThrownBy(() -> submitAndAccept(scheme.policyNumber(), THREE_BORROWERS))
             .isInstanceOf(InvalidPolicyStateException.class)
-            .hasMessageContaining("rate");
+            .hasMessageContaining("agreement");
+
+        agreeAtRate(scheme.policyNumber(), new BigDecimal("0.5000"));
+        submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+        assertThat(billingApiImpl.listInvoices(scheme.policyNumber(), null)).hasSize(1);
+    }
+
+    @Test
+    void aRateWithoutWhatItMeansIsRefused() {
+        // A rate alone does not say what to do with itself: two real lenders read the same number differently.
+        GroupProduct product = creditLifeProduct();
+        assertThatThrownBy(() -> policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(person("Lender Co"),
+            product.productId(), product.productVersionId(), null,
+            BenefitBasis.AMORTISING_LOAN, null, null, null, "TZS", null, List.of(), null, null, null,
+            LocalDate.of(2026, 6, 1), null, null, IssuanceBasis.MIGRATION, null, null, new BigDecimal("0.5000"), null),
+            "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("come together");
     }
 
     @Test
@@ -848,9 +872,25 @@ class SinglePremiumIntegrationTest {
 
     private record GroupProduct(UUID productId, UUID productVersionId) {}
 
+    /** A lender's scheme with its year's agreement at {@code ratePercent} a year, so it takes files. */
     private GroupSchemeView issueCreditLifeScheme(BigDecimal ratePercent) {
-        return policyApi.issueGroupScheme(
+        GroupSchemeView scheme = policyApi.issueGroupScheme(
             creditLifeRequest(creditLifeProduct(), ratePercent, "SINGLE"), "staff-1");
+        agreeAtRate(scheme.policyNumber(), ratePercent);
+        return scheme;
+    }
+
+    @Autowired private CreditLifeAgreementApi agreementApi;
+
+    /**
+     * The lender's yearly agreement, which every loan is priced on (2026-11-01): the rate per annum on the loan, as
+     * these tests' scheme rate always was, with no minimum, no commission, and ages and terms wide enough to take
+     * every fixture's borrower.
+     */
+    private void agreeAtRate(String policyNumber, BigDecimal ratePercent) {
+        agreementApi.add(policyNumber, new CreditLifeAgreementApi.AgreementInput(LocalDate.of(2026, 6, 1),
+            LocalDate.now().plusYears(1), ratePercent, CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL, null, 18, 100, 1,
+            480, null, false), "staff-setup");
     }
 
     private PolicyApi.IssueGroupSchemeRequest creditLifeRequest(GroupProduct product,

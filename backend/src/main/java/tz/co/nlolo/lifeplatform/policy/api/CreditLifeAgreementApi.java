@@ -32,13 +32,15 @@ public interface CreditLifeAgreementApi {
     /**
      * @param premiumRatePercent per annum on the loan amount, except on FLAT_ON_PRINCIPAL, where it is the whole price
      * @param minimumPremium the least one loan pays; zero for none
+     * @param minAge the youngest a borrower may be when their loan starts, 18 at the least
      * @param maxAge the oldest a borrower may be when their loan starts
-     * @param minTermMonths the shortest loan taken -- twelve, the user: "they all start with one year"
+     * @param minTermMonths the shortest loan taken. A loan shorter than a year is taken and priced by the agreement's
+     *     rule -- "they all start with one year" (the user) is how a short loan is charged, not a refusal
      * @param commissionPercent the lender's commission on premium, at most 15 (TIRA)
      * @param coverIncludesInterest whether a claim pays the balance with its interest or the principal alone
      */
     record AgreementInput(LocalDate validFrom, LocalDate validTo, BigDecimal premiumRatePercent,
-                          CreditLifePremiumBasis premiumBasis, BigDecimal minimumPremium, int maxAge,
+                          CreditLifePremiumBasis premiumBasis, BigDecimal minimumPremium, int minAge, int maxAge,
                           int minTermMonths, int maxTermMonths, BigDecimal commissionPercent,
                           boolean coverIncludesInterest) {}
 
@@ -47,7 +49,7 @@ public interface CreditLifeAgreementApi {
                          @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal premiumRatePercent,
                          CreditLifePremiumBasis premiumBasis,
                          @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal minimumPremium,
-                         int maxAge, int minTermMonths, int maxTermMonths,
+                         int minAge, int maxAge, int minTermMonths, int maxTermMonths,
                          @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal commissionPercent,
                          boolean coverIncludesInterest, Instant createdAt, String createdBy) {}
 }

@@ -39,7 +39,7 @@ class CreditLifeTemplateXlsxTest {
 
     private static CreditLifeTemplateXlsx.Terms terms(CreditLifePremiumBasis basis) {
         return new CreditLifeTemplateXlsx.Terms("Mkombozi Bank", "CL-1234ABCD", "TZS", FROM, TO,
-            new BigDecimal("0.6000"), basis, new BigDecimal("2000.00"), 65, 12, 120, new BigDecimal("10"));
+            new BigDecimal("0.6000"), basis, new BigDecimal("2000.00"), 18, 65, 12, 120, new BigDecimal("10"));
     }
 
     private static XSSFWorkbook open(byte[] bytes) throws IOException {
@@ -107,7 +107,7 @@ class CreditLifeTemplateXlsxTest {
                 .contains("Mkombozi Bank").contains("CL-1234ABCD").contains("1 Jan 2026 to 31 Dec 2026");
             assertThat(sheet.getRow(2).getCell(0).getStringCellValue())
                 .contains("× 0.6% for each year").contains("at least TZS 2,000").contains("12 to 120 months")
-                .contains("up to 65");
+                .contains("aged 18 to 65");
 
             type(sheet, 8, "Amina Hassan", LocalDate.of(1988, 3, 14), "10000000", 18, LocalDate.of(2026, 3, 1));
             type(sheet, 9, "Juma Rajabu", LocalDate.of(1990, 7, 2), "100000", 12, LocalDate.of(2026, 3, 2));
@@ -136,9 +136,11 @@ class CreditLifeTemplateXlsxTest {
             type(sheet, 10, "Six months", LocalDate.of(1980, 1, 1), "1000000", 6, LocalDate.of(2026, 3, 1));
             type(sheet, 11, "Last year", LocalDate.of(1980, 1, 1), "1000000", 12, LocalDate.of(2025, 12, 1));
             sheet.getRow(11).getCell(0).setCellValue("No dates");
+            type(sheet, 14, "Too young", LocalDate.of(2010, 1, 1), "1000000", 12, LocalDate.of(2026, 3, 1));
 
             assertThat(text(workbook, sheet.getRow(7).getCell(11))).isEqualTo("OK");
             assertThat(text(workbook, sheet.getRow(8).getCell(11))).isEqualTo("Older than 65 when the loan started");
+            assertThat(text(workbook, sheet.getRow(13).getCell(11))).isEqualTo("Younger than 18 when the loan started");
             assertThat(text(workbook, sheet.getRow(9).getCell(11))).isEqualTo("Shorter than 12 months");
             assertThat(text(workbook, sheet.getRow(10).getCell(11))).startsWith("Started before the agreement");
             assertThat(text(workbook, sheet.getRow(11).getCell(11))).startsWith("Fill in");
@@ -263,12 +265,61 @@ class CreditLifeTemplateXlsxTest {
         }
     }
 
+    /**
+     * The BUMACO May sheet pasted in as the bank holds it (2026-11-02): every date is TEXT, day first, which no date
+     * formula reads -- every row said "has not started yet" and every end date was #VALUE!. Read day first, they check
+     * OK, price as the bank's own sheet does, and come back through the upload unchanged.
+     */
     @Test
-    void theGreyColumnsAreLockedTheWhiteOnesAreNotAndTheHeaderStaysInView() throws Exception {
+    void rowsPastedFromALendersSheetWithTextDatesCheckPriceAndUploadAsTheyShould() throws Exception {
+        var bumaco = new CreditLifeTemplateXlsx.Terms("BUMACO", "GRP-BUMACO", "TZS", LocalDate.of(2026, 5, 1),
+            LocalDate.of(2027, 4, 30), new BigDecimal("0.6000"), CreditLifePremiumBasis.FLAT_ON_PRINCIPAL, null, 18, 70,
+            1, 120, new BigDecimal("15"));
+        byte[] filled;
+        try (XSSFWorkbook workbook = open(CreditLifeTemplateXlsx.build(bumaco))) {
+            Sheet sheet = workbook.getSheet(CreditLifeTemplateXlsx.SHEET);
+            String[][] may = {
+                { "JULIUS MBASHANGO MALUNDE", "12/05/1960", "1500000", "4", "18/05/2026" },
+                { "GAUDENCE PETTER CHAMI", "23/04/1966", "6000000", "12", "18-05-2026" },
+                { "CONSTANTINE LEONARD MALIPESA", "20.09.1962", "1000000", "2", "18/05/2026" },
+            };
+            for (int i = 0; i < may.length; i++) {
+                Row row = sheet.getRow(CreditLifeTemplateXlsx.HEADER_ROW + 1 + i);
+                row.getCell(0).setCellValue(may[i][0]);
+                row.getCell(1).setCellValue(may[i][1]);
+                row.getCell(3).setCellValue(Double.parseDouble(may[i][2]));
+                row.getCell(4).setCellValue(Integer.parseInt(may[i][3]));
+                row.getCell(5).setCellValue(may[i][4]);
+            }
+            Row julius = sheet.getRow(CreditLifeTemplateXlsx.HEADER_ROW + 1);
+            assertThat(text(workbook, julius.getCell(11))).isEqualTo("OK");
+            assertThat(text(workbook, julius.getCell(10))).isEqualTo("9000.0");
+            // 18 May plus four months, less a day.
+            assertThat(text(workbook, julius.getCell(9))).isEqualTo(String.valueOf(
+                (double) org.apache.poi.ss.usermodel.DateUtil.getExcelDate(LocalDate.of(2026, 9, 17))));
+            assertThat(text(workbook, sheet.getRow(CreditLifeTemplateXlsx.HEADER_ROW + 2).getCell(11))).isEqualTo("OK");
+            assertThat(text(workbook, sheet.getRow(CreditLifeTemplateXlsx.HEADER_ROW + 3).getCell(11))).isEqualTo("OK");
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            workbook.write(out);
+            filled = out.toByteArray();
+        }
+
+        var parsed = EnrolmentCsvParser.parse(new StringReader(
+            XlsxToCsv.convertSchedule(new ByteArrayInputStream(filled), EnrolmentCsvParser::looksLikeHeader)));
+        assertThat(parsed.errors()).isEmpty();
+        assertThat(parsed.rows()).hasSize(3);
+        assertThat(parsed.rows().get(0).borrowerDateOfBirth()).isEqualTo(LocalDate.of(1960, 5, 12));
+        assertThat(parsed.rows().get(1).disbursementDate()).isEqualTo(LocalDate.of(2026, 5, 18));
+        assertThat(parsed.rows().get(2).borrowerDateOfBirth()).isEqualTo(LocalDate.of(1962, 9, 20));
+    }
+
+    @Test
+    void theSheetIsNeverProtectedSoAPastedBlockCanBeCorrectedAndTheHeaderStaysInView() throws Exception {
         try (XSSFWorkbook workbook = open(CreditLifeTemplateXlsx.build(
                 terms(CreditLifePremiumBasis.WHOLE_YEARS_ROUNDED_UP)))) {
             XSSFSheet sheet = workbook.getSheet(CreditLifeTemplateXlsx.SHEET);
-            assertThat(sheet.getProtect()).isTrue();
+            // A block pasted from a bank's sheet carries locked formatting: under protection it could not be edited.
+            assertThat(sheet.getProtect()).isFalse();
             Row first = sheet.getRow(CreditLifeTemplateXlsx.HEADER_ROW + 1);
             for (int typed = 0; typed <= 8; typed++) {
                 assertThat(first.getCell(typed).getCellStyle().getLocked()).as("column %d", typed).isFalse();
@@ -281,17 +332,4 @@ class CreditLifeTemplateXlsxTest {
         }
     }
 
-    @Test
-    void aSchemeWithNoAgreementStillGetsItsOwnPriceAndNoInventedLimits() throws Exception {
-        var schemeRate = new CreditLifeTemplateXlsx.Terms("Lender", "CL-1", "TZS", null, null,
-            new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL, null, null, null, null, null);
-        try (XSSFWorkbook workbook = open(CreditLifeTemplateXlsx.build(schemeRate))) {
-            Sheet sheet = workbook.getSheet(CreditLifeTemplateXlsx.SHEET);
-            assertThat(sheet.getRow(2).getCell(0).getStringCellValue())
-                .isEqualTo("Premium = loan amount × 0.5% a year, for the loan's months.");
-            type(sheet, 8, "Someone", LocalDate.of(1950, 1, 1), "2400000", 18, LocalDate.of(2026, 3, 1));
-            assertThat(text(workbook, sheet.getRow(7).getCell(11))).isEqualTo("OK");
-            assertThat(text(workbook, sheet.getRow(7).getCell(10))).isEqualTo("18000.0");
-        }
-    }
 }
