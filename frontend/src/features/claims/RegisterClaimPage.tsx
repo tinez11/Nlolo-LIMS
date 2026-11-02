@@ -644,7 +644,7 @@ export function RegisterClaimPage() {
           <Panel
             outline
             title="Lender's statement"
-            subtitle="What the borrower still owed on the date of the event. The claim pays this, never more than the borrower's cover."
+            subtitle="What the borrower still owed on the date of the event, never more than was lent. Upload the statement under Evidence after registering: the claim is approved only with it."
           >
             <div className="grid gap-3 p-4 sm:grid-cols-2">
               <FormField label="Principal still owed" error={errors.loanPrincipalOutstanding?.message}>

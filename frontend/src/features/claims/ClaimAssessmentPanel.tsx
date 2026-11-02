@@ -17,6 +17,8 @@ import {
 } from './submitClaimAssessmentForm';
 import { Input, Textarea } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
+import { Receipt } from '@/components/Receipt';
+import { LenderBalance } from './LenderBalance';
 import { CheckboxField } from '@/components/ui/checkbox';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
@@ -92,6 +94,32 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
 
   const last = submitting.status === 'success' ? submitting.data : null;
 
+  /*
+    SAID, once it is recorded (2026-11-02). The form used to reset in place with one muted line at its foot, and the
+    history that proved the assessment landed sat below a tall form -- so an assessor pressed Submit and saw a screen
+    that looked exactly as it had before. The receipt says what was recorded and what happens next; another
+    assessment is one click away, because a claim may carry several.
+  */
+  if (last) {
+    return (
+      <div className="p-4">
+        <Receipt
+          heading="Assessment recorded"
+          lines={[
+            { label: 'Recommended', value: formatMoney(last.recommendedAmount) },
+            ...(last.fraudIndicator ? [{ label: 'Fraud review', value: 'Flagged' }] : []),
+          ]}
+          note="Next, a claims manager decides the settlement. It is listed under Assessments below."
+          onward={
+            <Button type="button" size="sm" variant="outline" onClick={() => resetSubmitAssessment(claimId)}>
+              Add another assessment
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
   return (
     <>
       <form className="space-y-3 p-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
@@ -127,23 +155,20 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
           </FormField>
         </div>
 
+        <LenderBalance cover={coverResource.data} />
+
         <CheckboxField label="Flag for fraud review" {...register('fraudIndicator')} />
 
         {submitting.status === 'error' && submitting.error && (
           <InlineError error={submitting.error} />
         )}
 
-        <Button type="submit" size="sm" variant="primary" pending={submitting.status === 'loading'}>
-          Submit assessment
-        </Button>
+        <div>
+          <Button type="submit" size="sm" variant="primary" pending={submitting.status === 'loading'}>
+            Submit assessment
+          </Button>
+        </div>
       </form>
-
-      {last && (
-        <p className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
-          Last submission this session: {formatMoney(last.recommendedAmount)}
-          {last.fraudIndicator && ' · flagged for fraud review'}
-        </p>
-      )}
     </>
   );
 }

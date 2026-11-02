@@ -162,12 +162,15 @@ export function attachClaimEvidence(
   file: File,
   description?: string,
   requestId?: string,
+  kind?: 'LOAN_STATEMENT',
 ): Promise<ClaimEvidenceView> {
   const form = new FormData();
   form.append('file', file);
   if (description) form.append('description', description);
   // Answering a document request: the server checks it is open before storing the file, then marks it received.
   if (requestId) form.append('requestId', requestId);
+  // The lender's loan statement on a credit-life claim (2026-11-02): approval needs one.
+  if (kind) form.append('kind', kind);
   return post<ClaimEvidenceView>(`/claims/${encodeURIComponent(claimId)}/evidence`, form);
 }
 

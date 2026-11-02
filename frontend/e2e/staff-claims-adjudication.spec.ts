@@ -151,7 +151,7 @@ test.describe('staff claims adjudication', () => {
     // Named as a person, from the assessor's own token -- this used to print their Keycloak
     // subject, a uuid, in both places.
     await expect(managerPage.getByText(/^Daudi Assessor · /)).toBeVisible();
-    await expect(managerPage.getByText(/recommended by Daudi Assessor\./)).toBeVisible();
+    await expect(managerPage.getByText(/recommended by Daudi Assessor/)).toBeVisible();
 
     // Approve is the default branch, prefilled with the recommendation -- NOT the 2,000,000 cover
     // -- and nothing is typed into it: the decision stands on the assessor's figure.
@@ -171,7 +171,7 @@ test.describe('staff claims adjudication', () => {
     // Approving moves money AND closes the policy permanently -- Claim.reopen()'s
     // own Javadoc records that reopening never reverses the closure -- so the
     // confirmation says exactly that before the second, deliberate click.
-    await expect(managerPage.getByText(/policy closes permanently/)).toBeVisible();
+    await expect(managerPage.getByText(/the policy closes for good/)).toBeVisible();
     await managerPage.getByRole('button', { name: 'Approve and pay' }).click();
 
     // decideSettlement's approve path publishes ClaimApproved AND ClaimSettlementRequested in

@@ -282,6 +282,14 @@ public class ClaimsApiImpl implements ClaimsApi {
         // that day, from the lender's own statement -- so the statement comes with the claim.
         if (claimable.isLoanCover()) {
             refuseUnlessALendersClaim(request);
+            // The principal still owed can never be more than was lent (2026-11-02). A statement saying it is was
+            // accepted and silently capped at approval -- the borrower's whole loan paid with no one told.
+            BigDecimal principalOwed = request.details().loanStatement().principalOutstanding();
+            if (claimable.loanPrincipal() != null && principalOwed.compareTo(claimable.loanPrincipal()) > 0) {
+                throw new ClaimValidationException("The principal still owed (" + principalOwed.toPlainString()
+                    + ") is more than the " + claimable.loanPrincipal().toPlainString() + " " + claimable.currencyCode()
+                    + " lent; check the lender's statement");
+            }
         }
         // A FAMILY'S CLAIM (family funeral cover): policy has already required the life and checked it was
         // covered on the date; who may file for a dependant is the version's rule (plan R9).
@@ -602,6 +610,13 @@ public class ClaimsApiImpl implements ClaimsApi {
         // death limit -- so both now go through ceilingFor.
         ClaimableCoverView cover = policyApi.claimableCover(claim.getPolicyNumber(),
             claim.getPolicyMemberId(), coveredLifeOf(claim), claim.getDateOfEvent(), claim.getClaimType().name());
+        if (cover.isLoanCover()) {
+            // The lender's figure beside the schedule's, so the assessor and the manager see when they part (2026-11-02).
+            LoanStatement statement = claim.getDetails().loanStatement();
+            BigDecimal owed = statement == null ? null : statement.owed(Boolean.TRUE.equals(cover.coverIncludesInterest()));
+            return new ClaimCoverView(ceilingFor(claim, cover), cover.currencyCode(), cover.amount(), owed,
+                cover.loanPrincipal());
+        }
         return new ClaimCoverView(ceilingFor(claim, cover), cover.currencyCode());
     }
 
@@ -699,6 +714,16 @@ public class ClaimsApiImpl implements ClaimsApi {
     public void decideSettlement(UUID claimId, boolean approved, BigDecimal approvedAmount, String approvedCurrency,
                                   String rejectionReason, ClaimDeclineReason declineReason,
                                   tz.co.nlolo.lifeplatform.PayoutRoute route, String idempotencyKey, String decidedBy) {
+        decideSettlement(claimId, approved, approvedAmount, approvedCurrency, rejectionReason, declineReason, route,
+            null, idempotencyKey, decidedBy);
+    }
+
+    @Override
+    @Transactional
+    public void decideSettlement(UUID claimId, boolean approved, BigDecimal approvedAmount, String approvedCurrency,
+                                  String rejectionReason, ClaimDeclineReason declineReason,
+                                  tz.co.nlolo.lifeplatform.PayoutRoute route, String approvalNote,
+                                  String idempotencyKey, String decidedBy) {
         String payeeRef = route == null ? null : route.payee();
         UUID tenantId = TenantContext.get();
         Claim claim = findOrThrow(claimId, tenantId);
@@ -807,12 +832,6 @@ public class ClaimsApiImpl implements ClaimsApi {
                 }
             }
 
-            settlementDecisionRepository.save(new SettlementDecision(tenantId, claimId, decidedBy, true,
-                approvedAmount, approvedCurrency, null, payeeRef));
-
-            // UNDER_ASSESSMENT -> APPROVED, or REGISTERED -> APPROVED for MATURITY's
-            // auto-approval; also validates approvedAmount is positive and within cover.
-            //
             // The ceiling comes from the claim's OWN stored facts -- its policy, its member, its
             // date of event -- and never from the caller, who is the party being bounded. On a
             // group scheme that is the member's covered amount, so a 5m life cannot be settled
@@ -823,6 +842,37 @@ public class ClaimsApiImpl implements ClaimsApi {
                 funeral.map(tz.co.nlolo.lifeplatform.claims.domain.FuneralClaim::getCoveredLifeId).orElse(null),
                 claim.getDateOfEvent(), claim.getClaimType().name());
             BigDecimal ceiling = ceilingFor(claim, claimable);
+
+            // A CREDIT-LIFE BORROWER'S CLAIM pays the lender's statement (2026-11-02): the statement must be on the claim,
+            // and paying above the repayment schedule's balance -- which the statement may honestly exceed, the schedule
+            // being the insurer's estimate -- needs a reason on the record. A claim registered before statements were
+            // asked for carries none, and is valued on the schedule as before.
+            String noteKept = null;
+            if (claimable.isLoanCover() && claim.getDetails().loanStatement() != null) {
+                boolean hasStatement = claimEvidenceRepository
+                    .findByClaimIdAndTenantIdOrderByUploadedAtDesc(claimId, tenantId).stream()
+                    .anyMatch(e -> ClaimEvidence.LOAN_STATEMENT.equals(e.getKind()));
+                if (!hasStatement) {
+                    throw new ClaimValidationException("Upload the lender's loan statement to this claim before approving it:"
+                        + " the claim pays the balance it shows");
+                }
+                // Only within the ceiling: an amount above it is refused by Claim.approve below, which is the truer answer.
+                if (approvedAmount != null && approvedAmount.compareTo(claimable.amount()) > 0
+                        && approvedAmount.compareTo(ceiling) <= 0) {
+                    if (approvalNote == null || approvalNote.isBlank()) {
+                        throw new ClaimValidationException("Approving " + approvedAmount.toPlainString()
+                            + " pays more than the " + claimable.amount().toPlainString()
+                            + " the repayment schedule says was still owed; give the reason");
+                    }
+                    noteKept = approvalNote.trim();
+                }
+            }
+
+            settlementDecisionRepository.save(new SettlementDecision(tenantId, claimId, decidedBy, true,
+                approvedAmount, approvedCurrency, null, payeeRef, noteKept));
+
+            // UNDER_ASSESSMENT -> APPROVED, or REGISTERED -> APPROVED for MATURITY's
+            // auto-approval; also validates approvedAmount is positive and within cover.
             claim.approve(approvedAmount, approvedCurrency, ceiling, annuity);
             // The TYPE and the DATE, because a consumer deciding what a claim ends must know which
             // benefit was approved and as of when. Without them benefitpayout would have to call back
@@ -970,6 +1020,17 @@ public class ClaimsApiImpl implements ClaimsApi {
     @Transactional
     public ClaimEvidenceView attachEvidence(UUID claimId, String documentRef, String description, String uploadedBy,
                                             String uploadedByName) {
+        return attachEvidence(claimId, documentRef, description, uploadedBy, uploadedByName, null);
+    }
+
+    @Override
+    @Transactional
+    public ClaimEvidenceView attachEvidence(UUID claimId, String documentRef, String description, String uploadedBy,
+                                            String uploadedByName, String kind) {
+        if (kind != null && !ClaimEvidence.LOAN_STATEMENT.equals(kind)) {
+            throw new ClaimValidationException("Unknown document kind " + kind + "; the only kind is "
+                + ClaimEvidence.LOAN_STATEMENT);
+        }
         UUID tenantId = TenantContext.get();
         Claim claim = findOrThrow(claimId, tenantId);
 
@@ -986,7 +1047,7 @@ public class ClaimsApiImpl implements ClaimsApi {
         documentApi.getMetadata(documentRef);
 
         ClaimEvidence evidence = new ClaimEvidence(tenantId, claimId, documentRef, description, uploadedBy,
-            uploadedByName);
+            uploadedByName, kind);
         claimEvidenceRepository.save(evidence);
 
         return toEvidenceView(evidence);
@@ -1156,6 +1217,6 @@ public class ClaimsApiImpl implements ClaimsApi {
     private ClaimEvidenceView toEvidenceView(ClaimEvidence evidence) {
         return new ClaimEvidenceView(evidence.getClaimEvidenceId(), evidence.getClaimId(), evidence.getDocumentRef(),
             evidence.getDescription(), evidence.getUploadedBy(), evidence.getUploadedByName(),
-            evidence.getUploadedAt());
+            evidence.getUploadedAt(), evidence.getKind());
     }
 }

@@ -118,6 +118,15 @@ test.describe('staff credit-life claim', () => {
     await assessorPage.getByLabel('Findings').fill('Death certificate verified');
     await assessorPage.getByRole('button', { name: 'Submit assessment' }).click();
     await expect(assessorPage.getByText('Under assessment')).toBeVisible({ timeout: 15_000 });
+    // THE LENDER'S STATEMENT, uploaded as such (2026-11-02): a credit-life claim is approved only with it on file.
+    await assessorPage.getByRole('tab', { name: 'Evidence' }).click();
+    await assessorPage.getByLabel("This is the lender's loan statement").check();
+    await assessorPage.getByLabel('Attach evidence').setInputFiles({
+      name: 'loan-statement.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.4 loan statement'),
+    });
+    await expect(assessorPage.getByText('Loan statement', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
     await assessorContext.close();
 
     // Approve, as a third person. NO PAYEE FIELD: the lender is the only payee there is.
@@ -127,7 +136,7 @@ test.describe('staff credit-life claim', () => {
     await expect(managerPage.getByRole('heading', { name: 'Decide settlement' })).toBeVisible({
       timeout: 30_000,
     });
-    await expect(managerPage.getByText(/the lender who holds this scheme, by bank transfer/)).toBeVisible({
+    await expect(managerPage.getByText(/^Paid to .* by bank transfer\.$/)).toBeVisible({
       timeout: 30_000,
     });
     await expect(managerPage.getByLabel('Mobile-money number')).toHaveCount(0);
@@ -144,7 +153,7 @@ test.describe('staff credit-life claim', () => {
 
     await managerPage.getByRole('button', { name: 'Approve claim' }).click();
     // On a scheme one life leaves; the policy does not close.
-    await expect(managerPage.getByText(/this life leaves the scheme when the claim settles/)).toBeVisible();
+    await expect(managerPage.getByText(/this person leaves the scheme; everyone else stays covered/)).toBeVisible();
     await managerPage.getByRole('button', { name: 'Approve and pay' }).click();
 
     // WHERE THE MONEY IS. Used to be a bare "Settlement requested" and nothing more.

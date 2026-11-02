@@ -136,7 +136,7 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
       {claim && (
         /*
           The record rail is facts only, and pinned -- the claimant's name and the
-          contestability flag stay on screen for the whole time the findings are being
+          event details stay on screen for the whole time the findings are being
           written. "Cannot tell whose death she is assessing without a second tab" was
           a real review finding, and a sticky column is the fix for it rather than
           another link.
@@ -157,31 +157,8 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
                       </Link>
                     }
                   />
-                  {/*
-                    The note used to read "Re-derived on every read, not a stored
-                    column", which is true and is a fact about the database, not
-                    about this claim. A claims manager deciding a death claim needs
-                    to know what the flag MEANS and how much weight to put on it.
-
-                    And the weight is genuinely different for a group scheme: no
-                    scheme carries an underwriting case id -- issueGroupScheme never
-                    records one, not even for a scheme issued from a decided group
-                    case -- so contestability cannot be measured at all there and
-                    the check fails closed to "requires review". Every group claim
-                    is therefore flagged, permanently. Saying so is the difference
-                    between a flag somebody weighs and a flag everybody clicks past.
-                  */}
-                  <Field
-                    label="Contestability"
-                    value={claim.requiresContestabilityReview ? 'Requires review' : 'Clear'}
-                    note={
-                      claim.requiresContestabilityReview
-                        ? claim.policyMemberId
-                          ? 'Always flagged on a scheme — cover here is not individually underwritten, so the window cannot be measured'
-                          : 'Inside the non-disclosure window, or the window could not be established'
-                        : 'Outside the non-disclosure window on the date of event'
-                    }
-                  />
+                  {/* No contestability row (2026-11-02, the user): it was always "Requires review" on a scheme, which
+                      cannot measure the window, so it told nobody anything. The server still derives the flag. */}
                   {/* A funeral plan's claim names the life who died; whether it was an accident decides the waiting period. */}
                   {claim.coveredLifeId && (
                     <AccidentalDeathField claimId={claimId} accidental={claim.accidental === true}

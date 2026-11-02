@@ -18,8 +18,12 @@ import {
   selectAssessments,
   selectClaimableCover,
   selectDecidingSettlement,
+  selectEvidence,
   useClaimStore,
 } from '@/store/claimStore';
+import { fileOwed, fileUnpaid, useBorrowerFileInvoice } from '@/features/payments/borrowerFile';
+import { LenderBalance } from './LenderBalance';
+import { aboveSchedule } from './scheduleCheck';
 import { assessorName } from './assessorName';
 import {
   blankApproveDecision,
@@ -52,12 +56,15 @@ export function ClaimSettlementPanel({
   claimId,
   policyNumber,
   onScheme,
+  policyMemberId = null,
 }: {
   claimId: string;
   policyNumber: string;
   /** The claim names a member: a group or credit-life scheme, where one life leaves and the
    *  contract stays -- so "the policy closes" would be false. */
   onScheme: boolean;
+  /** The member the claim names, on a scheme: whose monthly file must be paid before the payout (credit life). */
+  policyMemberId?: string | null;
 }) {
   const loadPolicy = usePolicyStore((s) => s.loadDetail);
   const policy = usePolicyStore(selectDetail(policyNumber));
@@ -88,6 +95,19 @@ export function ClaimSettlementPanel({
   }, [claimId, policyNumber]);
 
   const cover = coverResource.data?.claimableCover ?? null;
+
+  // A lender's claim (2026-11-02): approved only with the lender's loan statement uploaded, with a reason when it pays
+  // above the repayment schedule, and paid out only once the lender has paid the file the borrower joined on.
+  const lendersClaim = creditLife && coverResource.data?.statementOwed != null;
+  const loadEvidence = useClaimStore((s) => s.loadEvidence);
+  const evidence = useClaimStore(selectEvidence(claimId));
+  useEffect(() => {
+    if (lendersClaim) void loadEvidence(claimId);
+  }, [lendersClaim, claimId, loadEvidence]);
+  const missingStatement = lendersClaim && evidence.data != null
+    && !evidence.data.some((item) => item.kind === 'LOAN_STATEMENT');
+  const fileInvoice = useBorrowerFileInvoice(policyNumber, policyMemberId, creditLife);
+  const [approvalNote, setApprovalNote] = useState('');
   // Newest first, so [0] is the most recent assessment -- the one a second
   // assessor wrote after the first, if there were two.
   const latestAssessment = assessmentsResource.data?.[0] ?? null;
@@ -148,6 +168,7 @@ export function ClaimSettlementPanel({
     const difference = subtractAmounts(cover.amount, typedAmount);
     return difference ? formatMoney({ amount: difference, currencyCode: cover.currencyCode }) : null;
   })();
+  const needsNote = approved && aboveSchedule(coverResource.data, typeof typedAmount === 'string' ? typedAmount : undefined);
 
   /**
    * Validation runs FIRST, then the confirmation.
@@ -164,7 +185,9 @@ export function ClaimSettlementPanel({
 
   async function commit(values: SettlementDecisionFormValues) {
     setSentToFinance(values.approved && (creditLife || values.method !== 'MOBILE_MONEY'));
-    await decideSettlement(claimId, toApiRequest(values, creditLife), attempt);
+    const note = values.approved && aboveSchedule(coverResource.data, values.approvedAmount) ? approvalNote.trim() : '';
+    await decideSettlement(claimId, { ...toApiRequest(values, creditLife), ...(note ? { approvalNote: note } : {}) },
+      attempt);
     if (useClaimStore.getState().decidingSettlement[claimId]?.status === 'success') {
       setPending(null);
     }
@@ -199,8 +222,8 @@ export function ClaimSettlementPanel({
             decided.status === 'REJECTED'
               ? 'A claims manager can reopen a rejected claim if new evidence arrives.'
               : sentToFinance
-                ? 'Sent to finance under Payments to make: they make the payment and record its reference, and the claim settles then. The policy is now closed and reopening this claim will not reverse that.'
-                : 'Sent to the mobile-money provider; the claim settles when it confirms the payment. The policy is now closed and reopening this claim will not reverse that.'
+                ? 'Sent to finance to pay. The claim settles when they record the payment.'
+                : 'Sent to the mobile-money provider. The claim settles when it confirms the payment.'
           }
         />
       </div>
@@ -211,10 +234,7 @@ export function ClaimSettlementPanel({
     return (
       <div className="p-4" role="note">
         <p className="text-sm font-medium">Another claims manager decides this claim</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          You assessed it. Separation of duties keeps the person who weighed the evidence from also approving or
-          rejecting the payment, so the decision is someone else&rsquo;s.
-        </p>
+        <p className="mt-1 text-xs text-muted-foreground">You assessed it, so someone else decides.</p>
       </div>
     );
   }
@@ -284,9 +304,9 @@ export function ClaimSettlementPanel({
               */
               hint={
                 cover
-                  ? `Covered for ${formatMoney(cover)} — the most this claim can pay`
+                  ? `At most ${formatMoney(cover)}, the cover${latestAssessment && !recommendationExceedsCover(recommended, cover) ? ` · recommended by ${assessorName(latestAssessment)}` : ''}`
                   : coverResource.status === 'error'
-                    ? 'Could not read what this claim is covered for; the amount will be checked on submission'
+                    ? 'Could not read the cover; the amount is checked when you approve'
                     : undefined
               }
             >
@@ -322,46 +342,43 @@ export function ClaimSettlementPanel({
             say why is a number somebody is being asked to trust blind, and this
             one carries a colleague's judgement.
           */}
-          {latestAssessment && cover && recommendationExceedsCover(recommended, cover) ? (
-            // An assessment recorded before the backend bounded recommendations. Starting from
-            // it would open the form already refusing its own value, so it starts at the cover
-            // -- and says so, because silently replacing a colleague's figure is its own harm.
+          {latestAssessment && cover && recommendationExceedsCover(recommended, cover) && (
+            // An assessment recorded before the backend bounded recommendations: the form starts at the cover instead,
+            // and says so, because silently replacing a colleague's figure is its own harm.
             <p className="text-xs text-status-warning-fg">
-              The latest assessment, by {assessorName(latestAssessment)}, recommended{' '}
-              {formatMoney(latestAssessment.recommendedAmount)}, more than the{' '}
-              {formatMoney(cover)} this claim is covered for. Starting at the cover, the most it
-              can pay.
+              {assessorName(latestAssessment)} recommended {formatMoney(latestAssessment.recommendedAmount)}, more than
+              the cover, so this starts at the cover.
             </p>
-          ) : (
-            latestAssessment && (
-              <p className="text-xs text-muted-foreground">
-                Starts at {formatMoney(latestAssessment.recommendedAmount)}, recommended by{' '}
-                <span className="font-medium">{assessorName(latestAssessment)}</span>. Change it if you
-                have a finding they did not.
-              </p>
-            )
+          )}
+          <LenderBalance cover={coverResource.data} />
+          {lendersClaim && needsNote && (
+            <FormField label="Why pay more than the schedule">
+              <Textarea
+                className="min-h-16"
+                placeholder="Borrower missed two repayments; arrears shown on the statement"
+                value={approvalNote}
+                onChange={(e) => setApprovalNote(e.target.value)}
+              />
+            </FormField>
+          )}
+          {missingStatement && (
+            <p className="rounded-md bg-status-warning-bg px-3 py-2 text-sm text-status-warning-fg">
+              Upload the lender&rsquo;s loan statement under Evidence before approving.
+            </p>
           )}
           {creditLife ? (
-            /*
-              NOT a field. The insurer deals only with the lender (client answer 3.6), who is
-              the claimant and the policyholder (spec 2.9) -- there is no payee to choose. This
-              was a "Mobile-money destination" box, so finance was sent EFTs to "mobile" and
-              "i approve", and whoever approved could have typed any account at all.
-            */
-            <div className="rounded-md border border-border bg-surface px-3 py-2 text-xs">
-              <p>
-                Pays{' '}
-                {lenderPartyId ? (
-                  <PartyName partyId={lenderPartyId} className="font-medium" />
-                ) : (
-                  'the lender'
-                )}
-                , the lender who holds this scheme, by bank transfer.
+            // NOT a field: on credit life the lender is the only payee (client answer 3.6, spec 2.9).
+            <div className="space-y-1">
+              <p className="text-sm">
+                Paid to{' '}
+                {lenderPartyId ? <PartyName partyId={lenderPartyId} className="font-medium" /> : 'the lender'} by
+                bank transfer.
               </p>
-              <p className="mt-0.5 text-muted-foreground">
-                Finance makes the transfer to the lender&rsquo;s account and records it under Finance
-                &rarr; Payments to make.
-              </p>
+              {fileUnpaid(fileInvoice) && fileInvoice && (
+                <p className="text-sm text-status-pending-fg">
+                  Paid once the lender pays the file this borrower joined on ({fileOwed(fileInvoice)}).
+                </p>
+              )}
             </div>
           ) : (
             // Only the approval branch renders this, so the route fields are on the form it holds.
@@ -395,7 +412,7 @@ export function ClaimSettlementPanel({
       {pending ? (
         <ConfirmAct
           heading={pending.approved ? 'Approve this settlement?' : 'Reject this claim?'}
-          tone="danger"
+          tone={pending.approved ? 'primary' : 'danger'}
           consequence={
             pending.approved ? (
               <>
@@ -417,11 +434,10 @@ export function ClaimSettlementPanel({
                   </>
                 )}
                 .{' '}
-                {/* Who moves the money next (2026-10-29): mobile money goes straight to the provider; a transfer or a
-                    cheque goes to finance, who make it and record its reference. */}
+                {/* Who moves the money next: mobile money goes straight to the provider; a transfer or cheque to finance. */}
                 {creditLife || pending.method !== 'MOBILE_MONEY'
-                  ? 'It then goes to finance under Payments to make: they make it and record its reference, and the claim settles when they do.'
-                  : 'It is sent to the mobile-money provider now, and the claim settles when the provider confirms it.'}
+                  ? 'Finance then makes the payment.'
+                  : 'It is sent to the mobile-money provider now.'}
               </>
             ) : (
               <>
@@ -454,9 +470,9 @@ export function ClaimSettlementPanel({
               ? onScheme
                 ? // A scheme is not discharged by one death: this life leaves when the claim
                   // settles, and everybody else stays insured (PolicyApiImpl.dischargeForSettledClaim).
-                  'Money moves, and this life leaves the scheme when the claim settles — the scheme and everyone else on it stay in force.'
-                : 'Money moves, and the policy closes permanently — reopening this claim later will not reverse the closure or restart billing.'
-              : 'A claims manager can reopen a rejected claim, but this decision stays on the record.'
+                  'Once paid, this person leaves the scheme; everyone else stays covered.'
+                : 'Once paid, the policy closes for good.'
+              : 'A claims manager can reopen a rejected claim later.'
           }
           // Never the arming button's own words: "Reject claim" twice, a click
           // apart, is how the second click becomes as automatic as the first.
@@ -470,8 +486,10 @@ export function ClaimSettlementPanel({
           type="submit"
           size="sm"
           variant="primary"
-          // Approving waits for the policy: whether a payee is asked for depends on it.
-          disabled={deciding.status === 'loading' || (approved && productCategory === null)}
+          // Approving waits for the policy: whether a payee is asked for depends on it. A lender's claim also waits for
+          // its statement, and for a reason when it pays above the schedule.
+          disabled={deciding.status === 'loading' || (approved && productCategory === null)
+            || (approved && (missingStatement || (lendersClaim && needsNote && !approvalNote.trim())))}
         >
           {approved ? 'Approve claim' : 'Reject claim'}
         </Button>

@@ -172,6 +172,7 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
             "db-migrations/claims/V11__claim_document_request.sql",
             "db-migrations/claims/V12__claim_settled_at.sql",
+            "db-migrations/claims/V13__credit_life_statement_evidence.sql",
             // The settlement rail. A credit-life payout takes the EFT rail, which calls no
             // gateway at all -- so proving the whole chain here needs the payment schema and
             // nothing else: no WireMock, no aggregator, no stub. That is the rail being what
@@ -495,6 +496,7 @@ class CreditLifeClaimEndToEndTest {
                 new LoanStatement(ABOVE_FCL, null))),
             idem(), "claims.clerk");
         claimsApi.submitAssessment(claim.claimId(), "verified", null, null, false, "assessor.one", null);
+        attachLendersStatement(claim.claimId());
 
         // The 200,000,000 above the limit is uninsured, which is the point -- proved by the
         // platform refusing to settle for the whole debt. On the SAME claim, first: this used to
@@ -588,6 +590,48 @@ class CreditLifeClaimEndToEndTest {
         assertThat(claimsApi.claimableCover(claimId).amount()).isEqualByComparingTo(PRINCIPAL);
     }
 
+    // ---- checked against what was lent and the schedule (2026-11-02) -----------
+
+    @Test
+    void aStatementOwingMoreThanWasLentIsRefusedAtRegistration() {
+        // 50,000,000 said to be owed on a 2,400,000 loan: accepted and silently capped at approval, before this.
+        assertThatThrownBy(() -> decidable(new LoanStatement(new BigDecimal("50000000.00"), null)))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining("more than the");
+    }
+
+    @Test
+    void aCreditLifeClaimIsNotApprovedWithoutTheLendersStatementUploaded() {
+        UUID claimId = unstatedClaimAt(DISBURSED.plusMonths(6), new LoanStatement(new BigDecimal("1600000.00"), null));
+
+        assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true, new BigDecimal("1600000.00"), "TZS",
+            null, (String) null, idem(), "claims.manager"))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining("loan statement");
+
+        attachLendersStatement(claimId);
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("1600000.00"), "TZS", null, (String) null, idem(),
+            "claims.manager");
+        assertThat(claimsApi.getClaim(claimId).approvedAmount()).isEqualByComparingTo("1600000.00");
+    }
+
+    @Test
+    void payingAboveTheScheduleNeedsAReasonOnTheRecord() {
+        // The schedule says 1,600,000 at month six; the lender's statement says 1,750,000.
+        UUID claimId = decidable(new LoanStatement(new BigDecimal("1750000.00"), null));
+        assertThat(claimsApi.claimableCover(claimId).scheduledBalance()).isEqualByComparingTo("1600000.00");
+        assertThat(claimsApi.claimableCover(claimId).statementOwed()).isEqualByComparingTo("1750000.00");
+
+        assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true, new BigDecimal("1750000.00"), "TZS",
+            null, null, null, null, idem(), "claims.manager"))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining("give the reason");
+
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("1750000.00"), "TZS", null, null, null,
+            "Borrower missed two repayments; arrears confirmed on the statement", idem(), "claims.manager");
+        assertThat(claimsApi.getClaim(claimId).approvedAmount()).isEqualByComparingTo("1750000.00");
+    }
+
     @Test
     void aCreditLifeClaimWithoutTheLendersStatementIsRefused() {
         assertThatThrownBy(() -> claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(
@@ -677,6 +721,13 @@ class CreditLifeClaimEndToEndTest {
     }
 
     private UUID assessedClaimAt(LocalDate dateOfEvent, LoanStatement statement) {
+        UUID claimId = unstatedClaimAt(dateOfEvent, statement);
+        attachLendersStatement(claimId);
+        return claimId;
+    }
+
+    /** Registered and assessed, with the lender's statement NOT yet uploaded. */
+    private UUID unstatedClaimAt(LocalDate dateOfEvent, LoanStatement statement) {
         ClaimView claim = claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(
             scheme, borrowerMemberId, bankPartyId, ClaimType.DEATH, dateOfEvent,
             new DeathClaimDetails("Under investigation", "Dar es Salaam", dateOfEvent, "Dr Mwakalinga", null,
@@ -684,6 +735,18 @@ class CreditLifeClaimEndToEndTest {
             idem(), "claims.clerk");
         claimsApi.submitAssessment(claim.claimId(), "investigating", null, null, false, "assessor.one", null);
         return claim.claimId();
+    }
+
+    @Autowired private tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimEvidenceRepository claimEvidenceRepository;
+
+    /**
+     * The lender's statement, as uploaded evidence of kind LOAN_STATEMENT (2026-11-02). Written straight to the
+     * evidence table: this class has no object store, and approval reads only the evidence row's kind.
+     */
+    private void attachLendersStatement(UUID claimId) {
+        claimEvidenceRepository.save(new tz.co.nlolo.lifeplatform.claims.domain.ClaimEvidence(TenantContext.get(),
+            claimId, "doc-" + UUID.randomUUID(), "Loan statement", "claims.clerk", null,
+            tz.co.nlolo.lifeplatform.claims.domain.ClaimEvidence.LOAN_STATEMENT));
     }
 
     /** The idempotency key the last approval used, so the test can find the payout it produced.

@@ -275,7 +275,8 @@ public class ClaimController {
             }
         }
         claimsApi.decideSettlement(claimId, request.approved(), approvedAmount, approvedCurrency,
-            request.rejectionReason(), request.declineReason(), route, idempotencyKey, jwt.getSubject());
+            request.rejectionReason(), request.declineReason(), route, request.approvalNote(), idempotencyKey,
+            jwt.getSubject());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(ClaimResponseDto.from(claimsApi.getClaim(claimId)));
     }
 

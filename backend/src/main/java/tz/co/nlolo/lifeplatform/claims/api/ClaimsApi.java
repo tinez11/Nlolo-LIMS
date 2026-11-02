@@ -175,6 +175,16 @@ public interface ClaimsApi {
                            String rejectionReason, ClaimDeclineReason declineReason,
                            tz.co.nlolo.lifeplatform.PayoutRoute route, String idempotencyKey, String decidedBy);
 
+    /**
+     * The same, with the manager's reason for approving a credit-life claim above the balance the repayment schedule
+     * says was still owed (2026-11-02). Required then -- the lender's statement is the debt and may be paid, but not
+     * without saying why -- and kept on the decision. Ignored otherwise.
+     */
+    void decideSettlement(UUID claimId, boolean approved, BigDecimal approvedAmount, String approvedCurrency,
+                           String rejectionReason, ClaimDeclineReason declineReason,
+                           tz.co.nlolo.lifeplatform.PayoutRoute route, String approvalNote, String idempotencyKey,
+                           String decidedBy);
+
     void reopenClaim(UUID claimId, String reason, String reopenedBy);
 
     /**
@@ -183,6 +193,13 @@ public interface ClaimsApi {
      */
     ClaimEvidenceView attachEvidence(UUID claimId, String documentRef, String description, String uploadedBy,
                                      String uploadedByName);
+
+    /**
+     * The same, saying what the document is: {@code LOAN_STATEMENT} for the lender's loan statement, which a
+     * credit-life claim must carry before it is approved (2026-11-02). Null for an ordinary document.
+     */
+    ClaimEvidenceView attachEvidence(UUID claimId, String documentRef, String description, String uploadedBy,
+                                     String uploadedByName, String kind);
 
     List<ClaimEvidenceView> listEvidence(UUID claimId);
 }

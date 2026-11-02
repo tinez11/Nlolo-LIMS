@@ -30,6 +30,7 @@ public final class AnnuityTestMigrations {
         "db-migrations/claims/V9__zero_annuity_settlement.sql",
         "db-migrations/claims/V11__claim_document_request.sql",
         "db-migrations/claims/V12__claim_settled_at.sql",
+        "db-migrations/claims/V13__credit_life_statement_evidence.sql",
         "db-migrations/annuity/V1__create_annuity_schema.sql",
         // D2: after the deposit list's accumulation, benefitpayout and payment migrations.
         "db-migrations/accumulation/V4__vesting_entry.sql",

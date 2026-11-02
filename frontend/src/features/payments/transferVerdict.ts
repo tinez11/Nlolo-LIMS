@@ -1,5 +1,6 @@
-import type { ClaimView, PolicyMemberView, PolicyView } from '@/api/types';
+import type { ClaimView, InvoiceView, PolicyMemberView, PolicyView } from '@/api/types';
 import { exitSummary } from '@/features/policies/memberStanding';
+import { fileOwed, fileUnpaid } from './borrowerFile';
 
 /**
  * What finance needs to know about one bank transfer before making it, and whether they may.
@@ -31,8 +32,10 @@ export function transferVerdict(input: {
   claim: ClaimView | null;
   policy: PolicyView | null;
   member: PolicyMemberView | null;
+  /** Credit life: the invoice for the file the borrower joined on. */
+  fileInvoice?: InvoiceView | null;
 }): TransferVerdict {
-  const { claimId, payeeRef, claim, policy, member } = input;
+  const { claimId, payeeRef, claim, policy, member, fileInvoice = null } = input;
   const reasons: string[] = [];
   const notes: string[] = [];
   const creditLife = policy?.productCategory === 'CREDIT_LIFE';
@@ -52,6 +55,12 @@ export function transferVerdict(input: {
         `Another death claim (${member.openDeathClaimId}) is the one in progress for this borrower. A life is paid once — resolve which claim is real before transferring.`,
       );
     }
+  }
+
+  // Credit life (2026-11-02, the user's choice): a borrower's claim is paid only once the lender has paid for the file
+  // that put them on cover. Approved meanwhile, held here.
+  if (creditLife && fileInvoice && fileUnpaid(fileInvoice)) {
+    reasons.push(`The lender has not paid the file this borrower joined on (${fileOwed(fileInvoice)}). Pay this claim once it is paid.`);
   }
 
   // Individual business: a policy already closed by a death has been paid for.

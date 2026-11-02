@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import { getClaim } from '@/api/claims';
 import { getPolicy, getSchemeMember } from '@/api/policies';
-import type { AwaitingEftView, ClaimView, PolicyMemberView, PolicyView } from '@/api/types';
+import type { AwaitingEftView, ClaimView, InvoiceView, PolicyMemberView, PolicyView } from '@/api/types';
+import { borrowerFileInvoice } from './borrowerFile';
 
 /** Everything about the claim behind one transfer that the queue needs to say whose it is. */
 export interface TransferContext {
   claim: ClaimView | null;
   policy: PolicyView | null;
   member: PolicyMemberView | null;
+  /** Credit life: the invoice for the file the borrower joined on, which must be paid first (2026-11-02). */
+  fileInvoice: InvoiceView | null;
   /** True once every lookup has answered, successfully or not. */
   loaded: boolean;
 }
@@ -35,10 +38,13 @@ export function useTransferContexts(rows: AwaitingEftView[]): Record<string, Tra
             ? getSchemeMember(claim.policyNumber, claim.policyMemberId).catch(() => null)
             : Promise.resolve(null),
         ]);
+        const fileInvoice = claim && policy?.productCategory === 'CREDIT_LIFE'
+          ? await borrowerFileInvoice(claim.policyNumber, member)
+          : null;
         if (!cancelled) {
           setContexts((current) => ({
             ...current,
-            [row.disbursementId]: { claim, policy, member, loaded: true },
+            [row.disbursementId]: { claim, policy, member, fileInvoice, loaded: true },
           }));
         }
       })();

@@ -90,7 +90,7 @@ export function EftExecutionPage() {
     const context = contexts[d.disbursementId];
     return context
       ? transferVerdict({ claimId: d.sourceRef, payeeRef: d.payeeRef, claim: context.claim,
-          policy: context.policy, member: context.member })
+          policy: context.policy, member: context.member, fileInvoice: context.fileInvoice })
       : null;
   };
 

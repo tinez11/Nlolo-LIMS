@@ -208,6 +208,7 @@ class ReinsuranceContractTest {
             "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
             "db-migrations/claims/V11__claim_document_request.sql",
             "db-migrations/claims/V12__claim_settled_at.sql",
+            "db-migrations/claims/V13__credit_life_statement_evidence.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
