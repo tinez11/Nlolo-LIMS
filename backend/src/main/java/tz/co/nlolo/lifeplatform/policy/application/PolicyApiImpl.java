@@ -3034,8 +3034,13 @@ public class PolicyApiImpl implements PolicyApi {
         //
         // activateOnFirstPremium needs NO change: it activates any PROPOSED policy, and
         // billing still raises the employer's schedule off PolicyIssued exactly as before.
-        boolean startsCoverNow = request.issuanceBasis() != null
-            && request.issuanceBasis().startsCoverImmediately();
+        //
+        // A CREDIT-LIFE SCHEME IS ALWAYS IN FORCE ON SET-UP (2026-11-02, the user). It has no first premium to wait
+        // for -- each accepted file is invoiced -- and no borrower is covered until a file is accepted, behind the
+        // yearly agreement and a second person. Asking an underwriter why it is in force only ever recorded a
+        // "migration" for lenders nobody migrated, or left a scheme stuck as an offer nothing could accept.
+        boolean startsCoverNow = request.benefitBasis() == BenefitBasis.AMORTISING_LOAN
+            || (request.issuanceBasis() != null && request.issuanceBasis().startsCoverImmediately());
         if (startsCoverNow) {
             policy.activate();
         }

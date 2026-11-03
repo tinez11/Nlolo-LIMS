@@ -1355,15 +1355,16 @@ class GroupSchemeIntegrationTest {
     }
 
     @Test
-    void aCreditLifeSchemeMustStateHowItsLoansRepay() {
+    void aCreditLifeSchemeNeedNotStateHowItsLoansRepay() {
+        // It used to be refused without one. Since 2026-11-01 a claim pays the balance on the lender's statement, so
+        // the repayment method values nothing: set-up records the loans flat and monthly, and the scheme is in force.
         TenantContext.set(UUID.randomUUID());
         GroupProduct product = creditLifeProduct("CL-NOMETHOD");
 
-        assertThatThrownBy(() -> policyApi.issueGroupScheme(
-            loanScheme(product, person("Methodless Co"), BenefitBasis.AMORTISING_LOAN, null, null),
-            "staff-1"))
-            .isInstanceOf(InvalidPolicyStateException.class)
-            .hasMessageContaining("repay principal");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(
+            loanSchemeWith(product, person("Methodless Co"), null, List.of()), "staff-1");
+
+        assertThat(policyApi.getPolicy(scheme.policyNumber()).status()).isEqualTo(PolicyStatus.ACTIVE);
     }
 
     @Test

@@ -71,15 +71,11 @@ export const CREDIT_LIFE_PREMIUM_BASIS_LABELS: Record<
   WHOLE_YEARS_ROUNDED_UP: 'Per year, a part year counted whole',
 };
 
-/**
- * The bases that start cover at once — the only ones that leave a usable scheme today.
- *
- * The other two (`UNDERWRITING_OVERRIDE`, `GUARANTEED_ISSUE`) are real and are deliberately not
- * offered: both leave the scheme an offer, so picking one would produce exactly the dead end
- * above while looking like a choice.
+/*
+ * NO ISSUANCE BASIS (2026-11-02, the user). A credit-life scheme is in force on set-up -- it has no first premium to
+ * wait for, and no borrower is covered until a file is accepted -- so the service no longer asks why. The question
+ * only ever recorded "migration" for lenders nobody migrated, or left a scheme stuck as an offer.
  */
-export const IN_FORCE_ISSUANCE_BASES = ['MIGRATION', 'CONVERSION', 'REINSTATEMENT'] as const;
-
 export interface CreditLifeSchemeIssueFormValues {
   policyholderPartyId: string;
   productId: string;
@@ -87,8 +83,6 @@ export interface CreditLifeSchemeIssueFormValues {
   currency: string;
   fclAmount: string;
   commencementDate: string;
-  /** A basis, OFFER for an ordinary offer, or '' while the underwriter has not chosen yet. */
-  issuanceBasis: (typeof IN_FORCE_ISSUANCE_BASES)[number] | 'OFFER' | '';
   reasonForManualIssue: string;
 }
 
@@ -100,10 +94,6 @@ export function blankCreditLifeSchemeIssueForm(): CreditLifeSchemeIssueFormValue
     currency: 'TZS',
     fclAmount: '',
     commencementDate: '',
-    // NO DEFAULT. It used to be MIGRATION, which is true only of a lender whose book already
-    // runs elsewhere; a brand-new lender set up in a hurry went on record as a migration. The
-    // basis is kept with the underwriter's name for compliance, so they state it themselves.
-    issuanceBasis: '',
     reasonForManualIssue: '',
   };
 }
@@ -143,8 +133,6 @@ export function creditLifeSchemeIssueFormSchema(today: string = todayIso()) {
         .trim()
         .min(1, 'When this scheme starts — on or before the oldest loan the lender will send')
         .refine((v) => ISO_DATE_PATTERN.test(v), 'Not a valid date'),
-      issuanceBasis: z.union([z.enum(IN_FORCE_ISSUANCE_BASES), z.literal('OFFER'), z.literal('')])
-        .refine((v) => v !== '', 'Say why this scheme is in force'),
       reasonForManualIssue: z.string().trim(),
     })
     .superRefine((values, ctx) => {
@@ -198,8 +186,6 @@ export function toIssueRequest(
     // No premium, rate or repayment terms: the yearly agreement prices every file (see above).
     premiumFrequency: 'SINGLE',
     ...(values.commencementDate ? { commencementDate: values.commencementDate } : {}),
-    // OFFER is the console's word for "no basis": the endpoint says ordinary offer by omission.
-    ...(values.issuanceBasis && values.issuanceBasis !== 'OFFER' ? { issuanceBasis: values.issuanceBasis } : {}),
     ...(values.reasonForManualIssue.trim()
       ? { reasonForManualIssue: values.reasonForManualIssue.trim() }
       : {}),
