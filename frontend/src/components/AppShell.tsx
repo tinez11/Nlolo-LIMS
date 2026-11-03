@@ -383,8 +383,8 @@ function customerNav(groups: ReturnType<typeof navFor>, language: 'en' | 'sw'): 
   return groups.map((g) => ({ label: nav.group, items: g.items.map((i) => ({ ...i, label: label[i.to] ?? i.label })) }));
 }
 
-/** English or Swahili, for the customer portal only. */
-function LanguageSwitch() {
+/** English or Swahili, for the customer portal and the public quote link. */
+export function LanguageSwitch() {
   const language = useLanguage();
   const setLanguage = useLanguageStore((s) => s.setLanguage);
   return (

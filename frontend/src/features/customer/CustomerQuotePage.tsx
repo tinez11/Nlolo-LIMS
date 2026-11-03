@@ -1,7 +1,8 @@
 import { CalendarClock, Check, Plus, Trash2, Users, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { getCustomerProducts, quoteCustomerProduct, type CustomerProduct, type CustomerQuote } from '@/api/portal';
+import { type CustomerProduct, type CustomerQuote } from '@/api/portal';
+import { useQuoteSource } from './quoteSource';
 import { ShareBars } from '@/components/charts/ShareBars';
 import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
@@ -37,6 +38,7 @@ export function CustomerQuotePage() {
   const w = words.quote;
   const navigate = useNavigate();
   const keep = useApplyDraft((s) => s.keep);
+  const source = useQuoteSource();
   const [product, setProduct] = useState<CustomerProduct | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<ApiError | null>(null);
   const [at, setAt] = useState(0);
@@ -47,12 +49,12 @@ export function CustomerQuotePage() {
 
   useEffect(() => {
     let live = true;
-    getCustomerProducts().then(
+    source.listProducts().then(
       (all) => { if (live) setProduct(all.find((p) => p.productId === productId && p.online) ?? null); },
       (e: unknown) => { if (live) setLoadError(toApiError(e)); },
     );
     return () => { live = false; };
-  }, [productId]);
+  }, [productId, source]);
 
   if (loadError) return <div className="px-4 pt-6 sm:px-6"><ErrorPanel error={loadError} /></div>;
   if (product === undefined) return <LoadingBlock label="Loading" />;
@@ -60,7 +62,7 @@ export function CustomerQuotePage() {
     return (
       <div className="mx-auto max-w-xl space-y-3 px-4 pt-8 text-base">
         <p>{words.apply.lostLead}</p>
-        <Button asChild variant="primary"><Link to="/customers/products">{words.nav.products}</Link></Button>
+        <Button asChild variant="primary"><Link to={source.base}>{words.nav.products}</Link></Button>
       </div>
     );
   }
@@ -73,7 +75,7 @@ export function CustomerQuotePage() {
     setBusy(true);
     setError(null);
     try {
-      setQuote(await quoteCustomerProduct(p.productId, quoteRequest(p, answers)));
+      setQuote(await source.quote(p.productId, quoteRequest(p, answers)));
     } catch (e) {
       setError(toApiError(e));
     } finally {
@@ -93,14 +95,19 @@ export function CustomerQuotePage() {
     return (
       <>
         <PageHeader title={w.yourPrice} description={product.productName}
-          breadcrumb={[{ label: words.nav.products, to: '/customers/products' }]} />
+          breadcrumb={[{ label: words.nav.products, to: source.base }]} />
         <div className="w-full max-w-xl space-y-5 px-4 pb-10 text-base sm:px-6">
           <Answer quote={quote} w={w} />
+          {!source.canApply && (
+            <p className="rounded-xl bg-surface-muted px-4 py-3 text-sm">{words.publicQuote.applySoon}</p>
+          )}
           <div className="flex flex-col gap-2 sm:flex-row-reverse sm:justify-start">
-            <Button variant="primary" className="h-12 px-6 text-base" disabled={quote.deposit?.refusal != null}
-              onClick={() => { keep({ product, request: quoteRequest(product, answers), quote }); navigate(`/customers/products/${encodeURIComponent(product.productId)}/apply`); }}>
-              {w.apply}
-            </Button>
+            {source.canApply && (
+              <Button variant="primary" className="h-12 px-6 text-base" disabled={quote.deposit?.refusal != null}
+                onClick={() => { keep({ product, request: quoteRequest(product, answers), quote }); navigate(`${source.base}/${encodeURIComponent(product.productId)}/apply`); }}>
+                {w.apply}
+              </Button>
+            )}
             <Button variant="outline" className="h-12 text-base" onClick={() => { setQuote(null); setAt(0); }}>{w.change}</Button>
           </div>
         </div>
@@ -111,15 +118,15 @@ export function CustomerQuotePage() {
   return (
     <>
       <PageHeader title={title} description={product.productName}
-        breadcrumb={[{ label: words.nav.products, to: '/customers/products' }]} />
+        breadcrumb={[{ label: words.nav.products, to: source.base }]} />
       <div className="w-full max-w-xl space-y-6 px-4 pb-10 text-base sm:px-6">
         <StepBar at={at} of={steps.length} label={w.step(at + 1, steps.length)} />
         <StepScreen step={step} product={product} answers={answers} set={set} w={w} icon={<Icon className="size-7" />} />
         {error && <InlineError error={error} lead={w.notPriced} />}
         {/* Not priced here is not the end: an adviser can still price it, on the same answers. */}
-        {error?.status === 422 && at === steps.length - 1 && (
+        {source.canApply && error?.status === 422 && at === steps.length - 1 && (
           <Button variant="outline" className="h-12 w-full text-base"
-            onClick={() => { keep({ product, request: quoteRequest(product, answers), quote: null }); navigate(`/customers/products/${encodeURIComponent(product.productId)}/apply`); }}>
+            onClick={() => { keep({ product, request: quoteRequest(product, answers), quote: null }); navigate(`${source.base}/${encodeURIComponent(product.productId)}/apply`); }}>
             {w.adviserPrice}
           </Button>
         )}

@@ -1,7 +1,7 @@
 import { ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { applyForProduct, getCustomerProducts, type CustomerProduct } from '@/api/portal';
+import { applyForProduct, type CustomerProduct } from '@/api/portal';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
@@ -12,6 +12,7 @@ import { cn } from '@/lib/cn';
 import { NEED_ICON } from './needIcons';
 import { isNeed, NEEDS, type Need } from './selfService';
 import { useWords } from './words';
+import { useQuoteSource } from './quoteSource';
 
 /**
  * Get cover (2026-10-29, the user's choice of "start from what you need"): a tile for each need a product online meets,
@@ -20,6 +21,7 @@ import { useWords } from './words';
  */
 export function CustomerProductsPage() {
   const w = useWords().needs;
+  const source = useQuoteSource();
   const [products, setProducts] = useState<CustomerProduct[] | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [reload, setReload] = useState(0);
@@ -27,22 +29,23 @@ export function CustomerProductsPage() {
 
   useEffect(() => {
     let live = true;
-    getCustomerProducts().then(
+    source.listProducts().then(
       (p) => { if (live) { setProducts(p); setError(null); } },
       (e: unknown) => { if (live) setError(toApiError(e)); },
     );
     return () => { live = false; };
-  }, [reload]);
+  }, [reload, source]);
 
   const online = (products ?? []).filter((p) => p.online && isNeed(p.kind));
   const needs = NEEDS.filter((n) => online.some((p) => p.kind === n));
   const chosen = need ?? (needs.length === 1 ? needs[0]! : null);
-  const adviser = (products ?? []).filter((p) => !p.online);
+  const adviser = source.showsAdviserProducts ? (products ?? []).filter((p) => !p.online) : [];
 
   return (
     <>
       <PageHeader title={w.title} description={w.lead} />
       <div className="w-full max-w-3xl space-y-6 px-4 pb-10 text-base sm:px-6">
+        {source.header}
         {error ? (
           <ErrorPanel error={error} onRetry={() => setReload((n) => n + 1)} />
         ) : !products ? (
@@ -96,8 +99,9 @@ export function CustomerProductsPage() {
 
 function ProductCard({ product }: { product: CustomerProduct }) {
   const w = useWords().needs;
+  const source = useQuoteSource();
   return (
-    <Link to={`/customers/products/${encodeURIComponent(product.productId)}`}
+    <Link to={`${source.base}/${encodeURIComponent(product.productId)}`}
       className="flex items-center gap-4 rounded-2xl border border-border bg-surface p-4 shadow-card hover:bg-hover">
       <span className="min-w-0 flex-1 space-y-1">
         <span className="block text-title">{product.productName}</span>

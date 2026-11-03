@@ -1,0 +1,36 @@
+import { createContext, useContext, type ReactNode } from 'react';
+import { getCustomerProducts, quoteCustomerProduct, type CustomerProduct, type CustomerQuote, type CustomerQuoteRequest } from '@/api/portal';
+
+/**
+ * Where the Get-cover and price screens read from (2026-11-02): the signed-in customer's own portal, or the public
+ * quote link, where a visitor with no login prices on the facts they typed. The screens are the same; what differs is
+ * whose facts price it, where its links go, and whether it can be applied for there.
+ */
+export interface QuoteSource {
+  /** Where the product list lives; a product's price page is `${base}/${productId}`. */
+  base: string;
+  listProducts: () => Promise<CustomerProduct[]>;
+  quote: (productId: string, request: CustomerQuoteRequest) => Promise<CustomerQuote>;
+  /** The portal applies from the price; the public link does not yet. */
+  canApply: boolean;
+  /** The portal lists what an adviser prices, with a way to ask; the public link, with nobody to call back, does not. */
+  showsAdviserProducts: boolean;
+  /** Shown above the product list -- the public link's "who you are" summary. */
+  header?: ReactNode;
+}
+
+export const PORTAL_SOURCE: QuoteSource = {
+  base: '/customers/products',
+  listProducts: getCustomerProducts,
+  quote: quoteCustomerProduct,
+  canApply: true,
+  showsAdviserProducts: true,
+};
+
+const QuoteSourceContext = createContext<QuoteSource>(PORTAL_SOURCE);
+
+export const QuoteSourceProvider = QuoteSourceContext.Provider;
+
+export function useQuoteSource(): QuoteSource {
+  return useContext(QuoteSourceContext);
+}

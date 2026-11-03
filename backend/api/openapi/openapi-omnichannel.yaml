@@ -574,25 +574,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              properties:
-                sumAssured: { type: [number, "null"] }
-                frequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, ANNUALLY, null] }
-                termYears: { type: [integer, "null"] }
-                amount: { type: [number, "null"], description: "A deposit's amount" }
-                termMonths: { type: [integer, "null"], description: "A deposit's term" }
-                planCode: { type: [string, "null"], description: A funeral plan }
-                family:
-                  type: array
-                  items:
-                    type: object
-                    required: [role, name, dateOfBirth]
-                    properties:
-                      role: { type: string, enum: [SPOUSE, CHILD, PARENT, EXTENDED] }
-                      name: { type: string }
-                      dateOfBirth: { type: string, format: date }
-                      student: { type: boolean }
+            schema: { $ref: '#/components/schemas/CustomerQuoteRequest' }
       responses:
         '200':
           description: OK
@@ -602,6 +584,118 @@ paths:
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '422':
           description: Cannot be priced online
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /public/visits:
+    post:
+      summary: Starts a visit to the public quote link, once the browser has passed Cloudflare Turnstile
+      description: >-
+        No login (2026-11-02). The Turnstile token is checked with Cloudflare on the server; a pass is exchanged for a
+        signed visit token, valid `minutes`, which pricing needs in the X-Visit header. 403 when the challenge was not
+        passed, 404 when the public link is switched off here, 429 past 20 visits an hour from one address.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                turnstileToken: { type: string }
+      responses:
+        '201':
+          description: A visit
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [visitToken, minutes]
+                properties:
+                  visitToken: { type: string }
+                  minutes: { type: integer }
+        '403':
+          description: The challenge was not passed
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '429':
+          description: Too many requests
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /public/products:
+    get:
+      summary: The products sold online, for anyone -- the list a customer sees
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CustomerProduct' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '429':
+          description: Too many requests
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /public/products/{productId}/quote:
+    post:
+      summary: An indicative price on the facts a visitor typed -- no login, nothing stored
+      description: >-
+        The quotation form's own facts about the person (name, date of birth, sex, smoker status) and the same quote
+        request as the portal. Needs a visit token in X-Visit (401 without a valid, unexpired one). 422 as the portal
+        answers it; 429 past the rate limits.
+      security: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: X-Visit
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [person, request]
+              properties:
+                person:
+                  type: object
+                  required: [dateOfBirth]
+                  properties:
+                    fullName: { type: [string, "null"] }
+                    dateOfBirth: { type: string, format: date }
+                    sex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+                    smokerStatus: { type: [string, "null"], enum: [NON_SMOKER, SMOKER, UNKNOWN, null] }
+                request: { $ref: '#/components/schemas/CustomerQuoteRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerQuote' }
+        '401':
+          description: No visit, or it has ended
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Cannot be priced online
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '429':
+          description: Too many requests
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
@@ -1152,6 +1246,25 @@ components:
               code: { type: string }
               en: { type: string }
               sw: { type: string }
+    CustomerQuoteRequest:
+      type: object
+      properties:
+        sumAssured: { type: [number, "null"] }
+        frequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, ANNUALLY, null] }
+        termYears: { type: [integer, "null"] }
+        amount: { type: [number, "null"], description: "A deposit's amount" }
+        termMonths: { type: [integer, "null"], description: "A deposit's term" }
+        planCode: { type: [string, "null"], description: A funeral plan }
+        family:
+          type: array
+          items:
+            type: object
+            required: [role, name, dateOfBirth]
+            properties:
+              role: { type: string, enum: [SPOUSE, CHILD, PARENT, EXTENDED] }
+              name: { type: string }
+              dateOfBirth: { type: string, format: date }
+              student: { type: boolean }
     CustomerQuote:
       type: object
       additionalProperties: false

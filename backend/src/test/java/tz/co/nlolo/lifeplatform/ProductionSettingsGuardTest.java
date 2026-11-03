@@ -65,6 +65,31 @@ class ProductionSettingsGuardTest {
             "app.portal.url must be an https:// address");
     }
 
+    /** The public quote link (2026-11-02): on in production only with real secrets and the deployment's insurer. */
+    @Test
+    void thePublicQuoteLinkNeedsRealSecretsWhenSwitchedOn() {
+        Map<String, String> s = realLooking();
+        s.put("app.public-quote.enabled", "true");
+        s.put("app.public-quote.turnstile.enabled", "true");
+        s.put("app.public-quote.turnstile.secret", "1x0000000000000000000000000000000AA");
+        s.put("app.public-quote.visit-secret", "short");
+        s.put("app.public-quote.tenant-id", "11111111-1111-1111-1111-111111111111");
+        assertThat(ProductionSettingsGuard.problems(s::get)).containsExactlyInAnyOrder(
+            "app.public-quote is enabled but app.public-quote.turnstile.secret is a Cloudflare test secret or empty",
+            "app.public-quote.visit-secret must be at least 32 characters",
+            "app.public-quote.tenant-id must name this deployment's insurer");
+
+        s.put("app.public-quote.turnstile.secret", "0x4AAAAAAA-real-turnstile-secret");
+        s.put("app.public-quote.visit-secret", "a-real-visit-secret-of-at-least-32-characters");
+        s.put("app.public-quote.tenant-id", "6f1d2c34-5a6b-4c7d-8e9f-0a1b2c3d4e5f");
+        assertThat(ProductionSettingsGuard.problems(s::get)).isEmpty();
+
+        // Off, nothing about it is asked.
+        Map<String, String> off = realLooking();
+        off.put("app.public-quote.enabled", "false");
+        assertThat(ProductionSettingsGuard.problems(off::get)).isEmpty();
+    }
+
     @Test
     void theGuardOnlyExistsUnderTheProdProfile() {
         assertThat(ProductionSettingsGuard.class.getAnnotation(Profile.class).value()).containsExactly("prod");
