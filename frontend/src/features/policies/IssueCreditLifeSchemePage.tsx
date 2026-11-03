@@ -13,12 +13,11 @@ import { PartyPicker } from '@/components/PartyPicker';
 import { ProductChooser } from '@/components/ProductChooser';
 import { ErrorPanel, NoAccess } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { Input, Select } from '@/components/ui/input';
+import { Input } from '@/components/ui/input';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectIssuingScheme, usePolicyStore } from '@/store/policyStore';
 import { selectProductSnapshot, useProductStore } from '@/store/productStore';
 import {
-  IN_FORCE_ISSUANCE_BASES,
   blankCreditLifeSchemeIssueForm,
   creditLifeSchemeIssueFormSchema,
   toIssueRequest,
@@ -85,7 +84,6 @@ export function IssueCreditLifeSchemePage() {
   });
 
   const productId = useWatch({ control, name: 'productId' });
-  const issuanceBasis = useWatch({ control, name: 'issuanceBasis' });
   const lenderPartyId = useWatch({ control, name: 'policyholderPartyId' });
 
   /*
@@ -151,7 +149,7 @@ export function IssueCreditLifeSchemePage() {
       <PageHeader
         breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title="Set up a credit-life scheme"
-        description="A lender's book. Set up once here, priced by the lender's yearly agreement; the borrowers arrive every month on a file."
+        description="Once per lender. Borrowers then arrive on monthly files."
       />
 
       {!canUnderwrite && <NoAccess what="Setting up a credit-life scheme" who="underwriters" />}
@@ -174,15 +172,13 @@ export function IssueCreditLifeSchemePage() {
               )}
             />
             <p className="mt-1 text-xs text-subtle-foreground">
-              They hold the contract and pay the premium, and they are the beneficiary of every
-              claim on it — a credit-life payout settles the borrower&rsquo;s debt, so it goes to
-              the lender rather than to a family.
+              Holds the contract, pays the premium and receives the claims.
             </p>
             {lenderPartyId && lenderAgentKnown && (
               <p className="mt-1 text-xs text-muted-foreground">
                 {lenderAgentId
-                  ? 'Commission: paid to the lender, a registered agent, at the rate its yearly agreement states.'
-                  : 'Commission: the lender is not a registered agent yet, so the scheme starts direct. Register it on the scheme page.'}
+                  ? 'Commission: paid to the lender at its agreement’s rate.'
+                  : 'Commission: none until the lender is registered as an agent on the scheme page.'}
               </p>
             )}
           </FormField>
@@ -223,9 +219,7 @@ export function IssueCreditLifeSchemePage() {
               Scheme terms
             </legend>
             <p className="mb-2.5 text-xs text-muted-foreground">
-              Agreed once, per lender. The price &mdash; the rate, the borrowers&rsquo; ages, the loan lengths and the
-              lender&rsquo;s commission &mdash; is the yearly agreement, added on the scheme page next. A borrower is
-              covered for what they still owe.
+              The rate, ages, loan lengths and commission are set in the yearly agreement on the next page.
             </p>
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -235,10 +229,7 @@ export function IssueCreditLifeSchemePage() {
 
               <FormField label="Free cover limit (optional)" error={errors.fclAmount?.message}>
                 <Input placeholder="600000000.00" {...register('fclAmount')} />
-                <p className="mt-1 text-xs text-subtle-foreground">
-                  Leave blank for a scheme with no limit. Blank is not zero — a limit of zero
-                  would send every borrower to underwriting.
-                </p>
+                <p className="mt-1 text-xs text-subtle-foreground">Leave blank for no limit.</p>
               </FormField>
 
               <FormField label="Risk commences" error={errors.commencementDate?.message}>
@@ -249,48 +240,14 @@ export function IssueCreditLifeSchemePage() {
                     <DatePicker value={field.value} onChange={(iso) => field.onChange(iso ?? '')} />
                   )}
                 />
-                <p className="mt-1 text-xs text-subtle-foreground">
-                  On or before the oldest loan on the book. A borrower joins on the day they were
-                  lent to, and nobody can join a scheme that did not exist yet.
-                </p>
+                <p className="mt-1 text-xs text-subtle-foreground">On or before the oldest loan&rsquo;s start date.</p>
               </FormField>
 
-              <FormField label="Why this scheme is in force" error={errors.issuanceBasis?.message}>
-                <Select {...register('issuanceBasis')}>
-                  <option value="">Choose…</option>
-                  {IN_FORCE_ISSUANCE_BASES.map((value) => (
-                    <option key={value} value={value}>
-                      {value === 'MIGRATION'
-                        ? 'Migration — the lender already runs this book'
-                        : value === 'CONVERSION'
-                          ? 'Conversion — continuous cover from another contract'
-                          : 'Reinstatement — arrears have been settled'}
-                    </option>
-                  ))}
-                  <option value="OFFER">None — issue it as an offer</option>
-                </Select>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Recorded with your name as the underwriter who set this scheme up, for compliance.
-                </p>
-                {/* The wall, said before somebody hits it rather than after. An offer sits
-                    PROPOSED until the first premium clears, enrolment requires the scheme IN
-                    FORCE, and this console has no action anywhere that accepts an offer. */}
-                {issuanceBasis === 'OFFER' && (
-                  <p className="mt-1 text-xs text-status-warning-fg">
-                    An offer cannot receive an enrolment file until its first premium clears, and
-                    nothing in this console can accept one. Pick a basis unless you are recording
-                    a scheme that genuinely is not on risk yet.
-                  </p>
-                )}
+              {/* No "why this scheme is in force" (2026-11-02): a credit-life scheme is always in force on set-up. */}
+              <FormField label="Note for the record (optional)" error={errors.reasonForManualIssue?.message}>
+                <Input placeholder="Onboarding BUMACO's existing book" {...register('reasonForManualIssue')} />
               </FormField>
             </div>
-
-            <FormField label="Note for the record (optional)" error={errors.reasonForManualIssue?.message}>
-              <Input
-                placeholder="Onboarding BUMACO's existing book"
-                {...register('reasonForManualIssue')}
-              />
-            </FormField>
           </fieldset>
 
           {issuing.status === 'error' && issuing.error && <ErrorPanel error={issuing.error} />}
@@ -299,10 +256,7 @@ export function IssueCreditLifeSchemePage() {
             <Button type="submit" variant="primary" pending={issuing.status === 'loading'}>
               Set up the scheme
             </Button>
-            <p className="text-xs text-muted-foreground">
-              Lands on the scheme&rsquo;s page, where the lender&rsquo;s yearly agreement is added before the first
-              file.
-            </p>
+            <p className="text-xs text-muted-foreground">Next: add the lender&rsquo;s yearly agreement.</p>
           </div>
         </form>
         </FormLayout>

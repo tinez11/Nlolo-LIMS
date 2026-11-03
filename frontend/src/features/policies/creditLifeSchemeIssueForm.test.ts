@@ -15,7 +15,6 @@ function valid(overrides: Partial<CreditLifeSchemeIssueFormValues> = {}) {
     productId: 'f1b2c3d4-0000-4000-8000-000000000001',
     productVersionId: 'f1b2c3d4-0000-4000-8000-000000000002',
     commencementDate: '2026-06-01',
-    issuanceBasis: 'MIGRATION' as const,
     ...overrides,
   };
 }
@@ -110,16 +109,8 @@ describe('toIssueRequest', () => {
     expect('reasonForManualIssue' in request).toBe(false);
   });
 
-  it('omits the issuance basis when the scheme is being issued as an offer', () => {
-    // Null is what says "ordinary offer" on this endpoint; an empty string would fail the enum.
-    expect('issuanceBasis' in toIssueRequest(valid({ issuanceBasis: 'OFFER' }))).toBe(false);
-    expect(toIssueRequest(valid({ issuanceBasis: 'MIGRATION' })).issuanceBasis).toBe('MIGRATION');
-  });
-
-  it('has no default basis: the underwriter must say why the scheme is in force', () => {
-    // It defaulted to MIGRATION, which put a brand-new lender on record as a migrated book.
-    expect(blankCreditLifeSchemeIssueForm().issuanceBasis).toBe('');
-    const result = creditLifeSchemeIssueFormSchema(TODAY).safeParse(valid({ issuanceBasis: '' }));
-    expect(result.success).toBe(false);
+  it('sends no issuance basis: a credit-life scheme is in force on set-up', () => {
+    // 2026-11-02, the user. The question only ever recorded "migration" for lenders nobody migrated.
+    expect('issuanceBasis' in toIssueRequest(valid())).toBe(false);
   });
 });

@@ -503,6 +503,38 @@ class EnrolmentIntegrationTest {
      * file was judged by the agreement and passed -- then acceptance added each borrower against the PRODUCT's limits
      * and refused the whole file. The agreement's limits are the ones that count, at both steps.
      */
+    /**
+     * A credit-life scheme set up with no issuance basis is in force at once (2026-11-02, the user): it has no first
+     * premium to wait for, and cover still begins only when a file is accepted. It used to sit as an offer that nothing
+     * in the console could accept.
+     */
+    @Test
+    void aCreditLifeSchemeSetUpWithNoBasisIsInForceAndTakesItsFirstFile() {
+        String code = "CL-" + SEQ.incrementAndGet();
+        ProductSummaryView product = productApi.createProduct(code, "Credit life " + code, ProductCategory.CREDIT_LIFE,
+            "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null, List.of(),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)), null, null,
+            new EligibilityBounds(18, 70, 12, 120, null, null), ANY_FILING, "actuary");
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+        creditLifeScheme = policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(person("New Lender"),
+            product.productId(), snapshot.productVersionId(), null, BenefitBasis.AMORTISING_LOAN, null, null, null,
+            "TZS", null, List.of(), null, null, null, LocalDate.of(2026, 5, 1), null, null, null,
+            null, null, null, null), "staff-setup").policyNumber();
+
+        assertThat(policyApi.getPolicy(creditLifeScheme).status())
+            .isEqualTo(tz.co.nlolo.lifeplatform.policy.api.PolicyStatus.ACTIVE);
+
+        agreementApi.add(creditLifeScheme, new CreditLifeAgreementApi.AgreementInput(LocalDate.of(2026, 5, 1),
+            LocalDate.of(2027, 4, 30), new BigDecimal("0.6000"), CreditLifePremiumBasis.FLAT_ON_PRINCIPAL, null,
+            18, 70, 1, 120, new BigDecimal("15"), false), "staff-setup");
+        var submission = enrolmentApi.submit(creditLifeScheme, csv(
+            "LN-NEW,Neema Joseph Massawe,1985-02-11,F,,,1000000.00,12,2026-05-18\n"), "may.csv", "staff.one");
+        assertThat(submission.rejectedCount()).isZero();
+        enrolmentApi.accept(submission.submissionId(), "staff.two");
+        assertThat(policyApi.getGroupScheme(creditLifeScheme).activeMemberCount()).isEqualTo(1);
+    }
+
     @Test
     void aShortLoanTheAgreementTakesIsAcceptedWhateverTheProductsShortestLoan() {
         String code = "CL-" + SEQ.incrementAndGet();

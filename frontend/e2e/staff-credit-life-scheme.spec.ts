@@ -286,10 +286,8 @@ test.describe('staff credit-life scheme', () => {
     // rather than letting the server refuse the whole submission over a date it never showed.
     await page.getByLabel('Risk commences').fill(dmy('2026-06-01'));
 
-    // NO DEFAULT: the underwriter states the basis, because it is kept with their name for
-    // compliance and a brand-new lender is not a migration. It used to default to MIGRATION.
-    await expect(page.getByLabel('Why this scheme is in force')).toHaveValue('');
-    await page.getByLabel('Why this scheme is in force').selectOption('MIGRATION');
+    // NOT ASKED WHY IT IS IN FORCE (2026-11-02): a credit-life scheme always is on set-up.
+    await expect(page.getByLabel('Why this scheme is in force')).toHaveCount(0);
 
     /*
      * NO BORROWER IS TYPED, and its absence is the assertion. The form used to demand one
@@ -315,12 +313,11 @@ test.describe('staff credit-life scheme', () => {
     // is who earns. Unqualified, this failed only when that panel happened to load before the
     // assertion ran -- an intermittent strict-mode failure that read like a broken page.
     await expect(page.getByText(fixtures.lenderName).first()).toBeVisible({ timeout: 20_000 });
-    // In force on arrival, and therefore able to take a file — which is the whole point of the
-    // issuance-basis default above.
+    // In force on arrival, and therefore able to take a file, with no basis asked for.
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Joining files' })).toBeVisible();
-    // The underwriter of record, by name, with the basis they gave -- no case stands behind a
-    // credit-life scheme, so this is its compliance record. staff.underwriter set it up.
+    // The underwriter of record, by name -- no case stands behind a credit-life scheme, so this is
+    // its compliance record. staff.underwriter set it up.
     await page.getByRole('tab', { name: 'Scheme details' }).click();
     await expect(page.getByText('Set up by')).toBeVisible();
     // In the page, not the sidebar -- which shows the signed-in user's own name too.
