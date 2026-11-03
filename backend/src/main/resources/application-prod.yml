@@ -25,6 +25,17 @@ server:
   # Behind Caddy: honour X-Forwarded-* so anything that builds an absolute URL builds the public one.
   forward-headers-strategy: framework
 
+app:
+  # The public quote link: off in production until the deployment names its insurer and sets real secrets
+  # (ProductionSettingsGuard refuses to start otherwise).
+  public-quote:
+    enabled: ${PUBLIC_QUOTE_ENABLED:false}
+    tenant-id: ${PUBLIC_QUOTE_TENANT_ID:}
+    turnstile:
+      enabled: true
+      secret: ${TURNSTILE_SECRET:}
+    visit-secret: ${PUBLIC_VISIT_SECRET:}
+
 communication:
   email:
     # Off until a mail provider is configured (the user's D4): email notifications are recorded FAILED with a

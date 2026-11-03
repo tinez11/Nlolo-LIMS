@@ -73,6 +73,15 @@ public record CustomerProductView(UUID productId, String productName, String cat
     public record FamilyMember(String role, String name, LocalDate dateOfBirth, boolean student) {}
 
     /**
+     * Somebody quoting from the public link, with no login and no record (2026-11-02): the quotation form's own fields.
+     * Rated on these and nothing else; nothing is stored by sending them.
+     *
+     * @param sex FEMALE or MALE, or blank
+     * @param smokerStatus NON_SMOKER, SMOKER or UNKNOWN, or blank for unknown
+     */
+    public record Person(String fullName, LocalDate dateOfBirth, String sex, String smokerStatus) {}
+
+    /**
      * An indicative price, on the customer's own age, sex and smoker status as we hold them -- not an offer: underwriting
      * may load or decline. Every figure is the server's; the screen draws them and adds nothing up.
      *

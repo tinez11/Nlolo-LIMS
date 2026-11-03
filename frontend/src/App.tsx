@@ -15,6 +15,11 @@ import { RequirePermission, StaffAccessGate } from '@/components/StaffAccess';
 import { RealmPicker } from '@/features/RealmPicker';
 import { entryPath, hasRealmFallback, SHOW_REALM_PICKER } from '@/entryPath';
 import { REALM_HOME, SCREENS } from '@/screens';
+import { Suspense } from 'react';
+import { LoadingBlock } from '@/components/states';
+import { CustomerProductsPage } from '@/features/customer/CustomerProductsPage';
+import { CustomerQuotePage } from '@/features/customer/CustomerQuotePage';
+import { PublicQuoteApp } from '@/lazyPages';
 
 /**
  * Realm-scoped routes, built from the screen manifest in `@/screens`.
@@ -46,6 +51,13 @@ const router = createBrowserRouter(
   createRoutesFromElements(
     <>
         <Route path="/" element={ENTRY ? <Navigate to={ENTRY} replace /> : <RealmPicker />} />
+
+        {/* The public quote link (2026-11-02): no realm, no sign-in. The customer portal's own Get-cover and price
+            screens, priced on what the visitor types -- see PublicQuoteApp for what guards it. */}
+        <Route path="/quote" element={<Suspense fallback={<LoadingBlock />}><PublicQuoteApp /></Suspense>}>
+          <Route index element={<CustomerProductsPage />} />
+          <Route path=":productId" element={<CustomerQuotePage />} />
+        </Route>
 
         {realms.map((realm) => {
           const home = REALM_HOME[realm];

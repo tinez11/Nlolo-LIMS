@@ -186,6 +186,13 @@ public class SecurityConfig {
                 // PasswordResetSmsController itself before it does anything -- differently authenticated, not open. The
                 // literal rather than the controller's constant, which would make iam depend on omnichannel internals.
                 .requestMatchers(HttpMethod.POST, "/internal/password-reset/sms").permitAll()
+                // The public quote link (2026-11-02): open to anyone by design, and guarded inside instead -- a
+                // Turnstile-checked visit, a signed visit token for pricing, rate limits, and the deployment's own
+                // insurer as the tenant (omnichannel PublicAccess). Exact paths, never a /public/** prefix, so a
+                // controller added under /public later is not opened by accident.
+                .requestMatchers(HttpMethod.POST, "/public/visits").permitAll()
+                .requestMatchers(HttpMethod.GET, "/public/products").permitAll()
+                .requestMatchers(HttpMethod.POST, "/public/products/*/quote").permitAll()
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2
                 .authenticationManagerResolver(issuerAuthenticationManagerResolver))

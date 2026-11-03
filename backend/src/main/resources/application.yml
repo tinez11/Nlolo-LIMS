@@ -115,6 +115,17 @@ app:
       client-id: lifeplatform-admin
       client-secret: ${KEYCLOAK_PORTAL_ADMIN_SECRET:dev-secret-portal-admin}
       portal-client-id: lifeplatform-spa
+  # The public quote link (2026-11-02): anyone may price the portal's online products with no login. OFF unless a
+  # deployment turns it on and names its insurer -- the tenant is never taken from a request. A real deployment sets
+  # its own Cloudflare Turnstile secret and a visit secret; with none, visits end on every restart.
+  public-quote:
+    enabled: ${PUBLIC_QUOTE_ENABLED:true}
+    tenant-id: ${PUBLIC_QUOTE_TENANT_ID:11111111-1111-1111-1111-111111111111}
+    turnstile:
+      enabled: ${TURNSTILE_ENABLED:true}
+      # Cloudflare's published test secret, which always passes -- for development only.
+      secret: ${TURNSTILE_SECRET:1x0000000000000000000000000000000AA}
+    visit-secret: ${PUBLIC_VISIT_SECRET:}
   security:
     issuers:
       customers: ${KEYCLOAK_ISSUER_CUSTOMERS:http://localhost:8081/realms/customers}

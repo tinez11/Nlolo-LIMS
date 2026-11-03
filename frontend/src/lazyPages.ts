@@ -16,6 +16,10 @@ export const DashboardPage = lazy(() =>
  * screen here does not pull its chunk in. That is what makes App.tsx's claim true -- an
  * agent no longer downloads the finance and underwriting screens it can never open.
  */
+/** The public quote link (2026-11-02): its own chunk, so a visitor downloads none of the consoles. */
+export const PublicQuoteApp = lazy(() =>
+  import('@/features/public/PublicQuoteApp').then((m) => ({ default: m.PublicQuoteApp })),
+);
 export const AuditLogPage = lazy(() =>
   import('@/features/audit/AuditLogPage').then((m) => ({ default: m.AuditLogPage })),
 );

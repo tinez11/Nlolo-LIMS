@@ -98,7 +98,29 @@ public class CustomerProducts {
             throw new CustomerRequestRefusedException(listing.productName() + " is priced by an adviser: ask for it and we will"
                 + " contact you with a price");
         }
-        PartyDetailView me = partyApi.getPartyDetail(customerPartyId);
+        return priced(listing, version, kind, rated(partyApi.getPartyDetail(customerPartyId)), request, today);
+    }
+
+    /**
+     * The same price for somebody with no login (2026-11-02, the public quote link): their facts come from what they
+     * typed, never from any record, and nothing is stored. Only what the portal sells online is priced.
+     */
+    @Transactional(readOnly = true)
+    public CustomerProductView.Quote quoteForVisitor(UUID productId, CustomerProductView.QuoteRequest request,
+                                                     CustomerProductView.Person person) {
+        OnlineListingView listing = offered(productId);
+        LocalDate today = LocalDate.now(DAR);
+        ProductSnapshotView version = productApi.getActiveSnapshot(productId, today);
+        String kind = kindOf(listing.category(), version.productVersionId());
+        if (!toView(listing, today).online()) {
+            throw new CustomerRequestRefusedException(listing.productName() + " is priced by an adviser: contact us for a"
+                + " price");
+        }
+        return priced(listing, version, kind, rated(person, today), request, today);
+    }
+
+    private CustomerProductView.Quote priced(OnlineListingView listing, ProductSnapshotView version, String kind, Rated me,
+                                             CustomerProductView.QuoteRequest request, LocalDate today) {
         return switch (kind) {
             case "DEPOSIT" -> depositQuote(listing, version, request, today);
             case "SAVINGS_ACCOUNT" -> savingsQuote(listing, version, request, today);
@@ -107,21 +129,55 @@ public class CustomerProducts {
         };
     }
 
-    private CustomerProductView.Quote premiumQuote(OnlineListingView listing, String kind, PartyDetailView me,
+    /**
+     * The facts a price is rated on, whoever supplied them: a customer's record, or a visitor's own words. A visitor is
+     * not asked their occupation -- the quotation form does not ask it either -- so a product that rates on it is not
+     * priced for them online.
+     */
+    record Rated(String name, LocalDate dateOfBirth, Sex sex, SmokerStatus smoker, String occupationClass, boolean visitor) {}
+
+    private static Rated rated(PartyDetailView p) {
+        return new Rated(p.displayName(), p.dateOfBirth(), p.sex() == null ? null : Sex.valueOf(p.sex().name()),
+            p.smokerStatus() == null ? SmokerStatus.UNKNOWN : SmokerStatus.valueOf(p.smokerStatus().name()),
+            p.occupationClass(), false);
+    }
+
+    private static Rated rated(CustomerProductView.Person p, LocalDate today) {
+        if (p == null || p.dateOfBirth() == null) {
+            throw new CustomerRequestRefusedException("Give your date of birth");
+        }
+        if (p.dateOfBirth().isAfter(today)) {
+            throw new CustomerRequestRefusedException("Your date of birth cannot be in the future");
+        }
+        Sex sex;
+        SmokerStatus smoker;
+        try {
+            sex = p.sex() == null || p.sex().isBlank() ? null : Sex.valueOf(p.sex());
+            smoker = p.smokerStatus() == null || p.smokerStatus().isBlank() ? SmokerStatus.UNKNOWN
+                : SmokerStatus.valueOf(p.smokerStatus());
+        } catch (IllegalArgumentException e) {
+            throw new CustomerRequestRefusedException("Choose your sex and whether you smoke from the list");
+        }
+        String name = p.fullName() == null || p.fullName().isBlank() ? "You" : p.fullName().trim();
+        return new Rated(name, p.dateOfBirth(), sex, smoker, null, true);
+    }
+
+    private CustomerProductView.Quote premiumQuote(OnlineListingView listing, String kind, Rated me,
                                                    CustomerProductView.QuoteRequest request, LocalDate today) {
         BigDecimal sumAssured = positive(request.sumAssured());
         // Every rating factor the engine prices on, asked for up front in a customer's words rather than surfacing the
         // engine's own "OCCUPATION_CLASS is required" -- found by the test, 2026-10-09.
-        if (me.dateOfBirth() == null || me.sex() == null || me.occupationClass() == null) {
-            throw new CustomerRequestRefusedException("We need your date of birth, sex and occupation on file to price this. Contact us to add them, or ask"
-                + " for the cover and an adviser will price it.");
+        if (me.dateOfBirth() == null || me.sex() == null || (!me.visitor() && me.occupationClass() == null)) {
+            throw new CustomerRequestRefusedException(me.visitor()
+                ? "Give your date of birth and sex to price this."
+                : "We need your date of birth, sex and occupation on file to price this. Contact us to add them, or ask"
+                    + " for the cover and an adviser will price it.");
         }
         PremiumFrequency frequency = frequency(request.frequency());
         ProductApi.PremiumQuoteView quote;
         try {
             quote = productApi.quotePremium(new ProductApi.PremiumQuoteInput(listing.productId(), sumAssured,
-                listing.defaultCurrency(), me.dateOfBirth(), Sex.valueOf(me.sex().name()),
-                me.smokerStatus() == null ? SmokerStatus.UNKNOWN : SmokerStatus.valueOf(me.smokerStatus().name()),
+                listing.defaultCurrency(), me.dateOfBirth(), me.sex(), me.smoker(),
                 me.occupationClass(), frequency, today,
                 request.termYears() == null ? null : request.termYears() * 12));
         } catch (tz.co.nlolo.lifeplatform.product.api.PremiumNotQuotableException e) {
@@ -175,7 +231,7 @@ public class CustomerProducts {
             List.of(), null);
     }
 
-    private CustomerProductView.Quote funeralQuote(OnlineListingView listing, ProductSnapshotView version, PartyDetailView me,
+    private CustomerProductView.Quote funeralQuote(OnlineListingView listing, ProductSnapshotView version, Rated me,
                                                    CustomerProductView.QuoteRequest request, LocalDate today) {
         FuneralQuote q = priceFamily(version.productVersionId(), me, request.planCode(), request.frequency(),
             request.family(), today);
@@ -186,8 +242,11 @@ public class CustomerProducts {
                 l.benefit(), l.yearlyPremium())).toList(), null);
     }
 
-    /** The customer is always the main member: their name and date of birth come from their record, never the request. */
-    private FuneralQuote priceFamily(UUID versionId, PartyDetailView me, String planCode, String frequency,
+    /**
+     * The customer is always the main member: their name and date of birth come from their record, never the request --
+     * or, for a visitor with no record, from what they typed about themselves.
+     */
+    private FuneralQuote priceFamily(UUID versionId, Rated me, String planCode, String frequency,
                                      List<CustomerProductView.FamilyMember> family, LocalDate today) {
         if (planCode == null || planCode.isBlank()) {
             throw new CustomerRequestRefusedException("Choose a plan");
@@ -196,7 +255,7 @@ public class CustomerProducts {
             throw new CustomerRequestRefusedException("We need your date of birth on file to price this. Contact us to add it.");
         }
         List<FuneralLifeInput> lives = new ArrayList<>();
-        lives.add(new FuneralLifeInput(FuneralRole.MAIN_MEMBER, me.displayName(), me.dateOfBirth(), false));
+        lives.add(new FuneralLifeInput(FuneralRole.MAIN_MEMBER, me.name(), me.dateOfBirth(), false));
         for (CustomerProductView.FamilyMember m : family) {
             FuneralRole role = role(m.role());
             if (m.name() == null || m.name().isBlank() || m.dateOfBirth() == null) {
@@ -248,7 +307,7 @@ public class CustomerProducts {
                 }
             }
             case "FUNERAL" -> {
-                family = priceFamily(versionId, partyApi.getPartyDetail(customerPartyId), request.planCode(),
+                family = priceFamily(versionId, rated(partyApi.getPartyDetail(customerPartyId)), request.planCode(),
                     request.frequency(), request.family(), today);
                 sumAssured = family.mainMemberBenefit();
                 frequency = family.frequency().name();
