@@ -85,7 +85,7 @@ class ManualJournalIntegrationTest {
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             "db-migrations/finaccounting/V16__expense_allocation.sql",
             "db-migrations/finaccounting/V17__year_end_close.sql",
-            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql");
+            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -151,6 +151,61 @@ class ManualJournalIntegrationTest {
 
         assertThatThrownBy(() -> journals.approve(draft.id(), "finance-approver"))
             .isInstanceOf(ManualJournalStateException.class);
+    }
+
+    /**
+     * A company with one finance person (2026-11-04): someone given ledger.approve-own approves the journal they
+     * prepared. The draft and the posted entry both say so, and the database -- which refuses it for anyone else --
+     * takes it.
+     */
+    @Test
+    void aPersonAllowedToActAloneApprovesTheirOwnJournalAndBothRowsSaySo() {
+        UUID tenant = UUID.randomUUID();
+        TenantContext.set(tenant);
+        ManualJournalView draft = journals.create(payroll(null), "finance-alone");
+        journals.attachDocument(draft.id(), "doc-payroll-alone", "finance-alone");
+        journals.submit(draft.id(), "finance-alone");
+
+        signedInAs("finance-alone", "ROLE_FINANCE_OFFICER", "ROLE_APPROVE_OWN_WORK");
+        try {
+            ManualJournalView approved = journals.approve(draft.id(), "finance-alone");
+            assertThat(approved.status()).isEqualTo("APPROVED");
+            assertThat(jdbc.queryForObject("SELECT acted_alone FROM finaccounting.manual_journal WHERE manual_journal_id = ?",
+                Boolean.class, draft.id())).isTrue();
+            assertThat(jdbc.queryForObject("SELECT acted_alone FROM finaccounting.journal_entry WHERE journal_entry_id = ?",
+                Boolean.class, approved.journalEntryId())).isTrue();
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    void withoutThePermissionTheirOwnJournalStillWaitsForSomeoneElse() {
+        UUID tenant = UUID.randomUUID();
+        TenantContext.set(tenant);
+        ManualJournalView draft = journals.create(payroll(null), "finance-solo");
+        journals.attachDocument(draft.id(), "doc-payroll-solo", "finance-solo");
+        journals.submit(draft.id(), "finance-solo");
+
+        signedInAs("finance-solo", "ROLE_FINANCE_OFFICER", "ROLE_FINANCE_APPROVER");
+        try {
+            assertThatThrownBy(() -> journals.approve(draft.id(), "finance-solo"))
+                .isInstanceOf(ManualJournalStateException.class)
+                .hasMessage("You prepared this journal; a second person must approve it");
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
+    }
+
+    /** A staff sign-in holding these roles, as a request would carry it. */
+    private static void signedInAs(String subject, String... roles) {
+        java.util.List<org.springframework.security.core.GrantedAuthority> authorities = new java.util.ArrayList<>();
+        authorities.add(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_REALM_STAFF"));
+        for (String r : roles) authorities.add(new org.springframework.security.core.authority.SimpleGrantedAuthority(r));
+        org.springframework.security.oauth2.jwt.Jwt jwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("t")
+            .header("alg", "none").subject(subject).claim("tenant_id", TenantContext.get().toString()).build();
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+            new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(jwt, authorities));
     }
 
     @Test

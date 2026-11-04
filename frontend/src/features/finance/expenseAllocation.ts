@@ -1,3 +1,5 @@
+import { barredAsOwn } from '@/lib/ownWork';
+
 /**
  * P-19, the month's expense allocation (IFRS 17 I5b, month-end step 5): the console's rules for it. The server decides
  * each of them again; these only keep the screen from offering what it would refuse.
@@ -44,7 +46,9 @@ export function canDecideAllocation(
   viewer: string | null | undefined,
   approver: boolean,
 ): boolean {
-  return approver && allocation.status === 'PREPARED' && viewer != null && viewer !== allocation.preparedBy;
+  // Their own too, holding ifrs17.approve-own (2026-11-04).
+  return approver && allocation.status === 'PREPARED' && viewer != null
+    && !barredAsOwn(viewer, allocation.preparedBy, 'ifrs17');
 }
 
 export const money = (n: number | null | undefined) =>

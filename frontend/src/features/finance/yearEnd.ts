@@ -1,3 +1,5 @@
+import { barredAsOwn } from '@/lib/ownWork';
+
 /**
  * The year-end close (IFRS 17 I6): the console's rules for it. The server decides each of them again; these only keep
  * the screen from offering what it would refuse.
@@ -39,5 +41,7 @@ export function canDecideClose(
   viewer: string | null | undefined,
   approver: boolean,
 ): boolean {
-  return approver && close.status === 'PREPARED' && viewer != null && close.preparedBy != null && viewer !== close.preparedBy;
+  // Their own too, holding ifrs17.approve-own (2026-11-04).
+  return approver && close.status === 'PREPARED' && viewer != null && close.preparedBy != null
+    && !barredAsOwn(viewer, close.preparedBy, 'ifrs17');
 }

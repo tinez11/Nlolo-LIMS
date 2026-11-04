@@ -38,10 +38,15 @@ class PolicyRegister {
     private final PolicyElectionRepository elections;
     private final JdbcTemplate jdbc;
 
-    PolicyRegister(PolicyElectionRepository elections, JdbcTemplate jdbc) {
+    PolicyRegister(PolicyElectionRepository elections, JdbcTemplate jdbc,
+                   tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
         this.elections = elections;
         this.jdbc = jdbc;
+        this.ownWork = ownWork;
     }
+
+    /** Deciding a choice one proposed, for a company with one finance person (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     int currentVersion(UUID tenantId) {
         return elections.currentVersion(tenantId);
@@ -80,14 +85,22 @@ class PolicyRegister {
         lockRegister(tenantId);
         PolicyElection e = load(electionId);
         refuseASecondOnTheSameDay(e);
+        if (ownWork.mayActAlone("ledger.approve-own")) e.allowActingAlone();
         e.approve(by, signOffRef, elections.currentVersion(tenantId) + 1, Instant.now());
+        if (e.isActedAlone()) {
+            ownWork.record("Accounting policy choice approved by its proposer", electionId.toString(), null, by);
+        }
         return view(elections.save(e));
     }
 
     @Transactional
     PolicyElectionView reject(UUID electionId, String reason, String by) {
         PolicyElection e = load(electionId);
+        if (ownWork.mayActAlone("ledger.approve-own")) e.allowActingAlone();
         e.reject(by, reason, Instant.now());
+        if (e.isActedAlone()) {
+            ownWork.record("Accounting policy choice rejected by its proposer", electionId.toString(), null, by);
+        }
         return view(elections.save(e));
     }
 

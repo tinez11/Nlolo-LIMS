@@ -118,7 +118,14 @@ public class AccessService implements AccessApi {
             }
         }
         if (roles.isEmpty()) {
-            for (Permission p : Permission.values()) permissions.add(p.code());
+            // Every permission but acting alone: two people stay the rule unless a test says otherwise by role.
+            for (Permission p : Permission.values()) {
+                if (!BuiltInRoles.APPROVE_OWN_WORK.contains(p)) permissions.add(p.code());
+            }
+        }
+        // Token mode only (the tests): a token naming APPROVE_OWN_WORK acts alone, as a person given those permissions.
+        if (identity.tokenRoles().contains("APPROVE_OWN_WORK")) {
+            BuiltInRoles.APPROVE_OWN_WORK.forEach(p -> permissions.add(p.code()));
         }
         return new AccessView(identity.userId(), identity.displayName(), true, roles,
             roles.isEmpty() ? null : roles.get(0), permissions);

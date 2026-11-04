@@ -35,7 +35,8 @@ class PolicyApiImplSurrenderChargeTest {
         null,                               // group funeral families
         null,                               // credit-life agreements
         null, null, null, null, null, null, // party, product, refdata, distribution, underwriting, events
-        new ObjectMapper());
+        new ObjectMapper(),
+        null);                              // acting alone
 
     @Test
     void returnsZeroWhenScheduleIsNull() {

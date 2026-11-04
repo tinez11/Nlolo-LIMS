@@ -29,6 +29,22 @@ import java.util.UUID;
 @Table(name = "payout_instalment", schema = "benefitpayout")
 public class PayoutInstalment {
 
+    /**
+     * Approved by the person who prepared it (2026-11-04): they hold their area's "approve their own work", and the
+     * row says so -- the two-person rule refuses it otherwise.
+     */
+    @jakarta.persistence.Column(name = "acted_alone", nullable = false)
+    private boolean actedAlone;
+
+    /** Set for one request by a person allowed to act alone; never stored. */
+    @jakarta.persistence.Transient
+    private boolean mayActAlone;
+
+    /** The approver may be the person who prepared this: they hold their area's "approve their own work". */
+    public void allowActingAlone() { this.mayActAlone = true; }
+
+    public boolean isActedAlone() { return actedAlone; }
+
     /** States in which nothing has left the company, so the instalment may still be withdrawn. */
     private static final Set<InstalmentStatus> CANCELLABLE = EnumSet.of(
         InstalmentStatus.SCHEDULED, InstalmentStatus.DUE, InstalmentStatus.ON_HOLD, InstalmentStatus.REVIEWED);
@@ -158,10 +174,11 @@ public class PayoutInstalment {
     /** REVIEWED -> APPROVED, by someone other than the reviewer (decision Q1). */
     public void approve(String approver) {
         require(InstalmentStatus.REVIEWED, "be approved");
-        if (approver == null || approver.equals(reviewedBy)) {
+        if (approver == null || (approver.equals(reviewedBy) && !mayActAlone)) {
             throw new PayoutStateException("A payout must be approved by someone other than the person who reviewed it ("
                 + reviewedBy + ")");
         }
+        actedAlone = approver.equals(reviewedBy);
         this.approvedBy = approver;
         this.approvedAt = Instant.now();
         this.status = InstalmentStatus.APPROVED.name();

@@ -17,6 +17,22 @@ import java.util.UUID;
 @Entity
 @Table(name = "adjustment_request", schema = "accumulation")
 public class AdjustmentRequest {
+
+    /**
+     * Approved by the person who prepared it (2026-11-04): they hold their area's "approve their own work", and the
+     * row says so -- the two-person rule refuses it otherwise.
+     */
+    @jakarta.persistence.Column(name = "acted_alone", nullable = false)
+    private boolean actedAlone;
+
+    /** Set for one request by a person allowed to act alone; never stored. */
+    @jakarta.persistence.Transient
+    private boolean mayActAlone;
+
+    /** The approver may be the person who prepared this: they hold their area's "approve their own work". */
+    public void allowActingAlone() { this.mayActAlone = true; }
+
+    public boolean isActedAlone() { return actedAlone; }
     @Id @UuidGenerator @Column(name = "adjustment_id") private UUID adjustmentId;
     @Column(name = "tenant_id", nullable = false) private UUID tenantId;
     @Column(name = "policy_number", nullable = false) private String policyNumber;
@@ -47,9 +63,10 @@ public class AdjustmentRequest {
         if (!"PROPOSED".equals(status)) {
             throw new AccumulationStateException("This adjustment is " + status.toLowerCase() + ", not awaiting a decision");
         }
-        if (by.equals(proposedBy)) {
+        if (by.equals(proposedBy) && !mayActAlone) {
             throw new AccumulationStateException("An adjustment must be decided by someone other than the person who proposed it");
         }
+        actedAlone = by.equals(proposedBy);
         this.status = outcome;
         this.decidedBy = by;
         this.decidedAt = Instant.now();

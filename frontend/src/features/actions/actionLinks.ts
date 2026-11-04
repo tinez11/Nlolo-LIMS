@@ -25,7 +25,7 @@ const KINDS: Record<string, Kind> = {
   'issue-failed': { label: 'Policies not created', item: (i) => `underwriting/${id(i)}` },
   'kyc-verify': { label: 'Documents to verify', item: (i) => `parties/${id(i)}?tab=kyc`, all: 'clients/individuals?kycStatus=PENDING' },
   'claim-assess': { label: 'Claims to assess', item: (i) => `claims/${id(i)}`, all: 'claims?status=REGISTERED' },
-  'claim-settle': { label: 'Claims to decide', item: (i) => `claims/${id(i)}`, all: 'claims?status=SETTLEMENT_REQUESTED' },
+  'claim-settle': { label: 'Claims to decide', item: (i) => `claims/${id(i)}`, all: 'claims?status=UNDER_ASSESSMENT' },
   'credit-life-file': {
     label: 'Credit-life files to accept',
     item: (i) => `credit-life-schemes/${encodeURIComponent(i.policyNumber ?? '')}`,

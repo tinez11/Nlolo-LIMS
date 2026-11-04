@@ -1,4 +1,5 @@
 import type { Receipt } from '@/api/receipts';
+import { mayActAlone, SIGNING_OWN } from '@/lib/ownWork';
 import type { Gate } from './types';
 
 /**
@@ -19,12 +20,12 @@ export function confirmReceiptGates(receipt: Receipt, viewerSubject: string | un
           : `This receipt is already ${receipt.status === 'CONFIRMED' ? 'confirmed' : 'refused'}.`,
     },
     {
-      ok: !sameAsRecorder,
+      ok: !sameAsRecorder || mayActAlone('receipts'),
       hard: true,
       title: 'A second person confirms',
-      detail: sameAsRecorder
-        ? 'You recorded this receipt, so someone else must confirm it.'
-        : 'You did not record this receipt.',
+      detail: !sameAsRecorder
+        ? 'You did not record this receipt.'
+        : mayActAlone('receipts') ? SIGNING_OWN : 'You recorded this receipt, so someone else must confirm it.',
     },
   ];
 }

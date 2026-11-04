@@ -25,6 +25,22 @@ import java.util.UUID;
 @IdClass(AccountingPeriodId.class)
 public class AccountingPeriod {
 
+    /**
+     * Approved by the person who prepared it (2026-11-04): they hold their area's "approve their own work", and the
+     * row says so -- the two-person rule refuses it otherwise.
+     */
+    @jakarta.persistence.Column(name = "acted_alone", nullable = false)
+    private boolean actedAlone;
+
+    /** Set for one request by a person allowed to act alone; never stored. */
+    @jakarta.persistence.Transient
+    private boolean mayActAlone;
+
+    /** The approver may be the person who prepared this: they hold their area's "approve their own work". */
+    public void allowActingAlone() { this.mayActAlone = true; }
+
+    public boolean isActedAlone() { return actedAlone; }
+
     @Id @Column(name = "tenant_id") private UUID tenantId;
     @Id @Column(name = "period") private String period;
     @Enumerated(EnumType.STRING) @Column(name = "status", nullable = false) private PeriodStatus status;
@@ -88,9 +104,10 @@ public class AccountingPeriod {
         if (status != PeriodStatus.LOCKED || reopenRequestedBy == null) {
             throw new PeriodStateException("Period " + period + " has no reopening awaiting approval");
         }
-        if (by == null || by.equals(reopenRequestedBy)) {
+        if (by == null || (by.equals(reopenRequestedBy) && !mayActAlone)) {
             throw new PeriodStateException("A second person approves reopening a period");
         }
+        actedAlone = by.equals(reopenRequestedBy);
         status = PeriodStatus.OPEN;
         reopenedBy = by;
         reopenedAt = at;

@@ -1,4 +1,5 @@
 import type { PayoutInstalmentView } from '@/api/types';
+import { mayActAlone, SIGNING_OWN } from '@/lib/ownWork';
 import { humanizeStatus } from '@/lib/status';
 import type { Gate } from './types';
 
@@ -72,12 +73,12 @@ export function approveGates(payout: PayoutInstalmentView, viewerSubject: string
           : `This payout is ${label(payout.status)}, so it cannot be approved.`,
     },
     {
-      ok: !sameAsReviewer,
+      ok: !sameAsReviewer || mayActAlone('payouts'),
       hard: true,
       title: 'A second person approves',
-      detail: sameAsReviewer
-        ? 'You reviewed this payout, so someone else must approve it.'
-        : 'You did not review this payout.',
+      detail: !sameAsReviewer
+        ? 'You did not review this payout.'
+        : mayActAlone('payouts') ? SIGNING_OWN : 'You reviewed this payout, so someone else must approve it.',
     },
   ];
 }

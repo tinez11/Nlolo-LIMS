@@ -54,10 +54,14 @@ class FundRegister {
     private final PricingRun pricingRun;
     // Lazy: Corrections uses PricingRun too, and is only reached for a correction.
     private final org.springframework.beans.factory.ObjectProvider<Corrections> corrections;
+    /** Approving a price one posted, for a company with one fund manager (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     FundRegister(FundRepository funds, FundPriceRepository prices, ReferenceDataApi referenceData,
                  ApplicationEventPublisher events, @Qualifier("unitLinkedClock") Clock clock, PricingRun pricingRun,
-                 org.springframework.beans.factory.ObjectProvider<Corrections> corrections) {
+                 org.springframework.beans.factory.ObjectProvider<Corrections> corrections,
+                 tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.corrections = corrections;
         this.funds = funds;
         this.prices = prices;
@@ -186,12 +190,20 @@ class FundRegister {
         return proposed;
     }
 
+    private void recordIfAlone(FundPrice price, String by) {
+        if (price.isActedAlone()) {
+            ownWork.record("Fund price approved by the person who posted it", price.getPriceId().toString(), null, by);
+        }
+    }
+
     @Transactional
     FundPrice approve(UUID priceId, String by) {
         UUID tenantId = TenantContext.get();
         FundPrice price = prices.findByTenantIdAndPriceId(tenantId, priceId)
             .orElseThrow(() -> new FundNotFoundException("Price " + priceId));
         Fund fund = funds.findByTenantIdAndFundId(tenantId, price.getFundId()).orElseThrow();
+        // A person given funds.approve-own approves a price they posted, a correction too (2026-11-04).
+        if (ownWork.mayActAlone("funds.approve-own")) price.allowActingAlone();
         if (price.getSupersedesPriceId() == null) {
             // Prices are approved in date order. An order bound to a date with no price is priced by the first
             // approved price after it (spec §5), so approving an EARLIER date afterwards would leave orders that
@@ -212,9 +224,11 @@ class FundRegister {
                     + "; only the approved price for a date can be corrected");
             }
             corrections.getObject().apply(fund, wrong, price, by);
+            recordIfAlone(price, by);
             return price;
         }
         price.approve(by, clock.instant(), fund.getCode(), fund.getCutOffTime());
+        recordIfAlone(price, by);
         prices.saveAndFlush(price);
         // In the same transaction: the price and everything it prices commit together or not at all.
         pricingRun.onApproved(fund, price);

@@ -139,7 +139,7 @@ class FundRegisterIntegrationTest {
 
         assertThatThrownBy(() -> jdbc.update("UPDATE unitlinked.fund_price SET status = 'APPROVED', approved_by = proposed_by,"
             + " approved_at = now() WHERE price_id = ?", proposed.priceId()))
-            .hasMessageContaining("fund_price_check");
+            .hasMessageContaining("fund_price_two_person");
     }
 
     @Test

@@ -192,11 +192,48 @@ public class AccessAdministration {
     public List<UserView> users(String q) {
         UUID tenant = TenantContext.get();
         String like = q == null || q.isBlank() ? null : "%" + q.trim().toLowerCase() + "%";
-        List<UUID> ids = jdbc.queryForList("SELECT user_id FROM iam.staff_user WHERE tenant_id = :tenant "
+        MapSqlParameterSource t = new MapSqlParameterSource("tenant", tenant).addValue("q", like);
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT * FROM iam.staff_user WHERE tenant_id = :tenant "
                 + "AND (CAST(:q AS text) IS NULL OR lower(username) LIKE :q OR lower(coalesce(display_name, '')) LIKE :q "
-                + "OR lower(coalesce(email, '')) LIKE :q) ORDER BY active DESC, lower(coalesce(display_name, username))",
-            new MapSqlParameterSource("tenant", tenant).addValue("q", like), UUID.class);
-        return ids.stream().map(id -> userView(tenant, id)).toList();
+                + "OR lower(coalesce(email, '')) LIKE :q) ORDER BY active DESC, lower(coalesce(display_name, username))", t);
+
+        // The whole list in five reads, not six per person (2026-11-04: ten people took near two seconds).
+        Map<UUID, List<RoleRef>> roles = new java.util.HashMap<>();
+        Map<UUID, List<UUID>> roleIds = new java.util.HashMap<>();
+        jdbc.query("SELECT ur.user_id, ur.role_id, r.code, r.name FROM iam.user_role ur JOIN iam.role r "
+                + "ON r.role_id = ur.role_id WHERE ur.tenant_id = :tenant", t, rs -> {
+            UUID user = rs.getObject("user_id", UUID.class);
+            roles.computeIfAbsent(user, k -> new ArrayList<>()).add(new RoleRef(rs.getString("code"), rs.getString("name")));
+            roleIds.computeIfAbsent(user, k -> new ArrayList<>()).add(rs.getObject("role_id", UUID.class));
+        });
+        Map<UUID, List<String>> extra = new java.util.HashMap<>();
+        jdbc.query("SELECT user_id, permission FROM iam.user_permission WHERE tenant_id = :tenant ORDER BY permission", t,
+            rs -> { extra.computeIfAbsent(rs.getObject("user_id", UUID.class), k -> new ArrayList<>()).add(rs.getString("permission")); });
+        Set<UUID> pending = new java.util.HashSet<>(jdbc.queryForList("SELECT DISTINCT user_id FROM iam.access_change "
+            + "WHERE tenant_id = :tenant AND status = 'PENDING'", t, UUID.class));
+        Map<UUID, List<String>> rolePermissions = new java.util.HashMap<>();
+        jdbc.query("SELECT rp.role_id, rp.permission FROM iam.role_permission rp JOIN iam.role r ON r.role_id = rp.role_id "
+                + "WHERE rp.tenant_id = :tenant AND r.active", t,
+            rs -> { rolePermissions.computeIfAbsent(rs.getObject("role_id", UUID.class), k -> new ArrayList<>()).add(rs.getString("permission")); });
+
+        List<UserView> users = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            UUID userId = (UUID) row.get("user_id");
+            List<RoleRef> mine = new ArrayList<>(roles.getOrDefault(userId, List.of()));
+            mine.sort(Comparator.comparingInt((RoleRef r) -> BuiltInRoles.precedence(r.code())).thenComparing(RoleRef::name));
+            List<String> own = extra.getOrDefault(userId, List.of());
+            Set<String> effective = new TreeSet<>(own);
+            for (UUID roleId : roleIds.getOrDefault(userId, List.of())) {
+                effective.addAll(rolePermissions.getOrDefault(roleId, List.of()));
+            }
+            effective.removeIf(code -> Permission.fromCode(code).isEmpty());
+            Timestamp seen = (Timestamp) row.get("last_seen_at");
+            users.add(new UserView(userId, (String) row.get("username"), (String) row.get("display_name"),
+                (String) row.get("email"), (String) row.get("phone"), (String) row.get("home_branch"),
+                Boolean.TRUE.equals(row.get("active")), seen == null ? null : seen.toInstant(), List.copyOf(mine),
+                List.copyOf(own), List.copyOf(effective), pending.contains(userId)));
+        }
+        return users;
     }
 
     @Transactional(readOnly = true)

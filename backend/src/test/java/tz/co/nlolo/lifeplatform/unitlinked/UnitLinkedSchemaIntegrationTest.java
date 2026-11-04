@@ -89,7 +89,7 @@ class UnitLinkedSchemaIntegrationTest {
             + " policy_number, gross_amount, payee_ref, requested_by, requested_at, approved_by, approved_at, status)"
             + " VALUES (gen_random_uuid(), ?, 'POL-SCHEMA3', 150000, '+255700000600', 'staff-one', now(), 'staff-one', now(),"
             + " 'APPROVED')", tenant))
-            .hasMessageContaining("withdrawal_request_check");
+            .hasMessageContaining("withdrawal_request_two_person");
     }
 
     @Test

@@ -52,9 +52,13 @@ public class YearEndCloses {
     private final FinaccountingApiImpl postings;
     private final jakarta.persistence.EntityManager entityManager;
     private final ObjectMapper json;
+    /** Approving a close one prepared, for a company with one finance person (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     YearEndCloses(JdbcTemplate jdbc, AccountingPeriods periods, YearEndLockGate gate, FinaccountingApiImpl postings,
-                  jakarta.persistence.EntityManager entityManager, ObjectMapper json) {
+                  jakarta.persistence.EntityManager entityManager, ObjectMapper json,
+                  tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.jdbc = jdbc;
         this.periods = periods;
         this.gate = gate;
@@ -112,16 +116,17 @@ public class YearEndCloses {
         entityManager.flush();
         jdbc.update("UPDATE finaccounting.year_end_close SET status = 'POSTED', decided_by = ?, decided_at = now(),"
                 + " class_totals = ?::jsonb, profit = ?, dividends = ?, replaces_id = ?, journal_entry_id = ?,"
-                + " reversal_journal_id = ?, version = version + 1 WHERE tenant_id = ? AND close_id = ?"
-                + " AND status = 'PREPARED'",
+                + " reversal_journal_id = ?, acted_alone = (prepared_by = ?), version = version + 1"
+                + " WHERE tenant_id = ? AND close_id = ? AND status = 'PREPARED'",
             by, write(r.classTotals()), r.profit(), r.dividends(), previous.map(Row::id).orElse(null),
-            entry.getJournalEntryId(), reversal, tenantId, id);
+            entry.getJournalEntryId(), reversal, by, tenantId, id);
+        recordIfAlone(row, "approved", by);
         return get(id);
     }
 
     @Transactional
     public YearEndCloseView reject(UUID id, String reason, String by) {
-        decidable(load(id), by);
+        Row row = decidable(load(id), by);
         if (reason == null || reason.isBlank()) {
             throw new FinaccountingValidationException("Say why the close is rejected");
         }
@@ -130,8 +135,10 @@ public class YearEndCloses {
             throw new FinaccountingValidationException("A reason is at most 500 characters");
         }
         jdbc.update("UPDATE finaccounting.year_end_close SET status = 'REJECTED', decided_by = ?, decided_at = now(),"
-                + " decision_reason = ?, version = version + 1 WHERE tenant_id = ? AND close_id = ? AND status = 'PREPARED'",
-            by, r, TenantContext.get(), id);
+                + " decision_reason = ?, acted_alone = (prepared_by = ?), version = version + 1"
+                + " WHERE tenant_id = ? AND close_id = ? AND status = 'PREPARED'",
+            by, r, by, TenantContext.get(), id);
+        recordIfAlone(row, "rejected", by);
         return get(id);
     }
 
@@ -211,14 +218,21 @@ public class YearEndCloses {
             + " AND status = 'POSTED'", this::row, tenantId, year).stream().findFirst();
     }
 
-    private static Row decidable(Row row, String by) {
+    /** Unless the preparer holds ifrs17.approve-own (2026-11-04): a company with one finance person. */
+    private Row decidable(Row row, String by) {
         if (!"PREPARED".equals(row.status())) {
             throw new YearEndCloseStateException("Only a prepared close can be decided; this one is " + row.status());
         }
-        if (row.preparedBy().equals(by)) {
+        if (row.preparedBy().equals(by) && !ownWork.mayActAlone("ifrs17.approve-own")) {
             throw new YearEndCloseStateException("You prepared this close; a FINANCE_APPROVER other than you decides it");
         }
         return row;
+    }
+
+    private void recordIfAlone(Row row, String how, String by) {
+        if (row.preparedBy().equals(by)) {
+            ownWork.record("Year-end close " + how + " by its preparer", row.id().toString(), null, by);
+        }
     }
 
     /** The posted close's journal reversed -- sides swapped -- under the new close, and the old one REPLACED. */

@@ -152,10 +152,10 @@ class ClaimsContractTest {
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
-            "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
+            "db-migrations/benefitpayout/V4__withholding_rule_end.sql", "db-migrations/benefitpayout/V6__acted_alone.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
             "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
-            "db-migrations/accumulation/V9__withdrawal_rejection.sql",
+            "db-migrations/accumulation/V9__withdrawal_rejection.sql", "db-migrations/accumulation/V10__acted_alone.sql",
             "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
@@ -191,7 +191,7 @@ class ClaimsContractTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
-            "db-migrations/policy/V42__surrender_payout_route.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V45__acted_alone.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V7__journal_support_document_type.sql",
@@ -1227,5 +1227,42 @@ class ClaimsContractTest {
                     """))
             .andExpect(status().isAccepted())
             .andExpect(jsonPath("$.status").value("SETTLEMENT_REQUESTED"));
+    }
+
+    /**
+     * A company with one claims person (2026-11-04): someone given claims.settle-own decides the claim they assessed,
+     * and the act is journalled under their name, so an auditor finds it.
+     */
+    @Test
+    void aPersonAllowedToActAloneDecidesTheClaimTheyAssessedAndItIsJournalled() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-SOD-02");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        String oneperson = "the-only-claims-person";
+        submitAssessmentDirectly(tenantId, claimId, oneperson);
+
+        mockMvc.perform(post("/claims/" + claimId + "/settlement-decision")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_CLAIMS_ASSESSOR"),
+                        new SimpleGrantedAuthority("ROLE_CLAIMS_MANAGER"),
+                        new SimpleGrantedAuthority("ROLE_APPROVE_OWN_WORK"))
+                    .jwt(builder -> builder.subject(oneperson).claim("tenant_id", tenantId.toString())))
+                .header("Idempotency-Key", "ct-http-alone-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"approved":true,"approvedAmount":{"amount":"2000000.00","currencyCode":"TZS"},
+                     "payeeRef":"MPESA-0712340013"}
+                    """))
+            .andExpect(status().isAccepted())
+            .andExpect(jsonPath("$.status").value("SETTLEMENT_REQUESTED"));
+
+        mockMvc.perform(get("/audit-log").param("eventTypePrefix", "access.")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].eventType").value("access.ActedAlone"));
     }
 }

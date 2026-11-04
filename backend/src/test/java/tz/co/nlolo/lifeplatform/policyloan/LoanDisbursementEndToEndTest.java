@@ -122,10 +122,10 @@ class LoanDisbursementEndToEndTest {
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
-            "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
+            "db-migrations/benefitpayout/V4__withholding_rule_end.sql", "db-migrations/benefitpayout/V6__acted_alone.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
             "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
-            "db-migrations/accumulation/V9__withdrawal_rejection.sql",
+            "db-migrations/accumulation/V9__withdrawal_rejection.sql", "db-migrations/accumulation/V10__acted_alone.sql",
             "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
@@ -165,7 +165,7 @@ class LoanDisbursementEndToEndTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
-            "db-migrations/policy/V42__surrender_payout_route.sql",
+            "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V45__acted_alone.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
@@ -184,7 +184,7 @@ class LoanDisbursementEndToEndTest {
             "db-migrations/payment/V9__account_purposes.sql",
             "db-migrations/payment/V17__manual_receipts.sql",
             "db-migrations/payment/V18__payout_routes.sql",
-            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql");
+            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql");
     }
 
     @AfterAll

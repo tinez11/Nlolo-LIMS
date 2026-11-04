@@ -26,6 +26,16 @@ public final class BuiltInRoles {
     private static final Set<Permission> APPROVALS_ONLY_BY_APPROVER =
         EnumSet.of(LEDGER_APPROVE, IFRS17_APPROVE, REINSURANCE_APPROVE);
 
+    /**
+     * Acting alone where two people are the rule (2026-11-04, the user: a company with one underwriter or one finance
+     * person must still finish its work). No built-in role carries any of these; an administrator gives them to the
+     * role or the person who works alone. Declared before {@link #ALL}, which reads it.
+     */
+    public static final Set<Permission> APPROVE_OWN_WORK = EnumSet.of(UNDERWRITING_DECIDE_OWN,
+        POLICIES_SURRENDER_APPROVE_OWN, SCHEMES_ENROLMENTS_OWN, CLAIMS_SETTLE_OWN, ACCOUNTS_APPROVE_OWN,
+        COLLECTIONS_APPROVE_OWN, PAYOUTS_APPROVE_OWN, LEDGER_APPROVE_OWN, IFRS17_APPROVE_OWN, REINSURANCE_APPROVE_OWN,
+        FUNDS_APPROVE_OWN, PRODUCTS_DECLARE_APPROVE_OWN);
+
     private static final Set<Permission> SPECIALIST_UNDERWRITING_AND_CLAIMS = EnumSet.of(
         UNDERWRITING_ASSESS, UNDERWRITING_DECIDE, UNDERWRITING_DECIDE_AGAINST, UNDERWRITING_REFER, SCHEMES_MANAGE,
         CLAIMS_ASSESS, CLAIMS_SETTLE);
@@ -81,6 +91,7 @@ public final class BuiltInRoles {
         Set<Permission> all = EnumSet.allOf(Permission.class);
         all.removeAll(APPROVALS_ONLY_BY_APPROVER);
         all.removeAll(SPECIALIST_UNDERWRITING_AND_CLAIMS);
+        all.removeAll(APPROVE_OWN_WORK);
         return all;
     }
 

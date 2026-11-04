@@ -56,12 +56,16 @@ public class ExitApiImpl implements ExitApi {
     private final PolicyApi policyApi;
     private final DocumentApi documentApi;
     private final PartyApi partyApi;
+    /** Accepting a file one uploaded, for a company with one person on credit life (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     public ExitApiImpl(ExitSubmissionRepository submissionRepository,
                         ExitSubmissionRowRepository rowRepository,
                         GroupSchemeRepository groupSchemeRepository,
                         PolicyMemberRepository policyMemberRepository,
-                        PolicyApi policyApi, DocumentApi documentApi, PartyApi partyApi) {
+                        PolicyApi policyApi, DocumentApi documentApi, PartyApi partyApi,
+                        tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.submissionRepository = submissionRepository;
         this.rowRepository = rowRepository;
         this.groupSchemeRepository = groupSchemeRepository;
@@ -260,6 +264,7 @@ public class ExitApiImpl implements ExitApi {
 
         // Refuse BEFORE taking anybody off cover, so a rejected acceptance leaves the roll
         // exactly as it was.
+        if (ownWork.mayActAlone("schemes.enrolments-own")) submission.allowActingAlone();
         try {
             submission.requireAcceptableBy(acceptedBy);
         } catch (IllegalStateException e) {
@@ -286,6 +291,10 @@ public class ExitApiImpl implements ExitApi {
         }
 
         submission.accept(acceptedBy, exited);
+        if (submission.isActedAlone()) {
+            ownWork.record("Credit-life loans-ended file accepted by its uploader", submissionId.toString(),
+                submission.getPolicyNumber(), acceptedBy);
+        }
         return toView(submission);
     }
 

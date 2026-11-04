@@ -84,6 +84,8 @@ public class PolicyApiImpl implements PolicyApi {
     private final PolicyValueRepository policyValueRepository;
     private final SurrenderRequestRepository surrenderRequestRepository;
     private final PartyApi partyApi;
+    /** Approving a surrender one requested, for a company with one person (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
     private final ProductApi productApi;
     private final ReferenceDataApi referenceDataApi;
     private final DistributionApi distributionApi;
@@ -111,7 +113,9 @@ public class PolicyApiImpl implements PolicyApi {
                           CreditLifeAgreements creditLifeAgreements,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
                           DistributionApi distributionApi, UnderwritingApi underwritingApi,
-                          ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
+                          ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper,
+                          tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.policyRepository = policyRepository;
         this.coveredLives = coveredLives;
         this.groupFuneralFamilies = groupFuneralFamilies;
@@ -1556,8 +1560,14 @@ public class PolicyApiImpl implements PolicyApi {
             .orElseThrow(() -> new SurrenderRequestNotFoundException(surrenderRequestId));
         Policy policy = findPolicyOrThrow(request.getPolicyNumber(), tenantId);
 
-        // Two-person rule enforced in approve(); cover stops as of today (Q2).
+        // Two-person rule enforced in approve() -- unless the approver holds policies.surrender-approve-own
+        // (2026-11-04), a company with one person, recorded; cover stops as of today (Q2).
+        if (ownWork.mayActAlone("policies.surrender-approve-own")) request.allowActingAlone();
         request.approve(approvedBy);
+        if (request.isActedAlone()) {
+            ownWork.record("Surrender approved by its requester", surrenderRequestId.toString(), request.getPolicyNumber(),
+                approvedBy);
+        }
         policy.surrender(LocalDate.now());
         surrenderRequestRepository.save(request);
         policyRepository.save(policy);

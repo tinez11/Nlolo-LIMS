@@ -97,7 +97,9 @@ public class UnderwritingApiImpl implements UnderwritingApi {
                                 FuneralApplications funeralApplications, UnitLinkedChoices unitLinkedChoices,
                                 ProposalGroupLifeRepository proposalGroupLifeRepository,
                                 tz.co.nlolo.lifeplatform.underwriting.infrastructure.CaseAccountChargeRepository caseAccountCharges,
-                                tz.co.nlolo.lifeplatform.product.api.AccountChargeApi accountChargeApi) {
+                                tz.co.nlolo.lifeplatform.product.api.AccountChargeApi accountChargeApi,
+                                tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.caseAccountCharges = caseAccountCharges;
         this.accountChargeApi = accountChargeApi;
         this.proposalGroupLifeRepository = proposalGroupLifeRepository;
@@ -711,11 +713,15 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         // one who captured the proposal or wrote its evidence. Without this a single login could
         // open, assess and accept a case -- and one did, in twenty seconds, issuing a single-life
         // policy on a group product to a corporate "life assured" nobody else ever looked at.
-        if (decidedBy != null && decidedBy.equals(underwritingCase.getCreatedBy())) {
-            throw new UnderwritingSeparationOfDutiesException(caseId, "opened");
-        }
-        if (riskAssessmentRepository.existsByTenantIdAndCaseIdAndAssessor(tenantId, caseId, decidedBy)) {
-            throw new UnderwritingSeparationOfDutiesException(caseId, "assessed");
+        // Unless they hold underwriting.decide-own (2026-11-04): a company with one underwriter decides alone, recorded.
+        boolean opened = decidedBy != null && decidedBy.equals(underwritingCase.getCreatedBy());
+        boolean assessed = riskAssessmentRepository.existsByTenantIdAndCaseIdAndAssessor(tenantId, caseId, decidedBy);
+        if (opened || assessed) {
+            if (!ownWork.mayActAlone("underwriting.decide-own")) {
+                throw new UnderwritingSeparationOfDutiesException(caseId, opened ? "opened" : "assessed");
+            }
+            ownWork.record("Underwriting case decided by the underwriter who " + (opened ? "opened" : "assessed") + " it",
+                caseId.toString(), null, decidedBy);
         }
 
         // An ABSENT recommendation is not a disagreement. A pre-V5 case has none, and a case
@@ -1430,6 +1436,8 @@ public class UnderwritingApiImpl implements UnderwritingApi {
 
     private final tz.co.nlolo.lifeplatform.underwriting.infrastructure.CaseAccountChargeRepository caseAccountCharges;
     private final tz.co.nlolo.lifeplatform.product.api.AccountChargeApi accountChargeApi;
+    /** Acting alone on one's own case, for a company with one underwriter (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     @Override
     @Transactional

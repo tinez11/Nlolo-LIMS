@@ -32,8 +32,13 @@ class AccountingPeriods {
     private final EngineLockGate engineGate;
     private final YearEndLockGate yearEndGate;
 
+    /** Reopening a month one asked to reopen, for a company with one finance person (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
+
     AccountingPeriods(AccountingPeriodRepository periods, GlPostingRepository postings, UnpostedEvents unposted,
-                      EngineLockGate engineGate, YearEndLockGate yearEndGate) {
+                      EngineLockGate engineGate, YearEndLockGate yearEndGate,
+                      tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.periods = periods;
         this.postings = postings;
         this.unposted = unposted;
@@ -122,7 +127,9 @@ class AccountingPeriods {
     @Transactional
     AccountingPeriodView approveReopen(String period, String by) {
         AccountingPeriod p = load(period);
+        if (ownWork.mayActAlone("ledger.approve-own")) p.allowActingAlone();
         p.approveReopen(by, Instant.now());
+        if (p.isActedAlone()) ownWork.record("Locked month " + period + " reopened by the person who asked", period, null, by);
         return toView(periods.save(p));
     }
 

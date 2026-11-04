@@ -1,3 +1,4 @@
+import { barredAsOwn } from '@/lib/ownWork';
 import { can } from '@/auth/access';
 import { useEffect, useState } from 'react';
 import { useAuth } from 'react-oidc-context';
@@ -135,7 +136,7 @@ function Allocation({ allocation: a }: { allocation: ExpenseAllocationView }) {
         )}
 
         {canDecideAllocation(a, identity.subject, approver) && <Decision allocation={a} />}
-        {a.status === 'PREPARED' && identity.subject === a.preparedBy && (
+        {a.status === 'PREPARED' && barredAsOwn(identity.subject, a.preparedBy, 'ifrs17') && (
           <p className="text-sm text-muted-foreground">A finance approver other than you will approve or reject it.</p>
         )}
       </div>

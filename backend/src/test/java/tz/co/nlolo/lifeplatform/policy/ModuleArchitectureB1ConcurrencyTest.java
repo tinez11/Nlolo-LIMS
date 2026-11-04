@@ -95,10 +95,10 @@ class ModuleArchitectureB1ConcurrencyTest {
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
-            "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
+            "db-migrations/benefitpayout/V4__withholding_rule_end.sql", "db-migrations/benefitpayout/V6__acted_alone.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
             "db-migrations/accumulation/V6__withdrawal_payout_route.sql",
-            "db-migrations/accumulation/V9__withdrawal_rejection.sql",
+            "db-migrations/accumulation/V9__withdrawal_rejection.sql", "db-migrations/accumulation/V10__acted_alone.sql",
             "db-migrations/accumulation/V7__top_up_methods.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
@@ -138,7 +138,7 @@ class ModuleArchitectureB1ConcurrencyTest {
             "db-migrations/policy/V38__group_funeral_scheme.sql",
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
-            "db-migrations/policy/V42__surrender_payout_route.sql");
+            "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V45__acted_alone.sql");
     }
 
     @Autowired private PartyApi partyApi;

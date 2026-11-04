@@ -1,5 +1,6 @@
 import type { WithholdingRuleView } from '@/api/types';
 import type { Gate } from './types';
+import { mayActAlone, SIGNING_OWN } from '@/lib/ownWork';
 
 /**
  * What the platform will refuse before a withholding rule is approved. The wording is
@@ -12,7 +13,8 @@ const isSame = (viewer: string | undefined, other: string | null | undefined) =>
 
 export function approveRuleGates(rule: WithholdingRuleView, viewerSubject: string | undefined): Gate[] {
   const proposed = rule.status === 'PROPOSED';
-  const samePerson = isSame(viewerSubject, rule.proposedBy);
+  const own = isSame(viewerSubject, rule.proposedBy);
+  const samePerson = own && !mayActAlone('payouts');
   return [
     {
       ok: proposed,
@@ -26,7 +28,7 @@ export function approveRuleGates(rule: WithholdingRuleView, viewerSubject: strin
       title: 'A second person approves',
       detail: samePerson
         ? 'A withholding rule must be approved by someone other than the person who proposed it'
-        : 'You did not propose this rule.',
+        : own ? SIGNING_OWN : 'You did not propose this rule.',
     },
   ];
 }

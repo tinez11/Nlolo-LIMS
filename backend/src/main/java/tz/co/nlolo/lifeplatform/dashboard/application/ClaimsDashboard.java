@@ -48,7 +48,9 @@ public class ClaimsDashboard {
 
     /** @param period the months the ranged figures cover (2026-10-23); counts by status and the queue stay "now" */
     public ClaimsDashboardView build(boolean manager, DashboardPeriod period, LocalDate today) {
-        ClaimStatus queueStatus = manager ? ClaimStatus.SETTLEMENT_REQUESTED : ClaimStatus.REGISTERED;
+        // A manager decides a claim once it is assessed: UNDER_ASSESSMENT. SETTLEMENT_REQUESTED is already approved,
+        // its payment on the way -- the queue listed those as "awaiting your decision" until 2026-11-04.
+        ClaimStatus queueStatus = manager ? ClaimStatus.UNDER_ASSESSMENT : ClaimStatus.REGISTERED;
         List<QueuedClaim> queue = Safely.read("the " + queueStatus + " queue", () -> claims.searchClaims(
                 queueStatus, null, null, null, PageRequest.of(0, QUEUE_SIZE, Sort.by(Sort.Direction.ASC, "createdAt")))
             .map(c -> new QueuedClaim(c.claimId(), c.policyNumber(), c.claimantPartyId(), c.claimType().name(),

@@ -33,6 +33,22 @@ import java.util.UUID;
 @IdClass(PaymentTransaction.PaymentTransactionId.class)
 public class PaymentTransaction {
 
+    /**
+     * Approved by the person who prepared it (2026-11-04): they hold their area's "approve their own work", and the
+     * row says so -- the two-person rule refuses it otherwise.
+     */
+    @jakarta.persistence.Column(name = "acted_alone", nullable = false)
+    private boolean actedAlone;
+
+    /** Set for one request by a person allowed to act alone; never stored. */
+    @jakarta.persistence.Transient
+    private boolean mayActAlone;
+
+    /** The approver may be the person who prepared this: they hold their area's "approve their own work". */
+    public void allowActingAlone() { this.mayActAlone = true; }
+
+    public boolean isActedAlone() { return actedAlone; }
+
     @Id
     @Column(name = "payment_transaction_id")
     private UUID paymentTransactionId = UUID.randomUUID();
@@ -210,8 +226,12 @@ public class PaymentTransaction {
         }
         // A savings top-up needs no second person (2026-10-28): whoever asked for it may confirm the money came.
         if (by != null && by.equals(recordedBy) && !TOP_UP.equals(purpose)) {
-            throw new tz.co.nlolo.lifeplatform.payment.api.ReceiptRefusedException(
-                "A receipt must be approved by someone other than the person who recorded it");
+            // Unless they hold collections.approve-own (2026-11-04): a company with one finance person.
+            if (!mayActAlone) {
+                throw new tz.co.nlolo.lifeplatform.payment.api.ReceiptRefusedException(
+                    "A receipt must be approved by someone other than the person who recorded it");
+            }
+            actedAlone = true;
         }
     }
 

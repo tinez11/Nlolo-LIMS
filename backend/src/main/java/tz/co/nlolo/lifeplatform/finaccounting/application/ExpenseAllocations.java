@@ -54,8 +54,13 @@ public class ExpenseAllocations {
     private final FinaccountingApiImpl postings;
     private final jakarta.persistence.EntityManager entityManager;
 
+    /** Approving an allocation one prepared, for a company with one finance person (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
+
     ExpenseAllocations(JdbcTemplate jdbc, AccountingPeriods periods, FinaccountingApiImpl postings,
-                       jakarta.persistence.EntityManager entityManager) {
+                       jakarta.persistence.EntityManager entityManager,
+                       tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.jdbc = jdbc;
         this.periods = periods;
         this.postings = postings;
@@ -163,22 +168,25 @@ public class ExpenseAllocations {
         }
         jdbc.update("UPDATE finaccounting.expense_allocation SET status = 'POSTED', decided_by = ?, decided_at = now(),"
                 + " pool_at_approval = ?, over_pool = ?, replaces_id = ?, journal_entry_id = ?, reversal_journal_id = ?,"
-                + " version = version + 1 WHERE tenant_id = ? AND allocation_id = ? AND status = 'PREPARED'",
-            by, pool, over, previous.map(Row::id).orElse(null), journal, reversal, tenantId, id);
+                + " acted_alone = (prepared_by = ?), version = version + 1"
+                + " WHERE tenant_id = ? AND allocation_id = ? AND status = 'PREPARED'",
+            by, pool, over, previous.map(Row::id).orElse(null), journal, reversal, by, tenantId, id);
+        recordIfAlone(row, "approved", by);
         return get(id);
     }
 
     @Transactional
     public ExpenseAllocationView reject(UUID id, String reason, String by) {
-        decidable(load(id), by);
+        Row row = decidable(load(id), by);
         String r = trim(reason, 500, "A reason");
         if (r == null) {
             throw new FinaccountingValidationException("Say why the allocation is rejected");
         }
         jdbc.update("UPDATE finaccounting.expense_allocation SET status = 'REJECTED', decided_by = ?, decided_at = now(),"
-                + " decision_reason = ?, version = version + 1 WHERE tenant_id = ? AND allocation_id = ?"
-                + " AND status = 'PREPARED'",
-            by, r, TenantContext.get(), id);
+                + " decision_reason = ?, acted_alone = (prepared_by = ?), version = version + 1"
+                + " WHERE tenant_id = ? AND allocation_id = ? AND status = 'PREPARED'",
+            by, r, by, TenantContext.get(), id);
+        recordIfAlone(row, "rejected", by);
         return get(id);
     }
 
@@ -299,16 +307,23 @@ public class ExpenseAllocations {
             + " AND status = 'POSTED'", this::row, tenantId, period).stream().findFirst();
     }
 
-    private static Row decidable(Row row, String by) {
+    /** Unless the preparer holds ifrs17.approve-own (2026-11-04): a company with one finance person. */
+    private Row decidable(Row row, String by) {
         if (!"PREPARED".equals(row.status())) {
             throw new ExpenseAllocationStateException("Only a prepared allocation can be decided; this one is "
                 + row.status());
         }
-        if (row.preparedBy().equals(by)) {
+        if (row.preparedBy().equals(by) && !ownWork.mayActAlone("ifrs17.approve-own")) {
             throw new ExpenseAllocationStateException("You prepared this allocation; a FINANCE_APPROVER other than you"
                 + " decides it");
         }
         return row;
+    }
+
+    private void recordIfAlone(Row row, String how, String by) {
+        if (row.preparedBy().equals(by)) {
+            ownWork.record("Expense allocation " + how + " by its preparer", row.id().toString(), null, by);
+        }
     }
 
     private void requireClosing(String period) {

@@ -21,6 +21,22 @@ import java.util.UUID;
 @Table(name = "withholding_rule", schema = "benefitpayout")
 public class WithholdingRule {
 
+    /**
+     * Approved by the person who prepared it (2026-11-04): they hold their area's "approve their own work", and the
+     * row says so -- the two-person rule refuses it otherwise.
+     */
+    @jakarta.persistence.Column(name = "acted_alone", nullable = false)
+    private boolean actedAlone;
+
+    /** Set for one request by a person allowed to act alone; never stored. */
+    @jakarta.persistence.Transient
+    private boolean mayActAlone;
+
+    /** The approver may be the person who prepared this: they hold their area's "approve their own work". */
+    public void allowActingAlone() { this.mayActAlone = true; }
+
+    public boolean isActedAlone() { return actedAlone; }
+
     public enum Status { PROPOSED, APPROVED, WITHDRAWN }
 
     @Id @UuidGenerator @Column(name = "rule_id") private UUID ruleId;
@@ -59,9 +75,10 @@ public class WithholdingRule {
         if (status() != Status.PROPOSED) {
             throw new PayoutStateException("This withholding rule is " + status.toLowerCase() + ", not awaiting approval");
         }
-        if (approver == null || approver.equals(proposedBy)) {
+        if (approver == null || (approver.equals(proposedBy) && !mayActAlone)) {
             throw new PayoutStateException("A withholding rule must be approved by someone other than the person who proposed it");
         }
+        actedAlone = approver.equals(proposedBy);
         this.status = Status.APPROVED.name();
         this.approvedBy = approver;
         this.approvedAt = Instant.now();

@@ -1,3 +1,4 @@
+import { mayActAlone } from '@/lib/ownWork';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -121,7 +122,8 @@ export function DecisionPanel({
   const recommendation = view.recommendationOutcome ?? null;
   const override = isOverride(outcome, recommendation);
   const blockedByRank = override && !isSenior;
-  const conflict = separationOfDutiesConflict(view, callerSubject);
+  // No conflict for an underwriter allowed to decide their own case (underwriting.decide-own, 2026-11-04).
+  const conflict = mayActAlone('underwriting') ? null : separationOfDutiesConflict(view, callerSubject);
   /*
     The evidence itself, not the recommendation derived from it.
 

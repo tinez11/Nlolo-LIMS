@@ -1,5 +1,6 @@
 import type { PolicyView, SurrenderQuote, SurrenderRequestView } from '@/api/types';
 import { formatMoney } from '@/lib/money';
+import { mayActAlone, SIGNING_OWN } from '@/lib/ownWork';
 import { humanizeStatus } from '@/lib/status';
 import type { Gate } from './types';
 
@@ -97,12 +98,12 @@ export function approveSurrenderGates(
         : `This surrender is ${label(request.status)}, not awaiting approval.`,
     },
     {
-      ok: !sameAsRequester,
+      ok: !sameAsRequester || mayActAlone('surrenders'),
       hard: true,
       title: 'A second person approves',
-      detail: sameAsRequester
-        ? 'You requested this surrender, so someone else must approve it.'
-        : 'You did not request this surrender.',
+      detail: !sameAsRequester
+        ? 'You did not request this surrender.'
+        : mayActAlone('surrenders') ? SIGNING_OWN : 'You requested this surrender, so someone else must approve it.',
     },
   ];
 }

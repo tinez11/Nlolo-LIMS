@@ -112,10 +112,11 @@ class StatementStore {   // not "Statements": unitlinked has a bean of that name
     }
 
     boolean decide(UUID tenantId, UUID id, String status, String by, String reason) {
+        // acted_alone: decided by its own preparer, who was allowed to (2026-11-04) -- the service is the gate.
         return jdbc.update("UPDATE reinsurance.statement SET status = ?, decided_by = ?, decided_at = now(),"
-                + " decision_reason = ?, version = version + 1"
+                + " decision_reason = ?, acted_alone = (preparer = ?), version = version + 1"
                 + " WHERE tenant_id = ? AND statement_id = ? AND status = 'SUBMITTED'",
-            status, by, reason, tenantId, id) == 1;
+            status, by, reason, by, tenantId, id) == 1;
     }
 
     /** A rejected statement settles nothing: its bordereaux and recoveries are free for the quarter's next one. */

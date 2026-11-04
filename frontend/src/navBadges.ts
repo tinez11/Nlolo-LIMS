@@ -79,7 +79,7 @@ const LOADERS: Record<BadgeKey, { load: () => Promise<number>; title: (n: number
      money, so it is the queue with the most waiting on it and it had no counter at all. */
   'claims-settlement-pending': {
     load: async () =>
-      (await searchClaims({ status: 'SETTLEMENT_REQUESTED', pageSize: 1 })).page.totalElements ?? 0,
+      (await searchClaims({ status: 'UNDER_ASSESSMENT', pageSize: 1 })).page.totalElements ?? 0,
     title: (n) => `${plural(n, 'claim', 'claims')} awaiting a settlement decision`,
   },
   /* Level 5 is not 'the worst level' -- it is the level that publishes PolicyLapseRecommended,

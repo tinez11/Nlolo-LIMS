@@ -138,7 +138,7 @@ class EftDisbursementIntegrationTest {
             "db-migrations/payment/V9__account_purposes.sql",
             "db-migrations/payment/V17__manual_receipts.sql",
             "db-migrations/payment/V18__payout_routes.sql",
-            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql",
+            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
@@ -157,7 +157,7 @@ class EftDisbursementIntegrationTest {
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             "db-migrations/finaccounting/V16__expense_allocation.sql",
             "db-migrations/finaccounting/V17__year_end_close.sql",
-            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql");
+            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

@@ -94,6 +94,13 @@ public class JournalEntry {
     @Column(name = "document_refs")
     private String documentRefs;
 
+    /**
+     * A manual journal approved by its own preparer (2026-11-04): only one they were allowed to approve alone reaches
+     * here so -- the draft's decision is the gate -- and the posted entry carries the same mark.
+     */
+    @Column(name = "acted_alone", nullable = false)
+    private boolean actedAlone;
+
     @Column(name = "reverses_journal_id")
     private UUID reversesJournalId;
 
@@ -220,6 +227,7 @@ public class JournalEntry {
         this.reason = reason;
         this.reasonCode = reasonCode;
         this.documentRefs = documentRefs;
+        this.actedAlone = approver != null && approver.equals(preparer);
         return this;
     }
 

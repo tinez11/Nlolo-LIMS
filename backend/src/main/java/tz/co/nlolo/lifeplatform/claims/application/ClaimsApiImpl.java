@@ -90,6 +90,8 @@ public class ClaimsApiImpl implements ClaimsApi {
     private final ClaimInvestmentComponent investmentComponent;
     private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate requiresNewTransactionTemplate;
+    /** Acting alone on a claim one assessed, for a company with one claims person (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     public ClaimsApiImpl(ClaimRepository claimRepository, ClaimAssessmentRepository claimAssessmentRepository,
                           SettlementDecisionRepository settlementDecisionRepository,
@@ -100,7 +102,9 @@ public class ClaimsApiImpl implements ClaimsApi {
                           AnnuityApi annuityApi, FuneralClaims funeralClaims,
                           tz.co.nlolo.lifeplatform.unitlinked.api.UnitLinkedApi unitLinkedApi,
                           ClaimInvestmentComponent investmentComponent,
-                          ClaimDocumentRequestRepository claimDocumentRequestRepository) {
+                          ClaimDocumentRequestRepository claimDocumentRequestRepository,
+                          tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.claimDocumentRequestRepository = claimDocumentRequestRepository;
         this.investmentComponent = investmentComponent;
         this.unitLinkedApi = unitLinkedApi;
@@ -748,11 +752,16 @@ public class ClaimsApiImpl implements ClaimsApi {
         // CLAIMS_ASSESSOR vs CLAIMS_MANAGER are deliberately separate roles; the role gate lives
         // at the controller (@PreAuthorize). This additionally blocks the same *person* from
         // assessing and then deciding, which a role check alone cannot catch.
+        // Unless they hold claims.settle-own (2026-11-04): a company with one claims person decides alone, recorded.
         if (claimAssessmentRepository.existsByClaimIdAndTenantIdAndAssessor(claimId, tenantId, decidedBy)) {
-            // Addressed to the person, never naming them: decidedBy is an identity-provider subject, and printing it put
-            // a bare uuid in front of the manager who had just pressed Approve (2026-10-29).
-            throw new ClaimValidationException(
-                "Separation of duties: you assessed this claim, so another claims manager must decide it");
+            if (!ownWork.mayActAlone("claims.settle-own")) {
+                // Addressed to the person, never naming them: decidedBy is an identity-provider subject, and printing
+                // it put a bare uuid in front of the manager who had just pressed Approve (2026-10-29).
+                throw new ClaimValidationException(
+                    "Separation of duties: you assessed this claim, so another claims manager must decide it");
+            }
+            ownWork.record("Claim settlement decided by its assessor", claimId.toString(), claim.getPolicyNumber(),
+                decidedBy);
         }
 
         if (approved) {

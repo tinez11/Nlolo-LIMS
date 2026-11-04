@@ -1,5 +1,6 @@
 import type { FundPriceView, FundView, PriceAdjustmentView, UnitLinkedWithdrawalView } from '@/api/types';
 import type { Gate } from './types';
+import { mayActAlone, SIGNING_OWN } from '@/lib/ownWork';
 
 /**
  * What the platform will refuse before a fund price is approved or an adjustment decided (product
@@ -32,7 +33,8 @@ export function approvePriceGates(
   now: Date = new Date(),
 ): Gate[] {
   const proposed = price.status === 'PROPOSED';
-  const samePerson = isSame(viewerSubject, price.proposedBy);
+  const own = isSame(viewerSubject, price.proposedBy);
+  const samePerson = own && !mayActAlone('funds');
   const passed = fund ? cutOffPassed(price.valuationDate, fund.cutOffTime, now) : true;
   return [
     {
@@ -47,7 +49,7 @@ export function approvePriceGates(
       title: 'A second person approves',
       detail: samePerson
         ? 'A fund price must be approved by someone other than the person who proposed it'
-        : 'You did not propose this price.',
+        : own ? SIGNING_OWN : 'You did not propose this price.',
     },
     {
       ok: passed,
@@ -63,7 +65,8 @@ export function approvePriceGates(
 /** A partial withdrawal (U2) is approved by a second person, and only while it is still requested. */
 export function approveWithdrawalGates(withdrawal: UnitLinkedWithdrawalView, viewerSubject: string | undefined): Gate[] {
   const requested = withdrawal.status === 'REQUESTED';
-  const samePerson = isSame(viewerSubject, withdrawal.requestedBy);
+  const own = isSame(viewerSubject, withdrawal.requestedBy);
+  const samePerson = own && !mayActAlone('accounts');
   return [
     {
       ok: requested,
@@ -77,14 +80,15 @@ export function approveWithdrawalGates(withdrawal: UnitLinkedWithdrawalView, vie
       title: 'A second person approves',
       detail: samePerson
         ? 'A withdrawal must be approved by someone other than the person who requested it'
-        : 'You did not request this withdrawal.',
+        : own ? SIGNING_OWN : 'You did not request this withdrawal.',
     },
   ];
 }
 
 export function decideAdjustmentGates(adjustment: PriceAdjustmentView, viewerSubject: string | undefined): Gate[] {
   const open = adjustment.status === 'OPEN';
-  const samePerson = isSame(viewerSubject, adjustment.proposedBy);
+  const own = isSame(viewerSubject, adjustment.proposedBy);
+  const samePerson = own && !mayActAlone('funds');
   return [
     {
       ok: open,
@@ -98,7 +102,7 @@ export function decideAdjustmentGates(adjustment: PriceAdjustmentView, viewerSub
       title: 'A second person decides',
       detail: samePerson
         ? 'This adjustment arose from a correction you approved; a second person settles or waives it'
-        : 'You did not approve the correction that raised it.',
+        : own ? SIGNING_OWN : 'You did not approve the correction that raised it.',
     },
   ];
 }

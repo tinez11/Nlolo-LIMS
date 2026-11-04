@@ -27,7 +27,8 @@ class ClaimActionSources {
     @Bean
     ActionSource claimToSettle(ClaimRepository claims, PartyApi parties) {
         return ActionSource.forStaff("claim-settle", "claims.settle", "Approve or repudiate it", (viewer, limit) ->
-            read(claims, parties, ClaimStatus.SETTLEMENT_REQUESTED, "updatedAt", limit, Claim::getUpdatedAt,
+            // Assessed, waiting for the manager: UNDER_ASSESSMENT. SETTLEMENT_REQUESTED is approved and paying already.
+            read(claims, parties, ClaimStatus.UNDER_ASSESSMENT, "updatedAt", limit, Claim::getUpdatedAt,
                 "assessed"));
     }
 

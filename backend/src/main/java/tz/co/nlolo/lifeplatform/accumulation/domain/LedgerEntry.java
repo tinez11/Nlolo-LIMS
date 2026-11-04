@@ -29,6 +29,11 @@ public class LedgerEntry {
     @Column private String reason;
     @Column(name = "created_by", nullable = false) private String createdBy;
     @Column(name = "approved_by") private String approvedBy;
+    /**
+     * Approved by its own creator (2026-11-04): only an adjustment the person was allowed to approve alone reaches
+     * here so -- the request's own check is the gate -- and the line carries the same mark its request does.
+     */
+    @Column(name = "acted_alone", nullable = false) private boolean actedAlone;
 
     protected LedgerEntry() {}
 
@@ -47,6 +52,7 @@ public class LedgerEntry {
         this.reason = reason;
         this.createdBy = createdBy;
         this.approvedBy = approvedBy;
+        this.actedAlone = approvedBy != null && approvedBy.equals(createdBy);
     }
 
     public UUID getEntryId() { return entryId; }

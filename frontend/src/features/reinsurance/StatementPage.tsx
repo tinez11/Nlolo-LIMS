@@ -1,3 +1,4 @@
+import { barredAsOwn } from '@/lib/ownWork';
 import { can } from '@/auth/access';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from 'react-oidc-context';
@@ -44,7 +45,8 @@ function Statement({ statement: s }: { statement: ReinsuranceStatementView }) {
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const isPreparer = identity.subject === s.preparer;
-  const mayDecide = can('reinsurance.approve') && !isPreparer;
+  // Their own too, holding reinsurance.approve-own (2026-11-04): a company with one finance person.
+  const mayDecide = can('reinsurance.approve') && !barredAsOwn(identity.subject, s.preparer, 'reinsurance');
   const editable = s.status === 'DRAFT' && isPreparer;
 
   return (
@@ -233,7 +235,7 @@ function Actions({ statement: s, isPreparer, mayDecide }: { statement: Reinsuran
             <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void act(s.statementId, 'withdrawal')}>
               Withdraw
             </Button>
-            <p className="text-sm text-muted-foreground">Waiting for a finance approver other than you.</p>
+            {!mayDecide && <p className="text-sm text-muted-foreground">Waiting for a finance approver other than you.</p>}
           </>
         )}
         {s.status === 'SUBMITTED' && mayDecide && (

@@ -61,8 +61,9 @@ class ClaimsDashboardTest {
         everyStage();
         // Built BEFORE the stubbing that returns it: `claim()` stubs a mock of its own, and starting that inside an
         // unfinished `thenReturn(...)` is what Mockito reports as an unfinished stubbing.
-        ClaimView queued = claim(ClaimStatus.SETTLEMENT_REQUESTED);
-        when(claims.searchClaims(eq(ClaimStatus.SETTLEMENT_REQUESTED), isNull(), isNull(), isNull(),
+        // Assessed and waiting for the manager's decision (2026-11-04): not SETTLEMENT_REQUESTED, which is approved.
+        ClaimView queued = claim(ClaimStatus.UNDER_ASSESSMENT);
+        when(claims.searchClaims(eq(ClaimStatus.UNDER_ASSESSMENT), isNull(), isNull(), isNull(),
             argThat(p -> p != null && p.getPageSize() == ClaimsDashboard.QUEUE_SIZE)))
             .thenReturn(new PageImpl<>(List.of(queued)));
 
@@ -75,7 +76,7 @@ class ClaimsDashboardTest {
         assertThat(view.reopened()).isEqualTo(2L);
         assertThat(view.settled()).isEqualTo(128L);
         assertThat(view.recentActivity()).isEmpty();
-        assertThat(view.queueStatus()).isEqualTo("SETTLEMENT_REQUESTED");
+        assertThat(view.queueStatus()).isEqualTo("UNDER_ASSESSMENT");
         assertThat(view.queue()).singleElement().satisfies(q -> {
             assertThat(q.policyNumber()).isEqualTo("POL-00A4B7A1");
             assertThat(q.claimType()).isEqualTo("DEATH");

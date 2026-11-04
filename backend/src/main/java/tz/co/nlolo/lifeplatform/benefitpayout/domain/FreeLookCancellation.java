@@ -24,6 +24,22 @@ import java.util.UUID;
 @Table(name = "free_look_cancellation", schema = "benefitpayout")
 public class FreeLookCancellation {
 
+    /**
+     * Approved by the person who prepared it (2026-11-04): they hold their area's "approve their own work", and the
+     * row says so -- the two-person rule refuses it otherwise.
+     */
+    @jakarta.persistence.Column(name = "acted_alone", nullable = false)
+    private boolean actedAlone;
+
+    /** Set for one request by a person allowed to act alone; never stored. */
+    @jakarta.persistence.Transient
+    private boolean mayActAlone;
+
+    /** The approver may be the person who prepared this: they hold their area's "approve their own work". */
+    public void allowActingAlone() { this.mayActAlone = true; }
+
+    public boolean isActedAlone() { return actedAlone; }
+
     @Id
     @UuidGenerator
     @Column(name = "cancellation_id")
@@ -100,10 +116,11 @@ public class FreeLookCancellation {
             throw new PayoutStateException("Free-look cancellation " + cancellationId + " is " + status
                 + ", not awaiting approval");
         }
-        if (approver == null || approver.equals(requestedBy)) {
+        if (approver == null || (approver.equals(requestedBy) && !mayActAlone)) {
             throw new PayoutStateException("A free-look cancellation must be approved by someone other than the "
                 + "person who requested it (" + requestedBy + ")");
         }
+        actedAlone = approver.equals(requestedBy);
         this.approvedBy = approver;
         this.approvedAt = Instant.now();
         this.status = "APPROVED";

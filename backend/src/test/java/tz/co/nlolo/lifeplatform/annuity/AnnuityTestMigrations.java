@@ -33,10 +33,10 @@ public final class AnnuityTestMigrations {
         "db-migrations/claims/V13__credit_life_statement_evidence.sql",
         "db-migrations/annuity/V1__create_annuity_schema.sql",
         // D2: after the deposit list's accumulation, benefitpayout and payment migrations.
-        "db-migrations/accumulation/V4__vesting_entry.sql",
-        "db-migrations/benefitpayout/V5__commutation_kind.sql",
-        "db-migrations/payment/V12__commutation_purpose.sql",
-        "db-migrations/policy/V34__annuity_vesting.sql",
+        "db-migrations/accumulation/V4__vesting_entry.sql", "db-migrations/accumulation/V10__acted_alone.sql",
+        "db-migrations/benefitpayout/V5__commutation_kind.sql", "db-migrations/benefitpayout/V6__acted_alone.sql",
+        "db-migrations/payment/V12__commutation_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
+        "db-migrations/policy/V34__annuity_vesting.sql", "db-migrations/policy/V45__acted_alone.sql",
         "db-migrations/annuity/V2__deferred_annuities.sql",
     };
 

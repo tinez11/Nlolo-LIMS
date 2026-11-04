@@ -33,9 +33,13 @@ public class WithholdingRules {
 
     private final WithholdingRuleRepository rules;
 
-    public WithholdingRules(WithholdingRuleRepository rules) {
+    public WithholdingRules(WithholdingRuleRepository rules, tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
         this.rules = rules;
+        this.ownWork = ownWork;
     }
+
+    /** Approving one's own rule, for a company with one finance person (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     /**
      * Once per Idempotency-Key: a retried proposal returns the rule it created; the same key for a
@@ -89,7 +93,11 @@ public class WithholdingRules {
                     + " -- give that one an end date first");
             }
         }
+        if (ownWork.mayActAlone("payouts.approve-own")) rule.allowActingAlone();
         rule.approve(approver);
+        if (rule.isActedAlone()) {
+            ownWork.record("Withholding rule approved by its proposer", String.valueOf(rule.getRuleId()), null, approver);
+        }
         return rules.save(rule);
     }
 

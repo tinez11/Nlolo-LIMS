@@ -27,6 +27,22 @@ import java.util.UUID;
 @Table(name = "withdrawal_request", schema = "unitlinked")
 public class WithdrawalRequest {
 
+    /**
+     * Approved by the person who prepared it (2026-11-04): they hold their area's "approve their own work", and the
+     * row says so -- the two-person rule refuses it otherwise.
+     */
+    @jakarta.persistence.Column(name = "acted_alone", nullable = false)
+    private boolean actedAlone;
+
+    /** Set for one request by a person allowed to act alone; never stored. */
+    @jakarta.persistence.Transient
+    private boolean mayActAlone;
+
+    /** The approver may be the person who prepared this: they hold their area's "approve their own work". */
+    public void allowActingAlone() { this.mayActAlone = true; }
+
+    public boolean isActedAlone() { return actedAlone; }
+
     /** A fund named on the request and the gross amount to sell from it. */
     @Embeddable
     public static class Named {
@@ -87,10 +103,11 @@ public class WithdrawalRequest {
         if (!"REQUESTED".equals(status)) {
             throw new UnitLinkedStateException("Withdrawal " + withdrawalId + " is " + status + ", not awaiting approval");
         }
-        if (by == null || by.equals(requestedBy)) {
+        if (by == null || (by.equals(requestedBy) && !mayActAlone)) {
             throw new UnitLinkedStateException("A withdrawal must be approved by someone other than the person who requested"
                 + " it (" + requestedBy + "); a second person approves");
         }
+        actedAlone = by.equals(requestedBy);
         this.status = "APPROVED";
         this.approvedBy = by;
         this.approvedAt = at;

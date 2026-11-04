@@ -83,10 +83,12 @@ public class Approvals {
                 groups.add(new ApprovalsView.Group(source.kind(), source.label(), source.act(), 0, 0, true, List.of()));
                 continue;
             }
+            // A viewer allowed to approve their own work in this area (2026-11-04) signs their own requests too.
+            boolean alone = actsAlone(source.kind());
             List<ApprovalsView.Row> rows = read.pending().oldest().stream()
                 .map(i -> new ApprovalsView.Row(i.reference(), i.policyNumber(), i.summary(),
                     ApprovalsView.Money.of(i.amount(), i.currency()), i.requestedBy(), i.requestedBy() == null ? null : names.get(i.requestedBy()), i.requestedAt(),
-                    source.twoPeople() && viewerSubject != null && viewerSubject.equals(i.requestedBy())))
+                    source.twoPeople() && !alone && viewerSubject != null && viewerSubject.equals(i.requestedBy())))
                 .toList();
             // Own requests are counted from the rows in hand: a queue longer than one page could hide more of the
             // viewer's own beyond it, so the actionable figure errs high, never low.
@@ -97,6 +99,31 @@ public class Approvals {
                 canAct, false, rows));
         }
         return new ApprovalsView(actionable, groups);
+    }
+
+    /**
+     * The "approve their own work" permission each two-person kind answers to (2026-11-04). A kind not named here has
+     * no such permission, and its own requests always wait for someone else.
+     */
+    static final Map<String, String> OWN_WORK = Map.ofEntries(
+        Map.entry("receipt", "collections.approve-own"),
+        Map.entry("payout-approval", "payouts.approve-own"), Map.entry("free-look", "payouts.approve-own"),
+        Map.entry("withholding-rule", "payouts.approve-own"),
+        Map.entry("surrender", "policies.surrender-approve-own"),
+        Map.entry("account-withdrawal", "accounts.approve-own"), Map.entry("account-adjustment", "accounts.approve-own"),
+        Map.entry("unit-withdrawal", "accounts.approve-own"),
+        Map.entry("fund-price", "funds.approve-own"), Map.entry("price-adjustment", "funds.approve-own"),
+        Map.entry("rate-declaration", "products.declare-approve-own"),
+        Map.entry("bonus-declaration", "products.declare-approve-own"),
+        Map.entry("manual-journal", "ledger.approve-own"), Map.entry("accounting-policy", "ledger.approve-own"),
+        Map.entry("period-reopen", "ledger.approve-own"),
+        Map.entry("expense-allocation", "ifrs17.approve-own"), Map.entry("engine-run", "ifrs17.approve-own"),
+        Map.entry("year-end-close", "ifrs17.approve-own"),
+        Map.entry("reinsurance-statement", "reinsurance.approve-own"));
+
+    private boolean actsAlone(String kind) {
+        String own = OWN_WORK.get(kind);
+        return own != null && Permission.fromCode(own).map(access::can).orElse(false);
     }
 
     /** Names are a courtesy: without them a row still says who asked, by subject, and the page still loads. */

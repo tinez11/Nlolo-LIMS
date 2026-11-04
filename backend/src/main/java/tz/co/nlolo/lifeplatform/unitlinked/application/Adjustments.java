@@ -34,8 +34,12 @@ class Adjustments {
     private final ApplicationEventPublisher events;
     private final Clock clock;
 
+    /** Settling a correction one proposed, for a company with one fund manager (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
+
     Adjustments(PriceCorrectionAdjustmentRepository adjustments, PolicyApi policyApi, ApplicationEventPublisher events,
-                @Qualifier("unitLinkedClock") Clock clock) {
+                @Qualifier("unitLinkedClock") Clock clock, tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.adjustments = adjustments;
         this.policyApi = policyApi;
         this.events = events;
@@ -51,13 +55,22 @@ class Adjustments {
         return found.stream().map(Adjustments::view).toList();
     }
 
+    private void recordIfAlone(PriceCorrectionAdjustment a, String how, String by) {
+        if (a.isActedAlone()) {
+            ownWork.record("Price-correction adjustment " + how + " by the person who approved the correction",
+                a.getAdjustmentId().toString(), a.getPolicyNumber(), by);
+        }
+    }
+
     @Transactional
     AdjustmentView settle(UUID adjustmentId, String payeeRef, String by) {
         if (payeeRef == null || payeeRef.isBlank()) {
             throw new IllegalArgumentException("Settling an adjustment needs the payee to pay, or the reference it was collected under");
         }
         PriceCorrectionAdjustment a = load(adjustmentId);
+        if (ownWork.mayActAlone("funds.approve-own")) a.allowActingAlone();
         a.settle(by, payeeRef.trim(), clock.instant());
+        recordIfAlone(a, "settled", by);
         adjustments.save(a);
         if (a.getDirection() == PriceCorrectionAdjustment.Direction.OWED_TO_CUSTOMER) {
             String currency = policyApi.getPolicy(a.getPolicyNumber()).premiumCurrency();
@@ -78,7 +91,9 @@ class Adjustments {
     @Transactional
     AdjustmentView waive(UUID adjustmentId, String reason, String by) {
         PriceCorrectionAdjustment a = load(adjustmentId);
+        if (ownWork.mayActAlone("funds.approve-own")) a.allowActingAlone();
         a.waive(by, reason, clock.instant());
+        recordIfAlone(a, "waived", by);
         adjustments.save(a);
         // What the correction left owed (2130) or owing (1230) is released against benefits (5100).
         decided("unitlinked.AdjustmentWaived", a);

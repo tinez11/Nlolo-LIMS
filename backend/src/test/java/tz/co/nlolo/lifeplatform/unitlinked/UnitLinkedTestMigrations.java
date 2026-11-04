@@ -20,14 +20,14 @@ public final class UnitLinkedTestMigrations {
         "db-migrations/product/V26__unit_linked_options.sql",
         "db-migrations/underwriting/V17__unit_linked_choice.sql",
         "db-migrations/unitlinked/V2__units.sql",
-        "db-migrations/finaccounting/V9__unit_linked_accounts.sql",
+        "db-migrations/finaccounting/V9__unit_linked_accounts.sql", "db-migrations/finaccounting/V19__acted_alone.sql",
         "db-migrations/payment/V13__unit_linked_purposes.sql",
         // A unit-linked surrender request carries no quoted value (plan R11): quoted_value_amount becomes nullable.
-        "db-migrations/policy/V36__unit_linked_policy.sql",
+        "db-migrations/policy/V36__unit_linked_policy.sql", "db-migrations/policy/V45__acted_alone.sql",
         // U2: switches, withdrawals, top-ups, the split history, statements; the UL_TOP_UP collection purpose.
         "db-migrations/unitlinked/V3__u2.sql",
-        "db-migrations/unitlinked/V4__payout_routes.sql",
-        "db-migrations/payment/V14__unit_linked_top_up.sql",
+        "db-migrations/unitlinked/V4__payout_routes.sql", "db-migrations/unitlinked/V5__acted_alone.sql",
+        "db-migrations/payment/V14__unit_linked_top_up.sql", "db-migrations/payment/V21__acted_alone.sql",
     };
 
     public static final String[] ALL = Stream.concat(Stream.of(FuneralTestMigrations.ALL), Stream.of(UNIT_LINKED))

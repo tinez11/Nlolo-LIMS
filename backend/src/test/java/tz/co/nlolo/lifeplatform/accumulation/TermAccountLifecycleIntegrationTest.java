@@ -73,8 +73,8 @@ class TermAccountLifecycleIntegrationTest {
         wireMock.start();
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             Stream.concat(Stream.of(DepositTestMigrations.ALL), Stream.of(
-                "db-migrations/accumulation/V5__term_accounts.sql",
-                "db-migrations/payment/V15__term_account_maturity_purpose.sql",
+                "db-migrations/accumulation/V5__term_accounts.sql", "db-migrations/accumulation/V10__acted_alone.sql",
+                "db-migrations/payment/V15__term_account_maturity_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
                 "db-migrations/underwriting/V22__accepted_quotation.sql",
                 "db-migrations/underwriting/V23__return_for_amendment.sql")).toArray(String[]::new));
     }
