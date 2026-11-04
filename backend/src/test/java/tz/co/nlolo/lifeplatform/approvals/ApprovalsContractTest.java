@@ -105,6 +105,41 @@ class ApprovalsContractTest {
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andReturn().getResponse().getContentAsString();
         assertThat(JsonPath.<List<String>>read(forService, "$.groups[*].kind")).doesNotContain("account-withdrawal");
+
+        // The bell (2026-11-03): the second signer has a job opening the approvals; the asker, whose own it is, has none.
+        String bell = mockMvc.perform(get("/actions").with(staff("FINANCE_OFFICER", "finance-two")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andReturn().getResponse().getContentAsString();
+        assertThat(JsonPath.<List<String>>read(bell, "$.groups[*].kind")).contains("signatures");
+        String askersBell = mockMvc.perform(get("/actions").with(staff("CUSTOMER_SERVICE_REP", asker)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andReturn().getResponse().getContentAsString();
+        assertThat(JsonPath.<List<String>>read(askersBell, "$.groups[*].kind")).doesNotContain("signatures");
+    }
+
+    @Test
+    void anAgentsBellHoldsOnlyTheirOwnClientsWork() throws Exception {
+        // An agent who has registered nobody has nothing waiting -- and no staff kind leaks in.
+        String bell = mockMvc.perform(get("/actions").with(jwt()
+                .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                .jwt(b -> b.subject("agent-" + UUID.randomUUID()).claim("tenant_id", TENANT.toString())
+                    .claim("party_id", UUID.randomUUID().toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andReturn().getResponse().getContentAsString();
+        assertThat(JsonPath.<Integer>read(bell, "$.total")).isZero();
+        // Not `incomplete`: this database holds the deposit modules' tables only, so the KYC and offer jobs cannot be
+        // read here -- which is exactly what `incomplete` is for. Their queries are checked against the full schema.
+        assertThat(JsonPath.<List<String>>read(bell, "$.groups[*].kind")).isEmpty();
+    }
+
+    @Test
+    void theBellIsRefusedToACustomer() throws Exception {
+        mockMvc.perform(get("/actions").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                .jwt(b -> b.claim("tenant_id", TENANT.toString()))))
+            .andExpect(status().isForbidden());
     }
 
     private static Map<String, Object> withdrawalRow(String json, String policyNumber) {

@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn';
 import { humanizeStatus } from '@/lib/status';
 import { currentTheme, toggleTheme, type Theme } from '@/lib/theme';
 import { useNavBadges } from '@/navBadges';
+import { ActionBell } from '@/features/actions/ActionBell';
 import { navFor } from '@/screens';
 import { CommandPalette } from './CommandPalette';
 import { useListKeys } from './listKeys';
@@ -170,7 +171,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
           </Button>
         </div>
 
-        <div className="shrink-0 px-2 pb-2">
+        <div className="flex shrink-0 items-center gap-2 px-2 pb-2">
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
@@ -186,6 +187,8 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
               Ctrl K
             </kbd>
           </button>
+          {/* The jobs waiting for this person (2026-11-03), beside the search so it is in view on every page. */}
+          {(realm === 'staff' || realm === 'agents') && <ActionBell realm={realm} />}
         </div>
 
         {/*

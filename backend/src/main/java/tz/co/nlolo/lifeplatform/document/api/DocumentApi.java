@@ -22,4 +22,11 @@ public interface DocumentApi {
      * <p>Tenant scoping is applied here, not left to the caller.
      */
     List<DocumentMetadataView> listByOwnerContext(String ownerContext);
+
+    /**
+     * When each owner last had a document of {@code type} filed, for every owner context starting with
+     * {@code ownerContextPrefix} (2026-11-03): {@code party:} for "which clients sent identity evidence, and when". An
+     * owner with none is absent. Tenant-scoped here.
+     */
+    java.util.Map<String, java.time.Instant> latestUploads(String ownerContextPrefix, DocumentType type);
 }

@@ -459,6 +459,18 @@ public class PartyApiImpl implements PartyApi {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public java.util.Map<UUID, String> displayNames(java.util.Collection<UUID> partyIds) {
+        // A HashMap even when empty: callers look up ids that may be null, which Map.of() refuses.
+        java.util.Map<UUID, String> names = new java.util.HashMap<>();
+        if (partyIds == null || partyIds.isEmpty()) return names;
+        for (Object[] row : partyRepository.findDisplayNames(TenantContext.get(), partyIds)) {
+            names.put((UUID) row[0], (String) row[1]);
+        }
+        return names;
+    }
+
+    @Override
     public Set<UUID> partyIdsMatchingName(String q) {
         // A blank term is "no search", and it must not become "every party in the tenant"
         // by way of a LIKE '%%' -- the caller reads an empty set as "match nothing", so

@@ -22,4 +22,14 @@ public interface DocumentRecordRepository extends JpaRepository<DocumentRecord, 
      */
     List<DocumentRecord> findByTenantIdAndOwnerContextOrderByUploadedAtDescDocumentRefDesc(
         UUID tenantId, String ownerContext);
+
+    /** The newest upload of one type per owner whose context starts with a prefix (2026-11-03). */
+    @org.springframework.data.jpa.repository.Query("""
+        SELECT d.ownerContext, max(d.uploadedAt) FROM DocumentRecord d
+         WHERE d.tenantId = :tenantId AND d.documentType = :type AND d.ownerContext LIKE :prefix
+         GROUP BY d.ownerContext""")
+    List<Object[]> latestUploads(@org.springframework.data.repository.query.Param("tenantId") UUID tenantId,
+                                 @org.springframework.data.repository.query.Param("type")
+                                 tz.co.nlolo.lifeplatform.document.api.DocumentType type,
+                                 @org.springframework.data.repository.query.Param("prefix") String prefix);
 }

@@ -90,6 +90,18 @@ public interface PolicyRepository extends JpaRepository<Policy, String> {
                          @Param("q") String q,
                          Pageable pageable);
 
+    /**
+     * Offers waiting for their first premium, issued on a day in {@code [issuedFrom, issuedTo]}, sold by one of these
+     * agents (2026-11-03): the bell's offers about to close.
+     */
+    @Query("SELECT p FROM Policy p WHERE p.tenantId = :tenantId AND p.status = 'PROPOSED' "
+        + "AND p.issueDate >= :issuedFrom AND p.issueDate <= :issuedTo AND p.agentOfRecordId IN :agentOfRecordIds "
+        + "ORDER BY p.issueDate, p.policyNumber")
+    List<Policy> findOffersIssuedBetween(@Param("tenantId") UUID tenantId,
+                                         @Param("issuedFrom") LocalDate issuedFrom,
+                                         @Param("issuedTo") LocalDate issuedTo,
+                                         @Param("agentOfRecordIds") Collection<UUID> agentOfRecordIds);
+
     /** Backs {@code claims}' product filter: claims carries no product of its own, so it filters
      *  on the numbers of the policies sold under that product or category. */
     @Query("SELECT p.policyNumber FROM Policy p WHERE p.tenantId = :tenantId "

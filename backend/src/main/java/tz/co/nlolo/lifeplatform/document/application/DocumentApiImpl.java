@@ -64,6 +64,16 @@ public class DocumentApiImpl implements DocumentApi {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public java.util.Map<String, java.time.Instant> latestUploads(String ownerContextPrefix, DocumentType type) {
+        java.util.Map<String, java.time.Instant> latest = new java.util.HashMap<>();
+        for (Object[] row : repository.latestUploads(TenantContext.get(), type, ownerContextPrefix + "%")) {
+            latest.put((String) row[0], (java.time.Instant) row[1]);
+        }
+        return latest;
+    }
+
+    @Override
     public List<DocumentMetadataView> listByOwnerContext(String ownerContext) {
         return repository
             .findByTenantIdAndOwnerContextOrderByUploadedAtDescDocumentRefDesc(TenantContext.get(), ownerContext)

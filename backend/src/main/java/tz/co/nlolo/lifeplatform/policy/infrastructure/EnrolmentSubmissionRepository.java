@@ -21,4 +21,7 @@ public interface EnrolmentSubmissionRepository extends JpaRepository<EnrolmentSu
 
     List<EnrolmentSubmission> findByTenantIdAndPolicyNumberOrderBySubmittedAtDesc(
         UUID tenantId, String policyNumber);
+
+    /** Every file in one state across the tenant's schemes, newest first -- the bell's files to accept. */
+    List<EnrolmentSubmission> findByTenantIdAndStatusOrderBySubmittedAtDesc(UUID tenantId, SubmissionStatus status);
 }

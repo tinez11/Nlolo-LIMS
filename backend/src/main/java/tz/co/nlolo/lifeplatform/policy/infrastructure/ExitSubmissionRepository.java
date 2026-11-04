@@ -18,4 +18,7 @@ public interface ExitSubmissionRepository extends JpaRepository<ExitSubmission, 
 
     List<ExitSubmission> findByTenantIdAndPolicyNumberOrderBySubmittedAtDesc(
         UUID tenantId, String policyNumber);
+
+    /** Every file in one state across the tenant's schemes, newest first -- the bell's files to accept. */
+    List<ExitSubmission> findByTenantIdAndStatusOrderBySubmittedAtDesc(UUID tenantId, SubmissionStatus status);
 }
