@@ -31,4 +31,8 @@ public interface PolicyBalanceRepository extends JpaRepository<PolicyBalance, Po
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT b FROM PolicyBalance b WHERE b.tenantId = :tenantId AND b.policyNumber = :policyNumber")
     Optional<PolicyBalance> findForUpdate(@Param("tenantId") UUID tenantId, @Param("policyNumber") String policyNumber);
+
+    /** Policies whose balance can pay a premium that has fallen due, across every tenant: (tenant_id, policy_number). */
+    @Query(value = "SELECT tenant_id, policy_number FROM billing.balances_due_for_allocation()", nativeQuery = true)
+    java.util.List<Object[]> findDueForAllocationAcrossTenants();
 }

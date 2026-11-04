@@ -36,6 +36,8 @@ final class JournalWords {
         Map.entry("policyloan.LoanDisbursed", "Policy loan paid out"),
         Map.entry("policyloan.LoanInterestAccrued", "Loan interest charged"),
         Map.entry("policyloan.LoanRepaid", "Loan repayment received"),
+        Map.entry("billing.DepositReceived", "Deposit received"),
+        Map.entry("billing.PremiumPaidFromBalance", "Premium paid from balance"),
         Map.entry("policyloan.LoanOverpaid", "Loan overpaid -- held for the payer"),
         Map.entry("policyloan.LoanForcedLapseTriggered", "Loan closed against the policy's value"),
         Map.entry("accumulation.PostingRecorded", "Savings account movement"),

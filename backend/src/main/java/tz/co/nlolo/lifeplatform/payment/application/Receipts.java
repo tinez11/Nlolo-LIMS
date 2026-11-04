@@ -101,8 +101,12 @@ public class Receipts {
             throw new ReceiptRefusedException("Invoice due " + invoice.dueDate() + " is " + invoice.status()
                 .name().toLowerCase() + ": there is nothing left to receive on it");
         }
+        // On an insurance policy, more than the invoice owes is welcome (money movement step 2): the deposit lands on the
+        // policy's balance, pays what is due oldest first, and the rest pays the next premiums. Only a savings-type
+        // policy keeps the cap, and the "already waiting" check that went with it, until "For: Savings".
+        boolean capped = billing.isSavingsType(invoice.policyNumber());
         BigDecimal owed = invoice.balanceDue() == null ? invoice.amount() : invoice.balanceDue();
-        if (in.amount().compareTo(owed) > 0) {
+        if (capped && in.amount().compareTo(owed) > 0) {
             throw new ReceiptRefusedException("This is more than is owed on the invoice (" + owed.toPlainString() + " "
                 + invoice.currency() + "). Record what it pays, and the rest against the next invoice");
         }
@@ -120,7 +124,7 @@ public class Receipts {
         List<PaymentTransaction> waiting = transactions.findByTenantIdAndSourceRefAndStatusOrderByCreatedAtAsc(tenantId,
             invoice.invoiceId().toString(), "AWAITING_APPROVAL");
         BigDecimal waitingTotal = waiting.stream().map(PaymentTransaction::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        if (!waiting.isEmpty() && waitingTotal.add(in.amount()).compareTo(owed) > 0) {
+        if (capped && !waiting.isEmpty() && waitingTotal.add(in.amount()).compareTo(owed) > 0) {
             PaymentTransaction first = waiting.get(0);
             throw new ReceiptRefusedException(waiting.size() == 1
                 ? "A " + words(first.getMethod()) + " receipt (" + first.getGatewayReference() + ") of "

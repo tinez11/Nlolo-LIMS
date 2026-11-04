@@ -69,22 +69,46 @@ rules:
       - {dr: "2141", amount: amount}
       - {cr: "4160", amount: amount}
 
+  # Money movement step 2 (2026-11-04): cash posts when it ARRIVES, for what arrived, onto the policy's balance (2128);
+  # the balance then pays each premium as it falls due. PremiumCollected stays the "invoice fully paid" business event
+  # (commission, messages, paid-to-date) and posts nothing -- posting cash off it, at the invoice's amount and only on
+  # the PAID edge, left part payments out of the ledger and posted a credited invoice's full charge as cash received.
   - id: PLAT-A07
     event: billing.PremiumCollected
     models: [GMM, VFA]
-    description: Premium collected, to the account it reached by its payment method; the premium levy at the rate in force (A-19)
-    lines:
-      - {dr: "RECEIPT", amount: amount}
-      - {cr: "2122", amount: amount, movement: PRM_REN}
-      - {dr: "5220", amount: levy}
-      - {cr: "2650", amount: levy}
+    description: Premium fully paid -- the cash was posted on its deposit (M-01) and the premium on its payment from the balance (M-02)
+    post: false
 
   - id: I-02
     event: billing.PremiumCollected
     models: [PAA]
-    description: PAA premium received, to the account it reached by its payment method; the premium levy at the rate in force (A-19)
+    description: PAA premium fully paid -- the cash was posted on its deposit (M-01) and the premium on its payment from the balance (M-02-PAA)
+    post: false
+
+  - id: M-01
+    event: billing.DepositReceived
+    models: [GMM, VFA, PAA]
+    description: Money onto a policy's balance, to the account it reached by its payment method -- held as received in advance until it pays a premium
     lines:
       - {dr: "RECEIPT", amount: amount}
+      - {cr: "2128", amount: amount}
+
+  - id: M-02
+    event: billing.PremiumPaidFromBalance
+    models: [GMM, VFA]
+    description: A premium paid from the policy's balance; the premium levy at the rate in force (A-19), on the premium paid
+    lines:
+      - {dr: "2128", amount: amount}
+      - {cr: "2122", amount: amount, movement: PRM_REN}
+      - {dr: "5220", amount: levy}
+      - {cr: "2650", amount: levy}
+
+  - id: M-02-PAA
+    event: billing.PremiumPaidFromBalance
+    models: [PAA]
+    description: A PAA premium paid from the policy's balance; the premium levy at the rate in force (A-19), on the premium paid
+    lines:
+      - {dr: "2128", amount: amount}
       - {cr: "2142", amount: amount, movement: PRM_REN}
       - {dr: "5220", amount: levy}
       - {cr: "2650", amount: levy}

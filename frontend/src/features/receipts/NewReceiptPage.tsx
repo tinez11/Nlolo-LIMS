@@ -228,7 +228,11 @@ export function NewReceiptPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <FormField
                 label={`Amount (${owedNow?.currencyCode ?? 'TZS'})`}
-                hint={owedNow ? `At most ${formatMoney(owedNow)}, what ${loan ? 'the loan owes' : 'is owed'}.` : undefined}
+                hint={owedNow
+                  ? loan
+                    ? `At most ${formatMoney(owedNow)}, what the loan owes.`
+                    : `Owed now ${formatMoney(owedNow)}. Anything above it stays on the policy's balance and pays the next premiums.`
+                  : undefined}
                 error={errors.amount?.message}
               >
                 <Input inputMode="decimal" {...register('amount')} />

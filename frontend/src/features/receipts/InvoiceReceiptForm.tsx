@@ -84,7 +84,9 @@ export function InvoiceReceiptForm({
         <Input inputSize="sm" className="font-mono" {...register('reference')} />
       </FormField>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <FormField label={`Amount (${owed?.currencyCode ?? 'TZS'})`} error={errors.amount?.message}>
+        <FormField label={`Amount (${owed?.currencyCode ?? 'TZS'})`}
+          hint="Anything above what is owed stays on the policy's balance and pays the next premiums."
+          error={errors.amount?.message}>
           <Input inputSize="sm" inputMode="decimal" {...register('amount')} />
         </FormField>
         <FormField label="Received on" error={errors.receivedOn?.message}>

@@ -57,3 +57,24 @@ CREATE POLICY balance_entry_tenant_isolation ON billing.balance_entry
 
 GRANT SELECT, INSERT, UPDATE ON billing.policy_balance TO app_role;
 GRANT SELECT, INSERT ON billing.balance_entry TO app_role;
+
+-- Policies whose balance can pay a premium that has fallen due, across every tenant, for BalanceAllocationDrain.
+-- Invoices are raised a year ahead, so a balance waits for each premium's due date rather than paying next year's
+-- premiums the day the money lands. The day is Dar es Salaam's, not the database's UTC one. SECURITY DEFINER for the
+-- reason schedules_due_for_invoicing is: a background thread has no tenant, so RLS would show it nothing.
+CREATE OR REPLACE FUNCTION billing.balances_due_for_allocation()
+RETURNS TABLE (tenant_id UUID, policy_number VARCHAR)
+LANGUAGE sql SECURITY DEFINER AS $$
+    SELECT b.tenant_id, b.policy_number
+      FROM billing.policy_balance b
+     WHERE (SELECT COALESCE(SUM(CASE WHEN e.entry_type = 'DEPOSIT' THEN e.amount ELSE -e.amount END), 0)
+              FROM billing.balance_entry e
+             WHERE e.tenant_id = b.tenant_id AND e.policy_number = b.policy_number) > 0
+       AND EXISTS (SELECT 1 FROM billing.premium_invoice i
+                    WHERE i.tenant_id = b.tenant_id AND i.policy_number = b.policy_number
+                      AND i.status IN ('DUE', 'IN_GRACE', 'OVERDUE', 'PARTIALLY_PAID')
+                      AND i.due_date <= (now() AT TIME ZONE 'Africa/Dar_es_Salaam')::date)
+     LIMIT 500;
+$$;
+REVOKE EXECUTE ON FUNCTION billing.balances_due_for_allocation() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION billing.balances_due_for_allocation() TO app_role;

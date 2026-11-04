@@ -62,6 +62,9 @@ public class PaymentEventListener {
         switch (envelope.eventType()) {
             case "payment.PaymentConfirmed" -> withTenant(envelope, this::handleConfirmed);
             case "payment.PaymentFailed" -> withTenant(envelope, this::handleFailed);
+            // Money above what a loan owed (money movement step 2): the payer's, onto the policy's balance. policyloan's
+            // rule E-03-SURPLUS already posted it, so the deposit posts nothing more.
+            case "policyloan.LoanOverpaid" -> withTenant(envelope, this::handleLoanSurplus);
             // A lender's premium paid back (2026-10-30): the transfer finance made, or the rail's refusal of it.
             case "payment.DisbursementCompleted", "payment.DisbursementFailed" -> {
                 @SuppressWarnings("unchecked")
@@ -73,6 +76,16 @@ public class PaymentEventListener {
             }
             default -> { /* not billing-relevant */ }
         }
+    }
+
+    private void handleLoanSurplus(Map<String, Object> payload) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> amount = (Map<String, Object>) payload.get("amount");
+        Object paymentId = payload.get("paymentId");
+        billingApiImpl.depositLoanSurplus(String.valueOf(payload.get("policyNumber")),
+            new BigDecimal(String.valueOf(amount.get("amount"))), String.valueOf(amount.get("currencyCode")),
+            paymentId instanceof UUID u ? u : UUID.fromString(String.valueOf(paymentId)),
+            (String) payload.get("receiptMethod"), (String) payload.get("paymentReference"));
     }
 
     private void handleCreditRefund(Map<String, Object> payload, boolean completed) {
@@ -112,8 +125,11 @@ public class PaymentEventListener {
         Map<String, Object> amount = (Map<String, Object>) payload.get("amount");
         BigDecimal paidAmount = new BigDecimal((String) amount.get("amount"));
         String currency = (String) amount.get("currencyCode");
+        // Keyed on the confirmed payment itself (money movement step 2): its deposit lands on the balance once.
+        Object paymentId = payload.get("paymentRequestId");
         billingApi.applyConfirmedPayment(invoiceId, paidAmount, currency, (String) payload.get("gatewayReference"),
-            (String) payload.get("payerRef"), (String) payload.get("method"));
+            (String) payload.get("payerRef"), (String) payload.get("method"),
+            paymentId == null ? null : paymentId instanceof UUID u ? u : UUID.fromString(paymentId.toString()));
         // An agent's cash, recorded as a receipt and approved (2026-10-27): the field receipt it brought in is matched
         // now, by the money itself, rather than by somebody pressing "Mark matched" against nothing.
         Object fieldReceiptId = payload.get("fieldReceiptId");

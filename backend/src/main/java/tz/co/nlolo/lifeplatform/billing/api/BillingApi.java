@@ -146,6 +146,24 @@ public interface BillingApi {
     InvoiceView applyConfirmedPayment(UUID invoiceId, BigDecimal amount, String currency, String paymentReference,
                                       String payerRef, String method);
 
+    /**
+     * As above, keyed on the confirmed payment's own id (money movement step 2, 2026-11-04). On an insurance policy the
+     * money is a deposit on the policy's balance -- posted at once for what arrived -- and the balance pays the policy's
+     * premiums that have fallen due, oldest first, and the named invoice even if it is not yet due; what is left stays.
+     * A savings-type policy keeps the old road: the money pays the named invoice.
+     */
+    InvoiceView applyConfirmedPayment(UUID invoiceId, BigDecimal amount, String currency, String paymentReference,
+                                      String payerRef, String method, UUID paymentId);
+
+    /** What is on a policy's balance now: every deposit less every premium paid from it. Zero for none. */
+    BigDecimal balanceOf(String policyNumber);
+
+    /**
+     * Whether a policy's premiums keep their own road (its product version's account basis is ACCOUNT): no policy balance,
+     * and a receipt still at most what its invoice owes (money movement D12, until "For: Savings").
+     */
+    boolean isSavingsType(String policyNumber);
+
     record FieldReceiptResult(UUID receiptId, String status) {}
     FieldReceiptResult captureFieldReceipt(UUID agentId, String policyNumber, BigDecimal amount, String currency,
                                             String clientIdempotencyKey, Instant capturedAtClient);

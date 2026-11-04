@@ -160,8 +160,12 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
             heading="Confirm this receipt?"
             consequence={
               <>
-                <strong>{formatMoney(receipt.amount)}</strong> is applied to {target} on {receipt.policyNumber}, and the
-                ledger posts it to the account a {methodOf(receipt.method)?.label.toLowerCase() ?? 'payment'} reaches.
+                <strong>{formatMoney(receipt.amount)}</strong>{' '}
+                {receipt.purpose === 'PREMIUM'
+                  ? <>goes onto the balance of {receipt.policyNumber} and pays what it owes, oldest first; anything left
+                    pays its next premiums. The ledger</>
+                  : <>is applied to {target} on {receipt.policyNumber}, and the ledger</>}{' '}
+                posts it to the account a {methodOf(receipt.method)?.label.toLowerCase() ?? 'payment'} reaches.
               </>
             }
             reversal="Nothing here undoes it. A receipt confirmed in error is corrected by a manual journal."

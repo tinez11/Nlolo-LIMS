@@ -39,6 +39,10 @@ final class PostingFactsExtractor {
         Map.entry("billing.PremiumInvoiceGenerated", amount()),
         // levy: derived by the engine at the rate in force (A-19), zero while none is configured.
         Map.entry("billing.PremiumCollected", new EventShape(Set.of(AMOUNT, "levy"), Set.of())),
+        // Money movement step 2 (2026-11-04): cash onto a policy's balance, and a premium paid from it (levy derived by
+        // the engine, as it was for PremiumCollected).
+        Map.entry("billing.DepositReceived", amount()),
+        Map.entry("billing.PremiumPaidFromBalance", new EventShape(Set.of(AMOUNT, "levy"), Set.of())),
         Map.entry("billing.InvoiceWaived", amount()),
         Map.entry("billing.PremiumRefundDue", amount()),
         // A credit-life lender's premium paid back (2026-10-30): the bank side of the refund above.
@@ -125,6 +129,14 @@ final class PostingFactsExtractor {
                 putIfPresent(attrs, "receiptMethod", p.get("receiptMethod"));
                 yield List.of(money(type, string(p.get("invoiceId")), policy, p.get("amount"), today, attrs));
             }
+            // Keyed on the balance entry, so a redelivery posts once. The deposit's method picks the account it reached.
+            case "billing.DepositReceived" -> {
+                Map<String, String> attrs = new HashMap<>(Map.of("refType", "POLICY"));
+                putIfPresent(attrs, "receiptMethod", p.get("receiptMethod"));
+                yield List.of(money(type, string(p.get("entryId")), policy, p.get("amount"), today, attrs));
+            }
+            case "billing.PremiumPaidFromBalance" -> List.of(money(type, string(p.get("entryId")), policy, p.get("amount"),
+                today, Map.of("refType", "INVOICE")));
             case "billing.InvoiceWaived" ->
                 List.of(money(type, string(p.get("invoiceId")), policy, p.get("amount"), today, Map.of("refType", "INVOICE")));
             // Keyed on the CREDIT: one invoice carries a credit for every borrower on its file, each its own movement.

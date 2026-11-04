@@ -338,6 +338,14 @@ class PostingEngineIntegrationTest {
         String scheme = "POL-ENG-CLF";
         issue(tenant, scheme, "CRL", "PAA", "BANCASSURANCE", "DSM");
         UUID invoiceId = invoice(tenant, scheme, "84000.00", "m-1|2026-08-03|2028-02-02|84000.00");
+        // Money movement step 2: the bank's transfer lands on the policy's balance (cash posted for what arrived), the
+        // balance pays the invoice, and PremiumCollected -- still published on the PAID edge -- posts nothing.
+        UUID deposit = UUID.randomUUID();
+        UUID paid = UUID.randomUUID();
+        publish(tenant, "billing.DepositReceived", Map.of("entryId", deposit, "paymentId", UUID.randomUUID(),
+            "policyNumber", scheme, "amount", money("84000.00"), "receiptMethod", "BANK_DEPOSIT"));
+        publish(tenant, "billing.PremiumPaidFromBalance", Map.of("entryId", paid, "invoiceId", invoiceId,
+            "policyNumber", scheme, "amount", money("84000.00")));
         publish(tenant, "billing.PremiumCollected", Map.of("invoiceId", invoiceId, "policyNumber", scheme,
             "amount", money("84000.00"), "receiptMethod", "BANK_DEPOSIT"));
         UUID accrual = UUID.randomUUID();
@@ -364,9 +372,13 @@ class PostingEngineIntegrationTest {
         assertThat(balance("2530")).isEqualByComparingTo("0.00");
         assertThat(legs(tenant, "distribution.CommissionAccrued", accrual.toString()))
             .containsExactlyInAnyOrder("2123 DR 8400.00", "2530 CR 8400.00");
-        // The bank's transfer reached the bank account and cleared the receivable the invoice raised.
-        assertThat(legs(tenant, "billing.PremiumCollected", invoiceId.toString()))
-            .containsExactlyInAnyOrder("1120 DR 84000.00", "2142 CR 84000.00");
+        // The bank's transfer reached the bank account onto the balance, and the balance cleared the receivable.
+        assertThat(legs(tenant, "billing.DepositReceived", deposit.toString()))
+            .containsExactlyInAnyOrder("1120 DR 84000.00", "2128 CR 84000.00");
+        assertThat(legs(tenant, "billing.PremiumPaidFromBalance", paid.toString()))
+            .containsExactlyInAnyOrder("2128 DR 84000.00", "2142 CR 84000.00");
+        assertThat(legs(tenant, "billing.PremiumCollected", invoiceId.toString())).as("the business event posts nothing").isEmpty();
+        assertThat(balance("2128")).as("nothing left on the balance").isEqualByComparingTo("0.00");
         // The refund was owed back to the lender after it had paid in full ...
         assertThat(balance("2142")).isEqualByComparingTo("-9000.00");
 
@@ -390,11 +402,12 @@ class PostingEngineIntegrationTest {
     void thePremiumLevyPostsOnlyOnceFinanceHasApprovedARate() {
         UUID tenant = UUID.randomUUID();
         issue(tenant, "POL-ENG-LEVY", "TERM", null, "DIRECT", "DSM");
+        // The levy is on the premium paid from the balance (money movement step 2), not on the deposit.
         UUID before = UUID.randomUUID();
-        publish(tenant, "billing.PremiumCollected", Map.of("invoiceId", before, "policyNumber", "POL-ENG-LEVY",
-            "amount", money("1000.00")));
-        assertThat(legs(tenant, "billing.PremiumCollected", before.toString()))
-            .as("no rate configured: no levy").containsExactlyInAnyOrder("1140 DR 1000.00", "2122 CR 1000.00");
+        publish(tenant, "billing.PremiumPaidFromBalance", Map.of("entryId", before, "invoiceId", UUID.randomUUID(),
+            "policyNumber", "POL-ENG-LEVY", "amount", money("1000.00")));
+        assertThat(legs(tenant, "billing.PremiumPaidFromBalance", before.toString()))
+            .as("no rate configured: no levy").containsExactlyInAnyOrder("2128 DR 1000.00", "2122 CR 1000.00");
 
         TenantContext.set(tenant);
         var proposed = api.proposePolicyElection(new tz.co.nlolo.lifeplatform.finaccounting.api.PolicyElectionInput(
@@ -402,10 +415,10 @@ class PostingEngineIntegrationTest {
         api.approvePolicyElection(proposed.electionId(), "Board minute 3/2026", "finance-two");
 
         UUID after = UUID.randomUUID();
-        publish(tenant, "billing.PremiumCollected", Map.of("invoiceId", after, "policyNumber", "POL-ENG-LEVY",
-            "amount", money("1000.00")));
-        assertThat(legs(tenant, "billing.PremiumCollected", after.toString())).containsExactlyInAnyOrder(
-            "1140 DR 1000.00", "2122 CR 1000.00", "5220 DR 15.00", "2650 CR 15.00");
+        publish(tenant, "billing.PremiumPaidFromBalance", Map.of("entryId", after, "invoiceId", UUID.randomUUID(),
+            "policyNumber", "POL-ENG-LEVY", "amount", money("1000.00")));
+        assertThat(legs(tenant, "billing.PremiumPaidFromBalance", after.toString())).containsExactlyInAnyOrder(
+            "2128 DR 1000.00", "2122 CR 1000.00", "5220 DR 15.00", "2650 CR 15.00");
     }
 
     @Test

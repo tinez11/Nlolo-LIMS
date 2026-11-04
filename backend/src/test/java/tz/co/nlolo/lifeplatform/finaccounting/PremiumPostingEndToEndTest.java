@@ -357,26 +357,24 @@ class PremiumPostingEndToEndTest {
         assertThat(legFor(generatedLegs, "2121").getDirection()).isEqualTo(PostingDirection.CR);
         assertThat(legFor(generatedLegs, "2122").getAmount()).isEqualByComparingTo(premium);
 
-        // ---- Act 2: collect the invoice in full for real. finaccounting posts DR 1000 / CR 1200. ----
+        // ---- Act 2: collect the invoice in full for real. Money movement step 2: the money lands on the policy's
+        // balance (DR 1140 / CR 2128, for what arrived) and the balance pays the invoice (DR 2128 / CR 2122). ----
         TenantContext.set(tenantId);
         billingApi.applyConfirmedPayment(invoice.invoiceId(), premium, CURRENCY, "test-payment-ref-1");
 
-        // ---- Assertion 2: the collected journal entry, DR 1000 / CR 1200. ----
-        TenantContext.set(tenantId);
-        List<JournalEntry> collectedEntries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged()).stream()
-            .filter(e -> "billing.PremiumCollected".equals(e.getSourceEvent()))
-            .toList();
-        assertThat(collectedEntries).hasSize(1);
-        JournalEntry collectedEntry = collectedEntries.get(0);
-        assertThat(collectedEntry.getSourceRef()).isEqualTo(invoice.invoiceId().toString());
+        // ---- Assertion 2: the deposit and the premium paid from it, each two balanced legs. ----
+        JournalEntry depositEntry = onlyEntry(tenantId, "billing.DepositReceived");
+        List<GlPosting> depositLegs = legsOf(tenantId, depositEntry);
+        assertThat(depositLegs).extracting(GlPosting::getAccountCode).containsExactlyInAnyOrder("1140", "2128");
+        assertThat(legFor(depositLegs, "1140").getDirection()).isEqualTo(PostingDirection.DR);
+        assertThat(legFor(depositLegs, "1140").getAmount()).isEqualByComparingTo(premium);
 
-        TenantContext.set(tenantId);
-        List<GlPosting> collectedLegs = glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(
-            tenantId, collectedEntry.getJournalEntryId());
+        JournalEntry collectedEntry = onlyEntry(tenantId, "billing.PremiumPaidFromBalance");
+        List<GlPosting> collectedLegs = legsOf(tenantId, collectedEntry);
         assertThat(collectedLegs).as("must have exactly two balanced legs").hasSize(2);
         assertThat(collectedLegs).extracting(GlPosting::getAccountCode)
-            .containsExactlyInAnyOrder("1140", "2122");
-        assertThat(legFor(collectedLegs, "1140").getDirection()).isEqualTo(PostingDirection.DR);
+            .containsExactlyInAnyOrder("2128", "2122");
+        assertThat(legFor(collectedLegs, "2128").getDirection()).isEqualTo(PostingDirection.DR);
         assertThat(legFor(collectedLegs, "2122").getDirection()).isEqualTo(PostingDirection.CR);
         assertThat(legFor(collectedLegs, "2122").getAmount()).isEqualByComparingTo(premium);
 
@@ -408,8 +406,8 @@ class PremiumPostingEndToEndTest {
                 entry.getSourceEvent()).noneMatch(l -> l.getAccountCode().startsWith("4"));
         }
 
-        // ---- Assertion 5: a redelivered billing.PremiumCollected is a genuine no-op -- no second
-        // entry, no second posting pair, and no second finaccounting.GlPostingRecorded. ----
+        // ---- Assertion 5: PremiumCollected (still published, on the PAID edge) posts nothing, and a redelivered one is a
+        // genuine no-op -- no entry, no posting pair, and no finaccounting.GlPostingRecorded. ----
         eventRecorder.clear();
         Map<String, Object> redeliveredPayload = Map.of(
             "invoiceId", invoice.invoiceId(),
@@ -423,11 +421,11 @@ class PremiumPostingEndToEndTest {
         TenantContext.set(tenantId);
         assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged()).stream()
                 .filter(e -> "billing.PremiumCollected".equals(e.getSourceEvent())).toList())
-            .as("a redelivered PremiumCollected must not double-post").hasSize(1);
+            .as("PremiumCollected is the business event; cash and premium posted from the deposit and its payment").isEmpty();
         TenantContext.set(tenantId);
         assertThat(glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(
                 tenantId, collectedEntry.getJournalEntryId()))
-            .as("a redelivered PremiumCollected must not add a second posting pair").hasSize(2);
+            .as("a redelivered PremiumCollected must not add a posting pair").hasSize(2);
         assertThat(eventRecorder.ofType("finaccounting.GlPostingRecorded"))
             .as("a redelivered PremiumCollected must not publish a second GlPostingRecorded -- an "
                 + "idempotent write that still re-announces itself would mislead every downstream consumer")
@@ -461,15 +459,65 @@ class PremiumPostingEndToEndTest {
         billingApi.applyConfirmedPayment(invoice.invoiceId(), premium, CURRENCY, "SLIP-0042", "Amina Owner",
             "BANK_DEPOSIT");
 
-        TenantContext.set(tenantId);
-        JournalEntry collected = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged())
-            .stream().filter(e -> "billing.PremiumCollected".equals(e.getSourceEvent())).findFirst().orElseThrow();
-        TenantContext.set(tenantId);
-        List<GlPosting> legs = glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(
-            tenantId, collected.getJournalEntryId());
-        assertThat(legs).extracting(GlPosting::getAccountCode).containsExactlyInAnyOrder("1120", "2122");
+        // The deposit carries the method, so the cash posts to the account it reached (money movement step 2).
+        List<GlPosting> legs = legsOf(tenantId, onlyEntry(tenantId, "billing.DepositReceived"));
+        assertThat(legs).extracting(GlPosting::getAccountCode).containsExactlyInAnyOrder("1120", "2128");
         assertThat(legFor(legs, "1120").getDirection()).isEqualTo(PostingDirection.DR);
         assertThat(legFor(legs, "1120").getAmount()).isEqualByComparingTo(premium);
+    }
+
+    /**
+     * Money movement step 2, the review's findings in the ledger: more than is owed is posted for what arrived and the
+     * rest held on the balance (2128); a part payment is posted the moment it arrives (F1).
+     */
+    @Test
+    void moreThanIsOwedIsPostedForWhatArrivedAndAPartPaymentIsPostedAtOnce() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "PREMIUM-E2E-BALANCE");
+        BigDecimal premium = new BigDecimal("120000.00");
+        String policyNumber = issueAnnualPolicy(tenantId, fixture, new BigDecimal("2000000"), premium);
+        TenantContext.set(tenantId);
+        InvoiceView invoice = billingApi.getNextDueInvoice(policyNumber);
+
+        TenantContext.set(tenantId);
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("50000.00"), CURRENCY, "SLIP-PART",
+            null, "CASH", UUID.randomUUID());
+        assertThat(legsOf(tenantId, onlyEntry(tenantId, "billing.DepositReceived")))
+            .as("a part payment is in the ledger at once").extracting(GlPosting::getAmount)
+            .allMatch(a -> a.compareTo(new BigDecimal("50000.00")) == 0);
+
+        TenantContext.set(tenantId);
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("100000.00"), CURRENCY, "SLIP-REST",
+            null, "CASH", UUID.randomUUID());
+        TenantContext.set(tenantId);
+        assertThat(billingApi.getInvoice(invoice.invoiceId()).status()).isEqualTo(InvoiceStatus.PAID);
+        assertThat(billingApi.balanceOf(policyNumber)).isEqualByComparingTo("30000.00");
+        // 2128 holds exactly what is on the balance; 2122 for this invoice is cleared.
+        assertThat(net(tenantId, "2128")).isEqualByComparingTo("-30000.00");
+        assertThat(net(tenantId, "1120")).isEqualByComparingTo("150000.00");
+    }
+
+    private JournalEntry onlyEntry(UUID tenantId, String sourceEvent) {
+        TenantContext.set(tenantId);
+        List<JournalEntry> entries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged())
+            .stream().filter(e -> sourceEvent.equals(e.getSourceEvent())).toList();
+        assertThat(entries).as("one %s entry", sourceEvent).hasSize(1);
+        return entries.get(0);
+    }
+
+    private List<GlPosting> legsOf(UUID tenantId, JournalEntry entry) {
+        TenantContext.set(tenantId);
+        return glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(tenantId, entry.getJournalEntryId());
+    }
+
+    /** An account's net in this tenant, debit positive. */
+    private BigDecimal net(UUID tenantId, String account) {
+        TenantContext.set(tenantId);
+        return journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged()).stream()
+            .flatMap(e -> legsOf(tenantId, e).stream())
+            .filter(l -> account.equals(l.getAccountCode()))
+            .map(l -> l.getDirection() == PostingDirection.DR ? l.getAmount() : l.getAmount().negate())
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     /**
@@ -500,16 +548,16 @@ class PremiumPostingEndToEndTest {
         TenantContext.set(tenantId);
         assertThatThrownBy(() -> receipts.record(newReceipt, "finance-two"))
             .isInstanceOf(ReceiptRefusedException.class).hasMessageContaining("already recorded");
-        // Another slip for the same invoice while this one waits would pay it twice (POL-C0B3B81A, 2026-10-28).
+        // Another slip for the same invoice while this one waits used to be refused, so it could not pay the invoice twice
+        // (POL-C0B3B81A, 2026-10-28). Since money movement step 2 it cannot: money above what is owed stays on the
+        // policy's balance for its next premiums, so a second real slip is recorded rather than turned away.
         TenantContext.set(tenantId);
         var secondSlip = new Receipts.NewReceipt(invoice.invoiceId(), null, ReceiptMethod.CASH, "RC-000732", premium,
             java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")), null, null, null);
-        assertThatThrownBy(() -> receipts.record(secondSlip, "finance-two"))
-            .isInstanceOf(ReceiptRefusedException.class)
-            .hasMessage("A cheque receipt (CHQ-000731) of 120000.00 TZS is already waiting to be confirmed on this "
-                + "invoice. Confirm or refuse it under Approvals before recording another");
+        receipts.record(secondSlip, "finance-two");
         TenantContext.set(tenantId);
-        assertThat(receipts.waitingOn(invoice.invoiceId())).extracting(ReceiptView::reference).containsExactly("CHQ-000731");
+        assertThat(receipts.waitingOn(invoice.invoiceId())).extracting(ReceiptView::reference)
+            .containsExactly("CHQ-000731", "RC-000732");
         TenantContext.set(tenantId);
         assertThatThrownBy(() -> receipts.approve(recorded.receiptId(), "finance-one"))
             .isInstanceOf(ReceiptRefusedException.class).hasMessageContaining("someone other than");
@@ -519,13 +567,8 @@ class PremiumPostingEndToEndTest {
 
         TenantContext.set(tenantId);
         assertThat(billingApi.getInvoice(invoice.invoiceId()).status()).isEqualTo(InvoiceStatus.PAID);
-        TenantContext.set(tenantId);
-        JournalEntry collected = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged())
-            .stream().filter(e -> "billing.PremiumCollected".equals(e.getSourceEvent())).findFirst().orElseThrow();
-        TenantContext.set(tenantId);
-        assertThat(glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(tenantId,
-                collected.getJournalEntryId()))
-            .extracting(GlPosting::getAccountCode).containsExactlyInAnyOrder("1120", "2122");
+        assertThat(legsOf(tenantId, onlyEntry(tenantId, "billing.DepositReceived")))
+            .extracting(GlPosting::getAccountCode).containsExactlyInAnyOrder("1120", "2128");
     }
 
     private static GlPosting legFor(List<GlPosting> legs, String accountCode) {
