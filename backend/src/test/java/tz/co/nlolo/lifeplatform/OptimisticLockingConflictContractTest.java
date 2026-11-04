@@ -26,6 +26,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -102,21 +103,22 @@ class OptimisticLockingConflictContractTest {
     void concurrentRepaymentThatLosesTheVersionRaceIsMappedTo409NotBare500() throws Exception {
         UUID loanId = UUID.randomUUID();
         // The controller reads the loan first (for the object-level ownership check) before
-        // calling recordRepayment; a staff caller short-circuits that check, so this stub only
+        // calling requestRepayment; a staff caller short-circuits that check, so this stub only
         // has to get the request past the controller body and into the service call.
         when(policyLoanApi.getLoan(loanId)).thenReturn(new LoanView(loanId, "POL-TEST-0001",
             new BigDecimal("500000.00"), "TZS", new BigDecimal("500000.00"), "TZS",
             new BigDecimal("12.0"), LoanStatus.DISBURSED));
         // Exactly what Spring Data JPA raises when `UPDATE ... WHERE version = N` matches zero
-        // rows: the loser of two concurrent repayments against the same DISBURSED loan.
-        when(policyLoanApi.applyConfirmedRepayment(any(), any(), anyString(), anyString(), any(), any(), anyString()))
-            .thenThrow(new ObjectOptimisticLockingFailureException("policyloan.domain.PolicyLoan", loanId));
+        // rows: the loser of two concurrent writers against the same DISBURSED loan.
+        doThrow(new ObjectOptimisticLockingFailureException("policyloan.domain.PolicyLoan", loanId))
+            .when(policyLoanApi).requestRepayment(any(), anyString(), any(), anyString(), anyString());
 
-        mockMvc.perform(post("/loans/{loanId}/repayments", loanId)
+        mockMvc.perform(post("/loans/{loanId}/payment-request", loanId)
                 .with(staff())
+                .header("Idempotency-Key", "k-optlock-1")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"amount":{"amount":"25000.00","currencyCode":"TZS"},"paymentReference":"MPESA-TEST-1"}"""))
+                    {"payerRef":"255754000001","amount":{"amount":"25000.00","currencyCode":"TZS"}}"""))
             .andExpect(status().isConflict())
             .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
             .andExpect(jsonPath("$.errorCode").value("CONCURRENT_MODIFICATION"))
@@ -156,14 +158,15 @@ class OptimisticLockingConflictContractTest {
         when(policyLoanApi.getLoan(loanId)).thenReturn(new LoanView(loanId, "POL-TEST-0003",
             new BigDecimal("500000.00"), "TZS", new BigDecimal("500000.00"), "TZS",
             new BigDecimal("12.0"), LoanStatus.DISBURSED));
-        when(policyLoanApi.applyConfirmedRepayment(any(), any(), anyString(), anyString(), any(), any(), anyString()))
-            .thenThrow(new IllegalStateException("something genuinely unexpected"));
+        doThrow(new IllegalStateException("something genuinely unexpected"))
+            .when(policyLoanApi).requestRepayment(any(), anyString(), any(), anyString(), anyString());
 
-        mockMvc.perform(post("/loans/{loanId}/repayments", loanId)
+        mockMvc.perform(post("/loans/{loanId}/payment-request", loanId)
                 .with(staff())
+                .header("Idempotency-Key", "k-optlock-2")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"amount":{"amount":"25000.00","currencyCode":"TZS"},"paymentReference":"MPESA-TEST-2"}"""))
+                    {"payerRef":"255754000001","amount":{"amount":"25000.00","currencyCode":"TZS"}}"""))
             .andExpect(status().isInternalServerError())
             .andExpect(jsonPath("$.errorCode").value("INTERNAL_ERROR"));
     }

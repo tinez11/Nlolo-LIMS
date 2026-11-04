@@ -107,17 +107,20 @@ public class PolicyLoanController {
         return ResponseEntity.ok(LoanResponseDto.from(loan));
     }
 
-    @PostMapping("/loans/{loanId}/repayments")
-    // A customer repays their own loan; an agent no longer records one (2026-10-27, one agent level).
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or @access.can('loans.manage')")
-    public ResponseEntity<LoanResponseDto> recordRepayment(@PathVariable UUID loanId, @Valid @RequestBody RepaymentRequestDto request,
+    @PostMapping("/loans/{loanId}/payment-request")
+    // Money movement step 1 (2026-11-04): a repayment is money in like a premium -- asked of the payer's phone here,
+    // recorded by hand as a deposit For: Loan (POST /receipts). Neither counts until the money is confirmed, and there
+    // is no longer any way to book one by typing it in. Same callers as an invoice's payment request.
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.canAny('policies.service', 'collections.manage')")
+    public ResponseEntity<Void> requestRepayment(@PathVariable UUID loanId, @Valid @RequestBody LoanPaymentRequestDto request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         LoanView existing = policyLoanApi.getLoan(loanId);
         enforceCustomerOwnPolicyOnly(existing.policyNumber(), jwt, authentication);
-        LoanView loan = policyLoanApi.applyConfirmedRepayment(loanId, new BigDecimal(request.amount().amount()), request.amount().currencyCode(),
-            request.paymentReference(), null, UUID.randomUUID(), jwt.getSubject());
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(LoanResponseDto.from(loan));
+        AgentBook.require(policyApi, existing.policyNumber(), jwt, authentication);
+        policyLoanApi.requestRepayment(loanId, request.payerRef().trim(), new BigDecimal(request.amount().amount()),
+            request.amount().currencyCode(), idempotencyKey);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).build();
     }
 
     /** Mirrors PolicyController.enforceCustomerOwnPolicyOnly exactly (Global Constraints) --

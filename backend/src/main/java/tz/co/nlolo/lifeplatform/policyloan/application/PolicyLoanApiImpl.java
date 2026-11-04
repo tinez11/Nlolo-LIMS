@@ -249,6 +249,30 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
 
     @Override
     @Transactional
+    public void requestRepayment(UUID loanId, String payerRef, BigDecimal amount, String currency, String idempotencyKey) {
+        UUID tenantId = TenantContext.get();
+        // Same rule as an invoice's request (BillingApiImpl.requestPaymentForInvoice): the same key is the same attempt,
+        // a new key a new one, and there is deliberately no default.
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException("Idempotency-Key is required: the same key is the same collection attempt");
+        }
+        PolicyLoan loan = findLoanOrThrow(loanId, tenantId);
+        if (!"DISBURSED".equals(loan.getStatus()) && !"REPAYING".equals(loan.getStatus())) {
+            throw new LoanNotEligibleException("Loan " + loanId + " has nothing to repay (" + loan.getStatus() + ")");
+        }
+        BigDecimal owed = computeOutstandingBalance(loan).max(BigDecimal.ZERO);
+        if (amount.signum() <= 0 || amount.compareTo(owed) > 0) {
+            throw new LoanNotEligibleException("Ask for between 0.01 and " + owed.toPlainString() + " " + currency
+                + ", what the loan owes now");
+        }
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.RepaymentRequested", tenantId,
+            Map.of("loanId", loanId, "policyNumber", loan.getPolicyNumber(), "payerRef", payerRef,
+                   "amount", Map.of("amount", amount.setScale(2).toPlainString(), "currencyCode", currency),
+                   "idempotencyKey", idempotencyKey)));
+    }
+
+    @Override
+    @Transactional
     public LoanView markDisbursed(UUID loanId, String gatewayReference, Instant disbursedAt) {
         UUID tenantId = TenantContext.get();
         PolicyLoan loan = findLoanOrThrow(loanId, tenantId);

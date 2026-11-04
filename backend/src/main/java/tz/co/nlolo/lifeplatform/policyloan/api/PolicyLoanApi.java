@@ -17,6 +17,12 @@ public interface PolicyLoanApi {
     LoanView applyConfirmedRepayment(UUID loanId, BigDecimal amount, String currency, String paymentReference,
                                      String receiptMethod, UUID paymentId, String recordedBy);
 
+    /**
+     * Ask the payer's phone for a repayment (money movement step 1). Publishes {@code policyloan.RepaymentRequested} for
+     * payment to collect; nothing is applied until it is confirmed. Refused for more than the loan owes now.
+     */
+    void requestRepayment(UUID loanId, String payerRef, BigDecimal amount, String currency, String idempotencyKey);
+
     // Driven by policyloan.application.PaymentEventListener consuming payment's confirmation
     // events (M5). Formerly internal-only test seams standing in for those events.
     LoanView markDisbursed(UUID loanId, String gatewayReference, Instant disbursedAt);

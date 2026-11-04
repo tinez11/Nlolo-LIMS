@@ -148,9 +148,12 @@ paths:
               schema: { $ref: '#/components/schemas/LoanView' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
-  /loans/{loanId}/repayments:
+  /loans/{loanId}/payment-request:
     post:
-      summary: Record a repayment (ad hoc or scheduled — RepaymentSchedule is optional per Deliverable 3 Rev 2 B3)
+      summary: Ask the payer's phone for a loan repayment
+      description: >
+        Money movement step 1 (2026-11-04). Nothing is applied until payment confirms the money. A repayment recorded by
+        hand is a deposit For: Loan (POST /receipts with loanId). There is no way to book a repayment by typing it in.
       security:
         - customersAuth: [profile]
         - agentsAuth: [agent]
@@ -167,16 +170,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [amount, paymentReference]
+              additionalProperties: false
+              required: [payerRef, amount]
               properties:
+                payerRef: { type: string, minLength: 1, description: The payer's mobile-money number. }
                 amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
-                paymentReference: { type: string }
       responses:
-        '202':
-          description: Repayment accepted — pending payment gateway confirmation
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/LoanView' }
+        '202': { description: Asked; nothing is applied until the money is confirmed }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }

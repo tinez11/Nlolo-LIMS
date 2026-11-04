@@ -97,7 +97,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * an undeclared status for a completely expected outcome.
      *
      * <p>Reachable today, not theoretical: two concurrent repayments against the same
-     * {@code DISBURSED} loan both pass {@code PolicyLoanApiImpl.recordRepayment}'s eligibility
+     * {@code DISBURSED} loan both pass {@code PolicyLoanApiImpl.applyConfirmedRepayment}'s eligibility
      * gate, both dirty-check {@code DISBURSED -> REPAYING}, and both issue
      * {@code UPDATE ... WHERE version = N}; {@code PolicyLoan} carries {@code @Version} with no
      * pessimistic lock anywhere in that path. The same shape exists on {@code Policy},
