@@ -607,6 +607,7 @@ class PolicyLoanContractTest {
         // TenantContextFilter, which is what populates it on every MockMvc request above.
         TenantContext.set(fixture.tenantId());
         try {
+            policyLoanApi.approvePayout(loanId, "approver"); // money movement step 4: a second person releases it
             policyLoanApi.markDisbursed(loanId, "MM-TEST-REF", Instant.now());
         } finally {
             TenantContext.clear();
@@ -738,6 +739,7 @@ class PolicyLoanContractTest {
         // no-HTTP-endpoint-by-design reasoning as the repayment test above.
         TenantContext.set(fixture.tenantId());
         try {
+            policyLoanApi.approvePayout(loanId, "approver"); // money movement step 4: a second person releases it
             policyLoanApi.markDisbursed(loanId, "MM-TEST-REF", Instant.now());
         } finally {
             TenantContext.clear();

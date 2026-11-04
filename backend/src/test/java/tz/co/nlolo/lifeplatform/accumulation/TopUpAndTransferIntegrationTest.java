@@ -285,9 +285,9 @@ class TopUpAndTransferIntegrationTest {
     void aMobileMoneyTopUpMayBeConfirmedByWhoeverAskedForIt() {
         var issued = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, LocalDate.now());
         var topUp = asTenant(() -> api.requestTopUp(issued.policyNumber(), new BigDecimal("20000.00"), "+255700000002", "staff-one"));
-        // A receipt's "invoice" is its source: here the top-up.
+        // The top-up's receipt, found by its policy: a receipt names an invoice only for a premium (money movement step 1).
         asTenant(() -> receipts.awaitingApproval().stream()
-            .filter(r -> topUp.topUpId().equals(r.invoiceId()))
+            .filter(r -> issued.policyNumber().equals(r.policyNumber()))
             .map(r -> receipts.approve(r.receiptId(), "staff-one")).toList());
         assertThat(asTenant(() -> api.listTopUps(issued.policyNumber()))).first()
             .extracting(TopUpView::status).isEqualTo("COLLECTED");
