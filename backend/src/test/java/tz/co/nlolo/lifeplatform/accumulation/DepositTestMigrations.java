@@ -145,6 +145,7 @@ public final class DepositTestMigrations {
         "db-migrations/billing/V9__schedules_due_for_invoicing.sql",
         "db-migrations/billing/V10__premium_receipt.sql",
         "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql", "db-migrations/billing/V13__credit_refund_payout.sql",
+        "db-migrations/billing/V14__policy_balance.sql",
         "db-migrations/omnichannel/V1__portal_access.sql",
         "db-migrations/omnichannel/V2__sms_password_delivery.sql",
     };
