@@ -3,6 +3,7 @@ import { get, post, put } from '@/lib/http';
 import type { MutationAttempt } from '@/lib/idempotency';
 import type {
   BalanceStatementView,
+  BalanceWithdrawalView,
   BeneficiaryInput,
   BeneficiaryOfView,
   CoverageStatusView,
@@ -159,6 +160,32 @@ export function getBalanceStatement(policyNumber: string, page: number, size: nu
   return get<BalanceStatementView>(`/policies/${encodeURIComponent(policyNumber)}/balance/statement`, {
     params: { page, size },
   });
+}
+
+/** `GET /policies/{n}/balance/withdrawals` -- the policy's withdrawals from its balance, newest first. */
+export function listBalanceWithdrawals(policyNumber: string): Promise<BalanceWithdrawalView[]> {
+  return get<BalanceWithdrawalView[]>(`/policies/${encodeURIComponent(policyNumber)}/balance/withdrawals`);
+}
+
+/** `POST /policies/{n}/balance/withdrawals` -- payouts.manage asks; a second person approves before anything moves. */
+export function requestBalanceWithdrawal(
+  policyNumber: string,
+  body: { amount: { amount: string; currencyCode: string }; payee: RouteBody },
+): Promise<BalanceWithdrawalView> {
+  return post<BalanceWithdrawalView>(`/policies/${encodeURIComponent(policyNumber)}/balance/withdrawals`, body);
+}
+
+/** Approve (reason null) or reject (with the reason) a withdrawal -- payouts.approve. Approving asks the rail (202). */
+export function decideBalanceWithdrawal(withdrawalId: string, rejectReason: string | null): Promise<BalanceWithdrawalView> {
+  const id = encodeURIComponent(withdrawalId);
+  return rejectReason === null
+    ? post<BalanceWithdrawalView>(`/balance-withdrawals/${id}/approve`, {})
+    : post<BalanceWithdrawalView>(`/balance-withdrawals/${id}/reject`, { reason: rejectReason });
+}
+
+/** `POST /balance-withdrawals/{id}/payee` -- payouts.manage names who receives a policy-end withdrawal. */
+export function nameBalanceWithdrawalPayee(withdrawalId: string, payee: RouteBody): Promise<BalanceWithdrawalView> {
+  return post<BalanceWithdrawalView>(`/balance-withdrawals/${encodeURIComponent(withdrawalId)}/payee`, payee);
 }
 
 /** `GET /policies/{n}/invoices` -- a bare unpaged array, so the whole set arrives. */

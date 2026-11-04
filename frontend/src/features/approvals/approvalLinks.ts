@@ -19,6 +19,9 @@ const LINKS: Record<string, (row: ApprovalRow) => string | null> = {
   'payout-approval': (r) => `/staff/payouts/${id(r)}`,
   // Money movement step 4: a loan's payout is released on the policy's Loans tab.
   'loan-payout': (r) => policy(r, 'loans'),
+  // A withdrawal from the policy's balance is approved, or given its payee, on the Billing tab's Balance panel.
+  'balance-withdrawal': (r) => policy(r, 'billing'),
+  'balance-withdrawal-payee': (r) => policy(r, 'billing'),
   'payment-run': (r) => `/staff/payment-runs/${id(r)}`,
   'free-look': (r) => policy(r),
   surrender: (r) => policy(r),

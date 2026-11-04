@@ -9,7 +9,11 @@ import {
   issueGroupScheme,
   issuePolicy,
   listInvoices,
+  decideBalanceWithdrawal,
   getBalanceStatement,
+  listBalanceWithdrawals,
+  nameBalanceWithdrawalPayee,
+  requestBalanceWithdrawal,
   getPolicyBalance,
   listLoans,
   listSchemeMembers,
@@ -40,6 +44,7 @@ import type {
   GroupMemberInput,
   GroupSchemeView,
   BalanceStatementView,
+  BalanceWithdrawalView,
   InvoiceView,
   PolicyBalanceView,
   IssueGroupSchemeRequest,
@@ -91,6 +96,9 @@ interface PolicyState {
   /** Money movement step 5: the policy's balance, and its statement (pages merged, newest first). */
   balance: Keyed<PolicyBalanceView>;
   balanceStatement: Keyed<BalanceStatementView>;
+  balanceWithdrawals: Keyed<BalanceWithdrawalView[]>;
+  /** A withdrawal asked, approved, rejected or given its payee -- keyed by policy for asking, by withdrawal after. */
+  actingOnWithdrawal: Keyed<true>;
   // Deliberately separate from `detail`: a failed SAVE must not corrupt or discard
   // the last known-good read of the policy, and the two have unrelated shapes
   // (this one carries no useful `data`, just whether a save is in flight or failed).
@@ -147,6 +155,11 @@ interface PolicyState {
   loadBalance: (policyNumber: string) => Promise<void>;
   /** Page 0 replaces what is held; a later page adds the older lines after it. */
   loadBalanceStatement: (policyNumber: string, page?: number) => Promise<void>;
+  loadBalanceWithdrawals: (policyNumber: string) => Promise<void>;
+  /** Resolves to the withdrawal asked, or null when the server refused it (the error is on actingOnWithdrawal). */
+  requestBalanceWithdrawal: (policyNumber: string, body: Parameters<typeof requestBalanceWithdrawal>[1]) => Promise<BalanceWithdrawalView | null>;
+  decideBalanceWithdrawal: (policyNumber: string, withdrawalId: string, rejectReason: string | null) => Promise<void>;
+  nameBalanceWithdrawalPayee: (policyNumber: string, withdrawalId: string, payee: RouteBody) => Promise<void>;
   saveBeneficiaries: (policyNumber: string, beneficiaries: BeneficiaryInput[]) => Promise<void>;
   /** Clears a stale save error before a fresh edit attempt -- see the call site. */
   resetSaveBeneficiaries: (policyNumber: string) => void;
@@ -206,6 +219,8 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
   loans: {},
   balance: {},
   balanceStatement: {},
+  balanceWithdrawals: {},
+  actingOnWithdrawal: {},
   savingBeneficiaries: {},
   issuing: idle(),
   waivingInvoice: {},
@@ -321,6 +336,54 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
       },
     );
   },
+
+  loadBalanceWithdrawals: (policyNumber) =>
+    track(
+      `policy.balanceWithdrawals.${policyNumber}`,
+      getState().balanceWithdrawals[policyNumber] ?? idle<BalanceWithdrawalView[]>(),
+      (next) => set((s) => ({ balanceWithdrawals: { ...s.balanceWithdrawals, [policyNumber]: next } })),
+      () => listBalanceWithdrawals(policyNumber),
+    ),
+
+  requestBalanceWithdrawal: async (policyNumber, body) => {
+    let asked: BalanceWithdrawalView | null = null;
+    await track(
+      `policy.requestBalanceWithdrawal.${policyNumber}`,
+      getState().actingOnWithdrawal[policyNumber] ?? idle<true>(),
+      (next) => set((s) => ({ actingOnWithdrawal: { ...s.actingOnWithdrawal, [policyNumber]: next } })),
+      async (): Promise<true> => {
+        asked = await requestBalanceWithdrawal(policyNumber, body);
+        return true;
+      },
+    );
+    return asked;
+  },
+
+  decideBalanceWithdrawal: (policyNumber, withdrawalId, rejectReason) =>
+    track(
+      `policy.actOnWithdrawal.${withdrawalId}`,
+      getState().actingOnWithdrawal[withdrawalId] ?? idle<true>(),
+      (next) => set((s) => ({ actingOnWithdrawal: { ...s.actingOnWithdrawal, [withdrawalId]: next } })),
+      async (): Promise<true> => {
+        await decideBalanceWithdrawal(withdrawalId, rejectReason);
+        await Promise.all([getState().loadBalanceWithdrawals(policyNumber), getState().loadBalance(policyNumber),
+          getState().loadBalanceStatement(policyNumber)]);
+        return true;
+      },
+    ),
+
+  nameBalanceWithdrawalPayee: (policyNumber, withdrawalId, payee) =>
+    track(
+      `policy.actOnWithdrawal.${withdrawalId}`,
+      getState().actingOnWithdrawal[withdrawalId] ?? idle<true>(),
+      (next) => set((s) => ({ actingOnWithdrawal: { ...s.actingOnWithdrawal, [withdrawalId]: next } })),
+      async (): Promise<true> => {
+        await nameBalanceWithdrawalPayee(withdrawalId, payee);
+        await Promise.all([getState().loadBalanceWithdrawals(policyNumber), getState().loadBalance(policyNumber),
+          getState().loadBalanceStatement(policyNumber)]);
+        return true;
+      },
+    ),
 
   loadLoans: (policyNumber) =>
     track(

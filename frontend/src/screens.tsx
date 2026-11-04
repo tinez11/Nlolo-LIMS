@@ -50,6 +50,7 @@ import { NewRolePage } from '@/features/admin/NewRolePage';
 import { ApprovalsPage } from '@/features/approvals/ApprovalsPage';
 import { PaymentsPage } from '@/features/payments/PaymentsPage';
 import { NewReceiptPage } from '@/features/receipts/NewReceiptPage';
+import { BalanceWithdrawalPage } from '@/features/policies/BalanceWithdrawalPage';
 import { ReceiptPage } from '@/features/receipts/ReceiptPage';
 import { NewUserPage } from '@/features/admin/NewUserPage';
 import { RoleDetailPage } from '@/features/admin/RoleDetailPage';
@@ -361,6 +362,7 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
     'collections.manage', 'funds.approve', 'funds.manage', 'products.declare-approve', 'ledger.approve', 'ledger.manage',
     'ifrs17.approve', 'reinsurance.approve'],
   policies: ['policies.view'], 'policies/new': ['policies.issue'], 'policies/:policyNumber': ['policies.view'],
+  'policies/:policyNumber/withdraw': ['payouts.manage'],
   'held-vestings': ['accounts.view'],
   'group-schemes/new': ['schemes.manage'], 'group-funeral-schemes/new': ['schemes.manage'],
   'credit-life-schemes/new': ['schemes.manage'], 'group-schemes/:policyNumber': ['schemes.view'],
@@ -419,6 +421,8 @@ const STAFF_SCREENS: Screen[] = [
   },
   { path: 'policies/new', element: <IssuePolicyPage />, reach: 'drill-in' },
   { path: 'policies/:policyNumber', element: <PolicyDetailPage />, reach: 'drill-in' },
+  // Money movement step 5: a withdrawal from the policy's balance, asked on its own page and approved by a second person.
+  { path: 'policies/:policyNumber/withdraw', element: <BalanceWithdrawalPage />, reach: 'drill-in' },
   // Pensions the daily vesting sweep could not vest (product step 5 D2).
   {
     path: 'held-vestings',

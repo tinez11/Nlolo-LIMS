@@ -273,6 +273,16 @@ export const STATUS_MAPS = {
     REJECTED: 'neutral',
   },
 
+  // billing/domain/BalanceWithdrawal.java -- money off a policy's balance (money movement step 3a).
+  balanceWithdrawal: {
+    AWAITING_PAYEE: 'warning',
+    REQUESTED: 'warning',
+    APPROVED: 'pending',
+    PAID: 'success',
+    FAILED: 'danger',
+    REJECTED: 'neutral',
+  },
+
   // policyloan/api/LoanStatus.java
   loan: {
     RESERVED_PENDING_ORIGINATION: 'pending',

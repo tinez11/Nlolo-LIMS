@@ -10,6 +10,7 @@ import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectBalance, selectBalanceStatement, usePolicyStore } from '@/store/policyStore';
+import { BalanceWithdrawals } from './BalanceWithdrawals';
 
 /** What each statement line is, in the words the console uses for money (design §5.1). */
 const BALANCE_ENTRY_LABEL: Record<BalanceStatementLine['type'], string> = {
@@ -50,13 +51,21 @@ export function BalancePanel({ policyNumber }: { policyNumber: string }) {
           {...(covers ? { note: 'The last premium due that this balance pays in full' } : {})}
         />
       </dl>
-      {can('collections.manage') && (
+      {(can('collections.manage') || can('payouts.manage')) && (
         <div className="flex flex-wrap gap-1.5">
-          <Button asChild size="sm" variant="primary">
-            <Link to={depositHref}>Record deposit</Link>
-          </Button>
+          {can('collections.manage') && (
+            <Button asChild size="sm" variant="primary">
+              <Link to={depositHref}>Record deposit</Link>
+            </Button>
+          )}
+          {can('payouts.manage') && (
+            <Button asChild size="sm" variant="outline">
+              <Link to={`/staff/policies/${encodeURIComponent(policyNumber)}/withdraw`}>Withdraw</Link>
+            </Button>
+          )}
         </div>
       )}
+      <BalanceWithdrawals policyNumber={policyNumber} />
     </div>
   );
 }

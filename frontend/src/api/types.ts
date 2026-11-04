@@ -120,6 +120,8 @@ export type PolicyBalanceView = BillingComponents['schemas']['PolicyBalance'];
 /** One page of the balance's statement, newest first, each line with the balance after it. */
 export type BalanceStatementView = BillingComponents['schemas']['BalanceStatement'];
 export type BalanceStatementLine = BillingComponents['schemas']['BalanceStatementLine'];
+/** Money asked back off a policy's balance, or raised when the policy ended (money movement step 3a). */
+export type BalanceWithdrawalView = BillingComponents['schemas']['BalanceWithdrawal'];
 /**
  * One row of the collections queue. Its money and due date come from the invoice the case was
  * opened against, and are null -- never zero -- when that invoice cannot be resolved.
