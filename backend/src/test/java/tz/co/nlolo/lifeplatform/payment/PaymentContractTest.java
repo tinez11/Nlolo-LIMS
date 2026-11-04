@@ -622,4 +622,24 @@ class PaymentContractTest {
         mockMvc.perform(post("/receipts/" + UUID.randomUUID() + "/approval").with(staffOf(tenantId, "FINANCE_OFFICER")))
             .andExpect(status().isNotFound());
     }
+
+    /** Money movement step 1: a receipt pays an invoice OR repays a loan. The spec takes loanId; naming both is refused
+     * in words, as a 409, before anything is read. */
+    @Test
+    void aReceiptNamesAnInvoiceOrALoanNotBoth() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String both = "{\"invoiceId\":\"" + UUID.randomUUID() + "\",\"loanId\":\"" + UUID.randomUUID() + "\","
+            + "\"method\":\"CASH\",\"reference\":\"CR-BOTH\",\"amount\":{\"amount\":\"100.00\",\"currencyCode\":\"TZS\"},"
+            + "\"receivedOn\":\"2026-10-27\"}";
+        mockMvc.perform(post("/receipts").contentType(MediaType.APPLICATION_JSON).content(both)
+                .with(staffOf(tenantId, "FINANCE_OFFICER")))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        String neither = "{\"method\":\"CASH\",\"reference\":\"CR-NEITHER\","
+            + "\"amount\":{\"amount\":\"100.00\",\"currencyCode\":\"TZS\"},\"receivedOn\":\"2026-10-27\"}";
+        mockMvc.perform(post("/receipts").contentType(MediaType.APPLICATION_JSON).content(neither)
+                .with(staffOf(tenantId, "FINANCE_OFFICER")))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
 }

@@ -484,7 +484,7 @@ class PremiumPostingEndToEndTest {
         String policyNumber = issueAnnualPolicy(tenantId, fixture, new BigDecimal("2000000"), premium);
         TenantContext.set(tenantId);
         InvoiceView invoice = billingApi.getNextDueInvoice(policyNumber);
-        var newReceipt = new Receipts.NewReceipt(invoice.invoiceId(), ReceiptMethod.CHEQUE, "CHQ-000731", premium,
+        var newReceipt = new Receipts.NewReceipt(invoice.invoiceId(), null, ReceiptMethod.CHEQUE, "CHQ-000731", premium,
             java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")), "Amina Owner", "Paid at the branch",
             null);
 
@@ -501,7 +501,7 @@ class PremiumPostingEndToEndTest {
             .isInstanceOf(ReceiptRefusedException.class).hasMessageContaining("already recorded");
         // Another slip for the same invoice while this one waits would pay it twice (POL-C0B3B81A, 2026-10-28).
         TenantContext.set(tenantId);
-        var secondSlip = new Receipts.NewReceipt(invoice.invoiceId(), ReceiptMethod.CASH, "RC-000732", premium,
+        var secondSlip = new Receipts.NewReceipt(invoice.invoiceId(), null, ReceiptMethod.CASH, "RC-000732", premium,
             java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")), null, null, null);
         assertThatThrownBy(() -> receipts.record(secondSlip, "finance-two"))
             .isInstanceOf(ReceiptRefusedException.class)

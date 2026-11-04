@@ -4,6 +4,10 @@ import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.payment.api.ReceiptMethod;
+import tz.co.nlolo.lifeplatform.payment.api.ReceiptRefusedException;
+import tz.co.nlolo.lifeplatform.payment.api.ReceiptView;
+import tz.co.nlolo.lifeplatform.payment.application.Receipts;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
@@ -40,6 +44,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 
 /**
@@ -202,6 +207,7 @@ class LoanDisbursementEndToEndTest {
     @Autowired private PolicyAccountRepository policyAccountRepository;
     @Autowired private LoanTransactionRepository loanTransactionRepository;
     @Autowired private org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Autowired private Receipts receipts;
     @Autowired private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     @AfterEach
@@ -276,6 +282,64 @@ class LoanDisbursementEndToEndTest {
         LoanView after = policyLoanApi.getLoan(loan.loanId());
         assertThat(after.status()).isEqualTo(LoanStatus.REPAYING);
         assertThat(after.outstandingBalance()).isEqualByComparingTo("400000");
+    }
+
+    /** Money movement step 1: a cash deposit For: Loan counts only once a second person confirms it. */
+    @Test
+    void aCashDepositForALoanRepaysItOnlyOnceASecondPersonConfirmsIt() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LoanView loan = disbursedLoan(tenantId, "LOAN-E2E-DEPOSIT-1");
+        TenantContext.set(tenantId);
+        ReceiptView recorded = receipts.record(new Receipts.NewReceipt(null, loan.loanId(), ReceiptMethod.CASH, "CR-9001",
+            new BigDecimal("100000"), LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")), "Asha", null, null),
+            "finance-1");
+
+        assertThat(recorded.purpose()).isEqualTo("LOAN_REPAYMENT");
+        assertThat(recorded.loanId()).isEqualTo(loan.loanId());
+        assertThat(recorded.invoiceId()).isNull();
+        TenantContext.set(tenantId);
+        assertThat(policyLoanApi.getLoan(loan.loanId()).status()).as("recorded is not paid").isEqualTo(LoanStatus.DISBURSED);
+
+        TenantContext.set(tenantId);
+        receipts.approve(recorded.receiptId(), "finance-2");
+
+        TenantContext.set(tenantId);
+        LoanView after = policyLoanApi.getLoan(loan.loanId());
+        assertThat(after.status()).isEqualTo(LoanStatus.REPAYING);
+        assertThat(after.outstandingBalance()).isEqualByComparingTo("400000");
+    }
+
+    @Test
+    void aDepositForMoreThanTheLoanOwesIsRefusedAndSoIsOneOnTopOfAWaitingDeposit() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LoanView loan = disbursedLoan(tenantId, "LOAN-E2E-DEPOSIT-2");
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"));
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> receipts.record(new Receipts.NewReceipt(null, loan.loanId(), ReceiptMethod.CASH,
+            "CR-9002", new BigDecimal("600000"), today, null, null, null), "finance-1"))
+            .isInstanceOf(ReceiptRefusedException.class)
+            .hasMessageContaining("500000");
+
+        TenantContext.set(tenantId);
+        receipts.record(new Receipts.NewReceipt(null, loan.loanId(), ReceiptMethod.CASH, "CR-9003",
+            new BigDecimal("300000"), today, null, null, null), "finance-1");
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> receipts.record(new Receipts.NewReceipt(null, loan.loanId(), ReceiptMethod.CASH,
+            "CR-9004", new BigDecimal("300000"), today, null, null, null), "finance-1"))
+            .isInstanceOf(ReceiptRefusedException.class)
+            .hasMessageContaining("already waiting");
+    }
+
+    @Test
+    void aDepositNamingBothAnInvoiceAndALoanOrNeitherIsRefused() {
+        TenantContext.set(UUID.randomUUID());
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"));
+        assertThatThrownBy(() -> receipts.record(new Receipts.NewReceipt(UUID.randomUUID(), UUID.randomUUID(),
+            ReceiptMethod.CASH, "CR-9005", BigDecimal.TEN, today, null, null, null), "finance-1"))
+            .isInstanceOf(ReceiptRefusedException.class);
+        assertThatThrownBy(() -> receipts.record(new Receipts.NewReceipt(null, null,
+            ReceiptMethod.CASH, "CR-9006", BigDecimal.TEN, today, null, null, null), "finance-1"))
+            .isInstanceOf(ReceiptRefusedException.class);
     }
 
     @Test

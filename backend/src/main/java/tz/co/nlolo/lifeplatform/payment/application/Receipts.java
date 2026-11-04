@@ -14,6 +14,9 @@ import tz.co.nlolo.lifeplatform.payment.api.ReceiptRefusedException;
 import tz.co.nlolo.lifeplatform.payment.api.ReceiptView;
 import tz.co.nlolo.lifeplatform.payment.domain.PaymentTransaction;
 import tz.co.nlolo.lifeplatform.payment.infrastructure.PaymentTransactionRepository;
+import tz.co.nlolo.lifeplatform.policyloan.api.LoanStatus;
+import tz.co.nlolo.lifeplatform.policyloan.api.LoanView;
+import tz.co.nlolo.lifeplatform.policyloan.api.PolicyLoanApi;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -41,12 +44,14 @@ public class Receipts {
 
     private final PaymentTransactionRepository transactions;
     private final BillingApi billing;
+    private final PolicyLoanApi loans;
     private final ApplicationEventPublisher events;
 
-    Receipts(PaymentTransactionRepository transactions, BillingApi billing, ApplicationEventPublisher events,
-             tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+    Receipts(PaymentTransactionRepository transactions, BillingApi billing, PolicyLoanApi loans,
+             ApplicationEventPublisher events, tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
         this.transactions = transactions;
         this.billing = billing;
+        this.loans = loans;
         this.events = events;
         this.ownWork = ownWork;
     }
@@ -61,8 +66,11 @@ public class Receipts {
         }
     }
 
-    /** What a person records. {@code fieldReceiptId} when it is an agent's cash being brought in. */
-    public record NewReceipt(UUID invoiceId, ReceiptMethod method, String reference, BigDecimal amount,
+    /**
+     * What a person records: for an invoice or, since money movement step 1 (2026-11-04), for a loan -- one of the two.
+     * {@code fieldReceiptId} when it is an agent's cash being brought in.
+     */
+    public record NewReceipt(UUID invoiceId, UUID loanId, ReceiptMethod method, String reference, BigDecimal amount,
                              LocalDate receivedOn, String payerRef, String note, UUID fieldReceiptId) {}
 
     @Transactional
@@ -80,6 +88,12 @@ public class Receipts {
         LocalDate today = LocalDate.now(CIVIL);
         if (in.receivedOn() == null || in.receivedOn().isAfter(today)) {
             throw new ReceiptRefusedException("Say the day the money was received; it cannot be later than today");
+        }
+        if ((in.invoiceId() == null) == (in.loanId() == null)) {
+            throw new ReceiptRefusedException("Say what this pays: an invoice or a loan, one of the two");
+        }
+        if (in.loanId() != null) {
+            return recordForLoan(in, reference, recordedBy, tenantId);
         }
 
         InvoiceView invoice = billing.getInvoice(in.invoiceId());
@@ -125,7 +139,39 @@ public class Receipts {
         return view(receipt);
     }
 
-    /** The second person confirms it: the invoice is paid from it and the ledger posts it, by the method. */
+    /**
+     * A deposit For: Loan (money movement step 1): capped at what the loan owes, less what is already waiting on it --
+     * a typed deposit or a mobile-money request -- so a loan is never repaid twice over while one waits.
+     */
+    private ReceiptView recordForLoan(NewReceipt in, String reference, String recordedBy, UUID tenantId) {
+        LoanView loan = loans.getLoan(in.loanId());
+        if (loan.status() != LoanStatus.DISBURSED && loan.status() != LoanStatus.REPAYING) {
+            throw new ReceiptRefusedException("This loan is " + loan.status().name().toLowerCase()
+                + ": there is nothing to repay on it");
+        }
+        BigDecimal waiting = transactions.findByTenantIdAndSourceRefAndStatusOrderByCreatedAtAsc(tenantId,
+                in.loanId().toString(), "AWAITING_APPROVAL").stream()
+            .map(PaymentTransaction::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal room = loan.outstandingBalance().subtract(waiting).max(BigDecimal.ZERO);
+        if (in.amount().compareTo(room) > 0) {
+            throw new ReceiptRefusedException("The loan owes " + loan.outstandingBalance().toPlainString() + " "
+                + loan.outstandingCurrency() + (waiting.signum() > 0 ? ", and " + waiting.toPlainString()
+                + " is already waiting to be confirmed on it" : "") + ". Record at most " + room.toPlainString());
+        }
+        if (transactions.existsByTenantIdAndMethodAndGatewayReferenceAndStatusNot(tenantId, in.method().name(),
+                reference, REJECTED)) {
+            throw new ReceiptRefusedException("A receipt with this " + words(in.method()) + " reference (" + reference
+                + ") is already recorded");
+        }
+        PaymentTransaction receipt = PaymentTransaction.manualLoanReceipt(tenantId, "receipt:" + UUID.randomUUID(),
+            in.method().name(), reference, blankToNull(in.payerRef()) == null ? "—" : in.payerRef().trim(), in.amount(),
+            loan.outstandingCurrency(), in.loanId(), loan.policyNumber(), in.receivedOn(), blankToNull(in.note()),
+            recordedBy);
+        transactions.save(receipt);
+        return view(receipt);
+    }
+
+    /** The second person confirms it: the invoice or loan is paid from it and the ledger posts it, by the method. */
     @Transactional
     public ReceiptView approve(UUID receiptId, String by) {
         PaymentTransaction receipt = find(receiptId);
@@ -201,10 +247,12 @@ public class Receipts {
     }
 
     static ReceiptView view(PaymentTransaction t) {
-        return new ReceiptView(t.getPaymentTransactionId(), t.getMethod(), t.getGatewayReference(), t.getPayerRef(),
-            t.getAmount(), t.getCurrency(), UUID.fromString(t.getSourceRef()), t.getPolicyNumber(), t.getReceivedOn(),
-            t.getNote(), t.getFieldReceiptId(), t.getStatus(), t.getRecordedBy(), t.getCreatedAt(), t.getDecidedBy(),
-            t.getDecidedAt(), t.getDecisionReason());
+        boolean loan = "LOAN_REPAYMENT".equals(t.getPurpose());
+        UUID source = UUID.fromString(t.getSourceRef());
+        return new ReceiptView(t.getPaymentTransactionId(), t.getPurpose(), t.getMethod(), t.getGatewayReference(),
+            t.getPayerRef(), t.getAmount(), t.getCurrency(), loan ? null : source, loan ? source : null,
+            t.getPolicyNumber(), t.getReceivedOn(), t.getNote(), t.getFieldReceiptId(), t.getStatus(), t.getRecordedBy(),
+            t.getCreatedAt(), t.getDecidedBy(), t.getDecidedAt(), t.getDecisionReason());
     }
 
     public static String words(ReceiptMethod method) {

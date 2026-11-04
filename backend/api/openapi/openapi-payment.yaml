@@ -351,9 +351,16 @@ components:
     RecordReceipt:
       type: object
       additionalProperties: false
-      required: [invoiceId, method, reference, amount, receivedOn]
+      required: [method, reference, amount, receivedOn]
       properties:
-        invoiceId: { type: string, format: uuid }
+        invoiceId:
+          type: [string, 'null']
+          format: uuid
+          description: The invoice this pays; give this or loanId, not both (money movement step 1, 2026-11-04).
+        loanId:
+          type: [string, 'null']
+          format: uuid
+          description: The loan this repays, capped at what it owes less what is already waiting on it.
         method: { $ref: '#/components/schemas/ReceiptMethod' }
         reference:
           type: string
@@ -371,9 +378,13 @@ components:
     Receipt:
       type: object
       additionalProperties: false
-      required: [receiptId, method, reference, payerRef, amount, invoiceId, receivedOn, status, recordedBy, recordedAt]
+      required: [receiptId, purpose, method, reference, payerRef, amount, receivedOn, status, recordedBy, recordedAt]
       properties:
         receiptId: { type: string, format: uuid }
+        purpose:
+          type: string
+          enum: [PREMIUM, LOAN_REPAYMENT]
+          description: What it pays -- an invoice (PREMIUM) or a loan (LOAN_REPAYMENT). Exactly one of invoiceId and loanId is set.
         method:
           type: string
           enum: [MOBILE_MONEY, CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR]
@@ -381,7 +392,8 @@ components:
         reference: { type: string }
         payerRef: { type: string }
         amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
-        invoiceId: { type: string, format: uuid }
+        invoiceId: { type: [string, 'null'], format: uuid }
+        loanId: { type: [string, 'null'], format: uuid }
         policyNumber: { type: [string, 'null'] }
         receivedOn: { type: [string, 'null'], format: date, description: 'The day it was received; null on a mobile-money request' }
         note: { type: [string, 'null'] }

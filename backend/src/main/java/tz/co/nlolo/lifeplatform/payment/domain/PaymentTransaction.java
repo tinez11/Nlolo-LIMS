@@ -179,6 +179,23 @@ public class PaymentTransaction {
         return t;
     }
 
+    /** A deposit For: Loan (money movement step 1): recorded by hand against a loan, confirmed by a second person. */
+    public static PaymentTransaction manualLoanReceipt(UUID tenantId, String idempotencyKey, String method, String reference,
+                                                      String payerRef, java.math.BigDecimal amount, String currency,
+                                                      UUID loanId, String policyNumber, java.time.LocalDate receivedOn,
+                                                      String note, String recordedBy) {
+        PaymentTransaction t = new PaymentTransaction(tenantId, idempotencyKey, payerRef, amount, currency,
+            loanId.toString(), "LOAN_REPAYMENT");
+        t.method = method;
+        t.gatewayReference = reference;
+        t.policyNumber = policyNumber;
+        t.receivedOn = receivedOn;
+        t.note = note;
+        t.recordedBy = recordedBy;
+        t.status = "AWAITING_APPROVAL";
+        return t;
+    }
+
     /**
      * A savings top-up already received by hand (2026-10-28, user decision: one person). Receipted and confirmed at
      * once by the person who records it -- there is no second signature to wait for.

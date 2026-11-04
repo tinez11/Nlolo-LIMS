@@ -33,8 +33,10 @@ import java.util.UUID;
 @RestController
 public class ReceiptController {
 
+    /** An invoice it pays or a loan it repays (money movement step 1): one of the two, which Receipts.record enforces. */
     public record RecordReceiptRequest(
-        @NotNull UUID invoiceId,
+        UUID invoiceId,
+        UUID loanId,
         @NotNull ReceiptMethod method,
         @NotBlank @Size(max = 100) String reference,
         @NotNull MoneyDto amount,
@@ -45,15 +47,15 @@ public class ReceiptController {
 
     public record RejectReceiptRequest(@NotBlank @Size(max = 500) String reason) {}
 
-    public record ReceiptResponse(UUID receiptId, String method, String reference, String payerRef, MoneyDto amount,
-                                  UUID invoiceId, String policyNumber, LocalDate receivedOn, String note,
-                                  UUID fieldReceiptId, String status, String recordedBy, Instant recordedAt,
+    public record ReceiptResponse(UUID receiptId, String purpose, String method, String reference, String payerRef,
+                                  MoneyDto amount, UUID invoiceId, UUID loanId, String policyNumber, LocalDate receivedOn,
+                                  String note, UUID fieldReceiptId, String status, String recordedBy, Instant recordedAt,
                                   String decidedBy, Instant decidedAt, String decisionReason) {
         static ReceiptResponse from(ReceiptView v) {
-            return new ReceiptResponse(v.receiptId(), v.method(), v.reference(), v.payerRef(),
-                new MoneyDto(v.amount().toPlainString(), v.currency()), v.invoiceId(), v.policyNumber(), v.receivedOn(),
-                v.note(), v.fieldReceiptId(), v.status(), v.recordedBy(), v.recordedAt(), v.decidedBy(), v.decidedAt(),
-                v.decisionReason());
+            return new ReceiptResponse(v.receiptId(), v.purpose(), v.method(), v.reference(), v.payerRef(),
+                new MoneyDto(v.amount().toPlainString(), v.currency()), v.invoiceId(), v.loanId(), v.policyNumber(),
+                v.receivedOn(), v.note(), v.fieldReceiptId(), v.status(), v.recordedBy(), v.recordedAt(), v.decidedBy(),
+                v.decidedAt(), v.decisionReason());
         }
     }
 
@@ -67,7 +69,7 @@ public class ReceiptController {
     @PreAuthorize("@access.can('collections.manage')")
     public ResponseEntity<ReceiptResponse> record(@Valid @RequestBody RecordReceiptRequest body,
                                                   @AuthenticationPrincipal Jwt jwt) {
-        ReceiptView recorded = receipts.record(new Receipts.NewReceipt(body.invoiceId(), body.method(), body.reference(),
+        ReceiptView recorded = receipts.record(new Receipts.NewReceipt(body.invoiceId(), body.loanId(), body.method(), body.reference(),
             new BigDecimal(body.amount().amount()), body.receivedOn(), body.payerRef(), body.note(),
             body.fieldReceiptId()), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(ReceiptResponse.from(recorded));
