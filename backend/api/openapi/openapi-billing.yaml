@@ -920,7 +920,7 @@ components:
         createdAt: { type: string, format: date-time }
         refundAmount:
           description: The part paid back to a credit-life lender by bank transfer; null when the credit only lowered what was owed.
-          oneOf:
+          anyOf:
             - $ref: 'openapi-common.yaml#/components/schemas/Money'
             - type: "null"
         refundStatus: { type: [string, "null"], enum: [AWAITING_APPROVAL, REQUESTED, PAID, FAILED, REFUSED, null] }
