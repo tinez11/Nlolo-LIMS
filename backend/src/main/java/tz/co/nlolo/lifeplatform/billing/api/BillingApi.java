@@ -167,6 +167,12 @@ public interface BillingApi {
     /** What is on a policy's balance now: every deposit less every premium paid from it. Zero for none. */
     BigDecimal balanceOf(String policyNumber);
 
+    /**
+     * A customer asks for money back off their policy's balance, to their mobile-money number (money movement step 5).
+     * It waits for staff (payouts.approve) like any withdrawal. Returns the new withdrawal's id.
+     */
+    java.util.UUID requestWithdrawalToMobileMoney(String policyNumber, BigDecimal amount, String phone, String requestedBy);
+
     /** The balance and how far ahead it pays premiums (money movement step 5). */
     PolicyBalanceView balance(String policyNumber);
 

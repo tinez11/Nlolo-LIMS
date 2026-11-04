@@ -172,6 +172,68 @@ class CustomerPortalIntegrationTest {
             .andExpect(status().isForbidden());
     }
 
+    @Autowired private tz.co.nlolo.lifeplatform.billing.api.BillingApi billingApi;
+    @Autowired private tz.co.nlolo.lifeplatform.billing.application.BillingApiImpl billingApiImpl;
+
+    /**
+     * Money movement step 5: a policyholder reads their policy's balance and its statement, and asks for money back to
+     * their phone -- which waits for staff. A savings-type policy shows no balance; another customer reads nothing.
+     */
+    @Test
+    void aPolicyholderReadsTheirBalanceAndStatementAndAsksForAWithdrawal() throws Exception {
+        String policyNumber = fixtures.issue(TENANT, new tz.co.nlolo.lifeplatform.product.api.AccumulationPlan(
+            tz.co.nlolo.lifeplatform.product.api.ValueBasis.SCALE, null, null, java.util.List.of()), TODAY, 120).policyNumber();
+        UUID holder = asTenant(() -> policyApi.getPolicy(policyNumber)).policyholderPartyId();
+        UUID firstInvoice = asTenant(() -> billingApi.listInvoices(policyNumber, null)).get(0).invoiceId();
+        asTenant(() -> {
+            billingApiImpl.applyConfirmedPayment(firstInvoice, new java.math.BigDecimal("70000.00"), "TZS", "SLIP-PORTAL-1", "Owner",
+                "CASH", UUID.randomUUID());
+            return null;
+        });
+
+        mockMvc.perform(customer(get("/customer/policies/" + policyNumber), holder))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.balance.amount").value(20000.00));
+        mockMvc.perform(customer(get("/customer/policies/" + policyNumber + "/statement"), holder))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC))
+            .andExpect(jsonPath("$.total").value(2))
+            .andExpect(jsonPath("$.lines[0].type").value("PREMIUM_PAID"))
+            .andExpect(jsonPath("$.lines[0].amount").value(-50000.00))
+            .andExpect(jsonPath("$.lines[0].balanceAfter").value(20000.00));
+
+        mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .post("/customer/policies/" + policyNumber + "/withdrawals"), holder)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("{\"amount\":\"30000.00\",\"phone\":\"+255712000001\"}"))
+            .andExpect(status().isConflict());
+        mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .post("/customer/policies/" + policyNumber + "/withdrawals"), holder)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("{\"amount\":\"20000.00\",\"phone\":\"+255712000001\"}"))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
+        // It waits for staff: still on the balance until a second person approves it.
+        mockMvc.perform(customer(get("/customer/policies/" + policyNumber), holder))
+            .andExpect(jsonPath("$.balance.amount").value(20000.00));
+
+        UUID stranger = UUID.randomUUID();
+        mockMvc.perform(customer(get("/customer/policies/" + policyNumber + "/statement"), stranger))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(customer(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .post("/customer/policies/" + policyNumber + "/withdrawals"), stranger)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("{\"amount\":\"1.00\",\"phone\":\"+255712000001\"}"))
+            .andExpect(status().isForbidden());
+
+        // A savings-type policy keeps its money in its account: no balance block.
+        String savings = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, TODAY).policyNumber();
+        UUID saver = asTenant(() -> policyApi.getPolicy(savings)).policyholderPartyId();
+        mockMvc.perform(customer(get("/customer/policies/" + savings), saver))
+            .andExpect(jsonPath("$.balance").value(org.hamcrest.Matchers.nullValue()));
+    }
+
     @Autowired private tz.co.nlolo.lifeplatform.product.api.ProductApi productApi;
     @Autowired private tz.co.nlolo.lifeplatform.party.api.PartyApi partyApi;
 

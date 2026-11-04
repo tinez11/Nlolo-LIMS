@@ -642,6 +642,12 @@ public class BillingApiImpl implements BillingApi {
         return balanceEntryRepository.balanceOf(TenantContext.get(), policyNumber).setScale(2);
     }
 
+    @Override
+    public UUID requestWithdrawalToMobileMoney(String policyNumber, BigDecimal amount, String phone, String requestedBy) {
+        return balanceWithdrawals.request(policyNumber, amount, tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney(phone),
+            requestedBy).getWithdrawalId();
+    }
+
     /**
      * The balance, and the due date of the last premium it pays in full, walking what is still owed oldest first as
      * payFromBalance would. Premiums already due are paid as soon as money lands, so this is normally about premiums
