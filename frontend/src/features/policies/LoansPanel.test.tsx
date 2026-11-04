@@ -1,5 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as policiesApi from '@/api/policies';
 import type { LoanView, Money } from '@/api/types';
@@ -19,20 +21,22 @@ const disbursedLoan: LoanView = {
   status: 'DISBURSED',
 };
 
+/** The deposit link needs a router; the panel never navigates on its own. */
+function renderPanel(ui: ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
+
 /**
  * Panel-level coverage for the loans write surface.
  *
- * This exists because the e2e spec CANNOT reach it. A repayment control only appears on
- * a DISBURSED or REPAYING loan, no such loan can exist against real data (origination is
- * capped at cash value and nothing on the platform ever credits cash value), so
- * `staff-policy-loans.spec.ts`'s repayment-form test skips by design. A skipped test is
- * not coverage, and the alternative -- seeding a cash value just to make e2e green --
- * would be testing a fixture. So the form's real behavior is pinned here instead, where
- * the loan can simply be handed in.
+ * Since money movement step 1 (2026-11-04) a repayment is money in like a premium: a deposit For: Loan recorded on
+ * the receipt page and confirmed by a second person, or a mobile-money request. Nothing here books a repayment. The
+ * e2e spec can only reach these controls on a DISBURSED or REPAYING loan, which needs seeded cash value, so the
+ * panel's real behaviour is pinned here, where the loan can simply be handed in.
  */
 beforeEach(() => {
   vi.clearAllMocks();
-  usePolicyStore.setState({ loans: {}, originatingLoan: {}, repayingLoan: {} });
+  usePolicyStore.setState({ loans: {}, originatingLoan: {}, requestingLoanPayment: {} });
 });
 
 afterEach(() => {
@@ -41,94 +45,106 @@ afterEach(() => {
 
 describe('LoansPanel', () => {
   it('offers no repayment control on a loan that cannot take one', async () => {
-    // DISBURSEMENT_REQUESTED is the status every loan on this platform actually rests at,
-    // because nothing consumes LoanDisbursementRequested outside a test. Offering
-    // "Record repayment" here would 409 on click -- PolicyLoanApiImpl.recordRepayment
-    // requires DISBURSED or REPAYING.
+    // DISBURSEMENT_REQUESTED: the server refuses a repayment on it with a 409, so nothing is offered.
     vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([
       { ...disbursedLoan, status: 'DISBURSEMENT_REQUESTED' },
     ]);
 
-    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange />);
+    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange canRecordDeposit canRequestPayment />);
+
+    await waitFor(() => expect(screen.getByText(/of .*principal/)).toBeInTheDocument());
+    expect(screen.queryByRole('link', { name: 'Record deposit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request mobile-money payment' })).not.toBeInTheDocument();
+  });
+
+  it('offers a deposit and a mobile-money request on a repayable loan, never a typed repayment', async () => {
+    vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([disbursedLoan]);
+
+    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange canRecordDeposit canRequestPayment />);
 
     await waitFor(() => expect(screen.getByText(/of .*principal/)).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Record repayment' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Record deposit' })).toHaveAttribute('href',
+      `/staff/receipts/new?for=LOAN&loan=${disbursedLoan.loanId}&policy=POL-000001&from=policy`);
+    expect(screen.getByRole('button', { name: 'Request mobile-money payment' })).toBeInTheDocument();
   });
 
-  it('records a repayment and refetches the list rather than patching it', async () => {
+  it('shows neither to someone without the collections permissions', async () => {
+    vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([disbursedLoan]);
+
+    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange
+      canRecordDeposit={false} canRequestPayment={false} />);
+
+    await waitFor(() => expect(screen.getByText(/of .*principal/)).toBeInTheDocument());
+    expect(screen.queryByRole('link', { name: 'Record deposit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request mobile-money payment' })).not.toBeInTheDocument();
+  });
+
+  it('asks for what the loan owes, as the server stated it, under one attempt key', async () => {
     const listLoans = vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([disbursedLoan]);
-    const recordRepayment = vi
-      .spyOn(policiesApi, 'recordLoanRepayment')
-      .mockResolvedValue({ ...disbursedLoan, status: 'SETTLED', outstandingBalance: TZS('0.00') });
+    const request = vi.spyOn(policiesApi, 'requestLoanPayment').mockResolvedValue(undefined);
     const user = userEvent.setup();
 
-    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange />);
+    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange canRecordDeposit canRequestPayment />);
     await waitFor(() => expect(listLoans).toHaveBeenCalledTimes(1));
 
-    await user.click(screen.getByRole('button', { name: 'Record repayment' }));
-    await user.type(screen.getByPlaceholderText('200000'), '328770');
-    await user.type(screen.getByPlaceholderText('Receipt or transaction id'), 'PAY-REF-01');
-    await user.click(screen.getByRole('button', { name: 'Record repayment' }));
+    await user.click(screen.getByRole('button', { name: 'Request mobile-money payment' }));
+    expect(screen.getByLabelText('Amount (TZS)')).toHaveValue('328770.00');
+    await user.type(screen.getByPlaceholderText('The mobile-money number to ask'), '255754000001');
+    await user.click(screen.getByRole('button', { name: 'Request payment' }));
 
     await waitFor(() =>
-      expect(recordRepayment).toHaveBeenCalledWith(disbursedLoan.loanId, {
-        amount: { amount: '328770', currencyCode: 'TZS' },
-        paymentReference: 'PAY-REF-01',
-      }),
+      expect(request).toHaveBeenCalledWith(disbursedLoan.loanId, {
+        payerRef: '255754000001',
+        amount: { amount: '328770.00', currencyCode: 'TZS' },
+      }, expect.anything()),
     );
-    // Refetched, not patched: a repayment that clears the balance also flips the loan to
-    // SETTLED, and the row must show both together.
+    // Refetched: a fast confirmation already reflected server-side must show.
     await waitFor(() => expect(listLoans).toHaveBeenCalledTimes(2));
   });
 
   it('never sends the amount as a number, and rejects a third decimal before any request', async () => {
     vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([disbursedLoan]);
-    const recordRepayment = vi.spyOn(policiesApi, 'recordLoanRepayment');
+    const request = vi.spyOn(policiesApi, 'requestLoanPayment');
     const user = userEvent.setup();
 
-    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange />);
+    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange canRecordDeposit canRequestPayment />);
     await waitFor(() => expect(screen.getByText(/of .*principal/)).toBeInTheDocument());
 
-    await user.click(screen.getByRole('button', { name: 'Record repayment' }));
-    await user.type(screen.getByPlaceholderText('200000'), '100.555');
-    await user.type(screen.getByPlaceholderText('Receipt or transaction id'), 'R');
-    await user.click(screen.getByRole('button', { name: 'Record repayment' }));
+    await user.click(screen.getByRole('button', { name: 'Request mobile-money payment' }));
+    await user.clear(screen.getByLabelText('Amount (TZS)'));
+    await user.type(screen.getByLabelText('Amount (TZS)'), '100.555');
+    await user.type(screen.getByPlaceholderText('The mobile-money number to ask'), '255754000001');
+    await user.click(screen.getByRole('button', { name: 'Request payment' }));
 
-    // loan_transaction.amount is NUMERIC(19,2) -- a third decimal would be silently
-    // rounded by Postgres, so it must never leave the browser.
-    await waitFor(() =>
-      expect(screen.getByText(/up to 2 decimal places/)).toBeInTheDocument(),
-    );
-    expect(recordRepayment).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText(/up to 2 decimal places/)).toBeInTheDocument());
+    expect(request).not.toHaveBeenCalled();
   });
 
-  it('surfaces a rejection verbatim instead of rewording it', async () => {
+  it('surfaces a refusal verbatim and keeps the form open', async () => {
     vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([disbursedLoan]);
-    vi.spyOn(policiesApi, 'recordLoanRepayment').mockRejectedValue({
+    vi.spyOn(policiesApi, 'requestLoanPayment').mockRejectedValue({
       title: 'Conflict',
-      detail: 'Loan must be DISBURSED or REPAYING to accept a repayment (current: SETTLED)',
+      detail: 'Ask for between 0.01 and 328770.00 TZS, what the loan owes now',
       status: 409,
     });
     const user = userEvent.setup();
 
-    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange />);
+    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange canRecordDeposit canRequestPayment />);
     await waitFor(() => expect(screen.getByText(/of .*principal/)).toBeInTheDocument());
 
-    await user.click(screen.getByRole('button', { name: 'Record repayment' }));
-    await user.type(screen.getByPlaceholderText('200000'), '100');
-    await user.type(screen.getByPlaceholderText('Receipt or transaction id'), 'R');
-    await user.click(screen.getByRole('button', { name: 'Record repayment' }));
+    await user.click(screen.getByRole('button', { name: 'Request mobile-money payment' }));
+    await user.type(screen.getByPlaceholderText('The mobile-money number to ask'), '255754000001');
+    await user.click(screen.getByRole('button', { name: 'Request payment' }));
 
-    // The server's own message names the actual status, which is more useful than
-    // anything this form could invent -- and the form must stay open so it can be fixed.
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('current: SETTLED'));
-    expect(screen.getByPlaceholderText('200000')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('what the loan owes now'));
+    expect(screen.getByLabelText('Amount (TZS)')).toBeInTheDocument();
   });
 
   it('disables origination while the policy has no cash value, and says why', async () => {
     vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([]);
 
-    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange />);
+    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange canRecordDeposit canRequestPayment />);
 
     await waitFor(() => expect(screen.getByText('No loans')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Take a loan' })).toBeDisabled();
@@ -145,7 +161,7 @@ describe('LoansPanel', () => {
     const originate = vi.spyOn(policiesApi, 'originateLoan').mockResolvedValue(disbursedLoan);
     const user = userEvent.setup();
 
-    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('1000000.00')} canChange />);
+    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('1000000.00')} canChange canRecordDeposit canRequestPayment />);
     await waitFor(() => expect(screen.getByText('No loans')).toBeInTheDocument());
 
     const takeLoan = screen.getByRole('button', { name: 'Take a loan' });
@@ -165,9 +181,11 @@ describe('LoansPanel', () => {
 
   it('shows an agent the loans but offers no loan and no repayment (2026-10-27)', async () => {
     vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([disbursedLoan]);
-    render(<LoansPanel policyNumber="POL-000001" cashValue={TZS('1000000.00')} canChange={false} />);
+    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('1000000.00')} canChange={false}
+      canRecordDeposit={false} canRequestPayment={false} />);
     await waitFor(() => expect(screen.getByText(/principal/)).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Take a loan' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Record repayment' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Record deposit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request mobile-money payment' })).not.toBeInTheDocument();
   });
 });

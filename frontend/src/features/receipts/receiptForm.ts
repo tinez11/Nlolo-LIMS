@@ -34,10 +34,15 @@ export function methodOf(value: string): { value: string; label: string; referen
   return value === REQUESTED_MOBILE_MONEY.value ? REQUESTED_MOBILE_MONEY : RECEIPT_METHODS.find((m) => m.value === value);
 }
 
-/** Mirrors Receipts.record: an invoice, a method and its reference, an amount above zero, a day no later than today. */
+/**
+ * Mirrors Receipts.record: an invoice or a loan (one of the two, money movement step 1), a method and its reference, an
+ * amount above zero, a day no later than today.
+ */
 export const receiptFormSchema = z.object({
   policyNumber: z.string().trim().min(1, 'Enter the policy number'),
-  invoiceId: z.string().min(1, 'Choose the invoice this pays'),
+  paysFor: z.enum(['PREMIUM', 'LOAN']),
+  invoiceId: z.string(),
+  loanId: z.string(),
   method: z.enum(['CASH', 'BANK_DEPOSIT', 'CHEQUE', 'LIPA_NUMBER', 'TANQR'], { message: 'Choose how the money came in' }),
   reference: z.string().trim().min(1, 'Enter the reference, so the same money cannot be recorded twice').max(100),
   amount: z
@@ -52,6 +57,13 @@ export const receiptFormSchema = z.object({
   payerRef: z.string().trim().max(255),
   note: z.string().trim().max(500),
   fieldReceiptId: z.string(),
+}).superRefine((v, ctx) => {
+  if (v.paysFor === 'PREMIUM' && !v.invoiceId) {
+    ctx.addIssue({ code: 'custom', path: ['invoiceId'], message: 'Choose the invoice this pays' });
+  }
+  if (v.paysFor === 'LOAN' && !v.loanId) {
+    ctx.addIssue({ code: 'custom', path: ['loanId'], message: 'Choose the loan this repays' });
+  }
 });
 
 export type ReceiptFormValues = z.infer<typeof receiptFormSchema>;
@@ -59,7 +71,9 @@ export type ReceiptFormValues = z.infer<typeof receiptFormSchema>;
 export function blankReceiptForm(prefill: Partial<ReceiptFormValues> = {}): ReceiptFormValues {
   return {
     policyNumber: '',
+    paysFor: 'PREMIUM',
     invoiceId: '',
+    loanId: '',
     method: 'BANK_DEPOSIT',
     reference: '',
     amount: '',
@@ -73,7 +87,8 @@ export function blankReceiptForm(prefill: Partial<ReceiptFormValues> = {}): Rece
 
 export function toApiRequest(values: ReceiptFormValues, currency: string): RecordReceipt {
   return {
-    invoiceId: values.invoiceId,
+    invoiceId: values.paysFor === 'PREMIUM' ? values.invoiceId : null,
+    loanId: values.paysFor === 'LOAN' ? values.loanId : null,
     method: values.method,
     reference: values.reference.trim(),
     amount: { amount: Number(values.amount).toFixed(2), currencyCode: currency },

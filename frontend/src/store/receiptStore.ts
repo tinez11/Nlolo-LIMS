@@ -33,8 +33,9 @@ export const useReceiptStore = create<ReceiptState>((set, getState) => ({
   record: async (body) => {
     await track('receipt.record', getState().recording, (next) => set({ recording: next }), () => recordReceipt(body));
     const result = getState().recording;
-    // The invoice shows what is waiting on it: reread it, so the receipt just recorded is there.
-    if (result.status === 'success') await getState().loadWaiting(body.invoiceId);
+    // The invoice shows what is waiting on it: reread it, so the receipt just recorded is there. A loan deposit names no
+    // invoice (money movement step 1), so there is nothing to reread.
+    if (result.status === 'success' && body.invoiceId) await getState().loadWaiting(body.invoiceId);
     return result.status === 'success' ? result.data : null;
   },
 

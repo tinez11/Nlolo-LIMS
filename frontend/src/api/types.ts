@@ -199,9 +199,10 @@ export interface OriginateLoanRequest {
   /** Mobile-money / bank destination the disbursement is paid to. */
   payeeRef: string;
 }
-export interface LoanRepaymentRequest {
+/** `POST /loans/{loanId}/payment-request`: the payer's mobile-money number and how much to ask for. */
+export interface LoanPaymentRequest {
+  payerRef: string;
   amount: Money;
-  paymentReference: string;
 }
 
 /**

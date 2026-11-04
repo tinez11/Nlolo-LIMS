@@ -4,6 +4,7 @@ import { confirmReceiptGates } from './receiptGates';
 
 const receipt = (over: Partial<Receipt> = {}): Receipt => ({
   receiptId: 'r-1',
+  purpose: 'PREMIUM',
   method: 'CHEQUE',
   reference: 'CHQ-1',
   payerRef: 'Amina Owner',

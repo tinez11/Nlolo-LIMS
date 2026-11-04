@@ -12,7 +12,7 @@ import type {
   IssueGroupSchemeRequest,
   MemberStatus,
   PolicyMemberView,
-  LoanRepaymentRequest,
+  LoanPaymentRequest,
   LoanView,
   ManualIssueRequest,
   OriginateLoanRequest,
@@ -202,20 +202,20 @@ export function originateLoan(
 }
 
 /**
- * `POST /loans/{loanId}/repayments` -- staff/agent/customer. Also 202 with the
- * loan body, and the returned `outstandingBalance` is already net of this
- * repayment (the balance is folded from the loan's own append-only ledger, so
- * it is authoritative the moment the call returns).
- *
- * A repayment that clears the balance moves the loan straight to `SETTLED`;
- * partial repayments leave it `REPAYING` and are individually accepted, as many
- * times as needed.
+ * `POST /loans/{loanId}/payment-request` -- staff/customer/agent (money movement
+ * step 1, 2026-11-04). Asks the payer's phone for a repayment; 202 with no body.
+ * Nothing is repaid until finance confirms the money, so the loan's balance does
+ * not move on this call. `Idempotency-Key` is hard-required, as for an invoice.
+ * A repayment recorded by hand is a deposit For: Loan on the receipt page.
  */
-export function recordLoanRepayment(
+export function requestLoanPayment(
   loanId: string,
-  request: LoanRepaymentRequest,
-): Promise<LoanView> {
-  return post<LoanView>(`/loans/${encodeURIComponent(loanId)}/repayments`, request);
+  request: LoanPaymentRequest,
+  attempt: MutationAttempt,
+): Promise<void> {
+  return post<void>(`/loans/${encodeURIComponent(loanId)}/payment-request`, request, {
+    headers: attempt.headers(),
+  });
 }
 
 /**

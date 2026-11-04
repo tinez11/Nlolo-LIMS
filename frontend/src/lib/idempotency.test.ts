@@ -44,10 +44,11 @@ describe('startMutation', () => {
 });
 
 describe('requiresIdempotencyKey', () => {
-  // These six 400 without the header. A submit button that omits it is broken, so
+  // These seven 400 without the header. A submit button that omits it is broken, so
   // this list is asserted rather than trusted to a code comment.
   it.each([
     ['post', '/invoices/9f2/payment-request'],
+    ['post', '/loans/abc/payment-request'],
     ['post', '/claims'],
     ['post', '/agents'],
     ['post', '/agents/1/commission-statements/2/payout'],
@@ -78,7 +79,6 @@ describe('requiresIdempotencyKey', () => {
   it.each([
     ['post', '/policies/POL-1/endorsements'],
     ['post', '/policies/POL-1/loans'],
-    ['post', '/loans/abc/repayments'],
     ['post', '/underwriting/cases'],
   ])('does not require a key for %s %s', (method, url) => {
     expect(requiresIdempotencyKey(method, url)).toBe(false);

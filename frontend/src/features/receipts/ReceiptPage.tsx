@@ -77,7 +77,8 @@ export function ReceiptPage() {
               label="Policy"
               value={
                 receipt.policyNumber ? (
-                  <Link className="underline" to={`/staff/policies/${encodeURIComponent(receipt.policyNumber)}?tab=billing`}>
+                  <Link className="underline"
+                    to={`/staff/policies/${encodeURIComponent(receipt.policyNumber)}?tab=${receipt.loanId ? 'loans' : 'billing'}`}>
                     {receipt.policyNumber}
                   </Link>
                 ) : (
@@ -85,6 +86,9 @@ export function ReceiptPage() {
                 )
               }
             />
+            {receipt.loanId && (
+              <Field label="Loan" value={<span className="font-mono">{receipt.loanId.slice(0, 8)}</span>} />
+            )}
             {receipt.note && <Field label="Note" value={receipt.note} />}
             {receipt.fieldReceiptId && <Field label="Brings in" value="An agent's field receipt" />}
             <Field
@@ -107,6 +111,8 @@ export function ReceiptPage() {
 }
 
 function ReceiptDecision({ receipt }: { receipt: Receipt }) {
+  // What it pays (money movement step 1, 2026-11-04): a deposit For: Loan repays the loan, any other pays the invoice.
+  const target = receipt.loanId ? 'the loan' : 'the invoice';
   const auth = useAuth();
   const viewerSubject = readIdentity(auth.user?.access_token)?.subject ?? undefined;
   const approve = useReceiptStore((s) => s.approve);
@@ -119,7 +125,7 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
     return (
       <Panel title="Confirmed">
         <p className="px-4 pb-4 text-sm">
-          This receipt paid {formatMoney(receipt.amount)} against the invoice, and the ledger has posted it.
+          This receipt paid {formatMoney(receipt.amount)} against {target}, and the ledger has posted it.
         </p>
       </Panel>
     );
@@ -142,7 +148,8 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
   const gates = confirmReceiptGates(receipt, viewerSubject);
   const refused = gates.some((g) => !g.ok && g.hard);
   return (
-    <Panel title="Confirm this receipt" subtitle="Only a confirmed receipt pays the invoice.">
+    <Panel title="Confirm this receipt"
+      subtitle={receipt.loanId ? 'Only a confirmed receipt repays the loan.' : 'Only a confirmed receipt pays the invoice.'}>
       <div className="space-y-3 px-4 py-3">
         {receipt.method === REQUESTED_MOBILE_MONEY.value && <p className="text-sm">{REQUESTED_MOBILE_MONEY.hint}</p>}
         <GatePanel gates={gates} title="Before confirming" />
@@ -152,7 +159,7 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
             heading="Confirm this receipt?"
             consequence={
               <>
-                <strong>{formatMoney(receipt.amount)}</strong> is applied to the invoice on {receipt.policyNumber}, and the
+                <strong>{formatMoney(receipt.amount)}</strong> is applied to {target} on {receipt.policyNumber}, and the
                 ledger posts it to the account a {methodOf(receipt.method)?.label.toLowerCase() ?? 'payment'} reaches.
               </>
             }
