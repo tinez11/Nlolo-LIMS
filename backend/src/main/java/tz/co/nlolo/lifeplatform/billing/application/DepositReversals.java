@@ -143,6 +143,12 @@ public class DepositReversals {
         return reversals.findByTenantIdAndStatusOrderByRequestedAtAsc(TenantContext.get(), "REQUESTED");
     }
 
+    /** Every reversal asked of one deposit, newest first (money movement step 5: the deposit page shows them). */
+    @Transactional(readOnly = true)
+    public List<DepositReversal> forDeposit(UUID paymentId) {
+        return reversals.findByTenantIdAndPaymentIdOrderByRequestedAtDesc(TenantContext.get(), paymentId);
+    }
+
     @Transactional(readOnly = true)
     public DepositReversal get(UUID reversalId) {
         return find(reversalId);

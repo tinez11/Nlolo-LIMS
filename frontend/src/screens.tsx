@@ -50,6 +50,7 @@ import { NewRolePage } from '@/features/admin/NewRolePage';
 import { ApprovalsPage } from '@/features/approvals/ApprovalsPage';
 import { PaymentsPage } from '@/features/payments/PaymentsPage';
 import { NewReceiptPage } from '@/features/receipts/NewReceiptPage';
+import { ReverseDepositPage } from '@/features/receipts/ReverseDepositPage';
 import { BalanceWithdrawalPage } from '@/features/policies/BalanceWithdrawalPage';
 import { ReceiptPage } from '@/features/receipts/ReceiptPage';
 import { NewUserPage } from '@/features/admin/NewUserPage';
@@ -379,6 +380,7 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   agents: ['agents.view'], 'agents/new': ['agents.manage'], 'agents/:agentId': ['agents.view'],
   payments: ['collections.view', 'payouts.view'],
   'receipts/new': ['collections.manage'], 'receipts/:receiptId': ['collections.view', 'collections.manage'],
+  'receipts/:receiptId/reverse': ['collections.manage'],
   arrears: ['collections.view'], 'field-receipts': ['collections.view'], 'bank-transfers': ['payouts.view'],
   payouts: ['payouts.view'], 'payouts/:instalmentId': ['payouts.view'], 'payment-runs': ['payouts.view'],
   'payment-runs/:paymentRunId': ['payouts.view'], 'withholding-rules': ['payouts.view'], maturities: ['payouts.view'],
@@ -647,6 +649,8 @@ const STAFF_SCREENS: Screen[] = [
   // A receipt for premium the gateway did not pull, and its confirmation by a second person (2026-10-27).
   { path: 'receipts/new', element: <NewReceiptPage />, reach: 'drill-in' },
   { path: 'receipts/:receiptId', element: <ReceiptPage />, reach: 'drill-in' },
+  // Money movement step 5: a deposit whose money never arrived, reversed on its own page and confirmed by a second person.
+  { path: 'receipts/:receiptId/reverse', element: <ReverseDepositPage />, reach: 'drill-in' },
   { path: 'payments', element: <PaymentsPage />, reach: { group: 'collections', label: 'Payments', icon: ArrowLeftRight, badge: 'payments-attention' } },
   // Money owed to LIVING policyholders (product step 2), as distinct from the claims queue, which
   // pays on death. Under finance for the same reason bank transfers are: reviewing and approving a

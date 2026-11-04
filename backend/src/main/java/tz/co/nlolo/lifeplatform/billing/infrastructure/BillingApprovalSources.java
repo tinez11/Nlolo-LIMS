@@ -62,7 +62,8 @@ class BillingApprovalSources {
     ApprovalSource depositReversalsToConfirm(tz.co.nlolo.lifeplatform.billing.application.DepositReversals reversals) {
         return ApprovalSource.of("deposit-reversal", "Deposit reversals to confirm", "Confirm", "collections.approve",
             limit -> ApprovalSource.Pending.of(reversals.waiting().stream()
-                .map(r -> new ApprovalSource.Item(r.getReversalId().toString(), r.getPolicyNumber(),
+                // The deposit's id, not the reversal's: the deposit's own page is where the reversal is confirmed (step 5).
+                .map(r -> new ApprovalSource.Item(r.getPaymentId().toString(), r.getPolicyNumber(),
                     "Reverse a deposit: " + r.getReason(), r.getAmount(), r.getCurrency(), r.getRequestedBy(),
                     r.getRequestedAt())).toList(), limit));
     }

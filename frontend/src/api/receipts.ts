@@ -1,5 +1,6 @@
 import { get, post } from '@/lib/http';
 import type { components } from '@/types/api/payment';
+import type { components as BillingComponents } from '@/types/api/billing';
 
 /**
  * Receipts for premium the gateway did not pull (2026-10-27): cash, a bank deposit, a cheque, a Lipa-number payment or
@@ -27,6 +28,27 @@ export function getReceipt(receiptId: string): Promise<Receipt> {
 /** `POST /receipts/{id}/approval` -- collections.approve, and never the person who recorded it. */
 export function approveReceipt(receiptId: string): Promise<Receipt> {
   return post<Receipt>(`/receipts/${encodeURIComponent(receiptId)}/approval`);
+}
+
+/** A confirmed deposit whose money never really arrived, taken back off the balance (money movement step 3b). */
+export type DepositReversal = BillingComponents['schemas']['DepositReversal'];
+
+/** `GET /deposits/{id}/reversals` -- the reversals asked of one deposit, newest first. */
+export function listDepositReversals(paymentId: string): Promise<DepositReversal[]> {
+  return get<DepositReversal[]>(`/deposits/${encodeURIComponent(paymentId)}/reversals`);
+}
+
+/** `POST /deposits/{id}/reversal` -- collections.manage asks, saying why; a second person confirms. */
+export function requestDepositReversal(paymentId: string, reason: string): Promise<DepositReversal> {
+  return post<DepositReversal>(`/deposits/${encodeURIComponent(paymentId)}/reversal`, { reason });
+}
+
+/** Confirm (reason null) or reject (with the reason) a reversal -- collections.approve. */
+export function decideDepositReversal(reversalId: string, rejectReason: string | null): Promise<DepositReversal> {
+  const id = encodeURIComponent(reversalId);
+  return rejectReason === null
+    ? post<DepositReversal>(`/deposit-reversals/${id}/confirm`, {})
+    : post<DepositReversal>(`/deposit-reversals/${id}/reject`, { reason: rejectReason });
 }
 
 export function rejectReceipt(receiptId: string, reason: string): Promise<Receipt> {

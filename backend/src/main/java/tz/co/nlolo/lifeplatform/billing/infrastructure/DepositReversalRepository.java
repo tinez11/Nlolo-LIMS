@@ -16,4 +16,7 @@ public interface DepositReversalRepository extends JpaRepository<DepositReversal
 
     /** A reversal open or done on this deposit -- at most one, by ux_deposit_reversal_live. */
     boolean existsByTenantIdAndPaymentIdAndStatusIn(UUID tenantId, UUID paymentId, Collection<String> statuses);
+
+    /** Every reversal asked of one deposit, newest first -- what its page shows. */
+    List<DepositReversal> findByTenantIdAndPaymentIdOrderByRequestedAtDesc(UUID tenantId, UUID paymentId);
 }

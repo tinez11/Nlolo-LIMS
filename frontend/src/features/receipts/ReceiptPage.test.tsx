@@ -31,8 +31,9 @@ function renderPage() {
 
 describe('ReceiptPage', () => {
   beforeEach(() => {
-    useReceiptStore.setState({ receipt: {}, deciding: {} });
+    useReceiptStore.setState({ receipt: {}, deciding: {}, reversals: {}, reversing: {} });
     vi.mocked(receiptsApi.getReceipt).mockResolvedValue(waiting);
+    vi.mocked(receiptsApi.listDepositReversals).mockResolvedValue([]);
   });
 
   it('shows what came in, how, and its reference by name', async () => {
@@ -81,5 +82,42 @@ describe('ReceiptPage', () => {
     grantRoles('CUSTOMER_SERVICE_REP');
     renderPage();
     expect(await screen.findByRole('heading', { name: 'Waiting for confirmation' })).toBeInTheDocument();
+  });
+
+  // Money movement step 5: a confirmed premium deposit whose money never arrived is reversed from its page.
+  const confirmed: Receipt = { ...waiting, status: 'CONFIRMED', decidedBy: 'finance-two' };
+  const reversal: receiptsApi.DepositReversal = {
+    reversalId: 'rev-1', policyNumber: 'POL-1', paymentId: 'r-1', amount: { amount: '120000.00', currencyCode: 'TZS' },
+    reason: 'The cheque bounced', status: 'REQUESTED', requestedBy: 'finance-one', requestedAt: '2026-11-04T08:00:00Z',
+    decidedBy: null, decidedAt: null, rejectionReason: null, actedAlone: false,
+  };
+
+  it('offers Reverse on a confirmed deposit, on its own page', async () => {
+    grantRoles('FINANCE_OFFICER');
+    vi.mocked(receiptsApi.getReceipt).mockResolvedValue(confirmed);
+    renderPage();
+    expect(await screen.findByRole('link', { name: 'Reverse' })).toHaveAttribute('href', '/staff/receipts/r-1/reverse');
+  });
+
+  it('lets a second person confirm a waiting reversal', async () => {
+    grantRoles('FINANCE_OFFICER');
+    vi.mocked(receiptsApi.getReceipt).mockResolvedValue(confirmed);
+    vi.mocked(receiptsApi.listDepositReversals).mockResolvedValue([reversal]);
+    vi.mocked(receiptsApi.decideDepositReversal).mockResolvedValue({ ...reversal, status: 'CONFIRMED' });
+    const user = userEvent.setup();
+    renderPage();
+    expect(await screen.findByText(/The cheque bounced/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+    await user.click(screen.getByRole('button', { name: 'Reverse deposit' }));
+    expect(receiptsApi.decideDepositReversal).toHaveBeenCalledWith('rev-1', null);
+  });
+
+  it('says a reversed deposit came back off the balance, and offers nothing more', async () => {
+    grantRoles('FINANCE_OFFICER');
+    vi.mocked(receiptsApi.getReceipt).mockResolvedValue(confirmed);
+    vi.mocked(receiptsApi.listDepositReversals).mockResolvedValue([{ ...reversal, status: 'CONFIRMED' }]);
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'Reversed' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Reverse' })).not.toBeInTheDocument();
   });
 });

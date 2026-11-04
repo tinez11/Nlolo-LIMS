@@ -571,6 +571,22 @@ paths:
               schema: { $ref: '#/components/schemas/DepositReversal' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /deposits/{paymentId}/reversals:
+    get:
+      summary: The reversals asked of one deposit, newest first (money movement step 5)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: paymentId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Its reversals
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DepositReversal' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /deposit-reversals/{reversalId}:
     get:
       summary: One deposit reversal

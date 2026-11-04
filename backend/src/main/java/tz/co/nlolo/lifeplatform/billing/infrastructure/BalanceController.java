@@ -107,6 +107,13 @@ public class BalanceController {
         return ReversalResponse.from(reversals.request(paymentId, body.reason(), jwt.getSubject()));
     }
 
+    /** The reversals asked of one deposit, newest first; its page shows the one waiting, or what became of it. */
+    @GetMapping("/deposits/{paymentId}/reversals")
+    @PreAuthorize("@access.canAny('collections.view', 'collections.manage')")
+    public List<ReversalResponse> reversalsOf(@PathVariable UUID paymentId) {
+        return reversals.forDeposit(paymentId).stream().map(ReversalResponse::from).toList();
+    }
+
     @GetMapping("/deposit-reversals/{reversalId}")
     @PreAuthorize("@access.canAny('collections.view', 'collections.manage')")
     public ReversalResponse getReversal(@PathVariable UUID reversalId) {
