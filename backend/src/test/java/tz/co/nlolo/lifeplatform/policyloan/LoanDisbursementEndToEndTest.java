@@ -181,6 +181,7 @@ class LoanDisbursementEndToEndTest {
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             "db-migrations/policyloan/V8__interest_month_published.sql",
+            "db-migrations/policyloan/V9__payout_approval.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
@@ -259,6 +260,7 @@ class LoanDisbursementEndToEndTest {
         wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
             "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-" + productCode + "\"}")));
         LoanView originated = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
+        policyLoanApi.approvePayout(originated.loanId(), "approver"); // money movement step 4: a second person releases the payout
         assertThat(policyLoanApi.getLoan(originated.loanId()).status()).isEqualTo(LoanStatus.DISBURSED);
         return originated;
     }
@@ -366,14 +368,18 @@ class LoanDisbursementEndToEndTest {
         wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
             "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-E2E-SUCCESS\"}")));
 
-        // 1. Originate over the real API -- the loan legitimately rests at
-        // DISBURSEMENT_REQUESTED in the object THIS CALL returns, because that view is built
-        // from the in-memory entity at the end of originateLoan's own method body, before its
-        // transaction (and therefore the AFTER_COMMIT chain) has committed.
+        // 1. Originate over the real API -- the loan waits for its payout to be approved
+        // (money movement step 4); a second person then releases it. That view legitimately rests
+        // at DISBURSEMENT_REQUESTED, because it is built from the in-memory entity at the end of
+        // approvePayout's own method body, before its transaction (and therefore the AFTER_COMMIT
+        // chain) has committed.
         LoanView originated = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
-        assertThat(originated.status()).isEqualTo(LoanStatus.DISBURSEMENT_REQUESTED);
+        assertThat(originated.status()).isEqualTo(LoanStatus.AWAITING_PAYOUT_APPROVAL);
+        wireMock.verify(exactly(0), postRequestedFor(urlPathEqualTo("/disburse")));
+        LoanView released = policyLoanApi.approvePayout(originated.loanId(), "approver");
+        assertThat(released.status()).isEqualTo(LoanStatus.DISBURSEMENT_REQUESTED);
 
-        // 2. By the time originateLoan has RETURNED, the whole chain (policyloan -> event ->
+        // 2. By the time approvePayout has RETURNED, the whole chain (policyloan -> event ->
         // payment -> gateway -> event -> policyloan) has already run synchronously and
         // committed. No markDisbursed call anywhere in this test.
         LoanView reloaded = policyLoanApi.getLoan(originated.loanId());
@@ -405,6 +411,7 @@ class LoanDisbursementEndToEndTest {
         wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
             "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-E2E-FIRST-LOAN\"}")));
         LoanView firstLoan = policyLoanApi.originateLoan(policyNumber, new BigDecimal("300000"), "TZS", "MPESA-0700000001", "test-agent");
+        policyLoanApi.approvePayout(firstLoan.loanId(), "approver"); // money movement step 4: a second person releases the payout
         assertThat(policyLoanApi.getLoan(firstLoan.loanId()).status()).isEqualTo(LoanStatus.DISBURSED);
 
         BigDecimal preOriginationEncumbrance = encumbranceOf(policyNumber);
@@ -416,6 +423,7 @@ class LoanDisbursementEndToEndTest {
         wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
             "{\"status\":\"REJECTED\",\"reason\":\"INSUFFICIENT_FLOAT\"}")));
         LoanView secondLoan = policyLoanApi.originateLoan(policyNumber, new BigDecimal("200000"), "TZS", "MPESA-0700000002", "test-agent");
+        policyLoanApi.approvePayout(secondLoan.loanId(), "approver"); // money movement step 4: a second person releases the payout
 
         // 3. Reaches DISBURSEMENT_FAILED, with a REVERSAL transaction and the encumbrance
         // genuinely released.

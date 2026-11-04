@@ -77,6 +77,22 @@ public class CommissionStatement {
     @Column(name = "payout_failure_reason")
     private String payoutFailureReason;
 
+    // Money movement step 4 (distribution V11): who asked, and who released or refused the payout.
+    @Column(name = "payout_requested_by")
+    private String payoutRequestedBy;
+
+    @Column(name = "payout_decided_by")
+    private String payoutDecidedBy;
+
+    @Column(name = "payout_decided_at")
+    private Instant payoutDecidedAt;
+
+    @Column(name = "payout_refusal_reason")
+    private String payoutRefusalReason;
+
+    @Column(name = "acted_alone", nullable = false)
+    private boolean actedAlone;
+
     @Column(name = "closed_at")
     private Instant closedAt;
 
@@ -124,11 +140,12 @@ public class CommissionStatement {
         this.closedAt = closedAt;
     }
 
-    /** CommissionPayoutRequested published. CLOSED or PAYOUT_FAILED -> PAYOUT_REQUESTED.
+    /** Someone holding commission.pay asks to pay this statement. CLOSED or PAYOUT_FAILED -> AWAITING_PAYOUT_APPROVAL;
+     * nothing reaches the rail until a second person releases it (money movement step 4, 2026-11-04).
      * PAYOUT_FAILED is a valid source: the whole point of that state is that staff can retry,
      * and a retry MUST use a new idempotency key (payment dedupes on the old one). */
-    public void markPayoutRequested(String idempotencyKey, String payeeRef) {
-        if (status == StatementStatus.PAYOUT_REQUESTED) {
+    public void askForPayout(String idempotencyKey, String payeeRef, String requestedBy) {
+        if (status == StatementStatus.AWAITING_PAYOUT_APPROVAL || status == StatementStatus.PAYOUT_REQUESTED) {
             return;
         }
         if (status != StatementStatus.CLOSED && status != StatementStatus.PAYOUT_FAILED) {
@@ -147,10 +164,47 @@ public class CommissionStatement {
             throw new InvalidAgentStateException(
                 "Statement " + statementId + " totals " + totalAmount + "; nothing to pay out");
         }
-        this.status = StatementStatus.PAYOUT_REQUESTED;
+        this.status = StatementStatus.AWAITING_PAYOUT_APPROVAL;
         this.payoutIdempotencyKey = idempotencyKey;
         this.payeeRef = payeeRef;
+        this.payoutRequestedBy = requestedBy;
+        this.payoutDecidedBy = null;
+        this.payoutDecidedAt = null;
+        this.payoutRefusalReason = null;
+        this.actedAlone = false;
         this.payoutFailureReason = null; // a fresh attempt clears the previous failure
+    }
+
+    /** The second person releases the payout (payouts.approve). AWAITING_PAYOUT_APPROVAL -> PAYOUT_REQUESTED; the caller
+     * then asks payment to pay it. The person who asked may release it only with payouts.approve-own. */
+    public void approvePayout(String by, boolean mayActAlone) {
+        decidePayout(by, mayActAlone, "approved");
+        this.status = StatementStatus.PAYOUT_REQUESTED;
+    }
+
+    /** The second person refuses the payout, saying why. AWAITING_PAYOUT_APPROVAL -> CLOSED, so it can be asked again. */
+    public void refusePayout(String by, boolean mayActAlone, String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw new DistributionValidationException("Say why the payout is refused");
+        }
+        decidePayout(by, mayActAlone, "refused");
+        this.status = StatementStatus.CLOSED;
+        this.payoutRefusalReason = reason.trim();
+    }
+
+    private void decidePayout(String by, boolean mayActAlone, String verb) {
+        if (status != StatementStatus.AWAITING_PAYOUT_APPROVAL) {
+            throw new InvalidAgentStateException(
+                "Statement " + statementId + " is " + status + ", not waiting for its payout to be approved");
+        }
+        boolean ownRequest = by.equals(payoutRequestedBy);
+        if (ownRequest && !mayActAlone) {
+            throw new InvalidAgentStateException(
+                "A commission payout must be " + verb + " by someone other than the person who asked for it");
+        }
+        this.actedAlone = ownRequest;
+        this.payoutDecidedBy = by;
+        this.payoutDecidedAt = Instant.now();
     }
 
     /** payment.DisbursementCompleted. PAYOUT_REQUESTED -> PAID. Terminal. */
@@ -214,6 +268,11 @@ public class CommissionStatement {
     public String getPayeeRef() { return payeeRef; }
     public String getPayoutIdempotencyKey() { return payoutIdempotencyKey; }
     public String getPayoutFailureReason() { return payoutFailureReason; }
+    public String getPayoutRequestedBy() { return payoutRequestedBy; }
+    public String getPayoutDecidedBy() { return payoutDecidedBy; }
+    public Instant getPayoutDecidedAt() { return payoutDecidedAt; }
+    public String getPayoutRefusalReason() { return payoutRefusalReason; }
+    public boolean isActedAlone() { return actedAlone; }
     public Instant getClosedAt() { return closedAt; }
     public Instant getPaidAt() { return paidAt; }
 }

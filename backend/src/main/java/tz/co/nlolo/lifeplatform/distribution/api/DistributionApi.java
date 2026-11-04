@@ -166,7 +166,17 @@ public interface DistributionApi {
     List<CommissionStatementView> listStatements(UUID agentId, String period);
     List<CommissionAccrualView> listAccruals(UUID statementId);
 
-    /** Staff-triggered payout for a CLOSED (or previously PAYOUT_FAILED) statement. Publishes
-     * distribution.CommissionPayoutRequested; settlement completes asynchronously. */
+    /** Staff ask (commission.pay) to pay a CLOSED (or previously PAYOUT_FAILED) statement. It waits at
+     * AWAITING_PAYOUT_APPROVAL for a second person; nothing is published yet (money movement step 4). */
     void requestStatementPayout(UUID statementId, String payeeRef, String idempotencyKey, String requestedBy);
+
+    /** The second person releases the payout (payouts.approve): publishes distribution.CommissionPayoutRequested;
+     * settlement completes asynchronously. The person who asked may release it only with payouts.approve-own. */
+    CommissionStatementView approveStatementPayout(UUID statementId, String approvedBy);
+
+    /** The second person refuses the payout, saying why; the statement returns to CLOSED and may be asked again. */
+    CommissionStatementView refuseStatementPayout(UUID statementId, String refusedBy, String reason);
+
+    /** Statements asked to be paid and waiting for a second person, oldest period first. */
+    List<CommissionStatementView> listStatementsAwaitingPayoutApproval();
 }

@@ -176,6 +176,7 @@ class OfferNotificationEndToEndTest {
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
             "db-migrations/billing/V16__deposit_reversal.sql",
+            "db-migrations/billing/V17__lender_refund_approval.sql",
             "db-migrations/communication/V1__create_communication_schema.sql",
             "db-migrations/communication/V2__template_identity.sql",
             "db-migrations/communication/V3__seed_offer_templates.sql",

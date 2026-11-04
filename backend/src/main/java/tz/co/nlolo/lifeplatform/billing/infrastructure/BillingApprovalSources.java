@@ -48,6 +48,15 @@ class BillingApprovalSources {
                 .map(w -> withdrawalItem(w, "The policy ended with money on its balance")).toList(), limit));
     }
 
+    /** A credit-life lender's premium refund, raised automatically, waiting for a second person (money movement step 4). */
+    @Bean
+    ApprovalSource lenderRefundsToApprove(BillingApi billing) {
+        return ApprovalSource.of("lender-refund", "Lender refunds to approve", "Approve", "payouts.approve",
+            limit -> ApprovalSource.Pending.of(billing.listLenderRefundsAwaitingApproval().stream()
+                .map(r -> new ApprovalSource.Item(r.creditId().toString(), r.policyNumber(),
+                    "Premium paid back to the lender", r.amount(), r.currency(), null, r.raisedAt())).toList(), limit));
+    }
+
     /** A deposit whose money never arrived, waiting for its second person to reverse it (money movement step 3b). */
     @Bean
     ApprovalSource depositReversalsToConfirm(tz.co.nlolo.lifeplatform.billing.application.DepositReversals reversals) {

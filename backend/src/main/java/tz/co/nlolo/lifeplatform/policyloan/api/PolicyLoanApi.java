@@ -23,6 +23,18 @@ public interface PolicyLoanApi {
      */
     void requestRepayment(UUID loanId, String payerRef, BigDecimal amount, String currency, String idempotencyKey);
 
+    /**
+     * A second person releases a loan's payout (money movement step 4): payouts.approve, or the person who took the
+     * loan holding payouts.approve-own. Payment is then asked to pay it.
+     */
+    LoanView approvePayout(UUID loanId, String approvedBy);
+
+    /** A second person refuses a loan's payout, saying why: nothing is paid and the reserved loan value is freed. */
+    LoanView refusePayout(UUID loanId, String refusedBy, String reason);
+
+    /** Loans waiting for their payout to be released -- the approvals inbox's rows. */
+    List<LoanView> listLoansAwaitingPayoutApproval();
+
     // Driven by policyloan.application.PaymentEventListener consuming payment's confirmation
     // events (M5). Formerly internal-only test seams standing in for those events.
     LoanView markDisbursed(UUID loanId, String gatewayReference, Instant disbursedAt);

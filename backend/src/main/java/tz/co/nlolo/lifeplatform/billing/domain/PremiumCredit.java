@@ -76,6 +76,15 @@ public class PremiumCredit {
     @Column(name = "refund_paid_at")
     private Instant refundPaidAt;
 
+    @Column(name = "refund_decided_by")
+    private String refundDecidedBy;
+
+    @Column(name = "refund_decided_at")
+    private Instant refundDecidedAt;
+
+    @Column(name = "refund_refusal_reason")
+    private String refundRefusalReason;
+
     protected PremiumCredit() {}
 
     /** Part of this credit goes back to the lender by bank transfer: the part of the file it had already paid. */
@@ -85,7 +94,32 @@ public class PremiumCredit {
         }
         this.refundAmount = refund;
         this.refundPayee = payee;
+        // Money movement step 4 (billing V17): raised automatically, released to the bank-transfer queue by a second person.
+        this.refundStatus = "AWAITING_APPROVAL";
+    }
+
+    /** payouts.approve releases the refund: AWAITING_APPROVAL -> REQUESTED, and payment is asked for the transfer. */
+    public void approveRefund(String by) {
+        decideRefund(by);
         this.refundStatus = "REQUESTED";
+    }
+
+    /** payouts.approve refuses it, saying why: it stays owed to the lender on the books, as a failed one does. */
+    public void refuseRefund(String by, String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("Say why the refund is refused");
+        }
+        decideRefund(by);
+        this.refundStatus = "REFUSED";
+        this.refundRefusalReason = reason.trim();
+    }
+
+    private void decideRefund(String by) {
+        if (!"AWAITING_APPROVAL".equals(refundStatus)) {
+            throw new IllegalStateException("This lender refund is not waiting for approval (it is " + refundStatus + ")");
+        }
+        this.refundDecidedBy = by;
+        this.refundDecidedAt = Instant.now();
     }
 
     /** @return whether this call made it PAID -- false on a redelivery, which must post nothing twice */
@@ -108,6 +142,8 @@ public class PremiumCredit {
     public BigDecimal getRefundAmount() { return refundAmount; }
     public String getRefundPayee() { return refundPayee; }
     public String getRefundStatus() { return refundStatus; }
+    public String getRefundDecidedBy() { return refundDecidedBy; }
+    public String getRefundRefusalReason() { return refundRefusalReason; }
 
     public PremiumCredit(UUID tenantId, String policyNumber, UUID policyMemberId,
                           UUID originalInvoiceId, BigDecimal amount, String currency,

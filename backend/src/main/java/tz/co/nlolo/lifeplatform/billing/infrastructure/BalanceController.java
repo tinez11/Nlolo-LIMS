@@ -171,4 +171,19 @@ public class BalanceController {
                                      @AuthenticationPrincipal Jwt jwt) {
         return WithdrawalResponse.from(withdrawals.reject(withdrawalId, jwt.getSubject(), body.reason()));
     }
+
+    /** 202: a credit-life lender's premium refund released to the bank-transfer queue (money movement step 4). */
+    @PostMapping("/lender-refunds/{creditId}/approve")
+    @PreAuthorize("@access.can('payouts.approve')")
+    public ResponseEntity<tz.co.nlolo.lifeplatform.billing.api.LenderRefundView> approveLenderRefund(
+            @PathVariable UUID creditId, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.accepted().body(billing.approveLenderRefund(creditId, jwt.getSubject()));
+    }
+
+    @PostMapping("/lender-refunds/{creditId}/reject")
+    @PreAuthorize("@access.can('payouts.approve')")
+    public tz.co.nlolo.lifeplatform.billing.api.LenderRefundView rejectLenderRefund(@PathVariable UUID creditId,
+            @Valid @RequestBody Rejection body, @AuthenticationPrincipal Jwt jwt) {
+        return billing.refuseLenderRefund(creditId, jwt.getSubject(), body.reason());
+    }
 }

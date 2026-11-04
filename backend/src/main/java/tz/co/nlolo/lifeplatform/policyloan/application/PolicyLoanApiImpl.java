@@ -44,10 +44,14 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
     private final PolicyApi policyApi;
     private final ReferenceDataApi referenceDataApi;
     private final ApplicationEventPublisher eventPublisher;
+    /** Whether the person releasing a payout may be the one who took the loan (money movement step 4). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     public PolicyLoanApiImpl(PolicyLoanRepository policyLoanRepository, LoanInterestTermRepository loanInterestTermRepository,
                               LoanTransactionRepository loanTransactionRepository, PolicyApi policyApi,
-                              ReferenceDataApi referenceDataApi, ApplicationEventPublisher eventPublisher) {
+                              ReferenceDataApi referenceDataApi, ApplicationEventPublisher eventPublisher,
+                              tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.policyLoanRepository = policyLoanRepository;
         this.loanInterestTermRepository = loanInterestTermRepository;
         this.loanTransactionRepository = loanTransactionRepository;
@@ -156,12 +160,61 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
                    "principalAmount", Map.of("amount", requestedAmount.toPlainString(), "currencyCode", currency),
                    "interestRate", rate, "originatedAt", loan.getOriginatedAt().toString())));
 
-        // Disbursement is requested (event published) but never actually executed in M3 --
-        // payment (its consumer) is M5. Loans legitimately rest at DISBURSEMENT_REQUESTED here
-        // (Global Constraints) unless a test calls markDisbursed as a stand-in.
-        loan.markDisbursementRequested();
+        // Money movement step 4 (2026-11-04): the payout waits for a second person (approvePayout) -- the one money-out
+        // road that had nobody checking it. The reserved loan value stays reserved meanwhile.
+        loan.markAwaitingPayoutApproval(payeeRef);
         policyLoanRepository.save(loan);
+        return toView(loan);
+    }
 
+    /**
+     * A second person releases a loan's payout (money movement step 4): payouts.approve, or the person who took the loan
+     * holding payouts.approve-own, recorded against their name. Then payment is asked to pay it, as before.
+     */
+    @Override
+    @Transactional
+    public LoanView approvePayout(UUID loanId, String approvedBy) {
+        UUID tenantId = TenantContext.get();
+        PolicyLoan loan = findLoanOrThrow(loanId, tenantId);
+        loan.approvePayout(approvedBy, ownWork.mayActAlone("payouts.approve-own"));
+        policyLoanRepository.save(loan);
+        if (loan.isActedAlone()) {
+            ownWork.record("Loan payout released by the person who took the loan", loanId.toString(),
+                loan.getPolicyNumber(), approvedBy);
+        }
+        requestDisbursement(tenantId, loan);
+        return toView(loan);
+    }
+
+    /** A second person refuses a loan's payout: nothing is paid, and the reserved loan value is freed. */
+    @Override
+    @Transactional
+    public LoanView refusePayout(UUID loanId, String refusedBy, String reason) {
+        UUID tenantId = TenantContext.get();
+        PolicyLoan loan = findLoanOrThrow(loanId, tenantId);
+        loan.refusePayout(refusedBy, ownWork.mayActAlone("payouts.approve-own"), reason);
+        policyLoanRepository.save(loan);
+        loanTransactionRepository.save(new LoanTransaction(tenantId, loanId, "REVERSAL", loan.getPrincipalAmount(),
+            loan.getPrincipalCurrency(), "payout refused: " + reason.trim()));
+        policyApi.releaseEncumbrance(loan.getPolicyNumber(), loan.getPrincipalAmount(), loan.getPrincipalCurrency());
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanPayoutRefused", tenantId,
+            Map.of("loanId", loanId, "policyNumber", loan.getPolicyNumber(), "reason", reason.trim(),
+                   "refusedBy", refusedBy)));
+        return toView(loan);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<LoanView> listLoansAwaitingPayoutApproval() {
+        return policyLoanRepository.findByTenantIdAndStatus(TenantContext.get(), "AWAITING_PAYOUT_APPROVAL").stream()
+            .map(this::toView).toList();
+    }
+
+    /** Ask payment to pay a loan whose payout was released. */
+    private void requestDisbursement(UUID tenantId, PolicyLoan loan) {
+        String payeeRef = loan.getPayeeRef();
+        String currency = loan.getPrincipalCurrency();
+        BigDecimal requestedAmount = loan.getPrincipalAmount();
         Map<String, Object> disbursementPayload = new LinkedHashMap<>();
         disbursementPayload.put("loanId", loan.getLoanId());
         disbursementPayload.put("payeeRef", payeeRef);
@@ -178,8 +231,6 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         // before a disbursement payee is known) and Map.of throws NPE on a null value, whereas a
         // HashMap/LinkedHashMap accepts one.
         eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanDisbursementRequested", tenantId, disbursementPayload));
-
-        return toView(loan);
     }
 
     @Override

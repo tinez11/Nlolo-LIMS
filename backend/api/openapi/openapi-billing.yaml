@@ -607,8 +607,63 @@ paths:
               schema: { $ref: '#/components/schemas/DepositReversal' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /lender-refunds/{creditId}/approve:
+    post:
+      summary: Release a credit-life lender's premium refund to the bank-transfer queue (payouts.approve)
+      description: Money movement step 4 (2026-11-04). The refund is raised automatically when a borrower leaves after the lender paid; it waits at AWAITING_APPROVAL for a second person.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: creditId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '202':
+          description: Released; finance makes the transfer
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LenderRefund' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /lender-refunds/{creditId}/reject:
+    post:
+      summary: Refuse a lender's premium refund, saying why (payouts.approve); it stays owed to the lender on the books
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: creditId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: Refused
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LenderRefund' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
 components:
   schemas:
+    LenderRefund:
+      type: object
+      required: [creditId, policyNumber, payee, amount, currency, status, raisedAt]
+      properties:
+        creditId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        payee: { type: string }
+        amount: { type: number }
+        currency: { type: string }
+        status: { type: string, enum: [AWAITING_APPROVAL, REQUESTED, PAID, FAILED, REFUSED] }
+        exitReason: { type: [string, "null"] }
+        raisedAt: { type: string, format: date-time }
+        decidedBy: { type: [string, "null"] }
+        refusalReason: { type: [string, "null"] }
     DepositReversal:
       type: object
       additionalProperties: false

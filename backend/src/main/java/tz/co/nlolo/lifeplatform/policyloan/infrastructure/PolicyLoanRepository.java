@@ -11,6 +11,9 @@ public interface PolicyLoanRepository extends JpaRepository<PolicyLoan, UUID> {
     Optional<PolicyLoan> findByLoanIdAndTenantId(UUID loanId, UUID tenantId);
     List<PolicyLoan> findByPolicyNumberAndTenantId(String policyNumber, UUID tenantId);
 
+    /** Loans in one state, oldest first -- the payouts waiting for their second person (money movement step 4). */
+    List<PolicyLoan> findByTenantIdAndStatus(UUID tenantId, String status);
+
     /** The forced-lapse review queue the accrual sweep fills. Ordered oldest-flagged first so a
      * caller draining it in pages cannot starve the loans that have waited longest -- the same
      * class of omission a missing ORDER BY caused elsewhere on this platform, where an unordered

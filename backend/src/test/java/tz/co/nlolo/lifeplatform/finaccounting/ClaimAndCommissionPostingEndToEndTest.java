@@ -241,6 +241,7 @@ class ClaimAndCommissionPostingEndToEndTest {
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
             "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
+            "db-migrations/distribution/V11__commission_payout_approval.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
@@ -259,6 +260,7 @@ class ClaimAndCommissionPostingEndToEndTest {
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             "db-migrations/policyloan/V8__interest_month_published.sql",
+            "db-migrations/policyloan/V9__payout_approval.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
@@ -485,6 +487,7 @@ class ClaimAndCommissionPostingEndToEndTest {
 
         TenantContext.set(tenantId);
         distributionApi.requestStatementPayout(statementId, "MPESA-0715000002", payoutKey, "finance-officer");
+        distributionApi.approveStatementPayout(statementId, "finance-approver"); // money movement step 4: a second person releases it
 
         TenantContext.set(tenantId);
         assertThat(commissionStatementRepository.findByStatementIdAndTenantId(statementId, tenantId)

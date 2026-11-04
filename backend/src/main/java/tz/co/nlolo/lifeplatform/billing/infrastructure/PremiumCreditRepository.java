@@ -17,5 +17,7 @@ public interface PremiumCreditRepository extends JpaRepository<PremiumCredit, UU
 
     List<PremiumCredit> findByTenantIdAndPolicyNumber(UUID tenantId, String policyNumber);
 
+    List<PremiumCredit> findByTenantIdAndRefundStatusOrderByCreatedAt(UUID tenantId, String refundStatus);
+
     List<PremiumCredit> findByTenantIdAndOriginalInvoiceId(UUID tenantId, UUID originalInvoiceId);
 }

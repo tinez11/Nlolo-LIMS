@@ -276,7 +276,7 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
       // annotation is required to stop TypeScript widening the literal to boolean.
       async (): Promise<true> => {
         await requestPayout(agentId, statementId, request, attempt);
-        // 202 with no body -- the statement's real new status (PAYOUT_REQUESTED)
+        // 202 with no body -- the statement's real new status (AWAITING_PAYOUT_APPROVAL)
         // is only visible via a fresh GET.
         await getState().loadStatements(agentId);
         return true;

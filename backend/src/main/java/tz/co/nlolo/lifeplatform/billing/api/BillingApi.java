@@ -90,6 +90,15 @@ public interface BillingApi {
      */
     List<PremiumCreditView> listCredits(String policyNumber);
 
+    /** A second person (payouts.approve) releases a lender's premium refund to the bank-transfer queue (money movement step 4). */
+    LenderRefundView approveLenderRefund(java.util.UUID creditId, String approvedBy);
+
+    /** A second person refuses a lender's premium refund, saying why; it stays owed to the lender on the books. */
+    LenderRefundView refuseLenderRefund(java.util.UUID creditId, String refusedBy, String reason);
+
+    /** Lender refunds raised and waiting for a second person, oldest first. */
+    List<LenderRefundView> listLenderRefundsAwaitingApproval();
+
     /**
      * Single-invoice read by id, needed for object-level authorization on endpoints that identify
      * an invoice without naming its policy (BillingController.requestPaymentForInvoice). Tenant

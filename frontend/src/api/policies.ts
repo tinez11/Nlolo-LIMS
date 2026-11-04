@@ -182,9 +182,9 @@ export function listLoans(policyNumber: string): Promise<LoanView[]> {
 
 /**
  * `POST /policies/{n}/loans` -- staff/agent/customer. Returns **202** with the
- * loan body: the reservation against cash value is confirmed synchronously, but
- * disbursement is handed to `payment` and completes asynchronously, so the loan
- * that comes back is normally `DISBURSEMENT_REQUESTED` rather than `DISBURSED`.
+ * loan body: the reservation against cash value is confirmed synchronously, and the
+ * loan comes back `AWAITING_PAYOUT_APPROVAL`: a second person releases the payout
+ * (money movement step 4), after which `payment` disburses it asynchronously.
  *
  * Rejections worth surfacing verbatim rather than rewording: 409 when the
  * requested amount exceeds available loan value (cash value net of existing

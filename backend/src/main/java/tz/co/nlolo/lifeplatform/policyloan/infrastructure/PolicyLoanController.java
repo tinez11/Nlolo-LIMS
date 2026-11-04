@@ -55,8 +55,8 @@ public class PolicyLoanController {
         enforceCustomerOwnPolicyOnly(policyNumber, jwt, authentication);
         LoanView loan = policyLoanApi.originateLoan(policyNumber, new BigDecimal(request.requestedAmount().amount()),
             request.requestedAmount().currencyCode(), request.payeeRef(), jwt.getSubject());
-        // 202, not 200/201: openapi-policyloan.yaml describes this as "Loan reservation
-        // confirmed and disbursement requested (async)".
+        // 202, not 200/201: the loan is reserved and waits for its payout to be approved (money movement step 4);
+        // nothing is paid until a second person releases it.
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(LoanResponseDto.from(loan));
     }
 
@@ -105,6 +105,24 @@ public class PolicyLoanController {
         enforceCustomerOwnPolicyOnly(loan.policyNumber(), jwt, authentication);
         AgentBook.require(policyApi, loan.policyNumber(), jwt, authentication);
         return ResponseEntity.ok(LoanResponseDto.from(loan));
+    }
+
+    /** Money movement step 4: the second person releases a loan's payout -- payment is then asked to pay it. */
+    @PostMapping("/loans/{loanId}/payout-approval")
+    @PreAuthorize("@access.can('payouts.approve')")
+    public ResponseEntity<LoanResponseDto> approvePayout(@PathVariable UUID loanId, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.accepted().body(LoanResponseDto.from(policyLoanApi.approvePayout(loanId, jwt.getSubject())));
+    }
+
+    public record PayoutRefusal(@jakarta.validation.constraints.NotBlank
+                                @jakarta.validation.constraints.Size(max = 500) String reason) {}
+
+    /** The second person refuses a loan's payout, saying why; the reserved loan value is freed. */
+    @PostMapping("/loans/{loanId}/payout-refusal")
+    @PreAuthorize("@access.can('payouts.approve')")
+    public LoanResponseDto refusePayout(@PathVariable UUID loanId, @Valid @RequestBody PayoutRefusal body,
+                                        @AuthenticationPrincipal Jwt jwt) {
+        return LoanResponseDto.from(policyLoanApi.refusePayout(loanId, jwt.getSubject(), body.reason()));
     }
 
     @PostMapping("/loans/{loanId}/payment-request")

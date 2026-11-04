@@ -16,6 +16,7 @@ import tz.co.nlolo.lifeplatform.distribution.api.DistributionValidationException
 import tz.co.nlolo.lifeplatform.distribution.api.InvalidAgentStateException;
 import tz.co.nlolo.lifeplatform.distribution.api.LicenseStatus;
 import tz.co.nlolo.lifeplatform.distribution.api.PlanStatus;
+import tz.co.nlolo.lifeplatform.distribution.api.StatementStatus;
 import tz.co.nlolo.lifeplatform.distribution.api.SalesChannel;
 import tz.co.nlolo.lifeplatform.refdata.api.ReferenceDataApi;
 import tz.co.nlolo.lifeplatform.distribution.api.TierType;
@@ -116,6 +117,8 @@ public class DistributionApiImpl implements DistributionApi {
     private final ReferenceDataApi referenceDataApi;
     /** IFRS 17 I3b: the commission withholding rate in force (user decision 7). */
     private final tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi finaccountingApi;
+    /** Money movement step 4: a commission payout is released by a second person unless payouts.approve-own. */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     public DistributionApiImpl(AgentProfileRepository agentProfileRepository,
                                 CommissionPlanRepository commissionPlanRepository,
@@ -126,7 +129,9 @@ public class DistributionApiImpl implements DistributionApi {
                                 PartyApi partyApi, ProductApi productApi,
                                 ApplicationEventPublisher eventPublisher,
                                 ReferenceDataApi referenceDataApi,
-                                tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi finaccountingApi) {
+                                tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi finaccountingApi,
+                                tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.finaccountingApi = finaccountingApi;
         this.referenceDataApi = referenceDataApi;
         this.agentProfileRepository = agentProfileRepository;
@@ -676,13 +681,30 @@ public class DistributionApiImpl implements DistributionApi {
         // Validates non-blank payeeRef/idempotencyKey (and a positive total) BEFORE any event is
         // published -- a blank key forwarded to `payment` is swallowed inside its AFTER_COMMIT
         // listener and looks like a request that reached the rail zero times. This also performs
-        // the CLOSED/PAYOUT_FAILED -> PAYOUT_REQUESTED transition itself.
-        statement.markPayoutRequested(idempotencyKey, payeeRef);
+        // the CLOSED/PAYOUT_FAILED -> AWAITING_PAYOUT_APPROVAL transition itself. Money movement step 4 (2026-11-04):
+        // nothing reaches payment until a second person releases it (approveStatementPayout).
+        statement.askForPayout(idempotencyKey, payeeRef, requestedBy);
         // IFRS 17 I3b (guide A-05, user decision 7): tax withheld at the rate in force today -- none configured, none
-        // withheld -- and the agent paid the net.
+        // withheld -- and the agent paid the net. Set here so the approver sees the net they release.
         statement.applyWithholding(finaccountingApi.rateInForce("COMMISSION_WITHHOLDING_RATE",
             java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"))).orElse(null));
         commissionStatementRepository.save(statement);
+    }
+
+    @Override
+    @Transactional
+    public CommissionStatementView approveStatementPayout(UUID statementId, String approvedBy) {
+        UUID tenantId = TenantContext.get();
+        CommissionStatement statement = commissionStatementRepository.findByStatementIdAndTenantId(statementId, tenantId)
+            .orElseThrow(() -> new CommissionStatementNotFoundException("Commission statement " + statementId + " not found"));
+        statement.approvePayout(approvedBy, ownWork.mayActAlone("payouts.approve-own"));
+        commissionStatementRepository.save(statement);
+        if (statement.isActedAlone()) {
+            ownWork.record("Commission payout released by the person who asked for it", statementId.toString(), null,
+                approvedBy);
+        }
+        String idempotencyKey = statement.getPayoutIdempotencyKey();
+        String payeeRef = statement.getPayeeRef();
 
         // Matches api/asyncapi-events.yaml's CommissionPayoutRequestedPayload field-for-field.
         // Carries statementId, not sourceRef -- `payment` derives sourceRef = statementId.toString()
@@ -696,6 +718,26 @@ public class DistributionApiImpl implements DistributionApi {
                                       "currencyCode", statement.getTotalCurrency()));
         payload.put("idempotencyKey", idempotencyKey);
         eventPublisher.publishEvent(DomainEventEnvelope.of("distribution.CommissionPayoutRequested", tenantId, payload));
+        return toStatementView(statement);
+    }
+
+    @Override
+    @Transactional
+    public CommissionStatementView refuseStatementPayout(UUID statementId, String refusedBy, String reason) {
+        UUID tenantId = TenantContext.get();
+        CommissionStatement statement = commissionStatementRepository.findByStatementIdAndTenantId(statementId, tenantId)
+            .orElseThrow(() -> new CommissionStatementNotFoundException("Commission statement " + statementId + " not found"));
+        statement.refusePayout(refusedBy, ownWork.mayActAlone("payouts.approve-own"), reason);
+        commissionStatementRepository.save(statement);
+        return toStatementView(statement);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CommissionStatementView> listStatementsAwaitingPayoutApproval() {
+        return commissionStatementRepository
+            .findByTenantIdAndStatusOrderByPeriod(TenantContext.get(), StatementStatus.AWAITING_PAYOUT_APPROVAL)
+            .stream().map(this::toStatementView).toList();
     }
 
     private AgentProfile findAgentOrThrow(UUID agentId, UUID tenantId) {

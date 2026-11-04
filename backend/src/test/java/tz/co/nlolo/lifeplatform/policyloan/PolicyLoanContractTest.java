@@ -166,6 +166,7 @@ class PolicyLoanContractTest {
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             "db-migrations/policyloan/V8__interest_month_published.sql",
+            "db-migrations/policyloan/V9__payout_approval.sql",
             // NOT optional, and NOT in the task brief's list: every domain event these tests
             // publish (LoanOriginated, LoanDisbursementRequested, LoanRepaid, PolicyIssued, ...)
             // is picked up application-wide by audit.DomainEventAuditListener. It swallows its
@@ -337,7 +338,7 @@ class PolicyLoanContractTest {
             // the platform -- two Money objects whose amounts must stay decimal STRINGS, plus
             // currentInterestRate, which conversely must stay a JSON number.
             .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "LoanView"))
-            .andExpect(jsonPath("$.status").value("DISBURSEMENT_REQUESTED"))
+            .andExpect(jsonPath("$.status").value("AWAITING_PAYOUT_APPROVAL"))
             .andExpect(jsonPath("$.policyNumber").value(fixture.policyNumber()))
             .andExpect(jsonPath("$.principalAmount.amount").value("200000.00"))
             .andExpect(jsonPath("$.principalAmount.currencyCode").value("TZS"))
@@ -465,8 +466,8 @@ class PolicyLoanContractTest {
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
 
         // The owner's request to pay gets past the ownership gate and is then rejected on
-        // STATE, not authorization: the loan legitimately rests at DISBURSEMENT_REQUESTED (nothing
-        // consumes LoanDisbursementRequested until payment, M5). A 409 LOAN_NOT_ELIGIBLE here is
+        // STATE, not authorization: the loan legitimately waits at AWAITING_PAYOUT_APPROVAL (nothing
+        // is paid out until a second person releases it). A 409 LOAN_NOT_ELIGIBLE here is
         // therefore the proof the ownership check admitted them -- a 403 would mean it did not.
         mockMvc.perform(post("/loans/" + loanId + "/payment-request")
                 .with(customerOf(fixture.tenantId(), fixture.policyholderPartyId()))
@@ -495,7 +496,7 @@ class PolicyLoanContractTest {
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.length()").value(1))
             .andExpect(jsonPath("$[0].policyNumber").value(fixture.policyNumber()))
-            .andExpect(jsonPath("$[0].status").value("DISBURSEMENT_REQUESTED"));
+            .andExpect(jsonPath("$[0].status").value("AWAITING_PAYOUT_APPROVAL"));
     }
 
     // --- GET /loans/{loanId} -----------------------------------------------------------------
@@ -523,7 +524,49 @@ class PolicyLoanContractTest {
             .andExpect(jsonPath("$.principalAmount.amount").value(originatedPrincipal))
             .andExpect(jsonPath("$.principalAmount.amount").value("200000.00"))
             .andExpect(jsonPath("$.outstandingBalance.amount").value("200000.00"))
+            .andExpect(jsonPath("$.status").value("AWAITING_PAYOUT_APPROVAL"));
+    }
+
+    // --- POST /loans/{loanId}/payout-approval and /payout-refusal ----------------------------
+
+    @Test
+    void aLoanPayoutIsReleasedAndRefusedOverTheContract() throws Exception {
+        Fixture fixture = issuePolicyWithCashValue("LOAN-CONTRACT-PAYOUT", "1000000.00");
+        RequestPostProcessor approver = jwt()
+            .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+            .jwt(builder -> builder.subject("loan-approver").claim("tenant_id", fixture.tenantId().toString()));
+        UUID first = originate(fixture);
+        UUID second = originate(fixture);
+
+        // The person who took the loan may not release it: two people, unless payouts.approve-own says otherwise.
+        mockMvc.perform(post("/loans/" + first + "/payout-approval").with(staffOf(fixture.tenantId())))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("LOAN_NOT_ELIGIBLE"));
+
+        mockMvc.perform(post("/loans/" + first + "/payout-approval").with(approver))
+            .andExpect(status().isAccepted())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.status").value("DISBURSEMENT_REQUESTED"));
+
+        mockMvc.perform(post("/loans/" + second + "/payout-refusal").with(approver)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"payee number does not match\"}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("PAYOUT_REFUSED"));
+
+        mockMvc.perform(post("/loans/" + second + "/payout-approval").with(approver))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("LOAN_NOT_ELIGIBLE"));
+    }
+
+    private UUID originate(Fixture fixture) throws Exception {
+        String response = mockMvc.perform(post("/policies/" + fixture.policyNumber() + "/loans")
+                .with(staffOf(fixture.tenantId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(ORIGINATE_BODY))
+            .andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString();
+        return UUID.fromString(JsonPath.read(response, "$.loanId"));
     }
 
     @Test

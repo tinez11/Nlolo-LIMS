@@ -28,6 +28,7 @@ export interface CommissionTotals {
 
 const AWAITING: ReadonlySet<CommissionStatementView['status']> = new Set([
   'CLOSED',
+  'AWAITING_PAYOUT_APPROVAL',
   'PAYOUT_REQUESTED',
   'PAYOUT_FAILED',
 ]);

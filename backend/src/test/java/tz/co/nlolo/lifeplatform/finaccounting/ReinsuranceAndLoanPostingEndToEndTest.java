@@ -262,6 +262,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             "db-migrations/policyloan/V8__interest_month_published.sql",
+            "db-migrations/policyloan/V9__payout_approval.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
@@ -594,6 +595,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
 
         TenantContext.set(tenantId);
         LoanView originated = policyLoanApi.originateLoan(loanPolicyNumber, principal, CURRENCY, "MPESA-0716000002", "test-agent");
+        policyLoanApi.approvePayout(originated.loanId(), "approver"); // money movement step 4: a second person releases the payout
 
         TenantContext.set(tenantId);
         assertThat(policyLoanApi.getLoan(originated.loanId()).status()).isEqualTo(LoanStatus.DISBURSED);

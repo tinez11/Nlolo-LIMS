@@ -276,6 +276,8 @@ export const STATUS_MAPS = {
   // policyloan/api/LoanStatus.java
   loan: {
     RESERVED_PENDING_ORIGINATION: 'pending',
+    AWAITING_PAYOUT_APPROVAL: 'warning', // a second person releases the payout (money movement step 4)
+    PAYOUT_REFUSED: 'neutral',
     DISBURSEMENT_REQUESTED: 'pending',
     ORIGINATED: 'active',
     DISBURSED: 'active',
@@ -396,6 +398,7 @@ export const STATUS_MAPS = {
   // distribution/api/StatementStatus.java
   commissionStatement: {
     OPEN: 'active', // still accruing -- the live state, unlike an OPEN uw case
+    AWAITING_PAYOUT_APPROVAL: 'warning', // a second person releases the payout (money movement step 4)
     PAYOUT_REQUESTED: 'pending',
     CLOSED: 'neutral',
     PAID: 'success',

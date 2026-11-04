@@ -190,6 +190,7 @@ class CreditLifeCommissionTest {
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
             "db-migrations/billing/V16__deposit_reversal.sql",
+            "db-migrations/billing/V17__lender_refund_approval.sql",
             // payment: a refund paid back to the lender is a bank transfer (2026-10-30).
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V16__payment_policy_number.sql",
@@ -211,7 +212,8 @@ class CreditLifeCommissionTest {
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
-            "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql");
+            "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
+            "db-migrations/distribution/V11__commission_payout_approval.sql");
 
         MinioClient minio = MinioClient.builder()
             .endpoint(MINIO.getS3URL())
@@ -684,8 +686,16 @@ class CreditLifeCommissionTest {
 
         var credit = creditFor("Amina Hassan Mwinyi");
         assertThat((BigDecimal) credit.get("refund_amount")).isEqualByComparingTo("9000.00");
-        assertThat(credit.get("refund_status")).isEqualTo("REQUESTED");
         assertThat((String) credit.get("refund_payee")).contains("policyholder of " + scheme);
+
+        // Money movement step 4: raised automatically, nothing sent until a second person releases it.
+        assertThat(credit.get("refund_status")).isEqualTo("AWAITING_APPROVAL");
+        assertThat(disbursements.findByIdempotencyKeyAndTenantId("credit-refund:" + credit.get("credit_id"), tenantId))
+            .isEmpty();
+        assertThat(billingApi.listLenderRefundsAwaitingApproval())
+            .extracting(r -> r.creditId().toString()).contains(credit.get("credit_id").toString());
+        billingApi.approveLenderRefund((UUID) credit.get("credit_id"), "finance-approver");
+        assertThat(creditFor("Amina Hassan Mwinyi").get("refund_status")).isEqualTo("REQUESTED");
 
         var transfer = disbursements.findByIdempotencyKeyAndTenantId("credit-refund:" + credit.get("credit_id"), tenantId)
             .orElseThrow(() -> new AssertionError("No transfer was recorded for the refund"));
@@ -696,6 +706,22 @@ class CreditLifeCommissionTest {
         // Finance makes the transfer and records its bank reference: the credit is settled.
         paymentApiImpl.markEftExecuted(transfer.getDisbursementId(), "FT26103000123", "finance-officer");
         assertThat(creditFor("Amina Hassan Mwinyi").get("refund_status")).isEqualTo("PAID");
+    }
+
+    @Test
+    void aRefusedLenderRefundSendsNothingAndSaysWhy() {
+        schemeWithBankAsAgent();
+        submitAndAccept(THREE_BORROWERS);
+        policyApi.exitMember(scheme, memberNamed("Amina Hassan Mwinyi").policyMemberId(), LocalDate.of(2027, 5, 3),
+            ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+        UUID creditId = (UUID) creditFor("Amina Hassan Mwinyi").get("credit_id");
+
+        var refused = billingApi.refuseLenderRefund(creditId, "finance-approver", "the lender asked us to offset it");
+        assertThat(refused.status()).isEqualTo("REFUSED");
+        assertThat(refused.refusalReason()).isEqualTo("the lender asked us to offset it");
+        assertThat(disbursements.findByIdempotencyKeyAndTenantId("credit-refund:" + creditId, tenantId)).isEmpty();
+        assertThatThrownBy(() -> billingApi.approveLenderRefund(creditId, "finance-approver"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.BalanceRefusedException.class);
     }
 
     @Test

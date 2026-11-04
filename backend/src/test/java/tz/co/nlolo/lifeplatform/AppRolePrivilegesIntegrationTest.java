@@ -201,6 +201,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             "db-migrations/policyloan/V8__interest_month_published.sql",
+            "db-migrations/policyloan/V9__payout_approval.sql",
             // M4 (Task 1) additions: policy.policy now requires premium_amount/currency/frequency
             // on every insert (this class's own policy-issuing tests would otherwise fail), the
             // auto-issuance listener invoked by submitAssessment below needs
@@ -240,6 +241,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
             "db-migrations/billing/V16__deposit_reversal.sql",
+            "db-migrations/billing/V17__lender_refund_approval.sql",
             // M6 (Task 1) additions: appRoleCanReadWriteAndUpdateAClaim below needs claims' own
             // schema/grants -- V1 alone had zero GRANT statements anywhere in the file (again),
             // the exact M1/M5 failure mode this class exists to catch, and RLS on only 1 of its
@@ -294,6 +296,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
             "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
+            "db-migrations/distribution/V11__commission_payout_approval.sql",
             // M8 (Task 9) additions: reinsurance appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap distribution had entering
             // M7. reinsurance/V1 has zero GRANT statements (the recurring V1 pattern this class
@@ -546,6 +549,7 @@ class AppRolePrivilegesIntegrationTest {
         }
 
         LoanView loan = policyLoanApi.originateLoan(issued.policyNumber(), new java.math.BigDecimal("100000"), "TZS", "MPESA-0700000000", "test-agent");
+        policyLoanApi.approvePayout(loan.loanId(), "approver"); // money movement step 4: a second person releases the payout
         assertThat(loan.loanId()).isNotNull();
 
         // M5 (Task 6) changed this test's outcome, and the corrected reason (review fix, Important

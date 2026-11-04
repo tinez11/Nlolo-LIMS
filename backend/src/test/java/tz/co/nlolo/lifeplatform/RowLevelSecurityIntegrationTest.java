@@ -168,6 +168,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             "db-migrations/policyloan/V8__interest_month_published.sql",
+            "db-migrations/policyloan/V9__payout_approval.sql",
             // M4 (Task 1) additions: policy.policy now requires premium_amount/currency/frequency
             // on every insert (every auto-issued policy in policyIsTenantIsolatedUnderRls/
             // policyLoanIsTenantIsolatedUnderRls below would otherwise fail at persist time), the
@@ -209,6 +210,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
             "db-migrations/billing/V16__deposit_reversal.sql",
+            "db-migrations/billing/V17__lender_refund_approval.sql",
             // M5 (Task 1) additions: disbursementInstructionIsTenantIsolatedUnderRls/
             // disbursementIdempotencyRegistryIsTenantIsolatedUnderRls below need payment's own
             // schema/grants/RLS -- V1 alone shipped zero GRANTs and zero RLS on any table.
@@ -234,6 +236,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
             "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
+            "db-migrations/distribution/V11__commission_payout_approval.sql",
             // M8 (Task 9) additions. reinsurance/V1 enabled RLS on only ONE of its three tables
             // (reinsurance_treaty) and granted app_role nothing; V2 is what adds both cession's and
             // claim_recovery's policies, plus the grants that let app_role reach the schema at all.

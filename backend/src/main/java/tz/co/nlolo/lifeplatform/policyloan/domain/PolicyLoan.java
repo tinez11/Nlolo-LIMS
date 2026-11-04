@@ -62,6 +62,22 @@ public class PolicyLoan {
     @Column(name = "updated_by")
     private String updatedBy;
 
+    // A loan's payout approval (money movement step 4, policyloan V9).
+    @Column(name = "payee_ref")
+    private String payeeRef;
+
+    @Column(name = "payout_decided_by")
+    private String payoutDecidedBy;
+
+    @Column(name = "payout_decided_at")
+    private Instant payoutDecidedAt;
+
+    @Column(name = "payout_refusal_reason")
+    private String payoutRefusalReason;
+
+    @Column(name = "acted_alone", nullable = false)
+    private boolean actedAlone;
+
     protected PolicyLoan() {}
 
     public PolicyLoan(UUID tenantId, String policyNumber, BigDecimal principalAmount, String principalCurrency, String createdBy) {
@@ -101,6 +117,51 @@ public class PolicyLoan {
         this.status = "ORIGINATED";
         this.originatedAt = Instant.now();
     }
+
+    /**
+     * Taken, and waiting for a second person to release its payout (money movement step 4, policyloan V9): the payee is
+     * kept so the approver sees whom it pays and the payout request carries it.
+     */
+    public void markAwaitingPayoutApproval(String payeeRef) {
+        if (!"ORIGINATED".equals(status)) {
+            throw new LoanNotEligibleException("Loan " + loanId + " must be ORIGINATED to wait for payout approval (current: " + status + ")");
+        }
+        this.payeeRef = payeeRef;
+        this.status = "AWAITING_PAYOUT_APPROVAL";
+    }
+
+    /** The second person releases the payout -- or the person who took the loan, holding payouts.approve-own. */
+    public void approvePayout(String by, boolean mayActAlone) {
+        decidePayout(by, mayActAlone, "released");
+        this.status = "DISBURSEMENT_REQUESTED";
+    }
+
+    /** The second person refuses the payout, saying why; the caller frees the reserved loan value. */
+    public void refusePayout(String by, boolean mayActAlone, String why) {
+        if (why == null || why.isBlank()) {
+            throw new LoanNotEligibleException("Say why the loan's payout is refused");
+        }
+        decidePayout(by, mayActAlone, "refused");
+        this.status = "PAYOUT_REFUSED";
+        this.payoutRefusalReason = why.trim();
+    }
+
+    private void decidePayout(String by, boolean mayActAlone, String verb) {
+        if (!"AWAITING_PAYOUT_APPROVAL".equals(status)) {
+            throw new LoanNotEligibleException("Loan " + loanId + " is not waiting for its payout to be approved (current: " + status + ")");
+        }
+        if (by.equals(createdBy) && !mayActAlone) {
+            throw new LoanNotEligibleException("A loan's payout must be " + verb + " by someone other than the person who took the loan");
+        }
+        this.actedAlone = by.equals(createdBy);
+        this.payoutDecidedBy = by;
+        this.payoutDecidedAt = Instant.now();
+    }
+
+    public String getPayeeRef() { return payeeRef; }
+    public String getCreatedBy() { return createdBy; }
+    public String getPayoutDecidedBy() { return payoutDecidedBy; }
+    public boolean isActedAlone() { return actedAlone; }
 
     public void markDisbursementRequested() {
         if (!"ORIGINATED".equals(status)) {

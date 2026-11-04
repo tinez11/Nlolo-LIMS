@@ -1061,18 +1061,8 @@ public class BillingApiImpl implements BillingApi {
         }
         credit = premiumCreditRepository.save(credit);
         premiumCreditRepository.flush();
-        if (refund.signum() > 0) {
-            // A bank transfer finance makes by hand, as a credit-life claim's is: the insurer deals only with the lender.
-            Map<String, Object> request = new java.util.HashMap<>();
-            request.put("creditId", credit.getCreditId().toString());
-            request.put("idempotencyKey", "credit-refund:" + credit.getCreditId());
-            request.put("policyNumber", policyNumber);
-            request.put("payeeRef", payee);
-            request.put("disbursementMethod", "EFT");
-            request.put("amount", Map.of("amount", refund.toPlainString(), "currencyCode", currency));
-            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumRefundPayoutRequested", tenantId,
-                request));
-        }
+        // Money movement step 4 (2026-11-04): the refund waits for a second person (approveLenderRefund), who releases it
+        // to the bank-transfer queue.
 
         // If payments and credits now cover the invoice, nothing more is owed -- otherwise a
         // file whose every borrower left sits DUE and the arrears sweep chases it for nothing.
@@ -1250,6 +1240,64 @@ public class BillingApiImpl implements BillingApi {
             log.info("Paid {} {} back to the lender of {} for credit {}", credit.getRefundAmount(),
                 credit.getCurrency(), credit.getPolicyNumber(), creditId);
         });
+    }
+
+    @Override
+    @Transactional
+    public LenderRefundView approveLenderRefund(UUID creditId, String approvedBy) {
+        UUID tenantId = TenantContext.get();
+        PremiumCredit credit = lenderRefundOrThrow(tenantId, creditId);
+        credit.approveRefund(approvedBy);
+        premiumCreditRepository.save(credit);
+        // A bank transfer finance makes by hand, as a credit-life claim's is: the insurer deals only with the lender.
+        Map<String, Object> request = new java.util.HashMap<>();
+        request.put("creditId", credit.getCreditId().toString());
+        request.put("idempotencyKey", "credit-refund:" + credit.getCreditId());
+        request.put("policyNumber", credit.getPolicyNumber());
+        request.put("payeeRef", credit.getRefundPayee());
+        request.put("disbursementMethod", "EFT");
+        request.put("amount", Map.of("amount", credit.getRefundAmount().toPlainString(), "currencyCode", credit.getCurrency()));
+        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumRefundPayoutRequested", tenantId, request));
+        return lenderRefundView(credit);
+    }
+
+    @Override
+    @Transactional
+    public LenderRefundView refuseLenderRefund(UUID creditId, String refusedBy, String reason) {
+        PremiumCredit credit = lenderRefundOrThrow(TenantContext.get(), creditId);
+        try {
+            credit.refuseRefund(refusedBy, reason);
+        } catch (IllegalArgumentException e) {
+            throw new BalanceRefusedException(e.getMessage());
+        }
+        premiumCreditRepository.save(credit);
+        log.warn("Refund of {} {} to the lender of {} refused by {}: {}", credit.getRefundAmount(), credit.getCurrency(),
+            credit.getPolicyNumber(), refusedBy, credit.getRefundRefusalReason());
+        return lenderRefundView(credit);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<LenderRefundView> listLenderRefundsAwaitingApproval() {
+        return premiumCreditRepository.findByTenantIdAndRefundStatusOrderByCreatedAt(TenantContext.get(), "AWAITING_APPROVAL")
+            .stream().map(BillingApiImpl::lenderRefundView).toList();
+    }
+
+    private PremiumCredit lenderRefundOrThrow(UUID tenantId, UUID creditId) {
+        PremiumCredit credit = premiumCreditRepository.findById(creditId)
+            .filter(c -> c.getTenantId().equals(tenantId) && c.getRefundStatus() != null)
+            .orElseThrow(() -> new BalanceRefusedException("No lender refund " + creditId + " on this tenant's books"));
+        if (!"AWAITING_APPROVAL".equals(credit.getRefundStatus())) {
+            throw new BalanceRefusedException("This lender refund is not waiting for approval (it is "
+                + credit.getRefundStatus() + ")");
+        }
+        return credit;
+    }
+
+    private static LenderRefundView lenderRefundView(PremiumCredit c) {
+        return new LenderRefundView(c.getCreditId(), c.getPolicyNumber(), c.getRefundPayee(), c.getRefundAmount(),
+            c.getCurrency(), c.getRefundStatus(), c.getExitReason(), c.getCreatedAt(), c.getRefundDecidedBy(),
+            c.getRefundRefusalReason());
     }
 
     /** The rail refused the transfer. Left visible as FAILED rather than retried behind anybody's back. */

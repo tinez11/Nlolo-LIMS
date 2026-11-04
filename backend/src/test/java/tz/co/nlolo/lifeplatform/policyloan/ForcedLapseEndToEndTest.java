@@ -160,6 +160,7 @@ class ForcedLapseEndToEndTest {
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             "db-migrations/policyloan/V8__interest_month_published.sql",
+            "db-migrations/policyloan/V9__payout_approval.sql",
             // audit.DomainEventAuditListener persists a row for every domain event this test
             // triggers, regardless of publishing module -- without this, every such test fails
             // with "relation audit.audit_log does not exist".
@@ -241,6 +242,7 @@ class ForcedLapseEndToEndTest {
      */
     private LoanView disbursedLoanAtFullCashValue(String policyNumber, BigDecimal cashValue, int disbursedDaysAgo) throws Exception {
         LoanView originated = policyLoanApi.originateLoan(policyNumber, cashValue, "TZS", "MPESA-0712345678", "test-agent");
+        policyLoanApi.approvePayout(originated.loanId(), "approver"); // money movement step 4: a second person releases the payout
         policyLoanApi.markDisbursed(originated.loanId(), "MM-TEST-REF", Instant.now());
         try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              PreparedStatement statement = connection.prepareStatement(
@@ -318,6 +320,7 @@ class ForcedLapseEndToEndTest {
         String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000.00"), "LOAN-FL-HEALTHY");
         TenantContext.set(tenantId);
         LoanView originated = policyLoanApi.originateLoan(policyNumber, new BigDecimal("100000.00"), "TZS", "MPESA-0712345678", "test-agent");
+        policyLoanApi.approvePayout(originated.loanId(), "approver"); // money movement step 4: a second person releases the payout
         policyLoanApi.markDisbursed(originated.loanId(), "MM-TEST-REF", Instant.now());
         try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              PreparedStatement statement = connection.prepareStatement(

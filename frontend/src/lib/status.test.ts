@@ -139,11 +139,13 @@ describe('STATUS_MAPS coverage', () => {
   it('covers the loan lifecycle exactly as LoanStatus.java declares it', () => {
     expect(Object.keys(STATUS_MAPS.loan).sort()).toEqual(
       [
+        'AWAITING_PAYOUT_APPROVAL',
         'DISBURSED',
         'DISBURSEMENT_FAILED',
         'DISBURSEMENT_REQUESTED',
         'FORCED_LAPSE_TRIGGERED',
         'ORIGINATED',
+        'PAYOUT_REFUSED',
         'REPAYING',
         'RESERVED_PENDING_ORIGINATION',
         'SETTLED',
