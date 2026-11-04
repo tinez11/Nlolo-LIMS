@@ -78,12 +78,12 @@ export function FieldReceiptsPage() {
   const count: Stat = {
     label:
       status === 'RECONCILIATION_OVERDUE'
-        ? 'overdue receipts'
+        ? 'agent cash past its deadline'
         : status === 'PENDING_RECONCILIATION'
-          ? 'receipts awaiting a match'
+          ? 'agent cash awaiting a match'
           : status === 'RECONCILED'
-            ? 'matched receipts'
-            : 'field receipts',
+            ? 'matched agent cash'
+            : 'agent cash',
     value: total,
     pending: isInitialLoad(list),
     hint:
@@ -222,13 +222,13 @@ export function FieldReceiptsPage() {
               : status === 'PENDING_RECONCILIATION'
                 ? 'Nothing is waiting to be matched'
                 : status === 'RECONCILED'
-                  ? 'No matched receipts'
-                  : 'No field receipts'
+                  ? 'No matched agent cash'
+                  : 'No agent cash'
           }
           description={
             status === 'RECONCILIATION_OVERDUE'
-              ? 'Every receipt an agent has captured either matched a payment or is still inside its SLA.'
-              : 'A receipt appears here when an agent captures a premium payment in the field.'
+              ? 'All the cash agents have collected either matched a payment or is still inside its SLA.'
+              : 'Cash appears here when an agent collects a premium in the field.'
           }
           {...(status !== undefined
             ? {
@@ -260,7 +260,7 @@ export function FieldReceiptsPage() {
           onRowActivate={(r) => {
             if (r.policyNumber) navigate(`../policies/${encodeURIComponent(r.policyNumber)}`);
           }}
-          caption="Field receipts"
+          caption="Agent cash"
         />
         {list.data && (
           <Pager page={list.data.page} busy={busy} onPageChange={(next) => update({ page: next })} />
@@ -272,7 +272,7 @@ export function FieldReceiptsPage() {
   return (
     <>
       <PageHeader
-        title="Field receipts"
+        title="Agent cash"
         description="Premium an agent collected in the field, and whether the platform has matched it to a payment. Oldest unmatched first."
         count={<CountLine {...count} />}
       />

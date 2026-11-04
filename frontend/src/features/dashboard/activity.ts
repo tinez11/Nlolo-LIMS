@@ -58,10 +58,10 @@ const WORDS: Record<
     text: () => 'Premium collected',
     link: (r) => (r.policyNumber ? `/staff/policies/${r.policyNumber}` : undefined),
   },
-  'billing.FieldReceiptCaptured': { text: () => 'Field receipt captured', link: () => '/staff/field-receipts' },
-  'billing.FieldReceiptReconciled': { text: () => 'Field receipt reconciled', link: () => '/staff/field-receipts' },
+  'billing.FieldReceiptCaptured': { text: () => 'Agent cash collected', link: () => '/staff/field-receipts' },
+  'billing.FieldReceiptReconciled': { text: () => 'Agent cash matched', link: () => '/staff/field-receipts' },
   'billing.FieldReceiptReconciliationOverdue': {
-    text: () => 'Field receipt past its deadline',
+    text: () => 'Agent cash past its matching deadline',
     link: () => '/staff/field-receipts?status=RECONCILIATION_OVERDUE',
   },
   'billing.InvoiceWaived': {

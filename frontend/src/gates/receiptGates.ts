@@ -17,15 +17,15 @@ export function confirmReceiptGates(receipt: Receipt, viewerSubject: string | un
       detail:
         receipt.status === 'AWAITING_APPROVAL'
           ? 'Recorded and not yet confirmed. Nothing is paid until it is.'
-          : `This receipt is already ${receipt.status === 'CONFIRMED' ? 'confirmed' : 'refused'}.`,
+          : `This deposit is already ${receipt.status === 'CONFIRMED' ? 'confirmed' : 'refused'}.`,
     },
     {
       ok: !sameAsRecorder || mayActAlone('receipts'),
       hard: true,
       title: 'A second person confirms',
       detail: !sameAsRecorder
-        ? 'You did not record this receipt.'
-        : mayActAlone('receipts') ? SIGNING_OWN : 'You recorded this receipt, so someone else must confirm it.',
+        ? 'You did not record this deposit.'
+        : mayActAlone('receipts') ? SIGNING_OWN : 'You recorded this deposit, so someone else must confirm it.',
     },
   ];
 }

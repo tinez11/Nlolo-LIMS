@@ -22,7 +22,7 @@ export async function confirmRequestedPayments(browser: Browser, policyNumber: s
       await waiting.first().getByRole('button').first().click();
       await expect(page).toHaveURL(/\/staff\/receipts\/[0-9a-f-]{36}/, { timeout: 15_000 });
       await page.getByRole('button', { name: 'Confirm', exact: true }).click({ timeout: 30_000 });
-      await page.getByRole('button', { name: 'Confirm receipt' }).click();
+      await page.getByRole('button', { name: 'Confirm deposit' }).click();
       await expect(page.getByRole('heading', { name: 'Confirmed' })).toBeVisible({ timeout: 15_000 });
       await page.goto(register);
       // Loaded, one way or the other, before asking whether another is waiting.

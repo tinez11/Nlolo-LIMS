@@ -230,7 +230,7 @@ describe('screen manifest', () => {
       'Arrears',
       'Claims',
       'Corporate/Group',
-      'Field receipts',
+      'Agent cash',
       'Individuals',
       'Payments',
       'Payments to make',

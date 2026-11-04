@@ -22,7 +22,7 @@ import { formatMoney } from '@/lib/money';
 import { barredAsOwn } from '@/lib/ownWork';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useReceiptStore } from '@/store/receiptStore';
-import { methodOf, receiptOrigin, REQUESTED_MOBILE_MONEY } from './receiptForm';
+import { depositTitle, methodOf, receiptOrigin, REQUESTED_MOBILE_MONEY } from './receiptForm';
 
 
 /**
@@ -39,11 +39,11 @@ export function ReceiptPage() {
     void load(receiptId);
   }, [load, receiptId]);
 
-  if (!resource || isInitialLoad(resource)) return <LoadingBlock label="Loading receipt" />;
+  if (!resource || isInitialLoad(resource)) return <LoadingBlock label="Loading deposit" />;
   if (!resource.data && resource.status === 'error' && resource.error) {
     return (
       <>
-        <PageHeader breadcrumb={receiptOrigin(params.get('from'), null).crumbs} title="Receipt" />
+        <PageHeader breadcrumb={receiptOrigin(params.get('from'), null).crumbs} title="Deposit" />
         <div className="px-6">
           <ErrorPanel error={resource.error} onRetry={() => void load(receiptId)} />
         </div>
@@ -60,14 +60,14 @@ export function ReceiptPage() {
     <>
       <PageHeader
         breadcrumb={origin.crumbs}
-        title={`${method?.label ?? receipt.method} receipt`}
+        title={depositTitle(method?.label ?? receipt.method)}
         status={<StatusBadge kind="receipt" value={receipt.status} />}
       />
       <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-5">
           <ReceiptDecision receipt={receipt} />
         </div>
-        <Panel title="This receipt">
+        <Panel title="This deposit">
           <dl className="px-4 pb-2">
             <Field label="Amount" value={formatMoney(receipt.amount)} emphasis />
             <Field label="How it came in" value={method?.label ?? receipt.method} />
@@ -91,7 +91,7 @@ export function ReceiptPage() {
               <Field label="Loan" value={<span className="font-mono">{receipt.loanId.slice(0, 8)}</span>} />
             )}
             {receipt.note && <Field label="Note" value={receipt.note} />}
-            {receipt.fieldReceiptId && <Field label="Brings in" value="An agent's field receipt" />}
+            {receipt.fieldReceiptId && <Field label="Brings in" value="Cash an agent collected" />}
             <Field
               label={requested ? 'Requested by' : 'Recorded by'}
               value={receipt.recordedBy === 'system' ? 'The platform' : <StaffName subject={receipt.recordedBy} />}
@@ -128,7 +128,7 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
       <>
         <Panel title="Confirmed">
           <p className="px-4 pb-4 text-sm">
-            This receipt paid {formatMoney(receipt.amount)} against {target}, and the ledger has posted it.
+            This deposit paid {formatMoney(receipt.amount)} against {target}, and the ledger has posted it.
           </p>
         </Panel>
         {/* Money movement step 5: a premium deposit whose money never really arrived is reversed from here. */}
@@ -154,15 +154,15 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
   const gates = confirmReceiptGates(receipt, viewerSubject);
   const refused = gates.some((g) => !g.ok && g.hard);
   return (
-    <Panel title="Confirm this receipt"
-      subtitle={receipt.loanId ? 'Only a confirmed receipt repays the loan.' : 'Only a confirmed receipt pays the invoice.'}>
+    <Panel title="Confirm this deposit"
+      subtitle={receipt.loanId ? 'Only a confirmed deposit repays the loan.' : 'Only a confirmed deposit pays the invoice.'}>
       <div className="space-y-3 px-4 py-3">
         {receipt.method === REQUESTED_MOBILE_MONEY.value && <p className="text-sm">{REQUESTED_MOBILE_MONEY.hint}</p>}
         <GatePanel gates={gates} title="Before confirming" />
         {deciding?.status === 'error' && deciding.error && <InlineError error={deciding.error} />}
         {armed === 'confirm' ? (
           <ConfirmAct
-            heading="Confirm this receipt?"
+            heading="Confirm this deposit?"
             consequence={
               <>
                 <strong>{formatMoney(receipt.amount)}</strong>{' '}
@@ -175,8 +175,8 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
             }
             reversal={receipt.purpose === 'PREMIUM'
               ? 'If the money never really arrives (a bounced cheque), the deposit can be reversed from this page.'
-              : 'Nothing here undoes it. A receipt confirmed in error is corrected by a manual journal.'}
-            confirmLabel="Confirm receipt"
+              : 'Nothing here undoes it. A deposit confirmed in error is corrected by a manual journal.'}
+            confirmLabel="Confirm deposit"
             busy={deciding?.status === 'loading'}
             onConfirm={() => {
               void approve(receipt.receiptId);
@@ -200,7 +200,7 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
                   setArmed(null);
                 }}
               >
-                Refuse receipt
+                Refuse deposit
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setArmed(null)}>
                 Cancel

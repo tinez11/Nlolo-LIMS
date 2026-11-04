@@ -104,9 +104,14 @@ export function toApiRequest(values: ReceiptFormValues, currency: string): Recor
  * it pays, or the payments register. Before this both receipt pages pointed at Payments whatever page you had come
  * from -- a client's policy, most often.
  */
+/** A deposit's page title by how the money came in: "Cheque deposit"; a bank deposit is simply "Bank deposit". */
+export function depositTitle(methodLabel: string): string {
+  return /deposit$/i.test(methodLabel) ? methodLabel : `${methodLabel} deposit`;
+}
+
 export function receiptOrigin(from: string | null, policyNumber: string | null | undefined) {
   const lists: Record<string, { label: string; to: string }> = {
-    'field-receipts': { label: 'Field receipts', to: '/staff/field-receipts' },
+    'field-receipts': { label: 'Agent cash', to: '/staff/field-receipts' },
     payments: { label: 'Payments', to: '/staff/payments' },
     approvals: { label: 'Approvals', to: '/staff/approvals' },
   };

@@ -104,7 +104,7 @@ test.describe('staff policy loans', () => {
     // Where the Loans tab's "Record deposit" link leads, opened for a policy with no loan: the honest empty answer,
     // rather than a loan list to pick from that does not exist.
     await page.goto(`/staff/receipts/new?for=LOAN&policy=${encodeURIComponent(policyNumber)}&from=policy`);
-    await expect(page.getByRole('heading', { name: 'Record a receipt' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Record deposit' })).toBeVisible();
     // Exact: the action bell's "Jobs waiting for you" also contains the word.
     const paysFor = page.getByLabel('For', { exact: true });
     await expect(paysFor).toHaveValue('LOAN');

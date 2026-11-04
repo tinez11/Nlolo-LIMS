@@ -305,9 +305,9 @@ const NONE_WAITING: Receipt[] = [];
  */
 function WaitingReceipts({ receipts }: { receipts: Receipt[] }) {
   return (
-    <div className="mt-2 rounded-md border border-border bg-band px-3 py-2" aria-label="Receipts waiting to be confirmed">
+    <div className="mt-2 rounded-md border border-border bg-band px-3 py-2" aria-label="Deposits waiting to be confirmed">
       <p className="text-xs font-medium">
-        {receipts.length === 1 ? 'A receipt is waiting to be confirmed' : `${receipts.length} receipts are waiting to be confirmed`}
+        {receipts.length === 1 ? 'A deposit is waiting to be confirmed' : `${receipts.length} deposits are waiting to be confirmed`}
       </p>
       <ul className="mt-1 space-y-1">
         {receipts.map((r) => (

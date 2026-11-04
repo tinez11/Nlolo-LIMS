@@ -636,7 +636,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'field-receipts',
     element: <FieldReceiptsPage />,
-    reach: { group: 'collections', label: 'Field receipts', icon: HandCoins, badge: 'receipts-overdue' },
+    reach: { group: 'collections', label: 'Agent cash', icon: HandCoins, badge: 'receipts-overdue' },
   },
   // The third work queue, and the only one where the platform is the one who owes. Arrears and
   // field receipts are both about money coming IN and the platform can chase either by itself;

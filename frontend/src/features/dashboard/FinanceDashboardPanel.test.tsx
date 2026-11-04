@@ -123,7 +123,7 @@ describe('FinanceDashboardPanel', () => {
 
     expect(await screen.findByRole('link', { name: /Waiting for your signatures*2/ })).toHaveAttribute('href', '/staff/approvals');
     expect(screen.queryByText('Journals waiting for approval')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Field receipts past their deadline/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Agent cash past its matching deadline/ })).toHaveAttribute(
       'href',
       '/staff/field-receipts?status=RECONCILIATION_OVERDUE',
     );
@@ -134,7 +134,7 @@ describe('FinanceDashboardPanel', () => {
     renderScreen(<FinanceDashboardPanel range={RANGE} />);
 
     expect(await screen.findByRole('link', { name: /Waiting for your signature/ })).toBeInTheDocument();
-    expect(screen.queryByText('Field receipts past their deadline')).not.toBeInTheDocument();
+    expect(screen.queryByText('Agent cash past its matching deadline')).not.toBeInTheDocument();
     expect(screen.queryByText('Bank transfers and cheques not yet made')).not.toBeInTheDocument();
     expect(screen.queryByText('Policies in arrears at the lapse level')).not.toBeInTheDocument();
   });

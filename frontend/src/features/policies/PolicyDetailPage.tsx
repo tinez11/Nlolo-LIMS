@@ -515,7 +515,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             </Panel>
             <Panel
               title="Payment schedule"
-              subtitle="Every premium due, what was paid, when and under which receipt"
+              subtitle="Every premium due, what was paid, when and from which deposit"
               actions={<PaymentScheduleDownloads policyNumber={policyNumber} />}
             >
               <PaymentScheduleTable policyNumber={policyNumber} />

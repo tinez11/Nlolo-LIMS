@@ -39,7 +39,7 @@ describe('ReceiptPage', () => {
   it('shows what came in, how, and its reference by name', async () => {
     grantRoles('FINANCE_OFFICER');
     renderPage();
-    expect(await screen.findByRole('heading', { name: 'Bank deposit receipt' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Bank deposit' })).toBeInTheDocument();
     expect(screen.getByText('Bank slip or transfer reference')).toBeInTheDocument();
     expect(screen.getByText('SLIP-42')).toBeInTheDocument();
   });
@@ -50,7 +50,7 @@ describe('ReceiptPage', () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(await screen.findByRole('button', { name: 'Confirm' }));
-    await user.click(screen.getByRole('button', { name: 'Confirm receipt' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm deposit' }));
     expect(await screen.findByRole('heading', { name: 'Confirmed' })).toBeInTheDocument();
     expect(receiptsApi.approveReceipt).toHaveBeenCalledWith('r-1');
   });
@@ -60,7 +60,7 @@ describe('ReceiptPage', () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(await screen.findByRole('button', { name: 'Refuse' }));
-    expect(screen.getByRole('button', { name: 'Refuse receipt' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Refuse deposit' })).toBeDisabled();
   });
 
   // Money movement step 1 (2026-11-04): a deposit For: Loan names the loan, and confirming it repays the loan.

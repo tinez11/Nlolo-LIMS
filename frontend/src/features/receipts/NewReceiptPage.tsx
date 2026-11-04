@@ -153,12 +153,12 @@ export function NewReceiptPage() {
     <>
       <PageHeader
         breadcrumb={origin.crumbs}
-        title="Record a receipt"
+        title="Record deposit"
         description="Premium or a loan repayment paid by cash, bank deposit, cheque, Lipa number or TANQR. It counts once a second finance person confirms it."
       />
-      <FormLayout formId="new-receipt-form" outlineLabel="Receipt sections">
+      <FormLayout formId="new-receipt-form" outlineLabel="Deposit sections">
         <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
-          <UnsavedGuard when={isDirty && !isSubmitting} what="This receipt" />
+          <UnsavedGuard when={isDirty && !isSubmitting} what="This deposit" />
 
           <div data-outline="What it pays" className="space-y-4">
             <div className="flex flex-wrap items-end gap-2">
@@ -254,12 +254,12 @@ export function NewReceiptPage() {
           </div>
 
           {recording.status === 'error' && recording.error && (
-            <InlineError lead="Could not record the receipt" error={recording.error} />
+            <InlineError lead="Could not record the deposit" error={recording.error} />
           )}
 
           <div className="flex gap-2">
             <Button type="submit" variant="primary" pending={recording.status === 'loading'}>
-              Record receipt
+              Record deposit
             </Button>
             <Button asChild variant="ghost">
               <Link to={origin.back}>Cancel</Link>

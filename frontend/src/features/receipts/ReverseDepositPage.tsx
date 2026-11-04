@@ -13,7 +13,7 @@ import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useReceiptStore } from '@/store/receiptStore';
-import { methodOf } from './receiptForm';
+import { depositTitle, methodOf } from './receiptForm';
 
 /**
  * Reverse a confirmed deposit whose money never really arrived -- a bounced cheque (money movement step 5, design
@@ -53,7 +53,7 @@ export function ReverseDepositPage() {
       <PageHeader
         breadcrumb={[
           { label: 'Payments', to: '/staff/payments' },
-          { label: `${method?.label ?? receipt.method} receipt`, to: back },
+          { label: depositTitle(method?.label ?? receipt.method), to: back },
         ]}
         title="Reverse deposit"
         description="For money that never really arrived. Nothing comes off the balance until a second person confirms it."
