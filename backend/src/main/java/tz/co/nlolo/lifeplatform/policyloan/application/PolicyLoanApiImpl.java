@@ -543,6 +543,7 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         BigDecimal currentRate = loanInterestTermRepository.findByLoanIdOrderByEffectiveFromDesc(loan.getLoanId()).stream()
             .findFirst().map(LoanInterestTerm::getRate).orElse(BigDecimal.ZERO);
         return new LoanView(loan.getLoanId(), loan.getPolicyNumber(), loan.getPrincipalAmount(), loan.getPrincipalCurrency(),
-            outstanding, loan.getPrincipalCurrency(), currentRate, LoanStatus.valueOf(loan.getStatus()));
+            outstanding, loan.getPrincipalCurrency(), currentRate, LoanStatus.valueOf(loan.getStatus()), loan.getPayeeRef(),
+            loan.getCreatedBy(), loan.getPayoutDecidedBy(), loan.getPayoutRefusalReason());
     }
 }

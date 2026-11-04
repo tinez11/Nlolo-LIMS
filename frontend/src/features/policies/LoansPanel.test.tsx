@@ -5,10 +5,17 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as policiesApi from '@/api/policies';
 import type { LoanView, Money } from '@/api/types';
+import { grantAccess } from '@/test/access';
 import { usePolicyStore } from '@/store/policyStore';
 import { LoansPanel } from './LoansPanel';
 
 vi.mock('@/api/policies');
+vi.mock('react-oidc-context', () => ({
+  useAuth: () => ({ user: { access_token: 'token-for-staff-one' } }),
+}));
+vi.mock('@/auth/claims', () => ({
+  readIdentity: () => ({ subject: 'staff-one' }),
+}));
 
 const TZS = (amount: string): Money => ({ amount, currencyCode: 'TZS' });
 
@@ -36,7 +43,7 @@ function renderPanel(ui: ReactElement) {
  */
 beforeEach(() => {
   vi.clearAllMocks();
-  usePolicyStore.setState({ loans: {}, originatingLoan: {}, requestingLoanPayment: {} });
+  usePolicyStore.setState({ loans: {}, originatingLoan: {}, requestingLoanPayment: {}, decidingLoanPayout: {} });
 });
 
 afterEach(() => {
@@ -187,5 +194,52 @@ describe('LoansPanel', () => {
     expect(screen.queryByRole('button', { name: 'Take a loan' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Record deposit' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Request mobile-money payment' })).not.toBeInTheDocument();
+  });
+
+  // Money movement step 4: a loan's payout waits for a second person.
+  const waiting: LoanView = { ...disbursedLoan, status: 'AWAITING_PAYOUT_APPROVAL', payeeRef: 'MPESA-0712345678',
+    takenBy: 'staff-two', payoutDecidedBy: null, payoutRefusalReason: null };
+
+  it('lets a second person release a waiting payout, saying whom it pays', async () => {
+    grantAccess('payouts.approve');
+    vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([waiting]);
+    vi.spyOn(policiesApi, 'approveLoanPayout').mockResolvedValue({ ...waiting, status: 'DISBURSEMENT_REQUESTED' });
+    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange={false} canRecordDeposit={false} canRequestPayment={false} />);
+
+    expect(await screen.findByText(/To MPESA-0712345678/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Release payout' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Pay TZS 500,000.00' }));
+    await waitFor(() => expect(policiesApi.approveLoanPayout).toHaveBeenCalledWith(waiting.loanId));
+  });
+
+  it('refuses a payout only with a reason', async () => {
+    grantAccess('payouts.approve');
+    vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([waiting]);
+    vi.spyOn(policiesApi, 'refuseLoanPayout').mockResolvedValue({ ...waiting, status: 'PAYOUT_REFUSED' });
+    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange={false} canRecordDeposit={false} canRequestPayment={false} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Refuse' }));
+    expect(screen.getByRole('button', { name: 'Refuse payout' })).toBeDisabled();
+    await userEvent.type(screen.getByLabelText('Why is it refused?'), 'Payee number does not match');
+    await userEvent.click(screen.getByRole('button', { name: 'Refuse payout' }));
+    await waitFor(() => expect(policiesApi.refuseLoanPayout).toHaveBeenCalledWith(waiting.loanId, 'Payee number does not match'));
+  });
+
+  it('does not let the person who took the loan release it without the own-work permission', async () => {
+    grantAccess('payouts.approve');
+    vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([{ ...waiting, takenBy: 'staff-one' }]);
+    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange={false} canRecordDeposit={false} canRequestPayment={false} />);
+
+    expect(await screen.findByText('You took this loan, so someone else must release it.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Release payout' })).toBeDisabled();
+  });
+
+  it('shows a waiting payout without the buttons to someone who cannot release it', async () => {
+    grantAccess('accounts.view');
+    vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([waiting]);
+    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange={false} canRecordDeposit={false} canRequestPayment={false} />);
+
+    expect(await screen.findByText(/waiting for a second person/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Release payout' })).not.toBeInTheDocument();
   });
 });

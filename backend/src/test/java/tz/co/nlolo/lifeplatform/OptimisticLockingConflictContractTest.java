@@ -107,7 +107,7 @@ class OptimisticLockingConflictContractTest {
         // has to get the request past the controller body and into the service call.
         when(policyLoanApi.getLoan(loanId)).thenReturn(new LoanView(loanId, "POL-TEST-0001",
             new BigDecimal("500000.00"), "TZS", new BigDecimal("500000.00"), "TZS",
-            new BigDecimal("12.0"), LoanStatus.DISBURSED));
+            new BigDecimal("12.0"), LoanStatus.DISBURSED, null, null, null, null));
         // Exactly what Spring Data JPA raises when `UPDATE ... WHERE version = N` matches zero
         // rows: the loser of two concurrent writers against the same DISBURSED loan.
         doThrow(new ObjectOptimisticLockingFailureException("policyloan.domain.PolicyLoan", loanId))
@@ -157,7 +157,7 @@ class OptimisticLockingConflictContractTest {
         UUID loanId = UUID.randomUUID();
         when(policyLoanApi.getLoan(loanId)).thenReturn(new LoanView(loanId, "POL-TEST-0003",
             new BigDecimal("500000.00"), "TZS", new BigDecimal("500000.00"), "TZS",
-            new BigDecimal("12.0"), LoanStatus.DISBURSED));
+            new BigDecimal("12.0"), LoanStatus.DISBURSED, null, null, null, null));
         doThrow(new IllegalStateException("something genuinely unexpected"))
             .when(policyLoanApi).requestRepayment(any(), anyString(), any(), anyString(), anyString());
 

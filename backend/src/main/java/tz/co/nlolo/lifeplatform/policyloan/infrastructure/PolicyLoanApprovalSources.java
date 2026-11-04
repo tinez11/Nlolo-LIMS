@@ -14,7 +14,7 @@ class PolicyLoanApprovalSources {
         return ApprovalSource.of("loan-payout", "Loans to pay out", "Release", "payouts.approve",
             limit -> ApprovalSource.Pending.of(loans.listLoansAwaitingPayoutApproval().stream()
                 .map(l -> new ApprovalSource.Item(l.loanId().toString(), l.policyNumber(), "Policy loan payout",
-                    l.principalAmount(), l.principalCurrency(), null, null))
+                    l.principalAmount(), l.principalCurrency(), l.takenBy(), null))
                 .toList(), limit));
     }
 }

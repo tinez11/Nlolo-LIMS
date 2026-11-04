@@ -239,3 +239,7 @@ components:
         status:
           type: string
           enum: [RESERVED_PENDING_ORIGINATION, ORIGINATED, AWAITING_PAYOUT_APPROVAL, PAYOUT_REFUSED, DISBURSEMENT_REQUESTED, DISBURSED, REPAYING, SETTLED, FORCED_LAPSE_TRIGGERED, DISBURSEMENT_FAILED]
+        payeeRef: { type: [string, "null"], description: Where the loan is paid out to }
+        takenBy: { type: [string, "null"], description: Who took the loan -- the first person; the payout needs another (or payouts.approve-own) }
+        payoutDecidedBy: { type: [string, "null"] }
+        payoutRefusalReason: { type: [string, "null"] }

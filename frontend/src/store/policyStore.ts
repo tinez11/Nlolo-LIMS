@@ -14,6 +14,8 @@ import {
   listLoans,
   listSchemeMembers,
   originateLoan,
+  approveLoanPayout,
+  refuseLoanPayout,
   requestLoanPayment,
   reinstatePolicy,
   makePaidUp,
@@ -106,6 +108,8 @@ interface PolicyState {
   // A repayment request is keyed by loanId -- it targets an existing loan, and a
   // failure on one loan must not disturb another's form on the same policy.
   requestingLoanPayment: Keyed<true>;
+  /** Money movement step 4: a loan's payout released or refused by a second person, keyed by loan. */
+  decidingLoanPayout: Keyed<true>;
   // Each keyed by policyNumber, separately from `detail` and from each other --
   // same shape as claims' submittingAssessment/decidingSettlement/reopening: three
   // distinct lifecycle actions on the same entity, each its own tracked mutation.
@@ -168,6 +172,8 @@ interface PolicyState {
     attempt: MutationAttempt,
   ) => Promise<void>;
   resetRequestLoanPayment: (loanId: string) => void;
+  /** Release (reason null) or refuse (with the reason) a loan's payout, then re-read the policy's loans. */
+  decideLoanPayout: (policyNumber: string, loanId: string, refuseReason: string | null) => Promise<void>;
   suspendPolicy: (policyNumber: string, request: SuspendPolicyRequest) => Promise<void>;
   resetSuspendPolicy: (policyNumber: string) => void;
   resumePolicy: (policyNumber: string) => Promise<void>;
@@ -206,6 +212,7 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
   requestingPayment: {},
   originatingLoan: {},
   requestingLoanPayment: {},
+  decidingLoanPayout: {},
   suspending: {},
   resuming: {},
   reinstating: {},
@@ -444,6 +451,18 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
         await requestLoanPayment(loanId, request, attempt);
         // 202 with no body: nothing is repaid until finance confirms the money,
         // but refetch anyway so a fast confirm already reflected server-side shows.
+        await getState().loadLoans(policyNumber);
+        return true;
+      },
+    ),
+
+  decideLoanPayout: (policyNumber, loanId, refuseReason) =>
+    track(
+      `policy.decideLoanPayout.${loanId}`,
+      getState().decidingLoanPayout[loanId] ?? idle<true>(),
+      (next) => set((s) => ({ decidingLoanPayout: { ...s.decidingLoanPayout, [loanId]: next } })),
+      async (): Promise<true> => {
+        await (refuseReason === null ? approveLoanPayout(loanId) : refuseLoanPayout(loanId, refuseReason));
         await getState().loadLoans(policyNumber);
         return true;
       },

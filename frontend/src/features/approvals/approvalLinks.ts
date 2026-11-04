@@ -17,6 +17,8 @@ const LINKS: Record<string, (row: ApprovalRow) => string | null> = {
   receipt: (r) => `/staff/receipts/${id(r)}?from=approvals`,
   'payout-review': (r) => `/staff/payouts/${id(r)}`,
   'payout-approval': (r) => `/staff/payouts/${id(r)}`,
+  // Money movement step 4: a loan's payout is released on the policy's Loans tab.
+  'loan-payout': (r) => policy(r, 'loans'),
   'payment-run': (r) => `/staff/payment-runs/${id(r)}`,
   'free-look': (r) => policy(r),
   surrender: (r) => policy(r),

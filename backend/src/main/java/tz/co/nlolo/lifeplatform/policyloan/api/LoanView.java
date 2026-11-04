@@ -4,4 +4,5 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 public record LoanView(UUID loanId, String policyNumber, BigDecimal principalAmount, String principalCurrency,
-                        BigDecimal outstandingBalance, String outstandingCurrency, BigDecimal currentInterestRate, LoanStatus status) {}
+                        BigDecimal outstandingBalance, String outstandingCurrency, BigDecimal currentInterestRate, LoanStatus status,
+                        String payeeRef, String takenBy, String payoutDecidedBy, String payoutRefusalReason) {}

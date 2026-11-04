@@ -222,6 +222,16 @@ export function originateLoan(
  * not move on this call. `Idempotency-Key` is hard-required, as for an invoice.
  * A repayment recorded by hand is a deposit For: Loan on the receipt page.
  */
+/** `POST /loans/{id}/payout-approval` -- payouts.approve releases a loan's payout; payment is then asked (202). */
+export function approveLoanPayout(loanId: string): Promise<LoanView> {
+  return post<LoanView>(`/loans/${encodeURIComponent(loanId)}/payout-approval`, {});
+}
+
+/** `POST /loans/{id}/payout-refusal` -- payouts.approve refuses it, saying why; the reserved loan value is freed. */
+export function refuseLoanPayout(loanId: string, reason: string): Promise<LoanView> {
+  return post<LoanView>(`/loans/${encodeURIComponent(loanId)}/payout-refusal`, { reason });
+}
+
 export function requestLoanPayment(
   loanId: string,
   request: LoanPaymentRequest,

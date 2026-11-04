@@ -161,6 +161,7 @@ public class PolicyLoan {
     public String getPayeeRef() { return payeeRef; }
     public String getCreatedBy() { return createdBy; }
     public String getPayoutDecidedBy() { return payoutDecidedBy; }
+    public String getPayoutRefusalReason() { return payoutRefusalReason; }
     public boolean isActedAlone() { return actedAlone; }
 
     public void markDisbursementRequested() {

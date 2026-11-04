@@ -1,9 +1,15 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useAuth } from 'react-oidc-context';
 import { Link } from 'react-router-dom';
 import type { LoanView, Money } from '@/api/types';
+import { can } from '@/auth/access';
+import { readIdentity } from '@/auth/claims';
+import { ConfirmAct } from '@/components/ConfirmAct';
+import { StaffName } from '@/components/StaffName';
 import { StatusBadge } from '@/components/StatusBadge';
+import { barredAsOwn } from '@/lib/ownWork';
 import { InlineError } from '@/components/InlineError';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -214,6 +220,93 @@ function LoanRow({
       {asking && loanId && (
         <LoanPaymentForm policyNumber={policyNumber} loan={loan} onDone={() => setAsking(false)} />
       )}
+
+      {loanId && loan.status === 'AWAITING_PAYOUT_APPROVAL' && (
+        <PayoutDecision policyNumber={policyNumber} loan={loan} loanId={loanId} />
+      )}
+      {loan.status === 'PAYOUT_REFUSED' && (
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Payout refused{loan.payoutDecidedBy && <> by <StaffName subject={loan.payoutDecidedBy} /></>}
+          {loan.payoutRefusalReason ? `: ${loan.payoutRefusalReason}` : ''}. Nothing was paid, and the loan value is free again.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A loan taken and waiting for its payout to be released (money movement step 4): who took it and whom it pays, then
+ * Release or Refuse for someone holding payouts.approve. The person who took it may release it only with
+ * payouts.approve-own -- the server decides, and says so if refused.
+ */
+function PayoutDecision({ policyNumber, loan, loanId }: { policyNumber: string; loan: LoanView; loanId: string }) {
+  const decide = usePolicyStore((s) => s.decideLoanPayout);
+  const deciding = usePolicyStore((s) => s.decidingLoanPayout[loanId]);
+  const auth = useAuth();
+  const viewer = readIdentity(auth.user?.access_token)?.subject;
+  const [armed, setArmed] = useState(false);
+  const [refusing, setRefusing] = useState(false);
+  const [reason, setReason] = useState('');
+  const own = barredAsOwn(viewer, loan.takenBy, 'payouts');
+  const busy = deciding?.status === 'loading';
+
+  return (
+    <div className="mt-1.5 space-y-2">
+      <p className="text-xs text-muted-foreground">
+        To {loan.payeeRef ?? 'the payee'}
+        {loan.takenBy && <> · taken by <StaffName subject={loan.takenBy} /></>} · waiting for a second person to release
+        the payout
+      </p>
+      {can('payouts.approve') && (
+        <>
+          {deciding?.status === 'error' && deciding.error && <InlineError error={deciding.error} />}
+          {own && <p className="text-xs text-muted-foreground">You took this loan, so someone else must release it.</p>}
+          {armed ? (
+            <ConfirmAct
+              heading="Release this loan's payout?"
+              consequence={
+                <>
+                  <strong>{formatMoney(loan.principalAmount)}</strong> is paid out to {loan.payeeRef ?? 'the payee'}.
+                </>
+              }
+              reversal="If the payment fails, the loan is reversed and its value freed again."
+              confirmLabel={`Pay ${formatMoney(loan.principalAmount)}`}
+              tone="danger"
+              busy={busy}
+              onConfirm={() => {
+                void decide(policyNumber, loanId, null);
+                setArmed(false);
+              }}
+              onCancel={() => setArmed(false)}
+            />
+          ) : refusing ? (
+            <div className="space-y-2">
+              <FormField label="Why is it refused?">
+                <Input inputSize="sm" value={reason} onChange={(e) => setReason(e.target.value)} />
+              </FormField>
+              <div className="flex gap-2">
+                <Button size="sm" variant="danger" disabled={reason.trim() === '' || busy}
+                  onClick={() => void decide(policyNumber, loanId, reason.trim())}>
+                  Refuse payout
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setRefusing(false)}>
+                  Cancel
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Nothing has been paid, so nothing is reversed.</p>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button size="sm" variant="primary" disabled={own} onClick={() => setArmed(true)}>
+                Release payout
+              </Button>
+              <Button size="sm" variant="outline" disabled={own} onClick={() => setRefusing(true)}>
+                Refuse
+              </Button>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -270,9 +363,9 @@ function OriginateLoanForm({
       )}
 
       <p className="text-xs text-muted-foreground">
-        Limited to the policy&rsquo;s available cash value. Disbursement is requested
-        automatically and confirmed by the payment rail, so the loan stays pending until
-        the money is sent.
+        Limited to the policy&rsquo;s available cash value. A second person releases the payout
+        before anything is sent, and the payment rail confirms it, so the loan stays pending
+        until the money is sent.
       </p>
 
       <div className="flex items-center gap-1.5">

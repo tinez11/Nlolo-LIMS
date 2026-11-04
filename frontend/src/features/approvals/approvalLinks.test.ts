@@ -17,6 +17,8 @@ describe('approvalLink', () => {
 
   it('sends a payout to its own page', () => {
     expect(approvalLink('payout-approval', row({ reference: 'inst-9' }))).toBe('/staff/payouts/inst-9?from=approvals');
+    expect(approvalLink('loan-payout', row({ reference: 'loan-1', policyNumber: 'POL-7' })))
+      .toBe('/staff/policies/POL-7?tab=loans&from=approvals');
   });
 
   it('sends a declaration to the product it declares for', () => {
