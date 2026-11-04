@@ -12,6 +12,7 @@ import { expect, type Browser, type BrowserContext, type Page } from '@playwrigh
 export async function approverPage(browser: Browser): Promise<{ page: Page; context: BrowserContext }> {
   const context = await browser.newContext({ storageState: 'e2e/.auth/staff-finance-approver.json' });
   const page = await context.newPage();
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort()); // Keycloak's fonts can stall the sign-in page; it signs in fine without them
   await page.goto('/staff');
   // Not the URL: /staff loads first and the console only then redirects to Keycloak, so an early URL check sees
   // the console and skips the sign-in. Wait for what actually renders -- the login form or the finance landing page
