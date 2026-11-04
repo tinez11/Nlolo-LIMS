@@ -39,7 +39,7 @@ const WORDS: Record<
     link: (r) => (r.claimId ? `/staff/claims/${r.claimId}` : undefined),
   },
   'claims.ClaimSettlementRequested': {
-    text: () => 'Settlement requested',
+    text: () => 'Payout requested',
     link: (r) => (r.claimId ? `/staff/claims/${r.claimId}` : undefined),
   },
   'claims.ClaimApproved': {

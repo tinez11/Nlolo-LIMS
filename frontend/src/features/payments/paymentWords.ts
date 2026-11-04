@@ -9,12 +9,12 @@ import { humanizeStatus } from '@/lib/status';
  */
 const PURPOSES: Record<string, string> = {
   PREMIUM: 'Premium',
-  ACCOUNT_TOP_UP: 'Savings top-up',
+  ACCOUNT_TOP_UP: 'Savings deposit',
   UL_TOP_UP: 'Unit-linked top-up',
   // A loan repaid by deposit or mobile-money request (money movement step 1, 2026-11-04).
   LOAN_REPAYMENT: 'Loan repayment',
-  LOAN_DISBURSEMENT: 'Policy loan',
-  CLAIM_SETTLEMENT: 'Claim settlement',
+  LOAN_DISBURSEMENT: 'Loan paid out',
+  CLAIM_SETTLEMENT: 'Claim payout',
   COMMISSION_PAYOUT: 'Agent commission',
   SURRENDER_PAYOUT: 'Surrender',
   MATURITY_PAYOUT: 'Maturity',
@@ -23,7 +23,7 @@ const PURPOSES: Record<string, string> = {
   INCOME_PAYOUT: 'Income instalment',
   PREMIUM_RETURN_PAYOUT: 'Premium return',
   FREE_LOOK_REFUND: 'Free-look refund',
-  WITHDRAWAL_PAYOUT: 'Account withdrawal',
+  WITHDRAWAL_PAYOUT: 'Savings withdrawal',
   DEPOSIT_MATURITY_PAYOUT: 'Deposit maturity',
   ANNUITY_PAYOUT: 'Annuity',
   COMMUTATION_PAYOUT: 'Commutation',

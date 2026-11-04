@@ -17,7 +17,7 @@ const payment = (over: Partial<PaymentRecord>): PaymentRecord => ({
 
 describe('payment words', () => {
   it('says what a payment is for and how it moved, in plain words', () => {
-    expect(purposeWords('CLAIM_SETTLEMENT')).toBe('Claim settlement');
+    expect(purposeWords('CLAIM_SETTLEMENT')).toBe('Claim payout');
     expect(methodWords('EFT')).toBe('Bank transfer');
     expect(purposeWords('SOMETHING_NEW')).toBe('Something new');
   });

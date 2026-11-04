@@ -525,8 +525,20 @@ export function resolveStatus(kind: StatusKind, value: string): ResolvedStatus {
  */
 const ACRONYMS = new Set(['FCL', 'KYC', 'EFT', 'SMS', 'ID', 'XOL', 'PAA', 'GMM', 'CR', 'DR']);
 
-/** Turn `SETTLEMENT_REQUESTED` into `Settlement requested` for display. */
+/**
+ * Whole literals people read in the money-movement words (design §5.1): money owed on an event is a Payout, a loan's
+ * money out is "Paid out". The literals themselves are not renamed.
+ */
+const WORDS: Record<string, string> = {
+  SETTLEMENT_REQUESTED: 'Payout requested',
+  DISBURSEMENT_REQUESTED: 'Payout requested',
+  DISBURSED: 'Paid out',
+  DISBURSEMENT_FAILED: 'Payout failed',
+};
+
+/** Turn `IN_GRACE` into `In grace` for display. */
 export function humanizeStatus(value: string): string {
+  if (WORDS[value]) return WORDS[value];
   return value
     .split('_')
     .map((word, index) => {

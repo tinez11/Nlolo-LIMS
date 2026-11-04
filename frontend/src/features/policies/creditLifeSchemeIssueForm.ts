@@ -65,8 +65,8 @@ export const CREDIT_LIFE_PREMIUM_BASIS_LABELS: Record<
   (typeof CREDIT_LIFE_PREMIUM_BASES)[number],
   string
 > = {
-  FLAT_ON_PRINCIPAL: 'Flat on the disbursed amount, whatever the term',
-  PER_ANNUM_ON_PRINCIPAL: 'Per year, on the disbursed amount',
+  FLAT_ON_PRINCIPAL: 'Flat on the amount lent, whatever the term',
+  PER_ANNUM_ON_PRINCIPAL: 'Per year, on the amount lent',
   ANNUAL_ON_DECLINING_BALANCE: 'Per year, on the balance still outstanding',
   WHOLE_YEARS_ROUNDED_UP: 'Per year, a part year counted whole',
 };

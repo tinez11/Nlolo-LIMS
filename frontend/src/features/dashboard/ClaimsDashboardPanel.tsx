@@ -183,7 +183,7 @@ export function ClaimsDashboardPanel({ range }: PanelProps) {
         <div className="xl:col-span-7">
           <Panel
             emphasis
-            title={manager ? 'Awaiting your settlement decision' : 'Awaiting assessment'}
+            title={manager ? 'Awaiting your payout decision' : 'Awaiting assessment'}
             subtitle={
               manager
                 ? 'Oldest first. Approving pays; you cannot decide a claim you assessed.'
@@ -258,7 +258,7 @@ export function ClaimsDashboardPanel({ range }: PanelProps) {
               ...(next
                 ? [
                     {
-                      label: manager ? 'Decide the next settlement' : 'Assess the next claim',
+                      label: manager ? 'Decide the next payout' : 'Assess the next claim',
                       description: 'The one that has waited longest',
                       to: `/staff/claims/${next.claimId}`,
                     },

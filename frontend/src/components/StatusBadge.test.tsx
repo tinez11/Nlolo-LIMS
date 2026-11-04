@@ -6,7 +6,7 @@ import { StatusBadge } from './StatusBadge';
 describe('StatusBadge', () => {
   it('renders the humanized literal', () => {
     render(<StatusBadge kind="claim" value="SETTLEMENT_REQUESTED" />);
-    expect(screen.getByText('Settlement requested')).toBeInTheDocument();
+    expect(screen.getByText('Payout requested')).toBeInTheDocument();
   });
 
   it('applies the bucket colour for the domain', () => {
