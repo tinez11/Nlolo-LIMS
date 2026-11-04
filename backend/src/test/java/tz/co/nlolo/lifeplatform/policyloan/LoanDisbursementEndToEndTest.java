@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.policyloan;
 
 import tz.co.nlolo.lifeplatform.Application;
+import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
@@ -29,9 +30,12 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
@@ -197,6 +201,8 @@ class LoanDisbursementEndToEndTest {
     @Autowired private PolicyLoanApi policyLoanApi;
     @Autowired private PolicyAccountRepository policyAccountRepository;
     @Autowired private LoanTransactionRepository loanTransactionRepository;
+    @Autowired private org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Autowired private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     @AfterEach
     void resetAfterEach() {
@@ -236,6 +242,53 @@ class LoanDisbursementEndToEndTest {
         return policyAccountRepository.findById(policyNumber)
             .map(PolicyAccount::getLoanEncumbranceAmount)
             .orElseThrow(() -> new AssertionError("Expected a policy_account row for " + policyNumber));
+    }
+
+    /** A 500,000 loan taken and paid out through the real gateway chain, its tenant left set on this thread. */
+    private LoanView disbursedLoan(UUID tenantId, String productCode) throws Exception {
+        String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), productCode);
+        TenantContext.set(tenantId);
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
+            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-" + productCode + "\"}")));
+        LoanView originated = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
+        assertThat(policyLoanApi.getLoan(originated.loanId()).status()).isEqualTo(LoanStatus.DISBURSED);
+        return originated;
+    }
+
+    /** Publishes as payment would: inside a committed transaction, so AFTER_COMMIT listeners run. */
+    private void publishAfterCommit(UUID tenantId, String eventType, Map<String, Object> payload) {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+            eventPublisher.publishEvent(DomainEventEnvelope.of(eventType, tenantId, payload)));
+    }
+
+    @Test
+    void aConfirmedLoanRepaymentFromPaymentReducesTheLoan() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LoanView loan = disbursedLoan(tenantId, "LOAN-E2E-REPAY-1");
+        UUID paymentId = UUID.randomUUID();
+        publishAfterCommit(tenantId, "payment.PaymentConfirmed", Map.of(
+            "paymentRequestId", paymentId, "idempotencyKey", "k-" + paymentId, "sourceRef", loan.loanId().toString(),
+            "gatewayReference", "SLIP-77", "amount", Map.of("amount", "100000.00", "currencyCode", "TZS"),
+            "confirmedAt", Instant.now().toString(), "purpose", "LOAN_REPAYMENT", "method", "CASH",
+            "approvedBy", "finance-2"));
+
+        TenantContext.set(tenantId);
+        LoanView after = policyLoanApi.getLoan(loan.loanId());
+        assertThat(after.status()).isEqualTo(LoanStatus.REPAYING);
+        assertThat(after.outstandingBalance()).isEqualByComparingTo("400000");
+    }
+
+    @Test
+    void aPremiumConfirmationIsNotMistakenForALoanRepayment() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LoanView loan = disbursedLoan(tenantId, "LOAN-E2E-REPAY-2");
+        publishAfterCommit(tenantId, "payment.PaymentConfirmed", Map.of(
+            "paymentRequestId", UUID.randomUUID(), "idempotencyKey", "k-prem", "sourceRef", loan.loanId().toString(),
+            "gatewayReference", "X", "amount", Map.of("amount", "100000.00", "currencyCode", "TZS"),
+            "confirmedAt", Instant.now().toString(), "purpose", "PREMIUM"));
+
+        TenantContext.set(tenantId);
+        assertThat(policyLoanApi.getLoan(loan.loanId()).status()).isEqualTo(LoanStatus.DISBURSED);
     }
 
     @Test
