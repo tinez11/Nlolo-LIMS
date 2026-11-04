@@ -118,12 +118,13 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
         }),
       ),
     );
-    expect(await screen.findByText('TZS 1,000.00')).toBeInTheDocument();
+    // The headline and each frequency compared all read 1,000.00 here (one mocked premium): one or more, not exactly one.
+    expect((await screen.findAllByText('TZS 1,000.00')).length).toBeGreaterThan(0);
   });
 
   it('downloads the prospect quotation with the inputs only -- never a figure from the screen', async () => {
     await fillProspectAndPlan();
-    await screen.findByText('TZS 1,000.00');
+    await screen.findAllByText('TZS 1,000.00');
 
     await userEvent.click(screen.getByRole('button', { name: 'Download the quotation as PDF' }));
 
@@ -145,7 +146,7 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
 
   it('saves nothing: quoting and downloading register nobody and open no case', async () => {
     await fillProspectAndPlan();
-    await screen.findByText('TZS 1,000.00');
+    await screen.findAllByText('TZS 1,000.00');
     await userEvent.click(screen.getByRole('button', { name: 'Download the quotation as PDF' }));
     await waitFor(() => expect(downloadQuotation).toHaveBeenCalled());
 
@@ -156,7 +157,7 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
   it('proceed, then confirm: saves the inputs -- never the figures -- and goes on to onboard the customer', async () => {
     vi.mocked(acceptQuotation).mockResolvedValue({ quotationId: 'q-1' } as never);
     await fillProspectAndPlan();
-    await screen.findByText('TZS 1,000.00');
+    await screen.findAllByText('TZS 1,000.00');
 
     await userEvent.click(screen.getByRole('button', { name: 'Proceed to onboarding' }));
     // Nothing is sent by proceeding: the second click is the one that writes.
@@ -173,7 +174,7 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
 
   it('proceed, then cancel: sends nothing and returns to the calculator', async () => {
     await fillProspectAndPlan();
-    await screen.findByText('TZS 1,000.00');
+    await screen.findAllByText('TZS 1,000.00');
 
     await userEvent.click(screen.getByRole('button', { name: 'Proceed to onboarding' }));
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -209,7 +210,7 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
 
   it('takes a phone written the everyday way and sends it as +255; holds back one that is not Tanzanian', async () => {
     await fillProspectAndPlan();
-    await screen.findByText('TZS 1,000.00');
+    await screen.findAllByText('TZS 1,000.00');
     const phone = screen.getByLabelText('Phone number (optional)');
 
     await userEvent.type(phone, '0713 000 11');
@@ -250,7 +251,7 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
       traceId: 't', fieldErrors: [], errorCode: null, mayBeDenied: false,
     });
     await fillProspectAndPlan();
-    await screen.findByText('TZS 1,000.00');
+    await screen.findAllByText('TZS 1,000.00');
     await userEvent.click(screen.getByRole('button', { name: 'Proceed to onboarding' }));
     await userEvent.click(screen.getByRole('button', { name: 'Confirm and start onboarding' }));
 

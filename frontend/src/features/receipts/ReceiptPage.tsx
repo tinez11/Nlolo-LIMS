@@ -174,7 +174,7 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
               </>
             }
             reversal={receipt.purpose === 'PREMIUM'
-              ? 'If the money never really arrives -- a bounced cheque -- the deposit can be reversed from this page.'
+              ? 'If the money never really arrives (a bounced cheque), the deposit can be reversed from this page.'
               : 'Nothing here undoes it. A receipt confirmed in error is corrected by a manual journal.'}
             confirmLabel="Confirm receipt"
             busy={deciding?.status === 'loading'}
