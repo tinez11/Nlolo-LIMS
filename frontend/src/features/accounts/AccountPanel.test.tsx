@@ -82,8 +82,8 @@ describe('AccountPanel on a term account', () => {
     render(<AccountPanel policyNumber="POL-1" />);
     expect(screen.getByText('5.25% a year')).toBeInTheDocument();
     expect(screen.getByText(/Nothing can be withdrawn or surrendered until it matures/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Request withdrawal' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Request top-up' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request savings withdrawal' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Request savings deposit' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Record transfer in' })).toBeInTheDocument();
   });
 
@@ -91,7 +91,7 @@ describe('AccountPanel on a term account', () => {
     useAccumulationStore.setState({ termAccount: { 'POL-1': success(termAccount('AWAITING_PAYEE')) } });
     render(<AccountPanel policyNumber="POL-1" />);
     expect(screen.getByRole('button', { name: 'Record payee and pay' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Request top-up' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request savings deposit' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Record transfer in' })).not.toBeInTheDocument();
   });
 });
@@ -108,11 +108,11 @@ describe('AccountPanel', () => {
     // The header, then #3, #2, #1: the reversal first, naming what it reverses.
     expect(rows[1]).toHaveTextContent('Reversal');
     expect(rows[1]).toHaveTextContent('reverses #2');
-    expect(rows[2]).toHaveTextContent('Withdrawal');
+    expect(rows[2]).toHaveTextContent('Savings withdrawal');
     // Money out in its own column, unsigned.
     expect(rows[2]).toHaveTextContent('TZS 6,000.00');
     expect(rows[2]).not.toHaveTextContent('-');
-    expect(rows[3]).toHaveTextContent('Top-up');
+    expect(rows[3]).toHaveTextContent('Savings deposit');
   });
 
   it('shows what is waiting, says it updates itself, and rereads the account while it waits', () => {
@@ -165,29 +165,29 @@ describe('AccountPanel', () => {
     useAccumulationStore.setState({ topUp });
     const user = userEvent.setup();
     render(<AccountPanel policyNumber="POL-1" />);
-    await user.click(screen.getByRole('button', { name: 'Request top-up' }));
+    await user.click(screen.getByRole('button', { name: 'Request savings deposit' }));
     expect(screen.getByLabelText('Collect from')).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText('How is it being paid?'), 'CASH');
     expect(screen.queryByLabelText('Collect from')).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('Amount'), '25000');
     await user.type(screen.getByLabelText('Cash receipt number'), 'RC-104');
-    await user.click(screen.getByRole('button', { name: 'Record top-up' }));
+    await user.click(screen.getByRole('button', { name: 'Record savings deposit' }));
     expect(topUp).toHaveBeenCalledWith(
       'POL-1',
       expect.objectContaining({ amount: '25000', method: 'CASH', reference: 'RC-104' }),
       expect.anything(),
     );
     // The form closes and a receipt says what happened (2026-10-28): it used to reset in place, looking like nothing had.
-    const receipt = (await screen.findByText('Top-up credited')).closest('section')!;
+    const receipt = (await screen.findByText('Savings deposit credited')).closest('section')!;
     expect(receipt).toHaveTextContent('Cash · RC-104');
-    expect(screen.queryByRole('button', { name: 'Record top-up' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record savings deposit' })).not.toBeInTheDocument();
   });
 
   it('asks a bank transfer for the bank, branch, account name and number -- and not a phone number', async () => {
     grantRoles('CUSTOMER_SERVICE_REP');
     const user = userEvent.setup();
     render(<AccountPanel policyNumber="POL-1" />);
-    await user.click(screen.getByRole('button', { name: 'Request withdrawal' }));
+    await user.click(screen.getByRole('button', { name: 'Request savings withdrawal' }));
     expect(screen.getByLabelText('Mobile-money number')).toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: 'Bank transfer' }));
     expect(screen.queryByLabelText('Mobile-money number')).not.toBeInTheDocument();
@@ -202,13 +202,13 @@ describe('AccountPanel', () => {
 
   it('offers finance the transfer in, the adjustment and money received, but not the withdrawal', async () => {
     render(<AccountPanel policyNumber="POL-1" />);
-    for (const name of ['Record transfer in', 'Propose adjustment', 'Request top-up']) {
+    for (const name of ['Record transfer in', 'Propose adjustment', 'Request savings deposit']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
     }
     // Requesting a withdrawal is customer service's (accounts.transact, 2026-10-26); the server would refuse it.
-    expect(screen.queryByRole('button', { name: 'Request withdrawal' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request savings withdrawal' })).not.toBeInTheDocument();
     // Finance records money already received; asking a phone for it is customer service's (2026-10-29).
-    await userEvent.click(screen.getByRole('button', { name: 'Request top-up' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Request savings deposit' }));
     const options = within(screen.getByLabelText('How is it being paid?')).getAllByRole('option').map((o) => o.getAttribute('value'));
     expect(options).toContain('CASH');
     expect(options).not.toContain('MOBILE_MONEY');
@@ -217,7 +217,7 @@ describe('AccountPanel', () => {
   it('lets customer service ask a phone for a top-up, but never say money was received', async () => {
     grantRoles('CUSTOMER_SERVICE_REP');
     render(<AccountPanel policyNumber="POL-1" />);
-    await userEvent.click(screen.getByRole('button', { name: 'Request top-up' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Request savings deposit' }));
     const options = within(screen.getByLabelText('How is it being paid?')).getAllByRole('option').map((o) => o.getAttribute('value'));
     expect(options).toEqual(['MOBILE_MONEY']);
     expect(screen.getByText(/recorded by finance/)).toBeInTheDocument();
@@ -233,7 +233,7 @@ describe('AccountPanel', () => {
     const user = userEvent.setup();
     render(<AccountPanel policyNumber="POL-1" />);
     await user.click(screen.getByRole('button', { name: 'Reject' }));
-    const confirm = screen.getByRole('button', { name: 'Reject withdrawal' });
+    const confirm = screen.getByRole('button', { name: 'Reject savings withdrawal' });
     expect(confirm).toBeDisabled();
     await user.type(screen.getByLabelText('Why is it rejected?'), 'The customer cancelled it');
     await user.click(confirm);
@@ -243,7 +243,7 @@ describe('AccountPanel', () => {
   it('offers customer service the withdrawal and top-up, but not the transfer in or the adjustment', () => {
     grantRoles('CUSTOMER_SERVICE_REP');
     render(<AccountPanel policyNumber="POL-1" />);
-    for (const name of ['Request withdrawal', 'Request top-up']) {
+    for (const name of ['Request savings withdrawal', 'Request savings deposit']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
     }
     for (const name of ['Record transfer in', 'Propose adjustment']) {
@@ -290,7 +290,7 @@ describe('AccountPanel', () => {
     expect(early).toHaveTextContent('(maturity)');
     expect(screen.getByRole('button', { name: 'Download the deposit schedule as PDF' })).toBeInTheDocument();
     expect(screen.getByText('No instruction: it will be paid out to +255700000777.')).toBeInTheDocument();
-    for (const name of ['Request withdrawal', 'Request top-up', 'Record transfer in']) {
+    for (const name of ['Request savings withdrawal', 'Request savings deposit', 'Record transfer in']) {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
     }
     expect(screen.getByRole('button', { name: 'Propose adjustment' })).toBeInTheDocument();
@@ -338,7 +338,7 @@ describe('AccountPanel', () => {
     render(<AccountPanel policyNumber="POL-1" />);
     expect(screen.getByText('Waiting for the deposit')).toBeInTheDocument();
     expect(screen.queryByText('Nothing on the ledger yet')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Request top-up' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request savings deposit' })).not.toBeInTheDocument();
   });
 
   it('offers no money movement on a closed account', () => {
@@ -346,6 +346,6 @@ describe('AccountPanel', () => {
       account: { 'POL-1': success({ ...account, status: 'CLOSED', closedReason: 'SURRENDERED', closedOn: '2026-03-01' }) },
     });
     render(<AccountPanel policyNumber="POL-1" />);
-    expect(screen.queryByRole('button', { name: 'Request withdrawal' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request savings withdrawal' })).not.toBeInTheDocument();
   });
 });

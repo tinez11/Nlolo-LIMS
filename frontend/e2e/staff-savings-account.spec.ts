@@ -59,10 +59,10 @@ test.describe('a savings account', () => {
     await expect(page.getByText('Nothing on the ledger yet')).toBeVisible({ timeout: 20_000 });
 
     // Money in: a top-up, collected by the mock rail and credited on confirmation.
-    await page.getByRole('button', { name: 'Request top-up' }).click();
+    await page.getByRole('button', { name: 'Request savings deposit' }).click();
     await page.getByLabel('Amount').fill('100000.00');
     await page.getByLabel('Collect from').fill('+255700000002');
-    await page.getByRole('button', { name: 'Request top-up', exact: true }).last().click();
+    await page.getByRole('button', { name: 'Request savings deposit', exact: true }).last().click();
     await expect(page.getByText(/collection has been requested from the provider/)).toBeVisible({ timeout: 20_000 });
     // Credited once a second finance person confirms the money came (2026-10-27).
     await confirmRequestedPayments(browser, policyNumber);
@@ -76,7 +76,7 @@ test.describe('a savings account', () => {
     await expect(async () => {
       await page.reload();
       await page.getByRole('tab', { name: 'Account' }).click();
-      await expect(ledger.getByText('Top-up', { exact: true })).toBeVisible();
+      await expect(ledger.getByText('Savings deposit', { exact: true })).toBeVisible();
       await expect(ledger.getByText('Allocation charge', { exact: true })).toBeVisible();
     }).toPass({ timeout: 60_000 });
     // 100,000 in, 5% held back in policy year 1.
@@ -87,11 +87,11 @@ test.describe('a savings account', () => {
     }
 
     // Money out: requested by customer service, approved by someone else.
-    await page.getByRole('button', { name: 'Request withdrawal' }).click();
+    await page.getByRole('button', { name: 'Request savings withdrawal' }).click();
     await page.getByLabel('Amount').fill('10000.00');
     await page.getByLabel('Mobile-money number').fill('+255700000009');
     await page.getByRole('button', { name: 'Continue' }).click();
-    await page.getByRole('button', { name: 'Request withdrawal', exact: true }).last().click();
+    await page.getByRole('button', { name: 'Request savings withdrawal', exact: true }).last().click();
 
     // The requester cannot approve. Customer service does not hold accounts.approve, so it is offered no approval at
     // all (2026-10-26); the two-people rule for a finance requester is pinned by AccountPanel's own tests.
@@ -141,7 +141,7 @@ test.describe('customer service on a savings account', () => {
     const policyNumber = await savingsPolicy(browser);
     await page.goto(`/staff/policies/${policyNumber}`);
     await page.getByRole('tab', { name: 'Account' }).click();
-    await expect(page.getByRole('button', { name: 'Request withdrawal' })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('button', { name: 'Request savings withdrawal' })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole('button', { name: 'Record transfer in' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Propose adjustment' })).toHaveCount(0);
   });

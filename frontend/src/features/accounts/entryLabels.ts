@@ -6,12 +6,12 @@ import type { EntryType } from '@/api/types';
  */
 export const ENTRY_LABEL: Record<EntryType, string> = {
   CONTRIBUTION: 'Premium',
-  TOP_UP: 'Top-up',
+  TOP_UP: 'Savings deposit',
   TRANSFER_IN: 'Transfer in',
   ALLOCATION_CHARGE: 'Allocation charge',
   POLICY_FEE: 'Policy fee',
   INTEREST: 'Interest',
-  WITHDRAWAL: 'Withdrawal',
+  WITHDRAWAL: 'Savings withdrawal',
   SURRENDER: 'Surrender',
   MATURITY: 'Maturity',
   DEATH_CLAIM: 'Death claim',

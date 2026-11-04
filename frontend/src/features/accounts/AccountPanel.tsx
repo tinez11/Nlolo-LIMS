@@ -154,8 +154,8 @@ function Figures({ account }: { account: AccountView }) {
     <div className="space-y-3">
       <dl className="hero-scope grid grid-cols-1 gap-x-8 gap-y-4 rounded-xl bg-hero p-5 sm:grid-cols-3">
         <Field stacked label="Balance" value={formatMoney(account.balance)} />
-        <Field stacked label="Paid in" value={formatMoney(totals.paidIn)} note="Premiums, top-ups and transfers in" />
-        <Field stacked label="Paid out" value={formatMoney(totals.paidOut)} note="Withdrawals and other payments out" />
+        <Field stacked label="Paid in" value={formatMoney(totals.paidIn)} note="Premiums, savings deposits and transfers in" />
+        <Field stacked label="Paid out" value={formatMoney(totals.paidOut)} note="Savings withdrawals and other payments out" />
       </dl>
       <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Status" value={<StatusBadge kind="savingsAccount" value={account.status} />} />
@@ -183,7 +183,7 @@ function Ledger({ entries }: { entries: LedgerEntryView[] }) {
     return (
       <EmptyState
         title="Nothing on the ledger yet"
-        description="The account is credited when the first premium, top-up or transfer is collected."
+        description="The account is credited when the first premium, savings deposit or transfer is collected."
       />
     );
   }
@@ -295,8 +295,8 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
     <div className="space-y-4">
       {open && (
         <div className="flex flex-wrap gap-2">
-          {canTransact && moneyOut && actionButton('withdraw', 'Request withdrawal', <ArrowUpRight aria-hidden className="size-4" />)}
-          {(canTransact || canReceive) && moneyIn && actionButton('topup', 'Request top-up', <ArrowDownLeft aria-hidden className="size-4" />)}
+          {canTransact && moneyOut && actionButton('withdraw', 'Request savings withdrawal', <ArrowUpRight aria-hidden className="size-4" />)}
+          {(canTransact || canReceive) && moneyIn && actionButton('topup', 'Request savings deposit', <ArrowDownLeft aria-hidden className="size-4" />)}
           {/* Finance's: recording a transfer puts money on the account, and an adjustment is a
               correction a second finance user signs. Not offered at all to anyone else, rather than
               a button that would 403. */}
@@ -307,7 +307,7 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
 
       {done?.kind === 'topup' && (
         <Receipt
-          heading={done.topUp.status === 'COLLECTED' ? 'Top-up credited' : 'Top-up requested'}
+          heading={done.topUp.status === 'COLLECTED' ? 'Savings deposit credited' : 'Savings deposit requested'}
           lines={[
             { label: 'Amount', value: formatMoney(done.topUp.amount) },
             { label: 'How it came in', value: topUpHow(done.topUp) },
@@ -328,7 +328,7 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
       )}
       {done?.kind === 'withdraw' && (
         <Receipt
-          heading="Withdrawal requested"
+          heading="Savings withdrawal requested"
           lines={[
             { label: 'Amount', value: formatMoney(done.withdrawal.amount) },
             { label: 'Paid by', value: `${methodWords(done.withdrawal.method)} to ${describeRoute(done.withdrawal)}` },
@@ -384,7 +384,7 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
             {waiting.topUps.map((t) => (
               <WaitingLine
                 key={t.topUpId}
-                what="Top-up"
+                what="Savings deposit"
                 amount={formatMoney(t.amount)}
                 status={<StatusBadge kind="accountTopUp" value={t.status} />}
                 detail={<>{topUpHow(t)} · requested by <StaffName subject={t.requestedBy} /> · waiting for the money to arrive</>}
@@ -442,7 +442,7 @@ function PastRequests({ policyNumber }: { policyNumber: string }) {
       .map((w) => ({
         id: w.withdrawalId,
         at: w.requestedAt,
-        what: 'Withdrawal',
+        what: 'Savings withdrawal',
         amount: formatMoney(w.amount),
         how: w.status === 'REJECTED' ? `Rejected: ${w.rejectionReason ?? ''}` : `${methodWords(w.method)} · ${describeRoute(w)}`,
         status: <StatusBadge kind="accountWithdrawal" value={w.status} />,
@@ -452,7 +452,7 @@ function PastRequests({ policyNumber }: { policyNumber: string }) {
       .map((t) => ({
         id: t.topUpId,
         at: t.requestedAt,
-        what: 'Top-up',
+        what: 'Savings deposit',
         amount: formatMoney(t.amount),
         how: topUpHow(t),
         status: <StatusBadge kind="accountTopUp" value={t.status} />,
@@ -552,7 +552,7 @@ function WithdrawalForm({
   if (armed) {
     return (
       <ConfirmAct
-        heading="Request this withdrawal?"
+        heading="Request this savings withdrawal?"
         consequence={
           <>
             <strong>{formatMoney({ amount: armed.amount, currencyCode: account.balance.currencyCode })}</strong> from{' '}
@@ -561,7 +561,7 @@ function WithdrawalForm({
           </>
         }
         reversal="Nothing moves until a finance officer approves it. A request can be left unapproved."
-        confirmLabel="Request withdrawal"
+        confirmLabel="Request savings withdrawal"
         busy={acting?.status === 'loading'}
         onConfirm={() => {
           void withdraw(policyNumber, { amount: armed.amount, ...routeBody(armed) }, startMutation()).then((requested) => {
@@ -575,7 +575,7 @@ function WithdrawalForm({
   }
 
   return (
-    <ActionBox title="Withdraw from the account" onClose={onDone}>
+    <ActionBox title="Savings withdrawal" onClose={onDone}>
       <GatePanel gates={gates} title="Before requesting" />
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <form onSubmit={form.handleSubmit((v) => setArmed(v))} className="space-y-4">
@@ -633,7 +633,7 @@ function TopUpForm({
   const errors = form.formState.errors;
 
   return (
-    <ActionBox title="Top up the account" onClose={onDone}>
+    <ActionBox title="Savings deposit" onClose={onDone}>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <form
         onSubmit={form.handleSubmit((v) => {
@@ -697,7 +697,7 @@ function TopUpForm({
           )}
         </div>
         <Button type="submit" size="sm" variant="primary" disabled={acting?.status === 'loading'}>
-          {received ? 'Record top-up' : 'Request top-up'}
+          {received ? 'Record savings deposit' : 'Request savings deposit'}
         </Button>
       </form>
     </ActionBox>
@@ -803,7 +803,7 @@ export function WithdrawalRow({
 
   return (
     <WaitingLine
-      what="Withdrawal"
+      what="Savings withdrawal"
       amount={formatMoney(withdrawal.amount)}
       status={<StatusBadge kind="accountWithdrawal" value={withdrawal.status} />}
       detail={
@@ -825,7 +825,7 @@ export function WithdrawalRow({
           {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
           {armed ? (
             <ConfirmAct
-              heading="Approve this withdrawal?"
+              heading="Approve this savings withdrawal?"
               consequence={
                 <>
                   <strong>{formatMoney(withdrawal.amount)}</strong> leaves the account now and is paid by{' '}
@@ -854,7 +854,7 @@ export function WithdrawalRow({
                   disabled={reason.trim() === '' || acting?.status === 'loading'}
                   onClick={() => void reject(withdrawal.policyNumber, withdrawal.withdrawalId, reason.trim())}
                 >
-                  Reject withdrawal
+                  Reject savings withdrawal
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
                   Cancel
