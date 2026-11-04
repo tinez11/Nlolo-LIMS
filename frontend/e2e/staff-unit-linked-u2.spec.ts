@@ -215,6 +215,8 @@ test.describe('unit-linked U2', () => {
     await topUp.getByRole('button', { name: 'Request top-up' }).click();
     await expect(topUp.getByRole('list', { name: 'Top-ups' }).getByRole('listitem')).toHaveCount(1, { timeout: 15_000 });
     await expect(topUp.getByRole('list', { name: 'Top-ups' })).toContainText('TZS 200,000.00 from +255700000700');
+    // Received only once a second finance person confirms the money came (2026-10-27), like the first premium above.
+    await confirmRequestedPayments(browser, policyUrl.split('/').pop()!);
 
     // ---- An on-demand statement for the last 30 days: listed, and it downloads as a PDF.
     const statements = page.getByRole('region', { name: 'Unit statements' });

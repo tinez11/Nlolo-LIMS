@@ -63,7 +63,7 @@ test.describe('a savings account', () => {
     await page.getByLabel('Amount').fill('100000.00');
     await page.getByLabel('Collect from').fill('+255700000002');
     await page.getByRole('button', { name: 'Request savings deposit', exact: true }).last().click();
-    await expect(page.getByText(/collection has been requested from the provider/)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/A request was sent to the payer/)).toBeVisible({ timeout: 20_000 });
     // Credited once a second finance person confirms the money came (2026-10-27).
     await confirmRequestedPayments(browser, policyNumber);
 
