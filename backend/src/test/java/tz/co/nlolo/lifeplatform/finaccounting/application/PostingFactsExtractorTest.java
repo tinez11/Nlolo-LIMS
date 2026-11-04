@@ -169,6 +169,24 @@ class PostingFactsExtractorTest {
         assertThat(lapse.amount("total")).isEqualByComparingTo("1100000.00");   // guide E-06
     }
 
+    /** Money movement step 2: a deposit is keyed on its balance entry and carries its method; so is a premium paid. */
+    @Test
+    void aDepositAndAPremiumPaidFromTheBalanceAreKeyedOnTheirEntries() {
+        UUID deposit = UUID.randomUUID();
+        PostingFacts in = PostingFactsExtractor.extract("billing.DepositReceived", Map.of("entryId", deposit,
+            "paymentId", UUID.randomUUID(), "policyNumber", "POL-1", "amount", money("150000.00"),
+            "receiptMethod", "CASH"), TODAY).get(0);
+        assertThat(in.sourceRef()).isEqualTo(deposit.toString());
+        assertThat(in.amount(PostingFactsExtractor.AMOUNT)).isEqualByComparingTo("150000.00");
+        assertThat(in.attribute("receiptMethod")).isEqualTo("CASH");
+
+        UUID paid = UUID.randomUUID();
+        PostingFacts out = PostingFactsExtractor.extract("billing.PremiumPaidFromBalance", Map.of("entryId", paid,
+            "invoiceId", UUID.randomUUID(), "policyNumber", "POL-1", "amount", money("50000.00")), TODAY).get(0);
+        assertThat(out.sourceRef()).isEqualTo(paid.toString());
+        assertThat(out.amount(PostingFactsExtractor.AMOUNT)).isEqualByComparingTo("50000.00");
+    }
+
     /** Money movement step 1: loan money posts to the account it reached, and a surplus is keyed on its payment. */
     @Test
     void aLoanRepaymentCarriesItsMethodAndASurplusIsKeyedOnThePayment() {

@@ -98,6 +98,10 @@ Spring's default in-process event dispatch preserves publish order for **synchro
   - `policyloan.LoanRepaid` now carries `receiptMethod`, and finaccounting's E-03 debits the account the money reached (1120 for cash, bank deposit, cheque, TANQR; 1140 otherwise) instead of always 1140. Its `amount` is what the loan took, never more than it owed.
   - `policyloan.LoanOverpaid` — `paymentId`, `loanId`, `policyNumber`, `amount`, `receiptMethod`, `paymentReference`. The part of a confirmed repayment above what the loan owed; finaccounting's E-03-SURPLUS posts DR RECEIPT / CR 2128 (premiums received in advance), keyed `loan-surplus:{paymentId}`. Step 2 of the money-movement work turns it into the policy's balance.
   - `POST /loans/{loanId}/repayments`, which booked a repayment the moment anyone typed one in, is gone.
+  **The policy balance (money movement step 2, 2026-11-04).** Premium money on an insurance policy lands on the policy's balance first (`billing.policy_balance`, add-only `billing.balance_entry`):
+  - `billing.DepositReceived` — `entryId`, `paymentId`, `policyNumber`, `amount`, `receiptMethod`. Cash posted for what arrived: M-01 DR RECEIPT / CR 2128. Keyed on the entry; a redelivered confirmation deposits once (unique on `paymentId`). Not published for a loan surplus, which policyloan already posted.
+  - `billing.PremiumPaidFromBalance` — `entryId`, `invoiceId`, `policyNumber`, `amount`. The balance pays a premium that has fallen due (oldest first, plus the invoice the payment named): M-02 DR 2128 / CR 2122 (PAA: 2142), with the levy on the premium paid. `BalanceAllocationDrain` pays later premiums on their due dates.
+  - `billing.PremiumCollected` is unchanged as the "invoice fully paid" business event (commission, messages, paid-to-date, cash value) but **posts nothing** (PLAT-A07 / I-02 `post: false`). Savings-type policies (account basis) keep their own road until "For: Savings".
 
 ---
 
