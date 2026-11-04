@@ -70,7 +70,7 @@ describe('ReceiptPage', () => {
       ...waiting, purpose: 'LOAN_REPAYMENT', invoiceId: null, loanId: '8f1c2d3e-4a5b-6c7d-8e9f-0a1b2c3d4e5f',
     });
     renderPage();
-    expect(await screen.findByText('Only a confirmed receipt repays the loan.')).toBeInTheDocument();
+    expect(await screen.findByText('Only a confirmed deposit repays the loan.')).toBeInTheDocument();
     expect(screen.getByText('Loan')).toBeInTheDocument();
     expect(screen.getByText('8f1c2d3e')).toBeInTheDocument();
     // The breadcrumb names the policy too; the receipt's own Policy field is the one that opens its Loans tab.

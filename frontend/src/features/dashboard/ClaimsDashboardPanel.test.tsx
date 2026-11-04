@@ -102,7 +102,7 @@ describe('ClaimsDashboardPanel', () => {
   it('titles the queue by whose work it is', async () => {
     renderScreen(<ClaimsDashboardPanel range={RANGE} />);
 
-    expect(await screen.findByRole('heading', { name: 'Awaiting your settlement decision' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Awaiting your payout decision' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open claim-1' })).toHaveAttribute('href', '/staff/claims/claim-1');
   });
 });
