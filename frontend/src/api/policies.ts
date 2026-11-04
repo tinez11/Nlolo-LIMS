@@ -259,6 +259,17 @@ export function refuseLoanPayout(loanId: string, reason: string): Promise<LoanVi
   return post<LoanView>(`/loans/${encodeURIComponent(loanId)}/payout-refusal`, { reason });
 }
 
+/**
+ * Approve (reason null) or reject (with the reason) a credit-life lender's premium refund -- payouts.approve, money
+ * movement step 4. Approving puts the bank transfer in finance's queue (202).
+ */
+export function decideLenderRefund(creditId: string, rejectReason: string | null): Promise<unknown> {
+  const id = encodeURIComponent(creditId);
+  return rejectReason === null
+    ? post<unknown>(`/lender-refunds/${id}/approve`, {})
+    : post<unknown>(`/lender-refunds/${id}/reject`, { reason: rejectReason });
+}
+
 export function requestLoanPayment(
   loanId: string,
   request: LoanPaymentRequest,

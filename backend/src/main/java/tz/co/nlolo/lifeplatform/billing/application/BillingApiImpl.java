@@ -1373,7 +1373,7 @@ public class BillingApiImpl implements BillingApi {
             .sorted(java.util.Comparator.comparing(PremiumCredit::getCreatedAt))
             .map(c -> new PremiumCreditView(c.getCreditId(), c.getPolicyNumber(), c.getPolicyMemberId(),
                 c.getOriginalInvoiceId(), c.getAmount(), c.getCurrency(), c.getExitReason(), c.getExitDate(),
-                c.getCreatedAt()))
+                c.getCreatedAt(), c.getRefundAmount(), c.getRefundStatus(), c.getRefundPayee(), c.getRefundRefusalReason()))
             .toList();
     }
 }

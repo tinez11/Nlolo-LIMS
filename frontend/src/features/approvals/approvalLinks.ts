@@ -24,6 +24,8 @@ const LINKS: Record<string, (row: ApprovalRow) => string | null> = {
   // A withdrawal from the policy's balance is approved, or given its payee, on the Billing tab's Balance panel.
   'balance-withdrawal': (r) => policy(r, 'billing'),
   'balance-withdrawal-payee': (r) => policy(r, 'billing'),
+  // A credit-life lender's premium refund is approved beside the credit, on the scheme's invoices.
+  'lender-refund': (r) => policy(r, 'billing'),
   // The row's reference is agentId/statementId (DistributionApprovalSources); the agent's page releases it.
   'commission-payout': (r) => `/staff/agents/${encodeURIComponent(r.reference.split('/')[0] ?? '')}`,
   'payment-run': (r) => `/staff/payment-runs/${id(r)}`,

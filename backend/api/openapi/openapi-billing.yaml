@@ -918,6 +918,14 @@ components:
           description: Why the member left, as policy recorded it -- e.g. SETTLED_EARLY.
         exitDate: { type: string, format: date }
         createdAt: { type: string, format: date-time }
+        refundAmount:
+          description: The part paid back to a credit-life lender by bank transfer; null when the credit only lowered what was owed.
+          oneOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+            - type: "null"
+        refundStatus: { type: [string, "null"], enum: [AWAITING_APPROVAL, REQUESTED, PAID, FAILED, REFUSED, null] }
+        refundPayee: { type: [string, "null"] }
+        refundRefusalReason: { type: [string, "null"] }
     InvoiceView:
       type: object
       additionalProperties: false

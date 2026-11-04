@@ -3,7 +3,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
-import type { EnrolmentSubmissionView, InvoiceView, PolicyMemberView } from '@/api/types';
+import { decideLenderRefund } from '@/api/policies';
+import type { EnrolmentSubmissionView, InvoiceView, PolicyMemberView, PremiumCreditView } from '@/api/types';
+import type { ApiError } from '@/lib/apiError';
 import { FilterChip } from '@/components/FilterChip';
 import { InlineError } from '@/components/InlineError';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -140,6 +142,7 @@ export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
           policyNumber={policyNumber}
           invoice={invoice}
           credits={reconciliation.creditsByInvoice[invoice.invoiceId ?? ''] ?? []}
+          onRefundDecided={reconciliation.reload}
           file={
             invoice.enrolmentSubmissionId
               ? (reconciliation.filesById[invoice.enrolmentSubmissionId] ?? null)
@@ -158,11 +161,13 @@ function InvoiceRow({
   invoice,
   credits,
   file,
+  onRefundDecided,
 }: {
   policyNumber: string;
   invoice: InvoiceView;
   credits: CreditLine[];
   file: EnrolmentSubmissionView | null;
+  onRefundDecided: () => void;
 }) {
   const [action, setAction] = useState<'waive' | 'payment' | null>(null);
   // Mirrors the endpoint exactly: REALM_STAFF and (FINANCE_OFFICER or ADMIN).
@@ -225,6 +230,9 @@ function InvoiceRow({
       )}
 
       <InvoiceReconciliationLines invoice={invoice} credits={credits} />
+      {credits.filter(({ credit }) => credit.refundStatus).map(({ credit }) => (
+        <LenderRefundLine key={credit.creditId} credit={credit} onDecided={onRefundDecided} />
+      ))}
 
       {/* Accepted is not paid (2026-10-27): with no live mobile-money integration yet, finance confirms the money
           like any receipt, and only that pays the invoice. */}
@@ -523,5 +531,89 @@ function MobileMoneyRequestForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+const REFUND_WORDS: Record<NonNullable<PremiumCreditView['refundStatus']>, string> = {
+  AWAITING_APPROVAL: 'waiting for a second person to approve it',
+  REQUESTED: 'approved; waiting for finance to make the bank transfer',
+  PAID: 'paid',
+  FAILED: 'the transfer failed; still owed to the lender',
+  REFUSED: 'refused; still owed to the lender',
+};
+
+/**
+ * The part of a credit the lender had already paid, going back to it by bank transfer (billing V13), and where it
+ * stands. One raised automatically waits for a second person (payouts.approve, money movement step 4).
+ */
+function LenderRefundLine({ credit, onDecided }: { credit: PremiumCreditView; onDecided: () => void }) {
+  const [armed, setArmed] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+  if (!credit.refundStatus || !credit.refundAmount) return null;
+  const amount = formatMoney(credit.refundAmount);
+
+  async function decide(rejectReason: string | null) {
+    setBusy(true);
+    setError(null);
+    try {
+      await decideLenderRefund(credit.creditId, rejectReason);
+      onDecided();
+    } catch (cause) {
+      setError(cause as ApiError);
+    } finally {
+      setBusy(false);
+      setArmed(false);
+    }
+  }
+
+  return (
+    <div className="mt-1 space-y-1.5 text-xs">
+      <p className="text-muted-foreground">
+        Paid back to the lender: {amount} · {REFUND_WORDS[credit.refundStatus]}
+        {credit.refundRefusalReason ? ` (${credit.refundRefusalReason})` : ''}
+      </p>
+      {error && <InlineError error={error} />}
+      {credit.refundStatus === 'AWAITING_APPROVAL' && can('payouts.approve') && (
+        armed ? (
+          <ConfirmAct
+            heading="Approve this refund to the lender?"
+            consequence={<><strong>{amount}</strong> goes to finance&rsquo;s queue of bank transfers to {credit.refundPayee}.</>}
+            reversal="If the transfer fails, it stays owed to the lender."
+            confirmLabel={`Pay ${amount}`}
+            tone="danger"
+            busy={busy}
+            onConfirm={() => void decide(null)}
+            onCancel={() => setArmed(false)}
+          />
+        ) : rejecting ? (
+          <div className="space-y-2">
+            <FormField label="Why is it rejected?">
+              <Input inputSize="sm" value={reason} onChange={(e) => setReason(e.target.value)} />
+            </FormField>
+            <div className="flex gap-2">
+              <Button size="sm" variant="danger" disabled={reason.trim() === '' || busy}
+                onClick={() => void decide(reason.trim())}>
+                Reject refund
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => setArmed(true)}>
+              Approve refund
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setRejecting(true)}>
+              Reject
+            </Button>
+          </div>
+        )
+      )}
+    </div>
   );
 }
