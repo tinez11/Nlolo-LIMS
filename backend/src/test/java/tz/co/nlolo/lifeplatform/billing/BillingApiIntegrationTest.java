@@ -214,7 +214,8 @@ class BillingApiIntegrationTest {
             "db-migrations/payment/V18__payout_routes.sql",
             "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
             "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
-            "db-migrations/payment/V24__reversed_status.sql");
+            "db-migrations/payment/V24__reversed_status.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql");
     }
 
     @AfterAll
@@ -1016,6 +1017,8 @@ class BillingApiIntegrationTest {
         var balance = billingApi.balance(policyNumber);
         assertThat(balance.balance()).isEqualByComparingTo("25000.00");
         assertThat(balance.coversPremiumsTo()).isEqualTo(invoices.get(1).getDueDate());
+        // The books-match check's side of 2128 (money movement step 7): this tenant's one balance, summed.
+        assertThat(billingApi.policyBalancesTotal()).isEqualByComparingTo("25000.00");
 
         var statement = billingApi.balanceStatement(policyNumber, 0, 50);
         assertThat(statement.total()).isEqualTo(2);

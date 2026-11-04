@@ -135,6 +135,18 @@ public class PaymentEventListener {
     }
 
     private void handleConfirmed(Map<String, Object> payload) {
+        // A deposit naming no invoice (money movement step 5): onto the policy's balance by its number.
+        if ("DEPOSIT".equals(payload.get("purpose"))) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> amount = (Map<String, Object>) payload.get("amount");
+            Object paymentId = payload.get("paymentRequestId");
+            billingApiImpl.depositConfirmed(String.valueOf(payload.get("policyNumber")),
+                new BigDecimal(String.valueOf(amount.get("amount"))), String.valueOf(amount.get("currencyCode")),
+                paymentId instanceof UUID u ? u : UUID.fromString(String.valueOf(paymentId)),
+                (String) payload.get("method"), (String) payload.get("gatewayReference"), (String) payload.get("payerRef"));
+            reconcileFieldReceipt(payload);
+            return;
+        }
         if (!isPremium(payload)) {
             return;
         }
@@ -148,8 +160,14 @@ public class PaymentEventListener {
         billingApi.applyConfirmedPayment(invoiceId, paidAmount, currency, (String) payload.get("gatewayReference"),
             (String) payload.get("payerRef"), (String) payload.get("method"),
             paymentId == null ? null : paymentId instanceof UUID u ? u : UUID.fromString(paymentId.toString()));
-        // An agent's cash, recorded as a receipt and approved (2026-10-27): the field receipt it brought in is matched
-        // now, by the money itself, rather than by somebody pressing "Mark matched" against nothing.
+        reconcileFieldReceipt(payload);
+    }
+
+    /**
+     * An agent's cash, recorded as a receipt and approved (2026-10-27): the field receipt it brought in is matched now,
+     * by the money itself, rather than by somebody pressing "Mark matched" against nothing.
+     */
+    private void reconcileFieldReceipt(Map<String, Object> payload) {
         Object fieldReceiptId = payload.get("fieldReceiptId");
         if (fieldReceiptId != null) {
             billingApi.reconcileFieldReceipt(UUID.fromString(fieldReceiptId.toString()),

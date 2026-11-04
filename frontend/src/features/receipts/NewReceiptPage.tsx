@@ -12,7 +12,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { UnsavedGuard } from '@/components/UnsavedGuard';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
-import { formatDate } from '@/lib/dates';
+import { todayIso } from '@/lib/dates';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { formatMoney } from '@/lib/money';
 import { useReceiptStore } from '@/store/receiptStore';
@@ -26,7 +26,7 @@ import {
   type ReceiptFormValues,
 } from './receiptForm';
 
-/** Invoices a receipt can still pay: not paid, not waived. */
+/** Invoices still owed: not paid, not waived. */
 const OPEN = new Set(['DUE', 'PARTIALLY_PAID', 'IN_GRACE', 'OVERDUE']);
 
 /** Loans a deposit can still repay -- the two statuses the server accepts a repayment on. */
@@ -35,6 +35,13 @@ const REPAYABLE = new Set(['DISBURSED', 'REPAYING']);
 /** What is still owed on an invoice, as the server stated it; the charge itself where no balance is stated. */
 function owed(i: InvoiceView) {
   return i.balanceDue ?? i.amount ?? { amount: '0', currencyCode: 'TZS' };
+}
+
+/** What the invoices fallen due owe together, in their currency; null when none is owed. */
+function totalOwed(due: InvoiceView[]) {
+  if (due.length === 0) return null;
+  const sum = due.reduce((total, i) => total + Number(owed(i).amount), 0);
+  return { amount: sum.toFixed(2), currencyCode: owed(due[0]!).currencyCode };
 }
 
 /**
@@ -57,7 +64,6 @@ export function NewReceiptPage() {
     return blankReceiptForm({
       policyNumber: params.get('policy') ?? '',
       paysFor: params.get('for') === 'LOAN' ? 'LOAN' : 'PREMIUM',
-      invoiceId: params.get('invoice') ?? '',
       loanId: params.get('loan') ?? '',
       amount: params.get('amount') ?? '',
       reference: params.get('reference') ?? '',
@@ -76,12 +82,12 @@ export function NewReceiptPage() {
 
   const policyNumber = useWatch({ control, name: 'policyNumber' });
   const method = useWatch({ control, name: 'method' });
-  const invoiceId = useWatch({ control, name: 'invoiceId' });
   const paysFor = useWatch({ control, name: 'paysFor' });
   const loanId = useWatch({ control, name: 'loanId' });
   const chosenMethod = methodOf(method);
 
-  // The policy's open invoices, read once the policy number is asked for.
+  // The policy's open invoices, read once the policy number is asked for -- not to choose one (a deposit goes onto the
+  // policy's balance, money movement step 5), but to say what it owes now and to catch a policy number that is wrong.
   const [lookedUp, setLookedUp] = useState(prefill.policyNumber);
   const [invoices, setInvoices] = useState<InvoiceView[] | null>(null);
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
@@ -91,13 +97,8 @@ export function NewReceiptPage() {
     listInvoices(lookedUp)
       .then((all) => {
         if (cancelled) return;
-        const open = all.filter((i) => OPEN.has(i.status ?? '')).sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''));
-        setInvoices(open);
-        setInvoiceError(open.length === 0 ? `Nothing is owed on ${lookedUp}: every invoice is paid or waived.` : null);
-        // The oldest open invoice is the one a payment usually settles; a prefilled one is kept.
-        if (open.length > 0 && !open.some((i) => i.invoiceId === prefill.invoiceId)) {
-          setValue('invoiceId', open[0]!.invoiceId ?? '', { shouldDirty: true });
-        }
+        setInvoices(all.filter((i) => OPEN.has(i.status ?? '') && (i.dueDate ?? '') <= todayIso()));
+        setInvoiceError(all.length === 0 ? `No policy ${lookedUp} is billed here.` : null);
       })
       .catch(() => {
         if (!cancelled) {
@@ -108,7 +109,7 @@ export function NewReceiptPage() {
     return () => {
       cancelled = true;
     };
-  }, [lookedUp, prefill.invoiceId, setValue]);
+  }, [lookedUp]);
 
   // The policy's loans that can still take a repayment (money movement step 1), read once a loan deposit is asked for.
   const [loans, setLoans] = useState<LoanView[] | null>(null);
@@ -137,10 +138,9 @@ export function NewReceiptPage() {
     };
   }, [lookedUp, paysFor, prefill.loanId, setValue]);
 
-  const invoice = invoices?.find((i) => i.invoiceId === invoiceId) ?? null;
   const loan = paysFor === 'LOAN' ? (loans?.find((l) => l.loanId === loanId) ?? null) : null;
-  // What the amount is capped at, as the server stated it: the loan's balance or the invoice's.
-  const owedNow = loan ? (loan.outstandingBalance ?? null) : invoice ? owed(invoice) : null;
+  // The loan's balance, which caps a repayment, or what the policy's premiums owe today, which caps nothing.
+  const owedNow = loan ? (loan.outstandingBalance ?? null) : invoices ? totalOwed(invoices) : null;
   const from = params.get('from');
   const origin = receiptOrigin(from, prefill.policyNumber || null);
 
@@ -168,7 +168,7 @@ export function NewReceiptPage() {
                   placeholder="POL-XXXXXXXX"
                   {...register('policyNumber', {
                     setValueAs: (v: string) => v.toUpperCase(),
-                    // Looked up as soon as the number is in, so the invoice choice follows without another click.
+                    // Looked up as soon as the number is in, so what it owes shows without another click.
                     onBlur: (e: FocusEvent<HTMLInputElement>) => {
                       const typed = e.target.value.trim().toUpperCase();
                       if (typed) setLookedUp(typed);
@@ -177,7 +177,7 @@ export function NewReceiptPage() {
                 />
               </FormField>
               <Button type="button" variant="outline" onClick={() => setLookedUp(policyNumber.trim().toUpperCase())}>
-                Find invoices
+                Look up policy
               </Button>
             </div>
             <FormField label="For" error={errors.paysFor?.message}>
@@ -199,17 +199,6 @@ export function NewReceiptPage() {
               </FormField>
             )}
             {paysFor === 'PREMIUM' && invoiceError && <p className="text-sm text-status-warning-fg">{invoiceError}</p>}
-            {paysFor === 'PREMIUM' && invoices && invoices.length > 0 && (
-              <FormField label="Invoice it pays" error={errors.invoiceId?.message}>
-                <Select {...register('invoiceId')}>
-                  {invoices.map((i) => (
-                    <option key={i.invoiceId} value={i.invoiceId}>
-                      Due {formatDate(i.dueDate)} · {formatMoney(owed(i))} owed
-                    </option>
-                  ))}
-                </Select>
-              </FormField>
-            )}
           </div>
 
           <div data-outline="How it was paid" className="space-y-4">
@@ -231,7 +220,7 @@ export function NewReceiptPage() {
                 hint={owedNow
                   ? loan
                     ? `At most ${formatMoney(owedNow)}, what the loan owes.`
-                    : `Owed now ${formatMoney(owedNow)}. Anything above it stays on the policy's balance and pays the next premiums.`
+                    : `Owed now ${formatMoney(owedNow)}. It goes onto the policy's balance, which pays what is due oldest first; the rest pays the next premiums.`
                   : undefined}
                 error={errors.amount?.message}
               >

@@ -173,6 +173,9 @@ public interface BillingApi {
      */
     java.util.UUID requestWithdrawalToMobileMoney(String policyNumber, BigDecimal amount, String phone, String requestedBy);
 
+    /** Every policy balance in the tenant, summed: the sub-ledger behind account 2128 (money movement step 7). */
+    BigDecimal policyBalancesTotal();
+
     /** The balance and how far ahead it pays premiums (money movement step 5). */
     PolicyBalanceView balance(String policyNumber);
 

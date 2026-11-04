@@ -29,7 +29,7 @@ test.describe('staff field receipts queue', () => {
     // Every other queue on this console opens on everything. This one opens on the SLA breach,
     // because that is what the alert pages somebody about -- and the count says so rather than
     // leaving the default filter to be discovered.
-    await expect(page.getByText(/overdue receipts · past the reconciliation SLA/)).toBeVisible({
+    await expect(page.getByText(/agent cash past its deadline · past the reconciliation SLA/)).toBeVisible({
       timeout: 20_000,
     });
 

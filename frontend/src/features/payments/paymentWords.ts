@@ -9,6 +9,8 @@ import { humanizeStatus } from '@/lib/status';
  */
 const PURPOSES: Record<string, string> = {
   PREMIUM: 'Premium',
+  // A deposit onto a policy's balance that named no invoice (money movement step 5).
+  DEPOSIT: 'Deposit',
   ACCOUNT_TOP_UP: 'Savings deposit',
   UL_TOP_UP: 'Unit-linked top-up',
   // A loan repaid by deposit or mobile-money request (money movement step 1, 2026-11-04).

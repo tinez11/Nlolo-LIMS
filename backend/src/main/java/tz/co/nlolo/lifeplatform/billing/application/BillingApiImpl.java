@@ -590,6 +590,17 @@ public class BillingApiImpl implements BillingApi {
         payFromBalance(tenantId, policyNumber, method, reference, payerRef, payUpTo);
     }
 
+    /**
+     * A confirmed deposit naming no invoice (money movement step 5, payment's DEPOSIT purpose): onto the policy's
+     * balance, posted like any other deposit, paying only what has fallen due -- none of it pays a premium early.
+     */
+    @Transactional
+    public void depositConfirmed(String policyNumber, BigDecimal amount, String currency, UUID paymentId, String method,
+                                 String reference, String payerRef) {
+        deposit(TenantContext.get(), policyNumber, amount, currency, paymentId, method, reference, payerRef,
+            BalanceEntry.FROM_PAYMENT, "payment", null);
+    }
+
     /** A loan's surplus (policyloan.LoanOverpaid) onto the policy's balance -- already posted, so no ledger event. */
     @Transactional
     public void depositLoanSurplus(String policyNumber, BigDecimal amount, String currency, UUID paymentId, String method,
@@ -640,6 +651,12 @@ public class BillingApiImpl implements BillingApi {
     @Transactional(readOnly = true)
     public BigDecimal balanceOf(String policyNumber) {
         return balanceEntryRepository.balanceOf(TenantContext.get(), policyNumber).setScale(2);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal policyBalancesTotal() {
+        return balanceEntryRepository.totalOfTenant(TenantContext.get()).setScale(2);
     }
 
     @Override

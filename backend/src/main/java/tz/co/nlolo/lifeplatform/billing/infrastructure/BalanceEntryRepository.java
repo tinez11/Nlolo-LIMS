@@ -19,6 +19,11 @@ public interface BalanceEntryRepository extends JpaRepository<BalanceEntry, UUID
         + "FROM BalanceEntry e WHERE e.tenantId = :tenantId AND e.policyNumber = :policyNumber")
     BigDecimal balanceOf(@Param("tenantId") UUID tenantId, @Param("policyNumber") String policyNumber);
 
+    /** Every policy balance in the tenant, summed -- what account 2128 should hold (money movement step 7). */
+    @Query("SELECT COALESCE(SUM(CASE WHEN e.entryType IN ('DEPOSIT', 'PREMIUM_REOPENED') THEN e.amount ELSE -e.amount END), 0) "
+        + "FROM BalanceEntry e WHERE e.tenantId = :tenantId")
+    BigDecimal totalOfTenant(@Param("tenantId") UUID tenantId);
+
     /** A redelivered confirmation is the same payment: it deposits once. */
     boolean existsByTenantIdAndEntryTypeAndPaymentId(UUID tenantId, String entryType, UUID paymentId);
 

@@ -356,11 +356,18 @@ components:
         invoiceId:
           type: [string, 'null']
           format: uuid
-          description: The invoice this pays; give this or loanId, not both (money movement step 1, 2026-11-04).
+          description: The invoice this pays; give one of invoiceId, loanId or policyNumber (money movement step 1, 2026-11-04).
         loanId:
           type: [string, 'null']
           format: uuid
           description: The loan this repays, capped at what it owes less what is already waiting on it.
+        policyNumber:
+          type: [string, 'null']
+          maxLength: 40
+          description: >-
+            A deposit onto the policy's balance, naming no invoice (money movement step 5, design 7.2): it pays what has
+            fallen due, oldest first, and the rest waits for the next premiums. A savings-type policy's deposit pays its
+            oldest open invoice instead, as before.
         method: { $ref: '#/components/schemas/ReceiptMethod' }
         reference:
           type: string
@@ -383,10 +390,11 @@ components:
         receiptId: { type: string, format: uuid }
         purpose:
           type: string
-          enum: [PREMIUM, LOAN_REPAYMENT, ACCOUNT_TOP_UP, UL_TOP_UP]
+          enum: [PREMIUM, DEPOSIT, LOAN_REPAYMENT, ACCOUNT_TOP_UP, UL_TOP_UP]
           description: >
-            What it pays -- an invoice (PREMIUM, invoiceId set) or a loan (LOAN_REPAYMENT, loanId set). A savings or
-            unit-linked top-up recorded by hand is a receipt too; it names neither.
+            What it pays -- an invoice (PREMIUM, invoiceId set), a policy's balance (DEPOSIT, money movement step 5:
+            policyNumber set, no invoice) or a loan (LOAN_REPAYMENT, loanId set). A savings or unit-linked top-up
+            recorded by hand is a receipt too; it names neither.
         method:
           type: string
           enum: [MOBILE_MONEY, CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR]

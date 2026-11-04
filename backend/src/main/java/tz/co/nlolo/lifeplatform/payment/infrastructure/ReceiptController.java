@@ -33,10 +33,14 @@ import java.util.UUID;
 @RestController
 public class ReceiptController {
 
-    /** An invoice it pays or a loan it repays (money movement step 1): one of the two, which Receipts.record enforces. */
+    /**
+     * An invoice it pays, a loan it repays (money movement step 1) or a policy's balance it goes onto (step 5): one of
+     * the three, which Receipts.record enforces.
+     */
     public record RecordReceiptRequest(
         UUID invoiceId,
         UUID loanId,
+        @Size(max = 40) String policyNumber,
         @NotNull ReceiptMethod method,
         @NotBlank @Size(max = 100) String reference,
         @NotNull MoneyDto amount,
@@ -71,7 +75,7 @@ public class ReceiptController {
                                                   @AuthenticationPrincipal Jwt jwt) {
         ReceiptView recorded = receipts.record(new Receipts.NewReceipt(body.invoiceId(), body.loanId(), body.method(), body.reference(),
             new BigDecimal(body.amount().amount()), body.receivedOn(), body.payerRef(), body.note(),
-            body.fieldReceiptId()), jwt.getSubject());
+            body.fieldReceiptId(), body.policyNumber()), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(ReceiptResponse.from(recorded));
     }
 

@@ -283,6 +283,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
             "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
             "db-migrations/payment/V24__reversed_status.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql",
             // M7 (Task 10) additions: distribution appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap claims had entering M6.
             // distribution/V1 has zero GRANT statements (the recurring V1 pattern this class

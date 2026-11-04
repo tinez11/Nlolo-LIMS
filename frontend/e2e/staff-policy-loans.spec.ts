@@ -110,8 +110,10 @@ test.describe('staff policy loans', () => {
     await expect(paysFor).toHaveValue('LOAN');
     await expect(page.getByText(`No loan on ${policyNumber} has anything to repay.`)).toBeVisible();
 
-    // Back to a premium, the invoice choice returns: one form for both.
+    // Back to a premium, the loan choice and its "nothing to repay" go: a premium deposit names no invoice either --
+    // it goes onto the policy's balance (money movement step 5). One form for both.
     await paysFor.selectOption('PREMIUM');
-    await expect(page.getByLabel('Invoice it pays')).toBeVisible();
+    await expect(page.getByText(`No loan on ${policyNumber} has anything to repay.`)).toHaveCount(0);
+    await expect(page.getByLabel('Invoice it pays')).toHaveCount(0);
   });
 });

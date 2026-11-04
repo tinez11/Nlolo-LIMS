@@ -179,6 +179,27 @@ public class PaymentTransaction {
         return t;
     }
 
+    /**
+     * A deposit onto a policy's balance, naming no invoice (money movement step 5): its sourceRef is its own deposit id,
+     * and billing finds the balance by the policy number.
+     */
+    public static PaymentTransaction manualDeposit(UUID tenantId, String idempotencyKey, String method, String reference,
+                                                   String payerRef, java.math.BigDecimal amount, String currency,
+                                                   String policyNumber, java.time.LocalDate receivedOn, String note,
+                                                   UUID fieldReceiptId, String recordedBy) {
+        PaymentTransaction t = new PaymentTransaction(tenantId, idempotencyKey, payerRef, amount, currency,
+            UUID.randomUUID().toString(), "DEPOSIT");
+        t.method = method;
+        t.gatewayReference = reference;
+        t.policyNumber = policyNumber;
+        t.receivedOn = receivedOn;
+        t.note = note;
+        t.fieldReceiptId = fieldReceiptId;
+        t.recordedBy = recordedBy;
+        t.status = "AWAITING_APPROVAL";
+        return t;
+    }
+
     /** A deposit For: Loan (money movement step 1): recorded by hand against a loan, confirmed by a second person. */
     public static PaymentTransaction manualLoanReceipt(UUID tenantId, String idempotencyKey, String method, String reference,
                                                       String payerRef, java.math.BigDecimal amount, String currency,

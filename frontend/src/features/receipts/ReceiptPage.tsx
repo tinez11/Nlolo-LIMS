@@ -112,9 +112,13 @@ export function ReceiptPage() {
 }
 
 function ReceiptDecision({ receipt }: { receipt: Receipt }) {
-  // What it pays (money movement step 1, 2026-11-04), by its purpose: a loan, a savings account, or an invoice.
+  // Money onto the policy's balance: a premium deposit named by its invoice, or since money movement step 5 by the
+  // policy alone (DEPOSIT). Either is paid out oldest first, and either can be reversed.
+  const onBalance = receipt.purpose === 'PREMIUM' || receipt.purpose === 'DEPOSIT';
+  // What it pays (money movement step 1, 2026-11-04), by its purpose: a loan, a savings account, or the balance.
   const target = receipt.purpose === 'LOAN_REPAYMENT' ? 'the loan'
-    : receipt.purpose === 'ACCOUNT_TOP_UP' || receipt.purpose === 'UL_TOP_UP' ? 'the savings account' : 'the invoice';
+    : receipt.purpose === 'ACCOUNT_TOP_UP' || receipt.purpose === 'UL_TOP_UP' ? 'the savings account'
+      : `the balance of ${receipt.policyNumber}`;
   const auth = useAuth();
   const viewerSubject = readIdentity(auth.user?.access_token)?.subject ?? undefined;
   const approve = useReceiptStore((s) => s.approve);
@@ -128,11 +132,12 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
       <>
         <Panel title="Confirmed">
           <p className="px-4 pb-4 text-sm">
-            This deposit paid {formatMoney(receipt.amount)} against {target}, and the ledger has posted it.
+            This deposit paid {formatMoney(receipt.amount)} {onBalance ? 'onto' : 'against'} {target}, and the ledger has
+            posted it.
           </p>
         </Panel>
         {/* Money movement step 5: a premium deposit whose money never really arrived is reversed from here. */}
-        {receipt.purpose === 'PREMIUM' && <DepositReversalPanel receipt={receipt} viewerSubject={viewerSubject} />}
+        {onBalance && <DepositReversalPanel receipt={receipt} viewerSubject={viewerSubject} />}
       </>
     );
   }
@@ -155,7 +160,8 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
   const refused = gates.some((g) => !g.ok && g.hard);
   return (
     <Panel title="Confirm this deposit"
-      subtitle={receipt.loanId ? 'Only a confirmed deposit repays the loan.' : 'Only a confirmed deposit pays the invoice.'}>
+      subtitle={receipt.loanId ? 'Only a confirmed deposit repays the loan.'
+        : onBalance ? 'Only a confirmed deposit goes onto the policy’s balance.' : `Only a confirmed deposit pays into ${target}.`}>
       <div className="space-y-3 px-4 py-3">
         {receipt.method === REQUESTED_MOBILE_MONEY.value && <p className="text-sm">{REQUESTED_MOBILE_MONEY.hint}</p>}
         <GatePanel gates={gates} title="Before confirming" />
@@ -166,14 +172,14 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
             consequence={
               <>
                 <strong>{formatMoney(receipt.amount)}</strong>{' '}
-                {receipt.purpose === 'PREMIUM'
+                {onBalance
                   ? <>goes onto the balance of {receipt.policyNumber} and pays what it owes, oldest first; anything left
                     pays its next premiums. The ledger</>
                   : <>is applied to {target} on {receipt.policyNumber}, and the ledger</>}{' '}
                 posts it to the account a {methodOf(receipt.method)?.label.toLowerCase() ?? 'payment'} reaches.
               </>
             }
-            reversal={receipt.purpose === 'PREMIUM'
+            reversal={onBalance
               ? 'If the money never really arrives (a bounced cheque), the deposit can be reversed from this page.'
               : 'Nothing here undoes it. A deposit confirmed in error is corrected by a manual journal.'}
             confirmLabel="Confirm deposit"

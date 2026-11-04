@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { blankReceiptForm, receiptFormSchema, toApiRequest } from './receiptForm';
 
 const valid = blankReceiptForm({
-  policyNumber: 'POL-1',
-  invoiceId: 'inv-1',
+  policyNumber: 'pol-1',
   method: 'CHEQUE',
   reference: ' CHQ-731 ',
   amount: '120000',
@@ -11,7 +10,7 @@ const valid = blankReceiptForm({
 });
 
 describe('receipt form', () => {
-  it('accepts a receipt with its invoice, method, reference, amount and day', () => {
+  it('accepts a deposit with its policy, method, reference, amount and day -- no invoice', () => {
     expect(receiptFormSchema.safeParse(valid).success).toBe(true);
   });
 
@@ -25,9 +24,10 @@ describe('receipt form', () => {
     expect(receiptFormSchema.safeParse({ ...valid, amount: '0' }).success).toBe(false);
   });
 
-  it('sends money as a decimal string in the invoice currency, and blanks as nothing', () => {
+  // Money movement step 5 (design 7.2): a premium deposit names the policy, and its balance pays what is due.
+  it('sends a premium deposit onto the policy, money as a decimal string, and blanks as nothing', () => {
     expect(toApiRequest(valid, 'TZS')).toEqual({
-      invoiceId: 'inv-1',
+      policyNumber: 'POL-1',
       loanId: null,
       method: 'CHEQUE',
       reference: 'CHQ-731',
@@ -39,21 +39,16 @@ describe('receipt form', () => {
     });
   });
 
-  // Money movement step 1 (2026-11-04): a deposit can repay a loan instead of paying an invoice.
-  it('a loan deposit needs the loan, not an invoice', () => {
-    const parsed = receiptFormSchema.safeParse({ ...valid, paysFor: 'LOAN', invoiceId: '', loanId: '' });
+  // Money movement step 1 (2026-11-04): a deposit can repay a loan instead.
+  it('a loan deposit needs the loan', () => {
+    const parsed = receiptFormSchema.safeParse({ ...valid, paysFor: 'LOAN', loanId: '' });
     expect(parsed.success).toBe(false);
     expect(parsed.error?.issues.map((i) => i.path[0])).toEqual(['loanId']);
   });
 
-  it('a premium deposit needs the invoice', () => {
-    const parsed = receiptFormSchema.safeParse({ ...valid, invoiceId: '' });
-    expect(parsed.error?.issues.map((i) => i.path[0])).toEqual(['invoiceId']);
-  });
-
-  it('a loan deposit goes out with loanId and no invoiceId, whatever invoice was chosen before', () => {
+  it('a loan deposit goes out with loanId and no policy balance', () => {
     const body = toApiRequest({ ...valid, paysFor: 'LOAN', loanId: 'loan-1' }, 'TZS');
     expect(body.loanId).toBe('loan-1');
-    expect(body.invoiceId).toBeNull();
+    expect(body.policyNumber).toBeNull();
   });
 });

@@ -35,13 +35,12 @@ export function methodOf(value: string): { value: string; label: string; referen
 }
 
 /**
- * Mirrors Receipts.record: an invoice or a loan (one of the two, money movement step 1), a method and its reference, an
- * amount above zero, a day no later than today.
+ * Mirrors Receipts.record: a policy's balance or a loan (money movement steps 1 and 5 -- "Invoice it pays" went with
+ * design 7.2), a method and its reference, an amount above zero, a day no later than today.
  */
 export const receiptFormSchema = z.object({
   policyNumber: z.string().trim().min(1, 'Enter the policy number'),
   paysFor: z.enum(['PREMIUM', 'LOAN']),
-  invoiceId: z.string(),
   loanId: z.string(),
   method: z.enum(['CASH', 'BANK_DEPOSIT', 'CHEQUE', 'LIPA_NUMBER', 'TANQR'], { message: 'Choose how the money came in' }),
   reference: z.string().trim().min(1, 'Enter the reference, so the same money cannot be recorded twice').max(100),
@@ -58,9 +57,6 @@ export const receiptFormSchema = z.object({
   note: z.string().trim().max(500),
   fieldReceiptId: z.string(),
 }).superRefine((v, ctx) => {
-  if (v.paysFor === 'PREMIUM' && !v.invoiceId) {
-    ctx.addIssue({ code: 'custom', path: ['invoiceId'], message: 'Choose the invoice this pays' });
-  }
   if (v.paysFor === 'LOAN' && !v.loanId) {
     ctx.addIssue({ code: 'custom', path: ['loanId'], message: 'Choose the loan this repays' });
   }
@@ -72,7 +68,6 @@ export function blankReceiptForm(prefill: Partial<ReceiptFormValues> = {}): Rece
   return {
     policyNumber: '',
     paysFor: 'PREMIUM',
-    invoiceId: '',
     loanId: '',
     method: 'BANK_DEPOSIT',
     reference: '',
@@ -87,7 +82,8 @@ export function blankReceiptForm(prefill: Partial<ReceiptFormValues> = {}): Rece
 
 export function toApiRequest(values: ReceiptFormValues, currency: string): RecordReceipt {
   return {
-    invoiceId: values.paysFor === 'PREMIUM' ? values.invoiceId : null,
+    // A premium deposit goes onto the policy's balance, which pays what is due oldest first (money movement step 5).
+    policyNumber: values.paysFor === 'PREMIUM' ? values.policyNumber.trim().toUpperCase() : null,
     loanId: values.paysFor === 'LOAN' ? values.loanId : null,
     method: values.method,
     reference: values.reference.trim(),

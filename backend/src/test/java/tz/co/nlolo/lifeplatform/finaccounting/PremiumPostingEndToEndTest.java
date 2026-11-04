@@ -125,6 +125,7 @@ class PremiumPostingEndToEndTest {
             "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
             "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
             "db-migrations/payment/V24__reversed_status.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
@@ -573,6 +574,44 @@ class PremiumPostingEndToEndTest {
 
         TenantContext.set(tenantId);
         assertThat(billingApi.getInvoice(invoice.invoiceId()).status()).isEqualTo(InvoiceStatus.PAID);
+        assertThat(legsOf(tenantId, onlyEntry(tenantId, "billing.DepositReceived")))
+            .extracting(GlPosting::getAccountCode).containsExactlyInAnyOrder("1120", "2128");
+    }
+
+    /**
+     * Record deposit names the policy, not an invoice (money movement step 5, design 7.2): twice the premium onto the
+     * balance, and once a second person confirms it, the premium due today is paid from it, the rest stays for the next
+     * one, and the deposit posts to the bank account the transfer reached.
+     */
+    @Test
+    void aDepositNamingOnlyThePolicyGoesOntoItsBalanceAndPaysWhatIsDue() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "PREMIUM-E2E-DEPOSIT");
+        BigDecimal premium = new BigDecimal("120000.00");
+        String policyNumber = issueAnnualPolicy(tenantId, fixture, new BigDecimal("2000000"), premium);
+        TenantContext.set(tenantId);
+        InvoiceView invoice = billingApi.getNextDueInvoice(policyNumber);
+
+        TenantContext.set(tenantId);
+        ReceiptView recorded = receipts.record(new Receipts.NewReceipt(null, null, ReceiptMethod.BANK_DEPOSIT, "SLIP-4410",
+            premium.multiply(BigDecimal.TWO), java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")),
+            "Amina Owner", null, null, policyNumber.toLowerCase()), "finance-one");
+        assertThat(recorded.purpose()).isEqualTo("DEPOSIT");
+        assertThat(recorded.invoiceId()).as("it names no invoice").isNull();
+        assertThat(recorded.policyNumber()).isEqualTo(policyNumber);
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> receipts.record(new Receipts.NewReceipt(invoice.invoiceId(), null, ReceiptMethod.CASH,
+                "RC-1", premium, java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")), null, null, null,
+                policyNumber), "finance-one"))
+            .isInstanceOf(ReceiptRefusedException.class).hasMessageContaining("one of them");
+
+        TenantContext.set(tenantId);
+        transactionTemplate().executeWithoutResult(s -> receipts.approve(recorded.receiptId(), "finance-two"));
+
+        TenantContext.set(tenantId);
+        assertThat(billingApi.getInvoice(invoice.invoiceId()).status()).isEqualTo(InvoiceStatus.PAID);
+        assertThat(billingApi.balance(policyNumber).balance()).as("the second premium's worth waits on the balance")
+            .isEqualByComparingTo(premium);
         assertThat(legsOf(tenantId, onlyEntry(tenantId, "billing.DepositReceived")))
             .extracting(GlPosting::getAccountCode).containsExactlyInAnyOrder("1120", "2128");
     }

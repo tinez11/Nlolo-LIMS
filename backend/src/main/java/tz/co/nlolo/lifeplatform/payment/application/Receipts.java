@@ -67,11 +67,19 @@ public class Receipts {
     }
 
     /**
-     * What a person records: for an invoice or, since money movement step 1 (2026-11-04), for a loan -- one of the two.
-     * {@code fieldReceiptId} when it is an agent's cash being brought in.
+     * What a person records: for an invoice, for a loan (money movement step 1, 2026-11-04) or onto a policy's balance
+     * (step 5, design 7.2) -- one of the three. {@code fieldReceiptId} when it is an agent's cash being brought in.
      */
     public record NewReceipt(UUID invoiceId, UUID loanId, ReceiptMethod method, String reference, BigDecimal amount,
-                             LocalDate receivedOn, String payerRef, String note, UUID fieldReceiptId) {}
+                             LocalDate receivedOn, String payerRef, String note, UUID fieldReceiptId, String policyNumber) {
+        public NewReceipt(UUID invoiceId, UUID loanId, ReceiptMethod method, String reference, BigDecimal amount,
+                          LocalDate receivedOn, String payerRef, String note, UUID fieldReceiptId) {
+            this(invoiceId, loanId, method, reference, amount, receivedOn, payerRef, note, fieldReceiptId, null);
+        }
+    }
+
+    private static final java.util.Set<InvoiceStatus> OPEN =
+        java.util.EnumSet.of(InvoiceStatus.DUE, InvoiceStatus.IN_GRACE, InvoiceStatus.OVERDUE, InvoiceStatus.PARTIALLY_PAID);
 
     @Transactional
     public ReceiptView record(NewReceipt in, String recordedBy) {
@@ -89,11 +97,16 @@ public class Receipts {
         if (in.receivedOn() == null || in.receivedOn().isAfter(today)) {
             throw new ReceiptRefusedException("Say the day the money was received; it cannot be later than today");
         }
-        if ((in.invoiceId() == null) == (in.loanId() == null)) {
-            throw new ReceiptRefusedException("Say what this pays: an invoice or a loan, one of the two");
+        boolean forPolicy = in.policyNumber() != null && !in.policyNumber().isBlank();
+        int named = (in.invoiceId() != null ? 1 : 0) + (in.loanId() != null ? 1 : 0) + (forPolicy ? 1 : 0);
+        if (named != 1) {
+            throw new ReceiptRefusedException("Say what this pays: a policy's balance, an invoice or a loan, one of them");
         }
         if (in.loanId() != null) {
             return recordForLoan(in, reference, recordedBy, tenantId);
+        }
+        if (forPolicy) {
+            return recordForPolicy(in, reference, recordedBy, tenantId);
         }
 
         InvoiceView invoice = billing.getInvoice(in.invoiceId());
@@ -141,6 +154,42 @@ public class Receipts {
             in.fieldReceiptId(), recordedBy);
         transactions.save(receipt);
         return view(receipt);
+    }
+
+    /**
+     * A deposit onto a policy's balance (money movement step 5, design 7.2): no invoice is named, and none need be owed
+     * -- what has fallen due is paid oldest first once it is confirmed, and the rest waits for the next premiums. A
+     * savings-type policy keeps the invoice road (design D12, until "For: Savings"): its deposit pays the oldest open
+     * invoice, with that road's cap.
+     */
+    private ReceiptView recordForPolicy(NewReceipt in, String reference, String recordedBy, UUID tenantId) {
+        String policyNumber = in.policyNumber().trim().toUpperCase();
+        List<InvoiceView> invoices = billing.listInvoices(policyNumber, null);
+        if (invoices.isEmpty()) {
+            throw new ReceiptRefusedException("No policy " + policyNumber + " is billed here");
+        }
+        if (billing.isSavingsType(policyNumber)) {
+            InvoiceView oldest = invoices.stream().filter(i -> OPEN.contains(i.status())).findFirst()
+                .orElseThrow(() -> new ReceiptRefusedException("Nothing is owed on " + policyNumber
+                    + ": every invoice is paid or waived"));
+            return record(new NewReceipt(oldest.invoiceId(), null, in.method(), in.reference(), in.amount(),
+                in.receivedOn(), in.payerRef(), in.note(), in.fieldReceiptId()), recordedBy);
+        }
+        if (transactions.existsByTenantIdAndMethodAndGatewayReferenceAndStatusNot(tenantId, in.method().name(),
+                reference, REJECTED)) {
+            throw new ReceiptRefusedException("A receipt with this " + words(in.method()) + " reference (" + reference
+                + ") is already recorded");
+        }
+        if (in.fieldReceiptId() != null
+                && transactions.existsByTenantIdAndFieldReceiptIdAndStatusNot(tenantId, in.fieldReceiptId(), REJECTED)) {
+            throw new ReceiptRefusedException("This agent's receipt is already recorded");
+        }
+        PaymentTransaction deposit = PaymentTransaction.manualDeposit(tenantId, "receipt:" + UUID.randomUUID(),
+            in.method().name(), reference, blankToNull(in.payerRef()) == null ? "—" : in.payerRef().trim(), in.amount(),
+            invoices.get(0).currency(), policyNumber, in.receivedOn(), blankToNull(in.note()), in.fieldReceiptId(),
+            recordedBy);
+        transactions.save(deposit);
+        return view(deposit);
     }
 
     /**
