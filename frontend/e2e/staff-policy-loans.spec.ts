@@ -27,10 +27,9 @@ function loansPanel(page: Page): Locator {
 /**
  * The loans panel's write surface, against the real backend.
  *
- * `POST /policies/{n}/loans` and `POST /loans/{loanId}/repayments` shipped with the
- * `policyloan` module and no screen ever called either one -- a policy loan could be
- * listed but never created or repaid from this console. These tests cover the surface
- * that closes that.
+ * `POST /policies/{n}/loans` originates; a repayment (money movement step 1, 2026-11-04) is
+ * a deposit For: Loan on the receipt page or `POST /loans/{loanId}/payment-request`, and
+ * neither counts until the money is confirmed. These tests cover that surface.
  *
  * **What they deliberately do NOT do is originate a loan.** A loan is capped at the
  * policy's available loan value. Product step 1 made cash value real -- it is restated
@@ -77,7 +76,7 @@ test.describe('staff policy loans', () => {
     await expect(panel.getByText(/cash value, which is 0\.00/)).toBeVisible();
   });
 
-  test('the repayment action appears only on a loan that can actually take one', async ({
+  test('a repayment is never typed in, and its actions appear only on a loan that can take one', async ({
     page,
   }) => {
     const opened = await openFirstPolicyDetail(page);
@@ -85,40 +84,32 @@ test.describe('staff policy loans', () => {
     if (!opened) return;
 
     const panel = loansPanel(page);
-    const noLoans = panel.getByText('No loans');
-    // With no loans -- the state every current tenant is in, because origination is
-    // blocked upstream -- there must be no repayment control at all. This is a real
-    // assertion, not a placeholder: an unconditional "Record repayment" button on an
-    // empty panel, or on a loan resting at DISBURSEMENT_REQUESTED, would 409 on click,
-    // and only the status guard in `LoansPanel` prevents that.
-    if (await noLoans.isVisible()) {
-      await expect(panel.getByRole('button', { name: 'Record repayment' })).toHaveCount(0);
-      return;
-    }
+    // Money movement step 1 (2026-11-04): a repayment is a deposit For: Loan confirmed by a second person, or a
+    // mobile-money request. The old typed-in "Record repayment" is gone everywhere.
+    await expect(panel.getByRole('button', { name: 'Record repayment' })).toHaveCount(0);
 
-    // If a loan does exist (a future seeder, or a hand-created one), the control is
-    // offered exactly for the two statuses PolicyLoanApiImpl.recordRepayment accepts.
-    const repayable = panel.getByText(/^(DISBURSED|REPAYING)$/i);
-    const repayButtons = panel.getByRole('button', { name: 'Record repayment' });
-    await expect(repayButtons).toHaveCount(await repayable.count());
+    // Offered exactly for the two statuses the server accepts a repayment on -- none on a fresh policy, since
+    // origination is blocked by cash value; one pair per repayable loan wherever a loan does exist.
+    const repayable = await panel.getByText(/^(DISBURSED|REPAYING)$/i).count();
+    await expect(panel.getByRole('link', { name: 'Record deposit' })).toHaveCount(repayable);
+    await expect(panel.getByRole('button', { name: 'Request mobile-money payment' })).toHaveCount(repayable);
   });
 
-  test('opening the repayment form asks for an amount and a reference', async ({ page }) => {
+  test('the deposit page takes a loan repayment, and says so when the policy has no loan to repay', async ({ page }) => {
     const opened = await openFirstPolicyDetail(page);
     test.skip(!opened, 'no seeded policy to open');
     if (!opened) return;
+    const policyNumber = decodeURIComponent(new URL(page.url()).pathname.split('/').pop() ?? '');
 
-    const panel = loansPanel(page);
-    const repay = panel.getByRole('button', { name: 'Record repayment' }).first();
-    test.skip((await repay.count()) === 0, 'no repayable loan in this tenant');
+    // Where the Loans tab's "Record deposit" link leads, opened for a policy with no loan: the honest empty answer,
+    // rather than a loan list to pick from that does not exist.
+    await page.goto(`/staff/receipts/new?for=LOAN&policy=${encodeURIComponent(policyNumber)}&from=policy`);
+    await expect(page.getByRole('heading', { name: 'Record a receipt' })).toBeVisible();
+    await expect(page.getByLabel('For')).toHaveValue('LOAN');
+    await expect(page.getByText(`No loan on ${policyNumber} has anything to repay.`)).toBeVisible();
 
-    await repay.click();
-    await expect(panel.getByText('Repayment amount (TZS)')).toBeVisible();
-    await expect(panel.getByText('Payment reference')).toBeVisible();
-
-    // Submitting empty must surface the client-side validation rather than firing a
-    // request the backend would reject on shape.
-    await panel.getByRole('button', { name: 'Record repayment' }).last().click();
-    await expect(panel.getByText('A repayment amount is required')).toBeVisible();
+    // Back to a premium, the invoice choice returns: one form for both.
+    await page.getByLabel('For').selectOption('PREMIUM');
+    await expect(page.getByLabel('Invoice it pays')).toBeVisible();
   });
 });
