@@ -214,7 +214,8 @@ export type BadgeKey =
   | 'eft-awaiting'
   | 'needs-action'
   | 'approvals'
-  | 'payments-attention';
+  | 'payments-attention'
+  | 'payouts-attention';
 
 interface NavPlacement {
   group: NavGroupId;
@@ -378,11 +379,11 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   underwriting: ['underwriting.view'], 'underwriting/new': ['underwriting.propose'],
   'underwriting/:caseId': ['underwriting.view'],
   agents: ['agents.view'], 'agents/new': ['agents.manage'], 'agents/:agentId': ['agents.view'],
-  payments: ['collections.view', 'payouts.view'],
+  payments: ['collections.view'],
   'receipts/new': ['collections.manage'], 'receipts/:receiptId': ['collections.view', 'collections.manage'],
   'receipts/:receiptId/reverse': ['collections.manage'],
   arrears: ['collections.view'], 'field-receipts': ['collections.view'], 'bank-transfers': ['payouts.view'],
-  payouts: ['payouts.view'], 'payouts/:instalmentId': ['payouts.view'], 'payment-runs': ['payouts.view'],
+  payouts: ['payouts.view'], 'payouts/all': ['payouts.view'], 'payouts/:instalmentId': ['payouts.view'], 'payment-runs': ['payouts.view'],
   'payment-runs/:paymentRunId': ['payouts.view'], 'withholding-rules': ['payouts.view'], maturities: ['payouts.view'],
   funds: ['funds.view'],
   'gl-postings': ['ledger.view'], 'gl-postings/:journalEntryId': ['ledger.view'], 'chart-of-accounts': ['ledger.view'],
@@ -651,15 +652,17 @@ const STAFF_SCREENS: Screen[] = [
   { path: 'receipts/:receiptId', element: <ReceiptPage />, reach: 'drill-in' },
   // Money movement step 5: a deposit whose money never arrived, reversed on its own page and confirmed by a second person.
   { path: 'receipts/:receiptId/reverse', element: <ReverseDepositPage />, reach: 'drill-in' },
-  { path: 'payments', element: <PaymentsPage />, reach: { group: 'collections', label: 'Payments', icon: ArrowLeftRight, badge: 'payments-attention' } },
+  // Money movement 6d: the payments register is two registers by direction -- Deposits here, money out under Payouts.
+  { path: 'payments', element: <PaymentsPage direction="IN" />, reach: { group: 'collections', label: 'Deposits', icon: ArrowLeftRight, badge: 'payments-attention' } },
   // Money owed to LIVING policyholders (product step 2), as distinct from the claims queue, which
   // pays on death. Under finance for the same reason bank transfers are: reviewing and approving a
   // payout both move real money, and the endpoints are FINANCE_OFFICER/ADMIN only.
   {
     path: 'payouts',
     element: <PayoutsQueuePage />,
-    reach: { group: 'paying-out', label: 'Payouts', icon: Coins },
+    reach: { group: 'paying-out', label: 'Payouts', icon: Coins, badge: 'payouts-attention' },
   },
+  { path: 'payouts/all', element: <PaymentsPage direction="OUT" />, reach: 'drill-in' },
   { path: 'payouts/:instalmentId', element: <PayoutPage />, reach: 'drill-in' },
   {
     path: 'payment-runs',

@@ -112,7 +112,7 @@ export function depositTitle(methodLabel: string): string {
 export function receiptOrigin(from: string | null, policyNumber: string | null | undefined) {
   const lists: Record<string, { label: string; to: string }> = {
     'field-receipts': { label: 'Agent cash', to: '/staff/field-receipts' },
-    payments: { label: 'Payments', to: '/staff/payments' },
+    payments: { label: 'Deposits', to: '/staff/payments' },
     approvals: { label: 'Approvals', to: '/staff/approvals' },
   };
   const list = from ? lists[from] : undefined;
@@ -121,5 +121,5 @@ export function receiptOrigin(from: string | null, policyNumber: string | null |
     const policy = `/staff/policies/${encodeURIComponent(policyNumber)}?tab=billing`;
     return { crumbs: [{ label: 'Policies', to: '/staff/policies' }, { label: policyNumber, to: policy }], back: policy };
   }
-  return { crumbs: [{ label: 'Payments', to: '/staff/payments' }], back: '/staff/payments' };
+  return { crumbs: [{ label: 'Deposits', to: '/staff/payments' }], back: '/staff/payments' };
 }

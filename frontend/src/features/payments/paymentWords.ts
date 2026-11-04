@@ -68,7 +68,7 @@ export function paymentLink(p: PaymentRecord): string | null {
   // since 2026-10-27 is one -- a mobile-money request too; only older gateway rows, recorded by nobody, are not.
   if (p.direction === 'IN' && (p.method !== 'MOBILE_MONEY' || p.executedBy)) return `/staff/receipts/${encodeURIComponent(p.id)}?from=payments`;
   if (p.purpose === 'CLAIM_SETTLEMENT') return `/staff/claims/${encodeURIComponent(p.sourceRef)}`;
-  if (INSTALMENT_PURPOSES.has(p.purpose)) return fromList(`/staff/payouts/${encodeURIComponent(p.sourceRef)}`, 'payments');
+  if (INSTALMENT_PURPOSES.has(p.purpose)) return fromList(`/staff/payouts/${encodeURIComponent(p.sourceRef)}`, 'payouts-all');
   if (p.policyNumber) return `/staff/policies/${encodeURIComponent(p.policyNumber)}`;
   return null;
 }

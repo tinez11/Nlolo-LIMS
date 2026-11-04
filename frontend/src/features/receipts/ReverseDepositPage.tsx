@@ -52,7 +52,7 @@ export function ReverseDepositPage() {
     <>
       <PageHeader
         breadcrumb={[
-          { label: 'Payments', to: '/staff/payments' },
+          { label: 'Deposits', to: '/staff/payments' },
           { label: depositTitle(method?.label ?? receipt.method), to: back },
         ]}
         title="Reverse deposit"

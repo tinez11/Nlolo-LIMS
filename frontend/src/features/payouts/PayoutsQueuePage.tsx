@@ -18,6 +18,7 @@ import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useAccumulationStore } from '@/store/accumulationStore';
 import { useBenefitPayoutStore } from '@/store/benefitPayoutStore';
+import { PayoutViews } from './PayoutViews';
 
 const KIND_LABEL: Record<PayoutKind, string> = {
   SURVIVAL: 'Survival benefit',
@@ -171,11 +172,12 @@ export function PayoutsQueuePage() {
     <>
       <PageHeader
         title="Payouts"
-        description="Money owed to living policyholders: maturities, survival benefits, income and premium returns. Each one is reviewed by one person and approved by another."
+        description="Money owed to living policyholders: maturities, survival benefits, income and premium returns. Each one is reviewed by one person and approved by another. Every other payout is under All payouts."
         count={<CountLine {...count} />}
       />
 
       <div className="px-6 pb-6">
+        <PayoutViews current="instalments" />
         <div className="rounded-xl border border-border bg-surface shadow-card">
           <div className="flex flex-wrap items-center gap-1.5 gap-y-2 border-b border-border px-3 py-2.5">
             <FilterChip label="All" active={status === undefined} onClick={() => update({ status: undefined })} />

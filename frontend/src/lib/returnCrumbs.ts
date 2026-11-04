@@ -12,8 +12,9 @@ export interface Crumb {
  */
 const WORKING_LISTS: Record<string, Crumb> = {
   approvals: { label: 'Approvals', to: '/staff/approvals' },
-  payments: { label: 'Payments', to: '/staff/payments' },
+  payments: { label: 'Deposits', to: '/staff/payments' },
   'field-receipts': { label: 'Agent cash', to: '/staff/field-receipts' },
+  'payouts-all': { label: 'All payouts', to: '/staff/payouts/all' },
 };
 
 /** The link a working list uses to open a record, so the record can lead back. */

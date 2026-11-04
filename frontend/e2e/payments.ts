@@ -7,14 +7,14 @@ import { approverPage } from './approverSession';
  * confirms it). Before this the mock rail's "accepted" paid at once, so every spec that collects a premium or a
  * top-up now passes through here, as the person who did not ask for it.
  *
- * Confirms every mobile-money collection still waiting on the policy, from the payments register.
+ * Confirms every mobile-money collection still waiting on the policy, from Deposits.
  */
 export async function confirmRequestedPayments(browser: Browser, policyNumber: string): Promise<void> {
   const { page, context } = await approverPage(browser);
   try {
-    const register = `/staff/payments?state=waiting&direction=IN&policy=${encodeURIComponent(policyNumber)}`;
+    const register = `/staff/payments?state=waiting&policy=${encodeURIComponent(policyNumber)}`;
     const waiting = page.getByRole('row').filter({ hasText: 'Mobile money' });
-    const none = page.getByText('No payments match');
+    const none = page.getByText('No deposits match');
     await page.goto(register);
     await expect(waiting.first()).toBeVisible({ timeout: 30_000 });
     for (;;) {
