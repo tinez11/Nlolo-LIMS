@@ -2,6 +2,7 @@ import type { RouteBody } from '@/features/payments/payoutRoute';
 import { get, post, put } from '@/lib/http';
 import type { MutationAttempt } from '@/lib/idempotency';
 import type {
+  BalanceStatementView,
   BeneficiaryInput,
   BeneficiaryOfView,
   CoverageStatusView,
@@ -18,6 +19,7 @@ import type {
   OriginateLoanRequest,
   Page,
   PaymentRequest,
+  PolicyBalanceView,
   PolicyStatus,
   PolicyView,
   SurrenderQuote,
@@ -145,6 +147,18 @@ export function getCoverageStatus(
     `/policies/${encodeURIComponent(policyNumber)}/coverage-status`,
     asOf ? { params: { asOf } } : undefined,
   );
+}
+
+/** `GET /policies/{n}/balance` -- the balance and the due date of the last premium it pays in full. */
+export function getPolicyBalance(policyNumber: string): Promise<PolicyBalanceView> {
+  return get<PolicyBalanceView>(`/policies/${encodeURIComponent(policyNumber)}/balance`);
+}
+
+/** `GET /policies/{n}/balance/statement` -- one page, newest first; amounts signed, the balance after each line. */
+export function getBalanceStatement(policyNumber: string, page: number, size: number): Promise<BalanceStatementView> {
+  return get<BalanceStatementView>(`/policies/${encodeURIComponent(policyNumber)}/balance/statement`, {
+    params: { page, size },
+  });
 }
 
 /** `GET /policies/{n}/invoices` -- a bare unpaged array, so the whole set arrives. */

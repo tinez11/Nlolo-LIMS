@@ -9,6 +9,8 @@ import {
   issueGroupScheme,
   issuePolicy,
   listInvoices,
+  getBalanceStatement,
+  getPolicyBalance,
   listLoans,
   listSchemeMembers,
   originateLoan,
@@ -35,7 +37,9 @@ import type {
   CoverageStatusView,
   GroupMemberInput,
   GroupSchemeView,
+  BalanceStatementView,
   InvoiceView,
+  PolicyBalanceView,
   IssueGroupSchemeRequest,
   LoanPaymentRequest,
   LoanView,
@@ -82,6 +86,9 @@ interface PolicyState {
   coverage: Keyed<CoverageStatusView>;
   invoices: Keyed<InvoiceView[]>;
   loans: Keyed<LoanView[]>;
+  /** Money movement step 5: the policy's balance, and its statement (pages merged, newest first). */
+  balance: Keyed<PolicyBalanceView>;
+  balanceStatement: Keyed<BalanceStatementView>;
   // Deliberately separate from `detail`: a failed SAVE must not corrupt or discard
   // the last known-good read of the policy, and the two have unrelated shapes
   // (this one carries no useful `data`, just whether a save is in flight or failed).
@@ -133,6 +140,9 @@ interface PolicyState {
   loadCoverage: (policyNumber: string, asOf?: string) => Promise<void>;
   loadInvoices: (policyNumber: string) => Promise<void>;
   loadLoans: (policyNumber: string) => Promise<void>;
+  loadBalance: (policyNumber: string) => Promise<void>;
+  /** Page 0 replaces what is held; a later page adds the older lines after it. */
+  loadBalanceStatement: (policyNumber: string, page?: number) => Promise<void>;
   saveBeneficiaries: (policyNumber: string, beneficiaries: BeneficiaryInput[]) => Promise<void>;
   /** Clears a stale save error before a fresh edit attempt -- see the call site. */
   resetSaveBeneficiaries: (policyNumber: string) => void;
@@ -188,6 +198,8 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
   coverage: {},
   invoices: {},
   loans: {},
+  balance: {},
+  balanceStatement: {},
   savingBeneficiaries: {},
   issuing: idle(),
   waivingInvoice: {},
@@ -281,6 +293,27 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
       (next) => set((s) => ({ invoices: { ...s.invoices, [policyNumber]: next } })),
       () => listInvoices(policyNumber),
     ),
+
+  loadBalance: (policyNumber) =>
+    track(
+      `policy.balance.${policyNumber}`,
+      getState().balance[policyNumber] ?? idle<PolicyBalanceView>(),
+      (next) => set((s) => ({ balance: { ...s.balance, [policyNumber]: next } })),
+      () => getPolicyBalance(policyNumber),
+    ),
+
+  loadBalanceStatement: (policyNumber, page = 0) => {
+    const held = getState().balanceStatement[policyNumber]?.data;
+    return track(
+      `policy.balanceStatement.${policyNumber}`,
+      getState().balanceStatement[policyNumber] ?? idle<BalanceStatementView>(),
+      (next) => set((s) => ({ balanceStatement: { ...s.balanceStatement, [policyNumber]: next } })),
+      async () => {
+        const next = await getBalanceStatement(policyNumber, page, BALANCE_STATEMENT_PAGE);
+        return page === 0 || !held ? next : { ...next, lines: [...held.lines, ...next.lines] };
+      },
+    );
+  },
 
   loadLoans: (policyNumber) =>
     track(
@@ -650,6 +683,12 @@ export const selectCoverage =
     s.coverage[coverageKey(policyNumber, asOf)] ?? idle<CoverageStatusView>();
 export const selectInvoices = (policyNumber: string) => (s: PolicyState) =>
   s.invoices[policyNumber] ?? idle<InvoiceView[]>();
+/** How many statement lines one page brings: the latest first, older ones on request. */
+export const BALANCE_STATEMENT_PAGE = 25;
+export const selectBalance = (policyNumber: string) => (s: PolicyState) =>
+  s.balance[policyNumber] ?? idle<PolicyBalanceView>();
+export const selectBalanceStatement = (policyNumber: string) => (s: PolicyState) =>
+  s.balanceStatement[policyNumber] ?? idle<BalanceStatementView>();
 export const selectLoans = (policyNumber: string) => (s: PolicyState) =>
   s.loans[policyNumber] ?? idle<LoanView[]>();
 export const selectSavingBeneficiaries = (policyNumber: string) => (s: PolicyState) =>

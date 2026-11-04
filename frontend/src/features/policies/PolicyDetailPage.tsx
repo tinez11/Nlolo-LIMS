@@ -41,6 +41,7 @@ import { CessionsPanel } from '@/features/reinsurance/CessionsPanel';
 import { BeneficiariesPanel } from './BeneficiariesPanel';
 import { CoveredLivesPanel } from './CoveredLivesPanel';
 import { Ifrs17Classification } from './Ifrs17Classification';
+import { BalancePanel, BalanceStatementPanel } from './BalancePanel';
 import { InvoicesPanel } from './InvoicesPanel';
 import { LoansPanel } from './LoansPanel';
 import { FreeLookPanel } from '@/features/payouts/FreeLookPanel';
@@ -121,6 +122,10 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   // as the endpoint is.
   const savingsAccount = useAccumulationStore((s) => s.account[policyNumber]);
   const loadAccount = useAccumulationStore((s) => s.loadAccount);
+  // Money movement step 5: every other policy keeps its money on a balance, read by staff who see collections or
+  // payouts. Waits for the account read, so a savings policy never flashes a balance it does not have.
+  const hasBalance = isStaff && (can('collections.view') || can('collections.manage') || can('payouts.view'))
+    && savingsAccount !== undefined && !isInitialLoad(savingsAccount) && !savingsAccount.data;
   // Bonuses exist only for a policy on a with-profits version (product step 4); the read answers
   // null for every other policy, exactly as the account's does.
   const policyBonuses = useBonusStore((s) => s.policy[policyNumber]);
@@ -495,8 +500,18 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 contributions ended then. Any premiums left unpaid were waived.
               </p>
             )}
+            {/* Money movement step 5 (design §7.1): bounded panels before unbounded ones. A savings-type policy keeps
+                its money on the Account tab and has no balance (D12). */}
+            {hasBalance && (
+              <Panel title="Balance" subtitle="Money received and not yet used, paying premiums as they fall due">
+                <BalancePanel policyNumber={policyNumber} />
+              </Panel>
+            )}
             <Panel title="Policy schedule" subtitle="The one-page summary to give the client">
               <PolicyScheduleDownload policyNumber={policyNumber} />
+            </Panel>
+            <Panel title="Invoices" subtitle="Request a payment, waive or follow up an invoice">
+              <InvoicesPanel policyNumber={policyNumber} />
             </Panel>
             <Panel
               title="Payment schedule"
@@ -505,9 +520,11 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             >
               <PaymentScheduleTable policyNumber={policyNumber} />
             </Panel>
-            <Panel title="Invoices" subtitle="Request a payment, waive or follow up an invoice">
-              <InvoicesPanel policyNumber={policyNumber} />
-            </Panel>
+            {hasBalance && (
+              <Panel title="Statement" subtitle="Every deposit, premium paid and withdrawal on the balance">
+                <BalanceStatementPanel policyNumber={policyNumber} />
+              </Panel>
+            )}
           </div>
         ),
       },

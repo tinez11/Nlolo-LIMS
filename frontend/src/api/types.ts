@@ -115,6 +115,11 @@ export type GroupMemberInput = PolicyComponents['schemas']['GroupMemberInput'];
 
 export type InvoiceView = BillingComponents['schemas']['InvoiceView'];
 export type PremiumCreditView = BillingComponents['schemas']['PremiumCreditView'];
+/** A policy's balance and how far ahead it pays premiums (money movement step 5). */
+export type PolicyBalanceView = BillingComponents['schemas']['PolicyBalance'];
+/** One page of the balance's statement, newest first, each line with the balance after it. */
+export type BalanceStatementView = BillingComponents['schemas']['BalanceStatement'];
+export type BalanceStatementLine = BillingComponents['schemas']['BalanceStatementLine'];
 /**
  * One row of the collections queue. Its money and due date come from the invoice the case was
  * opened against, and are null -- never zero -- when that invoice cannot be resolved.

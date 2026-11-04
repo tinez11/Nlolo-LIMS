@@ -4,8 +4,8 @@ import { issueRealPolicy } from './policies';
 
 /**
  * Manual receipting through the real stack (2026-10-27): a premium paid by cheque is recorded by one finance officer
- * against the policy's invoice, refused to the recorder, and confirmed by a second finance person -- after which the
- * invoice reads Paid. The ledger's side (1120, not 1140) is pinned by PremiumPostingEndToEndTest.
+ * as a deposit on the policy (money movement step 5), refused to the recorder, and confirmed by a second finance
+ * person -- after which the invoice reads Paid. The ledger's side (1120, not 1140) is pinned by PremiumPostingEndToEndTest.
  */
 test.describe('receipts', () => {
   test.use({ storageState: 'e2e/.auth/staff-finance.json' });
@@ -18,25 +18,21 @@ test.describe('receipts', () => {
     const policyNumber = await asAdmin(browser, (admin) => issueRealPolicy(admin, 'E2E fixture: a premium paid by cheque'));
     const cheque = `CHQ-${Date.now()}`;
 
-    // From the invoice, where the money is owed: Request payment, then how it is being paid.
+    // Money movement step 5: money received some other way is a deposit, recorded on its own page from the policy's
+    // Balance panel -- the invoice list only asks a phone for payment now.
     await page.goto(`/staff/policies/${policyNumber}?tab=billing`);
-    await page.getByRole('button', { name: 'Request payment' }).first().click({ timeout: 30_000 });
-    await page.getByLabel('How is it being paid?').selectOption('CHEQUE');
+    await expect(page.getByRole('heading', { name: 'Balance' })).toBeVisible({ timeout: 30_000 });
+    await page.getByRole('link', { name: 'Record deposit' }).click();
+    await expect(page).toHaveURL(/\/staff\/receipts\/new\?/);
+    await expect(page.getByLabel('Policy number')).toHaveValue(policyNumber);
+    await page.getByLabel('How the money came in').selectOption('CHEQUE');
     await page.getByLabel('Cheque number').fill(cheque);
-    await expect(page.getByLabel(/^Amount/)).toHaveValue('800.00');
+    await page.getByLabel(/^Amount/).fill('800.00');
     await page.getByLabel('Paid by (optional)').fill('Amina Owner');
-    await page.getByRole('button', { name: 'Record payment received' }).click();
-    // Still on the policy: it says what happens next and offers the receipt.
-    // The confirmation itself -- since fafc5066 the invoice's own "waiting" line says the same sentence, so match the
-    // line that names what was recorded.
-    await expect(page.getByText(/Recorded TZS 800\.00 by cheque\. It pays this invoice once a second finance person/)).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(page).toHaveURL(new RegExp(`/staff/policies/${policyNumber}`));
-    await page.getByRole('link', { name: 'Open the receipt' }).click();
+    await page.getByRole('button', { name: 'Record receipt' }).click();
 
     // Recorded, and waiting: the recorder is told someone else confirms it.
-    await expect(page).toHaveURL(/\/staff\/receipts\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+    await expect(page).toHaveURL(/\/staff\/receipts\/[0-9a-f-]{36}(\?|$)/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Cheque receipt' })).toBeVisible();
     // Its way back is the policy it pays, where it was recorded -- not the payments register.
     await expect(
