@@ -105,11 +105,13 @@ test.describe('staff policy loans', () => {
     // rather than a loan list to pick from that does not exist.
     await page.goto(`/staff/receipts/new?for=LOAN&policy=${encodeURIComponent(policyNumber)}&from=policy`);
     await expect(page.getByRole('heading', { name: 'Record a receipt' })).toBeVisible();
-    await expect(page.getByLabel('For')).toHaveValue('LOAN');
+    // Exact: the action bell's "Jobs waiting for you" also contains the word.
+    const paysFor = page.getByLabel('For', { exact: true });
+    await expect(paysFor).toHaveValue('LOAN');
     await expect(page.getByText(`No loan on ${policyNumber} has anything to repay.`)).toBeVisible();
 
     // Back to a premium, the invoice choice returns: one form for both.
-    await page.getByLabel('For').selectOption('PREMIUM');
+    await paysFor.selectOption('PREMIUM');
     await expect(page.getByLabel('Invoice it pays')).toBeVisible();
   });
 });

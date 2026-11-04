@@ -27,7 +27,9 @@ test.describe('receipts', () => {
     await page.getByLabel('Paid by (optional)').fill('Amina Owner');
     await page.getByRole('button', { name: 'Record payment received' }).click();
     // Still on the policy: it says what happens next and offers the receipt.
-    await expect(page.getByText(/It pays this invoice once a second finance person confirms it/)).toBeVisible({
+    // The confirmation itself -- since fafc5066 the invoice's own "waiting" line says the same sentence, so match the
+    // line that names what was recorded.
+    await expect(page.getByText(/Recorded TZS 800\.00 by cheque\. It pays this invoice once a second finance person/)).toBeVisible({
       timeout: 15_000,
     });
     await expect(page).toHaveURL(new RegExp(`/staff/policies/${policyNumber}`));
