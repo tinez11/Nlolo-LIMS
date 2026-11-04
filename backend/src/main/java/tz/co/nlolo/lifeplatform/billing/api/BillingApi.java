@@ -167,6 +167,12 @@ public interface BillingApi {
     /** What is on a policy's balance now: every deposit less every premium paid from it. Zero for none. */
     BigDecimal balanceOf(String policyNumber);
 
+    /** The balance and how far ahead it pays premiums (money movement step 5). */
+    PolicyBalanceView balance(String policyNumber);
+
+    /** One page of the balance's statement, newest first, each line with the balance after it. */
+    BalanceStatementView balanceStatement(String policyNumber, int page, int size);
+
     /**
      * Whether a policy's premiums keep their own road (its product version's account basis is ACCOUNT): no policy balance,
      * and a receipt still at most what its invoice owes (money movement D12, until "For: Savings").

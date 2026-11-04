@@ -999,6 +999,38 @@ class BillingApiIntegrationTest {
     }
 
     @Test
+    void theBalanceSaysHowFarAheadItPaysAndItsStatementRunsNewestFirst() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BALANCE-STMT-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        TenantContext.set(tenantId);
+        List<PremiumInvoice> invoices = premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId);
+        assertThat(invoices).hasSizeGreaterThan(2);
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balance(policyNumber).coversPremiumsTo()).as("nothing on the balance yet").isNull();
+
+        // 40,000 against 15,000 a month: the first premium is paid, 25,000 stays -- one whole premium more, not two.
+        billingApi.applyConfirmedPayment(invoices.get(0).getInvoiceId(), new BigDecimal("40000.00"), "TZS", "SLIP-STMT-1",
+            "Amina", "CASH", UUID.randomUUID());
+        TenantContext.set(tenantId);
+        var balance = billingApi.balance(policyNumber);
+        assertThat(balance.balance()).isEqualByComparingTo("25000.00");
+        assertThat(balance.coversPremiumsTo()).isEqualTo(invoices.get(1).getDueDate());
+
+        var statement = billingApi.balanceStatement(policyNumber, 0, 50);
+        assertThat(statement.total()).isEqualTo(2);
+        assertThat(statement.lines()).extracting(l -> l.type()).containsExactly("PREMIUM_PAID", "DEPOSIT");
+        assertThat(statement.lines().get(0).amount()).isEqualByComparingTo("-15000.00");
+        assertThat(statement.lines().get(0).balanceAfter()).isEqualByComparingTo("25000.00");
+        assertThat(statement.lines().get(0).invoiceId()).isEqualTo(invoices.get(0).getInvoiceId());
+        assertThat(statement.lines().get(1).amount()).isEqualByComparingTo("40000.00");
+        assertThat(statement.lines().get(1).balanceAfter()).isEqualByComparingTo("40000.00");
+        assertThat(statement.lines().get(1).seq()).isEqualTo(1);
+        // Paged: the second page of one line is the oldest.
+        assertThat(billingApi.balanceStatement(policyNumber, 1, 1).lines()).extracting(l -> l.type()).containsExactly("DEPOSIT");
+    }
+
+    @Test
     void aPartPaymentIsPostedAtOnceAndLeavesNothingOnTheBalance() {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "BALANCE-PART-01");

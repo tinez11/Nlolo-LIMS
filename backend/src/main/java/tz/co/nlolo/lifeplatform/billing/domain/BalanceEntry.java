@@ -26,6 +26,9 @@ public class BalanceEntry {
     public static final String PREMIUM_REOPENED = "PREMIUM_REOPENED";
 
     /** A confirmed deposit or mobile-money request. */
+    /** The entry types that add to the balance; every other type takes from it (as BalanceEntryRepository.balanceOf sums). */
+    public static final java.util.Set<String> MONEY_IN = java.util.Set.of(DEPOSIT, PREMIUM_REOPENED);
+
     public static final String FROM_PAYMENT = "PAYMENT";
     /** Money above what a loan owed -- already posted by policyloan's rule E-03-SURPLUS, so it posts nothing here. */
     public static final String FROM_LOAN_SURPLUS = "LOAN_SURPLUS";

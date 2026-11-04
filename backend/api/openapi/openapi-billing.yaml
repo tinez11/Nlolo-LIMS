@@ -394,7 +394,9 @@ paths:
   /policies/{policyNumber}/balance:
     get:
       summary: What is on a policy's balance now (money movement step 2)
-      description: Every deposit less every premium paid from it and every withdrawal. Zero for a policy with none.
+      description: >
+        Every deposit less every premium paid from it and every withdrawal. Zero for a policy with none. Step 5 adds
+        coversPremiumsTo: the due date of the last premium the balance pays in full, as far as invoices are raised.
       security:
         - staffAuth: []
       parameters:
@@ -405,6 +407,23 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PolicyBalance' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /policies/{policyNumber}/balance/statement:
+    get:
+      summary: The balance's statement, newest first, a page at a time (money movement step 5)
+      description: Each line's amount is signed (money out negative) and carries the balance after it, summed by the server.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        '200':
+          description: One page of the statement
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BalanceStatement' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /policies/{policyNumber}/balance/withdrawals:
     get:
@@ -684,10 +703,41 @@ components:
     PolicyBalance:
       type: object
       additionalProperties: false
-      required: [policyNumber, balance]
+      required: [policyNumber, balance, coversPremiumsTo]
       properties:
         policyNumber: { type: string }
         balance: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        coversPremiumsTo: { type: [string, "null"], format: date, description: Due date of the last premium the balance pays in full; null when none }
+    BalanceStatement:
+      type: object
+      additionalProperties: false
+      required: [policyNumber, total, page, size, lines]
+      properties:
+        policyNumber: { type: string }
+        total: { type: integer, format: int64 }
+        page: { type: integer }
+        size: { type: integer }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/BalanceStatementLine' }
+    BalanceStatementLine:
+      type: object
+      additionalProperties: false
+      required: [entryId, seq, type, at, amount, balanceAfter, paymentId, invoiceId, withdrawalId, reversesEntryId, method, reference, source]
+      properties:
+        entryId: { type: string, format: uuid }
+        seq: { type: integer, description: Counts from 1 in the order entries were written }
+        type: { type: string, enum: [DEPOSIT, PREMIUM_PAID, WITHDRAWAL, REVERSAL, PREMIUM_REOPENED] }
+        at: { type: string, format: date-time }
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        balanceAfter: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        paymentId: { type: [string, "null"], format: uuid, description: The deposit's own page (receipt or payment) }
+        invoiceId: { type: [string, "null"], format: uuid }
+        withdrawalId: { type: [string, "null"], format: uuid }
+        reversesEntryId: { type: [string, "null"], format: uuid }
+        method: { type: [string, "null"] }
+        reference: { type: [string, "null"] }
+        source: { type: string, enum: [PAYMENT, LOAN_SURPLUS, WITHDRAWAL_RETURNED] }
     WithdrawalPayee:
       type: object
       additionalProperties: false

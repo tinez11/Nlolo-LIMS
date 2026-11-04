@@ -643,6 +643,55 @@ public class BillingApiImpl implements BillingApi {
     }
 
     /**
+     * The balance, and the due date of the last premium it pays in full, walking what is still owed oldest first as
+     * payFromBalance would. Premiums already due are paid as soon as money lands, so this is normally about premiums
+     * still to come; it reaches only as far as the invoices raised (a year ahead).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public PolicyBalanceView balance(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        BigDecimal left = balanceEntryRepository.balanceOf(tenantId, policyNumber).setScale(2);
+        List<PremiumInvoice> invoices = premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber,
+            tenantId);
+        String currency = invoices.stream().findFirst().map(PremiumInvoice::getCurrency).orElse("TZS");
+        LocalDate covers = null;
+        for (PremiumInvoice invoice : invoices) {
+            if (!PAYABLE.contains(invoice.getStatus())) continue;
+            BigDecimal owed = invoice.balanceDue(creditedAgainst(invoice));
+            if (owed.signum() <= 0) continue;
+            if (left.compareTo(owed) < 0) break;
+            left = left.subtract(owed);
+            covers = invoice.getDueDate();
+        }
+        return new PolicyBalanceView(policyNumber, balanceEntryRepository.balanceOf(tenantId, policyNumber).setScale(2),
+            currency, covers);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BalanceStatementView balanceStatement(String policyNumber, int page, int size) {
+        UUID tenantId = TenantContext.get();
+        List<BalanceEntry> entries = balanceEntryRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId,
+            policyNumber);
+        List<BalanceStatementView.Line> lines = new java.util.ArrayList<>(entries.size());
+        BigDecimal running = BigDecimal.ZERO;
+        int seq = 0;
+        for (BalanceEntry e : entries) {
+            BigDecimal signed = BalanceEntry.MONEY_IN.contains(e.getEntryType()) ? e.getAmount() : e.getAmount().negate();
+            running = running.add(signed);
+            lines.add(new BalanceStatementView.Line(e.getEntryId(), ++seq, e.getEntryType(), e.getCreatedAt(),
+                signed.setScale(2), running.setScale(2), e.getPaymentId(), e.getInvoiceId(), e.getWithdrawalId(),
+                e.getReversesEntryId(), e.getMethod(), e.getReference(), e.getSource()));
+        }
+        java.util.Collections.reverse(lines);
+        int from = Math.min(page * size, lines.size());
+        int to = Math.min(from + size, lines.size());
+        String currency = entries.stream().findFirst().map(BalanceEntry::getCurrency).orElse("TZS");
+        return new BalanceStatementView(policyNumber, currency, lines.size(), page, size, List.copyOf(lines.subList(from, to)));
+    }
+
+    /**
      * A savings-type policy -- its product version's account basis is ACCOUNT -- keeps premiums on their own road for
      * now: its money is savings, and a policy balance would hold money that belongs in the account (design D12).
      */

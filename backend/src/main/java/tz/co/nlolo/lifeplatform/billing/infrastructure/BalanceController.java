@@ -52,7 +52,14 @@ public class BalanceController {
 
     public record Rejection(@NotBlank @Size(max = 500) String reason) {}
 
-    public record BalanceResponse(String policyNumber, Money balance) {}
+    public record BalanceResponse(String policyNumber, Money balance, java.time.LocalDate coversPremiumsTo) {}
+
+    /** amount is signed here (money out negative), so it is a plain Money-shaped pair, not the request Money's pattern. */
+    public record StatementLine(UUID entryId, int seq, String type, Instant at, Money amount, Money balanceAfter,
+                                UUID paymentId, UUID invoiceId, UUID withdrawalId, UUID reversesEntryId, String method,
+                                String reference, String source) {}
+
+    public record StatementResponse(String policyNumber, long total, int page, int size, List<StatementLine> lines) {}
 
     public record WithdrawalResponse(UUID withdrawalId, String policyNumber, Money amount, String status, String reason,
                                      String method, String payeeRef, String requestedBy, Instant requestedAt,
@@ -122,10 +129,25 @@ public class BalanceController {
     @GetMapping("/policies/{policyNumber}/balance")
     @PreAuthorize("@access.canAny('collections.view', 'collections.manage', 'payouts.view')")
     public BalanceResponse balance(@PathVariable String policyNumber) {
-        BigDecimal now = billing.balanceOf(policyNumber);
-        String currency = billing.listInvoices(policyNumber, null).stream().findFirst()
-            .map(i -> i.currency()).orElse("TZS");
-        return new BalanceResponse(policyNumber, new Money(now.toPlainString(), currency));
+        var view = billing.balance(policyNumber);
+        return new BalanceResponse(policyNumber, new Money(view.balance().toPlainString(), view.currency()),
+            view.coversPremiumsTo());
+    }
+
+    /** One page of the balance's statement, newest first; amounts signed (money out negative), balance after each. */
+    @GetMapping("/policies/{policyNumber}/balance/statement")
+    @PreAuthorize("@access.canAny('collections.view', 'collections.manage', 'payouts.view')")
+    public StatementResponse statement(@PathVariable String policyNumber,
+                                       @RequestParam(defaultValue = "0") @jakarta.validation.constraints.Min(0) int page,
+                                       @RequestParam(defaultValue = "50") @jakarta.validation.constraints.Min(1)
+                                       @jakarta.validation.constraints.Max(200) int size) {
+        var view = billing.balanceStatement(policyNumber, page, size);
+        String c = view.currency();
+        return new StatementResponse(view.policyNumber(), view.total(), view.page(), view.size(), view.lines().stream()
+            .map(l -> new StatementLine(l.entryId(), l.seq(), l.type(), l.at(),
+                new Money(l.amount().toPlainString(), c), new Money(l.balanceAfter().toPlainString(), c), l.paymentId(),
+                l.invoiceId(), l.withdrawalId(), l.reversesEntryId(), l.method(), l.reference(), l.source()))
+            .toList());
     }
 
     @GetMapping("/policies/{policyNumber}/balance/withdrawals")

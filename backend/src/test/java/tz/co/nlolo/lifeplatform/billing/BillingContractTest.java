@@ -623,6 +623,47 @@ class BillingContractTest {
             .andExpect(jsonPath("$[0].enrolmentSubmissionId").doesNotExist());
     }
 
+    @Autowired private tz.co.nlolo.lifeplatform.billing.application.BillingApiImpl billingApiImpl;
+
+    /** Money movement step 5: the balance and its statement, as the Billing tab reads them. */
+    @Test
+    void theBalanceAndItsStatementMatchTheSpec() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-CONTRACT-BALANCE-01");
+        mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/balance").with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.balance.amount").value("0.00"))
+            .andExpect(jsonPath("$.coversPremiumsTo").value(org.hamcrest.Matchers.nullValue()));
+
+        String invoices = mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
+                .with(staffOf(fixture.tenantId())))
+            .andReturn().getResponse().getContentAsString();
+        UUID invoiceId = UUID.fromString(JsonPath.read(invoices, "$[0].invoiceId"));
+        TenantContext.set(fixture.tenantId());
+        try {
+            billingApiImpl.applyConfirmedPayment(invoiceId, new java.math.BigDecimal("20000.00"), "TZS", "SLIP-CT-BAL",
+                "Amina", "CASH", UUID.randomUUID());
+        } finally {
+            TenantContext.clear();
+        }
+
+        mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/balance").with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.balance.amount").value("5000.00"));
+        mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/balance/statement").with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.total").value(2))
+            .andExpect(jsonPath("$.lines[0].type").value("PREMIUM_PAID"))
+            .andExpect(jsonPath("$.lines[0].amount.amount").value("-15000.00"))
+            .andExpect(jsonPath("$.lines[0].balanceAfter.amount").value("5000.00"))
+            .andExpect(jsonPath("$.lines[1].type").value("DEPOSIT"));
+        mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/balance/statement?size=0")
+                .with(staffOf(fixture.tenantId())))
+            .andExpect(status().isBadRequest());
+    }
+
     /** A credit is readable, and the invoice it is credited against says so in its balance --
      * the two halves the policy page needs to show what is actually owed. */
     @Test
