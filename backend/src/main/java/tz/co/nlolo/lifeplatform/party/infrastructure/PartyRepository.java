@@ -86,6 +86,21 @@ public interface PartyRepository extends JpaRepository<Party, UUID> {
                                                    @Param("createdBy") String createdBy);
 
     /**
+     * Clients whose KYC is not verified -- pending or rejected -- with when it was last decided, for the bell
+     * (2026-11-03). {@code createdBy} null is every client; an agent's subject otherwise.
+     */
+    @Query("SELECT p.partyId, p.displayName, p.kycStatus, p.kycVerifiedAt FROM Party p WHERE p.tenantId = :tenantId "
+        + "AND p.kycStatus IN (tz.co.nlolo.lifeplatform.party.api.KycStatus.PENDING, "
+        + "tz.co.nlolo.lifeplatform.party.api.KycStatus.REJECTED) "
+        + "AND (:createdBy IS NULL OR p.createdBy = :createdBy)")
+    java.util.List<Object[]> findUnverified(@Param("tenantId") UUID tenantId, @Param("createdBy") String createdBy);
+
+    /** Id and display name only, for naming a list's rows (2026-11-03). */
+    @Query("SELECT p.partyId, p.displayName FROM Party p WHERE p.tenantId = :tenantId AND p.partyId IN :partyIds")
+    java.util.List<Object[]> findDisplayNames(@Param("tenantId") UUID tenantId,
+                                    @Param("partyIds") java.util.Collection<UUID> partyIds);
+
+    /**
      * The same ids-only projection, matched on name instead of creator, so another module
      * can scope its own query by "the parties called something like this".
      *

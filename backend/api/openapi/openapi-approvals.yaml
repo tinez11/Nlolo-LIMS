@@ -25,6 +25,23 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApprovalsView' }
         '403': { $ref: '#/components/responses/Problem' }
+  /actions:
+    get:
+      summary: The jobs waiting for the viewer -- the bell (2026-11-03)
+      description: >
+        Work waiting for somebody to act, read live from each module's own records, so a job leaves the list the moment
+        it is done. An agent gets their own clients' work; a staff member the kinds their permissions act on, and one
+        row for the signatures the approvals screen holds for them. Newest first, at most 30; `total` is every job.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionsView' }
+        '403': { $ref: '#/components/responses/Problem' }
 components:
   responses:
     Problem:
@@ -33,6 +50,46 @@ components:
         application/problem+json:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   schemas:
+    ActionsView:
+      type: object
+      required: [total, incomplete, groups]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          description: Every job waiting for the viewer -- the bell's number.
+        incomplete:
+          type: boolean
+          description: Some module could not be read, so the number may be short.
+        groups:
+          type: array
+          description: One per kind of work with anything waiting, the kind with the newest job first.
+          items: { $ref: '#/components/schemas/ActionGroup' }
+    ActionGroup:
+      type: object
+      required: [kind, act, total, items]
+      properties:
+        kind:
+          type: string
+          description: >
+            proposal-returned, proposal-postponed, kyc-resend, offer-closing (an agent's); proposal-review,
+            proposal-referred, issue-failed, kyc-verify, claim-assess, claim-settle, credit-life-file, signatures
+            (staff's). The console routes and labels on it.
+        act: { type: string, description: 'What the viewer is asked to do: "Review it".' }
+        total: { type: integer, minimum: 1, description: Every job of this kind. }
+        items:
+          type: array
+          description: The newest of them, at most 20.
+          items: { $ref: '#/components/schemas/ActionItem' }
+    ActionItem:
+      type: object
+      required: [reference, title, detail]
+      properties:
+        reference: { type: string, description: The record's own id -- a case, party, claim, submission or policy. }
+        policyNumber: { type: [string, 'null'] }
+        title: { type: string, description: 'Who it is about, read first: "Asha Mollel".' }
+        detail: { type: string, description: 'What it is, short: "Proposal PRO-0012 returned".' }
+        since: { type: [string, 'null'], format: date-time, description: When it started waiting. }
     ApprovalsView:
       type: object
       required: [actionable, groups]

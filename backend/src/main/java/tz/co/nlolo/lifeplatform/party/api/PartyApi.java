@@ -221,6 +221,12 @@ public interface PartyApi {
     Set<UUID> partyIdsRegisteredBy(String createdBy);
 
     /**
+     * Display names for these parties, in one read (2026-11-03): a list naming twenty clients asks once, not twenty
+     * times. A party not found in this tenant is simply absent.
+     */
+    java.util.Map<UUID, String> displayNames(java.util.Collection<UUID> partyIds);
+
+    /**
      * The ids of parties whose display name contains {@code q}, case-insensitively — the same
      * ids-only idiom as {@link #partyIdsRegisteredBy}, for a module that holds party ids and
      * needs to filter them by name.
