@@ -83,6 +83,8 @@ public class BillingApiImpl implements BillingApi {
     /** The policy balance (money movement step 2, billing V14). */
     private final PolicyBalanceRepository policyBalanceRepository;
     private final BalanceEntryRepository balanceEntryRepository;
+    /** What a policy that charges no more premiums gives back (money movement step 3a). */
+    private final BalanceWithdrawals balanceWithdrawals;
 
     public BillingApiImpl(BillingScheduleRepository billingScheduleRepository, PremiumInvoiceRepository premiumInvoiceRepository,
                            PremiumCreditRepository premiumCreditRepository,
@@ -91,7 +93,9 @@ public class BillingApiImpl implements BillingApi {
                            ApplicationEventPublisher eventPublisher,
                            ArrearsNotificationSweep arrearsNotificationSweep,
                            PremiumReceiptRepository premiumReceiptRepository,
-                           PolicyBalanceRepository policyBalanceRepository, BalanceEntryRepository balanceEntryRepository) {
+                           PolicyBalanceRepository policyBalanceRepository, BalanceEntryRepository balanceEntryRepository,
+                           BalanceWithdrawals balanceWithdrawals) {
+        this.balanceWithdrawals = balanceWithdrawals;
         this.policyBalanceRepository = policyBalanceRepository;
         this.balanceEntryRepository = balanceEntryRepository;
         this.premiumReceiptRepository = premiumReceiptRepository;
@@ -361,6 +365,17 @@ public class BillingApiImpl implements BillingApi {
                 waive(tenantId, invoice, reason, "system");
             }
         }
+        returnBalanceOnEnd(tenantId, policyNumber);
+    }
+
+    /**
+     * A policy that will charge no more premiums gives its balance back (money movement step 3a): first it pays any
+     * premium still owed for cover that was given, then whatever is left becomes a withdrawal waiting for finance to name
+     * who receives it.
+     */
+    private void returnBalanceOnEnd(UUID tenantId, String policyNumber) {
+        payFromBalance(tenantId, policyNumber, null, null, null, null);
+        balanceWithdrawals.raiseOnPolicyEnd(tenantId, policyNumber);
     }
 
     @Override
@@ -806,6 +821,7 @@ public class BillingApiImpl implements BillingApi {
                            "amount", Map.of("amount", outstanding.toPlainString(), "currencyCode", invoice.getCurrency()))));
             }
         }
+        returnBalanceOnEnd(tenantId, policyNumber);
     }
 
     /**

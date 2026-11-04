@@ -47,12 +47,14 @@ public class PaymentEventListener {
 
     private final BillingApi billingApi;
     private final BillingApiImpl billingApiImpl;
+    private final BalanceWithdrawals balanceWithdrawals;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
     public PaymentEventListener(BillingApi billingApi, BillingApiImpl billingApiImpl,
-                                PlatformTransactionManager transactionManager) {
+                                BalanceWithdrawals balanceWithdrawals, PlatformTransactionManager transactionManager) {
         this.billingApi = billingApi;
         this.billingApiImpl = billingApiImpl;
+        this.balanceWithdrawals = balanceWithdrawals;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
@@ -73,8 +75,24 @@ public class PaymentEventListener {
                     boolean completed = "payment.DisbursementCompleted".equals(envelope.eventType());
                     withTenant(envelope, payload -> handleCreditRefund(payload, completed));
                 }
+                // Money taken back off a policy's balance (money movement step 3a): paid, or refused by the rail.
+                if (BalanceWithdrawals.PURPOSE.equals(p.get("purpose"))) {
+                    boolean completed = "payment.DisbursementCompleted".equals(envelope.eventType());
+                    withTenant(envelope, payload -> handleWithdrawal(payload, completed));
+                }
             }
             default -> { /* not billing-relevant */ }
+        }
+    }
+
+    private void handleWithdrawal(Map<String, Object> payload, boolean completed) {
+        UUID withdrawalId = UUID.fromString(String.valueOf(payload.get("sourceRef")));
+        Object id = payload.get("disbursementId");
+        UUID disbursementId = id == null ? null : id instanceof UUID u ? u : UUID.fromString(String.valueOf(id));
+        if (completed) {
+            balanceWithdrawals.markPaid(withdrawalId, disbursementId);
+        } else {
+            balanceWithdrawals.markFailed(withdrawalId, disbursementId);
         }
     }
 

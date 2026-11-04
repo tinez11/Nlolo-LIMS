@@ -124,6 +124,10 @@ public class PaymentRequestListener {
             case "billing.PremiumRefundPayoutRequested" -> withTenant(envelope, payload -> payOut(TenantContext.get(),
                 requireKey(payload), payload, "CREDIT_LIFE_PREMIUM_REFUND", (String) payload.get("creditId"),
                 "PremiumRefundPayoutRequested"));
+            // Money taken back off a policy's balance, approved (money movement step 3a): paid by the route finance named.
+            case "billing.BalanceWithdrawalPayoutRequested" -> withTenant(envelope, payload -> payOut(TenantContext.get(),
+                requireKey(payload), payload, "BALANCE_WITHDRAWAL", (String) payload.get("withdrawalId"),
+                "BalanceWithdrawalPayoutRequested"));
             case "accumulation.PayoutRequested" -> withTenant(envelope, this::handleAccountPayout);
             // Unit-linked (product step 6): the same shape -- purpose, sourceRef, idempotencyKey, payee, amount.
             case "unitlinked.PayoutRequested" -> withTenant(envelope, this::handleAccountPayout);

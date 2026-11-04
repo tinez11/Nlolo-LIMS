@@ -43,6 +43,10 @@ final class PostingFactsExtractor {
         // the engine, as it was for PremiumCollected).
         Map.entry("billing.DepositReceived", amount()),
         Map.entry("billing.PremiumPaidFromBalance", new EventShape(Set.of(AMOUNT, "levy"), Set.of())),
+        // Money movement step 3a: a withdrawal from the balance -- approved, paid, or returned by a refused transfer.
+        Map.entry("billing.BalanceWithdrawalApproved", amount()),
+        Map.entry("billing.BalanceWithdrawalPaid", amount()),
+        Map.entry("billing.BalanceWithdrawalReturned", amount()),
         Map.entry("billing.InvoiceWaived", amount()),
         Map.entry("billing.PremiumRefundDue", amount()),
         // A credit-life lender's premium paid back (2026-10-30): the bank side of the refund above.
@@ -137,6 +141,12 @@ final class PostingFactsExtractor {
             }
             case "billing.PremiumPaidFromBalance" -> List.of(money(type, string(p.get("entryId")), policy, p.get("amount"),
                 today, Map.of("refType", "INVOICE")));
+            // Keyed on the withdrawal; its payout's rail (recorded by payment under the withdrawal id) picks the bank.
+            case "billing.BalanceWithdrawalApproved", "billing.BalanceWithdrawalReturned" ->
+                List.of(money(type, string(p.get("withdrawalId")), policy, p.get("amount"), today,
+                    Map.of("refType", "WITHDRAWAL")));
+            case "billing.BalanceWithdrawalPaid" -> List.of(money(type, string(p.get("withdrawalId")), policy,
+                p.get("amount"), today, paid("WITHDRAWAL", p.get("withdrawalId"))));
             case "billing.InvoiceWaived" ->
                 List.of(money(type, string(p.get("invoiceId")), policy, p.get("amount"), today, Map.of("refType", "INVOICE")));
             // Keyed on the CREDIT: one invoice carries a credit for every borrower on its file, each its own movement.

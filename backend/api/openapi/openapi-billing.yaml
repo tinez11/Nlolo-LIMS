@@ -391,8 +391,180 @@ paths:
                   status: { type: string, enum: [PENDING_RECONCILIATION] }
         '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /policies/{policyNumber}/balance:
+    get:
+      summary: What is on a policy's balance now (money movement step 2)
+      description: Every deposit less every premium paid from it and every withdrawal. Zero for a policy with none.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The balance
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyBalance' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /policies/{policyNumber}/balance/withdrawals:
+    get:
+      summary: The policy's withdrawals, newest first (money movement step 3a)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Its withdrawals
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BalanceWithdrawal' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Ask for money back off the policy's balance (payouts.manage); a second person approves it
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [amount, payee]
+              properties:
+                amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+                payee: { $ref: '#/components/schemas/WithdrawalPayee' }
+      responses:
+        '201':
+          description: Asked; waiting for its second person
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BalanceWithdrawal' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /balance-withdrawals/{withdrawalId}:
+    get:
+      summary: One withdrawal from a policy's balance
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: withdrawalId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The withdrawal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BalanceWithdrawal' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /balance-withdrawals/{withdrawalId}/payee:
+    post:
+      summary: Name who receives a withdrawal the platform raised when the policy ended (payouts.manage)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: withdrawalId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WithdrawalPayee' }
+      responses:
+        '200':
+          description: The payee is named; the withdrawal waits for its second person
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BalanceWithdrawal' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /balance-withdrawals/{withdrawalId}/approve:
+    post:
+      summary: The second person approves (payouts.approve); the money leaves the balance and the rail is asked to pay it
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: withdrawalId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '202':
+          description: Approved and asked of the rail, not yet paid
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BalanceWithdrawal' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /balance-withdrawals/{withdrawalId}/reject:
+    post:
+      summary: Refuse a withdrawal, saying why (payouts.approve); nothing left the balance
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: withdrawalId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: Refused
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BalanceWithdrawal' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
 components:
   schemas:
+    PolicyBalance:
+      type: object
+      additionalProperties: false
+      required: [policyNumber, balance]
+      properties:
+        policyNumber: { type: string }
+        balance: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+    WithdrawalPayee:
+      type: object
+      additionalProperties: false
+      description: Mobile money to payeeRef, a bank transfer (EFT) to the account named, or a cheque made out to payeeRef.
+      properties:
+        method: { type: [string, 'null'], enum: [MOBILE_MONEY, EFT, CHEQUE, null] }
+        payeeRef: { type: [string, 'null'], maxLength: 200 }
+        payeeBank: { type: [string, 'null'], maxLength: 100 }
+        payeeBranch: { type: [string, 'null'], maxLength: 100 }
+        payeeAccountName: { type: [string, 'null'], maxLength: 200 }
+        payeeAccountNumber: { type: [string, 'null'], maxLength: 50 }
+    BalanceWithdrawal:
+      type: object
+      additionalProperties: false
+      required: [withdrawalId, policyNumber, amount, status, reason, requestedBy, requestedAt, actedAlone]
+      properties:
+        withdrawalId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        status: { type: string, enum: [AWAITING_PAYEE, REQUESTED, APPROVED, PAID, FAILED, REJECTED] }
+        reason:
+          type: string
+          enum: [ASKED, POLICY_ENDED]
+          description: ASKED when someone asked for the money back; POLICY_ENDED when the platform raised it as the policy ended.
+        method: { type: [string, 'null'] }
+        payeeRef: { type: [string, 'null'] }
+        requestedBy: { type: string }
+        requestedAt: { type: string, format: date-time }
+        approvedBy: { type: [string, 'null'] }
+        approvedAt: { type: [string, 'null'], format: date-time }
+        rejectedBy: { type: [string, 'null'] }
+        rejectionReason: { type: [string, 'null'] }
+        actedAlone: { type: boolean }
     FieldReceiptView:
       description: >
         One agent-captured premium receipt: cash an agent says they took in the field, and

@@ -7,6 +7,8 @@ import org.springframework.data.domain.PageRequest;
 import tz.co.nlolo.lifeplatform.approvals.api.ApprovalSource;
 import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
 import tz.co.nlolo.lifeplatform.billing.api.FieldReceiptView;
+import tz.co.nlolo.lifeplatform.billing.application.BalanceWithdrawals;
+import tz.co.nlolo.lifeplatform.billing.domain.BalanceWithdrawal;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +30,27 @@ class BillingApprovalSources {
                 return new ApprovalSource.Pending(overdue.getTotalElements() + pending.getTotalElements(),
                     rows.stream().limit(limit).toList());
             });
+    }
+
+    /** Money asked back off a policy's balance, waiting for its second person (money movement step 3a). */
+    @Bean
+    ApprovalSource balanceWithdrawalsToApprove(BalanceWithdrawals withdrawals) {
+        return ApprovalSource.of("balance-withdrawal", "Withdrawals to approve", "Approve", "payouts.approve",
+            limit -> ApprovalSource.Pending.of(withdrawals.waiting("REQUESTED").stream()
+                .map(w -> withdrawalItem(w, "Withdrawal from the policy's balance")).toList(), limit));
+    }
+
+    /** A policy ended with money on its balance: finance names who receives it (money movement step 3a). */
+    @Bean
+    ApprovalSource balanceWithdrawalsAwaitingPayee(BalanceWithdrawals withdrawals) {
+        return ApprovalSource.of("balance-withdrawal-payee", "Withdrawals waiting for a payee", "Name the payee",
+            "payouts.manage", false, limit -> ApprovalSource.Pending.of(withdrawals.waiting("AWAITING_PAYEE").stream()
+                .map(w -> withdrawalItem(w, "The policy ended with money on its balance")).toList(), limit));
+    }
+
+    private static ApprovalSource.Item withdrawalItem(BalanceWithdrawal w, String what) {
+        return new ApprovalSource.Item(w.getWithdrawalId().toString(), w.getPolicyNumber(), what, w.getAmount(),
+            w.getCurrency(), "system".equals(w.getRequestedBy()) ? null : w.getRequestedBy(), w.getRequestedAt());
     }
 
     private static ApprovalSource.Item item(FieldReceiptView r, String what) {

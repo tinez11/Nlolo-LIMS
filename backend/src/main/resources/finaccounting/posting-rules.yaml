@@ -103,6 +103,32 @@ rules:
       - {dr: "5220", amount: levy}
       - {cr: "2650", amount: levy}
 
+  # Money taken back off a policy's balance (money movement step 3a, 2026-11-04): two steps like every payout -- the
+  # payable when it is approved, the bank when it is paid -- and a refused transfer puts the money back on the balance.
+  - id: M-03
+    event: billing.BalanceWithdrawalApproved
+    models: [GMM, VFA, PAA]
+    description: A withdrawal from a policy's balance approved -- owed back to the payer
+    lines:
+      - {dr: "2128", amount: amount}
+      - {cr: "2430", amount: amount}
+
+  - id: M-04
+    event: billing.BalanceWithdrawalPaid
+    models: [GMM, VFA, PAA]
+    description: A withdrawal from a policy's balance paid, out of the account the money left by
+    lines:
+      - {dr: "2430", amount: amount}
+      - {cr: BANK, amount: amount}
+
+  - id: M-05
+    event: billing.BalanceWithdrawalReturned
+    models: [GMM, VFA, PAA]
+    description: A withdrawal's transfer refused by the rail -- the money is back on the policy's balance
+    lines:
+      - {dr: "2430", amount: amount}
+      - {cr: "2128", amount: amount}
+
   - id: M-02-PAA
     event: billing.PremiumPaidFromBalance
     models: [PAA]

@@ -16,6 +16,10 @@ public class BalanceEntry {
 
     public static final String DEPOSIT = "DEPOSIT";
     public static final String PREMIUM_PAID = "PREMIUM_PAID";
+    /** Money taken back off the balance at a withdrawal's approval (billing V15, money movement step 3a). */
+    public static final String WITHDRAWAL = "WITHDRAWAL";
+    /** A withdrawal's transfer the rail refused: the money comes back as a deposit from this source, not fresh money. */
+    public static final String FROM_WITHDRAWAL_RETURNED = "WITHDRAWAL_RETURNED";
 
     /** A confirmed deposit or mobile-money request. */
     public static final String FROM_PAYMENT = "PAYMENT";
@@ -30,6 +34,7 @@ public class BalanceEntry {
     @Column(nullable = false) private String currency;
     @Column(name = "payment_id") private UUID paymentId;
     @Column(name = "invoice_id") private UUID invoiceId;
+    @Column(name = "withdrawal_id") private UUID withdrawalId;
     @Column private String method;
     @Column private String reference;
     @Column(nullable = false) private String source = FROM_PAYMENT;
@@ -67,7 +72,38 @@ public class BalanceEntry {
         return e;
     }
 
-    /** The entry's effect on the balance: a deposit adds, a premium paid takes away. */
+    /** Money taken back off the balance at a withdrawal's approval. */
+    public static BalanceEntry withdrawal(UUID tenantId, String policyNumber, BigDecimal amount, String currency,
+                                          UUID withdrawalId, String by) {
+        BalanceEntry e = new BalanceEntry();
+        e.tenantId = tenantId;
+        e.policyNumber = policyNumber;
+        e.entryType = WITHDRAWAL;
+        e.amount = amount;
+        e.currency = currency;
+        e.withdrawalId = withdrawalId;
+        e.createdBy = by;
+        return e;
+    }
+
+    /** A refused withdrawal's money back on the balance. */
+    public static BalanceEntry returned(UUID tenantId, String policyNumber, BigDecimal amount, String currency,
+                                        UUID withdrawalId) {
+        BalanceEntry e = new BalanceEntry();
+        e.tenantId = tenantId;
+        e.policyNumber = policyNumber;
+        e.entryType = DEPOSIT;
+        e.amount = amount;
+        e.currency = currency;
+        e.reference = "withdrawal:" + withdrawalId;
+        e.source = FROM_WITHDRAWAL_RETURNED;
+        e.createdBy = "system";
+        return e;
+    }
+
+    public UUID getWithdrawalId() { return withdrawalId; }
+
+    /** The entry's effect on the balance: a deposit adds, a premium paid or a withdrawal takes away. */
     public BigDecimal signedAmount() {
         return DEPOSIT.equals(entryType) ? amount : amount.negate();
     }

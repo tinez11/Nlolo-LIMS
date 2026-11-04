@@ -193,6 +193,7 @@ class BillingApiIntegrationTest {
             "db-migrations/billing/V10__premium_receipt.sql",
             "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql", "db-migrations/billing/V13__credit_refund_payout.sql",
             "db-migrations/billing/V14__policy_balance.sql",
+            "db-migrations/billing/V15__balance_withdrawal.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
@@ -208,7 +209,8 @@ class BillingApiIntegrationTest {
             "db-migrations/payment/V9__account_purposes.sql",
             "db-migrations/payment/V17__manual_receipts.sql",
             "db-migrations/payment/V18__payout_routes.sql",
-            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql");
+            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
+            "db-migrations/payment/V23__balance_withdrawal_purpose.sql");
     }
 
     @AfterAll
@@ -1086,6 +1088,101 @@ class BillingApiIntegrationTest {
         assertThat(eventRecorder.ofType("billing.PremiumPaidFromBalance")).hasSize(1);
         TenantContext.set(tenantId);
         assertThat(billingApi.balanceOf(policyNumber)).isEqualByComparingTo("35000.00");
+    }
+
+    // =========================================================================================
+    // Money movement step 3a (2026-11-04) -- withdrawals from the policy balance.
+    // =========================================================================================
+
+    @Autowired private tz.co.nlolo.lifeplatform.billing.application.BalanceWithdrawals balanceWithdrawals;
+
+    /** A policy with 25,000 left on its balance after its first premium (15,000 of 40,000). */
+    private String policyWithBalance(UUID tenantId, String code) {
+        Fixture fixture = buildFixture(tenantId, code);
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+        TenantContext.set(tenantId);
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("40000.00"), "TZS", "SLIP-" + code, null,
+            "CASH", UUID.randomUUID());
+        return policyNumber;
+    }
+
+    @Test
+    void aWithdrawalLeavesTheBalanceOnlyWhenASecondPersonApprovesIt() {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = policyWithBalance(tenantId, "WITHDRAW-01");
+
+        TenantContext.set(tenantId);
+        var asked = balanceWithdrawals.request(policyNumber, new BigDecimal("10000.00"),
+            tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney("255754000001"), "finance-1");
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balanceOf(policyNumber)).as("asked is not paid").isEqualByComparingTo("25000.00");
+
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> balanceWithdrawals.approve(asked.getWithdrawalId(), "finance-1"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.WithdrawalRefusedException.class)
+            .hasMessageContaining("someone other than");
+
+        eventRecorder.clear();
+        TenantContext.set(tenantId);
+        balanceWithdrawals.approve(asked.getWithdrawalId(), "finance-2");
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balanceOf(policyNumber)).isEqualByComparingTo("15000.00");
+        assertThat(eventRecorder.ofType("billing.BalanceWithdrawalApproved")).hasSize(1);
+        assertThat(eventRecorder.ofType("billing.BalanceWithdrawalPayoutRequested")).hasSize(1);
+    }
+
+    @Test
+    void aWithdrawalCannotTakeMoreThanIsOnTheBalance() {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = policyWithBalance(tenantId, "WITHDRAW-02");
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> balanceWithdrawals.request(policyNumber, new BigDecimal("25000.01"),
+            tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney("255754000001"), "finance-1"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.WithdrawalRefusedException.class)
+            .hasMessageContaining("25000.00");
+    }
+
+    @Test
+    void aRefusedTransferPutsTheMoneyBackOnTheBalance() {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = policyWithBalance(tenantId, "WITHDRAW-03");
+        TenantContext.set(tenantId);
+        var asked = balanceWithdrawals.request(policyNumber, new BigDecimal("25000.00"),
+            tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney("255754000001"), "finance-1");
+        TenantContext.set(tenantId);
+        balanceWithdrawals.approve(asked.getWithdrawalId(), "finance-2");
+        eventRecorder.clear();
+        TenantContext.set(tenantId);
+        balanceWithdrawals.markFailed(asked.getWithdrawalId(), UUID.randomUUID());
+        TenantContext.set(tenantId);
+        balanceWithdrawals.markFailed(asked.getWithdrawalId(), UUID.randomUUID());
+
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balanceOf(policyNumber)).as("back once, not twice").isEqualByComparingTo("25000.00");
+        assertThat(eventRecorder.ofType("billing.BalanceWithdrawalReturned")).hasSize(1);
+    }
+
+    @Test
+    void aPolicyThatEndsWithMoneyOnItsBalanceRaisesAWithdrawalWaitingForAPayee() {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = policyWithBalance(tenantId, "WITHDRAW-04");
+
+        publishCommitted(tenantId, "policy.PolicyCancelledFreeLook", Map.of("policyNumber", policyNumber,
+            "cancelledAt", java.time.Instant.now().toString(), "cancelledBy", "staff-two"));
+
+        TenantContext.set(tenantId);
+        var raised = balanceWithdrawals.listFor(policyNumber);
+        assertThat(raised).hasSize(1);
+        assertThat(raised.get(0).getStatus()).isEqualTo("AWAITING_PAYEE");
+        assertThat(raised.get(0).getReason()).isEqualTo("POLICY_ENDED");
+        assertThat(raised.get(0).getAmount()).isEqualByComparingTo("25000.00");
+
+        // Finance names the payee; a second person then approves, as any withdrawal.
+        TenantContext.set(tenantId);
+        var named = balanceWithdrawals.namePayee(raised.get(0).getWithdrawalId(),
+            tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney("255754000002"), "finance-1");
+        assertThat(named.getStatus()).isEqualTo("REQUESTED");
     }
 
     /**
