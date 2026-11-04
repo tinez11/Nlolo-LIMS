@@ -169,6 +169,23 @@ class PostingFactsExtractorTest {
         assertThat(lapse.amount("total")).isEqualByComparingTo("1100000.00");   // guide E-06
     }
 
+    /** Money movement step 1: loan money posts to the account it reached, and a surplus is keyed on its payment. */
+    @Test
+    void aLoanRepaymentCarriesItsMethodAndASurplusIsKeyedOnThePayment() {
+        PostingFacts repaid = PostingFactsExtractor.extract("policyloan.LoanRepaid", Map.of("loanId", UUID.randomUUID(),
+            "loanTransactionId", UUID.randomUUID(), "policyNumber", "WL-1", "interestAmount", "0.00",
+            "principalAmount", "200000.00", "amount", money("200000.00"), "receiptMethod", "CASH"), TODAY).get(0);
+        assertThat(repaid.attribute("receiptMethod")).isEqualTo("CASH");
+
+        UUID payment = UUID.randomUUID();
+        PostingFacts surplus = PostingFactsExtractor.extract("policyloan.LoanOverpaid", Map.of("paymentId", payment,
+            "loanId", UUID.randomUUID(), "policyNumber", "WL-1", "amount", money("150000.00"),
+            "receiptMethod", "BANK_DEPOSIT", "paymentReference", "SLIP-S"), TODAY).get(0);
+        assertThat(surplus.sourceRef()).isEqualTo("loan-surplus:" + payment);
+        assertThat(surplus.amount(PostingFactsExtractor.AMOUNT)).isEqualByComparingTo("150000.00");
+        assertThat(surplus.attribute("receiptMethod")).isEqualTo("BANK_DEPOSIT");
+    }
+
     @Test
     void anAccountLedgerPostingIsOneFactPerEntryByFlow() {
         List<PostingFacts> facts = PostingFactsExtractor.extract("accumulation.PostingRecorded", Map.of(

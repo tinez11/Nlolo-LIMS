@@ -527,11 +527,21 @@ rules:
   - id: E-03
     event: policyloan.LoanRepaid
     models: [ANY]
-    description: Loan repayment -- interest accrued first, then principal
+    description: Loan repayment -- interest accrued first, then principal; to the account the money reached (step 1, 2026-11-04)
     lines:
-      - {dr: "1140", amount: amount}
+      - {dr: "RECEIPT", amount: amount}
       - {cr: "2126", amount: interest}
       - {cr: "2125", amount: principal}
+
+  # Money above what a loan owed (money movement step 1, 2026-11-04): the payer's, never the loan's. Held as received
+  # in advance until it is applied or paid back -- before this, an overpayment drove 2125 below zero.
+  - id: E-03-SURPLUS
+    event: policyloan.LoanOverpaid
+    models: [ANY]
+    description: Money above what a loan owed -- the payer's, held as received in advance
+    lines:
+      - {dr: "RECEIPT", amount: amount}
+      - {cr: "2128", amount: amount}
 
   - id: E-06
     event: policyloan.LoanForcedLapseTriggered
