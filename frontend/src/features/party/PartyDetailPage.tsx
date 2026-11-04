@@ -1,13 +1,13 @@
 import { can } from '@/auth/access';
-import { Plus } from 'lucide-react';
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { cameFrom, type Crumb } from '@/lib/cameFrom';
 import { PageHeader } from '@/components/PageHeader';
+import { QuickActions } from '@/components/QuickActions';
+import { clientActions } from '@/lib/quickActions';
 import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
-import { Button } from '@/components/ui/button';
 import { partyTypeLabel } from '@/lib/partyType';
 import type { ApiError } from '@/lib/apiError';
 import type {
@@ -244,25 +244,15 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
               refused: an agent who can see the button reasonably concludes the record is
               theirs to change, and finds out otherwise at the point of saving.
             */}
-            {realm === 'staff' && party && (
-              <>
-                {can('clients.edit') && (
-                  <Button asChild variant="outline">
-                    <Link to={`/staff/parties/${partyId}/edit`}>Correct details</Link>
-                  </Button>
-                )}
-                {/* A case, not a policy: every policy on this console comes through underwriting,
-                    so the client page starts that case with this client already chosen as the
-                    applicant. Whoever may open one from the queue (underwriting.propose). */}
-                {can('underwriting.propose') && (
-                  <Button asChild variant="primary">
-                    <Link to={`/staff/underwriting/new?applicant=${encodeURIComponent(partyId ?? '')}`}>
-                      <Plus />
-                      New case
-                    </Link>
-                  </Button>
-                )}
-              </>
+            {/* The acts this person may do on this client, at the top (2026-11-04): a claim, a case, a payment, a
+                KYC decision, a portal invitation -- each with the client filled in. New case stays the primary act,
+                as it was: every policy on this console starts as one. */}
+            {realm === 'staff' && party && partyId && (
+              <QuickActions
+                actions={clientActions({ partyId, kycStatus: party.kycStatus, partyType: party.partyType },
+                  onlyPolicyOf(policies.data))}
+                primary="New case"
+              />
             )}
           </span>
         }
@@ -622,6 +612,20 @@ function LinkRow({ to, left, middle, right }: { to: string; left: ReactNode; mid
   );
 }
 
+/** What the viewer would do next on a claim in this state, if their permissions let them: the row opens it. */
+function claimNextStep(status: string | null | undefined): string | null {
+  if ((status === 'REGISTERED' || status === 'REOPENED' || status === 'UNDER_ASSESSMENT') && can('claims.assess')) {
+    return 'Assess';
+  }
+  if (status === 'UNDER_ASSESSMENT' && can('claims.settle')) return 'Decide';
+  return null;
+}
+
+/** The client's one policy, when they hold exactly one: a payment is then recorded straight against it. */
+function onlyPolicyOf(page: Page<PolicyView> | null | undefined): string | null {
+  return page && page.page.totalElements === 1 ? page.items[0]?.policyNumber ?? null : null;
+}
+
 function PolicyList({
   resource,
   onRetry,
@@ -900,7 +904,15 @@ function ClaimList({
                     <span className="ml-2 font-mono text-muted-foreground">{c.policyNumber}</span>
                   </>
                 }
-                right={<StatusBadge kind="claim" value={c.status} />}
+                right={
+                  <span className="flex items-center gap-2">
+                    {/* The viewer's next step on it, when there is one (2026-11-04): one click to do it. */}
+                    {claimNextStep(c.status) && (
+                      <span className="text-xs font-medium text-accent">{claimNextStep(c.status)}</span>
+                    )}
+                    <StatusBadge kind="claim" value={c.status} />
+                  </span>
+                }
               />
             ))}
             {/* No "view all" link: the Claims screen filters by status and free text,

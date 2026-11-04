@@ -3,7 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { FileText, ScrollText } from 'lucide-react';
 import { useState } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import * as partyApi from '@/api/party';
+import { grantAccess } from '@/test/access';
 import { CommandPalette } from './CommandPalette';
 
 beforeAll(() => {
@@ -65,6 +67,43 @@ describe('CommandPalette', () => {
     renderPalette();
     await userEvent.type(screen.getByRole('combobox'), 'Juma Rajabu');
     expect(screen.getByText(/does not search names or records/)).toBeInTheDocument();
+  });
+});
+
+describe('CommandPalette, people', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const WITH_CLIENTS = [
+    ...GROUPS,
+    { label: 'Clients', items: [{ group: 'clients' as const, label: 'Individuals', icon: FileText, to: 'clients/individuals' }] },
+  ];
+
+  it('finds a person by name and goes straight to an act on them', async () => {
+    grantAccess('clients.view', 'claims.register');
+    const search = vi.spyOn(partyApi, 'searchParties').mockResolvedValue({
+      items: [{ partyId: 'p-1', displayName: 'Juma Rajabu', partyType: 'INDIVIDUAL', kycStatus: 'VERIFIED' }],
+      page: { page: 0, pageSize: 5, totalElements: 1 },
+    } as Awaited<ReturnType<typeof partyApi.searchParties>>);
+    render(
+      <MemoryRouter initialEntries={['/staff/policies']}>
+        <CommandPalette realm="staff" groups={WITH_CLIENTS} open onOpenChange={vi.fn()} />
+        <Where />
+      </MemoryRouter>,
+    );
+    await userEvent.type(screen.getByRole('combobox'), 'Juma');
+
+    expect(await screen.findByRole('option', { name: 'Juma Rajabu' })).toBeInTheDocument();
+    expect(search).toHaveBeenCalledWith({ q: 'Juma', pageSize: 5 });
+    await userEvent.click(screen.getByRole('option', { name: /Register a claim, for Juma Rajabu/ }));
+    expect(screen.getByTestId('where')).toHaveTextContent('/staff/claims/new');
+  });
+
+  it('looks nobody up for someone who cannot open the client lists', async () => {
+    const search = vi.spyOn(partyApi, 'searchParties');
+    renderPalette();
+    await userEvent.type(screen.getByRole('combobox'), 'Juma');
+    await new Promise((r) => setTimeout(r, 400));
+    expect(search).not.toHaveBeenCalled();
   });
 });
 

@@ -1,3 +1,6 @@
+import { FocusTarget } from '@/components/FocusTarget';
+import { QuickActions } from '@/components/QuickActions';
+import { policyActions } from '@/lib/quickActions';
 import { can, canAny } from '@/auth/access';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useBreadcrumb } from '@/lib/cameFrom';
@@ -202,6 +205,11 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     );
   }
 
+  // Built once: the tabs show, and the quick actions offer only what the tabs hold (2026-11-04).
+  const sections = policyTabs();
+  const hasValuePanel = isStaff && !!policy && VALUE_CATEGORIES.includes(policy.productCategory ?? '')
+    && canAny('policies.surrender', 'policies.status', 'policies.surrender-approve');
+
   return (
     <>
       <PageHeader
@@ -252,9 +260,14 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 </Link>
               </Button>
             )}
-            {/* Surrender is a real action now (product step 1), and it lives in the Value panel
-                on the Overview tab with the gates and the second-person approval it needs. A
-                page-bar button cannot carry any of that, so there is none. */}
+            {/* The everyday acts on this policy, by permission (2026-11-04): each opens the tab or panel that
+                does it, with its gates -- surrender still happens in the Value panel, the button only takes you
+                there. */}
+            {isStaff && policy && (
+              <QuickActions actions={policyActions({ policyNumber, policyholderPartyId: policy.policyholderPartyId,
+                status: policy.status, productCategory: policy.productCategory },
+                sections.map((t) => t.value), hasValuePanel)} />
+            )}
           </>
         }
       />
@@ -270,7 +283,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         beside a pinned identity.
       */}
       <DetailLayout>
-        <RecordTabs label="Policy sections" tabs={policyTabs()} />
+        <RecordTabs label="Policy sections" tabs={sections} />
       </DetailLayout>
     </>
   );
@@ -366,9 +379,11 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       // Each panel only for someone who may act in it (2026-10-26): a button the server would refuse is not drawn.
       if (can('policies.status')) {
         overview.push(
-          <Panel key="lifecycle" title="Lifecycle">
-            <LifecycleActions policyNumber={policyNumber} status={policy.status} category={policy.productCategory ?? undefined} />
-          </Panel>,
+          <FocusTarget key="lifecycle" id="lifecycle">
+            <Panel title="Lifecycle">
+              <LifecycleActions policyNumber={policyNumber} status={policy.status} category={policy.productCategory ?? undefined} />
+            </Panel>
+          </FocusTarget>,
         );
       }
       // Only on a policy that could have value. A term policy has none, and a panel offering to
@@ -376,9 +391,11 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       if (VALUE_CATEGORIES.includes(policy.productCategory ?? '')
           && canAny('policies.surrender', 'policies.status', 'policies.surrender-approve')) {
         overview.push(
-          <Panel key="value" title="Value" subtitle="Stop paying and keep reduced cover, or cash it in">
-            <ValueActions policy={policy} />
-          </Panel>,
+          <FocusTarget key="value" id="value">
+            <Panel title="Value" subtitle="Stop paying and keep reduced cover, or cash it in">
+              <ValueActions policy={policy} />
+            </Panel>
+          </FocusTarget>,
         );
       }
       // Free-look is an INDIVIDUAL buyer's statutory right (guide §21.3). A group or credit-life

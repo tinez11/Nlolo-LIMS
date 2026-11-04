@@ -17,7 +17,9 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, LoadingBlock, TableSkeleton } from '@/components/states';
 import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
+import { can } from '@/auth/access';
 import { cn } from '@/lib/cn';
+import { claimableStatus } from '@/lib/policyCapacity';
 import { formatDate, formatMonths } from '@/lib/dates';
 import { formatMoney, NO_VALUE } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
@@ -509,7 +511,12 @@ export function GroupSchemePage() {
     return (
       <>
         <DataTable
-          columns={memberColumnsFor(data?.benefitBasis)}
+          columns={memberColumnsFor(data?.benefitBasis, {
+            policyNumber,
+            status: policyRecord.data?.status,
+            productCategory: policyRecord.data?.productCategory,
+            policyholderPartyId: policyRecord.data?.policyholderPartyId,
+          })}
           rows={rows}
           rowKey={(m) => m.policyMemberId ?? `${m.memberPartyId}`}
           caption="Members of this group scheme"
@@ -539,16 +546,60 @@ export function GroupSchemePage() {
  * not a tidiness point: a roll of several hundred borrowers is read by scanning, and a column of
  * em dashes costs width that the names and references need.
  */
-const memberColumnsFor = (basis: BenefitBasis | undefined): Column<PolicyMemberView>[] => {
+const memberColumnsFor = (
+  basis: BenefitBasis | undefined,
+  scheme: ClaimScheme,
+): Column<PolicyMemberView>[] => {
   const creditLife = basis === 'AMORTISING_LOAN';
-  return baseMemberColumns.filter((c) =>
+  const columns = baseMemberColumns.filter((c) =>
     c.key === 'memberReference' || c.key === 'arrivedOn'
       ? creditLife
       : c.key === 'gradeOrSalary'
         ? !creditLife
         : true,
   );
+  // GROUP_LIFE and CREDIT_LIFE: a claim there names the member. A funeral scheme's claim names a family instead, chosen
+  // on the claim form, so its roll offers none.
+  const claimsByMember = scheme.productCategory === 'GROUP_LIFE' || scheme.productCategory === 'CREDIT_LIFE';
+  return can('claims.register') && claimsByMember && claimableStatus(scheme.status, scheme.productCategory)
+    ? [...columns, claimColumn(scheme)]
+    : columns;
 };
+
+/**
+ * Register a claim from the roll (2026-11-04, quick actions): a death is reported against one member, so the form opens
+ * with the scheme and that member chosen. Only while the scheme is in force (the server's rule), and only on a live member
+ * with no claim already open -- that one links to its claim. On credit life the lender, who holds the scheme, is the
+ * claimant; on group life the employer is not, so nobody is filled in.
+ */
+interface ClaimScheme {
+  policyNumber: string;
+  status?: string | null | undefined;
+  productCategory?: string | null | undefined;
+  policyholderPartyId?: string | null | undefined;
+}
+
+const claimColumn = (scheme: ClaimScheme): Column<PolicyMemberView> => ({
+  key: 'claim',
+  header: '',
+  align: 'right',
+  render: (m) =>
+    m.status === 'ACTIVE' && !m.openDeathClaimId && m.policyMemberId ? (
+      <Button asChild size="sm" variant="ghost">
+        <Link
+          to={`/staff/claims/new?${new URLSearchParams({
+            policy: scheme.policyNumber,
+            member: m.policyMemberId,
+            ...(m.memberName ? { who: m.memberName } : {}),
+            ...(scheme.productCategory === 'CREDIT_LIFE' && scheme.policyholderPartyId
+              ? { claimant: scheme.policyholderPartyId } : {}),
+          }).toString()}`}
+        >
+          Register a claim
+        </Link>
+      </Button>
+    ) : null,
+});
 
 const baseMemberColumns: Column<PolicyMemberView>[] = [
   {

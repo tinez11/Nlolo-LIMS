@@ -62,27 +62,48 @@ export function policyCapacities(policy: PolicyView, partyId: string): PolicyCap
 }
 
 /**
- * The statuses `POST /claims` will actually accept today.
- *
- * Transcribed from `PolicyApiImpl.isPolicyInForce`, which is a plain "is this policy currently
- * ACTIVE-or-REINSTATED" status read -- it accepts an `asOf` date and, by its own comment, never
- * consults it. So a claim for an event that happened while cover was running is still refused
- * if the policy has lapsed since, which is the wrong answer and a known, recorded gap.
+ * The statuses a claim can be registered on, as `POST /claims` rules it (2026-11-04): the policy
+ * must have been on risk on the day of the event (`Policy.wasOnRiskOn`). That check is date-bounded
+ * now, so a lapsed, suspended or surrendered policy still takes a claim for an event before cover
+ * ended -- the old "reinstate it first" was the known gap, since closed.
  */
-const IN_FORCE_STATUSES = new Set(['ACTIVE', 'REINSTATED']);
+const CLAIMABLE = new Set(['ACTIVE', 'REINSTATED', 'PAID_UP', 'EXPIRED', 'ANNUITY_ENDED', 'LAPSED', 'SUSPENDED',
+  'SURRENDERED']);
+/** A scheme's claim is on a member, and the scheme itself must be in force today. */
+const SCHEME_CLAIMABLE = new Set(['ACTIVE', 'REINSTATED']);
+/** Cover ran and then stopped: a claim is taken only for an event before it stopped. */
+const ENDED = new Set(['LAPSED', 'SUSPENDED', 'SURRENDERED', 'EXPIRED', 'ANNUITY_ENDED']);
+
+const isScheme = (category: string | null | undefined) => category === 'GROUP_LIFE' || category === 'CREDIT_LIFE';
+
+/** Whether a claim can be registered on a policy in this status at all. */
+export function claimableStatus(status: string | null | undefined, category?: string | null): boolean {
+  return (isScheme(category) ? SCHEME_CLAIMABLE : CLAIMABLE).has(status ?? '');
+}
 
 /**
- * Whether registration will be accepted for this policy right now.
+ * What to tell the clerk before they choose this policy for a claim: why it will be refused, or what the date of the
+ * event has to be. Null when nothing stands in the way.
  *
- * Deliberately NOT used to disable the choice. `claimGates` makes the same fact a SOFT gate on
- * purpose, and its reasoning governs here too: a lapsed policy must route a claim to
- * investigation, never auto-refuse it, because refusing without proving the lapse notices were
- * sent is how an insurer ends up in front of a regulator. Hiding or disabling the policy in the
- * chooser would be that refusal, made earlier and more quietly.
- *
- * What it IS for: warning honestly before the click, so a 422 is expected rather than
- * mysterious, and naming the remedy (reinstate first) that `ClaimsApiImpl` says staff need.
+ * Deliberately NOT used to disable the choice in the chooser: the server's refusal says the same, and a clerk holding
+ * the right contract should still be able to see it said.
  */
-export function willAcceptClaimToday(policy: PolicyView): boolean {
-  return !!policy.status && IN_FORCE_STATUSES.has(policy.status);
+export function claimWarning(policy: Pick<PolicyView, 'status' | 'productCategory'>): string | null {
+  const status = policy.status ?? '';
+  if (isScheme(policy.productCategory)) {
+    return SCHEME_CLAIMABLE.has(status) ? null : 'The scheme is not in force, so a claim on it will be refused.';
+  }
+  switch (status) {
+    case 'PROPOSED':
+      return 'This is an offer, not yet on cover — it starts when the first premium clears. A claim on it will be refused.';
+    case 'NOT_TAKEN_UP':
+      return 'This offer was never taken up, so it was never on cover. A claim on it will be refused.';
+    case 'CANCELLED_FREE_LOOK':
+      return 'Cancelled in the free-look period, so void from the start. A claim on it will be refused.';
+    case 'MATURED':
+      return 'This policy has matured and closed. A claim on it will be refused.';
+  }
+  return ENDED.has(status)
+    ? `Cover has ended (${status.toLowerCase().replace(/_/g, ' ')}). A claim is accepted only for an event before it ended.`
+    : null;
 }
