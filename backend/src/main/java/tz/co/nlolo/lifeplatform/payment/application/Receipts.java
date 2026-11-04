@@ -247,10 +247,13 @@ public class Receipts {
     }
 
     static ReceiptView view(PaymentTransaction t) {
-        boolean loan = "LOAN_REPAYMENT".equals(t.getPurpose());
+        // The source is an invoice only for a premium and a loan only for a loan repayment. A savings top-up recorded by
+        // hand is a receipt too, and its source is a top-up id -- named neither, rather than shown as an invoice.
         UUID source = UUID.fromString(t.getSourceRef());
+        UUID invoiceId = "PREMIUM".equals(t.getPurpose()) ? source : null;
+        UUID loanId = "LOAN_REPAYMENT".equals(t.getPurpose()) ? source : null;
         return new ReceiptView(t.getPaymentTransactionId(), t.getPurpose(), t.getMethod(), t.getGatewayReference(),
-            t.getPayerRef(), t.getAmount(), t.getCurrency(), loan ? null : source, loan ? source : null,
+            t.getPayerRef(), t.getAmount(), t.getCurrency(), invoiceId, loanId,
             t.getPolicyNumber(), t.getReceivedOn(), t.getNote(), t.getFieldReceiptId(), t.getStatus(), t.getRecordedBy(),
             t.getCreatedAt(), t.getDecidedBy(), t.getDecidedAt(), t.getDecisionReason());
     }

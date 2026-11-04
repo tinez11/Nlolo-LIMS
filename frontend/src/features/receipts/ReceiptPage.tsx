@@ -111,8 +111,9 @@ export function ReceiptPage() {
 }
 
 function ReceiptDecision({ receipt }: { receipt: Receipt }) {
-  // What it pays (money movement step 1, 2026-11-04): a deposit For: Loan repays the loan, any other pays the invoice.
-  const target = receipt.loanId ? 'the loan' : 'the invoice';
+  // What it pays (money movement step 1, 2026-11-04), by its purpose: a loan, a savings account, or an invoice.
+  const target = receipt.purpose === 'LOAN_REPAYMENT' ? 'the loan'
+    : receipt.purpose === 'ACCOUNT_TOP_UP' || receipt.purpose === 'UL_TOP_UP' ? 'the savings account' : 'the invoice';
   const auth = useAuth();
   const viewerSubject = readIdentity(auth.user?.access_token)?.subject ?? undefined;
   const approve = useReceiptStore((s) => s.approve);

@@ -11,6 +11,8 @@ const PURPOSES: Record<string, string> = {
   PREMIUM: 'Premium',
   ACCOUNT_TOP_UP: 'Savings top-up',
   UL_TOP_UP: 'Unit-linked top-up',
+  // A loan repaid by deposit or mobile-money request (money movement step 1, 2026-11-04).
+  LOAN_REPAYMENT: 'Loan repayment',
   LOAN_DISBURSEMENT: 'Policy loan',
   CLAIM_SETTLEMENT: 'Claim settlement',
   COMMISSION_PAYOUT: 'Agent commission',

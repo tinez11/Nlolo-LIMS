@@ -383,8 +383,10 @@ components:
         receiptId: { type: string, format: uuid }
         purpose:
           type: string
-          enum: [PREMIUM, LOAN_REPAYMENT]
-          description: What it pays -- an invoice (PREMIUM) or a loan (LOAN_REPAYMENT). Exactly one of invoiceId and loanId is set.
+          enum: [PREMIUM, LOAN_REPAYMENT, ACCOUNT_TOP_UP, UL_TOP_UP]
+          description: >
+            What it pays -- an invoice (PREMIUM, invoiceId set) or a loan (LOAN_REPAYMENT, loanId set). A savings or
+            unit-linked top-up recorded by hand is a receipt too; it names neither.
         method:
           type: string
           enum: [MOBILE_MONEY, CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR]
