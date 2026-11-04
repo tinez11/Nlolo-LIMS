@@ -9,7 +9,13 @@ public interface PolicyLoanApi {
     LoanView originateLoan(String policyNumber, BigDecimal requestedAmount, String currency, String payeeRef, String originatedBy);
     LoanView getLoan(UUID loanId);
     List<LoanView> listLoansForPolicy(String policyNumber);
-    LoanView recordRepayment(UUID loanId, BigDecimal amount, String currency, String paymentReference, String recordedBy);
+    /**
+     * Money confirmed for this loan (money movement step 1, 2026-11-04): a deposit For: Loan a second person approved,
+     * or a mobile-money request the rail confirmed. Applies at most what the loan owes, interest first; anything above
+     * that is published as {@code policyloan.LoanOverpaid}, so it is posted and never silently kept.
+     */
+    LoanView applyConfirmedRepayment(UUID loanId, BigDecimal amount, String currency, String paymentReference,
+                                     String receiptMethod, UUID paymentId, String recordedBy);
 
     // Driven by policyloan.application.PaymentEventListener consuming payment's confirmation
     // events (M5). Formerly internal-only test seams standing in for those events.

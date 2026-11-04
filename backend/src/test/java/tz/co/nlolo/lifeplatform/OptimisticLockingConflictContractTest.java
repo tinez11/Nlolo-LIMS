@@ -109,7 +109,7 @@ class OptimisticLockingConflictContractTest {
             new BigDecimal("12.0"), LoanStatus.DISBURSED));
         // Exactly what Spring Data JPA raises when `UPDATE ... WHERE version = N` matches zero
         // rows: the loser of two concurrent repayments against the same DISBURSED loan.
-        when(policyLoanApi.recordRepayment(any(), any(), anyString(), anyString(), anyString()))
+        when(policyLoanApi.applyConfirmedRepayment(any(), any(), anyString(), anyString(), any(), any(), anyString()))
             .thenThrow(new ObjectOptimisticLockingFailureException("policyloan.domain.PolicyLoan", loanId));
 
         mockMvc.perform(post("/loans/{loanId}/repayments", loanId)
@@ -156,7 +156,7 @@ class OptimisticLockingConflictContractTest {
         when(policyLoanApi.getLoan(loanId)).thenReturn(new LoanView(loanId, "POL-TEST-0003",
             new BigDecimal("500000.00"), "TZS", new BigDecimal("500000.00"), "TZS",
             new BigDecimal("12.0"), LoanStatus.DISBURSED));
-        when(policyLoanApi.recordRepayment(any(), any(), anyString(), anyString(), anyString()))
+        when(policyLoanApi.applyConfirmedRepayment(any(), any(), anyString(), anyString(), any(), any(), anyString()))
             .thenThrow(new IllegalStateException("something genuinely unexpected"));
 
         mockMvc.perform(post("/loans/{loanId}/repayments", loanId)

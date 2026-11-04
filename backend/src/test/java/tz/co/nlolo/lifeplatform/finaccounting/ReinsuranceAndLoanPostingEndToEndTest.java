@@ -627,8 +627,8 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             .isEqualByComparingTo(principal);
 
         TenantContext.set(tenantId);
-        LoanView afterFirstHalf = policyLoanApi.recordRepayment(originated.loanId(), half, CURRENCY,
-            "repay-ref-reins-loan-e2e-1", "finance-officer-reins-loan-01");
+        LoanView afterFirstHalf = policyLoanApi.applyConfirmedRepayment(originated.loanId(), half, CURRENCY,
+            "repay-ref-reins-loan-e2e-1", "MOBILE_MONEY", UUID.randomUUID(), "finance-officer-reins-loan-01");
         assertThat(afterFirstHalf.status())
             .as("a partial repayment leaves the loan REPAYING, not SETTLED").isEqualTo(LoanStatus.REPAYING);
         assertThat(afterFirstHalf.outstandingBalance()).isEqualByComparingTo(half);
@@ -639,8 +639,8 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             .as("the first partial repayment must post exactly one journal entry").hasSize(1);
 
         TenantContext.set(tenantId);
-        LoanView afterSecondHalf = policyLoanApi.recordRepayment(originated.loanId(), half, CURRENCY,
-            "repay-ref-reins-loan-e2e-2", "finance-officer-reins-loan-01");
+        LoanView afterSecondHalf = policyLoanApi.applyConfirmedRepayment(originated.loanId(), half, CURRENCY,
+            "repay-ref-reins-loan-e2e-2", "MOBILE_MONEY", UUID.randomUUID(), "finance-officer-reins-loan-01");
         assertThat(afterSecondHalf.status())
             .as("the repayment that clears the balance settles the loan").isEqualTo(LoanStatus.SETTLED);
         assertThat(afterSecondHalf.outstandingBalance()).isEqualByComparingTo(BigDecimal.ZERO);

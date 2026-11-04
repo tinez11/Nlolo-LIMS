@@ -115,8 +115,8 @@ public class PolicyLoanController {
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         LoanView existing = policyLoanApi.getLoan(loanId);
         enforceCustomerOwnPolicyOnly(existing.policyNumber(), jwt, authentication);
-        LoanView loan = policyLoanApi.recordRepayment(loanId, new BigDecimal(request.amount().amount()), request.amount().currencyCode(),
-            request.paymentReference(), jwt.getSubject());
+        LoanView loan = policyLoanApi.applyConfirmedRepayment(loanId, new BigDecimal(request.amount().amount()), request.amount().currencyCode(),
+            request.paymentReference(), null, UUID.randomUUID(), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(LoanResponseDto.from(loan));
     }
 

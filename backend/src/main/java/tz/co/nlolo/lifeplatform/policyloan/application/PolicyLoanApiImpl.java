@@ -195,60 +195,55 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
 
     @Override
     @Transactional
-    public LoanView recordRepayment(UUID loanId, BigDecimal amount, String currency, String paymentReference, String recordedBy) {
+    public LoanView applyConfirmedRepayment(UUID loanId, BigDecimal amount, String currency, String paymentReference,
+                                            String receiptMethod, UUID paymentId, String recordedBy) {
         UUID tenantId = TenantContext.get();
         PolicyLoan loan = findLoanOrThrow(loanId, tenantId);
         if (!"DISBURSED".equals(loan.getStatus()) && !"REPAYING".equals(loan.getStatus())) {
             throw new LoanNotEligibleException("Loan " + loanId + " must be DISBURSED or REPAYING to accept a repayment (current: " + loan.getStatus() + ")");
         }
-        // M3 simplification (Global Constraints): every repayment is treated as immediately
-        // confirmed. The real trigger per Module Architecture is consuming
-        // payment.PaymentConfirmed (M5, not built) -- this makes the success path testable now.
-        // The saved transaction is CAPTURED, not discarded: its loanTransactionId is the only
-        // stable, per-repayment identity this event can carry, and finaccounting needs one (see
-        // the publish below). LoanTransaction.loanTransactionId is application-assigned in the
-        // constructor via UUID.randomUUID() -- NOT @GeneratedValue -- so it is already real and
-        // non-null here, whether or not Hibernate has flushed the INSERT yet.
-        // IFRS 17 I3b (guide E-03): interest accrued so far is paid first, then principal -- measured BEFORE this
-        // repayment is written, so the split is this repayment's own.
-        BigDecimal interestPart = position(loan).interestPartOf(amount);
-        LoanTransaction repayment = loanTransactionRepository.save(
-            new LoanTransaction(tenantId, loanId, "REPAYMENT", amount, currency, paymentReference));
-        loan.markRepaying();
-        BigDecimal outstanding = computeOutstandingBalance(loan);
-        if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
-            loan.markSettled();
+        // Money movement step 1 (2026-11-04): only CONFIRMED money reaches here -- a deposit a second person approved, or
+        // a mobile-money request the rail confirmed. The loan takes at most what it owes; the rest is the payer's,
+        // announced as LoanOverpaid so it is posted (2128) and, from step 2, held on the policy balance. Before this a
+        // typed-in repayment counted at once, and an overpayment drove principal below zero and was never given back.
+        BigDecimal owed = computeOutstandingBalance(loan).max(BigDecimal.ZERO);
+        BigDecimal applied = amount.min(owed);
+        BigDecimal surplus = amount.subtract(applied);
+        String method = receiptMethod == null ? "MOBILE_MONEY" : receiptMethod;
+
+        if (applied.signum() > 0) {
+            // IFRS 17 I3b (guide E-03): interest accrued so far is paid first, then principal -- measured BEFORE this
+            // repayment is written, so the split is this repayment's own.
+            BigDecimal interestPart = position(loan).interestPartOf(applied);
+            LoanTransaction repayment = loanTransactionRepository.save(
+                new LoanTransaction(tenantId, loanId, "REPAYMENT", applied, currency, paymentReference));
+            loan.markRepaying();
+            BigDecimal outstanding = computeOutstandingBalance(loan);
+            if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
+                loan.markSettled();
+            }
+            policyLoanRepository.save(loan);
+            // Published on every repayment, partial ones included: each is cash arriving. loanTransactionId is the
+            // posting's idempotency key -- unique per repayment, stable across a redelivery (M9: keyed on loanId, the
+            // second partial repayment was dropped as a false redelivery and the loan receivable never cleared).
+            eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanRepaid", tenantId,
+                Map.of("loanId", loanId, "loanTransactionId", repayment.getLoanTransactionId(),
+                       "policyNumber", loan.getPolicyNumber(),
+                       "interestAmount", interestPart.toPlainString(),
+                       "principalAmount", applied.subtract(interestPart).toPlainString(),
+                       "amount", Map.of("amount", applied.toPlainString(), "currencyCode", currency),
+                       "repaidAt", Instant.now().toString(),
+                       // How the money came in: the ledger posts it to the account it reached (was always 1140).
+                       "receiptMethod", method,
+                       "outstandingBalance", Map.of("amount", outstanding.max(BigDecimal.ZERO).toPlainString(),
+                                                    "currencyCode", loan.getPrincipalCurrency()))));
         }
-        policyLoanRepository.save(loan);
-
-        // loanTransactionId added by M9's final-review fix wave, and it is NOT cosmetic --
-        // it closes a silent financial misstatement.
-        //
-        // This publish is deliberately UNGUARDED (unlike markDisbursed/markDisbursementFailed
-        // above, which each publish only on a real transition) because the loan model genuinely
-        // supports REPEATABLE PARTIAL repayments: PolicyLoanApiIntegrationTest
-        // .repaymentReducesOutstandingBalanceAndSettlesAtZero pays 200,000 then 300,000 against a
-        // 500,000 loan, and BOTH are real accounting events -- cash arrived twice. Every partial
-        // repayment therefore must and does emit its own LoanRepaid.
-        //
-        // The bug that made this field necessary: finaccounting's PolicyLoanEventListener keyed its
-        // journal-entry idempotency (FinaccountingApiImpl.postEntry's
-        // existsByTenantIdAndSourceEventAndSourceRef fast-path) on loanId alone. loanId is stable
-        // across every repayment of the same loan, so the SECOND partial repayment looked exactly
-        // like a redelivery of the first and was silently dropped -- no exception, no failure
-        // metric, no alert, and 1400 Policy Loan Receivable never cleared. loanTransactionId is
-        // unique per repayment yet stable across a genuine redelivery of the same repayment, which
-        // is precisely the idempotency key that path needs. LoanDisbursed keeps keying on loanId:
-        // a loan is disbursed exactly once, so there that key is still correct.
-        eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanRepaid", tenantId,
-            Map.of("loanId", loanId, "loanTransactionId", repayment.getLoanTransactionId(),
-                   "policyNumber", loan.getPolicyNumber(),
-                   "interestAmount", interestPart.toPlainString(),
-                   "principalAmount", amount.subtract(interestPart).toPlainString(),
-                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency),
-                   "repaidAt", Instant.now().toString(),
-                   "outstandingBalance", Map.of("amount", outstanding.max(BigDecimal.ZERO).toPlainString(), "currencyCode", loan.getPrincipalCurrency()))));
-
+        if (surplus.signum() > 0) {
+            eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanOverpaid", tenantId,
+                Map.of("paymentId", paymentId, "loanId", loanId, "policyNumber", loan.getPolicyNumber(),
+                       "amount", Map.of("amount", surplus.setScale(2).toPlainString(), "currencyCode", currency),
+                       "receiptMethod", method, "paymentReference", paymentReference)));
+        }
         return toView(loan);
     }
 
