@@ -1,3 +1,5 @@
+import { barredAsOwn } from '@/lib/ownWork';
+
 /**
  * The IFRS 17 engine period page's rules (IFRS 17 I5a). Pure: no React, no store. The server enforces every one of
  * them; these only decide what the page offers.
@@ -19,9 +21,9 @@ export const FIGURE_LABEL: Record<string, string> = {
   RI_CSM: 'Reinsurance CSM',
 };
 
-/** A finance approver decides a validated run they did not upload. */
+/** A finance approver decides a validated run they did not upload -- or did, holding ifrs17.approve-own (2026-11-04). */
 export function canDecide(run: { status: string; uploadedBy: string }, viewer: string | null | undefined, isApprover: boolean): boolean {
-  return isApprover && run.status === 'VALIDATED' && !!viewer && viewer !== run.uploadedBy;
+  return isApprover && run.status === 'VALIDATED' && !!viewer && !barredAsOwn(viewer, run.uploadedBy, 'ifrs17');
 }
 
 /** A finance approver accepts an explanation someone else wrote. */

@@ -46,8 +46,12 @@ public class ReinsuranceStatements {
     private final Bordereaux bordereaux;
     private final ApplicationEventPublisher events;
 
+    /** Approving a statement one prepared, for a company with one finance person (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
+
     ReinsuranceStatements(StatementStore store, ReinsuranceTreatyRepository treaties, Bordereaux bordereaux,
-                          ApplicationEventPublisher events) {
+                          ApplicationEventPublisher events, tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.store = store;
         this.treaties = treaties;
         this.bordereaux = bordereaux;
@@ -243,8 +247,12 @@ public class ReinsuranceStatements {
             throw new StatementStateException("Only a submitted statement can be " + action + "d; this one is "
                 + row.status());
         }
+        // Unless they hold reinsurance.approve-own (2026-11-04): a company with one finance person, recorded.
         if (row.preparer().equals(by)) {
-            throw new StatementStateException("You prepared this statement; a second person must " + action + " it");
+            if (!ownWork.mayActAlone("reinsurance.approve-own")) {
+                throw new StatementStateException("You prepared this statement; a second person must " + action + " it");
+            }
+            ownWork.record("Reinsurance statement " + action + "d by its preparer", id.toString(), null, by);
         }
         return row;
     }

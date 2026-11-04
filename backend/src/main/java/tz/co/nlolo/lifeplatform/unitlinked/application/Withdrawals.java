@@ -70,11 +70,15 @@ class Withdrawals implements UnitsPricedListener {
     private final ProductApi productApi;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    /** Approving one's own unit withdrawal, for a company with one finance person (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     Withdrawals(UnitLinkedWithdrawalRequestRepository withdrawals, SwitchRequestRepository switches, PendingOrderRepository orders,
                 UnitEntryRepository entries, FundRepository funds, FundPriceRepository prices,
                 @org.springframework.context.annotation.Lazy UnitLedger ledger, SurrenderCharges charges, PolicyApi policyApi,
-                ProductApi productApi, ApplicationEventPublisher events, @Qualifier("unitLinkedClock") Clock clock) {
+                ProductApi productApi, ApplicationEventPublisher events, @Qualifier("unitLinkedClock") Clock clock,
+                tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.withdrawals = withdrawals;
         this.switches = switches;
         this.orders = orders;
@@ -129,7 +133,12 @@ class Withdrawals implements UnitsPricedListener {
         PolicyView policy = policyApi.getPolicy(request.getPolicyNumber());
         check(policy, request.getGrossAmount(), request.getNamed(), request.getWithdrawalId());
         Instant at = clock.instant();
+        if (ownWork.mayActAlone("accounts.approve-own")) request.allowActingAlone();
         request.approve(by, at);
+        if (request.isActedAlone()) {
+            ownWork.record("Unit withdrawal approved by its requester", withdrawalId.toString(),
+                request.getPolicyNumber(), by);
+        }
         Map<UUID, BigDecimal> amounts = request.getNamed().isEmpty()
             ? proRata(request.getPolicyNumber(), request.getGrossAmount())
             : namedAmounts(request.getNamed());

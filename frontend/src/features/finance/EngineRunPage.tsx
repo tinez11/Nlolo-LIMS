@@ -1,3 +1,4 @@
+import { barredAsOwn } from '@/lib/ownWork';
 import { can } from '@/auth/access';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from 'react-oidc-context';
@@ -111,7 +112,7 @@ function Run({ run: r }: { run: EngineRunView }) {
         ))}
 
         {canDecide(r, identity.subject, approver) && <Decision run={r} />}
-        {r.status === 'VALIDATED' && identity.subject === r.uploadedBy && (
+        {r.status === 'VALIDATED' && barredAsOwn(identity.subject, r.uploadedBy, 'ifrs17') && (
           <p className="text-sm text-muted-foreground">A finance approver other than you will approve or reject it.</p>
         )}
         {r.reconciliation.length > 0 && <Reconciliation run={r} viewer={identity.subject} approver={approver} />}

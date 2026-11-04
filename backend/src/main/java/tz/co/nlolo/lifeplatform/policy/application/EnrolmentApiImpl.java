@@ -71,6 +71,8 @@ public class EnrolmentApiImpl implements EnrolmentApi {
     private final DocumentApi documentApi;
     private final ApplicationEventPublisher eventPublisher;
     private final CreditLifeAgreements agreements;
+    /** Accepting a file one uploaded, for a company with one person on credit life (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     public EnrolmentApiImpl(EnrolmentSubmissionRepository submissionRepository,
                              EnrolmentSubmissionRowRepository rowRepository,
@@ -80,7 +82,9 @@ public class EnrolmentApiImpl implements EnrolmentApi {
                              PolicyApi policyApi, DocumentApi documentApi,
                              PartyApi partyApi,
                              ApplicationEventPublisher eventPublisher,
-                             CreditLifeAgreements agreements) {
+                             CreditLifeAgreements agreements,
+                             tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.agreements = agreements;
         this.submissionRepository = submissionRepository;
         this.rowRepository = rowRepository;
@@ -197,6 +201,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         GroupScheme scheme = findScheme(submission.getPolicyNumber(), tenantId);
 
         // Refuse BEFORE enrolling anybody, so a rejected acceptance leaves no members.
+        if (ownWork.mayActAlone("schemes.enrolments-own")) submission.allowActingAlone();
         try {
             submission.requireAcceptableBy(acceptedBy);
         } catch (IllegalStateException e) {
@@ -257,6 +262,10 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         }
 
         submission.accept(acceptedBy, enrolled, premiumTotal, statedTotal);
+        if (submission.isActedAlone()) {
+            ownWork.record("Credit-life new-loans file accepted by its uploader", submissionId.toString(),
+                submission.getPolicyNumber(), acceptedBy);
+        }
 
         BigDecimal variance = submission.premiumVariance();
         if (variance != null && variance.signum() != 0) {

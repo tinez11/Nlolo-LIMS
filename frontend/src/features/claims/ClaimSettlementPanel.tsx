@@ -1,3 +1,4 @@
+import { mayActAlone } from '@/lib/ownWork';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { useAuth } from 'react-oidc-context';
@@ -114,7 +115,9 @@ export function ClaimSettlementPanel({
   // Separation of duties, said before anyone presses Approve (2026-10-29): whoever assessed this claim may not decide
   // it. The server refuses that anyway; offering the form only to have it refused, with a raw id, was the bug.
   const viewer = readIdentity(useAuth().user?.access_token)?.subject ?? null;
-  const viewerAssessed = viewer !== null && (assessmentsResource.data ?? []).some((a) => a.assessor === viewer);
+  // Barred from deciding a claim they assessed -- unless they hold claims.settle-own (2026-11-04).
+  const viewerAssessed = viewer !== null && (assessmentsResource.data ?? []).some((a) => a.assessor === viewer)
+    && !mayActAlone('claims');
   const recommended = latestAssessment?.recommendedAmount ?? null;
 
   const form = useForm<SettlementDecisionFormValues>({

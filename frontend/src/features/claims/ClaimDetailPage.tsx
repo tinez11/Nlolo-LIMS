@@ -1,3 +1,4 @@
+import { mayActAlone } from '@/lib/ownWork';
 import { can } from '@/auth/access';
 import { useEffect } from 'react';
 import { useBreadcrumb } from '@/lib/cameFrom';
@@ -70,7 +71,8 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
   useEffect(() => {
     if (claimId && seesAssessments) void loadAssessments(claimId);
   }, [claimId, seesAssessments, loadAssessments]);
-  const viewerAssessed = (assessments.data ?? []).some((a) => a.assessor === identity?.subject);
+  // An assessor deciding their own claim is barred -- unless they hold claims.settle-own (2026-11-04).
+  const viewerAssessed = (assessments.data ?? []).some((a) => a.assessor === identity?.subject) && !mayActAlone('claims');
 
   const canAssess =
     roles.CLAIMS_ASSESSOR &&

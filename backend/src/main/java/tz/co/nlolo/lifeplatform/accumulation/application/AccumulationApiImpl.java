@@ -70,7 +70,9 @@ public class AccumulationApiImpl implements AccumulationApi {
                                TransferInRepository transfers, AdjustmentRequestRepository adjustments,
                                ApplicationEventPublisher events, StatementRepository statementRepository,
                                DocumentApi documentApi, IdempotentRequests keyed, Deposits deposits,
-                               ChosenCharges chosenCharges, TermAccountRepository termAccounts) {
+                               ChosenCharges chosenCharges, TermAccountRepository termAccounts,
+                               tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.chosenCharges = chosenCharges;
         this.termAccounts = termAccounts;
         this.keyed = keyed;
@@ -136,7 +138,12 @@ public class AccumulationApiImpl implements AccumulationApi {
         WithdrawalRequest request = withdrawals.findById(withdrawalId)
             .orElseThrow(() -> new AccumulationStateException("No withdrawal " + withdrawalId));
         Account account = loadOpen(request.getPolicyNumber());
+        if (ownWork.mayActAlone("accounts.approve-own")) request.allowActingAlone();
         request.approve(approvedBy);
+        if (request.isActedAlone()) {
+            ownWork.record("Withdrawal approved by its requester", withdrawalId.toString(), request.getPolicyNumber(),
+                approvedBy);
+        }
         // Again at approval: a month-end fee may have landed since the request.
         refuseBelowMinimum(account, request.getAmount());
         List<LedgerService.Line> lines = new java.util.ArrayList<>();
@@ -163,7 +170,12 @@ public class AccumulationApiImpl implements AccumulationApi {
     public WithdrawalView rejectWithdrawal(UUID withdrawalId, String rejectedBy, String reason) {
         WithdrawalRequest request = withdrawals.findById(withdrawalId)
             .orElseThrow(() -> new AccumulationStateException("No withdrawal " + withdrawalId));
+        if (ownWork.mayActAlone("accounts.approve-own")) request.allowActingAlone();
         request.reject(rejectedBy, reason);
+        if (request.isActedAlone()) {
+            ownWork.record("Withdrawal refused by its requester", withdrawalId.toString(), request.getPolicyNumber(),
+                rejectedBy);
+        }
         return toView(withdrawals.save(request));
     }
 
@@ -472,7 +484,12 @@ public class AccumulationApiImpl implements AccumulationApi {
         AdjustmentRequest request = adjustments.findById(adjustmentId)
             .orElseThrow(() -> new AccumulationStateException("No adjustment " + adjustmentId));
         loadOpen(request.getPolicyNumber());
+        if (ownWork.mayActAlone("accounts.approve-own")) request.allowActingAlone();
         request.approve(approvedBy);
+        if (request.isActedAlone()) {
+            ownWork.record("Account adjustment approved by its proposer", adjustmentId.toString(),
+                request.getPolicyNumber(), approvedBy);
+        }
         ledger.post(request.getPolicyNumber(), new LedgerService.Source("adjustment", "adjustment:" + adjustmentId),
             List.of(LedgerService.Line.of(EntryType.ADJUSTMENT, request.getAmount(), LocalDate.now(), request.getReason())),
             request.getProposedBy(), approvedBy);
@@ -484,7 +501,12 @@ public class AccumulationApiImpl implements AccumulationApi {
     public AdjustmentView rejectAdjustment(UUID adjustmentId, String rejectedBy) {
         AdjustmentRequest request = adjustments.findById(adjustmentId)
             .orElseThrow(() -> new AccumulationStateException("No adjustment " + adjustmentId));
+        if (ownWork.mayActAlone("accounts.approve-own")) request.allowActingAlone();
         request.reject(rejectedBy);
+        if (request.isActedAlone()) {
+            ownWork.record("Account adjustment refused by its proposer", adjustmentId.toString(),
+                request.getPolicyNumber(), rejectedBy);
+        }
         return toView(adjustments.save(request));
     }
 
@@ -1324,7 +1346,12 @@ public class AccumulationApiImpl implements AccumulationApi {
             .orElseThrow(() -> new AccumulationStateException("No rate declaration " + declarationId));
         // Again at approval: the month-end run may have passed the date since it was proposed.
         refuseIfReachingBack(declaration.getProductId(), declaration.getEffectiveFrom());
+        if (ownWork.mayActAlone("products.declare-approve-own")) declaration.allowActingAlone();
         declaration.approve(approvedBy);
+        if (declaration.isActedAlone()) {
+            ownWork.record("Credited interest rate approved by its proposer", declarationId.toString(), null,
+                approvedBy);
+        }
         try {
             // saveAndFlush so ux_rate_declaration_effective fires HERE, inside the catch -- a plain
             // save would flush at commit, outside it, and the caller would meet a 500.
@@ -1606,6 +1633,8 @@ public class AccumulationApiImpl implements AccumulationApi {
     }
 
     private final ChosenCharges chosenCharges;
+    /** Approving one's own withdrawal, adjustment or rate, for a company with one finance person (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
     private final TermAccountRepository termAccounts;
 
     /** The Account charges the policy is charged by in the policy year {@code on} falls in; none on its version's rows. */

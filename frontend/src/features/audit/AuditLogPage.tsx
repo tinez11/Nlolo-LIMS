@@ -29,6 +29,9 @@ const MODULES = [
   'underwriting',
 ] as const;
 
+/** The journal's prefix for acts approved alone (`access.ActedAlone`, 2026-11-04). */
+const ACTED_ALONE = 'access';
+
 /**
  * `GET /audit-log` — the audit module's first read screen.
  *
@@ -46,7 +49,9 @@ export function AuditLogPage() {
   const [params, setParams] = useSearchParams();
 
   const moduleParam = params.get('module');
-  const module = moduleParam && (MODULES as readonly string[]).includes(moduleParam) ? moduleParam : undefined;
+  // `access` is the acts approved alone (2026-11-04): an auditor's list, so it has its own plain-words chip.
+  const module = moduleParam && ((MODULES as readonly string[]).includes(moduleParam) || moduleParam === ACTED_ALONE)
+    ? moduleParam : undefined;
   const page = Math.max(0, Number(params.get('page') ?? '0') || 0);
 
   const list = useAuditStore((s) => s.list);
@@ -204,6 +209,12 @@ export function AuditLogPage() {
               mono
               active={module === undefined}
               onClick={() => update({ module: undefined })}
+            />
+            {/* Every act someone approved alone, holding their area's "approve their own work": by name, for auditors. */}
+            <FilterChip
+              label="Approved alone"
+              active={module === ACTED_ALONE}
+              onClick={() => update({ module: ACTED_ALONE })}
             />
             {MODULES.map((value) => (
               <FilterChip

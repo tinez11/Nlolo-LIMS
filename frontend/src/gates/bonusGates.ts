@@ -1,5 +1,6 @@
 import type { BonusDeclarationView } from '@/api/types';
 import type { Gate } from './types';
+import { mayActAlone, SIGNING_OWN } from '@/lib/ownWork';
 
 /**
  * What the platform will refuse before a bonus declaration is approved. The wording is
@@ -12,7 +13,8 @@ const isSame = (viewer: string | undefined, other: string | null | undefined) =>
 
 export function approveDeclarationGates(declaration: BonusDeclarationView, viewerSubject: string | undefined): Gate[] {
   const proposed = declaration.status === 'PROPOSED';
-  const samePerson = isSame(viewerSubject, declaration.proposedBy);
+  const own = isSame(viewerSubject, declaration.proposedBy);
+  const samePerson = own && !mayActAlone('declarations');
   return [
     {
       ok: proposed,
@@ -28,7 +30,7 @@ export function approveDeclarationGates(declaration: BonusDeclarationView, viewe
       title: 'A second person approves',
       detail: samePerson
         ? 'A bonus declaration must be approved by someone other than the person who proposed it'
-        : 'You did not propose this declaration.',
+        : own ? SIGNING_OWN : 'You did not propose this declaration.',
     },
   ];
 }

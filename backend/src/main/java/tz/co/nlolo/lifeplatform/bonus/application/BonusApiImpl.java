@@ -38,12 +38,16 @@ public class BonusApiImpl implements BonusApi {
     private final SettlementRepository settlements;
     private final ParticipationGate gate;
     private final BonusApiImpl self;
+    /** Approving one's own declaration, for a company with one actuary (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     /** {@code self} is this bean's proxy: the drain must reach attachOne through it, or REQUIRES_NEW is ignored. */
     public BonusApiImpl(DeclarationRepository declarations, ParticipantRepository participants, BonusIdempotentRequests keyed,
                         StatusEventRepository statusEvents, AttachmentEntryRepository entries,
                         DeclarationOutcomeRepository outcomes, AttachmentLedger ledger, ProductApi productApi,
-                        SettlementRepository settlements, ParticipationGate gate, @Lazy BonusApiImpl self) {
+                        SettlementRepository settlements, ParticipationGate gate, @Lazy BonusApiImpl self,
+                        tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.declarations = declarations;
         this.participants = participants;
         this.keyed = keyed;
@@ -89,7 +93,11 @@ public class BonusApiImpl implements BonusApi {
     @Transactional
     public BonusDeclarationView approveDeclaration(UUID declarationId, String approvedBy) {
         Declaration d = load(declarationId);
+        if (ownWork.mayActAlone("products.declare-approve-own")) d.allowActingAlone();
         d.approve(approvedBy);
+        if (d.isActedAlone()) {
+            ownWork.record("Bonus declaration approved by its proposer", declarationId.toString(), null, approvedBy);
+        }
         try {
             // saveAndFlush so ux_declaration_valuation fires inside the catch, not at commit as a 500.
             return toView(declarations.saveAndFlush(d));

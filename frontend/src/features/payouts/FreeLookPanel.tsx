@@ -1,3 +1,4 @@
+import { mayActAlone, SIGNING_OWN } from '@/lib/ownWork';
 import { can } from '@/auth/access';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
@@ -276,14 +277,16 @@ function DecidedOrAwaiting({
   }
 
   const sameAsRequester = viewerSubject !== undefined && viewerSubject === cancellation.requestedBy;
+  // Their own too, holding payouts.approve-own (2026-11-04): a company with one finance person.
+  const alone = mayActAlone('payouts');
   const gates: Gate[] = [
     {
-      ok: !sameAsRequester,
+      ok: !sameAsRequester || alone,
       hard: true,
       title: 'A second person approves',
-      detail: sameAsRequester
-        ? 'You prepared this cancellation, so someone else must approve it.'
-        : 'You did not prepare this cancellation.',
+      detail: !sameAsRequester
+        ? 'You did not prepare this cancellation.'
+        : alone ? SIGNING_OWN : 'You prepared this cancellation, so someone else must approve it.',
     },
   ];
   const refused = gates.some((g) => !g.ok && g.hard);

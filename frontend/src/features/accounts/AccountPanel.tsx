@@ -1,3 +1,4 @@
+import { barredAsOwn } from '@/lib/ownWork';
 import { can } from '@/auth/access';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, PencilLine, RefreshCw } from 'lucide-react';
@@ -866,7 +867,8 @@ export function WithdrawalRow({
               <Button size="sm" variant="primary" disabled={refused} onClick={() => setArmed(true)}>
                 Approve
               </Button>
-              <Button size="sm" variant="outline" disabled={viewerSubject === withdrawal.requestedBy} onClick={() => setRejecting(true)}>
+              <Button size="sm" variant="outline" disabled={barredAsOwn(viewerSubject, withdrawal.requestedBy, 'accounts')}
+                onClick={() => setRejecting(true)}>
                 Reject
               </Button>
             </div>

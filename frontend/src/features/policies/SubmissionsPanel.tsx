@@ -1,3 +1,4 @@
+import { mayActAlone, SIGNING_OWN } from '@/lib/ownWork';
 import { ChevronDown, Download, FileSpreadsheet, FileText, Upload } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { useAuth } from 'react-oidc-context';
@@ -117,6 +118,8 @@ export function SubmissionsPanel({
   // Acceptance must be a second person: the one who sent the file is told so up front, not refused after a click.
   const viewer = readIdentity(useAuth().user?.access_token).subject;
   const sentByViewer = pending != null && viewer != null && pending.submittedBy === viewer;
+  // Unless they hold schemes.enrolments-own (2026-11-04): a company with one person on credit life accepts alone.
+  const barred = sentByViewer && !mayActAlone('creditLifeFiles');
   const mayDecide = can('schemes.enrolments');
   const earlier = submissions.filter((s) => s !== pending);
   const fileWord = kind === 'exits' ? 'loans-ending file' : 'joining file';
@@ -234,7 +237,7 @@ export function SubmissionsPanel({
       {(blockedBy || pending) && (
         <p className="border-b border-border bg-status-warning-bg px-4 py-2 text-sm text-status-warning-fg">
           {blockedBy ??
-            (sentByViewer
+            (barred
               ? 'Your file below is waiting for a colleague to accept it. The next file can be sent once it is decided.'
               : 'A file below is waiting for acceptance. The next file can be sent once it is decided.')}
         </p>
@@ -288,7 +291,7 @@ export function SubmissionsPanel({
               </div>
               {mayDecide && (
               <div className="flex shrink-0 flex-wrap gap-2">
-                {!sentByViewer && (
+                {!barred && (
                   <Button
                     type="button"
                     size="sm"
@@ -313,9 +316,11 @@ export function SubmissionsPanel({
             </div>
             <Outcome row={pending} appliedNoun={appliedNoun} />
             <p className="text-sm text-status-pending-fg">
-              {sentByViewer
+              {barred
                 ? `You sent this file, so a colleague must accept it. Nobody is ${appliedNoun} until they do.`
-                : `Nobody is ${appliedNoun} until a second person accepts this file.`}
+                : sentByViewer
+                  ? `${SIGNING_OWN} Nobody is ${appliedNoun} until it is accepted.`
+                  : `Nobody is ${appliedNoun} until a second person accepts this file.`}
             </p>
             <div className="-ml-3">{reportButton(pending)}</div>
             {confirming?.id === pending.submissionId && (

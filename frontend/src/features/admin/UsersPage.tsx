@@ -15,7 +15,7 @@ import { formatDate } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useIamStore } from '@/store/iamStore';
 
-const SHOWS = ['ACTIVE', 'DEACTIVATED', 'AWAITING_APPROVAL'] as const;
+const SHOWS = ['ACTIVE', 'DEACTIVATED'] as const;
 type Show = (typeof SHOWS)[number];
 
 /** A user's status as the badge reads it. */
@@ -24,9 +24,9 @@ export function staffUserStatus(u: Pick<StaffUser, 'active'>): string {
 }
 
 /**
- * Everyone who signs in to the staff console (2026-10-26): their role, branch and when they were last in. A change to
- * someone's access that waits for a second administrator is found with the Awaiting approval filter and decided on
- * that person's page, as a manual journal is approved on its own page.
+ * Everyone who signs in to the staff console (2026-10-26): their role, branch and when they were last in. Access changes
+ * apply at once since 2026-10-28, so there is no "awaiting approval" filter any more (removed 2026-11-04); a change
+ * left waiting from before still shows its badge and is settled on that person's page.
  */
 export function UsersPage() {
   const [params, setParams] = useSearchParams();
@@ -69,7 +69,7 @@ export function UsersPage() {
   }
 
   const rows = (users.data ?? []).filter((u) =>
-    show === 'ACTIVE' ? u.active : show === 'DEACTIVATED' ? !u.active : show === 'AWAITING_APPROVAL' ? u.pendingApproval : true);
+    show === 'ACTIVE' ? u.active : show === 'DEACTIVATED' ? !u.active : true);
 
   const count: Stat = {
     label: 'users',
@@ -161,8 +161,6 @@ export function UsersPage() {
               onClick={() => update({ show: 'ACTIVE' })} />
             <FilterChip label={<StatusBadge kind="staffUser" value="DEACTIVATED" />} bare active={show === 'DEACTIVATED'}
               onClick={() => update({ show: 'DEACTIVATED' })} />
-            <FilterChip label={<StatusBadge kind="accessChange" value="PENDING" label="Awaiting approval" />} bare
-              active={show === 'AWAITING_APPROVAL'} onClick={() => update({ show: 'AWAITING_APPROVAL' })} />
             <div className="relative ml-auto w-full max-w-55">
               <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input

@@ -53,7 +53,7 @@ export function ClaimsDashboardPanel({ range }: PanelProps) {
 
   const p = view.period;
   const span = describeRange(p.from, p.to);
-  const manager = view.queueStatus === 'SETTLEMENT_REQUESTED';
+  const manager = view.queueStatus === 'UNDER_ASSESSMENT';
   const list = (status: string) => `/staff/claims?status=${status}`;
   const paid = moneyPoints(view.paidSeries);
   const categories = monthCategories(view.paidSeries.map((m) => m.month));
@@ -63,9 +63,9 @@ export function ClaimsDashboardPanel({ range }: PanelProps) {
       label: manager ? 'Awaiting your decision' : 'Awaiting assessment',
       icon: Inbox,
       color: 'chart-2',
-      value: countValue(manager ? view.settlementRequested : view.registered),
+      value: countValue(manager ? view.underAssessment : view.registered),
       hint: manager ? 'assessed and recommended' : 'registered, not yet assessed',
-      to: list(manager ? 'SETTLEMENT_REQUESTED' : 'REGISTERED'),
+      to: list(manager ? 'UNDER_ASSESSMENT' : 'REGISTERED'),
     },
     {
       label: 'Registered',
@@ -98,8 +98,8 @@ export function ClaimsDashboardPanel({ range }: PanelProps) {
 
   const stages = [
     { status: 'REGISTERED', label: 'Registered, awaiting an assessor', n: view.registered, color: 'chart-2' as const },
-    { status: 'UNDER_ASSESSMENT', label: 'Under assessment', n: view.underAssessment, color: 'chart-3' as const },
-    { status: 'SETTLEMENT_REQUESTED', label: 'Awaiting a settlement decision', n: view.settlementRequested, color: 'chart-4' as const },
+    { status: 'UNDER_ASSESSMENT', label: 'Assessed, awaiting a decision', n: view.underAssessment, color: 'chart-3' as const },
+    { status: 'SETTLEMENT_REQUESTED', label: 'Approved, payment on its way', n: view.settlementRequested, color: 'chart-4' as const },
     { status: 'APPROVED', label: 'Approved, payout not made', n: view.approved, color: 'chart-1' as const },
     { status: 'REOPENED', label: 'Reopened', n: view.reopened, color: 'chart-5' as const },
   ];

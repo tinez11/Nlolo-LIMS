@@ -60,21 +60,26 @@ class PolicyActionSources {
         });
     }
 
-    /** The person who sent a file in may not accept it, so it is not their job. */
+    /**
+     * The person who sent a file in may not accept it, so it is not their job -- unless they hold
+     * schemes.enrolments-own (2026-11-04), when it is.
+     */
     @Bean
     ActionSource creditLifeFiles(EnrolmentSubmissionRepository enrolments, ExitSubmissionRepository exits,
-                                 PolicyRepository policies, PartyApi parties) {
+                                 PolicyRepository policies, PartyApi parties,
+                                 tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
         return ActionSource.forStaff("credit-life-file", "schemes.enrolments", "Accept or withdraw it",
             (viewer, limit) -> {
                 record File(String id, String policyNumber, String what, java.time.Instant at) {}
                 List<File> files = new ArrayList<>();
                 UUID tenant = TenantContext.get();
+                boolean alone = ownWork.mayActAlone("schemes.enrolments-own");
                 enrolments.findByTenantIdAndStatusOrderBySubmittedAtDesc(tenant, SubmissionStatus.PENDING).stream()
-                    .filter(s -> !Objects.equals(s.getSubmittedBy(), viewer.subject()))
+                    .filter(s -> alone || !Objects.equals(s.getSubmittedBy(), viewer.subject()))
                     .forEach(s -> files.add(new File(s.getSubmissionId().toString(), s.getPolicyNumber(),
                         "New-loans file", s.getSubmittedAt())));
                 exits.findByTenantIdAndStatusOrderBySubmittedAtDesc(tenant, SubmissionStatus.PENDING).stream()
-                    .filter(s -> !Objects.equals(s.getSubmittedBy(), viewer.subject()))
+                    .filter(s -> alone || !Objects.equals(s.getSubmittedBy(), viewer.subject()))
                     .forEach(s -> files.add(new File(s.getSubmissionId().toString(), s.getPolicyNumber(),
                         "Loans-ended file", s.getSubmittedAt())));
                 Map<String, UUID> holders = new java.util.HashMap<>();

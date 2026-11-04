@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useRef, useState } from 'react';
 import { useForm, useWatch, Controller } from 'react-hook-form';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CLAIM_TYPES, type ClaimType, type CoveredLifeView, type GroupFuneralFamilyView, type PolicyMemberView } from '@/api/types';
 import { getCoveredLives } from '@/api/funeral';
 import { listGroupFuneralFamilies } from '@/api/groupFuneral';
@@ -62,6 +62,15 @@ function memberLabel(m: PolicyMemberView) {
 export function RegisterClaimPage() {
   const navigate = useNavigate();
   const [attempt] = useState<MutationAttempt>(() => startMutation());
+  // Arrived from a person, a policy or a scheme member (2026-11-04, quick actions): what is known is filled in.
+  const [params] = useSearchParams();
+  const given = {
+    claimant: params.get('claimant') ?? '',
+    policy: params.get('policy') ?? '',
+    member: params.get('member') ?? '',
+    // The member's name, so the schedule opens filtered to them even on a roll longer than one page.
+    who: params.get('who') ?? '',
+  };
 
   const registerClaim = useClaimStore((s) => s.registerClaim);
   const resetRegisterClaim = useClaimStore((s) => s.resetRegisterClaim);
@@ -97,9 +106,9 @@ export function RegisterClaimPage() {
         registerClaimFormSchema({ productCategory: productCategoryRef.current }),
       )(values, context, options),
     defaultValues: {
-      policyNumber: '',
-      policyMemberId: '',
-      claimantPartyId: '',
+      policyNumber: given.policy,
+      policyMemberId: given.member,
+      claimantPartyId: given.claimant,
       dateOfEvent: '',
       details: blankDetailsFor('DEATH'),
       coveredLifeId: '',
@@ -123,7 +132,8 @@ export function RegisterClaimPage() {
    * with no recorded connection, so a chooser that could ONLY offer connected policies would
    * make this console stricter than the platform it is a console for.
    */
-  const [manualPolicyEntry, setManualPolicyEntry] = useState(false);
+  // A policy given with no claimant (a scheme member's row) is shown typed in, since no claimant's list holds it yet.
+  const [manualPolicyEntry, setManualPolicyEntry] = useState(given.policy !== '' && given.claimant === '');
   const [policyFilter, setPolicyFilter] = useState('');
 
   /**
@@ -231,7 +241,7 @@ export function RegisterClaimPage() {
   }
   const members = usePolicyStore(selectMembers(policyNumber));
   const loadMembers = usePolicyStore((s) => s.loadMembers);
-  const [memberQuery, setMemberQuery] = useState('');
+  const [memberQuery, setMemberQuery] = useState(given.who);
   const memberTotal = members.data?.page?.totalElements ?? members.data?.items?.length ?? 0;
 
   useEffect(() => {
@@ -247,6 +257,14 @@ export function RegisterClaimPage() {
     return () => clearTimeout(timer);
   }, [insuresManyLives, policyNumber, memberQuery, loadMembers]);
 
+  // The schedule arrives after the form: a member given in the address is chosen again once their option exists,
+  // else the select shows "Choose the member…" over a value it does not display.
+  const givenMember = given.member;
+  const givenMemberListed = (members.data?.items ?? []).some((m) => m.policyMemberId === givenMember);
+  useEffect(() => {
+    if (givenMember && givenMemberListed) setValue('policyMemberId', givenMember);
+  }, [givenMember, givenMemberListed, setValue]);
+
   /**
    * Read by the resolver above at validation time. A ref rather than state because it must not
    * trigger a render of its own -- and written in an effect rather than during render, which
@@ -260,8 +278,10 @@ export function RegisterClaimPage() {
   // Clearing it when the policy stops being a scheme matters: a member id left behind from a
   // previously-typed scheme number would be sent against an individual policy and refused.
   useEffect(() => {
-    if (!insuresManyLives) setValue('policyMemberId', '');
-  }, [insuresManyLives, setValue]);
+    // Only once the policy is read: before that every policy looks like one life, and a member arriving
+    // pre-filled from a scheme's roll would be wiped while the page loads.
+    if (policy.data && !insuresManyLives) setValue('policyMemberId', '');
+  }, [policy.data, insuresManyLives, setValue]);
 
   // react-hook-form's FieldErrors type does not narrow per-branch on a
   // discriminated union field the way the VALUE type does -- `errors.details` is

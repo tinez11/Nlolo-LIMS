@@ -19,7 +19,7 @@ const VIEW = {
   approved: 4,
   reopened: 2,
   settled: 128,
-  queueStatus: 'SETTLEMENT_REQUESTED' as const,
+  queueStatus: 'UNDER_ASSESSMENT' as const,
   queue: [
     {
       claimId: 'claim-1',
@@ -27,7 +27,7 @@ const VIEW = {
       claimantPartyId: 'party-1',
       claimType: 'DEATH' as const,
       dateOfEvent: '2026-09-29',
-      status: 'SETTLEMENT_REQUESTED' as const,
+      status: 'UNDER_ASSESSMENT' as const,
     },
   ],
   openDocumentRequests: 11,
@@ -64,9 +64,9 @@ describe('ClaimsDashboardPanel', () => {
   it("opens the manager's own queue and reads the range", async () => {
     renderScreen(<ClaimsDashboardPanel range={RANGE} />);
 
-    expect(await screen.findByRole('link', { name: /^6 Awaiting your decision/ })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: /^9 Awaiting your decision/ })).toHaveAttribute(
       'href',
-      '/staff/claims?status=SETTLEMENT_REQUESTED',
+      '/staff/claims?status=UNDER_ASSESSMENT',
     );
     expect(getClaimsDashboard).toHaveBeenCalledWith(RANGE);
   });

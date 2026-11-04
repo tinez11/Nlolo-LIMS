@@ -1,3 +1,4 @@
+import { barredAsOwn, SIGNING_OWN } from '@/lib/ownWork';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from 'react-oidc-context';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -44,7 +45,8 @@ function Journal({ journal: j }: { journal: ManualJournalView }) {
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const isPreparer = identity.subject === j.preparer;
-  const mayDecide = canApproveJournals(identity) && !isPreparer;
+  // Their own too, holding ledger.approve-own (2026-11-04): a company with one finance person.
+  const mayDecide = canApproveJournals(identity) && !barredAsOwn(identity.subject, j.preparer, 'ledger');
 
   return (
     <>
@@ -298,8 +300,11 @@ function Actions({ journal: j, isPreparer, mayDecide }: { journal: ManualJournal
         {j.status === 'SUBMITTED' && !isPreparer && !mayDecide && (
           <p className="text-sm text-muted-foreground">Awaiting a finance approver.</p>
         )}
-        {j.status === 'SUBMITTED' && isPreparer && (
+        {j.status === 'SUBMITTED' && isPreparer && !mayDecide && (
           <p className="text-sm text-muted-foreground">A finance approver other than you will approve or reject it.</p>
+        )}
+        {j.status === 'SUBMITTED' && isPreparer && mayDecide && (
+          <p className="text-sm text-muted-foreground">{SIGNING_OWN}</p>
         )}
         {j.status === 'APPROVED' && !j.reversesJournalId && (
           <Button type="button" size="sm" variant="outline" disabled={busy}

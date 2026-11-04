@@ -22,6 +22,22 @@ import java.util.UUID;
 @Table(name = "exit_submission", schema = "policy")
 public class ExitSubmission {
 
+    /**
+     * Approved by the person who prepared it (2026-11-04): they hold their area's "approve their own work", and the
+     * row says so -- the two-person rule refuses it otherwise.
+     */
+    @jakarta.persistence.Column(name = "acted_alone", nullable = false)
+    private boolean actedAlone;
+
+    /** Set for one request by a person allowed to act alone; never stored. */
+    @jakarta.persistence.Transient
+    private boolean mayActAlone;
+
+    /** The approver may be the person who prepared this: they hold their area's "approve their own work". */
+    public void allowActingAlone() { this.mayActAlone = true; }
+
+    public boolean isActedAlone() { return actedAlone; }
+
     @Id
     @GeneratedValue
     @UuidGenerator
@@ -106,9 +122,12 @@ public class ExitSubmission {
             throw new IllegalArgumentException("Accepting an exits file needs the accepter's identity");
         }
         if (acceptedBy.equals(submittedBy)) {
-            // In words, not the person's id: this is read on the screen by the person it names.
-            throw new IllegalStateException("You uploaded this file, so you cannot accept an exits file you"
-                + " uploaded yourself: a second person must review it and accept it");
+            if (!mayActAlone) {
+                // In words, not the person's id: this is read on the screen by the person it names.
+                throw new IllegalStateException("You uploaded this file, so you cannot accept an exits file you"
+                    + " uploaded yourself: a second person must review it and accept it");
+            }
+            actedAlone = true;
         }
     }
 

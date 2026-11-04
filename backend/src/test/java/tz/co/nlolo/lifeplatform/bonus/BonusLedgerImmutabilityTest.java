@@ -33,7 +33,7 @@ class BonusLedgerImmutabilityTest {
     @BeforeAll
     static void migrate() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
-            "db-migrations/bonus/V1__create_bonus_schema.sql");
+            "db-migrations/bonus/V1__create_bonus_schema.sql", "db-migrations/bonus/V2__acted_alone.sql");
         try (Connection c = owner(); Statement s = c.createStatement()) {
             s.execute("ALTER ROLE app_role LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '" + APP_PASSWORD + "'");
             s.execute("INSERT INTO bonus.declaration (declaration_id, tenant_id, product_id, valuation_date, "

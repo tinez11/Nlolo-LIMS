@@ -128,18 +128,19 @@ class ManualJournals {
             + " WHERE tenant_id = ? AND manual_journal_id = ? AND status = ?", to, tenantId, id, from) == 1;
     }
 
-    boolean approve(UUID tenantId, UUID id, String approver, UUID journalEntryId) {
+    /** @param alone decided by its own preparer, who was allowed to (2026-11-04): the row says so */
+    boolean approve(UUID tenantId, UUID id, String approver, UUID journalEntryId, boolean alone) {
         return jdbc.update("UPDATE finaccounting.manual_journal SET status = 'APPROVED', decided_by = ?, decided_at = now(),"
-                + " journal_entry_id = ?, version = version + 1"
+                + " journal_entry_id = ?, acted_alone = ?, version = version + 1"
                 + " WHERE tenant_id = ? AND manual_journal_id = ? AND status = 'SUBMITTED'",
-            approver, journalEntryId, tenantId, id) == 1;
+            approver, journalEntryId, alone, tenantId, id) == 1;
     }
 
-    boolean reject(UUID tenantId, UUID id, String by, String reason) {
+    boolean reject(UUID tenantId, UUID id, String by, String reason, boolean alone) {
         return jdbc.update("UPDATE finaccounting.manual_journal SET status = 'REJECTED', decided_by = ?, decided_at = now(),"
-                + " decision_reason = ?, version = version + 1"
+                + " decision_reason = ?, acted_alone = ?, version = version + 1"
                 + " WHERE tenant_id = ? AND manual_journal_id = ? AND status = 'SUBMITTED'",
-            by, trim(reason, 500), tenantId, id) == 1;
+            by, trim(reason, 500), alone, tenantId, id) == 1;
     }
 
     void addDocument(UUID tenantId, UUID id, String ref) {

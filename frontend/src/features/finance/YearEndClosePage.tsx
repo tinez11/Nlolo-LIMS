@@ -1,3 +1,4 @@
+import { barredAsOwn } from '@/lib/ownWork';
 import { can } from '@/auth/access';
 import { useEffect, useState } from 'react';
 import { useAuth } from 'react-oidc-context';
@@ -76,7 +77,7 @@ function Close({ close: c }: { close: YearEndCloseView }) {
         )}
         <YearEndFigures close={c} />
         {canDecideClose(c, identity.subject, approver) && c.closeId && <Decision close={c} id={c.closeId} />}
-        {c.status === 'PREPARED' && identity.subject === c.preparedBy && (
+        {c.status === 'PREPARED' && barredAsOwn(identity.subject, c.preparedBy, 'ifrs17') && (
           <p className="text-sm text-muted-foreground">A finance approver other than you will approve or reject it.</p>
         )}
       </div>

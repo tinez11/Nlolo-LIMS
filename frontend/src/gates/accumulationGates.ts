@@ -1,5 +1,6 @@
 import type { AccountView, AdjustmentView, RateDeclarationView, WithdrawalView } from '@/api/types';
 import type { Gate } from './types';
+import { mayActAlone, SIGNING_OWN } from '@/lib/ownWork';
 
 /**
  * What the platform will refuse before money moves on a savings account -- and nothing it cannot
@@ -40,7 +41,8 @@ export function requestWithdrawalGates(account: AccountView, withdrawals: Withdr
 
 export function approveWithdrawalGates(withdrawal: WithdrawalView, viewerSubject: string | undefined): Gate[] {
   const requested = withdrawal.status === 'REQUESTED';
-  const samePerson = isSame(viewerSubject, withdrawal.requestedBy);
+  const own = isSame(viewerSubject, withdrawal.requestedBy);
+  const samePerson = own && !mayActAlone('accounts');
   return [
     {
       ok: requested,
@@ -54,14 +56,15 @@ export function approveWithdrawalGates(withdrawal: WithdrawalView, viewerSubject
       title: 'A second person approves',
       detail: samePerson
         ? 'A withdrawal must be approved by someone other than the person who requested it'
-        : 'You did not request this withdrawal.',
+        : own ? SIGNING_OWN : 'You did not request this withdrawal.',
     },
   ];
 }
 
 export function decideAdjustmentGates(adjustment: AdjustmentView, viewerSubject: string | undefined): Gate[] {
   const proposed = adjustment.status === 'PROPOSED';
-  const samePerson = isSame(viewerSubject, adjustment.proposedBy);
+  const own = isSame(viewerSubject, adjustment.proposedBy);
+  const samePerson = own && !mayActAlone('accounts');
   return [
     {
       ok: proposed,
@@ -75,14 +78,15 @@ export function decideAdjustmentGates(adjustment: AdjustmentView, viewerSubject:
       title: 'A second person decides',
       detail: samePerson
         ? 'An adjustment must be decided by someone other than the person who proposed it'
-        : 'You did not propose this adjustment.',
+        : own ? SIGNING_OWN : 'You did not propose this adjustment.',
     },
   ];
 }
 
 export function approveRateGates(declaration: RateDeclarationView, viewerSubject: string | undefined): Gate[] {
   const proposed = declaration.status === 'PROPOSED';
-  const samePerson = isSame(viewerSubject, declaration.proposedBy);
+  const own = isSame(viewerSubject, declaration.proposedBy);
+  const samePerson = own && !mayActAlone('declarations');
   return [
     {
       ok: proposed,
@@ -96,7 +100,7 @@ export function approveRateGates(declaration: RateDeclarationView, viewerSubject
       title: 'A second person approves',
       detail: samePerson
         ? 'A declared rate must be approved by someone other than the person who proposed it'
-        : 'You did not propose this rate.',
+        : own ? SIGNING_OWN : 'You did not propose this rate.',
     },
   ];
 }

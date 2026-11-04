@@ -14,6 +14,22 @@ import java.util.UUID;
 @Entity
 @Table(name = "declaration", schema = "bonus")
 public class Declaration {
+
+    /**
+     * Approved by the person who prepared it (2026-11-04): they hold their area's "approve their own work", and the
+     * row says so -- the two-person rule refuses it otherwise.
+     */
+    @jakarta.persistence.Column(name = "acted_alone", nullable = false)
+    private boolean actedAlone;
+
+    /** Set for one request by a person allowed to act alone; never stored. */
+    @jakarta.persistence.Transient
+    private boolean mayActAlone;
+
+    /** The approver may be the person who prepared this: they hold their area's "approve their own work". */
+    public void allowActingAlone() { this.mayActAlone = true; }
+
+    public boolean isActedAlone() { return actedAlone; }
     @Id @UuidGenerator @Column(name = "declaration_id") private UUID declarationId;
     @Column(name = "tenant_id", nullable = false) private UUID tenantId;
     @Column(name = "product_id", nullable = false) private UUID productId;
@@ -44,9 +60,10 @@ public class Declaration {
 
     public void approve(String by) {
         requireProposed();
-        if (by.equals(proposedBy)) {
+        if (by.equals(proposedBy) && !mayActAlone) {
             throw new BonusStateException("A bonus declaration must be approved by someone other than the person who proposed it");
         }
+        actedAlone = by.equals(proposedBy);
         this.status = DeclarationStatus.APPROVED.name();
         this.approvedBy = by;
         this.approvedAt = Instant.now();

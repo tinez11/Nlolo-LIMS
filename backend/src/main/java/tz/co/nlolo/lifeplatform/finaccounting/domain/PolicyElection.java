@@ -21,6 +21,22 @@ import java.util.UUID;
 @Table(name = "accounting_policy_election", schema = "finaccounting")
 public class PolicyElection {
 
+    /**
+     * Approved by the person who prepared it (2026-11-04): they hold their area's "approve their own work", and the
+     * row says so -- the two-person rule refuses it otherwise.
+     */
+    @jakarta.persistence.Column(name = "acted_alone", nullable = false)
+    private boolean actedAlone;
+
+    /** Set for one request by a person allowed to act alone; never stored. */
+    @jakarta.persistence.Transient
+    private boolean mayActAlone;
+
+    /** The approver may be the person who prepared this: they hold their area's "approve their own work". */
+    public void allowActingAlone() { this.mayActAlone = true; }
+
+    public boolean isActedAlone() { return actedAlone; }
+
     public enum Status { PROPOSED, APPROVED, REJECTED }
 
     @Id @Column(name = "election_id") private UUID electionId;
@@ -59,9 +75,10 @@ public class PolicyElection {
     /** A second person approves, naming the sign-off it rests on; it becomes the register's next version. */
     public void approve(String by, String signOff, int nextRegisterVersion, Instant at) {
         requireProposed();
-        if (by == null || by.equals(proposedBy)) {
+        if (by == null || (by.equals(proposedBy) && !mayActAlone)) {
             throw new PolicyRegisterStateException("A second person approves an accounting policy election");
         }
+        actedAlone = by.equals(proposedBy);
         if (signOff == null || signOff.isBlank()) {
             throw new FinaccountingValidationException("An approval names its sign-off reference");
         }
@@ -74,9 +91,10 @@ public class PolicyElection {
 
     public void reject(String by, String reason, Instant at) {
         requireProposed();
-        if (by == null || by.equals(proposedBy)) {
+        if (by == null || (by.equals(proposedBy) && !mayActAlone)) {
             throw new PolicyRegisterStateException("A second person decides an accounting policy election");
         }
+        actedAlone = by.equals(proposedBy);
         if (reason == null || reason.isBlank()) {
             throw new FinaccountingValidationException("A rejection gives its reason");
         }

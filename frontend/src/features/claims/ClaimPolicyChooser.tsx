@@ -11,7 +11,7 @@ import {
   CAPACITY_HINTS,
   CAPACITY_LABELS,
   policyCapacities,
-  willAcceptClaimToday,
+  claimWarning,
 } from '@/lib/policyCapacity';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectClaimantPolicies, usePolicyStore } from '@/store/policyStore';
@@ -29,14 +29,12 @@ import { selectClaimantPolicies, usePolicyStore } from '@/store/policyStore';
  * that distinguish them. A combobox would hide exactly the comparison the clerk came to make.
  * The filter box only appears once the list is long enough to need one.
  *
- * **Nothing is disabled, deliberately.** A policy that is not currently in force WILL be
- * refused by `POST /claims` today, and that is a known-wrong rule (`isPolicyInForce` ignores
- * the `asOf` it accepts, so a valid claim for an event that preceded a lapse is rejected).
- * `claimGates` already treats the same fact as a SOFT gate on purpose, with the reasoning that
- * a lapsed policy must route a claim to investigation and never be auto-refused, because
- * refusing without proving the lapse notices were sent is how an insurer ends up in front of a
- * regulator. Greying the row out here would be that refusal, made earlier and more quietly, so
- * instead the row says plainly what will happen and names the remedy.
+ * **Nothing is disabled, deliberately.** `claimGates` treats cover as a SOFT gate on purpose: a
+ * lapsed policy must route a claim to investigation and never be auto-refused, because refusing
+ * without proving the lapse notices were sent is how an insurer ends up in front of a regulator.
+ * Greying the row out here would be that refusal, made earlier and more quietly, so instead the
+ * row says plainly what the server will do (`claimWarning`): refuse an offer never on cover, or
+ * accept an ended policy only for an event before it ended.
  */
 export function ClaimPolicyChooser({
   claimantPartyId,
@@ -217,7 +215,7 @@ function PolicyOption({
   onSelect: () => void;
 }) {
   const capacities = policyCapacities(policy, claimantPartyId);
-  const acceptable = willAcceptClaimToday(policy);
+  const warning = claimWarning(policy);
 
   return (
     <button
@@ -268,15 +266,9 @@ function PolicyOption({
         ))}
       </div>
 
-      {!acceptable && (
-        /* Warned, never blocked -- see the component header. Naming the remedy matters: the
-           backend's own comment says staff must reinstate the policy before the claim can be
-           filed, and nothing else on screen would tell them that. */
-        <p className="mt-1.5 text-xs text-status-warning-fg">
-          Registration will be refused while the policy is{' '}
-          {(policy.status ?? 'not in force').toLowerCase()} — it has to be reinstated first.
-          Choose it anyway if this is the right contract; the rejection will say the same thing.
-        </p>
+      {warning && (
+        /* Warned, never blocked -- see the component header. */
+        <p className="mt-1.5 text-xs text-status-warning-fg">{warning}</p>
       )}
     </button>
   );

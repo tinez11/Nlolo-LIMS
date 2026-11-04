@@ -65,13 +65,17 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     private final BonusApi bonusApi;
     /** Product step 5: tax withheld at approval, by finance-approved rules. */
     private final WithholdingRules withholding;
+    /** Approving one's own payout or free-look refund, for a company with one finance person (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     public BenefitPayoutApiImpl(PayoutInstalmentRepository instalments, PayoutStreamRepository streams,
                                 PremiumTallyRepository tallies, PaymentRunRepository runs,
                                 FreeLookCancellationRepository cancellations, FreeLookDeductionRepository deductions,
                                 ProductApi productApi, PolicyApi policyApi,
                                 ApplicationEventPublisher eventPublisher, AccumulationApi accumulationApi,
-                                BonusApi bonusApi, WithholdingRules withholding) {
+                                BonusApi bonusApi, WithholdingRules withholding,
+                                tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.withholding = withholding;
         this.accumulationApi = accumulationApi;
         this.bonusApi = bonusApi;
@@ -326,7 +330,11 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     @Transactional
     public PayoutInstalmentView approve(UUID instalmentId, String approver) {
         PayoutInstalment i = load(instalmentId);
+        if (ownWork.mayActAlone("payouts.approve-own")) i.allowActingAlone();
         i.approve(approver);
+        if (i.isActedAlone()) {
+            ownWork.record("Payout approved by its reviewer", instalmentId.toString(), i.getPolicyNumber(), approver);
+        }
         // Tax withheld now, when the gross is final (product step 5) -- before the rail is asked to pay.
         withholding.apply(i);
         instalments.save(i);
@@ -569,7 +577,12 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     public FreeLookCancellationView approveFreeLook(UUID cancellationId, String approver) {
         FreeLookCancellation c = cancellations.findById(cancellationId)
             .orElseThrow(() -> new PayoutNotFoundException(cancellationId));
+        if (ownWork.mayActAlone("payouts.approve-own")) c.allowActingAlone();
         c.approve(approver);
+        if (c.isActedAlone()) {
+            ownWork.record("Free-look refund approved by its requester", cancellationId.toString(), c.getPolicyNumber(),
+                approver);
+        }
         cancellations.save(c);
         // The policy goes first: everything downstream -- billing stopping, commission going back --
         // hangs off PolicyCancelledFreeLook, and a schedule withdrawn against a policy that then

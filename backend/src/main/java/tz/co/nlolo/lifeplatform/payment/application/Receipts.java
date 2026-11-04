@@ -43,10 +43,22 @@ public class Receipts {
     private final BillingApi billing;
     private final ApplicationEventPublisher events;
 
-    Receipts(PaymentTransactionRepository transactions, BillingApi billing, ApplicationEventPublisher events) {
+    Receipts(PaymentTransactionRepository transactions, BillingApi billing, ApplicationEventPublisher events,
+             tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
         this.transactions = transactions;
         this.billing = billing;
         this.events = events;
+        this.ownWork = ownWork;
+    }
+
+    /** Confirming one's own receipt, for a company with one finance person (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
+
+    private void recordIfAlone(PaymentTransaction receipt, String how, String by) {
+        if (receipt.isActedAlone()) {
+            ownWork.record("Receipt " + how + " by the person who recorded it",
+                receipt.getPaymentTransactionId().toString(), receipt.getPolicyNumber(), by);
+        }
     }
 
     /** What a person records. {@code fieldReceiptId} when it is an agent's cash being brought in. */
@@ -117,7 +129,9 @@ public class Receipts {
     @Transactional
     public ReceiptView approve(UUID receiptId, String by) {
         PaymentTransaction receipt = find(receiptId);
+        if (ownWork.mayActAlone("collections.approve-own")) receipt.allowActingAlone();
         receipt.approveReceipt(by);
+        recordIfAlone(receipt, "confirmed", by);
         transactions.save(receipt);
         Map<String, Object> payload = new HashMap<>();
         payload.put("paymentRequestId", receipt.getPaymentTransactionId());
@@ -140,7 +154,9 @@ public class Receipts {
     public ReceiptView reject(UUID receiptId, String by, String reason) {
         if (reason == null || reason.isBlank()) throw new ReceiptRefusedException("Say why the receipt is refused");
         PaymentTransaction receipt = find(receiptId);
+        if (ownWork.mayActAlone("collections.approve-own")) receipt.allowActingAlone();
         receipt.rejectReceipt(by, reason.trim());
+        recordIfAlone(receipt, "refused", by);
         transactions.save(receipt);
         if (receipt.isRequested()) {
             // A request the platform made, not a slip someone typed: whoever asked for the money hears it never came,

@@ -57,18 +57,26 @@ export function PermissionPicker({
         );
       },
     },
-    // Fixed widths, the same in every group, so the columns line up down the whole list.
-    { key: 'label', header: 'Permission', className: 'w-56', render: (p) => <span className="font-medium">{p.label}</span> },
-    { key: 'allows', header: 'What it allows', secondary: true, render: (p) => <span className="text-muted-foreground">{p.description}</span> },
+    // What it allows sits under its name (2026-11-04): beside a long "comes from" it was squeezed to a word a line.
+    {
+      key: 'label',
+      header: 'Permission',
+      render: (p) => (
+        <span className="flex flex-col gap-0.5 py-1">
+          <span className="font-medium">{p.label}</span>
+          <span className="text-xs text-muted-foreground">{p.description}</span>
+        </span>
+      ),
+    },
     {
       key: 'from',
       header: 'Comes from',
-      className: 'w-44',
-      nowrap: true,
+      className: 'w-56',
+      secondary: true,
       render: (p) => {
         const roles = fromRoles.get(p.code);
-        if (roles?.length) return roles.join(', ');
-        if (selected.has(p.code)) return 'Single permission';
+        if (roles?.length) return <span className="text-xs">{roles.join(', ')}</span>;
+        if (selected.has(p.code)) return <span className="text-xs">Single permission</span>;
         return <span className="text-subtle-foreground">—</span>;
       },
     },

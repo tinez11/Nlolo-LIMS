@@ -128,9 +128,9 @@ class DashboardContractTest {
             List.of(new ClaimsDashboardView.SettlementMonth("2026-09", "TZS", 9, new Money("41000000.00", "TZS"))),
             List.of(new ClaimsDashboardView.SettlementMonth("2026-08", "TZS", 3, new Money("12000000.00", "TZS")),
                 new ClaimsDashboardView.SettlementMonth("2026-09", "TZS", 9, new Money("41000000.00", "TZS"))),
-            "SETTLEMENT_REQUESTED",
+            "UNDER_ASSESSMENT",
             List.of(new ClaimsDashboardView.QueuedClaim(UUID.randomUUID(), "POL-00A4B7A1", UUID.randomUUID(), "DEATH",
-                LocalDate.of(2026, 9, 29), "SETTLEMENT_REQUESTED")), List.of(),
+                LocalDate.of(2026, 9, 29), "UNDER_ASSESSMENT")), List.of(),
             new Period("2026-01", "2026-10", "2025-01", "2025-10", "2026-10"), new Money("120000000.00", "TZS"), null, null,
             List.of(new FinanceDashboardView.MonthPoint("2026-09", new Money("41000000.00", "TZS"))),
             List.of(new Share("DEATH", new Money("90000000.00", "TZS"), 6L, "75.0")),
@@ -139,7 +139,7 @@ class DashboardContractTest {
 
         mockMvc.perform(get("/dashboards/claims").with(staff("CLAIMS_MANAGER")))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.queueStatus").value("SETTLEMENT_REQUESTED"))
+            .andExpect(jsonPath("$.queueStatus").value("UNDER_ASSESSMENT"))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 

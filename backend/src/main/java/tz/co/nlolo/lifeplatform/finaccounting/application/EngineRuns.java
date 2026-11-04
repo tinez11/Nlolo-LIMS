@@ -67,9 +67,13 @@ public class EngineRuns {
     private final FinaccountingApiImpl postings;
     private final DocumentApi documents;
     private final jakarta.persistence.EntityManager entityManager;
+    /** Approving a run one uploaded, for a company with one finance person (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     EngineRuns(JdbcTemplate jdbc, EngineExtracts extracts, EngineLedger ledger, AccountingPeriods periods,
-               FinaccountingApiImpl postings, DocumentApi documents, jakarta.persistence.EntityManager entityManager) {
+               FinaccountingApiImpl postings, DocumentApi documents, jakarta.persistence.EntityManager entityManager,
+               tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.jdbc = jdbc;
         this.extracts = extracts;
         this.ledger = ledger;
@@ -178,22 +182,27 @@ public class EngineRuns {
                 + " is posted -- every line must post");
         }
         jdbc.update("UPDATE finaccounting.engine_run SET status = 'POSTED', decided_by = ?, decided_at = now(),"
-                + " signoff_reference = ?, report_document_ref = ?, replaces_run_id = ?, version = version + 1"
-                + " WHERE tenant_id = ? AND run_id = ? AND status = 'VALIDATED'",
-            approver, signOffReference.trim(), reportDocumentRef, replaced.map(Run::id).orElse(null), tenantId, runId);
+                + " signoff_reference = ?, report_document_ref = ?, replaces_run_id = ?, acted_alone = (uploaded_by = ?),"
+                + " version = version + 1 WHERE tenant_id = ? AND run_id = ? AND status = 'VALIDATED'",
+            approver, signOffReference.trim(), reportDocumentRef, replaced.map(Run::id).orElse(null), approver, tenantId,
+            runId);
+        recordIfAlone(run, "approved", approver);
         reconcile(tenantId, runId, run.period(), results.closings());
         return get(runId);
     }
 
     @Transactional
     public EngineRunView reject(UUID runId, String reason, String by) {
-        decidable(load(runId), by);
+        Run run = decidable(load(runId), by);
         if (reason == null || reason.isBlank()) {
             throw new FinaccountingValidationException("Say why the run is rejected");
         }
         jdbc.update("UPDATE finaccounting.engine_run SET status = 'REJECTED', decided_by = ?, decided_at = now(),"
-                + " decision_reason = ?, version = version + 1 WHERE tenant_id = ? AND run_id = ? AND status = 'VALIDATED'",
-            by, reason.trim().length() <= 500 ? reason.trim() : reason.trim().substring(0, 500), TenantContext.get(), runId);
+                + " decision_reason = ?, acted_alone = (uploaded_by = ?), version = version + 1"
+                + " WHERE tenant_id = ? AND run_id = ? AND status = 'VALIDATED'",
+            by, reason.trim().length() <= 500 ? reason.trim() : reason.trim().substring(0, 500), by, TenantContext.get(),
+            runId);
+        recordIfAlone(run, "rejected", by);
         return get(runId);
     }
 
@@ -299,14 +308,21 @@ public class EngineRuns {
             this::run, tenantId, period).stream().findFirst();
     }
 
-    private static Run decidable(Run run, String by) {
+    /** Unless the uploader holds ifrs17.approve-own (2026-11-04): a company with one finance person. */
+    private Run decidable(Run run, String by) {
         if (!"VALIDATED".equals(run.status())) {
             throw new EngineStateException("Only a validated run can be decided; this one is " + run.status());
         }
-        if (run.uploadedBy().equals(by)) {
+        if (run.uploadedBy().equals(by) && !ownWork.mayActAlone("ifrs17.approve-own")) {
             throw new EngineStateException("You uploaded this run; a FINANCE_APPROVER other than you approves it");
         }
         return run;
+    }
+
+    private void recordIfAlone(Run run, String how, String by) {
+        if (run.uploadedBy().equals(by)) {
+            ownWork.record("IFRS 17 engine run " + how + " by its uploader", run.id().toString(), null, by);
+        }
     }
 
     /**

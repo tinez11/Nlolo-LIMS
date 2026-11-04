@@ -71,9 +71,14 @@ public class ManualJournalApiImpl implements ManualJournalApi {
     private final TransactionTemplate tx;
     private final List<GuideTemplates.Template> guide;
 
+    /** Approving one's own journal, for a company with one finance person (2026-11-04). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
+
     ManualJournalApiImpl(ManualJournals drafts, ChartOfAccountRepository chart, ChartOfAccountSeeder seeder,
                          AccountingPeriods periods, ReferenceDataApi referenceData, FinaccountingApiImpl ledger,
-                         JdbcTemplate jdbc, ObjectMapper json, PlatformTransactionManager transactionManager) {
+                         JdbcTemplate jdbc, ObjectMapper json, PlatformTransactionManager transactionManager,
+                         tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.drafts = drafts;
         this.chart = chart;
         this.seeder = seeder;
@@ -164,16 +169,17 @@ public class ManualJournalApiImpl implements ManualJournalApi {
     public ManualJournalView approve(UUID id, String approver) {
         UUID tenantId = TenantContext.get();
         ManualJournals.Draft d = load(id);
-        decidable(d, approver, "approve");
+        boolean alone = decidable(d, approver, "approve");
         refuseProblems(d);
         try {
             tx.executeWithoutResult(status -> {
                 JournalEntry entry = journalOf(tenantId, d, approver);
                 JournalEntry posted = ledger.postEntry(entry).orElseThrow(() ->
                     new ManualJournalStateException("This journal was already posted"));
-                if (!drafts.approve(tenantId, id, approver, posted.getJournalEntryId())) {
+                if (!drafts.approve(tenantId, id, approver, posted.getJournalEntryId(), alone)) {
                     throw new ManualJournalStateException("This journal is no longer awaiting approval");
                 }
+                if (alone) ownWork.record("Manual journal approved by its preparer", id.toString(), null, approver);
                 if (d.header().autoReverseOn() != null) {
                     jdbc.update("INSERT INTO finaccounting.auto_reversal (tenant_id, original_journal_id, reverse_on)"
                         + " VALUES (?, ?, ?)", tenantId, posted.getJournalEntryId(), Date.valueOf(d.header().autoReverseOn()));
@@ -195,13 +201,14 @@ public class ManualJournalApiImpl implements ManualJournalApi {
     @Transactional
     public ManualJournalView reject(UUID id, String reason, String by) {
         ManualJournals.Draft d = load(id);
-        decidable(d, by, "reject");
+        boolean alone = decidable(d, by, "reject");
         if (reason == null || reason.isBlank()) {
             throw new FinaccountingValidationException("Say why the journal is rejected");
         }
-        if (!drafts.reject(TenantContext.get(), id, by, reason.trim())) {
+        if (!drafts.reject(TenantContext.get(), id, by, reason.trim(), alone)) {
             throw new ManualJournalStateException("This journal is no longer awaiting a decision");
         }
+        if (alone) ownWork.record("Manual journal rejected by its preparer", id.toString(), null, by);
         return view(load(id));
     }
 
@@ -351,15 +358,20 @@ public class ManualJournalApiImpl implements ManualJournalApi {
         return d;
     }
 
-    /** A submitted journal, and a decider who is not its preparer (maker-checker, guide 5.4). */
-    private static void decidable(ManualJournals.Draft d, String by, String action) {
+    /**
+     * A submitted journal, and a decider who is not its preparer (maker-checker, guide 5.4) -- unless they hold
+     * ledger.approve-own (2026-11-04), a company with one finance person. True when they are deciding alone.
+     */
+    private boolean decidable(ManualJournals.Draft d, String by, String action) {
         if (!"SUBMITTED".equals(d.header().status())) {
             throw new ManualJournalStateException("Only a submitted journal can be " + action + "d; this one is "
                 + d.header().status());
         }
-        if (d.header().preparer().equals(by)) {
+        if (!d.header().preparer().equals(by)) return false;
+        if (!ownWork.mayActAlone("ledger.approve-own")) {
             throw new ManualJournalStateException("You prepared this journal; a second person must " + action + " it");
         }
+        return true;
     }
 
     private void refuseProblems(ManualJournals.Draft d) {
