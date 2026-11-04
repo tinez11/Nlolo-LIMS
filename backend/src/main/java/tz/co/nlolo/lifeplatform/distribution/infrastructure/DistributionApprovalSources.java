@@ -13,8 +13,9 @@ class DistributionApprovalSources {
     ApprovalSource commissionPayoutsToApprove(DistributionApi distribution) {
         return ApprovalSource.of("commission-payout", "Commission payouts", "Release", "payouts.approve",
             limit -> ApprovalSource.Pending.of(distribution.listStatementsAwaitingPayoutApproval().stream()
-                .map(s -> new ApprovalSource.Item(s.statementId().toString(), null, "Commission payout, " + s.period(),
-                    s.totalAmount(), s.totalCurrency(), null, null))
+                // agentId/statementId: unique per row, and the agent's page is where the payout is released (step 5).
+                .map(s -> new ApprovalSource.Item(s.agentId() + "/" + s.statementId(), null, "Commission payout, " + s.period(),
+                    s.totalAmount(), s.totalCurrency(), s.payoutRequestedBy(), null))
                 .toList(), limit));
     }
 }

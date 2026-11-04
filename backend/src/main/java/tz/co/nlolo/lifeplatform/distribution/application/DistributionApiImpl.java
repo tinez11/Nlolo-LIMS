@@ -800,7 +800,8 @@ public class DistributionApiImpl implements DistributionApi {
     private CommissionStatementView toStatementView(CommissionStatement statement) {
         return new CommissionStatementView(statement.getStatementId(), statement.getAgentId(), statement.getPeriod(),
             statement.getTotalAmount(), statement.getTotalCurrency(), statement.getStatus(),
-            statement.getClosedAt(), statement.getPaidAt());
+            statement.getClosedAt(), statement.getPaidAt(), statement.getPayeeRef(), statement.getPayoutRequestedBy(),
+            statement.getPayoutRefusalReason());
     }
 
     /**

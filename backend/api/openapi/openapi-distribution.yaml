@@ -792,6 +792,9 @@ components:
             idempotency key.
         closedAt: { type: [string, "null"], format: date-time }
         paidAt: { type: [string, "null"], format: date-time }
+        payeeRef: { type: [string, "null"], description: Who the payout is paid to, once asked }
+        payoutRequestedBy: { type: [string, "null"], description: Who asked for the payout; a second person releases it }
+        payoutRefusalReason: { type: [string, "null"], description: Why the last payout asked was refused }
     CommissionAccrualView:
       type: object
       required: [accrualId, agentId, statementId, policyNumber, tierType, amount, period, sourceRef, accruedOn]

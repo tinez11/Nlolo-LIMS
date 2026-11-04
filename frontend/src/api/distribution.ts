@@ -192,6 +192,17 @@ export function listAccruals(agentId: string, statementId: string): Promise<Comm
  * OPEN (the monthly close sweep has not run yet) genuinely 409s, not a
  * client-side guess at the rule.
  */
+/**
+ * Release (reason null) or refuse (with the reason) a commission payout -- payouts.approve, money movement step 4.
+ * Releasing asks payment to pay the net (202); refusing returns the statement to CLOSED.
+ */
+export function decideCommissionPayout(statementId: string, refuseReason: string | null): Promise<CommissionStatementView> {
+  const id = encodeURIComponent(statementId);
+  return refuseReason === null
+    ? post<CommissionStatementView>(`/commission-statements/${id}/payout-approval`, {})
+    : post<CommissionStatementView>(`/commission-statements/${id}/payout-refusal`, { reason: refuseReason });
+}
+
 export function requestPayout(
   agentId: string,
   statementId: string,

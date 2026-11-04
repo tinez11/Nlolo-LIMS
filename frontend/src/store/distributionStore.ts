@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   createCommissionPlan,
+  decideCommissionPayout,
   getAgent,
   getApplicablePlan,
   getOwnAgent,
@@ -102,6 +103,9 @@ interface DistributionState {
     attempt: MutationAttempt,
   ) => Promise<void>;
   resetRequestPayout: (agentId: string, statementId: string) => void;
+  /** A second person releases (reason null) or refuses a statement's payout; the statements are read again. */
+  decidingPayout: Keyed<true>;
+  decidePayout: (agentId: string, statementId: string, refuseReason: string | null) => Promise<void>;
 }
 
 export const useDistributionStore = create<DistributionState>((set, getState) => ({
@@ -116,6 +120,7 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
   statements: {},
   accruals: {},
   requestingPayout: {},
+  decidingPayout: {},
   suspendingAgent: {},
   reactivatingAgent: {},
 
@@ -278,6 +283,18 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
         await requestPayout(agentId, statementId, request, attempt);
         // 202 with no body -- the statement's real new status (AWAITING_PAYOUT_APPROVAL)
         // is only visible via a fresh GET.
+        await getState().loadStatements(agentId);
+        return true;
+      },
+    ),
+
+  decidePayout: (agentId, statementId, refuseReason) =>
+    track(
+      `distribution.decidePayout.${statementId}`,
+      getState().decidingPayout[statementId] ?? idle<true>(),
+      (next) => set((s) => ({ decidingPayout: { ...s.decidingPayout, [statementId]: next } })),
+      async (): Promise<true> => {
+        await decideCommissionPayout(statementId, refuseReason);
         await getState().loadStatements(agentId);
         return true;
       },
