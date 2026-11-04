@@ -9,6 +9,7 @@ import { DepositScheduleDownload } from '@/features/documents/DepositScheduleDow
 import { PaymentScheduleDownloads, PaymentScheduleTable } from '@/features/documents/PaymentScheduleTable';
 import { toApiError, type ApiError } from '@/lib/apiError';
 import { formatDate } from '@/lib/dates';
+import { CustomerBalanceCard, CustomerStatementCard } from './CustomerBalance';
 import { StatusPill } from './CustomerUi';
 import { money } from './customerText';
 import { useWords } from './words';
@@ -85,6 +86,12 @@ export function CustomerPolicyPage() {
             </div>
           )}
         </section>
+
+        {/* Money movement step 5: the policy's balance first, its statement after the payment history. */}
+        {policy.balance && (
+          <CustomerBalanceCard policyNumber={s.policyNumber} balance={policy.balance}
+            card={(title, lead, children) => <Card title={title} {...(lead ? { lead } : {})}>{children}</Card>} />
+        )}
 
         <Card title={w.details}>
           <Rows rows={[
@@ -177,6 +184,10 @@ export function CustomerPolicyPage() {
         )}
 
         {s.premium != null && s.premiumFrequency !== 'SINGLE' && <PaymentHistory policyNumber={s.policyNumber} />}
+
+        {policy.balance && (
+          <CustomerStatementCard policyNumber={s.policyNumber} card={(title, lead, children) => <Card title={title} {...(lead ? { lead } : {})}>{children}</Card>} />
+        )}
 
         <Card title={w.claims} action={
           <Button asChild variant="outline" className="h-11"><Link to="/customers/claims/new"><ClipboardPlus aria-hidden />{w.report}</Link></Button>

@@ -102,3 +102,15 @@ export function markMessageRead(messageId: string): Promise<CustomerMessage> {
 export function getCustomerPolicy(policyNumber: string): Promise<CustomerPolicyView> {
   return get<CustomerPolicyView>(`/customer/policies/${enc(policyNumber)}`);
 }
+
+/** Money movement step 5: one page of the policy's balance statement, newest first. */
+export type CustomerStatementView = components['schemas']['CustomerStatement'];
+
+export function getCustomerStatement(policyNumber: string, page: number, size: number): Promise<CustomerStatementView> {
+  return get<CustomerStatementView>(`/customer/policies/${enc(policyNumber)}/statement`, { params: { page, size } });
+}
+
+/** Asks for money back off the policy's balance to the customer's phone; staff approve it before it is paid. */
+export function requestCustomerWithdrawal(policyNumber: string, amount: string, phone: string): Promise<{ withdrawalId: string }> {
+  return post<{ withdrawalId: string }>(`/customer/policies/${enc(policyNumber)}/withdrawals`, { amount, phone });
+}
