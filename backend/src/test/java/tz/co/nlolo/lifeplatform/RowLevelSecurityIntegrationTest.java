@@ -208,6 +208,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql", "db-migrations/billing/V13__credit_refund_payout.sql",
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
+            "db-migrations/billing/V16__deposit_reversal.sql",
             // M5 (Task 1) additions: disbursementInstructionIsTenantIsolatedUnderRls/
             // disbursementIdempotencyRegistryIsTenantIsolatedUnderRls below need payment's own
             // schema/grants/RLS -- V1 alone shipped zero GRANTs and zero RLS on any table.
@@ -222,6 +223,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/payment/V18__payout_routes.sql",
             "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
             "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
+            "db-migrations/payment/V24__reversed_status.sql",
             // M7 (Task 10) additions. distribution/V1 enabled RLS on NONE of its four tables and
             // granted app_role nothing; V2 is what adds both, plus commission_accrual and
             // policy_projection with their own policies. Until now no test in this class or

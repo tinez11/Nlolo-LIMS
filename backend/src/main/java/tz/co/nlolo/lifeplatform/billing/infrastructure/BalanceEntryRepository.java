@@ -11,8 +11,11 @@ import java.util.UUID;
 
 public interface BalanceEntryRepository extends JpaRepository<BalanceEntry, UUID> {
 
-    /** The balance: every deposit less every premium paid from it. Zero for a policy with no entries. */
-    @Query("SELECT COALESCE(SUM(CASE WHEN e.entryType = 'DEPOSIT' THEN e.amount ELSE -e.amount END), 0) "
+    /**
+     * The balance: money in (deposits, premiums reopened by a reversal) less money out (premiums paid, withdrawals,
+     * reversals). Zero for a policy with no entries; below zero only when a reversed deposit had already been withdrawn.
+     */
+    @Query("SELECT COALESCE(SUM(CASE WHEN e.entryType IN ('DEPOSIT', 'PREMIUM_REOPENED') THEN e.amount ELSE -e.amount END), 0) "
         + "FROM BalanceEntry e WHERE e.tenantId = :tenantId AND e.policyNumber = :policyNumber")
     BigDecimal balanceOf(@Param("tenantId") UUID tenantId, @Param("policyNumber") String policyNumber);
 
@@ -20,4 +23,10 @@ public interface BalanceEntryRepository extends JpaRepository<BalanceEntry, UUID
     boolean existsByTenantIdAndEntryTypeAndPaymentId(UUID tenantId, String entryType, UUID paymentId);
 
     List<BalanceEntry> findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(UUID tenantId, String policyNumber);
+
+    /** The deposit a confirmed payment made -- what a reversal takes back. */
+    java.util.Optional<BalanceEntry> findByTenantIdAndEntryTypeAndPaymentId(UUID tenantId, String entryType, UUID paymentId);
+
+    /** Entries that undo the given one: a REVERSAL of a deposit, or the PREMIUM_REOPENED parts of a premium paid. */
+    List<BalanceEntry> findByTenantIdAndReversesEntryId(UUID tenantId, UUID reversesEntryId);
 }

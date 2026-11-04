@@ -49,6 +49,14 @@ public class PremiumInvoice {
     @Column(name = "amount_paid", nullable = false)
     private BigDecimal amountPaid = BigDecimal.ZERO;
 
+    /**
+     * How many times this invoice was reopened after being paid in full (billing V16, money movement step 3b): a
+     * reversed deposit undid its payment. The next payment in full is collection number {@code reopenedCount + 1}, so
+     * the commission booked on it is keyed apart from the one clawed back.
+     */
+    @Column(name = "reopened_count", nullable = false)
+    private int reopenedCount;
+
     @Version
     private long version;
 
@@ -230,6 +238,30 @@ public class PremiumInvoice {
             this.status = "PAID";
         }
     }
+
+    /**
+     * Money that paid this invoice did not really arrive (money movement step 3b): the payment is taken back and the
+     * invoice is owed again -- PARTIALLY_PAID while something of it stays paid, DUE otherwise; the billing sweep moves
+     * it on to grace and overdue from its dates as for any unpaid premium. A WAIVED invoice stays waived.
+     *
+     * @return whether it was PAID before -- the caller then announces the collection undone, for its commission
+     */
+    public boolean reopen(BigDecimal amount) {
+        if ("WAIVED".equals(status)) {
+            return false;
+        }
+        boolean wasPaid = "PAID".equals(status);
+        BigDecimal paid = amountPaid == null ? BigDecimal.ZERO : amountPaid;
+        this.amountPaid = paid.subtract(amount).max(BigDecimal.ZERO);
+        this.status = amountPaid.signum() > 0 ? "PARTIALLY_PAID" : "DUE";
+        if (wasPaid) {
+            reopenedCount++;
+        }
+        return wasPaid;
+    }
+
+    /** Which payment in full this is: 1 for the first, n + 1 after it has been reopened n times. */
+    public int collectionNumber() { return reopenedCount + 1; }
 
     /** What is still owed: charged, less paid, less credited. Never negative. */
     public BigDecimal balanceDue(BigDecimal credited) {

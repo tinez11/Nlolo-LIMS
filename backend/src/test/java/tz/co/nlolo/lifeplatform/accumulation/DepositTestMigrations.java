@@ -130,6 +130,7 @@ public final class DepositTestMigrations {
         "db-migrations/payment/V18__payout_routes.sql",
         "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
         "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
+        "db-migrations/payment/V24__reversed_status.sql",
         "db-migrations/policyloan/V1__create_policyloan_schema.sql",
         "db-migrations/policyloan/V3__money_check_constraints.sql",
         "db-migrations/policyloan/V4__persist_reservation_id.sql",
@@ -148,6 +149,7 @@ public final class DepositTestMigrations {
         "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql", "db-migrations/billing/V13__credit_refund_payout.sql",
         "db-migrations/billing/V14__policy_balance.sql",
         "db-migrations/billing/V15__balance_withdrawal.sql",
+        "db-migrations/billing/V16__deposit_reversal.sql",
         "db-migrations/omnichannel/V1__portal_access.sql",
         "db-migrations/omnichannel/V2__sms_password_delivery.sql",
     };

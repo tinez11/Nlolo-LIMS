@@ -124,6 +124,9 @@ public class PaymentRequestListener {
             case "billing.PremiumRefundPayoutRequested" -> withTenant(envelope, payload -> payOut(TenantContext.get(),
                 requireKey(payload), payload, "CREDIT_LIFE_PREMIUM_REFUND", (String) payload.get("creditId"),
                 "PremiumRefundPayoutRequested"));
+            // A deposit reversed in billing (money movement step 3b): the receipt it came from is REVERSED in the register.
+            case "billing.DepositReversed" -> withTenant(envelope, payload -> requiresNewTransactionTemplate.executeWithoutResult(
+                status -> paymentApiImpl.markReversed(TenantContext.get(), UUID.fromString(String.valueOf(payload.get("paymentId"))))));
             // Money taken back off a policy's balance, approved (money movement step 3a): paid by the route finance named.
             case "billing.BalanceWithdrawalPayoutRequested" -> withTenant(envelope, payload -> payOut(TenantContext.get(),
                 requireKey(payload), payload, "BALANCE_WITHDRAWAL", (String) payload.get("withdrawalId"),

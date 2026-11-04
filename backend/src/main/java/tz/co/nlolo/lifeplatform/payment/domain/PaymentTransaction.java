@@ -273,6 +273,16 @@ public class PaymentTransaction {
         return "MOBILE_MONEY".equals(method);
     }
 
+    /**
+     * Its money never really arrived (money movement step 3b): billing reversed the deposit it made. Only a CONFIRMED
+     * payment can be; a redelivery changes nothing.
+     */
+    public void markReversed() {
+        if ("CONFIRMED".equals(status)) {
+            this.status = "REVERSED";
+        }
+    }
+
     public void markConfirmed(String gatewayReference) {
         if ("CONFIRMED".equals(status)) {
             return; // idempotent: a redelivered success callback is not an error

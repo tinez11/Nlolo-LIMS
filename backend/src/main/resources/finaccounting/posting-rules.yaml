@@ -129,6 +129,36 @@ rules:
       - {dr: "2430", amount: amount}
       - {cr: "2128", amount: amount}
 
+  # A deposit whose money never really arrived (money movement step 3b, 2026-11-04): taken off the balance against the
+  # account it had reached, and each premium it paid undone -- the receivable owed again, the levy given back.
+  - id: M-06
+    event: billing.DepositReversed
+    models: [GMM, VFA, PAA]
+    description: A deposit reversed -- a bounced cheque or a reversed payment -- off the balance and out of the account it reached
+    lines:
+      - {dr: "2128", amount: amount}
+      - {cr: "RECEIPT", amount: amount}
+
+  - id: M-07
+    event: billing.PremiumPaidReversed
+    models: [GMM, VFA]
+    description: A premium paid from the balance undone by a reversal -- owed again; its levy reversed
+    lines:
+      - {dr: "2122", amount: amount, movement: PRM_REN}
+      - {cr: "2128", amount: amount}
+      - {dr: "2650", amount: levy}
+      - {cr: "5220", amount: levy}
+
+  - id: M-07-PAA
+    event: billing.PremiumPaidReversed
+    models: [PAA]
+    description: A PAA premium paid from the balance undone by a reversal -- owed again; its levy reversed
+    lines:
+      - {dr: "2142", amount: amount, movement: PRM_REN}
+      - {cr: "2128", amount: amount}
+      - {dr: "2650", amount: levy}
+      - {cr: "5220", amount: levy}
+
   - id: M-02-PAA
     event: billing.PremiumPaidFromBalance
     models: [PAA]

@@ -20,6 +20,10 @@ public class BalanceEntry {
     public static final String WITHDRAWAL = "WITHDRAWAL";
     /** A withdrawal's transfer the rail refused: the money comes back as a deposit from this source, not fresh money. */
     public static final String FROM_WITHDRAWAL_RETURNED = "WITHDRAWAL_RETURNED";
+    /** A deposit taken back because its money never arrived (billing V16, money movement step 3b). */
+    public static final String REVERSAL = "REVERSAL";
+    /** A premium paid from the balance, undone by a reversal: the money is back on the balance, the invoice owed again. */
+    public static final String PREMIUM_REOPENED = "PREMIUM_REOPENED";
 
     /** A confirmed deposit or mobile-money request. */
     public static final String FROM_PAYMENT = "PAYMENT";
@@ -35,6 +39,7 @@ public class BalanceEntry {
     @Column(name = "payment_id") private UUID paymentId;
     @Column(name = "invoice_id") private UUID invoiceId;
     @Column(name = "withdrawal_id") private UUID withdrawalId;
+    @Column(name = "reverses_entry_id") private UUID reversesEntryId;
     @Column private String method;
     @Column private String reference;
     @Column(nullable = false) private String source = FROM_PAYMENT;
@@ -101,11 +106,42 @@ public class BalanceEntry {
         return e;
     }
 
-    public UUID getWithdrawalId() { return withdrawalId; }
+    /** A deposit taken back: the whole of it, linked to the deposit it reverses. */
+    public static BalanceEntry reversal(BalanceEntry deposit, String by) {
+        BalanceEntry e = new BalanceEntry();
+        e.tenantId = deposit.tenantId;
+        e.policyNumber = deposit.policyNumber;
+        e.entryType = REVERSAL;
+        e.amount = deposit.amount;
+        e.currency = deposit.currency;
+        e.paymentId = null;
+        e.method = deposit.method;
+        e.reference = deposit.reference;
+        e.reversesEntryId = deposit.entryId;
+        e.createdBy = by;
+        return e;
+    }
 
-    /** The entry's effect on the balance: a deposit adds, a premium paid or a withdrawal takes away. */
+    /** Part or all of a premium paid from the balance undone, linked to the PREMIUM_PAID it undoes. */
+    public static BalanceEntry premiumReopened(BalanceEntry paid, BigDecimal amount, String by) {
+        BalanceEntry e = new BalanceEntry();
+        e.tenantId = paid.tenantId;
+        e.policyNumber = paid.policyNumber;
+        e.entryType = PREMIUM_REOPENED;
+        e.amount = amount;
+        e.currency = paid.currency;
+        e.invoiceId = paid.invoiceId;
+        e.reversesEntryId = paid.entryId;
+        e.createdBy = by;
+        return e;
+    }
+
+    public UUID getWithdrawalId() { return withdrawalId; }
+    public UUID getReversesEntryId() { return reversesEntryId; }
+
+    /** The entry's effect on the balance: a deposit or a reopened premium adds; everything else takes away. */
     public BigDecimal signedAmount() {
-        return DEPOSIT.equals(entryType) ? amount : amount.negate();
+        return DEPOSIT.equals(entryType) || PREMIUM_REOPENED.equals(entryType) ? amount : amount.negate();
     }
 
     public UUID getEntryId() { return entryId; }

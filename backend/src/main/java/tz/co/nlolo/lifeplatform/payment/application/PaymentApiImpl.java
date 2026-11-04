@@ -411,6 +411,16 @@ public class PaymentApiImpl implements PaymentApi {
         paymentTransactionRepository.save(transaction);
     }
 
+    /** billing reversed the deposit this payment made (money movement step 3b): the register shows it REVERSED. */
+    @Transactional
+    void markReversed(UUID tenantId, UUID paymentTransactionId) {
+        paymentTransactionRepository.findByPaymentTransactionIdAndTenantId(paymentTransactionId, tenantId)
+            .ifPresent(t -> {
+                t.markReversed();
+                paymentTransactionRepository.save(t);
+            });
+    }
+
     @Transactional
     void confirmCollection(UUID tenantId, UUID paymentTransactionId, String gatewayReference) {
         PaymentTransaction transaction = paymentTransactionRepository

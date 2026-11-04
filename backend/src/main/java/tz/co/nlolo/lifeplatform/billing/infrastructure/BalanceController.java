@@ -13,9 +13,11 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import tz.co.nlolo.lifeplatform.PayoutRoute;
 import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
-import tz.co.nlolo.lifeplatform.billing.api.WithdrawalRefusedException;
+import tz.co.nlolo.lifeplatform.billing.api.BalanceRefusedException;
 import tz.co.nlolo.lifeplatform.billing.application.BalanceWithdrawals;
+import tz.co.nlolo.lifeplatform.billing.application.DepositReversals;
 import tz.co.nlolo.lifeplatform.billing.domain.BalanceWithdrawal;
+import tz.co.nlolo.lifeplatform.billing.domain.DepositReversal;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -41,7 +43,7 @@ public class BalanceController {
             try {
                 return PayoutRoute.of(method, payeeRef, payeeBank, payeeBranch, payeeAccountName, payeeAccountNumber);
             } catch (IllegalArgumentException e) {
-                throw new WithdrawalRefusedException(e.getMessage());
+                throw new BalanceRefusedException(e.getMessage());
             }
         }
     }
@@ -64,12 +66,57 @@ public class BalanceController {
         }
     }
 
+    public record ReversalRequest(@NotBlank @Size(max = 500) String reason) {}
+
+    public record ReversalResponse(UUID reversalId, String policyNumber, UUID paymentId, Money amount, String reason,
+                                   String status, String requestedBy, Instant requestedAt, String decidedBy,
+                                   Instant decidedAt, String rejectionReason, boolean actedAlone) {
+        static ReversalResponse from(DepositReversal r) {
+            return new ReversalResponse(r.getReversalId(), r.getPolicyNumber(), r.getPaymentId(),
+                new Money(r.getAmount().setScale(2).toPlainString(), r.getCurrency()), r.getReason(), r.getStatus(),
+                r.getRequestedBy(), r.getRequestedAt(), r.getDecidedBy(), r.getDecidedAt(), r.getRejectionReason(),
+                r.isActedAlone());
+        }
+    }
+
     private final BillingApi billing;
     private final BalanceWithdrawals withdrawals;
+    private final DepositReversals reversals;
 
-    public BalanceController(BillingApi billing, BalanceWithdrawals withdrawals) {
+    public BalanceController(BillingApi billing, BalanceWithdrawals withdrawals, DepositReversals reversals) {
         this.billing = billing;
         this.withdrawals = withdrawals;
+        this.reversals = reversals;
+    }
+
+    // ---- Reversals (money movement step 3b): a deposit whose money never really arrived ------------------------
+
+    /** Ask to reverse the deposit a confirmed receipt or payment made; its id is the receipt's. */
+    @PostMapping("/deposits/{paymentId}/reversal")
+    @PreAuthorize("@access.can('collections.manage')")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ReversalResponse requestReversal(@PathVariable UUID paymentId, @Valid @RequestBody ReversalRequest body,
+                                            @AuthenticationPrincipal Jwt jwt) {
+        return ReversalResponse.from(reversals.request(paymentId, body.reason(), jwt.getSubject()));
+    }
+
+    @GetMapping("/deposit-reversals/{reversalId}")
+    @PreAuthorize("@access.canAny('collections.view', 'collections.manage')")
+    public ReversalResponse getReversal(@PathVariable UUID reversalId) {
+        return ReversalResponse.from(reversals.get(reversalId));
+    }
+
+    @PostMapping("/deposit-reversals/{reversalId}/confirm")
+    @PreAuthorize("@access.can('collections.approve')")
+    public ReversalResponse confirmReversal(@PathVariable UUID reversalId, @AuthenticationPrincipal Jwt jwt) {
+        return ReversalResponse.from(reversals.confirm(reversalId, jwt.getSubject()));
+    }
+
+    @PostMapping("/deposit-reversals/{reversalId}/reject")
+    @PreAuthorize("@access.can('collections.approve')")
+    public ReversalResponse rejectReversal(@PathVariable UUID reversalId, @Valid @RequestBody Rejection body,
+                                           @AuthenticationPrincipal Jwt jwt) {
+        return ReversalResponse.from(reversals.reject(reversalId, jwt.getSubject(), body.reason()));
     }
 
     @GetMapping("/policies/{policyNumber}/balance")

@@ -47,6 +47,9 @@ final class PostingFactsExtractor {
         Map.entry("billing.BalanceWithdrawalApproved", amount()),
         Map.entry("billing.BalanceWithdrawalPaid", amount()),
         Map.entry("billing.BalanceWithdrawalReturned", amount()),
+        // Money movement step 3b: a deposit reversed, and a premium paid from it undone (levy derived by the engine).
+        Map.entry("billing.DepositReversed", amount()),
+        Map.entry("billing.PremiumPaidReversed", new EventShape(Set.of(AMOUNT, "levy"), Set.of())),
         Map.entry("billing.InvoiceWaived", amount()),
         Map.entry("billing.PremiumRefundDue", amount()),
         // A credit-life lender's premium paid back (2026-10-30): the bank side of the refund above.
@@ -147,6 +150,14 @@ final class PostingFactsExtractor {
                     Map.of("refType", "WITHDRAWAL")));
             case "billing.BalanceWithdrawalPaid" -> List.of(money(type, string(p.get("withdrawalId")), policy,
                 p.get("amount"), today, paid("WITHDRAWAL", p.get("withdrawalId"))));
+            // Keyed on the reversing entry; the deposit's method picks the account the money is taken back out of.
+            case "billing.DepositReversed" -> {
+                Map<String, String> attrs = new HashMap<>(Map.of("refType", "POLICY"));
+                putIfPresent(attrs, "receiptMethod", p.get("receiptMethod"));
+                yield List.of(money(type, string(p.get("entryId")), policy, p.get("amount"), today, attrs));
+            }
+            case "billing.PremiumPaidReversed" -> List.of(money(type, string(p.get("entryId")), policy, p.get("amount"),
+                today, Map.of("refType", "INVOICE")));
             case "billing.InvoiceWaived" ->
                 List.of(money(type, string(p.get("invoiceId")), policy, p.get("amount"), today, Map.of("refType", "INVOICE")));
             // Keyed on the CREDIT: one invoice carries a credit for every borrower on its file, each its own movement.

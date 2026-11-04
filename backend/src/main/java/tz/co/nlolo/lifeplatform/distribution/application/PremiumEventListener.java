@@ -78,7 +78,44 @@ public class PremiumEventListener {
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             case "billing.PremiumCollected" -> withTenant(envelope, this::handlePremiumCollected);
+            // A reversal undid a premium paid in full (money movement step 3b, user decision A): its commission comes back.
+            case "billing.PremiumCollectionReversed" -> withTenant(envelope, this::handleCollectionReversed);
             default -> { /* not distribution-relevant */ }
+        }
+    }
+
+    /**
+     * The key a collection's RENEWAL commission is booked under: the invoice for its first payment in full, and the
+     * invoice with its collection number for a later one -- after a reversal reopened it -- so commission clawed back
+     * from the first can be earned again by the next, while a redelivered event still finds its own.
+     */
+    static String collectionKey(UUID invoiceId, Object collection) {
+        int n = collection == null ? 1 : Integer.parseInt(collection.toString());
+        return n <= 1 ? invoiceId.toString() : invoiceId + ":" + n;
+    }
+
+    /**
+     * The RENEWAL commission booked on the collection a reversal undid is reversed, in the open period, once. A first
+     * premium (FIRST_YEAR, booked at issue) and a credit-life file (released when the lender paid) are not booked per
+     * collection, so they are left for finance -- logged as a warning naming the invoice.
+     */
+    private void handleCollectionReversed(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        UUID invoiceId = payload.get("invoiceId") instanceof UUID u ? u : UUID.fromString(String.valueOf(payload.get("invoiceId")));
+        String policyNumber = (String) payload.get("policyNumber");
+        String key = collectionKey(invoiceId, payload.get("collection"));
+        List<tz.co.nlolo.lifeplatform.distribution.domain.CommissionAccrual> booked = distributionApiImpl
+            .renewalAccrualsFor(tenantId, policyNumber, key);
+        if (booked.isEmpty()) {
+            log.warn("Premium on invoice {} (policy {}) was reversed but carried no RENEWAL commission to claw back -- a "
+                + "first premium or a credit-life file; finance reviews its commission by hand", invoiceId, policyNumber);
+            return;
+        }
+        String period = YearMonth.now().toString();
+        for (var original : booked) {
+            distributionApiImpl.persistAccrual(tenantId, original.getAgentId(), policyNumber, TierType.RENEWAL,
+                original.getAmount().negate(), original.getCurrency(), period, "reversal:" + key,
+                original.getAccrualId(), "system:billing.PremiumCollectionReversed");
         }
     }
 
@@ -181,11 +218,12 @@ public class PremiumEventListener {
             seller, List.of(), TierType.RENEWAL, collectedAmount, currency);
 
         String period = YearMonth.now().toString();
+        // sourceRef = the collection's key (the invoice, or the invoice and its collection number after a reversal), so
+        // ux_commission_accrual_once makes a redelivered collection a no-op while a real re-payment earns again.
+        String sourceRef = collectionKey(invoiceId, payload.get("collection"));
         for (CommissionCalculator.Accrual accrual : accruals) {
-            // sourceRef = invoiceId, so ux_commission_accrual_once makes a redelivered collection
-            // for an already-accrued invoice a no-op.
             distributionApiImpl.persistAccrual(tenantId, accrual.agentId(), policyNumber, accrual.tierType(),
-                    accrual.amount(), accrual.currency(), period, invoiceId.toString(), null,
+                    accrual.amount(), accrual.currency(), period, sourceRef, null,
                     "system:billing.PremiumCollected");
         }
     }

@@ -400,7 +400,10 @@ components:
         receivedOn: { type: [string, 'null'], format: date, description: 'The day it was received; null on a mobile-money request' }
         note: { type: [string, 'null'] }
         fieldReceiptId: { type: [string, 'null'], format: uuid }
-        status: { type: string, enum: [AWAITING_APPROVAL, CONFIRMED, REJECTED] }
+        status:
+          type: string
+          enum: [AWAITING_APPROVAL, CONFIRMED, REJECTED, REVERSED]
+          description: REVERSED once billing reversed the deposit it made -- a bounced cheque, a reversed payment (step 3b).
         recordedBy: { type: string }
         recordedAt: { type: string, format: date-time }
         decidedBy: { type: [string, 'null'] }
@@ -427,7 +430,7 @@ components:
         method: { type: string, enum: [MOBILE_MONEY, EFT, CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR] }
         status:
           type: string
-          enum: [PENDING, AWAITING_EXECUTION, AWAITING_APPROVAL, IN_DOUBT, CONFIRMED, COMPLETED, FAILED, REJECTED]
+          enum: [PENDING, AWAITING_EXECUTION, AWAITING_APPROVAL, IN_DOUBT, CONFIRMED, COMPLETED, FAILED, REJECTED, REVERSED]
         amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         counterparty: { type: string, description: Who paid (IN) or who is paid (OUT), as recorded. }
         reference: { type: [string, 'null'], description: The rail's or the bank's reference, once there is one. }

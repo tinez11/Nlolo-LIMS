@@ -239,7 +239,9 @@ class PostingEngine {
         }
         // The levy is on the premium paid (money movement step 2): from the balance as each premium is paid, never on the
         // deposit, part of which may wait for later premiums.
-        if ("billing.PremiumPaidFromBalance".equals(facts.eventType())) {
+        // ... and given back, at the rate in force, when a reversal undoes the premium paid (step 3b).
+        if ("billing.PremiumPaidFromBalance".equals(facts.eventType())
+                || "billing.PremiumPaidReversed".equals(facts.eventType())) {
             BigDecimal rate = register.inForce("PREMIUM_LEVY_RATE", "*", facts.eventDate())
                 .flatMap(e -> tz.co.nlolo.lifeplatform.finaccounting.domain.ElectionKey.rate(e.value()))
                 .orElse(BigDecimal.ZERO);

@@ -203,7 +203,8 @@ class SinglePremiumIntegrationTest {
             "db-migrations/billing/V10__premium_receipt.sql",
             "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql", "db-migrations/billing/V13__credit_refund_payout.sql",
             "db-migrations/billing/V14__policy_balance.sql",
-            "db-migrations/billing/V15__balance_withdrawal.sql");
+            "db-migrations/billing/V15__balance_withdrawal.sql",
+            "db-migrations/billing/V16__deposit_reversal.sql");
 
         // The container never runs compose's minio-init job, so the buckets are made here.
         MinioClient minio = MinioClient.builder()

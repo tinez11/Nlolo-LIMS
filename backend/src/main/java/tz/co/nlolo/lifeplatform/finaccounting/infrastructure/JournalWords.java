@@ -41,6 +41,8 @@ final class JournalWords {
         Map.entry("billing.BalanceWithdrawalApproved", "Withdrawal approved"),
         Map.entry("billing.BalanceWithdrawalPaid", "Withdrawal paid"),
         Map.entry("billing.BalanceWithdrawalReturned", "Withdrawal returned to the balance"),
+        Map.entry("billing.DepositReversed", "Deposit reversed"),
+        Map.entry("billing.PremiumPaidReversed", "Premium owed again after a reversal"),
         Map.entry("policyloan.LoanOverpaid", "Loan overpaid -- held for the payer"),
         Map.entry("policyloan.LoanForcedLapseTriggered", "Loan closed against the policy's value"),
         Map.entry("accumulation.PostingRecorded", "Savings account movement"),

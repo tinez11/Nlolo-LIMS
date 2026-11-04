@@ -55,6 +55,7 @@ class BillingSweepPsqlTest {
             "db-migrations/billing/V10__premium_receipt.sql",
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
+            "db-migrations/billing/V16__deposit_reversal.sql",
             // The policy schema is new to this list, and not incidental: the arrears step of the
             // sweep now joins policy.policy to skip offers nobody has accepted, so the function
             // will not even parse without these. The test inserts its own policy rows below.

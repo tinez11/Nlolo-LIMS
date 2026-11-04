@@ -550,6 +550,9 @@ public class BillingApiImpl implements BillingApi {
             // How the money came in (2026-10-27): the ledger posts it to the account it reached. Absent is the
             // gateway's mobile money, as every collection was before receipts.
             collected.put("receiptMethod", method == null ? "MOBILE_MONEY" : method);
+            // Which payment in full this is (money movement step 3b): 1 normally, n + 1 after a reversal reopened it n
+            // times -- distribution keys the commission on it, so commission clawed back can be earned again.
+            collected.put("collection", invoice.collectionNumber());
             eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumCollected", tenantId, collected));
         }
     }

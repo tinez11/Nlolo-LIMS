@@ -523,8 +523,109 @@ paths:
               schema: { $ref: '#/components/schemas/BalanceWithdrawal' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /deposits/{paymentId}/reversal:
+    post:
+      summary: Ask to reverse a deposit whose money never really arrived (collections.manage); a second person confirms
+      description: >
+        Money movement step 3b. paymentId is the confirmed receipt's (or payment's) id. On confirmation the deposit comes
+        off the balance and, if that leaves it below zero, the premiums it paid reopen newest first and their renewal
+        commission is clawed back.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: paymentId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '201':
+          description: Asked; waiting for its second person
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DepositReversal' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /deposit-reversals/{reversalId}:
+    get:
+      summary: One deposit reversal
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: reversalId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The reversal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DepositReversal' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /deposit-reversals/{reversalId}/confirm:
+    post:
+      summary: The second person confirms the reversal (collections.approve)
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: reversalId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Confirmed; the deposit is off the balance
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DepositReversal' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /deposit-reversals/{reversalId}/reject:
+    post:
+      summary: Refuse the reversal, saying why (collections.approve); nothing changes
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: reversalId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: Refused
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DepositReversal' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
 components:
   schemas:
+    DepositReversal:
+      type: object
+      additionalProperties: false
+      required: [reversalId, policyNumber, paymentId, amount, reason, status, requestedBy, requestedAt, actedAlone]
+      properties:
+        reversalId: { type: string, format: uuid }
+        policyNumber: { type: string }
+        paymentId: { type: string, format: uuid }
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        reason: { type: string }
+        status: { type: string, enum: [REQUESTED, CONFIRMED, REJECTED] }
+        requestedBy: { type: string }
+        requestedAt: { type: string, format: date-time }
+        decidedBy: { type: [string, 'null'] }
+        decidedAt: { type: [string, 'null'], format: date-time }
+        rejectionReason: { type: [string, 'null'] }
+        actedAlone: { type: boolean }
     PolicyBalance:
       type: object
       additionalProperties: false

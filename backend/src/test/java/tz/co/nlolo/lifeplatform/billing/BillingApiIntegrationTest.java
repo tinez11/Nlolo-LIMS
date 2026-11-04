@@ -194,6 +194,7 @@ class BillingApiIntegrationTest {
             "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql", "db-migrations/billing/V13__credit_refund_payout.sql",
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
+            "db-migrations/billing/V16__deposit_reversal.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
@@ -210,7 +211,8 @@ class BillingApiIntegrationTest {
             "db-migrations/payment/V17__manual_receipts.sql",
             "db-migrations/payment/V18__payout_routes.sql",
             "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
-            "db-migrations/payment/V23__balance_withdrawal_purpose.sql");
+            "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
+            "db-migrations/payment/V24__reversed_status.sql");
     }
 
     @AfterAll
@@ -1120,7 +1122,7 @@ class BillingApiIntegrationTest {
 
         TenantContext.set(tenantId);
         assertThatThrownBy(() -> balanceWithdrawals.approve(asked.getWithdrawalId(), "finance-1"))
-            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.WithdrawalRefusedException.class)
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.BalanceRefusedException.class)
             .hasMessageContaining("someone other than");
 
         eventRecorder.clear();
@@ -1139,7 +1141,7 @@ class BillingApiIntegrationTest {
         TenantContext.set(tenantId);
         assertThatThrownBy(() -> balanceWithdrawals.request(policyNumber, new BigDecimal("25000.01"),
             tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney("255754000001"), "finance-1"))
-            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.WithdrawalRefusedException.class)
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.BalanceRefusedException.class)
             .hasMessageContaining("25000.00");
     }
 
@@ -1183,6 +1185,72 @@ class BillingApiIntegrationTest {
         var named = balanceWithdrawals.namePayee(raised.get(0).getWithdrawalId(),
             tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney("255754000002"), "finance-1");
         assertThat(named.getStatus()).isEqualTo("REQUESTED");
+    }
+
+    // =========================================================================================
+    // Money movement step 3b (2026-11-04) -- reversing a deposit whose money never arrived.
+    // =========================================================================================
+
+    @Autowired private tz.co.nlolo.lifeplatform.billing.application.DepositReversals depositReversals;
+
+    @Test
+    void aBouncedChequeComesOffTheBalanceReopensThePremiumItPaidAndClawsBackItsCollection() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "REVERSE-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+        UUID cheque = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("40000.00"), "TZS", "CHQ-BOUNCE", null,
+            "CHEQUE", cheque);
+
+        TenantContext.set(tenantId);
+        var asked = depositReversals.request(cheque, "Cheque returned unpaid by the bank", "finance-1");
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> depositReversals.confirm(asked.getReversalId(), "finance-1"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.BalanceRefusedException.class)
+            .hasMessageContaining("someone other than");
+
+        eventRecorder.clear();
+        TenantContext.set(tenantId);
+        depositReversals.confirm(asked.getReversalId(), "finance-2");
+
+        // 40,000 came off; the 15,000 premium it paid is owed again, so the balance is back to nothing, not below.
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balanceOf(policyNumber)).isEqualByComparingTo("0.00");
+        assertThat(premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoice.invoiceId(), tenantId).orElseThrow()
+            .getStatus()).isEqualTo("DUE");
+        assertThat(eventRecorder.ofType("billing.DepositReversed")).hasSize(1);
+        assertThat(eventRecorder.ofType("billing.PremiumPaidReversed")).hasSize(1);
+        List<DomainEventEnvelope<?>> undone = eventRecorder.ofType("billing.PremiumCollectionReversed");
+        assertThat(undone).hasSize(1);
+        assertThat(payloadOf(undone.get(0)).get("collection")).isEqualTo(1);
+
+        // Paid again for real: a new collection, numbered 2, so its commission is keyed apart from the one clawed back.
+        eventRecorder.clear();
+        TenantContext.set(tenantId);
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("15000.00"), "TZS", "SLIP-REAL", null,
+            "CASH", UUID.randomUUID());
+        assertThat(payloadOf(eventRecorder.ofType("billing.PremiumCollected").get(0)).get("collection")).isEqualTo(2);
+    }
+
+    @Test
+    void aDepositIsReversedOnceOnly() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "REVERSE-02");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+        UUID payment = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("15000.00"), "TZS", "SLIP-ONCE", null,
+            "CASH", payment);
+        TenantContext.set(tenantId);
+        depositReversals.request(payment, "Reversed by the bank", "finance-1");
+
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> depositReversals.request(payment, "Again", "finance-1"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.BalanceRefusedException.class)
+            .hasMessageContaining("already");
     }
 
     /**

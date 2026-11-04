@@ -7,7 +7,7 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.PayoutRoute;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.approvals.api.OwnWork;
-import tz.co.nlolo.lifeplatform.billing.api.WithdrawalRefusedException;
+import tz.co.nlolo.lifeplatform.billing.api.BalanceRefusedException;
 import tz.co.nlolo.lifeplatform.billing.domain.BalanceEntry;
 import tz.co.nlolo.lifeplatform.billing.domain.BalanceWithdrawal;
 import tz.co.nlolo.lifeplatform.billing.domain.PolicyBalance;
@@ -56,11 +56,11 @@ public class BalanceWithdrawals {
     public BalanceWithdrawal request(String policyNumber, BigDecimal amount, PayoutRoute route, String by) {
         UUID tenantId = TenantContext.get();
         PolicyBalance balance = balances.findForUpdate(tenantId, policyNumber)
-            .orElseThrow(() -> new WithdrawalRefusedException("Policy " + policyNumber + " has no balance to withdraw from"));
+            .orElseThrow(() -> new BalanceRefusedException("Policy " + policyNumber + " has no balance to withdraw from"));
         refuseIfInFlight(tenantId, policyNumber);
         BigDecimal now = entries.balanceOf(tenantId, policyNumber);
         if (amount == null || amount.signum() <= 0 || amount.compareTo(now) > 0) {
-            throw new WithdrawalRefusedException("Withdraw between 0.01 and " + now.setScale(2).toPlainString() + " "
+            throw new BalanceRefusedException("Withdraw between 0.01 and " + now.setScale(2).toPlainString() + " "
                 + balance.getCurrency() + ", what is on the policy's balance");
         }
         return withdrawals.save(BalanceWithdrawal.asked(tenantId, policyNumber, amount, balance.getCurrency(), route, by));
@@ -102,7 +102,7 @@ public class BalanceWithdrawals {
         balances.findForUpdate(w.getTenantId(), w.getPolicyNumber()).orElseThrow();
         BigDecimal now = entries.balanceOf(w.getTenantId(), w.getPolicyNumber());
         if (w.getAmount().compareTo(now) > 0) {
-            throw new WithdrawalRefusedException("The policy's balance is " + now.setScale(2).toPlainString() + " "
+            throw new BalanceRefusedException("The policy's balance is " + now.setScale(2).toPlainString() + " "
                 + w.getCurrency() + " now, less than this withdrawal; refuse it and ask for what is there");
         }
         w.approve(by);
@@ -183,13 +183,13 @@ public class BalanceWithdrawals {
 
     private void refuseIfInFlight(UUID tenantId, String policyNumber) {
         if (withdrawals.existsByTenantIdAndPolicyNumberAndStatusIn(tenantId, policyNumber, LIVE)) {
-            throw new WithdrawalRefusedException("A withdrawal from this policy's balance is already waiting; finish or refuse it first");
+            throw new BalanceRefusedException("A withdrawal from this policy's balance is already waiting; finish or refuse it first");
         }
     }
 
     private BalanceWithdrawal find(UUID withdrawalId) {
         return withdrawals.findByWithdrawalIdAndTenantId(withdrawalId, TenantContext.get())
-            .orElseThrow(() -> new WithdrawalRefusedException("No withdrawal " + withdrawalId + " on this tenant's books"));
+            .orElseThrow(() -> new BalanceRefusedException("No withdrawal " + withdrawalId + " on this tenant's books"));
     }
 
     private static Map<String, Object> money(BalanceWithdrawal w) {

@@ -566,6 +566,13 @@ public class DistributionApiImpl implements DistributionApi {
      *
      * @return the persisted accrual, or empty if this exact accrual (or reversal) already exists
      */
+    /** The RENEWAL accruals booked on one collection (money movement step 3b) -- what a reversal of it claws back. */
+    List<CommissionAccrual> renewalAccrualsFor(UUID tenantId, String policyNumber, String collectionKey) {
+        return commissionAccrualRepository
+            .findByTenantIdAndPolicyNumberAndTierTypeAndReversesAccrualIdIsNull(tenantId, policyNumber, TierType.RENEWAL)
+            .stream().filter(a -> collectionKey.equals(a.getSourceRef()) && a.getAmount().signum() > 0).toList();
+    }
+
     Optional<CommissionAccrual> persistAccrual(UUID tenantId, UUID agentId, String policyNumber, TierType tierType,
                                                 BigDecimal amount, String currency, String period, String sourceRef,
                                                 UUID reversesAccrualId, String createdBy) {

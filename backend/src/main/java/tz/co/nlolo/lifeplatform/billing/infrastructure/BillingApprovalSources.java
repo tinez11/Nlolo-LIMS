@@ -48,6 +48,16 @@ class BillingApprovalSources {
                 .map(w -> withdrawalItem(w, "The policy ended with money on its balance")).toList(), limit));
     }
 
+    /** A deposit whose money never arrived, waiting for its second person to reverse it (money movement step 3b). */
+    @Bean
+    ApprovalSource depositReversalsToConfirm(tz.co.nlolo.lifeplatform.billing.application.DepositReversals reversals) {
+        return ApprovalSource.of("deposit-reversal", "Deposit reversals to confirm", "Confirm", "collections.approve",
+            limit -> ApprovalSource.Pending.of(reversals.waiting().stream()
+                .map(r -> new ApprovalSource.Item(r.getReversalId().toString(), r.getPolicyNumber(),
+                    "Reverse a deposit: " + r.getReason(), r.getAmount(), r.getCurrency(), r.getRequestedBy(),
+                    r.getRequestedAt())).toList(), limit));
+    }
+
     private static ApprovalSource.Item withdrawalItem(BalanceWithdrawal w, String what) {
         return new ApprovalSource.Item(w.getWithdrawalId().toString(), w.getPolicyNumber(), what, w.getAmount(),
             w.getCurrency(), "system".equals(w.getRequestedBy()) ? null : w.getRequestedBy(), w.getRequestedAt());

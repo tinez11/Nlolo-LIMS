@@ -2,7 +2,7 @@ package tz.co.nlolo.lifeplatform.billing.domain;
 
 import jakarta.persistence.*;
 import tz.co.nlolo.lifeplatform.PayoutRoute;
-import tz.co.nlolo.lifeplatform.billing.api.WithdrawalRefusedException;
+import tz.co.nlolo.lifeplatform.billing.api.BalanceRefusedException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -104,9 +104,9 @@ public class BalanceWithdrawal {
 
     public void reject(String by, String why) {
         if (!"REQUESTED".equals(status) && !"AWAITING_PAYEE".equals(status)) {
-            throw new WithdrawalRefusedException("This withdrawal is " + status.toLowerCase() + " and cannot be refused");
+            throw new BalanceRefusedException("This withdrawal is " + status.toLowerCase() + " and cannot be refused");
         }
-        if (why == null || why.isBlank()) throw new WithdrawalRefusedException("Say why the withdrawal is refused");
+        if (why == null || why.isBlank()) throw new BalanceRefusedException("Say why the withdrawal is refused");
         requireSecondPerson(by, "refused");
         this.actedAlone = by.equals(requestedBy);
         this.status = "REJECTED";
@@ -145,13 +145,13 @@ public class BalanceWithdrawal {
 
     private void requireSecondPerson(String by, String verb) {
         if (by.equals(requestedBy) && !mayActAlone) {
-            throw new WithdrawalRefusedException("A withdrawal must be " + verb + " by someone other than the person who asked for it");
+            throw new BalanceRefusedException("A withdrawal must be " + verb + " by someone other than the person who asked for it");
         }
     }
 
     private void requireStatus(String expected, String verb) {
         if (!expected.equals(status)) {
-            throw new WithdrawalRefusedException("This withdrawal is " + status.toLowerCase() + " and cannot be " + verb);
+            throw new BalanceRefusedException("This withdrawal is " + status.toLowerCase() + " and cannot be " + verb);
         }
     }
 

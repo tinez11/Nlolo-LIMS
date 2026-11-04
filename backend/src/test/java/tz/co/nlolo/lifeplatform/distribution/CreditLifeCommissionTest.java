@@ -189,6 +189,7 @@ class CreditLifeCommissionTest {
             "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql", "db-migrations/billing/V13__credit_refund_payout.sql",
             "db-migrations/billing/V14__policy_balance.sql",
             "db-migrations/billing/V15__balance_withdrawal.sql",
+            "db-migrations/billing/V16__deposit_reversal.sql",
             // payment: a refund paid back to the lender is a bank transfer (2026-10-30).
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V16__payment_policy_number.sql",
@@ -203,6 +204,7 @@ class CreditLifeCommissionTest {
             "db-migrations/payment/V18__payout_routes.sql",
             "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
             "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
+            "db-migrations/payment/V24__reversed_status.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/distribution/V4__partial_reversals.sql",
