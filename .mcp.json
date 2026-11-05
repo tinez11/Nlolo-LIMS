@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@0.0.83",
+        "--headless",
+        "--isolated",
+        "--storage-state=frontend/e2e/.auth/staff-admin.json"
+      ],
+      "env": {}
+    }
+  }
+}
