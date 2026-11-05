@@ -4,13 +4,16 @@ import type { ReactElement } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as policiesApi from '@/api/policies';
+import * as receiptsApi from '@/api/receipts';
 import type { BalanceStatementLine, BalanceStatementView, Money } from '@/api/types';
 import { formatDate } from '@/lib/dates';
 import { grantAccess } from '@/test/access';
 import { usePolicyStore } from '@/store/policyStore';
+import { useReceiptStore } from '@/store/receiptStore';
 import { BalancePanel, BalanceStatementPanel } from './BalancePanel';
 
 vi.mock('@/api/policies');
+vi.mock('@/api/receipts');
 
 const TZS = (amount: string): Money => ({ amount, currencyCode: 'TZS' });
 
@@ -35,6 +38,8 @@ function renderPanel(ui: ReactElement) {
 beforeEach(() => {
   vi.clearAllMocks();
   usePolicyStore.setState({ balance: {}, balanceStatement: {} });
+  useReceiptStore.setState({ waitingOnPolicy: {} });
+  vi.mocked(receiptsApi.listWaitingDeposits).mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -53,6 +58,26 @@ describe('BalancePanel', () => {
     expect(screen.getByText(formatDate('2026-12-04'))).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Record deposit' }))
       .toHaveAttribute('href', '/staff/receipts/new?policy=POL-000001&from=policy');
+  });
+
+  it('shows a deposit recorded on the policy while it waits for a second person', async () => {
+    grantAccess('collections.view');
+    vi.mocked(policiesApi.getPolicyBalance).mockResolvedValue({
+      policyNumber: 'POL-000001', balance: TZS('0.00'), coversPremiumsTo: null,
+    });
+    vi.mocked(receiptsApi.listWaitingDeposits).mockResolvedValue([{
+      receiptId: 'rc-1', purpose: 'DEPOSIT', method: 'BANK_DEPOSIT', reference: 'SLIP-77', payerRef: 'Neema',
+      amount: TZS('30000.00'), invoiceId: null, loanId: null, policyNumber: 'POL-000001', receivedOn: '2026-11-05',
+      note: null, fieldReceiptId: null, status: 'AWAITING_APPROVAL', recordedBy: 'staff-1',
+      recordedAt: '2026-11-05T08:00:00Z', decidedBy: null, decidedAt: null, decisionReason: null,
+    }]);
+    renderPanel(<BalancePanel policyNumber="POL-000001" />);
+
+    expect(await screen.findByText('A deposit is waiting to be confirmed')).toBeInTheDocument();
+    expect(receiptsApi.listWaitingDeposits).toHaveBeenCalledWith('POL-000001');
+    expect(screen.getByText('TZS 30,000.00')).toBeInTheDocument();
+    expect(screen.getByText(/goes onto the balance/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/staff/receipts/rc-1');
   });
 
   it('says no premium is ahead, and offers no deposit to someone who cannot record one', async () => {

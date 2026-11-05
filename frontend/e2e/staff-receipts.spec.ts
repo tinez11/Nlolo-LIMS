@@ -42,6 +42,14 @@ test.describe('receipts', () => {
     await expect(page.getByRole('button', { name: 'Confirm', exact: true })).toBeDisabled();
     const receiptUrl = page.url();
 
+    // Back on the policy it shows as waiting on the Balance panel -- a deposit naming only the policy has no invoice
+    // to wait on, and before this it showed nowhere but the approver's inbox.
+    await page.goto(`/staff/policies/${policyNumber}?tab=billing`);
+    const waiting = page.getByLabel('Deposits waiting to be confirmed');
+    await expect(waiting.getByText('A deposit is waiting to be confirmed')).toBeVisible({ timeout: 30_000 });
+    await expect(waiting).toContainText(cheque);
+    await expect(waiting).toContainText('goes onto the balance');
+
     // A second finance person confirms it.
     const second = await browser.newContext({ storageState: 'e2e/.auth/staff-finance-approver.json' });
     const approver = await second.newPage();

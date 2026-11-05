@@ -606,10 +606,15 @@ class PremiumPostingEndToEndTest {
                 "RC-1", premium, java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")), null, null, null,
                 policyNumber), "finance-one"))
             .isInstanceOf(ReceiptRefusedException.class).hasMessageContaining("one of them");
+        TenantContext.set(tenantId);
+        assertThat(receipts.waitingOnPolicy(policyNumber)).as("the policy shows the deposit while it waits")
+            .extracting(ReceiptView::receiptId).containsExactly(recorded.receiptId());
 
         TenantContext.set(tenantId);
         transactionTemplate().executeWithoutResult(s -> receipts.approve(recorded.receiptId(), "finance-two"));
 
+        TenantContext.set(tenantId);
+        assertThat(receipts.waitingOnPolicy(policyNumber)).as("and no longer once confirmed").isEmpty();
         TenantContext.set(tenantId);
         assertThat(billingApi.getInvoice(invoice.invoiceId()).status()).isEqualTo(InvoiceStatus.PAID);
         assertThat(billingApi.balance(policyNumber).balance()).as("the second premium's worth waits on the balance")

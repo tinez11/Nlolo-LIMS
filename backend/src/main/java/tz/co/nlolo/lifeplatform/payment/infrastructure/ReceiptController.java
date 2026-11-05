@@ -79,11 +79,18 @@ public class ReceiptController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ReceiptResponse.from(recorded));
     }
 
-    /** The receipts waiting to be confirmed on one invoice -- the invoice's own view of what is in flight. */
+    /**
+     * The receipts waiting to be confirmed on one invoice, or the deposits waiting on one policy's balance -- the
+     * record's own view of what is in flight. Exactly one of the two is named.
+     */
     @GetMapping("/receipts")
     @PreAuthorize("@access.canAny('collections.view', 'collections.manage')")
-    public ResponseEntity<java.util.List<ReceiptResponse>> waiting(@RequestParam UUID invoiceId) {
-        return ResponseEntity.ok(receipts.waitingOn(invoiceId).stream().map(ReceiptResponse::from).toList());
+    public ResponseEntity<java.util.List<ReceiptResponse>> waiting(@RequestParam(required = false) UUID invoiceId,
+                                                                   @RequestParam(required = false) String policyNumber) {
+        boolean byPolicy = policyNumber != null && !policyNumber.isBlank();
+        if ((invoiceId != null) == byPolicy) throw new IllegalArgumentException("Name one invoice or one policy");
+        java.util.List<ReceiptView> waiting = byPolicy ? receipts.waitingOnPolicy(policyNumber) : receipts.waitingOn(invoiceId);
+        return ResponseEntity.ok(waiting.stream().map(ReceiptResponse::from).toList());
     }
 
     @GetMapping("/receipts/{receiptId}")

@@ -36,14 +36,16 @@ paths:
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /receipts:
     get:
-      summary: The receipts waiting to be confirmed on one invoice, oldest first (collections.view or collections.manage)
+      summary: The receipts waiting to be confirmed on one invoice or one policy, oldest first (collections.view or collections.manage)
       description: >
         2026-10-28. What the invoice shows as in flight, so a receipt is visible where it was recorded and not only in
-        somebody else's approvals inbox.
+        somebody else's approvals inbox. Since money movement, `policyNumber` instead names a policy and returns the
+        deposits waiting on its balance. Exactly one of the two is named (400 otherwise).
       security:
         - staffAuth: []
       parameters:
-        - { name: invoiceId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: invoiceId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: policyNumber, in: query, required: false, schema: { type: string, maxLength: 40 } }
       responses:
         '200':
           description: OK

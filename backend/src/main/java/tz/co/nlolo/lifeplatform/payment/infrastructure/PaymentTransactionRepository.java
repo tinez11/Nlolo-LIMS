@@ -16,6 +16,11 @@ public interface PaymentTransactionRepository
     /** One invoice's receipts in one state -- those still waiting for their second signature (2026-10-28). */
     java.util.List<PaymentTransaction> findByTenantIdAndSourceRefAndStatusOrderByCreatedAtAsc(UUID tenantId, String sourceRef,
                                                                                             String status);
+    /** One policy's deposits in one state -- a balance's own view of what is in flight (money movement). */
+    java.util.List<PaymentTransaction> findByTenantIdAndPolicyNumberAndPurposeAndStatusOrderByCreatedAtAsc(UUID tenantId,
+                                                                                                        String policyNumber,
+                                                                                                        String purpose,
+                                                                                                        String status);
     Optional<PaymentTransaction> findByGatewayReferenceAndTenantId(String gatewayReference, UUID tenantId);
 
     // ---- Recorded receipts (2026-10-27) ----

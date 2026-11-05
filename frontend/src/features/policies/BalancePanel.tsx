@@ -10,7 +10,12 @@ import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectBalance, selectBalanceStatement, usePolicyStore } from '@/store/policyStore';
+import { useReceiptStore } from '@/store/receiptStore';
+import type { Receipt } from '@/api/receipts';
 import { BalanceWithdrawals } from './BalanceWithdrawals';
+import { WaitingReceipts } from './InvoicesPanel';
+
+const NONE_WAITING: Receipt[] = [];
 
 /** What each statement line is, in the words the console uses for money (design §5.1). */
 const BALANCE_ENTRY_LABEL: Record<BalanceStatementLine['type'], string> = {
@@ -28,10 +33,15 @@ const BALANCE_ENTRY_LABEL: Record<BalanceStatementLine['type'], string> = {
 export function BalancePanel({ policyNumber }: { policyNumber: string }) {
   const balance = usePolicyStore(selectBalance(policyNumber));
   const loadBalance = usePolicyStore((s) => s.loadBalance);
+  // A deposit naming only the policy has no invoice to wait on, so it shows here until it is confirmed -- without this
+  // it was invisible everywhere but the approver's inbox.
+  const loadWaiting = useReceiptStore((s) => s.loadWaitingOnPolicy);
+  const waiting = useReceiptStore((s) => s.waitingOnPolicy[policyNumber])?.data ?? NONE_WAITING;
 
   useEffect(() => {
     void loadBalance(policyNumber);
-  }, [policyNumber, loadBalance]);
+    if (can('collections.view')) void loadWaiting(policyNumber);
+  }, [policyNumber, loadBalance, loadWaiting]);
 
   if (isInitialLoad(balance)) return <LoadingBlock />;
   if (balance.status === 'error' && balance.error && balance.data === null) {
@@ -51,6 +61,12 @@ export function BalancePanel({ policyNumber }: { policyNumber: string }) {
           {...(covers ? { note: 'The last premium due that this balance pays in full' } : {})}
         />
       </dl>
+      {waiting.length > 0 && (
+        <WaitingReceipts
+          receipts={waiting}
+          lands="It goes onto the balance, and pays the premiums due, once a second finance person confirms it under Approvals."
+        />
+      )}
       {(can('collections.manage') || can('payouts.manage')) && (
         <div className="flex flex-wrap gap-1.5">
           {can('collections.manage') && (

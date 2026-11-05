@@ -21,6 +21,11 @@ export function listWaitingReceipts(invoiceId: string): Promise<Receipt[]> {
   return get<Receipt[]>(`/receipts?invoiceId=${encodeURIComponent(invoiceId)}`);
 }
 
+/** `GET /receipts?policyNumber=` -- the deposits still waiting to be confirmed on one policy's balance (money movement). */
+export function listWaitingDeposits(policyNumber: string): Promise<Receipt[]> {
+  return get<Receipt[]>(`/receipts?policyNumber=${encodeURIComponent(policyNumber)}`);
+}
+
 export function getReceipt(receiptId: string): Promise<Receipt> {
   return get<Receipt>(`/receipts/${encodeURIComponent(receiptId)}`);
 }

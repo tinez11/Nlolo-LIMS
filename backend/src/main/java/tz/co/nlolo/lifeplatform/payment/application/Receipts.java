@@ -285,6 +285,16 @@ public class Receipts {
             "AWAITING_APPROVAL").stream().map(Receipts::view).toList();
     }
 
+    /**
+     * One policy's deposits still waiting for their second signature, oldest first -- shown on the policy's balance,
+     * since a deposit naming only the policy has no invoice to show it on (money movement).
+     */
+    @Transactional(readOnly = true)
+    public List<ReceiptView> waitingOnPolicy(String policyNumber) {
+        return transactions.findByTenantIdAndPolicyNumberAndPurposeAndStatusOrderByCreatedAtAsc(TenantContext.get(),
+            policyNumber, "DEPOSIT", "AWAITING_APPROVAL").stream().map(Receipts::view).toList();
+    }
+
     /** Receipts waiting for their second signature, oldest first: the approvals inbox's rows. */
     @Transactional(readOnly = true)
     public List<ReceiptView> awaitingApproval() {
