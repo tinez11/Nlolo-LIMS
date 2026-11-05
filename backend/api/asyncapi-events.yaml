@@ -1630,7 +1630,8 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { receiptId: {type: string, format: uuid}, policyNumber: {type: string}, amount: {type: object}, capturedAt: {type: string, format: date-time}, agentId: {type: string, format: uuid} }
+          # policyholderPartyId (receipts step 1, 2026-11-05): who handed the cash over, so communication can tell them at once.
+          properties: { receiptId: {type: string, format: uuid}, policyNumber: {type: string}, amount: {type: object}, capturedAt: {type: string, format: date-time}, agentId: {type: string, format: uuid}, policyholderPartyId: {type: string, format: uuid} }
     FieldReceiptReconciliationOverduePayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

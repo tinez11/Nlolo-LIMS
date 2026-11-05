@@ -50,32 +50,36 @@ public class ReceiptEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
-        if (!"payment.ReceiptIssued".equals(envelope.eventType())) {
-            return;
-        }
         @SuppressWarnings("unchecked")
-        Map<String, Object> payload = (Map<String, Object>) envelope.payload();
+        Map<String, Object> payload = envelope.payload() instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
+        String policyNumber = (String) payload.get("policyNumber");
+        switch (envelope.eventType()) {
+            case "payment.ReceiptIssued" -> tell(envelope, payload, "PAYMENT_RECEIVED", Map.of(
+                "policyNumber", policyNumber, "amount", money(payload.get("amount")),
+                "receiptNumber", (String) payload.get("receiptNumber")));
+            // Cash handed to an agent, acknowledged as the agent records it; its receipt follows once it reaches us.
+            case "billing.FieldReceiptCaptured" -> tell(envelope, payload, "AGENT_CASH_RECEIVED", Map.of(
+                "policyNumber", policyNumber, "amount", money(payload.get("amount"))));
+            default -> { /* not a receipt */ }
+        }
+    }
+
+    private void tell(DomainEventEnvelope<?> envelope, Map<String, Object> payload, String templateKey,
+                      Map<String, String> values) {
         if (payload.get("policyholderPartyId") == null) {
-            log.warn("Receipt {} on policy {} names no policyholder; nobody to tell",
-                payload.get("receiptNumber"), payload.get("policyNumber"));
+            log.warn("{} on policy {} names no policyholder; nobody to tell", templateKey, payload.get("policyNumber"));
             return;
         }
-
         UUID previousTenant = TenantContext.getOrNull();
         TenantContext.set(envelope.tenantId());
         try {
             requiresNewTransactionTemplate.executeWithoutResult(status ->
                 notificationApi.notify(envelope.eventId(), (UUID) payload.get("policyholderPartyId"),
-                    (String) payload.get("policyNumber"), "PAYMENT_RECEIVED",
-                    Map.of(
-                        "policyNumber", (String) payload.get("policyNumber"),
-                        "amount", money(payload.get("amount")),
-                        "receiptNumber", (String) payload.get("receiptNumber"))));
+                    (String) payload.get("policyNumber"), templateKey, values));
         } catch (Exception e) {
-            // The money is confirmed either way -- payment has committed, and rolling that back to save a message would
-            // be exactly backwards. Logged loudly; the dispatch row records the failure for the desk.
-            log.error("Failed to acknowledge receipt {} on policy {}", payload.get("receiptNumber"),
-                payload.get("policyNumber"), e);
+            // The money is recorded either way -- its module has committed, and rolling that back to save a message
+            // would be exactly backwards. Logged loudly; the dispatch row records the failure for the desk.
+            log.error("Failed to send {} on policy {}", templateKey, payload.get("policyNumber"), e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

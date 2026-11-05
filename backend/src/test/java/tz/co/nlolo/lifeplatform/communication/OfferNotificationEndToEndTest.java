@@ -187,7 +187,7 @@ class OfferNotificationEndToEndTest {
             "db-migrations/communication/V8__platform_default_templates.sql",
             "db-migrations/communication/V9__payment_received_template.sql",
             "db-migrations/communication/V10__account_statement_template.sql",
-            "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql",
+            "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql", "db-migrations/communication/V17__agent_cash_received_template.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");
@@ -360,6 +360,24 @@ class OfferNotificationEndToEndTest {
             .filteredOn(d -> "COVER_STARTED".equals(d.getTemplateKey()) && "SMS".equals(d.getChannel()))
             .as("cover starts once; the second payment must not claim it started again")
             .hasSize(1);
+    }
+
+    /**
+     * Cash handed to an agent is acknowledged as the agent records it (receipts step 1; TIRA Code B.5(b)), before it
+     * reaches the insurer and is receipted -- the customer holds something from the moment the cash leaves their hand.
+     */
+    @Test
+    void cashHandedToAnAgentIsAcknowledgedAtOnce() {
+        String policyNumber = issueOffer(buildFixture("NOTIFY-AGENTCASH-01"), null);
+
+        TenantContext.set(SEEDED_TENANT);
+        billingApi.captureFieldReceipt(java.util.UUID.randomUUID(), policyNumber, new BigDecimal("15000.00"), "TZS",
+            "agent-cash-" + java.util.UUID.randomUUID(), java.time.Instant.now());
+
+        assertThat(messagesAbout(policyNumber))
+            .filteredOn(d -> "AGENT_CASH_RECEIVED".equals(d.getTemplateKey()) && "SMS".equals(d.getChannel()))
+            .extracting(NotificationDispatch::getBody)
+            .singleElement().asString().contains("TZS 15,000.00", policyNumber);
     }
 
     @Test
