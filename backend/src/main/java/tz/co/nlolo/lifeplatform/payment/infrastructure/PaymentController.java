@@ -56,10 +56,11 @@ public class PaymentController {
             @RequestParam(required = false) String direction,
             @RequestParam(required = false) String state,
             @RequestParam(required = false) String policyNumber,
+            @RequestParam(required = false) String receiptNumber,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int pageSize) {
         return ResponseEntity.ok(PaymentRegisterResponseDto.PageResponse.from(
-            paymentApi.register(direction, state, policyNumber,
+            paymentApi.register(direction, state, policyNumber, receiptNumber,
                 org.springframework.data.domain.PageRequest.of(Math.max(page, 0), Math.min(Math.max(pageSize, 1), 100)))));
     }
 

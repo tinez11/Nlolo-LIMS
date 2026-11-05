@@ -25,6 +25,11 @@ paths:
         - { name: direction, in: query, required: false, schema: { type: string, enum: [IN, OUT] } }
         - { name: state, in: query, required: false, schema: { type: string, enum: [attention, waiting, done, all] } }
         - { name: policyNumber, in: query, required: false, schema: { type: string } }
+        - name: receiptNumber
+          in: query
+          required: false
+          description: Only the money in with this receipt number (receipts step 1); case is forgiven.
+          schema: { type: string, maxLength: 20 }
         - { name: page, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
         - { name: pageSize, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
       responses:
@@ -77,9 +82,25 @@ paths:
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /receipt-numbers/{receiptNumber}:
+    get:
+      summary: A receipt by its number, as printed and sent by SMS (collections.view or collections.manage)
+      description: Receipts step 1 (2026-11-05). Case and surrounding spaces are forgiven.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: receiptNumber, in: path, required: true, schema: { type: string, maxLength: 20 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Receipt' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /receipts/{receiptId}:
     get:
-      summary: One recorded receipt (collections.view or collections.manage)
+      summary: One amount received, recorded by hand or pulled by the gateway (collections.view or collections.manage)
       security:
         - staffAuth: []
       parameters:
@@ -401,7 +422,7 @@ components:
           type: string
           enum: [MOBILE_MONEY, CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR]
           description: How it came in. MOBILE_MONEY is a request to the payer's phone, confirmed like any receipt (2026-10-27).
-        reference: { type: string }
+        reference: { type: [string, 'null'], description: "The method's own reference; null on a mobile-money request the provider has not answered yet" }
         payerRef: { type: string }
         amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         invoiceId: { type: [string, 'null'], format: uuid }
@@ -412,13 +433,21 @@ components:
         fieldReceiptId: { type: [string, 'null'], format: uuid }
         status:
           type: string
-          enum: [AWAITING_APPROVAL, CONFIRMED, REJECTED, REVERSED]
-          description: REVERSED once billing reversed the deposit it made -- a bounced cheque, a reversed payment (step 3b).
-        recordedBy: { type: string }
+          enum: [AWAITING_APPROVAL, CONFIRMED, REJECTED, REVERSED, PENDING, IN_DOUBT, FAILED]
+          description: >
+            REVERSED once billing reversed the deposit it made -- a bounced cheque, a reversed payment (step 3b).
+            PENDING, IN_DOUBT and FAILED are a mobile-money request's own states (receipts step 1: every amount
+            received opens here, not only the ones recorded by hand).
+        recordedBy: { type: [string, 'null'], description: Who recorded it by hand; null on one the gateway pulled }
         recordedAt: { type: string, format: date-time }
         decidedBy: { type: [string, 'null'] }
         decidedAt: { type: [string, 'null'], format: date-time }
         decisionReason: { type: [string, 'null'] }
+        receiptNumber:
+          type: [string, 'null']
+          description: >
+            RC-year-sequence, given when the money was confirmed (receipts step 1, 2026-11-05) and never reused; a
+            reversed one keeps it. Null until confirmed, and on one never confirmed.
     PaymentRegisterPage:
       type: object
       additionalProperties: false
@@ -449,6 +478,7 @@ components:
         createdAt: { type: string, format: date-time }
         executedBy: { type: [string, 'null'] }
         executedAt: { type: [string, 'null'], format: date-time }
+        receiptNumber: { type: [string, 'null'], description: 'Money in once confirmed: its RC-year-sequence receipt (receipts step 1).' }
     AwaitingEftView:
       type: object
       additionalProperties: false

@@ -6,5 +6,5 @@
 // benefitpayout::api added 2026-10-20 for the prospect quotation's survival and maturity lines; it does not depend back.
 @org.springframework.modulith.ApplicationModule(allowedDependencies = { "policy::api", "billing::api", "claims::api", "party::api",
     "product::api", "accumulation::api", "unitlinked::api", "annuity::api", "underwriting::api", "communication::api",
-    "benefitpayout::api" })
+    "benefitpayout::api", "payment::api" })
 package tz.co.nlolo.lifeplatform.omnichannel;

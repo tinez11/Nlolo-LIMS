@@ -131,7 +131,7 @@ public final class DepositTestMigrations {
         "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
         "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
         "db-migrations/payment/V24__reversed_status.sql",
-        "db-migrations/payment/V25__deposit_purpose.sql",
+        "db-migrations/payment/V25__deposit_purpose.sql", "db-migrations/payment/V26__receipt_number.sql",
         "db-migrations/policyloan/V1__create_policyloan_schema.sql",
         "db-migrations/policyloan/V3__money_check_constraints.sql",
         "db-migrations/policyloan/V4__persist_reservation_id.sql",
@@ -178,6 +178,6 @@ public final class DepositTestMigrations {
         "db-migrations/communication/V12__funeral_templates.sql",
         "db-migrations/communication/V13__unit_linked_templates.sql",
         "db-migrations/communication/V14__unit_linked_statement_template.sql",
-        "db-migrations/communication/V15__dispatch_body_and_inbox.sql",
+        "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql", "db-migrations/communication/V17__agent_cash_received_template.sql",
     };
 }

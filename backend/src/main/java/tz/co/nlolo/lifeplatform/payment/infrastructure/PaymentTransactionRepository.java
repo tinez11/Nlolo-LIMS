@@ -21,6 +21,21 @@ public interface PaymentTransactionRepository
                                                                                                         String policyNumber,
                                                                                                         String purpose,
                                                                                                         String status);
+    /** A policy's receipts, newest first (receipts step 1): every amount received for it that was confirmed. */
+    java.util.List<PaymentTransaction> findByTenantIdAndPolicyNumberAndReceiptNumberIsNotNullOrderByCreatedAtDesc(
+        UUID tenantId, String policyNumber);
+
+    /**
+     * The number the database gave a payment as it was confirmed (payment V26). Read back after a flush: the trigger
+     * sets it in the row, and the entity's own copy is only read when the row is next loaded.
+     */
+    @org.springframework.data.jpa.repository.Query(nativeQuery = true,
+        value = "SELECT receipt_number FROM payment.payment_transaction WHERE payment_transaction_id = :id")
+    String receiptNumberOf(@org.springframework.data.repository.query.Param("id") UUID paymentTransactionId);
+
+    /** A receipt by its number (payment V26, receipts step 1). */
+    Optional<PaymentTransaction> findByTenantIdAndReceiptNumber(UUID tenantId, String receiptNumber);
+
     Optional<PaymentTransaction> findByGatewayReferenceAndTenantId(String gatewayReference, UUID tenantId);
 
     // ---- Recorded receipts (2026-10-27) ----

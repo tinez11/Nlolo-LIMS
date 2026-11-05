@@ -90,7 +90,9 @@ class CustomerPortalIntegrationTest {
         String policyNumber = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, TODAY).policyNumber();
         UUID holder = asTenant(() -> policyApi.getPolicy(policyNumber)).policyholderPartyId();
         asTenant(() -> { notificationApi.notify(UUID.randomUUID(), holder, policyNumber, "PAYMENT_RECEIVED",
-            java.util.Map.of("amount", "TZS 50,000.00", "policyNumber", policyNumber)); return null; });
+            // The receipt number every PAYMENT_RECEIVED quotes since receipts step 1 (communication V16).
+            java.util.Map.of("amount", "TZS 50,000.00", "policyNumber", policyNumber, "receiptNumber", "RC-2026-000001"));
+            return null; });
 
         String body = mockMvc.perform(customer(get("/customer/messages"), holder))
             .andExpect(status().isOk())

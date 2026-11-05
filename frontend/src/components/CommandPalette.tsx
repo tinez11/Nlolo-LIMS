@@ -102,11 +102,11 @@ export function CommandPalette({
                     // cmdk otherwise gives it, which is the difference between a listbox a
                     // screen reader can read and a div with a stray aria-selected on it.
                     value={`open ${query}`}
-                    onSelect={() => go(jump)}
+                    onSelect={() => go(jump.to)}
                     className={item}
                   >
                     <FileText className="size-4 shrink-0" aria-hidden />
-                    Open policy {query.trim().toUpperCase()}
+                    {jump.label}
                   </Command.Item>
                 </Command.Group>
               )}

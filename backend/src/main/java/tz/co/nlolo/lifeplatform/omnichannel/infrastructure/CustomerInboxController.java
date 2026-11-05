@@ -34,6 +34,7 @@ public class CustomerInboxController {
         Map.entry("OFFER_EXPIRED", "Your policy offer has closed"),
         Map.entry("COVER_STARTED", "Your cover has started"),
         Map.entry("PAYMENT_RECEIVED", "Payment received"),
+        Map.entry("AGENT_CASH_RECEIVED", "Cash collected by your agent"),
         Map.entry("ACCOUNT_STATEMENT", "Your account statement"),
         Map.entry("PENSION_VESTING_REMINDER", "Your pension starts soon"),
         Map.entry("FUNERAL_LIFE_ADDED", "Someone was added to your funeral cover"),

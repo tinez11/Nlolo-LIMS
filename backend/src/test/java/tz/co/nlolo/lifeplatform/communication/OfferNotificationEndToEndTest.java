@@ -187,7 +187,7 @@ class OfferNotificationEndToEndTest {
             "db-migrations/communication/V8__platform_default_templates.sql",
             "db-migrations/communication/V9__payment_received_template.sql",
             "db-migrations/communication/V10__account_statement_template.sql",
-            "db-migrations/communication/V15__dispatch_body_and_inbox.sql",
+            "db-migrations/communication/V15__dispatch_body_and_inbox.sql", "db-migrations/communication/V16__payment_received_quotes_receipt.sql", "db-migrations/communication/V17__agent_cash_received_template.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");
@@ -203,6 +203,8 @@ class OfferNotificationEndToEndTest {
     @Autowired private PolicyApi policyApi;
     @Autowired private BillingApi billingApi;
     @Autowired private NotificationDispatchRepository dispatchRepository;
+    @Autowired private org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Autowired private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void acceptEverySms() {
@@ -238,6 +240,18 @@ class OfferNotificationEndToEndTest {
             fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
             new BigDecimal("1000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
             null, List.of(), "Notification E2E", null, null, null, null, basis), "test-staff").policyNumber();
+    }
+
+    /** payment.ReceiptIssued as payment publishes it on confirming money for this policy, in a committed transaction. */
+    private void receiptIssued(String policyNumber, String receiptNumber) {
+        TenantContext.set(SEEDED_TENANT);
+        java.util.UUID holder = policyApi.getPolicy(policyNumber).policyholderPartyId();
+        new org.springframework.transaction.support.TransactionTemplate(transactionManager).executeWithoutResult(s ->
+            eventPublisher.publishEvent(tz.co.nlolo.lifeplatform.DomainEventEnvelope.of("payment.ReceiptIssued",
+                SEEDED_TENANT, java.util.Map.of("receiptId", java.util.UUID.randomUUID(), "receiptNumber", receiptNumber,
+                    "policyNumber", policyNumber, "policyholderPartyId", holder,
+                    "amount", java.util.Map.of("amount", "50000.00", "currencyCode", "TZS"),
+                    "purpose", "PREMIUM", "method", "MOBILE_MONEY"))));
     }
 
     private List<NotificationDispatch> messagesAbout(String policyNumber) {
@@ -299,22 +313,26 @@ class OfferNotificationEndToEndTest {
     }
 
     /**
-     * Every premium is acknowledged, not just the one that starts cover.
+     * Every amount received is acknowledged, not just the one that starts cover.
      *
      * <p>The gap this closes was found by paying a real invoice twice: a customer's SECOND monthly
      * payment produced no message at all. Correct behaviour from activation's point of view — it
      * is silent on an already-ACTIVE policy so commission is not double-accrued and risk not
      * double-ceded — and a hole beside it, because the money arriving is a fact the customer is
      * owed either way.
+     *
+     * <p>Since receipts step 1 the message follows payment.ReceiptIssued, one per amount received under its receipt
+     * number. This schema has no payment module, so the test publishes the receipt as payment does on confirming.
      */
     @Test
-    void everyCollectedPremiumIsAcknowledged() {
+    void everyAmountReceivedIsAcknowledgedUnderItsReceiptNumber() {
         Fixture fixture = buildFixture("NOTIFY-RECEIPT-01");
         String policyNumber = issueOffer(fixture, null);
 
         TenantContext.set(SEEDED_TENANT);
         InvoiceView first = billingApi.getNextDueInvoice(policyNumber);
         billingApi.applyConfirmedPayment(first.invoiceId(), new BigDecimal("50000.00"), "TZS", "ref-1");
+        receiptIssued(policyNumber, "RC-2026-000101");
 
         // The first payment says both things: the money arrived, and cover has started. Two true
         // and different facts -- collapsing them would lose the half that matters every month
@@ -326,6 +344,7 @@ class OfferNotificationEndToEndTest {
         TenantContext.set(SEEDED_TENANT);
         InvoiceView second = billingApi.getNextDueInvoice(policyNumber);
         billingApi.applyConfirmedPayment(second.invoiceId(), new BigDecimal("50000.00"), "TZS", "ref-2");
+        receiptIssued(policyNumber, "RC-2026-000102");
 
         // The second says only the first of them -- and before this listener existed, said nothing.
         assertThat(messagesAbout(policyNumber))
@@ -333,9 +352,32 @@ class OfferNotificationEndToEndTest {
             .as("a customer paying their second month must still hear that it arrived")
             .hasSizeGreaterThanOrEqualTo(2);
         assertThat(messagesAbout(policyNumber))
+            .filteredOn(d -> "PAYMENT_RECEIVED".equals(d.getTemplateKey()) && "SMS".equals(d.getChannel()))
+            .extracting(NotificationDispatch::getBody)
+            .as("each message quotes the receipt it acknowledges")
+            .anySatisfy(b -> assertThat(b).contains("RC-2026-000102"));
+        assertThat(messagesAbout(policyNumber))
             .filteredOn(d -> "COVER_STARTED".equals(d.getTemplateKey()) && "SMS".equals(d.getChannel()))
             .as("cover starts once; the second payment must not claim it started again")
             .hasSize(1);
+    }
+
+    /**
+     * Cash handed to an agent is acknowledged as the agent records it (receipts step 1; TIRA Code B.5(b)), before it
+     * reaches the insurer and is receipted -- the customer holds something from the moment the cash leaves their hand.
+     */
+    @Test
+    void cashHandedToAnAgentIsAcknowledgedAtOnce() {
+        String policyNumber = issueOffer(buildFixture("NOTIFY-AGENTCASH-01"), null);
+
+        TenantContext.set(SEEDED_TENANT);
+        billingApi.captureFieldReceipt(java.util.UUID.randomUUID(), policyNumber, new BigDecimal("15000.00"), "TZS",
+            "agent-cash-" + java.util.UUID.randomUUID(), java.time.Instant.now());
+
+        assertThat(messagesAbout(policyNumber))
+            .filteredOn(d -> "AGENT_CASH_RECEIVED".equals(d.getTemplateKey()) && "SMS".equals(d.getChannel()))
+            .extracting(NotificationDispatch::getBody)
+            .singleElement().asString().contains("TZS 15,000.00", policyNumber);
     }
 
     @Test

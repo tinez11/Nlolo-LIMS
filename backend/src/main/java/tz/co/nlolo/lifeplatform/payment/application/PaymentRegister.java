@@ -30,23 +30,25 @@ class PaymentRegister {
         "attention", List.of("IN_DOUBT", "FAILED"),
         "waiting", List.of("PENDING", "AWAITING_EXECUTION", "AWAITING_APPROVAL"),
         "done", List.of("CONFIRMED", "COMPLETED"),
+        // REVERSED too (receipts step 1): a bounced cheque keeps its receipt number, and "all" must still find it.
         "all", List.of("PENDING", "AWAITING_EXECUTION", "AWAITING_APPROVAL", "IN_DOUBT", "CONFIRMED", "COMPLETED",
-            "FAILED", "REJECTED"));
+            "FAILED", "REJECTED", "REVERSED"));
 
     private static final String ROWS = """
         SELECT * FROM (
             SELECT payment_transaction_id AS id, 'IN' AS direction, purpose, method, status, amount,
                    currency, payer_ref AS counterparty, gateway_reference AS reference, source_ref, policy_number,
-                   created_at, recorded_by AS executed_by, decided_at AS executed_at
+                   created_at, recorded_by AS executed_by, decided_at AS executed_at, receipt_number
               FROM payment.payment_transaction WHERE tenant_id = :tenant
             UNION ALL
             SELECT disbursement_id, 'OUT', purpose, method, status, amount, currency, payee_ref, gateway_reference,
-                   source_ref, policy_number, created_at, executed_by, executed_at
+                   source_ref, policy_number, created_at, executed_by, executed_at, CAST(NULL AS VARCHAR)
               FROM payment.disbursement_instruction WHERE tenant_id = :tenant
         ) p
         WHERE (CAST(:direction AS VARCHAR) IS NULL OR direction = :direction)
           AND status IN (:statuses)
           AND (CAST(:policy AS VARCHAR) IS NULL OR policy_number = :policy)
+          AND (CAST(:receipt AS VARCHAR) IS NULL OR receipt_number = :receipt)
         """;
 
     private final NamedParameterJdbcTemplate jdbc;
@@ -56,13 +58,16 @@ class PaymentRegister {
     }
 
     @Transactional(readOnly = true)
-    Page<PaymentRecordView> search(String direction, String state, String policyNumber, Pageable pageable) {
+    Page<PaymentRecordView> search(String direction, String state, String policyNumber, String receiptNumber,
+                                   Pageable pageable) {
         List<String> statuses = STATES.getOrDefault(state == null ? "all" : state, STATES.get("all"));
         MapSqlParameterSource params = new MapSqlParameterSource()
             .addValue("tenant", TenantContext.get())
             .addValue("direction", direction == null || direction.isBlank() ? null : direction)
             .addValue("statuses", statuses)
             .addValue("policy", policyNumber == null || policyNumber.isBlank() ? null : policyNumber.trim())
+            .addValue("receipt", receiptNumber == null || receiptNumber.isBlank() ? null
+                : receiptNumber.trim().toUpperCase(java.util.Locale.ROOT))
             .addValue("size", pageable.getPageSize())
             .addValue("offset", pageable.getOffset());
         Long total = jdbc.queryForObject("SELECT count(*) FROM (" + ROWS + ") counted", params, Long.class);
@@ -71,7 +76,7 @@ class PaymentRegister {
                 rs.getString("purpose"), rs.getString("method"), rs.getString("status"), rs.getBigDecimal("amount"),
                 rs.getString("currency").trim(), rs.getString("counterparty"), rs.getString("reference"),
                 rs.getString("source_ref"), rs.getString("policy_number"), instant(rs.getTimestamp("created_at")),
-                rs.getString("executed_by"), instant(rs.getTimestamp("executed_at"))));
+                rs.getString("executed_by"), instant(rs.getTimestamp("executed_at")), rs.getString("receipt_number")));
         return new PageImpl<>(rows, pageable, total == null ? 0 : total);
     }
 

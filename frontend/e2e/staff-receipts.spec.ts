@@ -57,6 +57,22 @@ test.describe('receipts', () => {
     await approver.getByRole('button', { name: 'Confirm', exact: true }).click({ timeout: 30_000 });
     await approver.getByRole('button', { name: 'Confirm deposit' }).click();
     await expect(approver.getByRole('heading', { name: 'Confirmed' })).toBeVisible({ timeout: 15_000 });
+    // Confirmed, it is a numbered receipt (receipts step 1): the page is titled by the number the customer is texted,
+    // downloads as the customer's receipt, and Go to… opens it by that number.
+    const title = approver.getByRole('heading', { level: 1, name: /^Receipt RC-\d{4}-\d{6}$/ });
+    await expect(title).toBeVisible({ timeout: 15_000 });
+    const receiptNumber = ((await title.textContent()) ?? '').replace('Receipt ', '').trim();
+    const download = approver.waitForEvent('download');
+    await approver.getByRole('button', { name: 'Download PDF' }).click();
+    expect((await download).suggestedFilename()).toBe(`${receiptNumber}.pdf`);
+    await approver.goto('/staff/dashboard');
+    // A full load goes through the sign-in redirect first; the palette exists once the console is drawn.
+    await expect(approver.getByRole('navigation', { name: 'Main' })).toBeVisible({ timeout: 30_000 });
+    await approver.keyboard.press('Control+k');
+    await approver.getByRole('combobox').fill(receiptNumber.toLowerCase());
+    await approver.getByRole('option', { name: `Open receipt ${receiptNumber}` }).click();
+    await expect(approver).toHaveURL(/\/staff\/receipts\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+    await expect(approver.getByRole('heading', { level: 1, name: `Receipt ${receiptNumber}` })).toBeVisible();
     await second.close();
 
     // The invoice the cheque paid now reads Paid.

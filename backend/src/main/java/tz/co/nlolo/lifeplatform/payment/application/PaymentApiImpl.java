@@ -32,6 +32,8 @@ public class PaymentApiImpl implements PaymentApi {
     private final DisbursementIdempotencyRepository disbursementIdempotencyRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final PaymentRegister register;
+    /** Tells the customer, once per amount received, under its receipt number (receipts step 1). */
+    private final ReceiptNotices receiptNotices;
     // Task 8 (review fix, Critical 3): a fresh PROPAGATION_REQUIRES_NEW transaction for
     // applyGatewayCallback's mutation, opened only AFTER TenantContext has been set to the
     // resolved tenant. See applyGatewayCallback's javadoc for why this can't just be a plain
@@ -49,8 +51,10 @@ public class PaymentApiImpl implements PaymentApi {
                            DisbursementIdempotencyRepository disbursementIdempotencyRepository,
                            ApplicationEventPublisher eventPublisher,
                            PlatformTransactionManager transactionManager,
-                           PaymentRegister register) {
+                           PaymentRegister register,
+                           ReceiptNotices receiptNotices) {
         this.register = register;
+        this.receiptNotices = receiptNotices;
         this.paymentTransactionRepository = paymentTransactionRepository;
         this.disbursementRepository = disbursementRepository;
         this.payoutBatchRepository = payoutBatchRepository;
@@ -235,9 +239,25 @@ public class PaymentApiImpl implements PaymentApi {
 
     @Override
     @Transactional(readOnly = true)
+    public java.util.List<tz.co.nlolo.lifeplatform.payment.api.ReceiptView> receiptsForPolicy(String policyNumber) {
+        return paymentTransactionRepository
+            .findByTenantIdAndPolicyNumberAndReceiptNumberIsNotNullOrderByCreatedAtDesc(TenantContext.get(), policyNumber)
+            .stream().map(Receipts::view).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Optional<tz.co.nlolo.lifeplatform.payment.api.ReceiptView> findReceipt(UUID receiptId) {
+        return paymentTransactionRepository.findByPaymentTransactionIdAndTenantId(receiptId, TenantContext.get())
+            .map(Receipts::view);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public org.springframework.data.domain.Page<tz.co.nlolo.lifeplatform.payment.api.PaymentRecordView> register(
-            String direction, String state, String policyNumber, org.springframework.data.domain.Pageable pageable) {
-        return register.search(direction, state, policyNumber, pageable);
+            String direction, String state, String policyNumber, String receiptNumber,
+            org.springframework.data.domain.Pageable pageable) {
+        return register.search(direction, state, policyNumber, receiptNumber, pageable);
     }
 
     @Override
@@ -425,6 +445,14 @@ public class PaymentApiImpl implements PaymentApi {
         paymentTransactionRepository.save(transaction);
     }
 
+    /**
+     * The receipt number the database gave a payment as it was confirmed (payment V26). Never null in an event: a
+     * stack whose database predates V26 numbers nothing, and the confirmation must still go out.
+     */
+    private String receiptNumberOf(UUID paymentTransactionId) {
+        return java.util.Objects.requireNonNullElse(paymentTransactionRepository.receiptNumberOf(paymentTransactionId), "");
+    }
+
     /** billing reversed the deposit this payment made (money movement step 3b): the register shows it REVERSED. */
     @Transactional
     void markReversed(UUID tenantId, UUID paymentTransactionId) {
@@ -441,9 +469,11 @@ public class PaymentApiImpl implements PaymentApi {
             .findByPaymentTransactionIdAndTenantId(paymentTransactionId, tenantId)
             .orElseThrow(() -> new PaymentNotFoundException("Payment " + paymentTransactionId + " not found"));
         transaction.markConfirmed(gatewayReference);
-        paymentTransactionRepository.save(transaction);
+        paymentTransactionRepository.saveAndFlush(transaction);
         eventPublisher.publishEvent(DomainEventEnvelope.of("payment.PaymentConfirmed", tenantId,
             Map.of("paymentRequestId", paymentTransactionId,
+                   // Given by the database as the row turned CONFIRMED (receipts step 1); the customer's SMS quotes it.
+                   "receiptNumber", receiptNumberOf(paymentTransactionId),
                    "idempotencyKey", transaction.getIdempotencyKey(),
                    "sourceRef", transaction.getSourceRef(),
                    "gatewayReference", gatewayReference,
@@ -457,6 +487,7 @@ public class PaymentApiImpl implements PaymentApi {
                    "payerRef", transaction.getPayerRef(),
                    // How it came in (2026-10-27): the ledger posts it to the account it reached.
                    "method", transaction.getMethod())));
+        receiptNotices.issued(transaction);
     }
 
     /**
@@ -484,9 +515,10 @@ public class PaymentApiImpl implements PaymentApi {
                        "purpose", transaction.getPurpose())));
             return Optional.empty();
         }
-        paymentTransactionRepository.save(transaction);
+        paymentTransactionRepository.saveAndFlush(transaction);
         eventPublisher.publishEvent(DomainEventEnvelope.of("payment.PaymentConfirmed", tenantId,
             Map.of("paymentRequestId", transaction.getPaymentTransactionId(),
+                   "receiptNumber", receiptNumberOf(transaction.getPaymentTransactionId()),
                    "idempotencyKey", idempotencyKey,
                    "sourceRef", topUpId,
                    "gatewayReference", reference,
@@ -495,6 +527,7 @@ public class PaymentApiImpl implements PaymentApi {
                    "purpose", transaction.getPurpose(),
                    "payerRef", payerRef,
                    "method", method)));
+        receiptNotices.issued(transaction);
         return Optional.of(transaction.getPaymentTransactionId());
     }
 

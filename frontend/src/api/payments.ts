@@ -14,6 +14,8 @@ export interface PaymentRegisterQuery {
   state: RegisterState;
   direction?: PaymentDirection;
   policyNumber?: string;
+  /** RC-year-sequence: the one amount received under that receipt (receipts step 1). */
+  receiptNumber?: string;
   page: number;
   pageSize: number;
 }
@@ -25,6 +27,7 @@ export function listPayments(query: PaymentRegisterQuery): Promise<PaymentRegist
       state: query.state,
       ...(query.direction ? { direction: query.direction } : {}),
       ...(query.policyNumber ? { policyNumber: query.policyNumber } : {}),
+      ...(query.receiptNumber ? { receiptNumber: query.receiptNumber } : {}),
       page: query.page,
       pageSize: query.pageSize,
     },

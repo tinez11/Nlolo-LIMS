@@ -35,6 +35,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -755,10 +756,19 @@ public class BillingApiImpl implements BillingApi {
         }
         FieldReceipt receipt = new FieldReceipt(tenantId, policyNumber, agentId, amount, currency, clientIdempotencyKey, capturedAtClient);
         fieldReceiptRepository.save(receipt);
-        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.FieldReceiptCaptured", tenantId,
-            Map.of("receiptId", receipt.getReceiptId(), "policyNumber", policyNumber,
-                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency),
-                   "capturedAt", receipt.getCapturedAtServer().toString(), "agentId", agentId)));
+        Map<String, Object> captured = new HashMap<>(Map.of("receiptId", receipt.getReceiptId(), "policyNumber", policyNumber,
+            "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency),
+            "capturedAt", receipt.getCapturedAtServer().toString(), "agentId", agentId));
+        // Who handed the cash over is told at once (receipts step 1; TIRA Code B.5(b): an intermediary acknowledges
+        // "all monies received"), so communication needs the policyholder -- it can write to a party, not read a policy.
+        // Never at the cash's expense: a policy that cannot be read here only means nobody is texted.
+        try {
+            UUID holder = policyApi.getPolicy(policyNumber).policyholderPartyId();
+            if (holder != null) captured.put("policyholderPartyId", holder);
+        } catch (RuntimeException e) {
+            log.warn("Agent cash on {} recorded; its policyholder could not be read, so nobody is told", policyNumber, e);
+        }
+        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.FieldReceiptCaptured", tenantId, captured));
         return new FieldReceiptResult(receipt.getReceiptId(), receipt.getStatus());
     }
 

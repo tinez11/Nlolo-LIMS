@@ -122,7 +122,8 @@ export function BalanceStatementPanel({ policyNumber }: { policyNumber: string }
       header: 'Entry',
       render: (l) => (
         <span className="block min-w-0">
-          {l.type === 'DEPOSIT' && l.paymentId && l.method !== 'MOBILE_MONEY' ? (
+          {/* Every deposit opens the receipt of the money behind it -- mobile money too since receipts step 1. */}
+          {l.type === 'DEPOSIT' && l.paymentId ? (
             <Link to={`/staff/receipts/${encodeURIComponent(l.paymentId)}`} className="font-medium underline">
               {BALANCE_ENTRY_LABEL[l.type]}
             </Link>

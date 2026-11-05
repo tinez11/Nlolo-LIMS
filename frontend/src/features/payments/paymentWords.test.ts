@@ -27,11 +27,11 @@ describe('payment words', () => {
     expect(paymentLink(payment({ purpose: 'SURVIVAL_BENEFIT_PAYOUT', sourceRef: 'i-3' }))).toBe('/staff/payouts/i-3?from=payouts-all');
   });
 
-  it('opens the receipt of money in, a mobile-money request included, but not an older gateway row', () => {
+  it('opens the receipt of every amount received, a gateway payment nobody recorded included (receipts step 1)', () => {
     const request = payment({ direction: 'IN', purpose: 'PREMIUM', id: 'r-1', policyNumber: 'POL-7' });
     expect(paymentLink({ ...request, executedBy: 'finance-one' })).toBe('/staff/receipts/r-1?from=payments');
     expect(paymentLink({ ...request, method: 'CASH' })).toBe('/staff/receipts/r-1?from=payments');
-    expect(paymentLink(request)).toBe('/staff/policies/POL-7');
+    expect(paymentLink(request)).toBe('/staff/receipts/r-1?from=payments');
   });
 
   it('otherwise opens the policy, and nothing where none was recorded', () => {

@@ -26,6 +26,11 @@ export function listWaitingDeposits(policyNumber: string): Promise<Receipt[]> {
   return get<Receipt[]>(`/receipts?policyNumber=${encodeURIComponent(policyNumber)}`);
 }
 
+/** `GET /receipt-numbers/{number}` -- a receipt by the number printed on it and sent by SMS (receipts step 1). */
+export function getReceiptByNumber(receiptNumber: string): Promise<Receipt> {
+  return get<Receipt>(`/receipt-numbers/${encodeURIComponent(receiptNumber)}`);
+}
+
 export function getReceipt(receiptId: string): Promise<Receipt> {
   return get<Receipt>(`/receipts/${encodeURIComponent(receiptId)}`);
 }

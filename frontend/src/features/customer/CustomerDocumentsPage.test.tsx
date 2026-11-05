@@ -50,17 +50,20 @@ describe('CustomerDocumentsPage', () => {
     await waitFor(() => expect(download.saveBlob).toHaveBeenCalledWith(expect.any(Blob), 'policy-schedule-POL-ABFE4139.pdf'));
   });
 
-  it('lists the premiums received, each with its receipt', async () => {
+  it('lists every payment received, each under its receipt number', async () => {
     dashboardWith(policy());
     vi.mocked(documentsApi.listReceipts).mockResolvedValue([{ receiptId: 'r-1', receivedOn: '2026-10-08', amount: 100000,
-      currency: 'TZS', reference: 'MM-123', paidBy: '+255715000001', coversFrom: '2026-10-08', coversTo: '2027-10-07' }]);
+      currency: 'TZS', reference: 'MM-123', paidBy: '+255715000001', coversFrom: '2026-10-08', coversTo: '2027-10-07',
+      receiptNumber: 'RC-2026-000014', status: 'CONFIRMED' }]);
     vi.mocked(documentsApi.downloadReceipt).mockResolvedValue(new Blob(['pdf']));
     render(<CustomerDocumentsPage />);
 
-    await userEvent.click(await screen.findByRole('button', { name: /Premium receipts/ }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Receipts/ }));
     expect(await screen.findByText('TZS 100,000.00')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: /Download the receipt of/ }));
+    expect(screen.getByText('RC-2026-000014')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Download receipt RC-2026-000014' }));
     await waitFor(() => expect(documentsApi.downloadReceipt).toHaveBeenCalledWith('POL-ABFE4139', 'r-1'));
+    await waitFor(() => expect(download.saveBlob).toHaveBeenCalledWith(expect.any(Blob), 'RC-2026-000014.pdf'));
   });
 
   it('shows the documents sent with a claim', async () => {

@@ -61,8 +61,10 @@ export function PaymentsPage({ direction }: { direction: PaymentDirection }) {
   const stateParam = params.get('state');
   const state: RegisterState = STATES.some((s) => s.value === stateParam) ? (stateParam as RegisterState) : 'attention';
   const policyNumber = params.get('policy') ?? '';
+  // One box finds either: a receipt number (RC-…) as printed and texted to the customer, or a policy (receipts step 1).
+  const receiptNumber = params.get('receipt') ?? '';
   const page = Math.max(0, Number(params.get('page') ?? '0') || 0);
-  const [policyInput, setPolicyInput] = useState(policyNumber);
+  const [policyInput, setPolicyInput] = useState(policyNumber || receiptNumber);
 
   const list = usePaymentStore(selectRegister);
   const loadRegister = usePaymentStore((s) => s.loadRegister);
@@ -72,17 +74,20 @@ export function PaymentsPage({ direction }: { direction: PaymentDirection }) {
       state,
       direction,
       ...(policyNumber ? { policyNumber } : {}),
+      ...(receiptNumber ? { receiptNumber } : {}),
       page,
       pageSize: DEFAULT_PAGE_SIZE,
     });
-  }, [loadRegister, state, direction, policyNumber, page]);
+  }, [loadRegister, state, direction, policyNumber, receiptNumber, page]);
 
-  function update(next: { state?: RegisterState; policy?: string; page?: number }) {
+  function update(next: { state?: RegisterState; policy?: string; receipt?: string; page?: number }) {
     const merged = new URLSearchParams(params);
     if (next.state !== undefined) merged.set('state', next.state);
-    if (next.policy !== undefined) {
-      if (next.policy) merged.set('policy', next.policy);
-      else merged.delete('policy');
+    for (const key of ['policy', 'receipt'] as const) {
+      const value = next[key];
+      if (value === undefined) continue;
+      if (value) merged.set(key, value);
+      else merged.delete(key);
     }
     if (next.page !== undefined && next.page > 0) merged.set('page', String(next.page));
     else merged.delete('page');
@@ -91,7 +96,10 @@ export function PaymentsPage({ direction }: { direction: PaymentDirection }) {
 
   function applyPolicy(e: FormEvent) {
     e.preventDefault();
-    update({ policy: policyInput.trim().toUpperCase() });
+    const value = policyInput.trim().toUpperCase();
+    // A receipt is found by any state it is in, so a person quoting one is not told it is missing because it is done.
+    if (value.startsWith('RC-')) update({ receipt: value, policy: '', state: 'all' });
+    else update({ policy: value, receipt: '' });
   }
 
   const total = list.data?.page.totalElements ?? null;
@@ -124,6 +132,7 @@ export function PaymentsPage({ direction }: { direction: PaymentDirection }) {
         <span className="flex flex-col gap-0.5">
           <span className="font-medium">{purposeWords(p.purpose)}</span>
           {p.policyNumber && <span className="text-xs text-muted-foreground">{p.policyNumber}</span>}
+          {p.receiptNumber && <span className="font-mono text-xs text-muted-foreground">{p.receiptNumber}</span>}
         </span>
       ),
     },
@@ -223,11 +232,11 @@ export function PaymentsPage({ direction }: { direction: PaymentDirection }) {
               ))}
             </div>
             <form className="ml-auto flex items-end gap-2" onSubmit={applyPolicy}>
-              <FormField label="Policy number">
+              <FormField label={direction === 'IN' ? 'Policy or receipt number' : 'Policy number'}>
                 <Input
                   inputSize="sm"
-                  className="w-40 font-mono"
-                  placeholder="POL-XXXXXXXX"
+                  className="w-44 font-mono"
+                  placeholder={direction === 'IN' ? 'POL-… or RC-…' : 'POL-XXXXXXXX'}
                   value={policyInput}
                   onChange={(e) => setPolicyInput(e.target.value)}
                 />
@@ -235,14 +244,14 @@ export function PaymentsPage({ direction }: { direction: PaymentDirection }) {
               <Button type="submit" size="sm">
                 Apply
               </Button>
-              {policyNumber && (
+              {(policyNumber || receiptNumber) && (
                 <Button
                   type="button"
                   size="sm"
                   variant="ghost"
                   onClick={() => {
                     setPolicyInput('');
-                    update({ policy: '' });
+                    update({ policy: '', receipt: '' });
                   }}
                 >
                   Clear

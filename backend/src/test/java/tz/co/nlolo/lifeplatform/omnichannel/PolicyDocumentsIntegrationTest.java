@@ -75,6 +75,7 @@ class PolicyDocumentsIntegrationTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private AccumulationTestFixtures fixtures;
     @Autowired private BillingApi billingApi;
+    @Autowired private tz.co.nlolo.lifeplatform.payment.application.Receipts receipts;
     @Autowired private tz.co.nlolo.lifeplatform.policy.api.PolicyApi policyApi;
 
     private static <T> T asTenant(Supplier<T> work) {
@@ -156,10 +157,25 @@ class PolicyDocumentsIntegrationTest {
                 org.hamcrest.Matchers.containsString("payment-schedule-" + policyNumber + ".xlsx")));
     }
 
-    /** The policy schedule and premium receipts (2026-10-08, the customer portal step 3). */
+    /**
+     * A savings plan whose first premium arrived as money does since receipts step 1: a bank deposit recorded by one
+     * finance person and confirmed by another, which numbers its receipt and pays the invoice.
+     */
+    private String receivedSavingsPlan(String reference) {
+        String policyNumber = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, TODAY).policyNumber();
+        InvoiceView first = asTenant(() -> billingApi.listInvoices(policyNumber, null)).stream()
+            .min(Comparator.comparing(InvoiceView::dueDate)).orElseThrow();
+        var recorded = asTenant(() -> receipts.record(new tz.co.nlolo.lifeplatform.payment.application.Receipts.NewReceipt(
+            first.invoiceId(), null, tz.co.nlolo.lifeplatform.payment.api.ReceiptMethod.BANK_DEPOSIT, reference,
+            new BigDecimal("50000.00"), TODAY, "+255700000001", null, null), "finance-one"));
+        asTenant(() -> receipts.approve(recorded.receiptId(), "finance-two"));
+        return policyNumber;
+    }
+
+    /** The policy schedule and its receipts (2026-10-08, the customer portal step 3; numbered, receipts step 1). */
     @Test
     void thePolicyScheduleSaysWhatThePolicyIsAndEachPaymentHasAReceipt() throws Exception {
-        String policyNumber = paidSavingsPlan("MM-DOC-4");
+        String policyNumber = receivedSavingsPlan("MM-DOC-4");
         UUID holder = asTenant(() -> policyApi.getPolicy(policyNumber)).policyholderPartyId();
 
         byte[] schedule = mockMvc.perform(get("/policies/" + policyNumber + "/policy-schedule/pdf")
@@ -183,15 +199,20 @@ class PolicyDocumentsIntegrationTest {
             .andExpect(jsonPath("$[0].receivedOn").value(TODAY.toString()))
             // Paid on day one for the first period: it covers from today, not from the invoice's end-of-period date.
             .andExpect(jsonPath("$[0].coversFrom").value(TODAY.toString()))
+            // Numbered as it was confirmed: RC, the year, a sequence (receipts step 1).
+            .andExpect(jsonPath("$[0].receiptNumber").value(org.hamcrest.Matchers.matchesPattern("RC-\\d{4}-\\d{6}")))
+            .andExpect(jsonPath("$[0].status").value("CONFIRMED"))
             .andReturn().getResponse().getContentAsString();
         String receiptId = com.jayway.jsonpath.JsonPath.read(receipts, "$[0].receiptId");
+        String receiptNumber = com.jayway.jsonpath.JsonPath.read(receipts, "$[0].receiptNumber");
 
         byte[] receipt = mockMvc.perform(staff(get("/policies/" + policyNumber + "/receipts/" + receiptId + "/pdf")))
             .andExpect(status().isOk())
             .andReturn().getResponse().getContentAsByteArray();
         try (var doc = Loader.loadPDF(receipt)) {
-            assertThat(new PDFTextStripper().getText(doc)).contains("Premium receipt", policyNumber, "MM-DOC-4", "Cover paid for",
-                "50,000.00", "Received with thanks");
+            // What came in, how, and what it was for -- the premium apart from anything else (TIRA Code B.5(b)).
+            assertThat(new PDFTextStripper().getText(doc)).contains("Receipt " + receiptNumber, policyNumber,
+                "Bank deposit MM-DOC-4", "Premium, cover", "50,000.00", "Received with thanks");
         }
 
         // Another customer gets neither.

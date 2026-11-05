@@ -1004,7 +1004,10 @@ components:
     ReceiptLine:
       type: object
       additionalProperties: false
-      required: [receiptId, receivedOn, amount, currency, reference, paidBy, coversFrom, coversTo]
+      description: >
+        One amount received on the policy (receipts step 1, 2026-11-05: every amount received, not only the premiums
+        paid). The cover period is that of the premiums the money paid on arrival; null where it paid none.
+      required: [receiptId, receivedOn, amount, currency, reference, paidBy, coversFrom, coversTo, receiptNumber, status]
       properties:
         receiptId: { type: string, format: uuid }
         receivedOn: { type: string, format: date }
@@ -1012,8 +1015,10 @@ components:
         currency: { type: string }
         reference: { type: [string, "null"] }
         paidBy: { type: [string, "null"] }
-        coversFrom: { type: [string, "null"], format: date, description: "First day of cover the premium paid for" }
-        coversTo: { type: [string, "null"], format: date, description: "Last day of cover the premium paid for" }
+        coversFrom: { type: [string, "null"], format: date, description: "First day of cover the premiums it paid buy" }
+        coversTo: { type: [string, "null"], format: date, description: "Last day of cover the premiums it paid buy" }
+        receiptNumber: { type: string, description: "RC-year-sequence, as printed on the receipt and sent by SMS" }
+        status: { type: string, enum: [CONFIRMED, REVERSED] }
     CustomerAmount:
       type: object
       additionalProperties: false

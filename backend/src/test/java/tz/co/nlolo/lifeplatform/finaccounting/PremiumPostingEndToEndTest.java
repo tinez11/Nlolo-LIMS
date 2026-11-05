@@ -125,7 +125,7 @@ class PremiumPostingEndToEndTest {
             "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
             "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
             "db-migrations/payment/V24__reversed_status.sql",
-            "db-migrations/payment/V25__deposit_purpose.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql", "db-migrations/payment/V26__receipt_number.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
@@ -615,6 +615,12 @@ class PremiumPostingEndToEndTest {
 
         TenantContext.set(tenantId);
         assertThat(receipts.waitingOnPolicy(policyNumber)).as("and no longer once confirmed").isEmpty();
+        // Numbered as it was confirmed, and found by the number a customer quotes, however they type it (receipts step 1).
+        TenantContext.set(tenantId);
+        String number = receipts.get(recorded.receiptId()).receiptNumber();
+        assertThat(number).as("a receipt number given on confirming").matches("RC-\\d{4}-\\d{6}");
+        TenantContext.set(tenantId);
+        assertThat(receipts.byNumber(" " + number.toLowerCase() + " ").receiptId()).isEqualTo(recorded.receiptId());
         TenantContext.set(tenantId);
         assertThat(billingApi.getInvoice(invoice.invoiceId()).status()).isEqualTo(InvoiceStatus.PAID);
         assertThat(billingApi.balance(policyNumber).balance()).as("the second premium's worth waits on the balance")
