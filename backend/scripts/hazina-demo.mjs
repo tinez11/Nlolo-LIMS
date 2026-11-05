@@ -154,7 +154,17 @@ async function sell() {
   }
   if (!invoice) throw new Error("no invoice raised");
   await api(admin, "POST", `/invoices/${invoice.invoiceId}/payment-request`, { payerRef: "+255754144369" });
-  console.log(`first premium requested on invoice ${invoice.invoiceId} (${invoice.dueDate}) from +255754144369`);
+  // A request the rail accepts is money in only once a second finance person confirms it (2026-10-27).
+  const finance = await token("staff", "staff.finance");
+  const approver = await token("staff", "staff.finance-approver");
+  let waiting = [];
+  for (let i = 0; i < 20 && waiting.length === 0; i++) {
+    waiting = await api(finance, "GET", `/receipts?invoiceId=${invoice.invoiceId}`);
+    if (waiting.length === 0) await new Promise((r) => setTimeout(r, 1000));
+  }
+  if (waiting.length === 0) throw new Error("the premium's request never reached finance to confirm");
+  await api(approver, "POST", `/receipts/${waiting[0].receiptId}/approval`);
+  console.log(`first premium on invoice ${invoice.invoiceId} (${invoice.dueDate}) requested from +255754144369 and confirmed`);
 }
 
 async function price(date, ...values) {

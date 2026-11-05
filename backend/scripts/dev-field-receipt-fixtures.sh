@@ -26,7 +26,7 @@ API="${API:-http://localhost:8080}"
 KEYCLOAK="${KEYCLOAK:-http://localhost:8081}"
 PSQL=(docker compose -f infra/docker-compose.yml exec -T postgres psql -U postgres -d lifeplatform -tAc)
 
-AGENTS_SECRET=$(grep -o '"secret" *: *"[^"]*"' keycloak/agents-realm.json | head -1 | cut -d'"' -f4)
+AGENTS_SECRET=$(source scripts/seed-lib.sh; realm_secret agents)
 
 token_for() {   # token_for <realm> <username> <client-secret>
   curl -sf -X POST "$KEYCLOAK/realms/$1/protocol/openid-connect/token" \
