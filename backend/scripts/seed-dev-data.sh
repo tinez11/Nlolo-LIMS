@@ -695,10 +695,101 @@ INVOICES_JSON=$(api "$STAFF_FINANCE_TOKEN" GET "/policies/$POLICY_NUMBER/invoice
 INVOICE_ID=$(jsonval "$INVOICES_JSON" invoiceId)
 echo "invoiceId=$INVOICE_ID"
 
+# A second finance person confirms money before it counts (2026-10-27): a mobile-money request the rail accepts waits
+# for them exactly as a typed deposit does. Every confirmation below is staff.finance-approver's, never the recorder's.
+STAFF_APPROVER_TOKEN=$(token_for staff staff.finance-approver "$STAFF_SECRET")
+
+confirm_waiting_on_invoice() {   # confirm_waiting_on_invoice <invoiceId>
+  local waiting id
+  for i in $(seq 1 20); do
+    waiting=$(api "$STAFF_FINANCE_TOKEN" GET "/receipts?invoiceId=$1")
+    id=$(jsonval "$waiting" receiptId)
+    [ -n "$id" ] && break
+    sleep 1
+  done
+  if [ -z "$id" ]; then echo "FATAL: nothing waiting to be confirmed on invoice $1" >&2; exit 1; fi
+  api "$STAFF_APPROVER_TOKEN" POST "/receipts/$id/approval" >/dev/null
+  echo "$id"
+}
+
 curl -sf -X POST "$API/invoices/$INVOICE_ID/payment-request" \
   -H "Authorization: Bearer $STAFF_FINANCE_TOKEN" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuid)" -d '{"payerRef":"+255712345678"}' >/dev/null
-echo "payment-request accepted for invoiceId=$INVOICE_ID (WireMock confirms synchronously; billing.PremiumCollected follows)"
+echo "payment-request accepted for invoiceId=$INVOICE_ID; confirmed by the approver: $(confirm_waiting_on_invoice "$INVOICE_ID")"
+
+echo "=== Step 7a: Money movement, one policy per case (design §12) ==="
+# Money in and out only through deposits and payouts, each confirmed by a second person, so the books-match check at
+# the end has every road to reconcile: paid, paid ahead, part paid, withdrawn, reversed. A loan with a surplus needs a
+# cash value, which no policy has on the day it is issued -- the loan specs build that case themselves.
+
+new_case_policy() {   # new_case_policy <full name> <phone>  -> prints the new policy's number
+  local party case decision number
+  party=$(jsonval "$(api "$AGENT_SENIOR_TOKEN" POST "/parties/individuals" \
+    "{\"fullName\":\"$1\",\"dateOfBirth\":\"1988-06-01\",\"contactInfo\":{\"phoneNumber\":\"$2\"}}")" partyId)
+  api "$STAFF_FINANCE_TOKEN" POST "/parties/$party/kyc" \
+    '{"status":"VERIFIED","evidenceDocumentRef":"seed:kyc-evidence-money-case"}' >/dev/null
+  case=$(jsonval "$(api "$AGENT_SENIOR_TOKEN" POST "/underwriting/cases" \
+    "{\"applicantPartyId\":\"$party\",\"productId\":\"$PRODUCT_ID\",\"productVersionId\":\"$PRODUCT_VERSION_ID\",\"sumAssured\":{\"amount\":\"1500000.00\",\"currencyCode\":\"TZS\"}}")" caseId)
+  api "$STAFF_SENIOR_TOKEN" POST "/underwriting/cases/$case/assessments" \
+    '{"assessmentType":"MEDICAL","findings":"Standard risk, no adverse findings","riskScore":10}' >/dev/null
+  decision=$(jsonval "$(api "$STAFF_UNDERWRITER_TOKEN" POST "/underwriting/cases/$case/decision" \
+    '{"outcome":"ACCEPT","reason":"Seed data: a money-movement case"}')" decisionOutcome)
+  [ "$decision" = "ACCEPT" ] || { echo "FATAL: case $case for $1 was not accepted" >&2; exit 1; }
+  for i in $(seq 1 30); do
+    number=$(jsonval "$(api "$STAFF_FINANCE_TOKEN" GET "/policies?policyholderPartyId=$party")" policyNumber)
+    [ -n "$number" ] && break
+    sleep 1
+  done
+  [ -n "$number" ] || { echo "FATAL: no policy issued for $1" >&2; exit 1; }
+  echo "$number"
+}
+
+first_premium() {   # first_premium <policyNumber> -> the first invoice's amount
+  jsonval "$(api "$STAFF_FINANCE_TOKEN" GET "/policies/$1/invoices")" amount
+}
+
+deposit() {   # deposit <policyNumber> <method> <reference> <amount>  -> the confirmed deposit's id
+  local id
+  id=$(jsonval "$(api "$STAFF_FINANCE_TOKEN" POST "/receipts" \
+    "{\"policyNumber\":\"$1\",\"method\":\"$2\",\"reference\":\"$3\",\"amount\":{\"amount\":\"$4\",\"currencyCode\":\"TZS\"},\"receivedOn\":\"$(date +%F)\",\"payerRef\":\"Seed payer\"}")" receiptId)
+  [ -n "$id" ] || { echo "FATAL: the deposit $3 on $1 was refused" >&2; exit 1; }
+  api "$STAFF_APPROVER_TOKEN" POST "/receipts/$id/approval" >/dev/null
+  echo "$id"
+}
+
+mul() { awk -v a="$1" -v f="$2" 'BEGIN { printf "%.2f", a * f }'; }
+SEED_RUN=$(date +%s)
+
+PAID_POLICY=$(new_case_policy "Neema Paid" "+255713000101")
+PAID_PREMIUM=$(first_premium "$PAID_POLICY")
+deposit "$PAID_POLICY" BANK_DEPOSIT "SEED-PAID-$SEED_RUN" "$PAID_PREMIUM" >/dev/null
+echo "paid:       $PAID_POLICY -- one premium by bank deposit"
+
+AHEAD_POLICY=$(new_case_policy "Juma Ahead" "+255713000102")
+AHEAD_PREMIUM=$(first_premium "$AHEAD_POLICY")
+deposit "$AHEAD_POLICY" CASH "SEED-AHEAD-$SEED_RUN" "$(mul "$AHEAD_PREMIUM" 3)" >/dev/null
+echo "paid ahead: $AHEAD_POLICY -- three premiums in cash; two wait on the balance"
+
+PART_POLICY=$(new_case_policy "Zawadi Part" "+255713000103")
+PART_PREMIUM=$(first_premium "$PART_POLICY")
+deposit "$PART_POLICY" LIPA_NUMBER "SEED-PART-$SEED_RUN" "$(mul "$PART_PREMIUM" 0.5)" >/dev/null
+echo "part paid:  $PART_POLICY -- half a premium by Lipa number"
+
+WITHDRAWN_POLICY=$(new_case_policy "Baraka Withdrawn" "+255713000104")
+WITHDRAWN_PREMIUM=$(first_premium "$WITHDRAWN_POLICY")
+deposit "$WITHDRAWN_POLICY" BANK_DEPOSIT "SEED-WDR-$SEED_RUN" "$(mul "$WITHDRAWN_PREMIUM" 2)" >/dev/null
+WITHDRAWAL_ID=$(jsonval "$(api "$STAFF_FINANCE_TOKEN" POST "/policies/$WITHDRAWN_POLICY/balance/withdrawals" \
+  "{\"amount\":{\"amount\":\"$WITHDRAWN_PREMIUM\",\"currencyCode\":\"TZS\"},\"payee\":{\"method\":\"MOBILE_MONEY\",\"payeeRef\":\"+255713000104\"}}")" withdrawalId)
+api "$STAFF_APPROVER_TOKEN" POST "/balance-withdrawals/$WITHDRAWAL_ID/approve" >/dev/null
+echo "withdrawn:  $WITHDRAWN_POLICY -- two premiums deposited, the second withdrawn to mobile money"
+
+REVERSED_POLICY=$(new_case_policy "Rehema Reversed" "+255713000105")
+REVERSED_PREMIUM=$(first_premium "$REVERSED_POLICY")
+CHEQUE_ID=$(deposit "$REVERSED_POLICY" CHEQUE "SEED-CHQ-$SEED_RUN" "$REVERSED_PREMIUM")
+REVERSAL_ID=$(jsonval "$(api "$STAFF_FINANCE_TOKEN" POST "/deposits/$CHEQUE_ID/reversal" \
+  '{"reason":"Seed data: the cheque bounced"}')" reversalId)
+api "$STAFF_APPROVER_TOKEN" POST "/deposit-reversals/$REVERSAL_ID/confirm" >/dev/null
+echo "reversed:   $REVERSED_POLICY -- a cheque deposited, then reversed when it bounced; the premium is owed again"
 
 echo "=== Step 8: Claim, with evidence ==="
 CLAIM_JSON=$(curl -sf -X POST "$API/claims" \
@@ -758,5 +849,22 @@ echo " invoiceId:          $INVOICE_ID"
 echo " claimId:            $CLAIM_ID"
 echo " documentRef:        $DOCUMENT_REF"
 echo " policyLoan:         $LOAN_STATUS"
+echo " money cases:        paid $PAID_POLICY, ahead $AHEAD_POLICY, part $PART_POLICY,"
+echo "                     withdrawn $WITHDRAWN_POLICY, reversed $REVERSED_POLICY"
 echo "================================================================"
 echo "Paste policyNumber/claimId/documentRef above into pgAdmin or a browser to explore."
+
+echo ""
+echo "=== Do the books match? (money movement step 7) ==="
+# The ledger posts after commit, so give it a moment, then fail loudly on any difference: seed data the books do not
+# agree with is a bug in the seed or in the platform, and either is worth stopping for.
+sleep 5
+BOOKS_JSON=$(api "$STAFF_FINANCE_TOKEN" GET "/finance/books-match")
+node -e '
+  const v = JSON.parse(process.argv[1]);
+  for (const c of v.checks) {
+    console.log(`${c.matches ? "ok  " : "FAIL"}  ${c.name}: ledger ${c.ledger}, records ${c.records}, difference ${c.difference}`);
+  }
+  if (!v.allMatch) { console.error("FATAL: the books do not match -- see FAIL above."); process.exit(1); }
+  console.log("The books match.");
+' "$BOOKS_JSON"

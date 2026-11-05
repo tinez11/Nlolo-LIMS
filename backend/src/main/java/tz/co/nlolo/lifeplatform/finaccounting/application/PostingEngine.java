@@ -260,9 +260,7 @@ class PostingEngine {
         if (!PostingRuleSet.BANK.equals(line.account())) {
             return line.account();
         }
-        // A cheque is drawn on the same bank account a transfer leaves (2026-10-28).
-        String method = facts.attribute("paymentMethod");
-        return "EFT".equals(method) || "CHEQUE".equals(method) ? PostingRuleSet.BANK_EFT : PostingRuleSet.BANK_MOBILE_MONEY;
+        return tz.co.nlolo.lifeplatform.finaccounting.api.CashAccounts.forPayout(facts.attribute("paymentMethod"));
     }
 
     private static LineDimensions dimensions(PostingFacts facts, PostingRuleSet.Line line,

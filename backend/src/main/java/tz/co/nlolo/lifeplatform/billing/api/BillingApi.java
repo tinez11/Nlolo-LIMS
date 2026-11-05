@@ -176,6 +176,12 @@ public interface BillingApi {
     /** Every policy balance in the tenant, summed: the sub-ledger behind account 2128 (money movement step 7). */
     BigDecimal policyBalancesTotal();
 
+    /**
+     * What each policy's invoices still owe, in TZS -- charged less paid less credited, never below zero, a waived one
+     * owing nothing (money movement step 7): the sub-ledger behind the premium receivables.
+     */
+    java.util.Map<String, BigDecimal> owedByPolicy();
+
     /** The balance and how far ahead it pays premiums (money movement step 5). */
     PolicyBalanceView balance(String policyNumber);
 

@@ -242,6 +242,20 @@ public class PaymentApiImpl implements PaymentApi {
 
     @Override
     @Transactional(readOnly = true)
+    public List<MovedByMethod> movedByMethod() {
+        java.util.UUID tenantId = TenantContext.get();
+        java.util.List<MovedByMethod> moved = new java.util.ArrayList<>();
+        for (Object[] row : paymentTransactionRepository.confirmedByMethod(tenantId)) {
+            moved.add(new MovedByMethod("IN", (String) row[0], (java.math.BigDecimal) row[1]));
+        }
+        for (Object[] row : disbursementRepository.completedByMethod(tenantId)) {
+            moved.add(new MovedByMethod("OUT", (String) row[0], (java.math.BigDecimal) row[1]));
+        }
+        return moved;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<DisbursementStatusView> listDisbursementsFor(String purpose, String sourceRef) {
         return disbursementRepository
             .findByTenantIdAndPurposeAndSourceRefOrderByCreatedAtDesc(TenantContext.get(), purpose, sourceRef)

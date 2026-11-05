@@ -67,4 +67,9 @@ public interface DisbursementInstructionRepository
      */
     @Query(value = "SELECT payment.resolve_disbursement_tenant_by_id(:disbursementId)", nativeQuery = true)
     UUID resolveTenantByDisbursementId(@Param("disbursementId") UUID disbursementId);
+
+    /** Completed payouts in TZS by method (money movement step 7's cash check): [method, total]. */
+    @Query("SELECT d.method, SUM(d.amount) FROM DisbursementInstruction d WHERE d.tenantId = :tenantId "
+        + "AND d.status = 'COMPLETED' AND d.currency = 'TZS' GROUP BY d.method")
+    java.util.List<Object[]> completedByMethod(@Param("tenantId") UUID tenantId);
 }

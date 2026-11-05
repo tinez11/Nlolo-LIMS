@@ -277,6 +277,8 @@ class PremiumPostingEndToEndTest {
     @Autowired private PolicyApi policyApi;
     @Autowired private BillingApi billingApi;
     @Autowired private Receipts receipts;
+    @Autowired private tz.co.nlolo.lifeplatform.payment.api.PaymentApi paymentApi;
+    @Autowired private tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi finaccountingApi;
     @Autowired private JournalEntryRepository journalEntryRepository;
     @Autowired private GlPostingRepository glPostingRepository;
     @Autowired private ApplicationEventPublisher eventPublisher;
@@ -614,6 +616,19 @@ class PremiumPostingEndToEndTest {
             .isEqualByComparingTo(premium);
         assertThat(legsOf(tenantId, onlyEntry(tenantId, "billing.DepositReceived")))
             .extracting(GlPosting::getAccountCode).containsExactlyInAnyOrder("1120", "2128");
+
+        // The books-match check's sub-ledgers, read from the real tables (money movement step 7): the money the rail
+        // moved, and the policy's receivable beside what its invoices owe.
+        TenantContext.set(tenantId);
+        assertThat(paymentApi.movedByMethod()).anySatisfy(m -> {
+            assertThat(m.direction()).isEqualTo("IN");
+            assertThat(m.method()).isEqualTo("BANK_DEPOSIT");
+            assertThat(m.total()).isEqualByComparingTo(premium.multiply(BigDecimal.TWO));
+        });
+        TenantContext.set(tenantId);
+        BigDecimal receivable = finaccountingApi.receivablesByPolicy().getOrDefault(policyNumber, BigDecimal.ZERO);
+        TenantContext.set(tenantId);
+        assertThat(receivable).isEqualByComparingTo(billingApi.owedByPolicy().getOrDefault(policyNumber, BigDecimal.ZERO));
     }
 
     private static GlPosting legFor(List<GlPosting> legs, String accountCode) {

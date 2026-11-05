@@ -660,6 +660,16 @@ public class BillingApiImpl implements BillingApi {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public java.util.Map<String, BigDecimal> owedByPolicy() {
+        java.util.Map<String, BigDecimal> byPolicy = new java.util.HashMap<>();
+        for (Object[] row : premiumInvoiceRepository.owedByPolicy(TenantContext.get())) {
+            byPolicy.put((String) row[0], (BigDecimal) row[1]);
+        }
+        return byPolicy;
+    }
+
+    @Override
     public UUID requestWithdrawalToMobileMoney(String policyNumber, BigDecimal amount, String phone, String requestedBy) {
         return balanceWithdrawals.request(policyNumber, amount, tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney(phone),
             requestedBy).getWithdrawalId();

@@ -48,4 +48,9 @@ public interface PaymentTransactionRepository
      * javadoc and db-migrations/payment/V4's section-2 comment. */
     @Query(value = "SELECT payment.resolve_payment_transaction_tenant_by_id(:paymentTransactionId)", nativeQuery = true)
     UUID resolveTenantByPaymentTransactionId(@Param("paymentTransactionId") UUID paymentTransactionId);
+
+    /** Confirmed collections in TZS by method (money movement step 7's cash check): [method, total]. */
+    @Query("SELECT t.method, SUM(t.amount) FROM PaymentTransaction t WHERE t.tenantId = :tenantId "
+        + "AND t.status = 'CONFIRMED' AND t.currency = 'TZS' GROUP BY t.method")
+    java.util.List<Object[]> confirmedByMethod(@Param("tenantId") UUID tenantId);
 }
