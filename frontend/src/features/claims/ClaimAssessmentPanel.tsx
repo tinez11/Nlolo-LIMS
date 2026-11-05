@@ -109,7 +109,7 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
             { label: 'Recommended', value: formatMoney(last.recommendedAmount) },
             ...(last.fraudIndicator ? [{ label: 'Fraud review', value: 'Flagged' }] : []),
           ]}
-          note="Next, a claims manager decides the settlement. It is listed under Assessments below."
+          note="Next, a claims manager decides the payout. It is listed under Assessments below."
           onward={
             <Button type="button" size="sm" variant="outline" onClick={() => resetSubmitAssessment(claimId)}>
               Add another assessment

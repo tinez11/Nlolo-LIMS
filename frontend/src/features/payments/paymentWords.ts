@@ -9,10 +9,14 @@ import { humanizeStatus } from '@/lib/status';
  */
 const PURPOSES: Record<string, string> = {
   PREMIUM: 'Premium',
-  ACCOUNT_TOP_UP: 'Savings top-up',
+  // A deposit onto a policy's balance that named no invoice (money movement step 5).
+  DEPOSIT: 'Deposit',
+  ACCOUNT_TOP_UP: 'Savings deposit',
   UL_TOP_UP: 'Unit-linked top-up',
-  LOAN_DISBURSEMENT: 'Policy loan',
-  CLAIM_SETTLEMENT: 'Claim settlement',
+  // A loan repaid by deposit or mobile-money request (money movement step 1, 2026-11-04).
+  LOAN_REPAYMENT: 'Loan repayment',
+  LOAN_DISBURSEMENT: 'Loan paid out',
+  CLAIM_SETTLEMENT: 'Claim payout',
   COMMISSION_PAYOUT: 'Agent commission',
   SURRENDER_PAYOUT: 'Surrender',
   MATURITY_PAYOUT: 'Maturity',
@@ -21,7 +25,7 @@ const PURPOSES: Record<string, string> = {
   INCOME_PAYOUT: 'Income instalment',
   PREMIUM_RETURN_PAYOUT: 'Premium return',
   FREE_LOOK_REFUND: 'Free-look refund',
-  WITHDRAWAL_PAYOUT: 'Account withdrawal',
+  WITHDRAWAL_PAYOUT: 'Savings withdrawal',
   DEPOSIT_MATURITY_PAYOUT: 'Deposit maturity',
   ANNUITY_PAYOUT: 'Annuity',
   COMMUTATION_PAYOUT: 'Commutation',
@@ -66,7 +70,7 @@ export function paymentLink(p: PaymentRecord): string | null {
   // since 2026-10-27 is one -- a mobile-money request too; only older gateway rows, recorded by nobody, are not.
   if (p.direction === 'IN' && (p.method !== 'MOBILE_MONEY' || p.executedBy)) return `/staff/receipts/${encodeURIComponent(p.id)}?from=payments`;
   if (p.purpose === 'CLAIM_SETTLEMENT') return `/staff/claims/${encodeURIComponent(p.sourceRef)}`;
-  if (INSTALMENT_PURPOSES.has(p.purpose)) return fromList(`/staff/payouts/${encodeURIComponent(p.sourceRef)}`, 'payments');
+  if (INSTALMENT_PURPOSES.has(p.purpose)) return fromList(`/staff/payouts/${encodeURIComponent(p.sourceRef)}`, 'payouts-all');
   if (p.policyNumber) return `/staff/policies/${encodeURIComponent(p.policyNumber)}`;
   return null;
 }

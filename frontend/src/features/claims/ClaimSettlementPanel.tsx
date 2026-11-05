@@ -201,7 +201,7 @@ export function ClaimSettlementPanel({
     return (
       <div className="p-4">
         <Receipt
-          heading={decided.status === 'REJECTED' ? 'Claim rejected' : 'Settlement approved'}
+          heading={decided.status === 'REJECTED' ? 'Claim rejected' : 'Payout approved'}
           /*
             Only the amount, and only when there is one.
 
@@ -414,7 +414,7 @@ export function ClaimSettlementPanel({
 
       {pending ? (
         <ConfirmAct
-          heading={pending.approved ? 'Approve this settlement?' : 'Reject this claim?'}
+          heading={pending.approved ? 'Approve this payout?' : 'Reject this claim?'}
           tone={pending.approved ? 'primary' : 'danger'}
           consequence={
             pending.approved ? (

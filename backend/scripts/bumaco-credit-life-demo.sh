@@ -71,7 +71,7 @@ api() {
 
 jsonval() { grep -o "\"$2\" *: *\"[^\"]*\"" <<<"$1" | head -1 | sed -E 's/.*: *"([^"]*)"/\1/'; }
 
-STAFF_SECRET=$(grep -o '"secret" *: *"[^"]*"' keycloak/staff-realm.json | head -1 | cut -d'"' -f4)
+STAFF_SECRET=$(source scripts/seed-lib.sh; realm_secret staff)
 STAFF_ADMIN_TOKEN=$(token_for staff staff.admin "$STAFF_SECRET")
 STAFF_FINANCE_TOKEN=$(token_for staff staff.finance "$STAFF_SECRET")
 # Issuing a scheme is gated on UNDERWRITER, not on admin or finance.

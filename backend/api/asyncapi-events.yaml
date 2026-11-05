@@ -446,7 +446,7 @@ channels:
     publish:
       message: { $ref: '#/components/messages/LoanOriginated' }
   policyloan.LoanDisbursementRequested:
-    description: "Producer: policyloan. Consumer: payment (request/confirm pattern, Deliverable 2 Rev 2 A2)."
+    description: "Producer: policyloan, when a second person releases the loan payout (money movement step 4). Consumer: payment (request/confirm pattern, Deliverable 2 Rev 2 A2)."
     publish:
       message: { $ref: '#/components/messages/LoanDisbursementRequested' }
   policyloan.LoanDisbursed:
@@ -588,7 +588,7 @@ channels:
     publish:
       message: { $ref: '#/components/messages/CommissionAccrued' }
   distribution.CommissionPayoutRequested:
-    description: "Producer: distribution. Consumer: payment (request/confirm pattern)."
+    description: "Producer: distribution, when a second person releases the commission payout (money movement step 4). Consumer: payment (request/confirm pattern)."
     publish:
       message: { $ref: '#/components/messages/CommissionPayoutRequested' }
   distribution.CommissionPaid:
@@ -946,6 +946,10 @@ channels:
     description: "Producer: policyloan (a loan's disbursement failed at the payment rail). Consumers: audit only."
     publish:
       message: { $ref: '#/components/messages/LoanDisbursementFailed' }
+  policyloan.LoanPayoutRefused:
+    description: "Producer: policyloan (money movement step 4: a second person refused a loan payout; the reserved loan value is freed). Consumers: audit only."
+    publish:
+      message: { $ref: '#/components/messages/LoanPayoutRefused' }
   policyloan.LoanInterestAccrued:
     description: "Producer: policyloan (the month-end interest accrual on one loan). Consumers: finaccounting, audit."
     publish:
@@ -1065,6 +1069,7 @@ components:
     AccumulationPayoutPaid: { messageId: AccumulationPayoutPaid, name: AccumulationPayoutPaid, payload: { $ref: '#/components/schemas/AccumulationPayoutPaidPayload' } }
     VestingReminderDue: { messageId: VestingReminderDue, name: VestingReminderDue, payload: { $ref: '#/components/schemas/VestingReminderDuePayload' } }
     AgentStatusChanged: { messageId: AgentStatusChanged, name: AgentStatusChanged, payload: { $ref: '#/components/schemas/AgentStatusChangedPayload' } }
+    LoanPayoutRefused: { messageId: LoanPayoutRefused, name: LoanPayoutRefused, payload: { $ref: '#/components/schemas/LoanPayoutRefusedPayload' } }
     LoanDisbursementFailed: { messageId: LoanDisbursementFailed, name: LoanDisbursementFailed, payload: { $ref: '#/components/schemas/LoanDisbursementFailedPayload' } }
     LoanInterestAccrued: { messageId: LoanInterestAccrued, name: LoanInterestAccrued, payload: { $ref: '#/components/schemas/LoanInterestAccruedPayload' } }
     ChargeRefused: { messageId: ChargeRefused, name: ChargeRefused, payload: { $ref: '#/components/schemas/ChargeRefusedPayload' } }
@@ -1984,6 +1989,11 @@ components:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
           properties: { loanId: {type: string, format: uuid}, policyNumber: {type: string}, reason: {type: string}, failedAt: {type: string, format: date-time} }
+    LoanPayoutRefusedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { loanId: {type: string, format: uuid}, policyNumber: {type: string}, reason: {type: string}, refusedBy: {type: string} }
     LoanInterestAccruedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

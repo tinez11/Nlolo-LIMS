@@ -19,9 +19,10 @@ import { Input } from '@/components/ui/input';
 import { confirmReceiptGates } from '@/gates/receiptGates';
 import { formatDate, formatInstant } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
+import { barredAsOwn } from '@/lib/ownWork';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useReceiptStore } from '@/store/receiptStore';
-import { methodOf, receiptOrigin, REQUESTED_MOBILE_MONEY } from './receiptForm';
+import { depositTitle, methodOf, receiptOrigin, REQUESTED_MOBILE_MONEY } from './receiptForm';
 
 
 /**
@@ -38,11 +39,11 @@ export function ReceiptPage() {
     void load(receiptId);
   }, [load, receiptId]);
 
-  if (!resource || isInitialLoad(resource)) return <LoadingBlock label="Loading receipt" />;
+  if (!resource || isInitialLoad(resource)) return <LoadingBlock label="Loading deposit" />;
   if (!resource.data && resource.status === 'error' && resource.error) {
     return (
       <>
-        <PageHeader breadcrumb={receiptOrigin(params.get('from'), null).crumbs} title="Receipt" />
+        <PageHeader breadcrumb={receiptOrigin(params.get('from'), null).crumbs} title="Deposit" />
         <div className="px-6">
           <ErrorPanel error={resource.error} onRetry={() => void load(receiptId)} />
         </div>
@@ -59,14 +60,14 @@ export function ReceiptPage() {
     <>
       <PageHeader
         breadcrumb={origin.crumbs}
-        title={`${method?.label ?? receipt.method} receipt`}
+        title={depositTitle(method?.label ?? receipt.method)}
         status={<StatusBadge kind="receipt" value={receipt.status} />}
       />
       <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-5">
           <ReceiptDecision receipt={receipt} />
         </div>
-        <Panel title="This receipt">
+        <Panel title="This deposit">
           <dl className="px-4 pb-2">
             <Field label="Amount" value={formatMoney(receipt.amount)} emphasis />
             <Field label="How it came in" value={method?.label ?? receipt.method} />
@@ -77,7 +78,8 @@ export function ReceiptPage() {
               label="Policy"
               value={
                 receipt.policyNumber ? (
-                  <Link className="underline" to={`/staff/policies/${encodeURIComponent(receipt.policyNumber)}?tab=billing`}>
+                  <Link className="underline"
+                    to={`/staff/policies/${encodeURIComponent(receipt.policyNumber)}?tab=${receipt.loanId ? 'loans' : 'billing'}`}>
                     {receipt.policyNumber}
                   </Link>
                 ) : (
@@ -85,8 +87,11 @@ export function ReceiptPage() {
                 )
               }
             />
+            {receipt.loanId && (
+              <Field label="Loan" value={<span className="font-mono">{receipt.loanId.slice(0, 8)}</span>} />
+            )}
             {receipt.note && <Field label="Note" value={receipt.note} />}
-            {receipt.fieldReceiptId && <Field label="Brings in" value="An agent's field receipt" />}
+            {receipt.fieldReceiptId && <Field label="Brings in" value="Cash an agent collected" />}
             <Field
               label={requested ? 'Requested by' : 'Recorded by'}
               value={receipt.recordedBy === 'system' ? 'The platform' : <StaffName subject={receipt.recordedBy} />}
@@ -107,6 +112,13 @@ export function ReceiptPage() {
 }
 
 function ReceiptDecision({ receipt }: { receipt: Receipt }) {
+  // Money onto the policy's balance: a premium deposit named by its invoice, or since money movement step 5 by the
+  // policy alone (DEPOSIT). Either is paid out oldest first, and either can be reversed.
+  const onBalance = receipt.purpose === 'PREMIUM' || receipt.purpose === 'DEPOSIT';
+  // What it pays (money movement step 1, 2026-11-04), by its purpose: a loan, a savings account, or the balance.
+  const target = receipt.purpose === 'LOAN_REPAYMENT' ? 'the loan'
+    : receipt.purpose === 'ACCOUNT_TOP_UP' || receipt.purpose === 'UL_TOP_UP' ? 'the savings account'
+      : `the balance of ${receipt.policyNumber}`;
   const auth = useAuth();
   const viewerSubject = readIdentity(auth.user?.access_token)?.subject ?? undefined;
   const approve = useReceiptStore((s) => s.approve);
@@ -117,11 +129,16 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
 
   if (receipt.status === 'CONFIRMED') {
     return (
-      <Panel title="Confirmed">
-        <p className="px-4 pb-4 text-sm">
-          This receipt paid {formatMoney(receipt.amount)} against the invoice, and the ledger has posted it.
-        </p>
-      </Panel>
+      <>
+        <Panel title="Confirmed">
+          <p className="px-4 pb-4 text-sm">
+            This deposit paid {formatMoney(receipt.amount)} {onBalance ? 'onto' : 'against'} {target}, and the ledger has
+            posted it.
+          </p>
+        </Panel>
+        {/* Money movement step 5: a premium deposit whose money never really arrived is reversed from here. */}
+        {onBalance && <DepositReversalPanel receipt={receipt} viewerSubject={viewerSubject} />}
+      </>
     );
   }
   if (receipt.status === 'REJECTED') {
@@ -142,22 +159,30 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
   const gates = confirmReceiptGates(receipt, viewerSubject);
   const refused = gates.some((g) => !g.ok && g.hard);
   return (
-    <Panel title="Confirm this receipt" subtitle="Only a confirmed receipt pays the invoice.">
+    <Panel title="Confirm this deposit"
+      subtitle={receipt.loanId ? 'Only a confirmed deposit repays the loan.'
+        : onBalance ? 'Only a confirmed deposit goes onto the policy’s balance.' : `Only a confirmed deposit pays into ${target}.`}>
       <div className="space-y-3 px-4 py-3">
         {receipt.method === REQUESTED_MOBILE_MONEY.value && <p className="text-sm">{REQUESTED_MOBILE_MONEY.hint}</p>}
         <GatePanel gates={gates} title="Before confirming" />
         {deciding?.status === 'error' && deciding.error && <InlineError error={deciding.error} />}
         {armed === 'confirm' ? (
           <ConfirmAct
-            heading="Confirm this receipt?"
+            heading="Confirm this deposit?"
             consequence={
               <>
-                <strong>{formatMoney(receipt.amount)}</strong> is applied to the invoice on {receipt.policyNumber}, and the
-                ledger posts it to the account a {methodOf(receipt.method)?.label.toLowerCase() ?? 'payment'} reaches.
+                <strong>{formatMoney(receipt.amount)}</strong>{' '}
+                {onBalance
+                  ? <>goes onto the balance of {receipt.policyNumber} and pays what it owes, oldest first; anything left
+                    pays its next premiums. The ledger</>
+                  : <>is applied to {target} on {receipt.policyNumber}, and the ledger</>}{' '}
+                posts it to the account a {methodOf(receipt.method)?.label.toLowerCase() ?? 'payment'} reaches.
               </>
             }
-            reversal="Nothing here undoes it. A receipt confirmed in error is corrected by a manual journal."
-            confirmLabel="Confirm receipt"
+            reversal={onBalance
+              ? 'If the money never really arrives (a bounced cheque), the deposit can be reversed from this page.'
+              : 'Nothing here undoes it. A deposit confirmed in error is corrected by a manual journal.'}
+            confirmLabel="Confirm deposit"
             busy={deciding?.status === 'loading'}
             onConfirm={() => {
               void approve(receipt.receiptId);
@@ -181,7 +206,7 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
                   setArmed(null);
                 }}
               >
-                Refuse receipt
+                Refuse deposit
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setArmed(null)}>
                 Cancel
@@ -198,6 +223,112 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
             </Button>
           </div>
         )}
+      </div>
+    </Panel>
+  );
+}
+
+/**
+ * A confirmed premium deposit's reversal (money movement step 3b): Reverse opens its own page; one asked waits for a
+ * second person (collections.approve) -- or the asker, holding collections.approve-own -- and one done says so.
+ */
+function DepositReversalPanel({ receipt, viewerSubject }: { receipt: Receipt; viewerSubject: string | undefined }) {
+  const reversals = useReceiptStore((s) => s.reversals[receipt.receiptId]);
+  const load = useReceiptStore((s) => s.loadReversals);
+  const decide = useReceiptStore((s) => s.decideReversal);
+  const acting = useReceiptStore((s) => s.reversing[receipt.receiptId]);
+  const [armed, setArmed] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
+
+  useEffect(() => {
+    void load(receipt.receiptId);
+  }, [receipt.receiptId, load]);
+
+  if (!reversals || isInitialLoad(reversals)) return null;
+  const live = (reversals.data ?? []).find((r) => r.status === 'REQUESTED' || r.status === 'CONFIRMED');
+  const busy = acting?.status === 'loading';
+
+  if (live?.status === 'CONFIRMED') {
+    return (
+      <Panel title="Reversed">
+        <p className="px-4 pb-4 text-sm">
+          {formatMoney(live.amount)} came back off the balance{live.decidedBy && <> when <StaffName subject={live.decidedBy} /> confirmed it</>}:
+          {' '}{live.reason}. Any premium it had paid and the balance could not cover is owed again.
+        </p>
+      </Panel>
+    );
+  }
+  if (live?.status === 'REQUESTED') {
+    const own = barredAsOwn(viewerSubject, live.requestedBy, 'receipts');
+    return (
+      <Panel title="Reversal waiting" subtitle="Nothing comes off the balance until a second person confirms it.">
+        <div className="space-y-3 px-4 py-3">
+          <p className="text-sm">
+            Asked by <StaffName subject={live.requestedBy} />: {live.reason}
+          </p>
+          {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
+          {can('collections.approve') && (
+            <>
+              {own && <p className="text-xs text-muted-foreground">You asked for this reversal, so someone else must confirm it.</p>}
+              {armed ? (
+                <ConfirmAct
+                  heading="Reverse this deposit?"
+                  consequence={
+                    <>
+                      <strong>{formatMoney(live.amount)}</strong> comes off the balance of {live.policyNumber}. If the balance
+                      cannot cover it, the premiums it paid are owed again, newest first, and their commission is taken back.
+                    </>
+                  }
+                  reversal="A reversal cannot be undone. Money that does arrive later is recorded as a new deposit."
+                  confirmLabel="Reverse deposit"
+                  tone="danger"
+                  busy={busy}
+                  onConfirm={() => {
+                    void decide(receipt.receiptId, live.reversalId, null);
+                    setArmed(false);
+                  }}
+                  onCancel={() => setArmed(false)}
+                />
+              ) : rejecting ? (
+                <div className="space-y-2">
+                  <FormField label="Why is it rejected?">
+                    <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+                  </FormField>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="danger" disabled={reason.trim() === '' || busy}
+                      onClick={() => void decide(receipt.receiptId, live.reversalId, reason.trim())}>
+                      Reject reversal
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Button size="sm" disabled={own} onClick={() => setArmed(true)}>
+                    Confirm
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={own} onClick={() => setRejecting(true)}>
+                    Reject
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </Panel>
+    );
+  }
+  if (!can('collections.manage')) return null;
+  return (
+    <Panel title="Money never arrived?">
+      <div className="space-y-2 px-4 py-3">
+        <p className="text-sm">A bounced cheque or a deposit recorded in error is reversed, saying why, and a second person confirms it.</p>
+        <Button asChild size="sm" variant="outline">
+          <Link to={`/staff/receipts/${encodeURIComponent(receipt.receiptId)}/reverse`}>Reverse</Link>
+        </Button>
       </div>
     </Panel>
   );

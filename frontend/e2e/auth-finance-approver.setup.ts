@@ -10,10 +10,13 @@ const FINANCE_USER = 'staff.finance-approver';
 const FINANCE_PASSWORD = 'devpassword';
 
 setup(`authenticate as ${FINANCE_USER}`, async ({ page }) => {
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort()); // Keycloak's fonts can stall the sign-in page; it signs in fine without them
   await page.goto('/staff');
 
   await page.waitForURL(/\/realms\/staff\/protocol\/openid-connect\/auth/, {
     timeout: 30_000,
+    // The form, not every resource: the login theme's Google Fonts can take 30s+ from here, so "load" may never come.
+    waitUntil: 'domcontentloaded',
   });
 
   await page.locator('#username').fill(FINANCE_USER);

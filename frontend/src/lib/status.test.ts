@@ -139,11 +139,13 @@ describe('STATUS_MAPS coverage', () => {
   it('covers the loan lifecycle exactly as LoanStatus.java declares it', () => {
     expect(Object.keys(STATUS_MAPS.loan).sort()).toEqual(
       [
+        'AWAITING_PAYOUT_APPROVAL',
         'DISBURSED',
         'DISBURSEMENT_FAILED',
         'DISBURSEMENT_REQUESTED',
         'FORCED_LAPSE_TRIGGERED',
         'ORIGINATED',
+        'PAYOUT_REFUSED',
         'REPAYING',
         'RESERVED_PENDING_ORIGINATION',
         'SETTLED',
@@ -167,7 +169,14 @@ describe('STATUS_MAPS coverage', () => {
 
 describe('humanizeStatus', () => {
   it('sentence-cases an ordinary literal', () => {
-    expect(humanizeStatus('SETTLEMENT_REQUESTED')).toBe('Settlement requested');
+    expect(humanizeStatus('PARTIALLY_PAID')).toBe('Partially paid');
+  });
+
+  it('reads money owed on an event as a payout, and a loan\'s money out as paid out', () => {
+    expect(humanizeStatus('SETTLEMENT_REQUESTED')).toBe('Payout requested');
+    expect(humanizeStatus('DISBURSEMENT_REQUESTED')).toBe('Payout requested');
+    expect(humanizeStatus('DISBURSED')).toBe('Paid out');
+    expect(humanizeStatus('DISBURSEMENT_FAILED')).toBe('Payout failed');
   });
 
   it('keeps the acronyms staff read as acronyms', () => {

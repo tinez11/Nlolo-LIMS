@@ -6,7 +6,12 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.billing.api.*;
 import tz.co.nlolo.lifeplatform.billing.domain.ArrearsCase;
+import tz.co.nlolo.lifeplatform.billing.domain.BalanceEntry;
 import tz.co.nlolo.lifeplatform.billing.domain.BillingSchedule;
+import tz.co.nlolo.lifeplatform.billing.domain.PolicyBalance;
+import tz.co.nlolo.lifeplatform.billing.infrastructure.BalanceEntryRepository;
+import tz.co.nlolo.lifeplatform.billing.infrastructure.PolicyBalanceRepository;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
 import tz.co.nlolo.lifeplatform.billing.domain.FieldReceipt;
 import tz.co.nlolo.lifeplatform.billing.domain.PremiumCredit;
 import tz.co.nlolo.lifeplatform.billing.domain.PremiumInvoice;
@@ -75,6 +80,11 @@ public class BillingApiImpl implements BillingApi {
     private final PolicyApi policyApi;
     private final ApplicationEventPublisher eventPublisher;
     private final ArrearsNotificationSweep arrearsNotificationSweep;
+    /** The policy balance (money movement step 2, billing V14). */
+    private final PolicyBalanceRepository policyBalanceRepository;
+    private final BalanceEntryRepository balanceEntryRepository;
+    /** What a policy that charges no more premiums gives back (money movement step 3a). */
+    private final BalanceWithdrawals balanceWithdrawals;
 
     public BillingApiImpl(BillingScheduleRepository billingScheduleRepository, PremiumInvoiceRepository premiumInvoiceRepository,
                            PremiumCreditRepository premiumCreditRepository,
@@ -82,7 +92,12 @@ public class BillingApiImpl implements BillingApi {
                            ProductApi productApi, PolicyApi policyApi,
                            ApplicationEventPublisher eventPublisher,
                            ArrearsNotificationSweep arrearsNotificationSweep,
-                           PremiumReceiptRepository premiumReceiptRepository) {
+                           PremiumReceiptRepository premiumReceiptRepository,
+                           PolicyBalanceRepository policyBalanceRepository, BalanceEntryRepository balanceEntryRepository,
+                           BalanceWithdrawals balanceWithdrawals) {
+        this.balanceWithdrawals = balanceWithdrawals;
+        this.policyBalanceRepository = policyBalanceRepository;
+        this.balanceEntryRepository = balanceEntryRepository;
         this.premiumReceiptRepository = premiumReceiptRepository;
         this.billingScheduleRepository = billingScheduleRepository;
         this.premiumInvoiceRepository = premiumInvoiceRepository;
@@ -323,7 +338,9 @@ public class BillingApiImpl implements BillingApi {
      * vesting, a terminated policy's future invoices -- left its receivable on the ledger for good.
      */
     private void waive(UUID tenantId, PremiumInvoice invoice, String reason, String waivedBy) {
-        BigDecimal outstanding = invoice.getAmount().subtract(invoice.getAmountPaid());
+        // What is still owed: charged less paid less credited (money movement step 2). Charged less paid reversed a
+        // credited premium twice -- once by its credit, again by the waiver.
+        BigDecimal outstanding = invoice.balanceDue(creditedAgainst(invoice));
         invoice.waive(reason);
         premiumInvoiceRepository.save(invoice);
         arrearsCaseRepository.findByInvoiceIdAndTenantIdAndResolvedAtIsNull(invoice.getInvoiceId(), tenantId)
@@ -348,6 +365,17 @@ public class BillingApiImpl implements BillingApi {
                 waive(tenantId, invoice, reason, "system");
             }
         }
+        returnBalanceOnEnd(tenantId, policyNumber);
+    }
+
+    /**
+     * A policy that will charge no more premiums gives its balance back (money movement step 3a): first it pays any
+     * premium still owed for cover that was given, then whatever is left becomes a withdrawal waiting for finance to name
+     * who receives it.
+     */
+    private void returnBalanceOnEnd(UUID tenantId, String policyNumber) {
+        payFromBalance(tenantId, policyNumber, null, null, null, null);
+        balanceWithdrawals.raiseOnPolicyEnd(tenantId, policyNumber);
     }
 
     @Override
@@ -408,15 +436,55 @@ public class BillingApiImpl implements BillingApi {
     @Transactional
     public InvoiceView applyConfirmedPayment(UUID invoiceId, BigDecimal amount, String currency, String paymentReference,
                                              String payerRef, String method) {
+        return applyConfirmedPayment(invoiceId, amount, currency, paymentReference, payerRef, method, null);
+    }
+
+    /**
+     * Confirmed premium money (money movement step 2, 2026-11-04). On an insurance policy it is a DEPOSIT on the
+     * policy's balance -- posted to the ledger at once for what arrived -- and the balance then pays the policy's
+     * premiums that have fallen due, oldest first; whatever is left stays and pays the next ones. The invoice named
+     * only says which policy. A savings-type policy (account basis) keeps the old road for now: the money pays that
+     * invoice directly, as before (design D12, its surplus road arrives with "For: Savings").
+     *
+     * @param paymentId the confirmed payment's own id, the deposit's idempotency key; null from older callers, when a
+     *                  stable key is made from the invoice and the reference
+     */
+    @Override
+    @Transactional
+    public InvoiceView applyConfirmedPayment(UUID invoiceId, BigDecimal amount, String currency, String paymentReference,
+                                             String payerRef, String method, UUID paymentId) {
         UUID tenantId = TenantContext.get();
         PremiumInvoice invoice = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoiceId, tenantId)
             .orElseThrow(() -> new InvoiceNotFoundException(invoiceId));
-        String statusBefore = invoice.getStatus();
         // A redelivered confirmation carries the same reference: recorded and applied once (billing V10).
         if (paymentReference != null
                 && premiumReceiptRepository.existsByTenantIdAndInvoiceIdAndPaymentReference(tenantId, invoiceId, paymentReference)) {
             return toView(invoice);
         }
+        if (!isSavingsType(invoice.getPolicyNumber())) {
+            UUID depositKey = paymentId != null ? paymentId
+                : paymentReference != null
+                    ? UUID.nameUUIDFromBytes((invoiceId + "|" + paymentReference).getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                    : UUID.randomUUID();
+            // Paid up to the invoice it was asked for even if that one is not yet due: whoever chose to pay next month's
+            // premium early has paid it. Only what is left waits for each later premium's due date.
+            deposit(tenantId, invoice.getPolicyNumber(), amount, currency != null ? currency : invoice.getCurrency(),
+                depositKey, method, paymentReference, payerRef, BalanceEntry.FROM_PAYMENT, "payment", invoice.getDueDate());
+            return toView(premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoiceId, tenantId).orElse(invoice));
+        }
+        applyToInvoice(tenantId, invoice, amount, currency, paymentReference, payerRef, method);
+        return toView(invoice);
+    }
+
+    /**
+     * Money applied to one invoice: the invoice's running total, a receipt row for the payment schedule, its arrears
+     * case resolved, and -- on the edge to PAID -- billing.PremiumCollected. The one place an invoice is paid, whether
+     * the money came straight from a confirmation (savings-type) or from the policy's balance.
+     */
+    private void applyToInvoice(UUID tenantId, PremiumInvoice invoice, BigDecimal amount, String currency,
+                                String paymentReference, String payerRef, String method) {
+        UUID invoiceId = invoice.getInvoiceId();
+        String statusBefore = invoice.getStatus();
         // Credits count towards settling it -- see PremiumInvoice.applyPayment(paid, credited).
         invoice.applyPayment(amount, creditedAgainst(invoice));
         premiumInvoiceRepository.save(invoice);
@@ -482,9 +550,190 @@ public class BillingApiImpl implements BillingApi {
             // How the money came in (2026-10-27): the ledger posts it to the account it reached. Absent is the
             // gateway's mobile money, as every collection was before receipts.
             collected.put("receiptMethod", method == null ? "MOBILE_MONEY" : method);
+            // Which payment in full this is (money movement step 3b): 1 normally, n + 1 after a reversal reopened it n
+            // times -- distribution keys the commission on it, so commission clawed back can be earned again.
+            collected.put("collection", invoice.collectionNumber());
             eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumCollected", tenantId, collected));
         }
-        return toView(invoice);
+    }
+
+    // ---- The policy balance (money movement step 2, billing V14) -------------------------------------------------
+
+    /** Open invoices a balance may pay: owed, and not waived. */
+    private static final java.util.Set<String> PAYABLE = java.util.Set.of("DUE", "IN_GRACE", "OVERDUE", "PARTIALLY_PAID");
+    private static final java.time.ZoneId CIVIL = java.time.ZoneId.of("Africa/Dar_es_Salaam");
+
+    /**
+     * Money onto a policy's balance, once per payment, then the balance pays what has fallen due. A loan surplus was
+     * already posted by policyloan (E-03-SURPLUS), so it publishes nothing to the ledger here; every other deposit
+     * publishes billing.DepositReceived, which posts DR the account it reached / CR 2128.
+     */
+    void deposit(UUID tenantId, String policyNumber, BigDecimal amount, String currency, UUID paymentId, String method,
+                 String reference, String payerRef, String source, String by, LocalDate payUpTo) {
+        policyBalanceRepository.open(tenantId, policyNumber, currency);
+        PolicyBalance balance = policyBalanceRepository.findForUpdate(tenantId, policyNumber).orElseThrow();
+        if (!balance.getCurrency().equals(currency)) {
+            throw new IllegalArgumentException("Policy " + policyNumber + " is billed in " + balance.getCurrency()
+                + "; a deposit in " + currency + " cannot go onto its balance");
+        }
+        if (balanceEntryRepository.existsByTenantIdAndEntryTypeAndPaymentId(tenantId, BalanceEntry.DEPOSIT, paymentId)) {
+            return; // a redelivered confirmation: deposited once
+        }
+        BalanceEntry entry = balanceEntryRepository.save(BalanceEntry.deposit(tenantId, policyNumber, amount, currency,
+            paymentId, method, reference, source, by));
+        if (!BalanceEntry.FROM_LOAN_SURPLUS.equals(source)) {
+            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.DepositReceived", tenantId,
+                Map.of("entryId", entry.getEntryId(), "paymentId", paymentId, "policyNumber", policyNumber,
+                       "amount", Map.of("amount", amount.setScale(2).toPlainString(), "currencyCode", currency),
+                       "receiptMethod", method == null ? "MOBILE_MONEY" : method)));
+        }
+        payFromBalance(tenantId, policyNumber, method, reference, payerRef, payUpTo);
+    }
+
+    /**
+     * A confirmed deposit naming no invoice (money movement step 5, payment's DEPOSIT purpose): onto the policy's
+     * balance, posted like any other deposit, paying only what has fallen due -- none of it pays a premium early.
+     */
+    @Transactional
+    public void depositConfirmed(String policyNumber, BigDecimal amount, String currency, UUID paymentId, String method,
+                                 String reference, String payerRef) {
+        deposit(TenantContext.get(), policyNumber, amount, currency, paymentId, method, reference, payerRef,
+            BalanceEntry.FROM_PAYMENT, "payment", null);
+    }
+
+    /** A loan's surplus (policyloan.LoanOverpaid) onto the policy's balance -- already posted, so no ledger event. */
+    @Transactional
+    public void depositLoanSurplus(String policyNumber, BigDecimal amount, String currency, UUID paymentId, String method,
+                                   String reference) {
+        deposit(TenantContext.get(), policyNumber, amount, currency, paymentId, method, reference, null,
+            BalanceEntry.FROM_LOAN_SURPLUS, "loan", null);
+    }
+
+    /**
+     * Under the balance's lock, pays the policy's premiums that have fallen due (Dar es Salaam's day), oldest first,
+     * while there is balance. Each payment is a PREMIUM_PAID entry and billing.PremiumPaidFromBalance (DR 2128 / CR the
+     * receivable, with the levy on what was paid). A premium not yet due waits: invoices are raised a year ahead, and
+     * paying next year's today would release its commission and cover-paid-to date early. BalanceAllocationDrain comes
+     * back for it on its due date.
+     */
+    void payFromBalance(UUID tenantId, String policyNumber, String method, String reference, String payerRef,
+                        LocalDate payUpTo) {
+        if (policyBalanceRepository.findForUpdate(tenantId, policyNumber).isEmpty()) {
+            return; // never received a deposit
+        }
+        BigDecimal left = balanceEntryRepository.balanceOf(tenantId, policyNumber);
+        LocalDate today = LocalDate.now(CIVIL);
+        LocalDate cutoff = payUpTo != null && payUpTo.isAfter(today) ? payUpTo : today;
+        for (PremiumInvoice invoice : premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId)) {
+            if (left.signum() <= 0) break;
+            if (!PAYABLE.contains(invoice.getStatus()) || invoice.getDueDate().isAfter(cutoff)) continue;
+            BigDecimal owed = invoice.balanceDue(creditedAgainst(invoice));
+            if (owed.signum() <= 0) continue;
+            BigDecimal applied = left.min(owed);
+            BalanceEntry paid = balanceEntryRepository.save(BalanceEntry.premiumPaid(tenantId, policyNumber, applied,
+                invoice.getCurrency(), invoice.getInvoiceId()));
+            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumPaidFromBalance", tenantId,
+                Map.of("entryId", paid.getEntryId(), "invoiceId", invoice.getInvoiceId(), "policyNumber", policyNumber,
+                       "amount", Map.of("amount", applied.setScale(2).toPlainString(), "currencyCode", invoice.getCurrency()))));
+            applyToInvoice(tenantId, invoice, applied, invoice.getCurrency(),
+                reference != null ? reference : "balance:" + paid.getEntryId(), payerRef, method);
+            left = left.subtract(applied);
+        }
+    }
+
+    /** The drain's entry point: pay what has fallen due for one policy, in the caller's tenant. */
+    @Transactional
+    public void payFromBalance(String policyNumber) {
+        payFromBalance(TenantContext.get(), policyNumber, null, null, null, null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal balanceOf(String policyNumber) {
+        return balanceEntryRepository.balanceOf(TenantContext.get(), policyNumber).setScale(2);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal policyBalancesTotal() {
+        return balanceEntryRepository.totalOfTenant(TenantContext.get()).setScale(2);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Map<String, BigDecimal> owedByPolicy() {
+        java.util.Map<String, BigDecimal> byPolicy = new java.util.HashMap<>();
+        for (Object[] row : premiumInvoiceRepository.owedByPolicy(TenantContext.get())) {
+            byPolicy.put((String) row[0], (BigDecimal) row[1]);
+        }
+        return byPolicy;
+    }
+
+    @Override
+    public UUID requestWithdrawalToMobileMoney(String policyNumber, BigDecimal amount, String phone, String requestedBy) {
+        return balanceWithdrawals.request(policyNumber, amount, tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney(phone),
+            requestedBy).getWithdrawalId();
+    }
+
+    /**
+     * The balance, and the due date of the last premium it pays in full, walking what is still owed oldest first as
+     * payFromBalance would. Premiums already due are paid as soon as money lands, so this is normally about premiums
+     * still to come; it reaches only as far as the invoices raised (a year ahead).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public PolicyBalanceView balance(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        BigDecimal left = balanceEntryRepository.balanceOf(tenantId, policyNumber).setScale(2);
+        List<PremiumInvoice> invoices = premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber,
+            tenantId);
+        String currency = invoices.stream().findFirst().map(PremiumInvoice::getCurrency).orElse("TZS");
+        LocalDate covers = null;
+        for (PremiumInvoice invoice : invoices) {
+            if (!PAYABLE.contains(invoice.getStatus())) continue;
+            BigDecimal owed = invoice.balanceDue(creditedAgainst(invoice));
+            if (owed.signum() <= 0) continue;
+            if (left.compareTo(owed) < 0) break;
+            left = left.subtract(owed);
+            covers = invoice.getDueDate();
+        }
+        return new PolicyBalanceView(policyNumber, balanceEntryRepository.balanceOf(tenantId, policyNumber).setScale(2),
+            currency, covers);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BalanceStatementView balanceStatement(String policyNumber, int page, int size) {
+        UUID tenantId = TenantContext.get();
+        List<BalanceEntry> entries = balanceEntryRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId,
+            policyNumber);
+        List<BalanceStatementView.Line> lines = new java.util.ArrayList<>(entries.size());
+        BigDecimal running = BigDecimal.ZERO;
+        int seq = 0;
+        for (BalanceEntry e : entries) {
+            BigDecimal signed = BalanceEntry.MONEY_IN.contains(e.getEntryType()) ? e.getAmount() : e.getAmount().negate();
+            running = running.add(signed);
+            lines.add(new BalanceStatementView.Line(e.getEntryId(), ++seq, e.getEntryType(), e.getCreatedAt(),
+                signed.setScale(2), running.setScale(2), e.getPaymentId(), e.getInvoiceId(), e.getWithdrawalId(),
+                e.getReversesEntryId(), e.getMethod(), e.getReference(), e.getSource()));
+        }
+        java.util.Collections.reverse(lines);
+        int from = Math.min(page * size, lines.size());
+        int to = Math.min(from + size, lines.size());
+        String currency = entries.stream().findFirst().map(BalanceEntry::getCurrency).orElse("TZS");
+        return new BalanceStatementView(policyNumber, currency, lines.size(), page, size, List.copyOf(lines.subList(from, to)));
+    }
+
+    /**
+     * A savings-type policy -- its product version's account basis is ACCOUNT -- keeps premiums on their own road for
+     * now: its money is savings, and a policy balance would hold money that belongs in the account (design D12).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isSavingsType(String policyNumber) {
+        PolicyView policy = policyApi.getPolicy(policyNumber);
+        return policy.productVersionId() != null
+            && productApi.resolveAccumulationPlan(policy.productVersionId()).basis() == tz.co.nlolo.lifeplatform.product.api.ValueBasis.ACCOUNT;
     }
 
     @Override
@@ -647,7 +896,7 @@ public class BillingApiImpl implements BillingApi {
             if (!invoice.getDueDate().isAfter(after) || !UNSETTLED.contains(invoice.getStatus())) {
                 continue;
             }
-            BigDecimal outstanding = invoice.getAmount().subtract(invoice.getAmountPaid());
+            BigDecimal outstanding = invoice.balanceDue(creditedAgainst(invoice));
             invoice.waive(reason);
             premiumInvoiceRepository.save(invoice);
             if (outstanding.signum() > 0) {
@@ -657,6 +906,7 @@ public class BillingApiImpl implements BillingApi {
                            "amount", Map.of("amount", outstanding.toPlainString(), "currencyCode", invoice.getCurrency()))));
             }
         }
+        returnBalanceOnEnd(tenantId, policyNumber);
     }
 
     /**
@@ -893,18 +1143,8 @@ public class BillingApiImpl implements BillingApi {
         }
         credit = premiumCreditRepository.save(credit);
         premiumCreditRepository.flush();
-        if (refund.signum() > 0) {
-            // A bank transfer finance makes by hand, as a credit-life claim's is: the insurer deals only with the lender.
-            Map<String, Object> request = new java.util.HashMap<>();
-            request.put("creditId", credit.getCreditId().toString());
-            request.put("idempotencyKey", "credit-refund:" + credit.getCreditId());
-            request.put("policyNumber", policyNumber);
-            request.put("payeeRef", payee);
-            request.put("disbursementMethod", "EFT");
-            request.put("amount", Map.of("amount", refund.toPlainString(), "currencyCode", currency));
-            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumRefundPayoutRequested", tenantId,
-                request));
-        }
+        // Money movement step 4 (2026-11-04): the refund waits for a second person (approveLenderRefund), who releases it
+        // to the bank-transfer queue.
 
         // If payments and credits now cover the invoice, nothing more is owed -- otherwise a
         // file whose every borrower left sits DUE and the arrears sweep chases it for nothing.
@@ -1084,6 +1324,64 @@ public class BillingApiImpl implements BillingApi {
         });
     }
 
+    @Override
+    @Transactional
+    public LenderRefundView approveLenderRefund(UUID creditId, String approvedBy) {
+        UUID tenantId = TenantContext.get();
+        PremiumCredit credit = lenderRefundOrThrow(tenantId, creditId);
+        credit.approveRefund(approvedBy);
+        premiumCreditRepository.save(credit);
+        // A bank transfer finance makes by hand, as a credit-life claim's is: the insurer deals only with the lender.
+        Map<String, Object> request = new java.util.HashMap<>();
+        request.put("creditId", credit.getCreditId().toString());
+        request.put("idempotencyKey", "credit-refund:" + credit.getCreditId());
+        request.put("policyNumber", credit.getPolicyNumber());
+        request.put("payeeRef", credit.getRefundPayee());
+        request.put("disbursementMethod", "EFT");
+        request.put("amount", Map.of("amount", credit.getRefundAmount().toPlainString(), "currencyCode", credit.getCurrency()));
+        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumRefundPayoutRequested", tenantId, request));
+        return lenderRefundView(credit);
+    }
+
+    @Override
+    @Transactional
+    public LenderRefundView refuseLenderRefund(UUID creditId, String refusedBy, String reason) {
+        PremiumCredit credit = lenderRefundOrThrow(TenantContext.get(), creditId);
+        try {
+            credit.refuseRefund(refusedBy, reason);
+        } catch (IllegalArgumentException e) {
+            throw new BalanceRefusedException(e.getMessage());
+        }
+        premiumCreditRepository.save(credit);
+        log.warn("Refund of {} {} to the lender of {} refused by {}: {}", credit.getRefundAmount(), credit.getCurrency(),
+            credit.getPolicyNumber(), refusedBy, credit.getRefundRefusalReason());
+        return lenderRefundView(credit);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<LenderRefundView> listLenderRefundsAwaitingApproval() {
+        return premiumCreditRepository.findByTenantIdAndRefundStatusOrderByCreatedAt(TenantContext.get(), "AWAITING_APPROVAL")
+            .stream().map(BillingApiImpl::lenderRefundView).toList();
+    }
+
+    private PremiumCredit lenderRefundOrThrow(UUID tenantId, UUID creditId) {
+        PremiumCredit credit = premiumCreditRepository.findById(creditId)
+            .filter(c -> c.getTenantId().equals(tenantId) && c.getRefundStatus() != null)
+            .orElseThrow(() -> new BalanceRefusedException("No lender refund " + creditId + " on this tenant's books"));
+        if (!"AWAITING_APPROVAL".equals(credit.getRefundStatus())) {
+            throw new BalanceRefusedException("This lender refund is not waiting for approval (it is "
+                + credit.getRefundStatus() + ")");
+        }
+        return credit;
+    }
+
+    private static LenderRefundView lenderRefundView(PremiumCredit c) {
+        return new LenderRefundView(c.getCreditId(), c.getPolicyNumber(), c.getRefundPayee(), c.getRefundAmount(),
+            c.getCurrency(), c.getRefundStatus(), c.getExitReason(), c.getCreatedAt(), c.getRefundDecidedBy(),
+            c.getRefundRefusalReason());
+    }
+
     /** The rail refused the transfer. Left visible as FAILED rather than retried behind anybody's back. */
     @Transactional
     public void markCreditRefundFailed(UUID creditId) {
@@ -1108,7 +1406,7 @@ public class BillingApiImpl implements BillingApi {
             .sorted(java.util.Comparator.comparing(PremiumCredit::getCreatedAt))
             .map(c -> new PremiumCreditView(c.getCreditId(), c.getPolicyNumber(), c.getPolicyMemberId(),
                 c.getOriginalInvoiceId(), c.getAmount(), c.getCurrency(), c.getExitReason(), c.getExitDate(),
-                c.getCreatedAt()))
+                c.getCreatedAt(), c.getRefundAmount(), c.getRefundStatus(), c.getRefundPayee(), c.getRefundRefusalReason()))
             .toList();
     }
 }

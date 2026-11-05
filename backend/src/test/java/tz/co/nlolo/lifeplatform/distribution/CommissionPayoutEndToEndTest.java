@@ -199,6 +199,7 @@ class CommissionPayoutEndToEndTest {
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
             "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
+            "db-migrations/distribution/V11__commission_payout_approval.sql",
             // IFRS 17 I3b: a payout reads the commission withholding rate from the accounting policy register.
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
@@ -226,7 +227,10 @@ class CommissionPayoutEndToEndTest {
             "db-migrations/payment/V9__account_purposes.sql",
             "db-migrations/payment/V17__manual_receipts.sql",
             "db-migrations/payment/V18__payout_routes.sql",
-            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql");
+            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
+            "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
+            "db-migrations/payment/V24__reversed_status.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -360,6 +364,7 @@ class CommissionPayoutEndToEndTest {
 
         TenantContext.set(tenantId);
         distributionApi.requestStatementPayout(statementId, "MPESA-0713000001", payoutKey, "finance-officer");
+        distributionApi.approveStatementPayout(statementId, "finance-approver"); // money movement step 4: a second person releases it
 
         // A REAL payment.disbursement_instruction row, with the specific correlation Task 8 needs.
         DisbursementInstruction instruction = disbursementRepository
@@ -392,6 +397,7 @@ class CommissionPayoutEndToEndTest {
 
         TenantContext.set(tenantId);
         distributionApi.requestStatementPayout(statementId, "MPESA-0713000002", payoutKey, "finance-officer");
+        distributionApi.approveStatementPayout(statementId, "finance-approver"); // money movement step 4: a second person releases it
         assertThat(statusOf(tenantId, statementId)).isEqualTo(StatementStatus.PAID);
         assertThat(eventRecorder.ofType("distribution.CommissionPaid")).hasSize(1);
 
@@ -417,6 +423,7 @@ class CommissionPayoutEndToEndTest {
 
         TenantContext.set(tenantId);
         distributionApi.requestStatementPayout(statementId, "MPESA-0713000003", "payout-fail-" + statementId, "finance-officer");
+        distributionApi.approveStatementPayout(statementId, "finance-approver"); // money movement step 4: a second person releases it
 
         assertThat(statusOf(tenantId, statementId)).isEqualTo(StatementStatus.PAYOUT_FAILED);
         TenantContext.set(tenantId);
@@ -432,6 +439,7 @@ class CommissionPayoutEndToEndTest {
             "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-COMM-E2E-RETRY\"}")));
         TenantContext.set(tenantId);
         distributionApi.requestStatementPayout(statementId, "MPESA-0713000003", "payout-retry-" + statementId, "finance-officer");
+        distributionApi.approveStatementPayout(statementId, "finance-approver"); // money movement step 4: a second person releases it
 
         assertThat(statusOf(tenantId, statementId)).isEqualTo(StatementStatus.PAID);
         wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/disburse")));
@@ -448,6 +456,7 @@ class CommissionPayoutEndToEndTest {
 
         TenantContext.set(tenantId);
         distributionApi.requestStatementPayout(statementId, "MPESA-0713000004", payoutKey, "finance-officer");
+        distributionApi.approveStatementPayout(statementId, "finance-approver"); // money movement step 4: a second person releases it
         wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/disburse")));
 
         // The same CommissionPayoutRequested envelope again, same idempotencyKey -- payment's own
@@ -497,6 +506,7 @@ class CommissionPayoutEndToEndTest {
 
         TenantContext.set(tenantId);
         distributionApi.requestStatementPayout(statementId, "MPESA-0713000005", "payout-" + statementId, "finance-officer");
+        distributionApi.approveStatementPayout(statementId, "finance-approver"); // money movement step 4: a second person releases it
 
         // Negative control, and the documented IN_DOUBT boundary: the rail said nothing, payment
         // recorded IN_DOUBT and published no event, so the statement is genuinely still awaiting a

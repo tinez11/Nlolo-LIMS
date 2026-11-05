@@ -15,7 +15,12 @@ public record CustomerPolicyView(CustomerDashboardView.CustomerPolicySummary sum
                                  List<Beneficiary> beneficiaries, List<CoveredLife> coveredLives, Savings savings,
                                  Units units, Annuity annuity, List<ClaimLine> claims,
                                  /** A fixed-term deposit's running term (2026-10-09); null on anything else. */
-                                 Deposit deposit) {
+                                 Deposit deposit,
+                                 /** Money movement step 5: the policy's balance; null on a savings-type policy (D12). */
+                                 Balance balance) {
+
+    /** What the policy holds and the due date of the last premium it pays in full (null when none). */
+    public record Balance(BigDecimal amount, String currency, LocalDate coversPremiumsTo) {}
 
     /**
      * A fixed-term deposit's running term as the customer reads it: the plan, what it has earned so far, and what it pays

@@ -4,6 +4,7 @@ import { confirmReceiptGates } from './receiptGates';
 
 const receipt = (over: Partial<Receipt> = {}): Receipt => ({
   receiptId: 'r-1',
+  purpose: 'PREMIUM',
   method: 'CHEQUE',
   reference: 'CHQ-1',
   payerRef: 'Amina Owner',
@@ -24,7 +25,7 @@ describe('confirmReceiptGates', () => {
   it('refuses the person who recorded it, saying so to them', () => {
     const second = confirmReceiptGates(receipt(), 'finance-one')[1]!;
     expect(second.ok).toBe(false);
-    expect(second.detail).toBe('You recorded this receipt, so someone else must confirm it.');
+    expect(second.detail).toBe('You recorded this deposit, so someone else must confirm it.');
   });
 
   it('refuses one already decided', () => {

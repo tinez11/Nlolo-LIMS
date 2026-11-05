@@ -18,6 +18,7 @@ export const IDEMPOTENCY_HEADER = 'Idempotency-Key';
  *  `/api` dev-proxy prefix is stripped. */
 const REQUIRED: readonly RegExp[] = [
   /^\/invoices\/[^/]+\/payment-request$/,
+  /^\/loans\/[^/]+\/payment-request$/,
   /^\/claims$/,
   /^\/agents$/,
   /^\/agents\/[^/]+\/commission-statements\/[^/]+\/payout$/,

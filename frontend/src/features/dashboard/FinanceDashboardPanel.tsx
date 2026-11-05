@@ -108,7 +108,7 @@ export function FinanceDashboardPanel({ range }: PanelProps) {
   const waiting: { n: number | null | undefined; text: string; to?: string; tone: 'warn' | 'calm'; show: boolean }[] = [
     { n: signatures.data?.actionable, text: 'Waiting for your signature', to: '/staff/approvals', tone: 'warn',
       show: true },
-    { n: v.receiptsOverdue, text: 'Field receipts past their deadline', to: '/staff/field-receipts?status=RECONCILIATION_OVERDUE', tone: 'warn',
+    { n: v.receiptsOverdue, text: 'Agent cash past its matching deadline', to: '/staff/field-receipts?status=RECONCILIATION_OVERDUE', tone: 'warn',
       show: can('collections.manage') },
     { n: v.transfersAwaiting, text: 'Bank transfers and cheques not yet made', to: '/staff/bank-transfers', tone: 'calm',
       show: can('payouts.manage') },
@@ -240,7 +240,7 @@ export function FinanceDashboardPanel({ range }: PanelProps) {
           <DashboardRail
             alerts={[]}
             actions={[
-              { label: 'Match field receipts', description: 'Agent-collected cash to payments', to: '/staff/field-receipts' },
+              { label: 'Match agent cash', description: 'Agent-collected cash to payments', to: '/staff/field-receipts' },
               { label: 'Make bank transfers', description: 'Approved payouts awaiting EFT', to: '/staff/bank-transfers' },
               { label: 'Prepare a journal', description: 'Approval follows segregation of duties', to: '/staff/manual-journals/new' },
               { label: 'Run a statement', description: 'Trial balance, P&L, balance sheet', to: '/staff/reports' },

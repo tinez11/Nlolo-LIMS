@@ -1,7 +1,17 @@
 package tz.co.nlolo.lifeplatform.policyloan;
 
 import tz.co.nlolo.lifeplatform.Application;
+import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
+import tz.co.nlolo.lifeplatform.policyloan.domain.LoanTransaction;
+import tz.co.nlolo.lifeplatform.policyloan.infrastructure.LoanTransactionRepository;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
@@ -38,6 +48,7 @@ import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 
 @Testcontainers
 @SpringBootTest(classes = Application.class)
+@Import(PolicyLoanApiIntegrationTest.EventRecorderConfiguration.class)
 class PolicyLoanApiIntegrationTest {
 
     @Container
@@ -139,6 +150,7 @@ class PolicyLoanApiIntegrationTest {
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             "db-migrations/policyloan/V8__interest_month_published.sql",
+            "db-migrations/policyloan/V9__payout_approval.sql",
             // Every policyloan event this test triggers (LoanOriginated, LoanDisbursementRequested,
             // etc.) is picked up application-wide by audit.DomainEventAuditListener, which
             // persists an audit_log row regardless of which module published the event -- without
@@ -154,9 +166,89 @@ class PolicyLoanApiIntegrationTest {
     @Autowired private PolicyApi policyApi;
     @Autowired private PolicyLoanApi policyLoanApi;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private LoanTransactionRepository loanTransactionRepository;
+    @Autowired private EventRecorder eventRecorder;
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
+
+    /** Records every published domain event -- the AFTER_COMMIT pattern ReinsuranceAndLoanPostingEndToEndTest uses. */
+    @TestConfiguration
+    static class EventRecorderConfiguration {
+        @Bean
+        EventRecorder policyLoanApiTestEventRecorder() { return new EventRecorder(); }
+    }
+
+    static class EventRecorder {
+        private final List<DomainEventEnvelope<?>> received = new CopyOnWriteArrayList<>();
+
+        @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+        void record(DomainEventEnvelope<?> envelope) { received.add(envelope); }
+
+        void clear() { received.clear(); }
+
+        List<DomainEventEnvelope<?>> ofType(String eventType) {
+            return received.stream().filter(e -> eventType.equals(e.eventType())).toList();
+        }
+    }
+
+    /** A 500,000 loan, disbursed, in a fresh tenant left set on this thread. */
+    private LoanView originateAndDisburse500k(UUID tenantId, String productCode) throws Exception {
+        String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), productCode);
+        TenantContext.set(tenantId);
+        LoanView originated = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
+        policyLoanApi.approvePayout(originated.loanId(), "approver"); // money movement step 4: a second person releases the payout
+        policyLoanApi.markDisbursed(originated.loanId(), "MM-TEST-REF", Instant.now());
+        eventRecorder.clear();
+        return originated;
+    }
+
+    @Test
+    void aRepaymentAboveWhatTheLoanOwesSettlesItAndAnnouncesOnlyTheSurplus() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LoanView originated = originateAndDisburse500k(tenantId, "LOAN-OVERPAY-01");
+        UUID paymentId = UUID.randomUUID();
+
+        LoanView settled = policyLoanApi.applyConfirmedRepayment(originated.loanId(), new BigDecimal("650000"), "TZS",
+            "SLIP-OVER-1", "CASH", paymentId, "finance-1");
+
+        assertThat(settled.status()).isEqualTo(LoanStatus.SETTLED);
+        assertThat(settled.outstandingBalance()).isEqualByComparingTo(BigDecimal.ZERO);
+        TenantContext.set(tenantId);
+        BigDecimal repaid = loanTransactionRepository.findByLoanIdOrderByOccurredAt(originated.loanId()).stream()
+            .filter(t -> "REPAYMENT".equals(t.getTransactionType())).map(LoanTransaction::getAmount)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(repaid).as("only what was owed is booked against the loan").isEqualByComparingTo("500000");
+        List<DomainEventEnvelope<?>> overpaidEvents = eventRecorder.ofType("policyloan.LoanOverpaid");
+        assertThat(overpaidEvents).hasSize(1);
+        Map<?, ?> overpaid = (Map<?, ?>) overpaidEvents.get(0).payload();
+        assertThat(overpaid.get("paymentId")).isEqualTo(paymentId);
+        assertThat(((Map<?, ?>) overpaid.get("amount")).get("amount")).isEqualTo("150000.00");
+        assertThat(overpaid.get("receiptMethod")).isEqualTo("CASH");
+    }
+
+    @Test
+    void aRepaymentWithinTheBalanceAnnouncesNoSurplusAndCarriesItsMethod() throws Exception {
+        LoanView originated = originateAndDisburse500k(UUID.randomUUID(), "LOAN-OVERPAY-02");
+
+        policyLoanApi.applyConfirmedRepayment(originated.loanId(), new BigDecimal("200000"), "TZS", "SLIP-1",
+            "BANK_DEPOSIT", UUID.randomUUID(), "finance-1");
+
+        assertThat(eventRecorder.ofType("policyloan.LoanOverpaid")).isEmpty();
+        Map<?, ?> repaid = (Map<?, ?>) eventRecorder.ofType("policyloan.LoanRepaid").get(0).payload();
+        assertThat(repaid.get("receiptMethod")).isEqualTo("BANK_DEPOSIT");
+    }
+
+    @Test
+    void aRepaymentOnASettledLoanIsRefusedRatherThanSilentlyKept() throws Exception {
+        LoanView originated = originateAndDisburse500k(UUID.randomUUID(), "LOAN-OVERPAY-03");
+        policyLoanApi.applyConfirmedRepayment(originated.loanId(), new BigDecimal("500000"), "TZS", "S-1", "CASH",
+            UUID.randomUUID(), "finance-1");
+
+        assertThatThrownBy(() -> policyLoanApi.applyConfirmedRepayment(originated.loanId(), new BigDecimal("1000"), "TZS",
+            "S-2", "CASH", UUID.randomUUID(), "finance-1"))
+            .isInstanceOf(LoanNotEligibleException.class);
+    }
 
     private String issuePolicyWithCashValue(UUID tenantId, BigDecimal cashValue, String productCode) throws Exception {
         TenantContext.set(tenantId);
@@ -196,15 +288,57 @@ class PolicyLoanApiIntegrationTest {
     }
 
     @Test
-    void originateLoanReservesConfirmsAndRestsAtDisbursementRequested() throws Exception {
+    void originateLoanReservesConfirmsAndWaitsForItsPayoutToBeApproved() throws Exception {
         UUID tenantId = UUID.randomUUID();
         String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "LOAN-ORIGINATE-01");
         TenantContext.set(tenantId);
 
         LoanView loan = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
-        assertEquals(LoanStatus.DISBURSEMENT_REQUESTED, loan.status());
+        assertEquals(LoanStatus.AWAITING_PAYOUT_APPROVAL, loan.status());
         assertEquals(0, new BigDecimal("500000").compareTo(loan.principalAmount()));
         assertEquals(0, new BigDecimal("12.0").compareTo(loan.currentInterestRate())); // TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE, PLACEHOLDER
+        assertThat(policyLoanApi.listLoansAwaitingPayoutApproval()).extracting(LoanView::loanId).contains(loan.loanId());
+    }
+
+    @Test
+    void aSecondPersonReleasesTheLoanPayout() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "LOAN-PAYOUT-01");
+        TenantContext.set(tenantId);
+        LoanView loan = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
+
+        LoanView released = policyLoanApi.approvePayout(loan.loanId(), "approver");
+        assertEquals(LoanStatus.DISBURSEMENT_REQUESTED, released.status());
+        assertThat(policyLoanApi.listLoansAwaitingPayoutApproval()).extracting(LoanView::loanId).doesNotContain(loan.loanId());
+    }
+
+    @Test
+    void thePersonWhoTookTheLoanCannotReleaseItsPayoutWithoutTheOwnPermission() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "LOAN-PAYOUT-02");
+        TenantContext.set(tenantId);
+        LoanView loan = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
+
+        assertThrows(LoanNotEligibleException.class, () -> policyLoanApi.approvePayout(loan.loanId(), "test-agent"));
+        assertThrows(LoanNotEligibleException.class, () -> policyLoanApi.refusePayout(loan.loanId(), "test-agent", "changed my mind"));
+        assertEquals(LoanStatus.AWAITING_PAYOUT_APPROVAL, policyLoanApi.getLoan(loan.loanId()).status());
+    }
+
+    @Test
+    void aRefusedPayoutFreesTheLoanValueAndCannotThenBeReleased() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "LOAN-PAYOUT-03");
+        TenantContext.set(tenantId);
+        LoanView loan = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
+
+        LoanView refused = policyLoanApi.refusePayout(loan.loanId(), "approver", "payee number does not match the policyholder");
+        assertEquals(LoanStatus.PAYOUT_REFUSED, refused.status());
+        assertThat(loanTransactionRepository.findByLoanIdOrderByOccurredAt(loan.loanId()))
+            .extracting(LoanTransaction::getTransactionType).contains("REVERSAL");
+        // The 500,000 reserved by the refused loan is free again: the whole loan value can be taken.
+        LoanView next = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
+        assertEquals(LoanStatus.AWAITING_PAYOUT_APPROVAL, next.status());
+        assertThrows(LoanNotEligibleException.class, () -> policyLoanApi.approvePayout(loan.loanId(), "approver"));
     }
 
     @Test
@@ -234,13 +368,14 @@ class PolicyLoanApiIntegrationTest {
         String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "LOAN-REPAY-01");
         TenantContext.set(tenantId);
         LoanView originated = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
+        policyLoanApi.approvePayout(originated.loanId(), "approver"); // money movement step 4: a second person releases the payout
         policyLoanApi.markDisbursed(originated.loanId(), "MM-TEST-REF", Instant.now()); // stands in for consuming payment.DisbursementCompleted
 
-        LoanView afterFirstRepayment = policyLoanApi.recordRepayment(originated.loanId(), new BigDecimal("200000"), "TZS", "PAY-REF-01", "test-agent");
+        LoanView afterFirstRepayment = policyLoanApi.applyConfirmedRepayment(originated.loanId(), new BigDecimal("200000"), "TZS", "PAY-REF-01", "MOBILE_MONEY", UUID.randomUUID(), "test-agent");
         assertEquals(LoanStatus.REPAYING, afterFirstRepayment.status());
         assertEquals(0, new BigDecimal("300000").compareTo(afterFirstRepayment.outstandingBalance()));
 
-        LoanView afterFullRepayment = policyLoanApi.recordRepayment(originated.loanId(), new BigDecimal("300000"), "TZS", "PAY-REF-02", "test-agent");
+        LoanView afterFullRepayment = policyLoanApi.applyConfirmedRepayment(originated.loanId(), new BigDecimal("300000"), "TZS", "PAY-REF-02", "MOBILE_MONEY", UUID.randomUUID(), "test-agent");
         assertEquals(LoanStatus.SETTLED, afterFullRepayment.status());
         assertEquals(0, BigDecimal.ZERO.compareTo(afterFullRepayment.outstandingBalance()));
     }
@@ -251,11 +386,12 @@ class PolicyLoanApiIntegrationTest {
         String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "LOAN-REPAY-02");
         TenantContext.set(tenantId);
         LoanView originated = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
+        policyLoanApi.approvePayout(originated.loanId(), "approver"); // money movement step 4: a second person releases the payout
 
         // Never called markDisbursed -- loan legitimately rests at DISBURSEMENT_REQUESTED
         // (Global Constraints: payment, its real trigger, is M5).
         assertThrows(LoanNotEligibleException.class, () ->
-            policyLoanApi.recordRepayment(originated.loanId(), new BigDecimal("100000"), "TZS", "PAY-REF-03", "test-agent"));
+            policyLoanApi.applyConfirmedRepayment(originated.loanId(), new BigDecimal("100000"), "TZS", "PAY-REF-03", "MOBILE_MONEY", UUID.randomUUID(), "test-agent"));
     }
 
     @Test
@@ -264,6 +400,7 @@ class PolicyLoanApiIntegrationTest {
         String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "LOAN-FORCELAPSE-01");
         TenantContext.set(tenantId);
         LoanView originated = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
+        policyLoanApi.approvePayout(originated.loanId(), "approver"); // money movement step 4: a second person releases the payout
         policyLoanApi.markDisbursed(originated.loanId(), "MM-TEST-REF", Instant.now());
 
         LoanView forced = policyLoanApi.triggerForcedLapse(originated.loanId(), "cash value exhausted");
@@ -305,14 +442,15 @@ class PolicyLoanApiIntegrationTest {
         String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "LOAN-OPTLOCK-01");
         TenantContext.set(tenantId);
         LoanView originated = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
+        policyLoanApi.approvePayout(originated.loanId(), "approver"); // money movement step 4: a second person releases the payout
         policyLoanApi.markDisbursed(originated.loanId(), "MM-TEST-REF", Instant.now());
 
         TransactionTemplate transaction = new TransactionTemplate(transactionManager);
         assertThatThrownBy(() -> transaction.execute(status -> {
             policyLoanApi.getLoan(originated.loanId());          // version N into the persistence context
             bumpLoanVersionOnACommittedSideConnection(originated.loanId());  // the concurrent winner
-            return policyLoanApi.recordRepayment(originated.loanId(), new BigDecimal("100000"), "TZS",
-                "MPESA-REPAY-OPTLOCK", "test-agent");            // flushes UPDATE ... WHERE version = N
+            return policyLoanApi.applyConfirmedRepayment(originated.loanId(), new BigDecimal("100000"), "TZS",
+                "MPESA-REPAY-OPTLOCK", "MOBILE_MONEY", UUID.randomUUID(), "test-agent"); // flushes UPDATE ... WHERE version = N
         })).isInstanceOf(OptimisticLockingFailureException.class);
     }
 

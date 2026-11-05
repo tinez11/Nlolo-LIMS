@@ -6,16 +6,16 @@ const item = (eventType: string, refs: Record<string, string> = {}): ActivityIte
   ({ eventType, occurredAt: '2026-10-27T08:00:00Z', refs, amount: null }) as unknown as ActivityItem;
 
 describe('describeActivity', () => {
-  it('opens a payment on its policy in the payments register', () => {
+  it('opens a deposit on its policy in Deposits', () => {
     expect(describeActivity(item('payment.PaymentConfirmed', { policyNumber: 'POL-7' }))).toEqual({
-      text: 'Payment confirmed',
+      text: 'Deposit confirmed',
       to: '/staff/payments?state=all&policy=POL-7',
     });
   });
 
-  it('opens a payment with no policy on the state it ended in', () => {
+  it('opens a payment with no policy on the state it ended in, a payout in All payouts', () => {
     expect(describeActivity(item('payment.PaymentFailed')).to).toBe('/staff/payments?state=attention');
-    expect(describeActivity(item('payment.DisbursementCompleted')).to).toBe('/staff/payments?state=done');
+    expect(describeActivity(item('payment.DisbursementCompleted')).to).toBe('/staff/payouts/all?state=done');
   });
 
   it('words an event it has never heard of from its own name, unlinked', () => {

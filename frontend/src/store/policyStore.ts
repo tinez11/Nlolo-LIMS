@@ -9,10 +9,18 @@ import {
   issueGroupScheme,
   issuePolicy,
   listInvoices,
+  decideBalanceWithdrawal,
+  getBalanceStatement,
+  listBalanceWithdrawals,
+  nameBalanceWithdrawalPayee,
+  requestBalanceWithdrawal,
+  getPolicyBalance,
   listLoans,
   listSchemeMembers,
   originateLoan,
-  recordLoanRepayment,
+  approveLoanPayout,
+  refuseLoanPayout,
+  requestLoanPayment,
   reinstatePolicy,
   makePaidUp,
   getSurrenderValue,
@@ -35,9 +43,12 @@ import type {
   CoverageStatusView,
   GroupMemberInput,
   GroupSchemeView,
+  BalanceStatementView,
+  BalanceWithdrawalView,
   InvoiceView,
+  PolicyBalanceView,
   IssueGroupSchemeRequest,
-  LoanRepaymentRequest,
+  LoanPaymentRequest,
   LoanView,
   ManualIssueRequest,
   OriginateLoanRequest,
@@ -82,6 +93,12 @@ interface PolicyState {
   coverage: Keyed<CoverageStatusView>;
   invoices: Keyed<InvoiceView[]>;
   loans: Keyed<LoanView[]>;
+  /** Money movement step 5: the policy's balance, and its statement (pages merged, newest first). */
+  balance: Keyed<PolicyBalanceView>;
+  balanceStatement: Keyed<BalanceStatementView>;
+  balanceWithdrawals: Keyed<BalanceWithdrawalView[]>;
+  /** A withdrawal asked, approved, rejected or given its payee -- keyed by policy for asking, by withdrawal after. */
+  actingOnWithdrawal: Keyed<true>;
   // Deliberately separate from `detail`: a failed SAVE must not corrupt or discard
   // the last known-good read of the policy, and the two have unrelated shapes
   // (this one carries no useful `data`, just whether a save is in flight or failed).
@@ -96,9 +113,11 @@ interface PolicyState {
   // Origination is keyed by policyNumber, not by loan id: the loan does not exist
   // yet, and a policy can only have one origination in flight from this screen.
   originatingLoan: Keyed<true>;
-  // Repayment is keyed by loanId -- it targets an existing loan, and a failure on
-  // one loan must not disturb another's form on the same policy.
-  repayingLoan: Keyed<true>;
+  // A repayment request is keyed by loanId -- it targets an existing loan, and a
+  // failure on one loan must not disturb another's form on the same policy.
+  requestingLoanPayment: Keyed<true>;
+  /** Money movement step 4: a loan's payout released or refused by a second person, keyed by loan. */
+  decidingLoanPayout: Keyed<true>;
   // Each keyed by policyNumber, separately from `detail` and from each other --
   // same shape as claims' submittingAssessment/decidingSettlement/reopening: three
   // distinct lifecycle actions on the same entity, each its own tracked mutation.
@@ -133,6 +152,14 @@ interface PolicyState {
   loadCoverage: (policyNumber: string, asOf?: string) => Promise<void>;
   loadInvoices: (policyNumber: string) => Promise<void>;
   loadLoans: (policyNumber: string) => Promise<void>;
+  loadBalance: (policyNumber: string) => Promise<void>;
+  /** Page 0 replaces what is held; a later page adds the older lines after it. */
+  loadBalanceStatement: (policyNumber: string, page?: number) => Promise<void>;
+  loadBalanceWithdrawals: (policyNumber: string) => Promise<void>;
+  /** Resolves to the withdrawal asked, or null when the server refused it (the error is on actingOnWithdrawal). */
+  requestBalanceWithdrawal: (policyNumber: string, body: Parameters<typeof requestBalanceWithdrawal>[1]) => Promise<BalanceWithdrawalView | null>;
+  decideBalanceWithdrawal: (policyNumber: string, withdrawalId: string, rejectReason: string | null) => Promise<void>;
+  nameBalanceWithdrawalPayee: (policyNumber: string, withdrawalId: string, payee: RouteBody) => Promise<void>;
   saveBeneficiaries: (policyNumber: string, beneficiaries: BeneficiaryInput[]) => Promise<void>;
   /** Clears a stale save error before a fresh edit attempt -- see the call site. */
   resetSaveBeneficiaries: (policyNumber: string) => void;
@@ -151,12 +178,15 @@ interface PolicyState {
   resetRequestPaymentForInvoice: (invoiceId: string) => void;
   originateLoan: (policyNumber: string, request: OriginateLoanRequest) => Promise<void>;
   resetOriginateLoan: (policyNumber: string) => void;
-  recordLoanRepayment: (
+  requestLoanPayment: (
     policyNumber: string,
     loanId: string,
-    request: LoanRepaymentRequest,
+    request: LoanPaymentRequest,
+    attempt: MutationAttempt,
   ) => Promise<void>;
-  resetRecordLoanRepayment: (loanId: string) => void;
+  resetRequestLoanPayment: (loanId: string) => void;
+  /** Release (reason null) or refuse (with the reason) a loan's payout, then re-read the policy's loans. */
+  decideLoanPayout: (policyNumber: string, loanId: string, refuseReason: string | null) => Promise<void>;
   suspendPolicy: (policyNumber: string, request: SuspendPolicyRequest) => Promise<void>;
   resetSuspendPolicy: (policyNumber: string) => void;
   resumePolicy: (policyNumber: string) => Promise<void>;
@@ -187,12 +217,17 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
   coverage: {},
   invoices: {},
   loans: {},
+  balance: {},
+  balanceStatement: {},
+  balanceWithdrawals: {},
+  actingOnWithdrawal: {},
   savingBeneficiaries: {},
   issuing: idle(),
   waivingInvoice: {},
   requestingPayment: {},
   originatingLoan: {},
-  repayingLoan: {},
+  requestingLoanPayment: {},
+  decidingLoanPayout: {},
   suspending: {},
   resuming: {},
   reinstating: {},
@@ -279,6 +314,75 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
       getState().invoices[policyNumber] ?? idle<InvoiceView[]>(),
       (next) => set((s) => ({ invoices: { ...s.invoices, [policyNumber]: next } })),
       () => listInvoices(policyNumber),
+    ),
+
+  loadBalance: (policyNumber) =>
+    track(
+      `policy.balance.${policyNumber}`,
+      getState().balance[policyNumber] ?? idle<PolicyBalanceView>(),
+      (next) => set((s) => ({ balance: { ...s.balance, [policyNumber]: next } })),
+      () => getPolicyBalance(policyNumber),
+    ),
+
+  loadBalanceStatement: (policyNumber, page = 0) => {
+    const held = getState().balanceStatement[policyNumber]?.data;
+    return track(
+      `policy.balanceStatement.${policyNumber}`,
+      getState().balanceStatement[policyNumber] ?? idle<BalanceStatementView>(),
+      (next) => set((s) => ({ balanceStatement: { ...s.balanceStatement, [policyNumber]: next } })),
+      async () => {
+        const next = await getBalanceStatement(policyNumber, page, BALANCE_STATEMENT_PAGE);
+        return page === 0 || !held ? next : { ...next, lines: [...held.lines, ...next.lines] };
+      },
+    );
+  },
+
+  loadBalanceWithdrawals: (policyNumber) =>
+    track(
+      `policy.balanceWithdrawals.${policyNumber}`,
+      getState().balanceWithdrawals[policyNumber] ?? idle<BalanceWithdrawalView[]>(),
+      (next) => set((s) => ({ balanceWithdrawals: { ...s.balanceWithdrawals, [policyNumber]: next } })),
+      () => listBalanceWithdrawals(policyNumber),
+    ),
+
+  requestBalanceWithdrawal: async (policyNumber, body) => {
+    let asked: BalanceWithdrawalView | null = null;
+    await track(
+      `policy.requestBalanceWithdrawal.${policyNumber}`,
+      getState().actingOnWithdrawal[policyNumber] ?? idle<true>(),
+      (next) => set((s) => ({ actingOnWithdrawal: { ...s.actingOnWithdrawal, [policyNumber]: next } })),
+      async (): Promise<true> => {
+        asked = await requestBalanceWithdrawal(policyNumber, body);
+        return true;
+      },
+    );
+    return asked;
+  },
+
+  decideBalanceWithdrawal: (policyNumber, withdrawalId, rejectReason) =>
+    track(
+      `policy.actOnWithdrawal.${withdrawalId}`,
+      getState().actingOnWithdrawal[withdrawalId] ?? idle<true>(),
+      (next) => set((s) => ({ actingOnWithdrawal: { ...s.actingOnWithdrawal, [withdrawalId]: next } })),
+      async (): Promise<true> => {
+        await decideBalanceWithdrawal(withdrawalId, rejectReason);
+        await Promise.all([getState().loadBalanceWithdrawals(policyNumber), getState().loadBalance(policyNumber),
+          getState().loadBalanceStatement(policyNumber)]);
+        return true;
+      },
+    ),
+
+  nameBalanceWithdrawalPayee: (policyNumber, withdrawalId, payee) =>
+    track(
+      `policy.actOnWithdrawal.${withdrawalId}`,
+      getState().actingOnWithdrawal[withdrawalId] ?? idle<true>(),
+      (next) => set((s) => ({ actingOnWithdrawal: { ...s.actingOnWithdrawal, [withdrawalId]: next } })),
+      async (): Promise<true> => {
+        await nameBalanceWithdrawalPayee(withdrawalId, payee);
+        await Promise.all([getState().loadBalanceWithdrawals(policyNumber), getState().loadBalance(policyNumber),
+          getState().loadBalanceStatement(policyNumber)]);
+        return true;
+      },
     ),
 
   loadLoans: (policyNumber) =>
@@ -401,26 +505,37 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
       return { originatingLoan: rest };
     }),
 
-  recordLoanRepayment: (policyNumber, loanId, request) =>
+  requestLoanPayment: (policyNumber, loanId, request, attempt) =>
     track(
-      `policy.recordLoanRepayment.${loanId}`,
-      getState().repayingLoan[loanId] ?? idle<true>(),
-      (next) => set((s) => ({ repayingLoan: { ...s.repayingLoan, [loanId]: next } })),
+      `policy.requestLoanPayment.${loanId}`,
+      getState().requestingLoanPayment[loanId] ?? idle<true>(),
+      (next) => set((s) => ({ requestingLoanPayment: { ...s.requestingLoanPayment, [loanId]: next } })),
       async (): Promise<true> => {
-        await recordLoanRepayment(loanId, request);
-        // Refetch, not patch: the returned balance is authoritative, but a
-        // repayment that clears the balance also flips the loan to SETTLED, and
-        // the row on screen must show both together.
+        await requestLoanPayment(loanId, request, attempt);
+        // 202 with no body: nothing is repaid until finance confirms the money,
+        // but refetch anyway so a fast confirm already reflected server-side shows.
         await getState().loadLoans(policyNumber);
         return true;
       },
     ),
 
-  resetRecordLoanRepayment: (loanId) =>
+  decideLoanPayout: (policyNumber, loanId, refuseReason) =>
+    track(
+      `policy.decideLoanPayout.${loanId}`,
+      getState().decidingLoanPayout[loanId] ?? idle<true>(),
+      (next) => set((s) => ({ decidingLoanPayout: { ...s.decidingLoanPayout, [loanId]: next } })),
+      async (): Promise<true> => {
+        await (refuseReason === null ? approveLoanPayout(loanId) : refuseLoanPayout(loanId, refuseReason));
+        await getState().loadLoans(policyNumber);
+        return true;
+      },
+    ),
+
+  resetRequestLoanPayment: (loanId) =>
     set((s) => {
-      if (!(loanId in s.repayingLoan)) return s;
-      const { [loanId]: _discard, ...rest } = s.repayingLoan;
-      return { repayingLoan: rest };
+      if (!(loanId in s.requestingLoanPayment)) return s;
+      const { [loanId]: _discard, ...rest } = s.requestingLoanPayment;
+      return { requestingLoanPayment: rest };
     }),
 
   // Each of the three below returns the updated PolicyView directly, but `detail`
@@ -650,6 +765,12 @@ export const selectCoverage =
     s.coverage[coverageKey(policyNumber, asOf)] ?? idle<CoverageStatusView>();
 export const selectInvoices = (policyNumber: string) => (s: PolicyState) =>
   s.invoices[policyNumber] ?? idle<InvoiceView[]>();
+/** How many statement lines one page brings: the latest first, older ones on request. */
+export const BALANCE_STATEMENT_PAGE = 25;
+export const selectBalance = (policyNumber: string) => (s: PolicyState) =>
+  s.balance[policyNumber] ?? idle<PolicyBalanceView>();
+export const selectBalanceStatement = (policyNumber: string) => (s: PolicyState) =>
+  s.balanceStatement[policyNumber] ?? idle<BalanceStatementView>();
 export const selectLoans = (policyNumber: string) => (s: PolicyState) =>
   s.loans[policyNumber] ?? idle<LoanView[]>();
 export const selectSavingBeneficiaries = (policyNumber: string) => (s: PolicyState) =>
@@ -676,8 +797,8 @@ export const selectRequestingPayment = (invoiceId: string) => (s: PolicyState) =
   s.requestingPayment[invoiceId] ?? idle<true>();
 export const selectOriginatingLoan = (policyNumber: string) => (s: PolicyState) =>
   s.originatingLoan[policyNumber] ?? idle<true>();
-export const selectRepayingLoan = (loanId: string) => (s: PolicyState) =>
-  s.repayingLoan[loanId] ?? idle<true>();
+export const selectRequestingLoanPayment = (loanId: string) => (s: PolicyState) =>
+  s.requestingLoanPayment[loanId] ?? idle<true>();
 
 export const selectScheme = (policyNumber: string) => (s: PolicyState) =>
   s.scheme[policyNumber] ?? idle<GroupSchemeView>();

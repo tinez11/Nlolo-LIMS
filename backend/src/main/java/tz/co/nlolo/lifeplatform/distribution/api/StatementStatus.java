@@ -8,6 +8,8 @@ package tz.co.nlolo.lifeplatform.distribution.api;
 public enum StatementStatus {
     OPEN,
     CLOSED,
+    /** Asked to be paid (commission.pay); waits for a second person (distribution V11, money movement step 4). */
+    AWAITING_PAYOUT_APPROVAL,
     PAYOUT_REQUESTED,
     PAID,
     PAYOUT_FAILED

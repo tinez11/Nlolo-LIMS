@@ -262,6 +262,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             "db-migrations/policyloan/V8__interest_month_published.sql",
+            "db-migrations/policyloan/V9__payout_approval.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
@@ -272,6 +273,10 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/payment/V17__manual_receipts.sql",
             "db-migrations/payment/V18__payout_routes.sql",
             "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
+            "db-migrations/payment/V22__loan_repayment_purpose.sql",
+            "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
+            "db-migrations/payment/V24__reversed_status.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
@@ -591,6 +596,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
 
         TenantContext.set(tenantId);
         LoanView originated = policyLoanApi.originateLoan(loanPolicyNumber, principal, CURRENCY, "MPESA-0716000002", "test-agent");
+        policyLoanApi.approvePayout(originated.loanId(), "approver"); // money movement step 4: a second person releases the payout
 
         TenantContext.set(tenantId);
         assertThat(policyLoanApi.getLoan(originated.loanId()).status()).isEqualTo(LoanStatus.DISBURSED);
@@ -626,8 +632,10 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             .isEqualByComparingTo(principal);
 
         TenantContext.set(tenantId);
-        LoanView afterFirstHalf = policyLoanApi.recordRepayment(originated.loanId(), half, CURRENCY,
-            "repay-ref-reins-loan-e2e-1", "finance-officer-reins-loan-01");
+        // Money movement step 1 (2026-11-04): paid in cash at a branch, so the ledger posts it to the premium
+        // collection bank account (1120) it reached -- E-03 used to post every repayment to 1140 mobile money.
+        LoanView afterFirstHalf = policyLoanApi.applyConfirmedRepayment(originated.loanId(), half, CURRENCY,
+            "repay-ref-reins-loan-e2e-1", "CASH", UUID.randomUUID(), "finance-officer-reins-loan-01");
         assertThat(afterFirstHalf.status())
             .as("a partial repayment leaves the loan REPAYING, not SETTLED").isEqualTo(LoanStatus.REPAYING);
         assertThat(afterFirstHalf.outstandingBalance()).isEqualByComparingTo(half);
@@ -638,8 +646,12 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             .as("the first partial repayment must post exactly one journal entry").hasSize(1);
 
         TenantContext.set(tenantId);
-        LoanView afterSecondHalf = policyLoanApi.recordRepayment(originated.loanId(), half, CURRENCY,
-            "repay-ref-reins-loan-e2e-2", "finance-officer-reins-loan-01");
+        // The second payment brings 100,000 more than the loan owes: the loan takes its half, and the surplus is the
+        // payer's, held in 2128 rather than driving principal below zero.
+        BigDecimal surplus = new BigDecimal("100000");
+        UUID secondPayment = UUID.randomUUID();
+        LoanView afterSecondHalf = policyLoanApi.applyConfirmedRepayment(originated.loanId(), half.add(surplus), CURRENCY,
+            "repay-ref-reins-loan-e2e-2", "CASH", secondPayment, "finance-officer-reins-loan-01");
         assertThat(afterSecondHalf.status())
             .as("the repayment that clears the balance settles the loan").isEqualTo(LoanStatus.SETTLED);
         assertThat(afterSecondHalf.outstandingBalance()).isEqualByComparingTo(BigDecimal.ZERO);
@@ -669,16 +681,28 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             .as("each LoanRepaid entry's sourceRef must be its own repayment's loanTransactionId")
             .containsExactlyInAnyOrderElementsOf(repaymentTransactionIds);
 
-        // Both entries are balanced DR 1000 Cash / CR 1400 Policy Loan Receivable for their half.
+        // Both entries are balanced DR 1120 premium collection bank / CR 2125 policy loan principal for their half.
         for (JournalEntry repaidEntry : repaidEntries) {
             List<GlPosting> repaidLegs = legsFor(tenantId, repaidEntry);
             assertThat(repaidLegs).hasSize(2);
             assertThat(repaidLegs).extracting(GlPosting::getAccountCode)
-                .containsExactlyInAnyOrder("1140", "2125");
-            assertThat(legFor(repaidLegs, "1140").getDirection()).isEqualTo(PostingDirection.DR);
+                .containsExactlyInAnyOrder("1120", "2125");
+            assertThat(legFor(repaidLegs, "1120").getDirection()).isEqualTo(PostingDirection.DR);
             assertThat(legFor(repaidLegs, "2125").getDirection()).isEqualTo(PostingDirection.CR);
             assertThat(legFor(repaidLegs, "2125").getAmount()).isEqualByComparingTo(half);
         }
+
+        // The surplus: one entry keyed on the payment, DR the bank it reached / CR 2128 received in advance.
+        TenantContext.set(tenantId);
+        List<JournalEntry> surplusEntries = journalEntryRepository
+            .findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged()).stream()
+            .filter(e -> "policyloan.LoanOverpaid".equals(e.getSourceEvent())).toList();
+        assertThat(surplusEntries).hasSize(1);
+        assertThat(surplusEntries.get(0).getSourceRef()).isEqualTo("loan-surplus:" + secondPayment);
+        List<GlPosting> surplusLegs = legsFor(tenantId, surplusEntries.get(0));
+        assertThat(surplusLegs).extracting(GlPosting::getAccountCode).containsExactlyInAnyOrder("1120", "2128");
+        assertThat(legFor(surplusLegs, "2128").getDirection()).isEqualTo(PostingDirection.CR);
+        assertThat(legFor(surplusLegs, "2128").getAmount()).isEqualByComparingTo(surplus);
 
         // ---- Assertion 5: 1400 Policy Loan Receivable nets to EXACTLY zero across the disbursement
         // and BOTH partial repayments -- the loan-side mirror of PremiumPostingEndToEndTest's 1200

@@ -1,9 +1,11 @@
 import { can } from '@/auth/access';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
-import type { EnrolmentSubmissionView, InvoiceView, PolicyMemberView } from '@/api/types';
+import { decideLenderRefund } from '@/api/policies';
+import type { EnrolmentSubmissionView, InvoiceView, PolicyMemberView, PremiumCreditView } from '@/api/types';
+import type { ApiError } from '@/lib/apiError';
 import { FilterChip } from '@/components/FilterChip';
 import { InlineError } from '@/components/InlineError';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -37,10 +39,7 @@ import {
   waiveInvoiceFormSchema,
   type WaiveInvoiceFormValues,
 } from './waiveInvoiceForm';
-import { Input, Select } from '@/components/ui/input';
-import type { ReceiptMethod } from '@/api/receipts';
-import { InvoiceReceiptForm } from '@/features/receipts/InvoiceReceiptForm';
-import { RECEIPT_METHODS } from '@/features/receipts/receiptForm';
+import { Input } from '@/components/ui/input';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { Tip } from '@/components/ui/tooltip';
 import type { Receipt } from '@/api/receipts';
@@ -63,7 +62,14 @@ import { useReceiptStore } from '@/store/receiptStore';
  * -- the action stays enabled for every invoice, and staff judgement is the
  * only guard that exists.
  */
-export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
+export function InvoicesPanel({
+  policyNumber,
+  canRequestPayment = false,
+}: {
+  policyNumber: string;
+  /** Who may ask a payer's phone for an invoice -- the endpoint's rule, decided by the console that shows it. */
+  canRequestPayment?: boolean;
+}) {
   const loadInvoices = usePolicyStore((s) => s.loadInvoices);
   const invoices = usePolicyStore(selectInvoices(policyNumber));
   const category = usePolicyStore(selectDetail(policyNumber)).data?.productCategory;
@@ -142,7 +148,9 @@ export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
           key={invoice.invoiceId ?? JSON.stringify(invoice)}
           policyNumber={policyNumber}
           invoice={invoice}
+          canRequestPayment={canRequestPayment}
           credits={reconciliation.creditsByInvoice[invoice.invoiceId ?? ''] ?? []}
+          onRefundDecided={reconciliation.reload}
           file={
             invoice.enrolmentSubmissionId
               ? (reconciliation.filesById[invoice.enrolmentSubmissionId] ?? null)
@@ -159,13 +167,17 @@ export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
 function InvoiceRow({
   policyNumber,
   invoice,
+  canRequestPayment,
   credits,
   file,
+  onRefundDecided,
 }: {
   policyNumber: string;
   invoice: InvoiceView;
+  canRequestPayment: boolean;
   credits: CreditLine[];
   file: EnrolmentSubmissionView | null;
+  onRefundDecided: () => void;
 }) {
   const [action, setAction] = useState<'waive' | 'payment' | null>(null);
   // Mirrors the endpoint exactly: REALM_STAFF and (FINANCE_OFFICER or ADMIN).
@@ -228,6 +240,9 @@ function InvoiceRow({
       )}
 
       <InvoiceReconciliationLines invoice={invoice} credits={credits} />
+      {credits.filter(({ credit }) => credit.refundStatus).map(({ credit }) => (
+        <LenderRefundLine key={credit.creditId} credit={credit} onDecided={onRefundDecided} />
+      ))}
 
       {/* Accepted is not paid (2026-10-27): with no live mobile-money integration yet, finance confirms the money
           like any receipt, and only that pays the invoice. */}
@@ -252,8 +267,8 @@ function InvoiceRow({
       {invoiceId && action === null && (
         <div className="mt-1.5 flex items-center gap-1.5">
           {/* Waiving is finance-gated server-side, so this only avoids offering a button that
-              can now do nothing but 403. Requesting payment stays open to everyone, because it
-              takes nothing away from anyone -- agents and customers can both do it. */}
+              can now do nothing but 403. Requesting payment follows its endpoint too: a customer or
+              an agent may ask, staff only with collections or servicing -- canRequestPayment. */}
           {canWaive && (
             <Button size="sm" variant="ghost" className="-ml-2" onClick={() => setAction('waive')}>
               Waive
@@ -261,7 +276,7 @@ function InvoiceRow({
           )}
           {/* Only while something is owed. The request asks for the balance due, and the
               backend refuses one on an invoice payments and credits already cover. */}
-          {owing && !covered && (
+          {owing && !covered && canRequestPayment && (
             <Button
               size="sm"
               variant="ghost"
@@ -282,9 +297,8 @@ function InvoiceRow({
         />
       )}
       {action === 'payment' && invoiceId && (
-        <PaymentRequestForm
+        <MobileMoneyRequestForm
           policyNumber={policyNumber}
-          invoice={invoice}
           invoiceId={invoiceId}
           onDone={() => setAction(null)}
         />
@@ -299,11 +313,18 @@ const NONE_WAITING: Receipt[] = [];
  * The receipts recorded against an invoice that a second person has not yet confirmed -- each with how it came in,
  * its reference, who recorded it and a way to it. The invoice is paid only when one is confirmed under Approvals.
  */
-function WaitingReceipts({ receipts }: { receipts: Receipt[] }) {
+/** Deposits recorded and waiting for a second finance person; `lands` says what each will pay once confirmed. */
+export function WaitingReceipts({
+  receipts,
+  lands = 'It pays this invoice once a second finance person confirms it under Approvals.',
+}: {
+  receipts: Receipt[];
+  lands?: string;
+}) {
   return (
-    <div className="mt-2 rounded-md border border-border bg-band px-3 py-2" aria-label="Receipts waiting to be confirmed">
+    <div className="mt-2 rounded-md border border-border bg-band px-3 py-2" aria-label="Deposits waiting to be confirmed">
       <p className="text-xs font-medium">
-        {receipts.length === 1 ? 'A receipt is waiting to be confirmed' : `${receipts.length} receipts are waiting to be confirmed`}
+        {receipts.length === 1 ? 'A deposit is waiting to be confirmed' : `${receipts.length} deposits are waiting to be confirmed`}
       </p>
       <ul className="mt-1 space-y-1">
         {receipts.map((r) => (
@@ -321,9 +342,7 @@ function WaitingReceipts({ receipts }: { receipts: Receipt[] }) {
           </li>
         ))}
       </ul>
-      <p className="mt-1 text-xs text-muted-foreground">
-        It pays this invoice once a second finance person confirms it under Approvals.
-      </p>
+      <p className="mt-1 text-xs text-muted-foreground">{lands}</p>
     </div>
   );
 }
@@ -467,60 +486,16 @@ function WaiveForm({
 }
 
 /**
- * How an invoice is paid (2026-10-27): asked for now by mobile money -- a request to the payer's phone -- or, for
- * finance, already received some other way and recorded here. One action, the method chosen first, and you stay on
- * the policy either way.
+ * Asks the payer’s phone for what the invoice owes. Money received some other way is a deposit, recorded on its
+ * own page from the Balance panel (money movement step 5) -- not here.
  */
-function PaymentRequestForm({
-  policyNumber,
-  invoice,
-  invoiceId,
-  onDone,
-}: {
-  policyNumber: string;
-  invoice: InvoiceView;
-  invoiceId: string;
-  onDone: () => void;
-}) {
-  const [method, setMethod] = useState<'MOBILE_MONEY' | ReceiptMethod>('MOBILE_MONEY');
-  const canRecord = can('collections.manage');
-  const chooser = canRecord ? (
-    <FormField label="How is it being paid?">
-      <Select inputSize="sm" value={method} onChange={(e) => setMethod(e.target.value as 'MOBILE_MONEY' | ReceiptMethod)}>
-        <optgroup label="Ask for it now">
-          <option value="MOBILE_MONEY">Mobile money — send a request to the payer’s phone</option>
-        </optgroup>
-        <optgroup label="Already paid — record it">
-          {RECEIPT_METHODS.map((m) => (
-            <option key={m.value} value={m.value}>
-              {m.label}
-            </option>
-          ))}
-        </optgroup>
-      </Select>
-    </FormField>
-  ) : null;
-
-  if (method !== 'MOBILE_MONEY') {
-    return (
-      <div className="mt-2 space-y-2 rounded-md border border-border p-2.5">
-        {chooser}
-        <InvoiceReceiptForm policyNumber={policyNumber} invoice={invoice} method={method} onDone={onDone} />
-      </div>
-    );
-  }
-  return <MobileMoneyRequestForm policyNumber={policyNumber} invoiceId={invoiceId} chooser={chooser} onDone={onDone} />;
-}
-
 function MobileMoneyRequestForm({
   policyNumber,
   invoiceId,
-  chooser,
   onDone,
 }: {
   policyNumber: string;
   invoiceId: string;
-  chooser: ReactNode;
   onDone: () => void;
 }) {
   const requestPaymentForInvoice = usePolicyStore((s) => s.requestPaymentForInvoice);
@@ -554,7 +529,6 @@ function MobileMoneyRequestForm({
 
   return (
     <form className="mt-2 space-y-2 rounded-md border border-border p-2.5" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
-      {chooser}
       <FormField label="Payer reference" error={errors.payerRef?.message}>
         <Input inputSize="sm" placeholder="The mobile-money number to ask" {...register('payerRef')} />
       </FormField>
@@ -572,5 +546,89 @@ function MobileMoneyRequestForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+const REFUND_WORDS: Record<NonNullable<PremiumCreditView['refundStatus']>, string> = {
+  AWAITING_APPROVAL: 'waiting for a second person to approve it',
+  REQUESTED: 'approved; waiting for finance to make the bank transfer',
+  PAID: 'paid',
+  FAILED: 'the transfer failed; still owed to the lender',
+  REFUSED: 'refused; still owed to the lender',
+};
+
+/**
+ * The part of a credit the lender had already paid, going back to it by bank transfer (billing V13), and where it
+ * stands. One raised automatically waits for a second person (payouts.approve, money movement step 4).
+ */
+function LenderRefundLine({ credit, onDecided }: { credit: PremiumCreditView; onDecided: () => void }) {
+  const [armed, setArmed] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+  if (!credit.refundStatus || !credit.refundAmount) return null;
+  const amount = formatMoney(credit.refundAmount);
+
+  async function decide(rejectReason: string | null) {
+    setBusy(true);
+    setError(null);
+    try {
+      await decideLenderRefund(credit.creditId, rejectReason);
+      onDecided();
+    } catch (cause) {
+      setError(cause as ApiError);
+    } finally {
+      setBusy(false);
+      setArmed(false);
+    }
+  }
+
+  return (
+    <div className="mt-1 space-y-1.5 text-xs">
+      <p className="text-muted-foreground">
+        Paid back to the lender: {amount} · {REFUND_WORDS[credit.refundStatus]}
+        {credit.refundRefusalReason ? ` (${credit.refundRefusalReason})` : ''}
+      </p>
+      {error && <InlineError error={error} />}
+      {credit.refundStatus === 'AWAITING_APPROVAL' && can('payouts.approve') && (
+        armed ? (
+          <ConfirmAct
+            heading="Approve this refund to the lender?"
+            consequence={<><strong>{amount}</strong> goes to finance&rsquo;s queue of bank transfers to {credit.refundPayee}.</>}
+            reversal="If the transfer fails, it stays owed to the lender."
+            confirmLabel={`Pay ${amount}`}
+            tone="danger"
+            busy={busy}
+            onConfirm={() => void decide(null)}
+            onCancel={() => setArmed(false)}
+          />
+        ) : rejecting ? (
+          <div className="space-y-2">
+            <FormField label="Why is it rejected?">
+              <Input inputSize="sm" value={reason} onChange={(e) => setReason(e.target.value)} />
+            </FormField>
+            <div className="flex gap-2">
+              <Button size="sm" variant="danger" disabled={reason.trim() === '' || busy}
+                onClick={() => void decide(reason.trim())}>
+                Reject refund
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => setArmed(true)}>
+              Approve refund
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setRejecting(true)}>
+              Reject
+            </Button>
+          </div>
+        )
+      )}
+    </div>
   );
 }

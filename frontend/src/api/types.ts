@@ -115,6 +115,13 @@ export type GroupMemberInput = PolicyComponents['schemas']['GroupMemberInput'];
 
 export type InvoiceView = BillingComponents['schemas']['InvoiceView'];
 export type PremiumCreditView = BillingComponents['schemas']['PremiumCreditView'];
+/** A policy's balance and how far ahead it pays premiums (money movement step 5). */
+export type PolicyBalanceView = BillingComponents['schemas']['PolicyBalance'];
+/** One page of the balance's statement, newest first, each line with the balance after it. */
+export type BalanceStatementView = BillingComponents['schemas']['BalanceStatement'];
+export type BalanceStatementLine = BillingComponents['schemas']['BalanceStatementLine'];
+/** Money asked back off a policy's balance, or raised when the policy ended (money movement step 3a). */
+export type BalanceWithdrawalView = BillingComponents['schemas']['BalanceWithdrawal'];
 /**
  * One row of the collections queue. Its money and due date come from the invoice the case was
  * opened against, and are null -- never zero -- when that invoice cannot be resolved.
@@ -199,9 +206,10 @@ export interface OriginateLoanRequest {
   /** Mobile-money / bank destination the disbursement is paid to. */
   payeeRef: string;
 }
-export interface LoanRepaymentRequest {
+/** `POST /loans/{loanId}/payment-request`: the payer's mobile-money number and how much to ask for. */
+export interface LoanPaymentRequest {
+  payerRef: string;
   amount: Money;
-  paymentReference: string;
 }
 
 /**

@@ -90,6 +90,15 @@ public interface BillingApi {
      */
     List<PremiumCreditView> listCredits(String policyNumber);
 
+    /** A second person (payouts.approve) releases a lender's premium refund to the bank-transfer queue (money movement step 4). */
+    LenderRefundView approveLenderRefund(java.util.UUID creditId, String approvedBy);
+
+    /** A second person refuses a lender's premium refund, saying why; it stays owed to the lender on the books. */
+    LenderRefundView refuseLenderRefund(java.util.UUID creditId, String refusedBy, String reason);
+
+    /** Lender refunds raised and waiting for a second person, oldest first. */
+    List<LenderRefundView> listLenderRefundsAwaitingApproval();
+
     /**
      * Single-invoice read by id, needed for object-level authorization on endpoints that identify
      * an invoice without naming its policy (BillingController.requestPaymentForInvoice). Tenant
@@ -145,6 +154,45 @@ public interface BillingApi {
      */
     InvoiceView applyConfirmedPayment(UUID invoiceId, BigDecimal amount, String currency, String paymentReference,
                                       String payerRef, String method);
+
+    /**
+     * As above, keyed on the confirmed payment's own id (money movement step 2, 2026-11-04). On an insurance policy the
+     * money is a deposit on the policy's balance -- posted at once for what arrived -- and the balance pays the policy's
+     * premiums that have fallen due, oldest first, and the named invoice even if it is not yet due; what is left stays.
+     * A savings-type policy keeps the old road: the money pays the named invoice.
+     */
+    InvoiceView applyConfirmedPayment(UUID invoiceId, BigDecimal amount, String currency, String paymentReference,
+                                      String payerRef, String method, UUID paymentId);
+
+    /** What is on a policy's balance now: every deposit less every premium paid from it. Zero for none. */
+    BigDecimal balanceOf(String policyNumber);
+
+    /**
+     * A customer asks for money back off their policy's balance, to their mobile-money number (money movement step 5).
+     * It waits for staff (payouts.approve) like any withdrawal. Returns the new withdrawal's id.
+     */
+    java.util.UUID requestWithdrawalToMobileMoney(String policyNumber, BigDecimal amount, String phone, String requestedBy);
+
+    /** Every policy balance in the tenant, summed: the sub-ledger behind account 2128 (money movement step 7). */
+    BigDecimal policyBalancesTotal();
+
+    /**
+     * What each policy's invoices still owe, in TZS -- charged less paid less credited, never below zero, a waived one
+     * owing nothing (money movement step 7): the sub-ledger behind the premium receivables.
+     */
+    java.util.Map<String, BigDecimal> owedByPolicy();
+
+    /** The balance and how far ahead it pays premiums (money movement step 5). */
+    PolicyBalanceView balance(String policyNumber);
+
+    /** One page of the balance's statement, newest first, each line with the balance after it. */
+    BalanceStatementView balanceStatement(String policyNumber, int page, int size);
+
+    /**
+     * Whether a policy's premiums keep their own road (its product version's account basis is ACCOUNT): no policy balance,
+     * and a receipt still at most what its invoice owes (money movement D12, until "For: Savings").
+     */
+    boolean isSavingsType(String policyNumber);
 
     record FieldReceiptResult(UUID receiptId, String status) {}
     FieldReceiptResult captureFieldReceipt(UUID agentId, String policyNumber, BigDecimal amount, String currency,

@@ -237,7 +237,11 @@ class PostingEngine {
             attributes.put("paymentMethod", rails.methodOf(tenantId, facts.attribute("paymentRef"))
                 .orElse(DisbursementMethodRecorder.MOBILE_MONEY));
         }
-        if ("billing.PremiumCollected".equals(facts.eventType())) {
+        // The levy is on the premium paid (money movement step 2): from the balance as each premium is paid, never on the
+        // deposit, part of which may wait for later premiums.
+        // ... and given back, at the rate in force, when a reversal undoes the premium paid (step 3b).
+        if ("billing.PremiumPaidFromBalance".equals(facts.eventType())
+                || "billing.PremiumPaidReversed".equals(facts.eventType())) {
             BigDecimal rate = register.inForce("PREMIUM_LEVY_RATE", "*", facts.eventDate())
                 .flatMap(e -> tz.co.nlolo.lifeplatform.finaccounting.domain.ElectionKey.rate(e.value()))
                 .orElse(BigDecimal.ZERO);
@@ -256,9 +260,7 @@ class PostingEngine {
         if (!PostingRuleSet.BANK.equals(line.account())) {
             return line.account();
         }
-        // A cheque is drawn on the same bank account a transfer leaves (2026-10-28).
-        String method = facts.attribute("paymentMethod");
-        return "EFT".equals(method) || "CHEQUE".equals(method) ? PostingRuleSet.BANK_EFT : PostingRuleSet.BANK_MOBILE_MONEY;
+        return tz.co.nlolo.lifeplatform.finaccounting.api.CashAccounts.forPayout(facts.attribute("paymentMethod"));
     }
 
     private static LineDimensions dimensions(PostingFacts facts, PostingRuleSet.Line line,

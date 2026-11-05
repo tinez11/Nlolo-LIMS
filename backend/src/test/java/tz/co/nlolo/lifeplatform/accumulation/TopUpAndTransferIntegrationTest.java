@@ -161,12 +161,16 @@ class TopUpAndTransferIntegrationTest {
             "db-migrations/payment/V17__manual_receipts.sql",
             "db-migrations/payment/V18__payout_routes.sql",
             "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
+            "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
+            "db-migrations/payment/V24__reversed_status.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             "db-migrations/policyloan/V8__interest_month_published.sql",
+            "db-migrations/policyloan/V9__payout_approval.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
             "db-migrations/billing/V3__amount_paid.sql",
@@ -176,7 +180,11 @@ class TopUpAndTransferIntegrationTest {
             "db-migrations/billing/V8__schedule_premium_paying_until.sql",
             "db-migrations/billing/V9__schedules_due_for_invoicing.sql",
             "db-migrations/billing/V10__premium_receipt.sql",
-            "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql", "db-migrations/billing/V13__credit_refund_payout.sql");
+            "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql", "db-migrations/billing/V13__credit_refund_payout.sql",
+            "db-migrations/billing/V14__policy_balance.sql",
+            "db-migrations/billing/V15__balance_withdrawal.sql",
+            "db-migrations/billing/V16__deposit_reversal.sql",
+            "db-migrations/billing/V17__lender_refund_approval.sql");
     }
 
     @AfterAll
@@ -278,9 +286,9 @@ class TopUpAndTransferIntegrationTest {
     void aMobileMoneyTopUpMayBeConfirmedByWhoeverAskedForIt() {
         var issued = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, LocalDate.now());
         var topUp = asTenant(() -> api.requestTopUp(issued.policyNumber(), new BigDecimal("20000.00"), "+255700000002", "staff-one"));
-        // A receipt's "invoice" is its source: here the top-up.
+        // The top-up's receipt, found by its policy: a receipt names an invoice only for a premium (money movement step 1).
         asTenant(() -> receipts.awaitingApproval().stream()
-            .filter(r -> topUp.topUpId().equals(r.invoiceId()))
+            .filter(r -> issued.policyNumber().equals(r.policyNumber()))
             .map(r -> receipts.approve(r.receiptId(), "staff-one")).toList());
         assertThat(asTenant(() -> api.listTopUps(issued.policyNumber()))).first()
             .extracting(TopUpView::status).isEqualTo("COLLECTED");

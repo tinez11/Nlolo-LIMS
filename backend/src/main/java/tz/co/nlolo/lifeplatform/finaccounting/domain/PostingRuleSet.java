@@ -52,11 +52,7 @@ public record PostingRuleSet(int version, List<Rule> rules) {
 
     /** The account a premium reached, by its receipt method; null or unknown is the gateway's mobile money. */
     public static String receiptAccount(String method) {
-        if (method == null) return BANK_MOBILE_MONEY;
-        return switch (method) {
-            case "CASH", "BANK_DEPOSIT", "CHEQUE", "TANQR" -> RECEIPT_BANK;
-            default -> BANK_MOBILE_MONEY;
-        };
+        return tz.co.nlolo.lifeplatform.finaccounting.api.CashAccounts.forReceipt(method);
     }
 
     public PostingRuleSet {

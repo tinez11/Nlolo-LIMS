@@ -112,7 +112,7 @@ class ActionsTest {
     @Test
     void signaturesAreOneGroupWithARowPerKindAndTheViewersOwnAreNotCounted() {
         CurrentAccess access = holding(Permission.ACCOUNTS_APPROVE);
-        ApprovalSource withdrawals = ApprovalSource.of("account-withdrawal", "Account withdrawals", "Approve",
+        ApprovalSource withdrawals = ApprovalSource.of("account-withdrawal", "Savings withdrawals", "Approve",
             "accounts.approve", limit -> ApprovalSource.Pending.of(List.of(
                 new ApprovalSource.Item("w1", "POL-1", "w1", BigDecimal.TEN, "TZS", "alice", EARLY),
                 new ApprovalSource.Item("w2", "POL-2", "w2", BigDecimal.TEN, "TZS", "bob", LATE),
@@ -126,7 +126,7 @@ class ActionsTest {
             assertThat(g.kind()).isEqualTo("signatures");
             assertThat(g.total()).isEqualTo(2);
             assertThat(g.items()).singleElement().satisfies(i -> {
-                assertThat(i.title()).isEqualTo("Account withdrawals");
+                assertThat(i.title()).isEqualTo("Savings withdrawals");
                 assertThat(i.detail()).isEqualTo("2 waiting");
                 assertThat(i.since()).isEqualTo(LATE);
             });

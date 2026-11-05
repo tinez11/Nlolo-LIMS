@@ -10,4 +10,12 @@ import java.util.UUID;
  * (PENDING/PAID) predates -- Task 9 reconciles the OpenAPI spec against V2's real lifecycle. */
 public record CommissionStatementView(UUID statementId, UUID agentId, String period, BigDecimal totalAmount,
                                        String totalCurrency, StatementStatus status,
-                                       Instant closedAt, Instant paidAt) {}
+                                       Instant closedAt, Instant paidAt, String payeeRef, String payoutRequestedBy,
+                                       String payoutRefusalReason) {
+
+    /** A statement no payout has been asked of yet. */
+    public CommissionStatementView(UUID statementId, UUID agentId, String period, BigDecimal totalAmount,
+                                   String totalCurrency, StatementStatus status, Instant closedAt, Instant paidAt) {
+        this(statementId, agentId, period, totalAmount, totalCurrency, status, closedAt, paidAt, null, null, null);
+    }
+}

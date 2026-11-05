@@ -22,7 +22,7 @@ test.describe('approvals inbox', () => {
     await expect(page.getByText(/\d+ waiting for you ·/)).toBeVisible({ timeout: 30_000 });
     // Finance officers sign withdrawals and payouts: those kinds are theirs, whether or not anything waits today.
     await page.getByRole('button', { name: 'Everything you approve' }).click();
-    await expect(page.getByRole('region', { name: 'Account withdrawals' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Savings withdrawals' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'Payouts to approve' })).toBeVisible();
     // And the books' approvals are the finance approver's, not theirs.
     await expect(page.getByRole('region', { name: 'Manual journals' })).toHaveCount(0);

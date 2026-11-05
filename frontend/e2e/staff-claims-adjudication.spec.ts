@@ -84,7 +84,7 @@ test.describe('staff claims adjudication, as an underwriter', () => {
     await expect(page.getByRole('heading', { name: 'Death' })).toBeVisible();
 
     await expect(page.getByRole('heading', { name: 'Submit an assessment' })).not.toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Decide settlement' })).not.toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Decide the payout' })).not.toBeVisible();
     await expect(page.getByRole('heading', { name: 'Reopen' })).not.toBeVisible();
   });
 });
@@ -118,7 +118,7 @@ test.describe('staff claims adjudication', () => {
 
     // Role gating, from the assessor's own side: this identity can assess, not decide.
     await expect(assessorPage.getByRole('heading', { name: 'Submit an assessment' })).toBeVisible();
-    await expect(assessorPage.getByRole('heading', { name: 'Decide settlement' })).not.toBeVisible();
+    await expect(assessorPage.getByRole('heading', { name: 'Decide the payout' })).not.toBeVisible();
 
     // The recommendation opens at the claim's cover -- the 2,000,000 sum assured, read from
     // GET /claims/{id}/claimable-cover -- and says so, rather than a blank field with an
@@ -141,7 +141,7 @@ test.describe('staff claims adjudication', () => {
     await managerPage.goto(`/staff/claims/${claimId}`);
 
     // Role gating, from the manager's own side: this identity can decide, not assess.
-    await expect(managerPage.getByRole('heading', { name: 'Decide settlement' })).toBeVisible();
+    await expect(managerPage.getByRole('heading', { name: 'Decide the payout' })).toBeVisible();
     await expect(managerPage.getByRole('heading', { name: 'Submit an assessment' })).not.toBeVisible();
 
     // Separation of duties means this manager never saw the assessment -- so it is shown to them,

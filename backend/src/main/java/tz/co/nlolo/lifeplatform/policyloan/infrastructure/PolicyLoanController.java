@@ -55,8 +55,8 @@ public class PolicyLoanController {
         enforceCustomerOwnPolicyOnly(policyNumber, jwt, authentication);
         LoanView loan = policyLoanApi.originateLoan(policyNumber, new BigDecimal(request.requestedAmount().amount()),
             request.requestedAmount().currencyCode(), request.payeeRef(), jwt.getSubject());
-        // 202, not 200/201: openapi-policyloan.yaml describes this as "Loan reservation
-        // confirmed and disbursement requested (async)".
+        // 202, not 200/201: the loan is reserved and waits for its payout to be approved (money movement step 4);
+        // nothing is paid until a second person releases it.
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(LoanResponseDto.from(loan));
     }
 
@@ -107,17 +107,38 @@ public class PolicyLoanController {
         return ResponseEntity.ok(LoanResponseDto.from(loan));
     }
 
-    @PostMapping("/loans/{loanId}/repayments")
-    // A customer repays their own loan; an agent no longer records one (2026-10-27, one agent level).
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or @access.can('loans.manage')")
-    public ResponseEntity<LoanResponseDto> recordRepayment(@PathVariable UUID loanId, @Valid @RequestBody RepaymentRequestDto request,
+    /** Money movement step 4: the second person releases a loan's payout -- payment is then asked to pay it. */
+    @PostMapping("/loans/{loanId}/payout-approval")
+    @PreAuthorize("@access.can('payouts.approve')")
+    public ResponseEntity<LoanResponseDto> approvePayout(@PathVariable UUID loanId, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.accepted().body(LoanResponseDto.from(policyLoanApi.approvePayout(loanId, jwt.getSubject())));
+    }
+
+    public record PayoutRefusal(@jakarta.validation.constraints.NotBlank
+                                @jakarta.validation.constraints.Size(max = 500) String reason) {}
+
+    /** The second person refuses a loan's payout, saying why; the reserved loan value is freed. */
+    @PostMapping("/loans/{loanId}/payout-refusal")
+    @PreAuthorize("@access.can('payouts.approve')")
+    public LoanResponseDto refusePayout(@PathVariable UUID loanId, @Valid @RequestBody PayoutRefusal body,
+                                        @AuthenticationPrincipal Jwt jwt) {
+        return LoanResponseDto.from(policyLoanApi.refusePayout(loanId, jwt.getSubject(), body.reason()));
+    }
+
+    @PostMapping("/loans/{loanId}/payment-request")
+    // Money movement step 1 (2026-11-04): a repayment is money in like a premium -- asked of the payer's phone here,
+    // recorded by hand as a deposit For: Loan (POST /receipts). Neither counts until the money is confirmed, and there
+    // is no longer any way to book one by typing it in. Same callers as an invoice's payment request.
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.canAny('policies.service', 'collections.manage')")
+    public ResponseEntity<Void> requestRepayment(@PathVariable UUID loanId, @Valid @RequestBody LoanPaymentRequestDto request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         LoanView existing = policyLoanApi.getLoan(loanId);
         enforceCustomerOwnPolicyOnly(existing.policyNumber(), jwt, authentication);
-        LoanView loan = policyLoanApi.recordRepayment(loanId, new BigDecimal(request.amount().amount()), request.amount().currencyCode(),
-            request.paymentReference(), jwt.getSubject());
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(LoanResponseDto.from(loan));
+        AgentBook.require(policyApi, existing.policyNumber(), jwt, authentication);
+        policyLoanApi.requestRepayment(loanId, request.payerRef().trim(), new BigDecimal(request.amount().amount()),
+            request.amount().currencyCode(), idempotencyKey);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).build();
     }
 
     /** Mirrors PolicyController.enforceCustomerOwnPolicyOnly exactly (Global Constraints) --

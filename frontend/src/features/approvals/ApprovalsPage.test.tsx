@@ -22,7 +22,7 @@ const view: ApprovalsView = {
   actionable: 3,
   groups: [
     {
-      kind: 'account-withdrawal', label: 'Account withdrawals', act: 'Approve', total: 2, actionable: 1,
+      kind: 'account-withdrawal', label: 'Savings withdrawals', act: 'Approve', total: 2, actionable: 1,
       unreadable: false,
       rows: [
         { reference: 'w-1', policyNumber: 'POL-1', summary: 'Withdrawal to +255700000009',
@@ -58,7 +58,7 @@ describe('ApprovalsPage', () => {
 
   it('lists what waits by kind; a payout review links to the page that does the act', async () => {
     renderPage();
-    const withdrawals = await screen.findByRole('region', { name: 'Account withdrawals' });
+    const withdrawals = await screen.findByRole('region', { name: 'Savings withdrawals' });
     expect(within(withdrawals).getByText('2 waiting · 1 for you')).toBeInTheDocument();
     expect(within(withdrawals).getByText('Neema Service')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute('href', '/staff/payouts/i-1?from=approvals');
@@ -85,7 +85,7 @@ describe('ApprovalsPage', () => {
     usePolicyStore.setState({ loadDetail: async () => {} });
     const user = userEvent.setup();
     renderPage();
-    const withdrawals = await screen.findByRole('region', { name: 'Account withdrawals' });
+    const withdrawals = await screen.findByRole('region', { name: 'Savings withdrawals' });
     await user.click(within(withdrawals).getByRole('button', { name: 'Review' }));
     const review = screen.getByRole('region', { name: 'Review POL-1' });
     expect(within(review).getByText('TZS 150,000.00')).toBeInTheDocument();
@@ -97,7 +97,7 @@ describe('ApprovalsPage', () => {
 
   it("marks the viewer's own request as someone else's to sign, with no act offered", async () => {
     renderPage();
-    const withdrawals = await screen.findByRole('region', { name: 'Account withdrawals' });
+    const withdrawals = await screen.findByRole('region', { name: 'Savings withdrawals' });
     expect(within(withdrawals).getByText('You — someone else signs')).toBeInTheDocument();
     // Only the other person's request can be reviewed here.
     expect(within(withdrawals).getAllByRole('button', { name: 'Review' })).toHaveLength(1);
@@ -115,7 +115,7 @@ describe('ApprovalsPage', () => {
   it('hides kinds with nothing waiting until asked for everything', async () => {
     const user = userEvent.setup();
     renderPage();
-    await screen.findByRole('region', { name: 'Account withdrawals' });
+    await screen.findByRole('region', { name: 'Savings withdrawals' });
     expect(screen.queryByRole('region', { name: 'Fund prices' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Everything you approve' }));

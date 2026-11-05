@@ -187,7 +187,8 @@ class AgentBookOfBusinessScopingTest {
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
-            "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql");
+            "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
+            "db-migrations/distribution/V11__commission_payout_approval.sql");
 
         MinioClient minioClient = MinioClient.builder()
             .endpoint(MINIO.getS3URL()).credentials(MINIO.getUserName(), MINIO.getPassword()).build();
@@ -589,9 +590,8 @@ class AgentBookOfBusinessScopingTest {
         mockMvc.perform(post("/policies/{n}/loans", book.policyInTeam()).with(supervisor)
                 .contentType(json).content("{\"requestedAmount\":{\"amount\":\"1000.00\",\"currencyCode\":\"TZS\"},\"payeeRef\":\"+255700000001\"}"))
             .andExpect(status().isForbidden());
-        mockMvc.perform(post("/loans/{l}/repayments", UUID.randomUUID()).with(supervisor)
-                .contentType(json).content("{\"amount\":{\"amount\":\"100.00\",\"currencyCode\":\"TZS\"},\"paymentReference\":\"PAY-AGENT\"}"))
-            .andExpect(status().isForbidden());
+        // No repayment check: since money movement step 1 a repayment is money in, asked of the payer's phone through
+        // /loans/{l}/payment-request -- requesting payment, which an agent may do.
         mockMvc.perform(post("/claims").with(supervisor).header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(json).content("""
                     {"policyNumber":"%s","claimantPartyId":"%s","claimType":"DEATH","dateOfEvent":"2026-10-01",

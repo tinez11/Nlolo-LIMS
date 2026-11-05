@@ -2,7 +2,7 @@ package tz.co.nlolo.lifeplatform.policyloan;
 
 import tz.co.nlolo.lifeplatform.policyloan.infrastructure.MoneyDto;
 import tz.co.nlolo.lifeplatform.policyloan.infrastructure.OriginateLoanRequestDto;
-import tz.co.nlolo.lifeplatform.policyloan.infrastructure.RepaymentRequestDto;
+import tz.co.nlolo.lifeplatform.policyloan.infrastructure.LoanPaymentRequestDto;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -89,9 +89,9 @@ class PolicyLoanMoneyDtoValidationTest {
     }
 
     @Test
-    void negativeRepaymentAmountFailsCascadedValidationOnRepaymentRequest() {
-        RepaymentRequestDto request = new RepaymentRequestDto(new MoneyDto("-50000.00", "TZS"), "REF-001");
-        Set<ConstraintViolation<RepaymentRequestDto>> violations = validator.validate(request);
+    void negativeRepaymentAmountFailsCascadedValidationOnALoanPaymentRequest() {
+        LoanPaymentRequestDto request = new LoanPaymentRequestDto("255754000001", new MoneyDto("-50000.00", "TZS"));
+        Set<ConstraintViolation<LoanPaymentRequestDto>> violations = validator.validate(request);
         assertThat(violations).as("a negative repayment amount must be rejected at the wire boundary").isNotEmpty();
     }
 }

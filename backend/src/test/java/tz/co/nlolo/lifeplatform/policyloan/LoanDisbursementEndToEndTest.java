@@ -1,8 +1,13 @@
 package tz.co.nlolo.lifeplatform.policyloan;
 
 import tz.co.nlolo.lifeplatform.Application;
+import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.payment.api.ReceiptMethod;
+import tz.co.nlolo.lifeplatform.payment.api.ReceiptRefusedException;
+import tz.co.nlolo.lifeplatform.payment.api.ReceiptView;
+import tz.co.nlolo.lifeplatform.payment.application.Receipts;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
@@ -29,13 +34,17 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 
 /**
@@ -172,6 +181,7 @@ class LoanDisbursementEndToEndTest {
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             "db-migrations/policyloan/V8__interest_month_published.sql",
+            "db-migrations/policyloan/V9__payout_approval.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
@@ -184,7 +194,11 @@ class LoanDisbursementEndToEndTest {
             "db-migrations/payment/V9__account_purposes.sql",
             "db-migrations/payment/V17__manual_receipts.sql",
             "db-migrations/payment/V18__payout_routes.sql",
-            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql");
+            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
+            "db-migrations/payment/V22__loan_repayment_purpose.sql",
+            "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
+            "db-migrations/payment/V24__reversed_status.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql");
     }
 
     @AfterAll
@@ -196,6 +210,9 @@ class LoanDisbursementEndToEndTest {
     @Autowired private PolicyLoanApi policyLoanApi;
     @Autowired private PolicyAccountRepository policyAccountRepository;
     @Autowired private LoanTransactionRepository loanTransactionRepository;
+    @Autowired private org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Autowired private Receipts receipts;
+    @Autowired private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     @AfterEach
     void resetAfterEach() {
@@ -237,6 +254,112 @@ class LoanDisbursementEndToEndTest {
             .orElseThrow(() -> new AssertionError("Expected a policy_account row for " + policyNumber));
     }
 
+    /** A 500,000 loan taken and paid out through the real gateway chain, its tenant left set on this thread. */
+    private LoanView disbursedLoan(UUID tenantId, String productCode) throws Exception {
+        String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), productCode);
+        TenantContext.set(tenantId);
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
+            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-" + productCode + "\"}")));
+        LoanView originated = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
+        policyLoanApi.approvePayout(originated.loanId(), "approver"); // money movement step 4: a second person releases the payout
+        assertThat(policyLoanApi.getLoan(originated.loanId()).status()).isEqualTo(LoanStatus.DISBURSED);
+        return originated;
+    }
+
+    /** Publishes as payment would: inside a committed transaction, so AFTER_COMMIT listeners run. */
+    private void publishAfterCommit(UUID tenantId, String eventType, Map<String, Object> payload) {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+            eventPublisher.publishEvent(DomainEventEnvelope.of(eventType, tenantId, payload)));
+    }
+
+    @Test
+    void aConfirmedLoanRepaymentFromPaymentReducesTheLoan() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LoanView loan = disbursedLoan(tenantId, "LOAN-E2E-REPAY-1");
+        UUID paymentId = UUID.randomUUID();
+        publishAfterCommit(tenantId, "payment.PaymentConfirmed", Map.of(
+            "paymentRequestId", paymentId, "idempotencyKey", "k-" + paymentId, "sourceRef", loan.loanId().toString(),
+            "gatewayReference", "SLIP-77", "amount", Map.of("amount", "100000.00", "currencyCode", "TZS"),
+            "confirmedAt", Instant.now().toString(), "purpose", "LOAN_REPAYMENT", "method", "CASH",
+            "approvedBy", "finance-2"));
+
+        TenantContext.set(tenantId);
+        LoanView after = policyLoanApi.getLoan(loan.loanId());
+        assertThat(after.status()).isEqualTo(LoanStatus.REPAYING);
+        assertThat(after.outstandingBalance()).isEqualByComparingTo("400000");
+    }
+
+    /** Money movement step 1: a cash deposit For: Loan counts only once a second person confirms it. */
+    @Test
+    void aCashDepositForALoanRepaysItOnlyOnceASecondPersonConfirmsIt() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LoanView loan = disbursedLoan(tenantId, "LOAN-E2E-DEPOSIT-1");
+        TenantContext.set(tenantId);
+        ReceiptView recorded = receipts.record(new Receipts.NewReceipt(null, loan.loanId(), ReceiptMethod.CASH, "CR-9001",
+            new BigDecimal("100000"), LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")), "Asha", null, null),
+            "finance-1");
+
+        assertThat(recorded.purpose()).isEqualTo("LOAN_REPAYMENT");
+        assertThat(recorded.loanId()).isEqualTo(loan.loanId());
+        assertThat(recorded.invoiceId()).isNull();
+        TenantContext.set(tenantId);
+        assertThat(policyLoanApi.getLoan(loan.loanId()).status()).as("recorded is not paid").isEqualTo(LoanStatus.DISBURSED);
+
+        TenantContext.set(tenantId);
+        receipts.approve(recorded.receiptId(), "finance-2");
+
+        TenantContext.set(tenantId);
+        LoanView after = policyLoanApi.getLoan(loan.loanId());
+        assertThat(after.status()).isEqualTo(LoanStatus.REPAYING);
+        assertThat(after.outstandingBalance()).isEqualByComparingTo("400000");
+    }
+
+    @Test
+    void aDepositForMoreThanTheLoanOwesIsRefusedAndSoIsOneOnTopOfAWaitingDeposit() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LoanView loan = disbursedLoan(tenantId, "LOAN-E2E-DEPOSIT-2");
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"));
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> receipts.record(new Receipts.NewReceipt(null, loan.loanId(), ReceiptMethod.CASH,
+            "CR-9002", new BigDecimal("600000"), today, null, null, null), "finance-1"))
+            .isInstanceOf(ReceiptRefusedException.class)
+            .hasMessageContaining("500000");
+
+        TenantContext.set(tenantId);
+        receipts.record(new Receipts.NewReceipt(null, loan.loanId(), ReceiptMethod.CASH, "CR-9003",
+            new BigDecimal("300000"), today, null, null, null), "finance-1");
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> receipts.record(new Receipts.NewReceipt(null, loan.loanId(), ReceiptMethod.CASH,
+            "CR-9004", new BigDecimal("300000"), today, null, null, null), "finance-1"))
+            .isInstanceOf(ReceiptRefusedException.class)
+            .hasMessageContaining("already waiting");
+    }
+
+    @Test
+    void aDepositNamingBothAnInvoiceAndALoanOrNeitherIsRefused() {
+        TenantContext.set(UUID.randomUUID());
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam"));
+        assertThatThrownBy(() -> receipts.record(new Receipts.NewReceipt(UUID.randomUUID(), UUID.randomUUID(),
+            ReceiptMethod.CASH, "CR-9005", BigDecimal.TEN, today, null, null, null), "finance-1"))
+            .isInstanceOf(ReceiptRefusedException.class);
+        assertThatThrownBy(() -> receipts.record(new Receipts.NewReceipt(null, null,
+            ReceiptMethod.CASH, "CR-9006", BigDecimal.TEN, today, null, null, null), "finance-1"))
+            .isInstanceOf(ReceiptRefusedException.class);
+    }
+
+    @Test
+    void aPremiumConfirmationIsNotMistakenForALoanRepayment() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LoanView loan = disbursedLoan(tenantId, "LOAN-E2E-REPAY-2");
+        publishAfterCommit(tenantId, "payment.PaymentConfirmed", Map.of(
+            "paymentRequestId", UUID.randomUUID(), "idempotencyKey", "k-prem", "sourceRef", loan.loanId().toString(),
+            "gatewayReference", "X", "amount", Map.of("amount", "100000.00", "currencyCode", "TZS"),
+            "confirmedAt", Instant.now().toString(), "purpose", "PREMIUM"));
+
+        TenantContext.set(tenantId);
+        assertThat(policyLoanApi.getLoan(loan.loanId()).status()).isEqualTo(LoanStatus.DISBURSED);
+    }
+
     @Test
     void originateLoanRunsTheRealChainThroughToDisbursedWithTheGatewaysOwnReference() throws Exception {
         UUID tenantId = UUID.randomUUID();
@@ -246,14 +369,18 @@ class LoanDisbursementEndToEndTest {
         wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
             "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-E2E-SUCCESS\"}")));
 
-        // 1. Originate over the real API -- the loan legitimately rests at
-        // DISBURSEMENT_REQUESTED in the object THIS CALL returns, because that view is built
-        // from the in-memory entity at the end of originateLoan's own method body, before its
-        // transaction (and therefore the AFTER_COMMIT chain) has committed.
+        // 1. Originate over the real API -- the loan waits for its payout to be approved
+        // (money movement step 4); a second person then releases it. That view legitimately rests
+        // at DISBURSEMENT_REQUESTED, because it is built from the in-memory entity at the end of
+        // approvePayout's own method body, before its transaction (and therefore the AFTER_COMMIT
+        // chain) has committed.
         LoanView originated = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
-        assertThat(originated.status()).isEqualTo(LoanStatus.DISBURSEMENT_REQUESTED);
+        assertThat(originated.status()).isEqualTo(LoanStatus.AWAITING_PAYOUT_APPROVAL);
+        wireMock.verify(exactly(0), postRequestedFor(urlPathEqualTo("/disburse")));
+        LoanView released = policyLoanApi.approvePayout(originated.loanId(), "approver");
+        assertThat(released.status()).isEqualTo(LoanStatus.DISBURSEMENT_REQUESTED);
 
-        // 2. By the time originateLoan has RETURNED, the whole chain (policyloan -> event ->
+        // 2. By the time approvePayout has RETURNED, the whole chain (policyloan -> event ->
         // payment -> gateway -> event -> policyloan) has already run synchronously and
         // committed. No markDisbursed call anywhere in this test.
         LoanView reloaded = policyLoanApi.getLoan(originated.loanId());
@@ -285,6 +412,7 @@ class LoanDisbursementEndToEndTest {
         wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
             "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-E2E-FIRST-LOAN\"}")));
         LoanView firstLoan = policyLoanApi.originateLoan(policyNumber, new BigDecimal("300000"), "TZS", "MPESA-0700000001", "test-agent");
+        policyLoanApi.approvePayout(firstLoan.loanId(), "approver"); // money movement step 4: a second person releases the payout
         assertThat(policyLoanApi.getLoan(firstLoan.loanId()).status()).isEqualTo(LoanStatus.DISBURSED);
 
         BigDecimal preOriginationEncumbrance = encumbranceOf(policyNumber);
@@ -296,6 +424,7 @@ class LoanDisbursementEndToEndTest {
         wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
             "{\"status\":\"REJECTED\",\"reason\":\"INSUFFICIENT_FLOAT\"}")));
         LoanView secondLoan = policyLoanApi.originateLoan(policyNumber, new BigDecimal("200000"), "TZS", "MPESA-0700000002", "test-agent");
+        policyLoanApi.approvePayout(secondLoan.loanId(), "approver"); // money movement step 4: a second person releases the payout
 
         // 3. Reaches DISBURSEMENT_FAILED, with a REVERSAL transaction and the encumbrance
         // genuinely released.

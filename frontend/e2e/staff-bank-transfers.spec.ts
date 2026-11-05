@@ -44,7 +44,7 @@ test.describe('staff bank transfers', () => {
      * was settled, which is exactly why the empty state says what it says.
      */
     const table = page.getByRole('table', { name: 'Payments to make by hand' });
-    const empty = page.getByText('Nothing is waiting on a transfer');
+    const empty = page.getByText('No payments to make', { exact: true });
     await expect(table.or(empty)).toBeVisible({ timeout: 30_000 });
 
     // Whichever it is, the page must not be showing a failure.
@@ -65,7 +65,7 @@ test.describe('staff bank transfers', () => {
      * proved nothing on a tenant that DID have a transfer waiting.
      */
     const table = page.getByRole('table', { name: 'Payments to make by hand' });
-    const empty = page.getByText('Nothing is waiting on a transfer');
+    const empty = page.getByText('No payments to make', { exact: true });
     await expect(table.or(empty)).toBeVisible({ timeout: 30_000 });
 
     // The first ENABLED one: a transfer whose life is already paid, or has another live death

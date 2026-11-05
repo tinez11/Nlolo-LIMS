@@ -9,7 +9,31 @@ public interface PolicyLoanApi {
     LoanView originateLoan(String policyNumber, BigDecimal requestedAmount, String currency, String payeeRef, String originatedBy);
     LoanView getLoan(UUID loanId);
     List<LoanView> listLoansForPolicy(String policyNumber);
-    LoanView recordRepayment(UUID loanId, BigDecimal amount, String currency, String paymentReference, String recordedBy);
+    /**
+     * Money confirmed for this loan (money movement step 1, 2026-11-04): a deposit For: Loan a second person approved,
+     * or a mobile-money request the rail confirmed. Applies at most what the loan owes, interest first; anything above
+     * that is published as {@code policyloan.LoanOverpaid}, so it is posted and never silently kept.
+     */
+    LoanView applyConfirmedRepayment(UUID loanId, BigDecimal amount, String currency, String paymentReference,
+                                     String receiptMethod, UUID paymentId, String recordedBy);
+
+    /**
+     * Ask the payer's phone for a repayment (money movement step 1). Publishes {@code policyloan.RepaymentRequested} for
+     * payment to collect; nothing is applied until it is confirmed. Refused for more than the loan owes now.
+     */
+    void requestRepayment(UUID loanId, String payerRef, BigDecimal amount, String currency, String idempotencyKey);
+
+    /**
+     * A second person releases a loan's payout (money movement step 4): payouts.approve, or the person who took the
+     * loan holding payouts.approve-own. Payment is then asked to pay it.
+     */
+    LoanView approvePayout(UUID loanId, String approvedBy);
+
+    /** A second person refuses a loan's payout, saying why: nothing is paid and the reserved loan value is freed. */
+    LoanView refusePayout(UUID loanId, String refusedBy, String reason);
+
+    /** Loans waiting for their payout to be released -- the approvals inbox's rows. */
+    List<LoanView> listLoansAwaitingPayoutApproval();
 
     // Driven by policyloan.application.PaymentEventListener consuming payment's confirmation
     // events (M5). Formerly internal-only test seams standing in for those events.

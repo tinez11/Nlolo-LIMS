@@ -109,6 +109,10 @@ public class Approvals {
         Map.entry("receipt", "collections.approve-own"),
         Map.entry("payout-approval", "payouts.approve-own"), Map.entry("free-look", "payouts.approve-own"),
         Map.entry("withholding-rule", "payouts.approve-own"),
+        // Money movement (2026-11-04): deposits reversed, balance withdrawals, loan, commission and lender-refund payouts.
+        Map.entry("deposit-reversal", "collections.approve-own"), Map.entry("balance-withdrawal", "payouts.approve-own"),
+        Map.entry("loan-payout", "payouts.approve-own"), Map.entry("commission-payout", "payouts.approve-own"),
+        Map.entry("lender-refund", "payouts.approve-own"),
         Map.entry("surrender", "policies.surrender-approve-own"),
         Map.entry("account-withdrawal", "accounts.approve-own"), Map.entry("account-adjustment", "accounts.approve-own"),
         Map.entry("unit-withdrawal", "accounts.approve-own"),

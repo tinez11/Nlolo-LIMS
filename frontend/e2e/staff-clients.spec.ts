@@ -179,7 +179,8 @@ test.describe('staff clients register', () => {
     await expect(page.getByText('Verified').first()).toBeVisible({ timeout: 20_000 });
 
     // Now correct them, including an IDENTITY field — the case where an implementation would
-    // most plausibly decide a reset was the responsible thing to do.
+    // most plausibly decide a reset was the responsible thing to do. (Correct details sits under More.)
+    await page.getByRole('button', { name: /^More actions/ }).click();
     await page.getByRole('link', { name: 'Correct details' }).click();
     await expect(page).toHaveURL(`/staff/parties/${partyId}/edit`, { timeout: 15_000 });
 

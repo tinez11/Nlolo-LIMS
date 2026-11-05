@@ -31,4 +31,19 @@ public interface PremiumInvoiceRepository extends JpaRepository<PremiumInvoice, 
      * one -- and the redelivery path in raiseSinglePremiumInvoice depends on that being true.
      */
     Optional<PremiumInvoice> findByTenantIdAndEnrolmentSubmissionId(UUID tenantId, UUID enrolmentSubmissionId);
+
+    /**
+     * What each policy's invoices still owe in TZS -- PremiumInvoice.balanceDue summed: charged less paid less credited,
+     * never below zero, a waived invoice nothing (money movement step 7): [policy, owed].
+     */
+    @org.springframework.data.jpa.repository.Query(nativeQuery = true, value = """
+        SELECT i.policy_number,
+               SUM(GREATEST(i.amount - COALESCE(i.amount_paid, 0) - COALESCE(c.credited, 0), 0))
+          FROM billing.premium_invoice i
+          LEFT JOIN (SELECT original_invoice_id, SUM(amount) AS credited
+                       FROM billing.premium_credit WHERE tenant_id = :tenantId GROUP BY original_invoice_id) c
+            ON c.original_invoice_id = i.invoice_id
+         WHERE i.tenant_id = :tenantId AND i.status <> 'WAIVED' AND i.currency = 'TZS'
+         GROUP BY i.policy_number""")
+    List<Object[]> owedByPolicy(@org.springframework.data.repository.query.Param("tenantId") UUID tenantId);
 }

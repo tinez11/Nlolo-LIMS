@@ -506,6 +506,61 @@ paths:
               schema: { $ref: '#/components/schemas/CustomerPolicy' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /customer/policies/{policyNumber}/statement:
+    get:
+      summary: The policy's balance statement, newest first (money movement step 5)
+      description: Each line's amount is signed (money out negative) with the balance after it. 403 for a policy the customer does not hold.
+      security:
+        - customersAuth: [profile]
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerStatement' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /customer/policies/{policyNumber}/withdrawals:
+    post:
+      summary: Ask for money back off the policy's balance, to the customer's phone (money movement step 5)
+      description: Waits for staff to approve it (payouts.approve). 409 when it is more than the balance or one is already waiting.
+      security:
+        - customersAuth: [profile]
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [amount, phone]
+              properties:
+                amount: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+                phone: { type: string, minLength: 1, maxLength: 30 }
+      responses:
+        '201':
+          description: Asked; it waits for staff to approve it
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [withdrawalId]
+                properties:
+                  withdrawalId: { type: string, format: uuid }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
   /customer/claims:
     get:
       summary: The claims the signed-in customer made
@@ -1012,12 +1067,44 @@ components:
         policies:
           type: array
           items: { $ref: '#/components/schemas/CustomerPolicySummary' }
+    CustomerStatement:
+      type: object
+      additionalProperties: false
+      required: [currency, total, page, size, lines]
+      properties:
+        currency: { type: string }
+        total: { type: integer, format: int64 }
+        page: { type: integer }
+        size: { type: integer }
+        lines:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [entryId, type, at, amount, balanceAfter]
+            properties:
+              entryId: { type: string, format: uuid }
+              type: { type: string, enum: [DEPOSIT, PREMIUM_PAID, WITHDRAWAL, REVERSAL, PREMIUM_REOPENED] }
+              at: { type: string, format: date-time }
+              amount: { type: number }
+              balanceAfter: { type: number }
     CustomerPolicy:
       type: object
       additionalProperties: false
       required: [summary, lifeAssuredName, commencementDate, maturityDate, termMonths, beneficiaries, coveredLives,
-                 savings, units, annuity, claims, deposit]
+                 savings, units, annuity, claims, deposit, balance]
       properties:
+        balance:
+          description: Money movement step 5 -- the policy's balance and how far ahead it pays; null on a savings-type policy
+          anyOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [amount, currency, coversPremiumsTo]
+              properties:
+                amount: { type: number }
+                currency: { type: string }
+                coversPremiumsTo: { type: [string, "null"], format: date }
         deposit:
           description: A fixed-term deposit's running term (2026-10-09); null on anything else
           anyOf:

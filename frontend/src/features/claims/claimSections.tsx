@@ -92,13 +92,13 @@ export function claimSections({
   if (canDecide) {
     sections.push({
       id: 'settlement',
-      label: 'Settlement',
+      label: 'Payout',
       content: (
         <div className="space-y-5">
           <Panel
             id="settlement"
             emphasis
-            title="Decide settlement"
+            title="Decide the payout"
             subtitle="Approve or reject — distinct from assessing."
           >
             <ClaimSettlementPanel
@@ -147,7 +147,7 @@ export function claimSections({
         <Panel
           id="payment"
           title="Payment"
-          subtitle="Where the settlement is, and who it is waiting on"
+          subtitle="Where the payout is, and who it is waiting on"
         >
           <ClaimPaymentPanel claimId={claimId} claimStatus={claim.status} />
         </Panel>
@@ -200,7 +200,7 @@ export function claimSections({
         <Panel
           id="reinsurance"
           title="Reinsurance"
-          subtitle="Recoveries this claim's own settlement produced"
+          subtitle="Recoveries this claim's own payout produced"
         >
           <RecoveriesPanel claimId={claimId} />
         </Panel>

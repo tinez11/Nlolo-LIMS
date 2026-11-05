@@ -20,7 +20,7 @@ const funeralPolicy: CustomerPolicyView = {
   lifeAssuredName: 'Nadine Kileo', commencementDate: '2026-10-08', maturityDate: null, termMonths: null,
   beneficiaries: [{ name: 'Amina Kileo', sharePercent: 100 }],
   coveredLives: [{ coveredLifeId: 'life-1', name: 'Nadine Kileo', role: 'MAIN_MEMBER', benefit: 4000000, status: 'ACTIVE', waitingPeriodEnds: '2099-01-01' }],
-  savings: null, units: null, annuity: null, deposit: null,
+  savings: null, units: null, annuity: null, deposit: null, balance: null,
   claims: [{ claimId: 'c-1', claimType: 'DEATH', status: 'SETTLED', dateOfEvent: '2026-10-08', approvedAmount: 4000000, currency: 'TZS' }],
 };
 

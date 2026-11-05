@@ -214,7 +214,7 @@ test.describe('family funeral cover', () => {
       await manager.getByLabel('Mobile-money number').fill('+255700000779');
       await manager.getByRole('button', { name: 'Approve claim' }).click();
       await manager.getByRole('button', { name: 'Approve and pay' }).click();
-      await expect(manager.getByText(/Settlement requested|Settled/).first()).toBeVisible({ timeout: 60_000 });
+      await expect(manager.getByText(/Payout requested|Settled/).first()).toBeVisible({ timeout: 60_000 });
     });
 
     // ---- A natural death inside the waiting period: approval is refused, the decline names it.

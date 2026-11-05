@@ -7,11 +7,13 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record CommissionStatementResponseDto(UUID statementId, UUID agentId, String period, MoneyDto totalAmount,
-                                              StatementStatus status, Instant closedAt, Instant paidAt) {
+                                              StatementStatus status, Instant closedAt, Instant paidAt,
+                                              String payeeRef, String payoutRequestedBy, String payoutRefusalReason) {
 
     public static CommissionStatementResponseDto from(CommissionStatementView view) {
         return new CommissionStatementResponseDto(view.statementId(), view.agentId(), view.period(),
             new MoneyDto(view.totalAmount().toPlainString(), view.totalCurrency()),
-            view.status(), view.closedAt(), view.paidAt());
+            view.status(), view.closedAt(), view.paidAt(), view.payeeRef(), view.payoutRequestedBy(),
+            view.payoutRefusalReason());
     }
 }

@@ -19,6 +19,7 @@ import {
   type CommissionTotals,
   type StatementMonth,
 } from './commissionView';
+import { PayoutDecision } from './PayoutDecision';
 import { PayoutForm } from './PayoutForm';
 
 /**
@@ -194,10 +195,19 @@ function StatementLines({
       )}
       {/* The whole statement, not just its id: a confirmation that cannot name the amount it is
           about to pay is not a confirmation. */}
-      {canManage && (
+      {statement.status === 'AWAITING_PAYOUT_APPROVAL' ? (
         <div className="px-4 pb-4">
-          <PayoutForm agentId={agentId} statement={statement} />
+          <PayoutDecision agentId={agentId} statement={statement} />
         </div>
+      ) : (
+        canManage && (
+          <div className="px-4 pb-4">
+            {statement.status === 'CLOSED' && statement.payoutRefusalReason && (
+              <p className="text-xs text-muted-foreground">Last payout refused: {statement.payoutRefusalReason}</p>
+            )}
+            <PayoutForm agentId={agentId} statement={statement} />
+          </div>
+        )
       )}
     </Panel>
   );

@@ -25,7 +25,7 @@ describe('claimNextStep', () => {
 
   it('tells a manager who did not assess it that the decision is theirs', () => {
     expect(claimNextStep({ claim: death('UNDER_ASSESSMENT'), ...none, canDecide: true }).text).toBe(
-      'Assessed. Next: decide the settlement under Settlement.',
+      'Assessed. Next: decide the payout under Payout.',
     );
   });
 

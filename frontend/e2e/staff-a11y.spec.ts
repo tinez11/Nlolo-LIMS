@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { dmy, todayIso } from './dates';
 
 /**
  * axe over the console's list screens, compared against a committed baseline.
@@ -70,7 +71,26 @@ test('no accessibility violation beyond the recorded baseline', async ({ page })
   // The third record shape: two columns, a pinned rail and no tab or section bar. Reached
   // through its drawer for the same reason the claim record is -- the treaties table's first
   // column is a reinsurer's name, so no cell carries an id to build a URL from.
+  //
+  // A fresh stack has no treaty until a reinsurance spec authors one, and this spec runs first, so it authors one
+  // itself when the register is empty: effective a year ahead, which no cession picks (isActiveOn excludes it) and
+  // so cannot outrank the today-dated treaties the reinsurance specs cede to.
   await page.goto('/staff/treaties');
+  await expect(page.getByRole('heading', { name: 'Treaties', level: 1 })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('.animate-pulse, .animate-spin')).toHaveCount(0, { timeout: 30_000 });
+  if ((await page.getByRole('table', { name: 'Treaties' }).getByRole('button').count()) === 0) {
+    await page.goto('/staff/treaties/new');
+    await page.getByLabel('Reinsurer name').fill(`E2E a11y Re ${Date.now()}`);
+    await page.getByLabel('Retention limit').fill('0.00');
+    await page.getByLabel('Cession percent').fill('10');
+    await page.getByLabel('Reinsurance commission').fill('0');
+    const nextYear = new Date(`${todayIso()}T00:00:00Z`);
+    nextYear.setUTCFullYear(nextYear.getUTCFullYear() + 1);
+    await page.getByLabel('Effective from').fill(dmy(nextYear.toISOString().slice(0, 10)));
+    await page.getByRole('button', { name: 'Create treaty' }).click();
+    await expect(page).toHaveURL(/\/staff\/treaties\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+    await page.goto('/staff/treaties');
+  }
   await page.getByRole('table', { name: 'Treaties' }).getByRole('button').first().click();
   await page.getByRole('link', { name: /full detail/i }).click();
   await expect(page).toHaveURL(/\/staff\/treaties\/[0-9a-f-]{36}$/);

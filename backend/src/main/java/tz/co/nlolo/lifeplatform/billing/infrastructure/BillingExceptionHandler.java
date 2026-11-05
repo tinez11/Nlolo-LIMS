@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.billing.infrastructure;
 import tz.co.nlolo.lifeplatform.billing.api.FieldReceiptNotFoundException;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceNotFoundException;
 import tz.co.nlolo.lifeplatform.billing.api.NothingOwedException;
+import tz.co.nlolo.lifeplatform.billing.api.BalanceRefusedException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -29,6 +30,11 @@ public class BillingExceptionHandler {
     @ExceptionHandler(NothingOwedException.class)
     public ProblemDetail handleNothingOwed(NothingOwedException ex) {
         return problem(HttpStatus.CONFLICT, ex.getMessage(), "NOTHING_OWED");
+    }
+
+    @ExceptionHandler(BalanceRefusedException.class)
+    public ProblemDetail handleWithdrawalRefused(BalanceRefusedException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "BALANCE_REFUSED");
     }
 
     private static ProblemDetail problem(HttpStatus status, String detail, String errorCode) {

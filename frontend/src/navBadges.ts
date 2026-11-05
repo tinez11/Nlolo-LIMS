@@ -117,10 +117,15 @@ const LOADERS: Record<BadgeKey, { load: () => Promise<number>; title: (n: number
     load: async () => (await getApprovals()).actionable,
     title: (n) => `${plural(n, 'item', 'items')} waiting for your signature`,
   },
-  /* Payments the rail left in doubt or refused (2026-10-27), money in and out: each one somebody has to chase. */
+  /* Payments the rail left in doubt or refused (2026-10-27): each one somebody has to chase. Counted by direction
+     since money movement 6d, on the register that lists them -- Deposits and Payouts. */
   'payments-attention': {
-    load: async () => (await listPayments({ state: 'attention', page: 0, pageSize: 1 })).page.totalElements,
-    title: (n) => `${plural(n, 'payment', 'payments')} stuck with the provider or failed`,
+    load: async () => (await listPayments({ state: 'attention', direction: 'IN', page: 0, pageSize: 1 })).page.totalElements,
+    title: (n) => `${plural(n, 'deposit', 'deposits')} stuck with the provider or failed`,
+  },
+  'payouts-attention': {
+    load: async () => (await listPayments({ state: 'attention', direction: 'OUT', page: 0, pageSize: 1 })).page.totalElements,
+    title: (n) => `${plural(n, 'payout', 'payouts')} stuck with the provider or failed`,
   },
   /* An agent's proposals returned or postponed (2026-10-20). Declines are on the list to be read, but are final, so
      they are not counted as something to do. */

@@ -78,7 +78,9 @@ class ChartOfAccountMigrationV5Test {
             "db-migrations/finaccounting/V15__engine_period_cycle.sql",
             "db-migrations/finaccounting/V16__expense_allocation.sql",
             "db-migrations/finaccounting/V17__year_end_close.sql",
-            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql", "db-migrations/finaccounting/V19__acted_alone.sql");
+            // Not V19 (acted_alone): its manual-journal check reads journal_entry.source_type, which V10 adds, and this
+            // test skips V10 -- nor does the chart's shape depend on who may approve their own journal.
+            "db-migrations/finaccounting/V18__policy_snapshot_lives.sql");
     }
 
     /** The nine flat accounts as M9 seeded them -- no parent, no level, no status. */

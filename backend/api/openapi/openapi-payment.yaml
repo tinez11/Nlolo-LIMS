@@ -36,14 +36,16 @@ paths:
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /receipts:
     get:
-      summary: The receipts waiting to be confirmed on one invoice, oldest first (collections.view or collections.manage)
+      summary: The receipts waiting to be confirmed on one invoice or one policy, oldest first (collections.view or collections.manage)
       description: >
         2026-10-28. What the invoice shows as in flight, so a receipt is visible where it was recorded and not only in
-        somebody else's approvals inbox.
+        somebody else's approvals inbox. Since money movement, `policyNumber` instead names a policy and returns the
+        deposits waiting on its balance. Exactly one of the two is named (400 otherwise).
       security:
         - staffAuth: []
       parameters:
-        - { name: invoiceId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: invoiceId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: policyNumber, in: query, required: false, schema: { type: string, maxLength: 40 } }
       responses:
         '200':
           description: OK
@@ -351,9 +353,23 @@ components:
     RecordReceipt:
       type: object
       additionalProperties: false
-      required: [invoiceId, method, reference, amount, receivedOn]
+      required: [method, reference, amount, receivedOn]
       properties:
-        invoiceId: { type: string, format: uuid }
+        invoiceId:
+          type: [string, 'null']
+          format: uuid
+          description: The invoice this pays; give one of invoiceId, loanId or policyNumber (money movement step 1, 2026-11-04).
+        loanId:
+          type: [string, 'null']
+          format: uuid
+          description: The loan this repays, capped at what it owes less what is already waiting on it.
+        policyNumber:
+          type: [string, 'null']
+          maxLength: 40
+          description: >-
+            A deposit onto the policy's balance, naming no invoice (money movement step 5, design 7.2): it pays what has
+            fallen due, oldest first, and the rest waits for the next premiums. A savings-type policy's deposit pays its
+            oldest open invoice instead, as before.
         method: { $ref: '#/components/schemas/ReceiptMethod' }
         reference:
           type: string
@@ -371,9 +387,16 @@ components:
     Receipt:
       type: object
       additionalProperties: false
-      required: [receiptId, method, reference, payerRef, amount, invoiceId, receivedOn, status, recordedBy, recordedAt]
+      required: [receiptId, purpose, method, reference, payerRef, amount, receivedOn, status, recordedBy, recordedAt]
       properties:
         receiptId: { type: string, format: uuid }
+        purpose:
+          type: string
+          enum: [PREMIUM, DEPOSIT, LOAN_REPAYMENT, ACCOUNT_TOP_UP, UL_TOP_UP]
+          description: >
+            What it pays -- an invoice (PREMIUM, invoiceId set), a policy's balance (DEPOSIT, money movement step 5:
+            policyNumber set, no invoice) or a loan (LOAN_REPAYMENT, loanId set). A savings or unit-linked top-up
+            recorded by hand is a receipt too; it names neither.
         method:
           type: string
           enum: [MOBILE_MONEY, CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR]
@@ -381,12 +404,16 @@ components:
         reference: { type: string }
         payerRef: { type: string }
         amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
-        invoiceId: { type: string, format: uuid }
+        invoiceId: { type: [string, 'null'], format: uuid }
+        loanId: { type: [string, 'null'], format: uuid }
         policyNumber: { type: [string, 'null'] }
         receivedOn: { type: [string, 'null'], format: date, description: 'The day it was received; null on a mobile-money request' }
         note: { type: [string, 'null'] }
         fieldReceiptId: { type: [string, 'null'], format: uuid }
-        status: { type: string, enum: [AWAITING_APPROVAL, CONFIRMED, REJECTED] }
+        status:
+          type: string
+          enum: [AWAITING_APPROVAL, CONFIRMED, REJECTED, REVERSED]
+          description: REVERSED once billing reversed the deposit it made -- a bounced cheque, a reversed payment (step 3b).
         recordedBy: { type: string }
         recordedAt: { type: string, format: date-time }
         decidedBy: { type: [string, 'null'] }
@@ -413,7 +440,7 @@ components:
         method: { type: string, enum: [MOBILE_MONEY, EFT, CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR] }
         status:
           type: string
-          enum: [PENDING, AWAITING_EXECUTION, AWAITING_APPROVAL, IN_DOUBT, CONFIRMED, COMPLETED, FAILED, REJECTED]
+          enum: [PENDING, AWAITING_EXECUTION, AWAITING_APPROVAL, IN_DOUBT, CONFIRMED, COMPLETED, FAILED, REJECTED, REVERSED]
         amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         counterparty: { type: string, description: Who paid (IN) or who is paid (OUT), as recorded. }
         reference: { type: [string, 'null'], description: The rail's or the bank's reference, once there is one. }

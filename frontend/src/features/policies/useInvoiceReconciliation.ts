@@ -14,6 +14,8 @@ export interface InvoiceReconciliation {
   creditsByInvoice: Record<string, CreditLine[]>;
   /** The monthly files, keyed by submission id -- what raised each credit-life invoice. */
   filesById: Record<string, EnrolmentSubmissionView>;
+  /** Reads the credits again -- after a lender refund is approved or rejected (money movement step 5). */
+  reload: () => void;
 }
 
 /**
@@ -25,7 +27,8 @@ export interface InvoiceReconciliation {
  * A failed member lookup leaves the credit on screen without a name rather than dropping it.
  */
 export function useInvoiceReconciliation(policyNumber: string, isScheme: boolean): InvoiceReconciliation {
-  const [state, setState] = useState<InvoiceReconciliation>({ creditsByInvoice: {}, filesById: {} });
+  const [state, setState] = useState<Omit<InvoiceReconciliation, 'reload'>>({ creditsByInvoice: {}, filesById: {} });
+  const [reads, setReads] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,7 +59,7 @@ export function useInvoiceReconciliation(policyNumber: string, isScheme: boolean
     return () => {
       cancelled = true;
     };
-  }, [policyNumber, isScheme]);
+  }, [policyNumber, isScheme, reads]);
 
-  return state;
+  return { ...state, reload: () => setReads((n) => n + 1) };
 }

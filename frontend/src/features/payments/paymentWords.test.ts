@@ -17,14 +17,14 @@ const payment = (over: Partial<PaymentRecord>): PaymentRecord => ({
 
 describe('payment words', () => {
   it('says what a payment is for and how it moved, in plain words', () => {
-    expect(purposeWords('CLAIM_SETTLEMENT')).toBe('Claim settlement');
+    expect(purposeWords('CLAIM_SETTLEMENT')).toBe('Claim payout');
     expect(methodWords('EFT')).toBe('Bank transfer');
     expect(purposeWords('SOMETHING_NEW')).toBe('Something new');
   });
 
   it('opens the claim a settlement pays and the instalment a benefit pays', () => {
     expect(paymentLink(payment({ purpose: 'CLAIM_SETTLEMENT', sourceRef: 'c-9' }))).toBe('/staff/claims/c-9');
-    expect(paymentLink(payment({ purpose: 'SURVIVAL_BENEFIT_PAYOUT', sourceRef: 'i-3' }))).toBe('/staff/payouts/i-3?from=payments');
+    expect(paymentLink(payment({ purpose: 'SURVIVAL_BENEFIT_PAYOUT', sourceRef: 'i-3' }))).toBe('/staff/payouts/i-3?from=payouts-all');
   });
 
   it('opens the receipt of money in, a mobile-money request included, but not an older gateway row', () => {

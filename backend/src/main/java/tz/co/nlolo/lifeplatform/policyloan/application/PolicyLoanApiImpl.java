@@ -44,10 +44,14 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
     private final PolicyApi policyApi;
     private final ReferenceDataApi referenceDataApi;
     private final ApplicationEventPublisher eventPublisher;
+    /** Whether the person releasing a payout may be the one who took the loan (money movement step 4). */
+    private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
 
     public PolicyLoanApiImpl(PolicyLoanRepository policyLoanRepository, LoanInterestTermRepository loanInterestTermRepository,
                               LoanTransactionRepository loanTransactionRepository, PolicyApi policyApi,
-                              ReferenceDataApi referenceDataApi, ApplicationEventPublisher eventPublisher) {
+                              ReferenceDataApi referenceDataApi, ApplicationEventPublisher eventPublisher,
+                              tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+        this.ownWork = ownWork;
         this.policyLoanRepository = policyLoanRepository;
         this.loanInterestTermRepository = loanInterestTermRepository;
         this.loanTransactionRepository = loanTransactionRepository;
@@ -156,12 +160,61 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
                    "principalAmount", Map.of("amount", requestedAmount.toPlainString(), "currencyCode", currency),
                    "interestRate", rate, "originatedAt", loan.getOriginatedAt().toString())));
 
-        // Disbursement is requested (event published) but never actually executed in M3 --
-        // payment (its consumer) is M5. Loans legitimately rest at DISBURSEMENT_REQUESTED here
-        // (Global Constraints) unless a test calls markDisbursed as a stand-in.
-        loan.markDisbursementRequested();
+        // Money movement step 4 (2026-11-04): the payout waits for a second person (approvePayout) -- the one money-out
+        // road that had nobody checking it. The reserved loan value stays reserved meanwhile.
+        loan.markAwaitingPayoutApproval(payeeRef);
         policyLoanRepository.save(loan);
+        return toView(loan);
+    }
 
+    /**
+     * A second person releases a loan's payout (money movement step 4): payouts.approve, or the person who took the loan
+     * holding payouts.approve-own, recorded against their name. Then payment is asked to pay it, as before.
+     */
+    @Override
+    @Transactional
+    public LoanView approvePayout(UUID loanId, String approvedBy) {
+        UUID tenantId = TenantContext.get();
+        PolicyLoan loan = findLoanOrThrow(loanId, tenantId);
+        loan.approvePayout(approvedBy, ownWork.mayActAlone("payouts.approve-own"));
+        policyLoanRepository.save(loan);
+        if (loan.isActedAlone()) {
+            ownWork.record("Loan payout released by the person who took the loan", loanId.toString(),
+                loan.getPolicyNumber(), approvedBy);
+        }
+        requestDisbursement(tenantId, loan);
+        return toView(loan);
+    }
+
+    /** A second person refuses a loan's payout: nothing is paid, and the reserved loan value is freed. */
+    @Override
+    @Transactional
+    public LoanView refusePayout(UUID loanId, String refusedBy, String reason) {
+        UUID tenantId = TenantContext.get();
+        PolicyLoan loan = findLoanOrThrow(loanId, tenantId);
+        loan.refusePayout(refusedBy, ownWork.mayActAlone("payouts.approve-own"), reason);
+        policyLoanRepository.save(loan);
+        loanTransactionRepository.save(new LoanTransaction(tenantId, loanId, "REVERSAL", loan.getPrincipalAmount(),
+            loan.getPrincipalCurrency(), "payout refused: " + reason.trim()));
+        policyApi.releaseEncumbrance(loan.getPolicyNumber(), loan.getPrincipalAmount(), loan.getPrincipalCurrency());
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanPayoutRefused", tenantId,
+            Map.of("loanId", loanId, "policyNumber", loan.getPolicyNumber(), "reason", reason.trim(),
+                   "refusedBy", refusedBy)));
+        return toView(loan);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<LoanView> listLoansAwaitingPayoutApproval() {
+        return policyLoanRepository.findByTenantIdAndStatus(TenantContext.get(), "AWAITING_PAYOUT_APPROVAL").stream()
+            .map(this::toView).toList();
+    }
+
+    /** Ask payment to pay a loan whose payout was released. */
+    private void requestDisbursement(UUID tenantId, PolicyLoan loan) {
+        String payeeRef = loan.getPayeeRef();
+        String currency = loan.getPrincipalCurrency();
+        BigDecimal requestedAmount = loan.getPrincipalAmount();
         Map<String, Object> disbursementPayload = new LinkedHashMap<>();
         disbursementPayload.put("loanId", loan.getLoanId());
         disbursementPayload.put("payeeRef", payeeRef);
@@ -178,8 +231,6 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         // before a disbursement payee is known) and Map.of throws NPE on a null value, whereas a
         // HashMap/LinkedHashMap accepts one.
         eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanDisbursementRequested", tenantId, disbursementPayload));
-
-        return toView(loan);
     }
 
     @Override
@@ -195,61 +246,80 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
 
     @Override
     @Transactional
-    public LoanView recordRepayment(UUID loanId, BigDecimal amount, String currency, String paymentReference, String recordedBy) {
+    public LoanView applyConfirmedRepayment(UUID loanId, BigDecimal amount, String currency, String paymentReference,
+                                            String receiptMethod, UUID paymentId, String recordedBy) {
         UUID tenantId = TenantContext.get();
         PolicyLoan loan = findLoanOrThrow(loanId, tenantId);
         if (!"DISBURSED".equals(loan.getStatus()) && !"REPAYING".equals(loan.getStatus())) {
             throw new LoanNotEligibleException("Loan " + loanId + " must be DISBURSED or REPAYING to accept a repayment (current: " + loan.getStatus() + ")");
         }
-        // M3 simplification (Global Constraints): every repayment is treated as immediately
-        // confirmed. The real trigger per Module Architecture is consuming
-        // payment.PaymentConfirmed (M5, not built) -- this makes the success path testable now.
-        // The saved transaction is CAPTURED, not discarded: its loanTransactionId is the only
-        // stable, per-repayment identity this event can carry, and finaccounting needs one (see
-        // the publish below). LoanTransaction.loanTransactionId is application-assigned in the
-        // constructor via UUID.randomUUID() -- NOT @GeneratedValue -- so it is already real and
-        // non-null here, whether or not Hibernate has flushed the INSERT yet.
-        // IFRS 17 I3b (guide E-03): interest accrued so far is paid first, then principal -- measured BEFORE this
-        // repayment is written, so the split is this repayment's own.
-        BigDecimal interestPart = position(loan).interestPartOf(amount);
-        LoanTransaction repayment = loanTransactionRepository.save(
-            new LoanTransaction(tenantId, loanId, "REPAYMENT", amount, currency, paymentReference));
-        loan.markRepaying();
-        BigDecimal outstanding = computeOutstandingBalance(loan);
-        if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
-            loan.markSettled();
+        // Money movement step 1 (2026-11-04): only CONFIRMED money reaches here -- a deposit a second person approved, or
+        // a mobile-money request the rail confirmed. The loan takes at most what it owes; the rest is the payer's,
+        // announced as LoanOverpaid so it is posted (2128) and, from step 2, held on the policy balance. Before this a
+        // typed-in repayment counted at once, and an overpayment drove principal below zero and was never given back.
+        BigDecimal owed = computeOutstandingBalance(loan).max(BigDecimal.ZERO);
+        BigDecimal applied = amount.min(owed);
+        BigDecimal surplus = amount.subtract(applied);
+        String method = receiptMethod == null ? "MOBILE_MONEY" : receiptMethod;
+
+        if (applied.signum() > 0) {
+            // IFRS 17 I3b (guide E-03): interest accrued so far is paid first, then principal -- measured BEFORE this
+            // repayment is written, so the split is this repayment's own.
+            BigDecimal interestPart = position(loan).interestPartOf(applied);
+            LoanTransaction repayment = loanTransactionRepository.save(
+                new LoanTransaction(tenantId, loanId, "REPAYMENT", applied, currency, paymentReference));
+            loan.markRepaying();
+            BigDecimal outstanding = computeOutstandingBalance(loan);
+            if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
+                loan.markSettled();
+            }
+            policyLoanRepository.save(loan);
+            // Published on every repayment, partial ones included: each is cash arriving. loanTransactionId is the
+            // posting's idempotency key -- unique per repayment, stable across a redelivery (M9: keyed on loanId, the
+            // second partial repayment was dropped as a false redelivery and the loan receivable never cleared).
+            eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanRepaid", tenantId,
+                Map.of("loanId", loanId, "loanTransactionId", repayment.getLoanTransactionId(),
+                       "policyNumber", loan.getPolicyNumber(),
+                       "interestAmount", interestPart.toPlainString(),
+                       "principalAmount", applied.subtract(interestPart).toPlainString(),
+                       "amount", Map.of("amount", applied.toPlainString(), "currencyCode", currency),
+                       "repaidAt", Instant.now().toString(),
+                       // How the money came in: the ledger posts it to the account it reached (was always 1140).
+                       "receiptMethod", method,
+                       "outstandingBalance", Map.of("amount", outstanding.max(BigDecimal.ZERO).toPlainString(),
+                                                    "currencyCode", loan.getPrincipalCurrency()))));
         }
-        policyLoanRepository.save(loan);
-
-        // loanTransactionId added by M9's final-review fix wave, and it is NOT cosmetic --
-        // it closes a silent financial misstatement.
-        //
-        // This publish is deliberately UNGUARDED (unlike markDisbursed/markDisbursementFailed
-        // above, which each publish only on a real transition) because the loan model genuinely
-        // supports REPEATABLE PARTIAL repayments: PolicyLoanApiIntegrationTest
-        // .repaymentReducesOutstandingBalanceAndSettlesAtZero pays 200,000 then 300,000 against a
-        // 500,000 loan, and BOTH are real accounting events -- cash arrived twice. Every partial
-        // repayment therefore must and does emit its own LoanRepaid.
-        //
-        // The bug that made this field necessary: finaccounting's PolicyLoanEventListener keyed its
-        // journal-entry idempotency (FinaccountingApiImpl.postEntry's
-        // existsByTenantIdAndSourceEventAndSourceRef fast-path) on loanId alone. loanId is stable
-        // across every repayment of the same loan, so the SECOND partial repayment looked exactly
-        // like a redelivery of the first and was silently dropped -- no exception, no failure
-        // metric, no alert, and 1400 Policy Loan Receivable never cleared. loanTransactionId is
-        // unique per repayment yet stable across a genuine redelivery of the same repayment, which
-        // is precisely the idempotency key that path needs. LoanDisbursed keeps keying on loanId:
-        // a loan is disbursed exactly once, so there that key is still correct.
-        eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanRepaid", tenantId,
-            Map.of("loanId", loanId, "loanTransactionId", repayment.getLoanTransactionId(),
-                   "policyNumber", loan.getPolicyNumber(),
-                   "interestAmount", interestPart.toPlainString(),
-                   "principalAmount", amount.subtract(interestPart).toPlainString(),
-                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency),
-                   "repaidAt", Instant.now().toString(),
-                   "outstandingBalance", Map.of("amount", outstanding.max(BigDecimal.ZERO).toPlainString(), "currencyCode", loan.getPrincipalCurrency()))));
-
+        if (surplus.signum() > 0) {
+            eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanOverpaid", tenantId,
+                Map.of("paymentId", paymentId, "loanId", loanId, "policyNumber", loan.getPolicyNumber(),
+                       "amount", Map.of("amount", surplus.setScale(2).toPlainString(), "currencyCode", currency),
+                       "receiptMethod", method, "paymentReference", paymentReference)));
+        }
         return toView(loan);
+    }
+
+    @Override
+    @Transactional
+    public void requestRepayment(UUID loanId, String payerRef, BigDecimal amount, String currency, String idempotencyKey) {
+        UUID tenantId = TenantContext.get();
+        // Same rule as an invoice's request (BillingApiImpl.requestPaymentForInvoice): the same key is the same attempt,
+        // a new key a new one, and there is deliberately no default.
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException("Idempotency-Key is required: the same key is the same collection attempt");
+        }
+        PolicyLoan loan = findLoanOrThrow(loanId, tenantId);
+        if (!"DISBURSED".equals(loan.getStatus()) && !"REPAYING".equals(loan.getStatus())) {
+            throw new LoanNotEligibleException("Loan " + loanId + " has nothing to repay (" + loan.getStatus() + ")");
+        }
+        BigDecimal owed = computeOutstandingBalance(loan).max(BigDecimal.ZERO);
+        if (amount.signum() <= 0 || amount.compareTo(owed) > 0) {
+            throw new LoanNotEligibleException("Ask for between 0.01 and " + owed.toPlainString() + " " + currency
+                + ", what the loan owes now");
+        }
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.RepaymentRequested", tenantId,
+            Map.of("loanId", loanId, "policyNumber", loan.getPolicyNumber(), "payerRef", payerRef,
+                   "amount", Map.of("amount", amount.setScale(2).toPlainString(), "currencyCode", currency),
+                   "idempotencyKey", idempotencyKey)));
     }
 
     @Override
@@ -473,6 +543,7 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         BigDecimal currentRate = loanInterestTermRepository.findByLoanIdOrderByEffectiveFromDesc(loan.getLoanId()).stream()
             .findFirst().map(LoanInterestTerm::getRate).orElse(BigDecimal.ZERO);
         return new LoanView(loan.getLoanId(), loan.getPolicyNumber(), loan.getPrincipalAmount(), loan.getPrincipalCurrency(),
-            outstanding, loan.getPrincipalCurrency(), currentRate, LoanStatus.valueOf(loan.getStatus()));
+            outstanding, loan.getPrincipalCurrency(), currentRate, LoanStatus.valueOf(loan.getStatus()), loan.getPayeeRef(),
+            loan.getCreatedBy(), loan.getPayoutDecidedBy(), loan.getPayoutRefusalReason());
     }
 }

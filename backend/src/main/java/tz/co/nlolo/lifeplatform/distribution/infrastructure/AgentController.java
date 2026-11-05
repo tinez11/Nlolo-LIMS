@@ -296,7 +296,8 @@ public class AgentController {
     /**
      * 202, not 201 or 200: the payout is REQUESTED here and settles asynchronously through
      * {@code payment}'s request/confirm loop, so no resource is complete when this returns. The
-     * statement moves CLOSED (or PAYOUT_FAILED) -> PAYOUT_REQUESTED synchronously; PAID arrives
+     * statement moves CLOSED (or PAYOUT_FAILED) -> AWAITING_PAYOUT_APPROVAL synchronously, a second person releases it
+     * (approvePayout below, money movement step 4) to PAYOUT_REQUESTED, and PAID arrives
      * later via {@code payment.DisbursementCompleted}.
      *
      * <p>A retry after a failed payout MUST use a NEW {@code Idempotency-Key}: {@code payment}
@@ -330,6 +331,28 @@ public class AgentController {
         }
         distributionApi.requestStatementPayout(statementId, request.payeeRef(), idempotencyKey, jwt.getSubject());
         return ResponseEntity.accepted().build();
+    }
+
+    /** The second person releases a commission payout (money movement step 4, 2026-11-04); payment is then asked. */
+    @PostMapping("/commission-statements/{statementId}/payout-approval")
+    @PreAuthorize("@access.can('payouts.approve')")
+    public ResponseEntity<CommissionStatementResponseDto> approvePayout(@PathVariable UUID statementId,
+                                                                        @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.accepted().body(CommissionStatementResponseDto.from(
+            distributionApi.approveStatementPayout(statementId, jwt.getSubject())));
+    }
+
+    public record PayoutRefusal(@jakarta.validation.constraints.NotBlank
+                                @jakarta.validation.constraints.Size(max = 500) String reason) {}
+
+    /** The second person refuses a commission payout, saying why; the statement returns to CLOSED. */
+    @PostMapping("/commission-statements/{statementId}/payout-refusal")
+    @PreAuthorize("@access.can('payouts.approve')")
+    public CommissionStatementResponseDto refusePayout(@PathVariable UUID statementId,
+                                                       @Valid @RequestBody PayoutRefusal body,
+                                                       @AuthenticationPrincipal Jwt jwt) {
+        return CommissionStatementResponseDto.from(
+            distributionApi.refuseStatementPayout(statementId, jwt.getSubject(), body.reason()));
     }
 
     private static void requireIdempotencyKey(String idempotencyKey) {

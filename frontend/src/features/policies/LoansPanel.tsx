@@ -1,25 +1,33 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useAuth } from 'react-oidc-context';
+import { Link } from 'react-router-dom';
 import type { LoanView, Money } from '@/api/types';
+import { can } from '@/auth/access';
+import { readIdentity } from '@/auth/claims';
+import { ConfirmAct } from '@/components/ConfirmAct';
+import { StaffName } from '@/components/StaffName';
 import { StatusBadge } from '@/components/StatusBadge';
+import { barredAsOwn } from '@/lib/ownWork';
 import { InlineError } from '@/components/InlineError';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
+import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectLoans,
   selectOriginatingLoan,
-  selectRepayingLoan,
+  selectRequestingLoanPayment,
   usePolicyStore,
 } from '@/store/policyStore';
 import {
-  blankLoanRepaymentForm,
-  loanRepaymentFormSchema,
-  toApiRequest as toRepaymentApiRequest,
-  type LoanRepaymentFormValues,
-} from './loanRepaymentForm';
+  blankLoanPaymentForm,
+  loanPaymentFormSchema,
+  toLoanPaymentRequest,
+  type LoanPaymentFormValues,
+} from './loanPaymentForm';
 import {
   blankOriginateLoanForm,
   originateLoanFormSchema,
@@ -30,20 +38,18 @@ import { FormField } from '@/components/FormField';
 import { Input } from '@/components/ui/input';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 
-/** Only these two statuses accept a repayment -- `PolicyLoanApiImpl.recordRepayment`
- *  throws `LoanNotEligibleException` (409) for every other one, and the same pair is
- *  what the interest-accrual sweep charges interest on. Mirrored here so the action is
- *  hidden rather than offered and then rejected. */
+/** Only these two statuses accept a repayment -- `PolicyLoanApiImpl.applyConfirmedRepayment`
+ *  and `requestRepayment` refuse every other one with a 409, and the same pair is what the
+ *  interest-accrual sweep charges interest on. Mirrored here so the actions are hidden rather
+ *  than offered and then rejected. */
 const REPAYABLE: readonly string[] = ['DISBURSED', 'REPAYING'];
 
 /**
- * The loans panel: reads the policy's loans and, unlike the read-only table this
- * replaced, lets staff act on them -- `POST /policies/{n}/loans` to originate and
- * `POST /loans/{loanId}/repayments` to record a repayment.
- *
- * Both endpoints existed and were reachable from the very first release of this module;
- * nothing in this console called either of them, so a policy loan could be listed but
- * never created or repaid from the UI.
+ * The loans panel: reads the policy's loans and lets staff act on them --
+ * `POST /policies/{n}/loans` to originate, and for a repayment (money movement step 1,
+ * 2026-11-04) either a deposit For: Loan on the receipt page or
+ * `POST /loans/{loanId}/payment-request` to ask the payer's phone. Neither repays anything
+ * until the money is confirmed; a repayment can no longer be booked by typing it in.
  *
  * The NO-PAGER shape is inherited: `GET /policies/{n}/loans` returns a bare unpaged
  * array, so the whole set is on screen and there is nothing to page through.
@@ -65,10 +71,16 @@ export function LoansPanel({
   policyNumber,
   cashValue,
   canChange,
+  canRecordDeposit,
+  canRequestPayment,
 }: {
   policyNumber: string;
-  /** Staff who manage loans (2026-10-27: an agent reads a loan, and neither takes nor repays one). */
+  /** Staff who manage loans and may take one (2026-10-27: an agent reads a loan, and neither takes nor repays one). */
   canChange: boolean;
+  /** May record a deposit For: Loan -- the deposit permission, `collections.manage` (money movement D11). */
+  canRecordDeposit: boolean;
+  /** May ask the payer's phone for a repayment -- `collections.manage` or `policies.service`, as for an invoice. */
+  canRequestPayment: boolean;
   // `| undefined` explicitly, not just optional: this project runs
   // exactOptionalPropertyTypes, so an optional prop does not accept an
   // explicitly-undefined value -- and the caller passes `policy?.cashValue`.
@@ -106,7 +118,8 @@ export function LoansPanel({
               key={loan.loanId ?? JSON.stringify(loan)}
               policyNumber={policyNumber}
               loan={loan}
-              canChange={canChange}
+              canRecordDeposit={canRecordDeposit}
+              canRequestPayment={canRequestPayment}
             />
           ))}
         </div>
@@ -147,10 +160,22 @@ export function LoansPanel({
   );
 }
 
-function LoanRow({ policyNumber, loan, canChange }: { policyNumber: string; loan: LoanView; canChange: boolean }) {
-  const [repaying, setRepaying] = useState(false);
+function LoanRow({
+  policyNumber,
+  loan,
+  canRecordDeposit,
+  canRequestPayment,
+}: {
+  policyNumber: string;
+  loan: LoanView;
+  canRecordDeposit: boolean;
+  canRequestPayment: boolean;
+}) {
+  const [asking, setAsking] = useState(false);
   const loanId = loan.loanId ?? '';
   const repayable = loan.status !== undefined && REPAYABLE.includes(loan.status);
+  const depositHref = `/staff/receipts/new?for=LOAN&loan=${encodeURIComponent(loanId)}`
+    + `&policy=${encodeURIComponent(policyNumber)}&from=policy`;
 
   return (
     <div className="px-4 py-3">
@@ -175,20 +200,112 @@ function LoanRow({ policyNumber, loan, canChange }: { policyNumber: string; loan
         </p>
       )}
 
-      {canChange && loanId && repayable && !repaying && (
-        <div className="mt-1.5">
-          <Button size="sm" variant="ghost" className="-ml-2" onClick={() => setRepaying(true)}>
-            Record repayment
-          </Button>
+      {/* A repayment is money in like a premium (money movement step 1): recorded on the receipt page and confirmed
+          by a second person, or asked of the payer's phone. Neither repays anything until the money is confirmed. */}
+      {loanId && repayable && !asking && (canRecordDeposit || canRequestPayment) && (
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {canRecordDeposit && (
+            <Button asChild size="sm" variant="ghost" className="-ml-2">
+              <Link to={depositHref}>Record deposit</Link>
+            </Button>
+          )}
+          {canRequestPayment && (
+            <Button size="sm" variant="ghost" className={canRecordDeposit ? undefined : '-ml-2'} onClick={() => setAsking(true)}>
+              Request mobile-money payment
+            </Button>
+          )}
         </div>
       )}
 
-      {repaying && loanId && (
-        <RepaymentForm
-          policyNumber={policyNumber}
-          loanId={loanId}
-          onDone={() => setRepaying(false)}
-        />
+      {asking && loanId && (
+        <LoanPaymentForm policyNumber={policyNumber} loan={loan} onDone={() => setAsking(false)} />
+      )}
+
+      {loanId && loan.status === 'AWAITING_PAYOUT_APPROVAL' && (
+        <PayoutDecision policyNumber={policyNumber} loan={loan} loanId={loanId} />
+      )}
+      {loan.status === 'PAYOUT_REFUSED' && (
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Payout refused{loan.payoutDecidedBy && <> by <StaffName subject={loan.payoutDecidedBy} /></>}
+          {loan.payoutRefusalReason ? `: ${loan.payoutRefusalReason}` : ''}. Nothing was paid, and the loan value is free again.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A loan taken and waiting for its payout to be released (money movement step 4): who took it and whom it pays, then
+ * Release or Refuse for someone holding payouts.approve. The person who took it may release it only with
+ * payouts.approve-own -- the server decides, and says so if refused.
+ */
+function PayoutDecision({ policyNumber, loan, loanId }: { policyNumber: string; loan: LoanView; loanId: string }) {
+  const decide = usePolicyStore((s) => s.decideLoanPayout);
+  const deciding = usePolicyStore((s) => s.decidingLoanPayout[loanId]);
+  const auth = useAuth();
+  const viewer = readIdentity(auth.user?.access_token)?.subject;
+  const [armed, setArmed] = useState(false);
+  const [refusing, setRefusing] = useState(false);
+  const [reason, setReason] = useState('');
+  const own = barredAsOwn(viewer, loan.takenBy, 'payouts');
+  const busy = deciding?.status === 'loading';
+
+  return (
+    <div className="mt-1.5 space-y-2">
+      <p className="text-xs text-muted-foreground">
+        To {loan.payeeRef ?? 'the payee'}
+        {loan.takenBy && <> · taken by <StaffName subject={loan.takenBy} /></>} · waiting for a second person to release
+        the payout
+      </p>
+      {can('payouts.approve') && (
+        <>
+          {deciding?.status === 'error' && deciding.error && <InlineError error={deciding.error} />}
+          {own && <p className="text-xs text-muted-foreground">You took this loan, so someone else must release it.</p>}
+          {armed ? (
+            <ConfirmAct
+              heading="Release this loan's payout?"
+              consequence={
+                <>
+                  <strong>{formatMoney(loan.principalAmount)}</strong> is paid out to {loan.payeeRef ?? 'the payee'}.
+                </>
+              }
+              reversal="If the payment fails, the loan is reversed and its value freed again."
+              confirmLabel={`Pay ${formatMoney(loan.principalAmount)}`}
+              tone="danger"
+              busy={busy}
+              onConfirm={() => {
+                void decide(policyNumber, loanId, null);
+                setArmed(false);
+              }}
+              onCancel={() => setArmed(false)}
+            />
+          ) : refusing ? (
+            <div className="space-y-2">
+              <FormField label="Why is it refused?">
+                <Input inputSize="sm" value={reason} onChange={(e) => setReason(e.target.value)} />
+              </FormField>
+              <div className="flex gap-2">
+                <Button size="sm" variant="danger" disabled={reason.trim() === '' || busy}
+                  onClick={() => void decide(policyNumber, loanId, reason.trim())}>
+                  Refuse payout
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setRefusing(false)}>
+                  Cancel
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Nothing has been paid, so nothing is reversed.</p>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button size="sm" variant="primary" disabled={own} onClick={() => setArmed(true)}>
+                Release payout
+              </Button>
+              <Button size="sm" variant="outline" disabled={own} onClick={() => setRefusing(true)}>
+                Refuse
+              </Button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -246,9 +363,9 @@ function OriginateLoanForm({
       )}
 
       <p className="text-xs text-muted-foreground">
-        Limited to the policy&rsquo;s available cash value. Disbursement is requested
-        automatically and confirmed by the payment rail, so the loan stays pending until
-        the money is sent.
+        Limited to the policy&rsquo;s available cash value. A second person releases the payout
+        before anything is sent, and the payment rail confirms it, so the loan stays pending
+        until the money is sent.
       </p>
 
       <div className="flex items-center gap-1.5">
@@ -263,21 +380,27 @@ function OriginateLoanForm({
   );
 }
 
-function RepaymentForm({
+/** Ask the payer's phone for a repayment, by default what the loan owes as the server stated it. The same shape as the
+ *  invoice row's mobile-money request (InvoicesPanel.MobileMoneyRequestForm). */
+function LoanPaymentForm({
   policyNumber,
-  loanId,
+  loan,
   onDone,
 }: {
   policyNumber: string;
-  loanId: string;
+  loan: LoanView;
   onDone: () => void;
 }) {
-  const recordLoanRepayment = usePolicyStore((s) => s.recordLoanRepayment);
-  const resetRecordLoanRepayment = usePolicyStore((s) => s.resetRecordLoanRepayment);
-  const repaying = usePolicyStore(selectRepayingLoan(loanId));
+  const loanId = loan.loanId ?? '';
+  const currency = loan.outstandingBalance?.currencyCode ?? 'TZS';
+  const requestLoanPayment = usePolicyStore((s) => s.requestLoanPayment);
+  const resetRequestLoanPayment = usePolicyStore((s) => s.resetRequestLoanPayment);
+  const requesting = usePolicyStore(selectRequestingLoanPayment(loanId));
+  // Minted once per mount, reused across retries; reopening the form starts a new attempt.
+  const [attempt] = useState<MutationAttempt>(() => startMutation());
 
   useEffect(() => {
-    resetRecordLoanRepayment(loanId);
+    resetRequestLoanPayment(loanId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loanId]);
 
@@ -285,15 +408,15 @@ function RepaymentForm({
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<LoanRepaymentFormValues>({
+  } = useForm<LoanPaymentFormValues>({
     ...VALIDATE_ON_TOUCH,
-    resolver: zodResolver(loanRepaymentFormSchema),
-    defaultValues: blankLoanRepaymentForm(),
+    resolver: zodResolver(loanPaymentFormSchema),
+    defaultValues: blankLoanPaymentForm(loan.outstandingBalance?.amount ?? ''),
   });
 
-  async function onSubmit(values: LoanRepaymentFormValues) {
-    await recordLoanRepayment(policyNumber, loanId, toRepaymentApiRequest(values));
-    if (usePolicyStore.getState().repayingLoan[loanId]?.status === 'success') onDone();
+  async function onSubmit(values: LoanPaymentFormValues) {
+    await requestLoanPayment(policyNumber, loanId, toLoanPaymentRequest(values, currency), attempt);
+    if (usePolicyStore.getState().requestingLoanPayment[loanId]?.status === 'success') onDone();
   }
 
   return (
@@ -301,30 +424,25 @@ function RepaymentForm({
       className="mt-2 space-y-2 rounded-md border border-border p-2.5"
       onSubmit={(e) => void handleSubmit(onSubmit)(e)}
     >
-      <FormField label="Repayment amount (TZS)" error={errors.amount?.message}>
-        <Input inputSize="sm" placeholder="200000" inputMode="decimal" {...register('amount')} />
+      <FormField label="Payer reference" error={errors.payerRef?.message}>
+        <Input inputSize="sm" placeholder="The mobile-money number to ask" {...register('payerRef')} />
       </FormField>
 
-      <FormField label="Payment reference" error={errors.paymentReference?.message}>
-        <Input
-          inputSize="sm"
-          placeholder="Receipt or transaction id"
-          {...register('paymentReference')}
-        />
+      <FormField label={`Amount (${currency})`} error={errors.amount?.message}>
+        <Input inputSize="sm" inputMode="decimal" {...register('amount')} />
       </FormField>
 
-      {repaying.status === 'error' && repaying.error && (
-        <InlineError error={repaying.error} />
+      {requesting.status === 'error' && requesting.error && (
+        <InlineError error={requesting.error} />
       )}
 
       <p className="text-xs text-muted-foreground">
-        Partial repayments are accepted as often as needed. Clearing the balance settles
-        the loan.
+        Nothing is repaid until the money is confirmed. At most what the loan owes now.
       </p>
 
       <div className="flex items-center gap-1.5">
-        <Button type="submit" size="sm" pending={repaying.status === 'loading'}>
-          Record repayment
+        <Button type="submit" size="sm" pending={requesting.status === 'loading'}>
+          Request payment
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onDone}>
           Cancel

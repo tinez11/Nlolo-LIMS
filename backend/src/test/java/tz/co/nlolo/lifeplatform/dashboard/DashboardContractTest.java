@@ -19,6 +19,7 @@ import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.dashboard.api.ActivityItem;
 import tz.co.nlolo.lifeplatform.dashboard.api.AgentDashboardView;
+import tz.co.nlolo.lifeplatform.dashboard.api.BooksMatchView;
 import tz.co.nlolo.lifeplatform.dashboard.api.ClaimsDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.api.CountPoint;
 import tz.co.nlolo.lifeplatform.dashboard.api.DaysPoint;
@@ -28,6 +29,7 @@ import tz.co.nlolo.lifeplatform.dashboard.api.Period;
 import tz.co.nlolo.lifeplatform.dashboard.api.Share;
 import tz.co.nlolo.lifeplatform.dashboard.api.UnderwritingDashboardView;
 import tz.co.nlolo.lifeplatform.dashboard.application.AgentDashboard;
+import tz.co.nlolo.lifeplatform.dashboard.application.BooksMatch;
 import tz.co.nlolo.lifeplatform.dashboard.application.ClaimsDashboard;
 import tz.co.nlolo.lifeplatform.dashboard.application.FinanceDashboard;
 import tz.co.nlolo.lifeplatform.dashboard.application.UnderwritingDashboard;
@@ -79,6 +81,7 @@ class DashboardContractTest {
     @MockBean private ClaimsDashboard claims;
     @MockBean private FinanceDashboard finance;
     @MockBean private AgentDashboard agent;
+    @MockBean private BooksMatch booksMatch;
 
     private static RequestPostProcessor staff(String... roles) {
         SimpleGrantedAuthority[] authorities = new SimpleGrantedAuthority[roles.length + 1];
@@ -200,6 +203,21 @@ class DashboardContractTest {
     @Test
     void anUnderwriterIsRefusedTheFinanceDashboard() throws Exception {
         mockMvc.perform(get("/dashboards/finance").with(staff("UNDERWRITER"))).andExpect(status().isForbidden());
+    }
+
+    /** Money movement step 7: the books-match check, as finance and the seeding script read it. */
+    @Test
+    void financeReadsWhetherTheBooksMatch() throws Exception {
+        when(booksMatch.check()).thenReturn(new BooksMatchView(false, List.of(
+            new BooksMatchView.Check("2128 Premiums received in advance = sum of policy balances", "90000.00", "120000.00",
+                "-30000.00", "TZS", false),
+            new BooksMatchView.Check("Money events left unposted", "0", "0", "0", "count", true))));
+        mockMvc.perform(get("/finance/books-match").with(staff("FINANCE_OFFICER")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.allMatch").value(false))
+            .andExpect(jsonPath("$.checks[0].difference").value("-30000.00"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        mockMvc.perform(get("/finance/books-match").with(staff("UNDERWRITER"))).andExpect(status().isForbidden());
     }
 
     private static RequestPostProcessor agentToken(String partyId) {

@@ -133,7 +133,7 @@ test.describe('staff credit-life claim', () => {
     const managerContext = await browser.newContext({ storageState: 'e2e/.auth/staff-manager.json' });
     const managerPage = await managerContext.newPage();
     await managerPage.goto(claimUrl);
-    await expect(managerPage.getByRole('heading', { name: 'Decide settlement' })).toBeVisible({
+    await expect(managerPage.getByRole('heading', { name: 'Decide the payout' })).toBeVisible({
       timeout: 30_000,
     });
     await expect(managerPage.getByText(/^Paid to .* by bank transfer\.$/)).toBeVisible({
@@ -157,7 +157,7 @@ test.describe('staff credit-life claim', () => {
     await managerPage.getByRole('button', { name: 'Approve and pay' }).click();
 
     // WHERE THE MONEY IS. Used to be a bare "Settlement requested" and nothing more.
-    await expect(managerPage.getByText('Settlement requested', { exact: true })).toBeVisible({
+    await expect(managerPage.getByText('Payout requested', { exact: true })).toBeVisible({
       timeout: 30_000,
     });
     // Where the money is has its own tab (2026-10-29).
@@ -179,7 +179,7 @@ test.describe('staff credit-life claim', () => {
     await expect(transfer).toContainText(lenderName, { timeout: 30_000 });
     await expect(transfer).toContainText('Amina Hassan Mwinyi');
     await expect(transfer).toContainText('Death claim');
-    await expect(transfer).toContainText('Claim settlement');
+    await expect(transfer).toContainText('Claim payout');
     await transfer.getByRole('button', { name: 'Record payment made' }).click();
     const confirmation = financePage.getByRole('group', { name: 'Has this transfer been made?' });
     await confirmation.getByLabel('Bank reference', { exact: true }).fill(`E2E-FT-${Date.now()}`);

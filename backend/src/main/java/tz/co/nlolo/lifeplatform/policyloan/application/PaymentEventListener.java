@@ -11,6 +11,7 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -19,7 +20,9 @@ import java.util.UUID;
  * Closes M5's request/confirm loop on the policyloan side: consumes payment's
  * {@code DisbursementCompleted}/{@code DisbursementFailed} confirmation events
  * (docs/02-module-architecture.md:65) and drives {@code PolicyLoanApi.markDisbursed}/
- * {@code markDisbursementFailed} accordingly.
+ * {@code markDisbursementFailed} accordingly -- and, since money movement step 1 (2026-11-04),
+ * {@code PaymentConfirmed}/{@code PaymentFailed} with purpose {@code LOAN_REPAYMENT}, the only way a
+ * repayment reaches a loan.
  *
  * <p>Mirrors {@code billing.application.PolicyEventListener}'s exact mechanics -- AFTER_COMMIT
  * (the producer's, i.e. payment's, write must be durable first), a brand-new REQUIRES_NEW
@@ -59,6 +62,8 @@ public class PaymentEventListener {
         switch (envelope.eventType()) {
             case "payment.DisbursementCompleted" -> withTenant(envelope, this::handleCompleted);
             case "payment.DisbursementFailed" -> withTenant(envelope, this::handleFailed);
+            case "payment.PaymentConfirmed" -> withTenant(envelope, this::handleRepaymentConfirmed);
+            case "payment.PaymentFailed" -> withTenant(envelope, this::handleRepaymentFailed);
             default -> { /* not policyloan-relevant */ }
         }
     }
@@ -98,5 +103,28 @@ public class PaymentEventListener {
         // Compensating action per docs/03-aggregate-design.md:208: reverse the encumbrance so the
         // policyholder's loan value is not permanently consumed by a payout that never happened.
         policyLoanApi.markDisbursementFailed(loanId, (String) payload.get("reason"));
+    }
+
+    /** Loan money confirmed (money movement step 1): a deposit For: Loan, approved, or a mobile-money request, paid. */
+    private void handleRepaymentConfirmed(Map<String, Object> payload) {
+        if (!"LOAN_REPAYMENT".equals(payload.get("purpose"))) {
+            return; // a premium or a top-up rode the same event type
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> amount = (Map<String, Object>) payload.get("amount");
+        Object by = payload.get("approvedBy");
+        policyLoanApi.applyConfirmedRepayment(UUID.fromString(String.valueOf(payload.get("sourceRef"))),
+            new BigDecimal(String.valueOf(amount.get("amount"))), String.valueOf(amount.get("currencyCode")),
+            String.valueOf(payload.get("gatewayReference")), (String) payload.get("method"),
+            UUID.fromString(String.valueOf(payload.get("paymentRequestId"))), by == null ? "gateway" : by.toString());
+    }
+
+    /** A loan collection that never arrived: nothing was applied, so there is nothing to undo -- the trail is the log. */
+    private void handleRepaymentFailed(Map<String, Object> payload) {
+        if (!"LOAN_REPAYMENT".equals(payload.get("purpose"))) {
+            return;
+        }
+        log.warn("Loan repayment collection failed for loan {} (tenant {}): {}", payload.get("sourceRef"),
+            TenantContext.get(), payload.get("reason"));
     }
 }

@@ -8,7 +8,9 @@ import tz.co.nlolo.lifeplatform.audit.domain.AuditLogEntry;
 import tz.co.nlolo.lifeplatform.audit.infrastructure.AuditLogRepository;
 import tz.co.nlolo.lifeplatform.payment.domain.DisbursementInstruction;
 import tz.co.nlolo.lifeplatform.payment.domain.PaymentGatewayPort;
+import tz.co.nlolo.lifeplatform.payment.domain.PaymentTransaction;
 import tz.co.nlolo.lifeplatform.payment.infrastructure.DisbursementInstructionRepository;
+import tz.co.nlolo.lifeplatform.payment.infrastructure.PaymentTransactionRepository;
 import tz.co.nlolo.lifeplatform.payment.infrastructure.MobileMoneyGatewayAdapter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -153,7 +155,11 @@ class PaymentRequestListenerIntegrationTest {
             "db-migrations/payment/V9__account_purposes.sql",
             "db-migrations/payment/V17__manual_receipts.sql",
             "db-migrations/payment/V18__payout_routes.sql",
-            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql");
+            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
+            "db-migrations/payment/V22__loan_repayment_purpose.sql",
+            "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
+            "db-migrations/payment/V24__reversed_status.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql");
     }
 
     @AfterAll
@@ -162,6 +168,7 @@ class PaymentRequestListenerIntegrationTest {
     @Autowired private ApplicationEventPublisher eventPublisher;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private DisbursementInstructionRepository disbursementRepository;
+    @Autowired private PaymentTransactionRepository paymentTransactionRepository;
     @Autowired private AuditLogRepository auditLogRepository;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private MeterRegistry meterRegistry;
@@ -446,6 +453,31 @@ class PaymentRequestListenerIntegrationTest {
         // redelivery genuinely cannot cause a double payout -- not merely "a second row wasn't
         // written".
         wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/disburse")));
+    }
+
+    /** Money movement step 1: a loan repayment asked of the payer's phone is a collection for the loan, waiting for
+     * finance to confirm it -- not a premium, and not paid. */
+    @Test
+    void aLoanRepaymentRequestBecomesALoanRepaymentCollection() throws Exception {
+        wireMock.stubFor(post(urlPathEqualTo("/collect")).willReturn(okJson(
+            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-LOAN-REPAY-01\"}")));
+        UUID tenantId = UUID.randomUUID();
+        UUID loanId = UUID.randomUUID();
+        String idempotencyKey = "loan-repay-" + loanId;
+
+        transactionTemplate().executeWithoutResult(status -> eventPublisher.publishEvent(DomainEventEnvelope.of(
+            "policyloan.RepaymentRequested", tenantId, Map.of("loanId", loanId, "policyNumber", "POL-LOAN-1",
+                "payerRef", "255754000001", "amount", Map.of("amount", "100000.00", "currencyCode", "TZS"),
+                "idempotencyKey", idempotencyKey))));
+
+        TenantContext.set(tenantId);
+        PaymentTransaction collection = paymentTransactionRepository
+            .findByIdempotencyKeyAndTenantId(idempotencyKey, tenantId).orElseThrow();
+        assertThat(collection.getPurpose()).isEqualTo("LOAN_REPAYMENT");
+        assertThat(collection.getSourceRef()).isEqualTo(loanId.toString());
+        assertThat(collection.getPolicyNumber()).isEqualTo("POL-LOAN-1");
+        assertThat(collection.getStatus()).as("accepted by the rail is not paid").isEqualTo("AWAITING_APPROVAL");
+        wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/collect")));
     }
 
     @Test

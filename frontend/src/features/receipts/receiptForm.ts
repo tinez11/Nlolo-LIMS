@@ -34,10 +34,14 @@ export function methodOf(value: string): { value: string; label: string; referen
   return value === REQUESTED_MOBILE_MONEY.value ? REQUESTED_MOBILE_MONEY : RECEIPT_METHODS.find((m) => m.value === value);
 }
 
-/** Mirrors Receipts.record: an invoice, a method and its reference, an amount above zero, a day no later than today. */
+/**
+ * Mirrors Receipts.record: a policy's balance or a loan (money movement steps 1 and 5 -- "Invoice it pays" went with
+ * design 7.2), a method and its reference, an amount above zero, a day no later than today.
+ */
 export const receiptFormSchema = z.object({
   policyNumber: z.string().trim().min(1, 'Enter the policy number'),
-  invoiceId: z.string().min(1, 'Choose the invoice this pays'),
+  paysFor: z.enum(['PREMIUM', 'LOAN']),
+  loanId: z.string(),
   method: z.enum(['CASH', 'BANK_DEPOSIT', 'CHEQUE', 'LIPA_NUMBER', 'TANQR'], { message: 'Choose how the money came in' }),
   reference: z.string().trim().min(1, 'Enter the reference, so the same money cannot be recorded twice').max(100),
   amount: z
@@ -52,6 +56,10 @@ export const receiptFormSchema = z.object({
   payerRef: z.string().trim().max(255),
   note: z.string().trim().max(500),
   fieldReceiptId: z.string(),
+}).superRefine((v, ctx) => {
+  if (v.paysFor === 'LOAN' && !v.loanId) {
+    ctx.addIssue({ code: 'custom', path: ['loanId'], message: 'Choose the loan this repays' });
+  }
 });
 
 export type ReceiptFormValues = z.infer<typeof receiptFormSchema>;
@@ -59,7 +67,8 @@ export type ReceiptFormValues = z.infer<typeof receiptFormSchema>;
 export function blankReceiptForm(prefill: Partial<ReceiptFormValues> = {}): ReceiptFormValues {
   return {
     policyNumber: '',
-    invoiceId: '',
+    paysFor: 'PREMIUM',
+    loanId: '',
     method: 'BANK_DEPOSIT',
     reference: '',
     amount: '',
@@ -73,7 +82,9 @@ export function blankReceiptForm(prefill: Partial<ReceiptFormValues> = {}): Rece
 
 export function toApiRequest(values: ReceiptFormValues, currency: string): RecordReceipt {
   return {
-    invoiceId: values.invoiceId,
+    // A premium deposit goes onto the policy's balance, which pays what is due oldest first (money movement step 5).
+    policyNumber: values.paysFor === 'PREMIUM' ? values.policyNumber.trim().toUpperCase() : null,
+    loanId: values.paysFor === 'LOAN' ? values.loanId : null,
     method: values.method,
     reference: values.reference.trim(),
     amount: { amount: Number(values.amount).toFixed(2), currencyCode: currency },
@@ -89,10 +100,15 @@ export function toApiRequest(values: ReceiptFormValues, currency: string): Recor
  * it pays, or the payments register. Before this both receipt pages pointed at Payments whatever page you had come
  * from -- a client's policy, most often.
  */
+/** A deposit's page title by how the money came in: "Cheque deposit"; a bank deposit is simply "Bank deposit". */
+export function depositTitle(methodLabel: string): string {
+  return /deposit$/i.test(methodLabel) ? methodLabel : `${methodLabel} deposit`;
+}
+
 export function receiptOrigin(from: string | null, policyNumber: string | null | undefined) {
   const lists: Record<string, { label: string; to: string }> = {
-    'field-receipts': { label: 'Field receipts', to: '/staff/field-receipts' },
-    payments: { label: 'Payments', to: '/staff/payments' },
+    'field-receipts': { label: 'Agent cash', to: '/staff/field-receipts' },
+    payments: { label: 'Deposits', to: '/staff/payments' },
     approvals: { label: 'Approvals', to: '/staff/approvals' },
   };
   const list = from ? lists[from] : undefined;
@@ -101,5 +117,5 @@ export function receiptOrigin(from: string | null, policyNumber: string | null |
     const policy = `/staff/policies/${encodeURIComponent(policyNumber)}?tab=billing`;
     return { crumbs: [{ label: 'Policies', to: '/staff/policies' }, { label: policyNumber, to: policy }], back: policy };
   }
-  return { crumbs: [{ label: 'Payments', to: '/staff/payments' }], back: '/staff/payments' };
+  return { crumbs: [{ label: 'Deposits', to: '/staff/payments' }], back: '/staff/payments' };
 }

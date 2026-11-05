@@ -66,7 +66,7 @@ api() {         # api <token> <method> <path> [json-body]
 
 jsonval() { grep -o "\"$2\" *: *\"[^\"]*\"" <<<"$1" | head -1 | sed -E 's/.*: *"([^"]*)"/\1/'; }
 
-STAFF_SECRET=$(grep -o '"secret" *: *"[^"]*"' keycloak/staff-realm.json | head -1 | cut -d'"' -f4)
+STAFF_SECRET=$(source scripts/seed-lib.sh; realm_secret staff)
 STAFF_ADMIN_TOKEN=$(token_for staff staff.admin "$STAFF_SECRET")
 STAFF_FINANCE_TOKEN=$(token_for staff staff.finance "$STAFF_SECRET")
 STAFF_SENIOR_TOKEN=$(token_for staff staff.senior "$STAFF_SECRET")
@@ -159,7 +159,17 @@ if [ -n "$INVOICE_ID" ]; then
   curl -sf -X POST "$API/invoices/$INVOICE_ID/payment-request" \
     -H "Authorization: Bearer $STAFF_FINANCE_TOKEN" -H 'Content-Type: application/json' \
     -H "Idempotency-Key: $(uuid)" -d '{"payerRef":"+255747577461"}' >/dev/null
-  echo "payment-request accepted; the deposit opens once the rail confirms"
+  # A request the rail accepts is money in only once a second finance person confirms it (2026-10-27).
+  APPROVER_TOKEN=$(token_for staff staff.finance-approver "$STAFF_SECRET")
+  RECEIPT_ID=""
+  for i in $(seq 1 20); do
+    RECEIPT_ID=$(jsonval "$(api "$STAFF_FINANCE_TOKEN" GET "/receipts?invoiceId=$INVOICE_ID")" receiptId)
+    [ -n "$RECEIPT_ID" ] && break
+    sleep 1
+  done
+  [ -n "$RECEIPT_ID" ] || { echo "FATAL: the deposit's request never reached finance to confirm" >&2; exit 1; }
+  api "$APPROVER_TOKEN" POST "/receipts/$RECEIPT_ID/approval" >/dev/null
+  echo "payment-request accepted and confirmed by the approver; the deposit opens"
 else
   echo "No invoice yet -- collect the deposit from the policy screen." >&2
 fi

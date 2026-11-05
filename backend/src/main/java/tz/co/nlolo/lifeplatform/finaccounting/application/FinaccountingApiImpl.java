@@ -260,6 +260,16 @@ public class FinaccountingApiImpl implements FinaccountingApi {
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public java.util.Map<String, java.math.BigDecimal> receivablesByPolicy() {
+        java.util.Map<String, java.math.BigDecimal> byPolicy = new java.util.HashMap<>();
+        for (Object[] row : glPostingRepository.netDebitByPolicy(TenantContext.get(), List.of("2122", "2142"))) {
+            byPolicy.put((String) row[0], (java.math.BigDecimal) row[1]);
+        }
+        return byPolicy;
+    }
+
+    @Override
     public TrialBalanceView trialBalanceThrough(String period) {
         UUID tenantId = TenantContext.get();
         return assemble(tenantId, "through " + period,

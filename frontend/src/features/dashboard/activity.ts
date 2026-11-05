@@ -8,11 +8,14 @@ const OUTCOME: Record<string, string> = {
   DECLINED: 'declined',
 };
 
-/** The payments register, on the event's policy when it names one -- every state, so the payment is in the list. */
-function register(refs: Record<string, string>, state: 'done' | 'attention'): string {
+/**
+ * The register a payment is in -- Deposits for money in, All payouts for money out (money movement 6d) -- on the
+ * event's policy when it names one: every state, so the payment is in the list.
+ */
+function register(refs: Record<string, string>, state: 'done' | 'attention', list = '/staff/payments'): string {
   return refs.policyNumber
-    ? `/staff/payments?state=all&policy=${encodeURIComponent(refs.policyNumber)}`
-    : `/staff/payments?state=${state}`;
+    ? `${list}?state=all&policy=${encodeURIComponent(refs.policyNumber)}`
+    : `${list}?state=${state}`;
 }
 
 /**
@@ -39,7 +42,7 @@ const WORDS: Record<
     link: (r) => (r.claimId ? `/staff/claims/${r.claimId}` : undefined),
   },
   'claims.ClaimSettlementRequested': {
-    text: () => 'Settlement requested',
+    text: () => 'Payout requested',
     link: (r) => (r.claimId ? `/staff/claims/${r.claimId}` : undefined),
   },
   'claims.ClaimApproved': {
@@ -58,10 +61,10 @@ const WORDS: Record<
     text: () => 'Premium collected',
     link: (r) => (r.policyNumber ? `/staff/policies/${r.policyNumber}` : undefined),
   },
-  'billing.FieldReceiptCaptured': { text: () => 'Field receipt captured', link: () => '/staff/field-receipts' },
-  'billing.FieldReceiptReconciled': { text: () => 'Field receipt reconciled', link: () => '/staff/field-receipts' },
+  'billing.FieldReceiptCaptured': { text: () => 'Agent cash collected', link: () => '/staff/field-receipts' },
+  'billing.FieldReceiptReconciled': { text: () => 'Agent cash matched', link: () => '/staff/field-receipts' },
   'billing.FieldReceiptReconciliationOverdue': {
-    text: () => 'Field receipt past its deadline',
+    text: () => 'Agent cash past its matching deadline',
     link: () => '/staff/field-receipts?status=RECONCILIATION_OVERDUE',
   },
   'billing.InvoiceWaived': {
@@ -82,10 +85,10 @@ const WORDS: Record<
   },
   // Money in and out opens the payments register (2026-10-27): on its policy where the event names one, otherwise on the
   // state the payment ended in.
-  'payment.PaymentConfirmed': { text: () => 'Payment confirmed', link: (r) => register(r, 'done') },
-  'payment.PaymentFailed': { text: () => 'Payment failed', link: (r) => register(r, 'attention') },
-  'payment.DisbursementCompleted': { text: () => 'Payout completed', link: (r) => register(r, 'done') },
-  'payment.DisbursementFailed': { text: () => 'Payout failed', link: (r) => register(r, 'attention') },
+  'payment.PaymentConfirmed': { text: () => 'Deposit confirmed', link: (r) => register(r, 'done') },
+  'payment.PaymentFailed': { text: () => 'Deposit failed', link: (r) => register(r, 'attention') },
+  'payment.DisbursementCompleted': { text: () => 'Payout completed', link: (r) => register(r, 'done', '/staff/payouts/all') },
+  'payment.DisbursementFailed': { text: () => 'Payout failed', link: (r) => register(r, 'attention', '/staff/payouts/all') },
   'payment.EftDisbursementAwaitingExecution': {
     text: () => 'Bank transfer waiting to be made',
     link: () => '/staff/bank-transfers',

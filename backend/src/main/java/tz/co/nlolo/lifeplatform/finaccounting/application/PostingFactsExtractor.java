@@ -39,6 +39,17 @@ final class PostingFactsExtractor {
         Map.entry("billing.PremiumInvoiceGenerated", amount()),
         // levy: derived by the engine at the rate in force (A-19), zero while none is configured.
         Map.entry("billing.PremiumCollected", new EventShape(Set.of(AMOUNT, "levy"), Set.of())),
+        // Money movement step 2 (2026-11-04): cash onto a policy's balance, and a premium paid from it (levy derived by
+        // the engine, as it was for PremiumCollected).
+        Map.entry("billing.DepositReceived", amount()),
+        Map.entry("billing.PremiumPaidFromBalance", new EventShape(Set.of(AMOUNT, "levy"), Set.of())),
+        // Money movement step 3a: a withdrawal from the balance -- approved, paid, or returned by a refused transfer.
+        Map.entry("billing.BalanceWithdrawalApproved", amount()),
+        Map.entry("billing.BalanceWithdrawalPaid", amount()),
+        Map.entry("billing.BalanceWithdrawalReturned", amount()),
+        // Money movement step 3b: a deposit reversed, and a premium paid from it undone (levy derived by the engine).
+        Map.entry("billing.DepositReversed", amount()),
+        Map.entry("billing.PremiumPaidReversed", new EventShape(Set.of(AMOUNT, "levy"), Set.of())),
         Map.entry("billing.InvoiceWaived", amount()),
         Map.entry("billing.PremiumRefundDue", amount()),
         // A credit-life lender's premium paid back (2026-10-30): the bank side of the refund above.
@@ -58,6 +69,8 @@ final class PostingFactsExtractor {
         Map.entry("distribution.CommissionPaid", new EventShape(Set.of("gross", "paid", "withheld"), Set.of("channel"))),
         Map.entry("policyloan.LoanDisbursed", amount()),
         Map.entry("policyloan.LoanRepaid", new EventShape(Set.of(AMOUNT, "interest", "principal"), Set.of())),
+        // Money above what a loan owed (money movement step 1): its method rides as receiptMethod, as on LoanRepaid.
+        Map.entry("policyloan.LoanOverpaid", amount()),
         Map.entry("policyloan.LoanInterestAccrued", amount()),
         Map.entry("policyloan.LoanForcedLapseTriggered", new EventShape(Set.of("total", "principal", "interest"), Set.of())),
         Map.entry("accumulation.PostingRecorded", amount("flow", "receiptMethod")),
@@ -123,6 +136,28 @@ final class PostingFactsExtractor {
                 putIfPresent(attrs, "receiptMethod", p.get("receiptMethod"));
                 yield List.of(money(type, string(p.get("invoiceId")), policy, p.get("amount"), today, attrs));
             }
+            // Keyed on the balance entry, so a redelivery posts once. The deposit's method picks the account it reached.
+            case "billing.DepositReceived" -> {
+                Map<String, String> attrs = new HashMap<>(Map.of("refType", "POLICY"));
+                putIfPresent(attrs, "receiptMethod", p.get("receiptMethod"));
+                yield List.of(money(type, string(p.get("entryId")), policy, p.get("amount"), today, attrs));
+            }
+            case "billing.PremiumPaidFromBalance" -> List.of(money(type, string(p.get("entryId")), policy, p.get("amount"),
+                today, Map.of("refType", "INVOICE")));
+            // Keyed on the withdrawal; its payout's rail (recorded by payment under the withdrawal id) picks the bank.
+            case "billing.BalanceWithdrawalApproved", "billing.BalanceWithdrawalReturned" ->
+                List.of(money(type, string(p.get("withdrawalId")), policy, p.get("amount"), today,
+                    Map.of("refType", "WITHDRAWAL")));
+            case "billing.BalanceWithdrawalPaid" -> List.of(money(type, string(p.get("withdrawalId")), policy,
+                p.get("amount"), today, paid("WITHDRAWAL", p.get("withdrawalId"))));
+            // Keyed on the reversing entry; the deposit's method picks the account the money is taken back out of.
+            case "billing.DepositReversed" -> {
+                Map<String, String> attrs = new HashMap<>(Map.of("refType", "POLICY"));
+                putIfPresent(attrs, "receiptMethod", p.get("receiptMethod"));
+                yield List.of(money(type, string(p.get("entryId")), policy, p.get("amount"), today, attrs));
+            }
+            case "billing.PremiumPaidReversed" -> List.of(money(type, string(p.get("entryId")), policy, p.get("amount"),
+                today, Map.of("refType", "INVOICE")));
             case "billing.InvoiceWaived" ->
                 List.of(money(type, string(p.get("invoiceId")), policy, p.get("amount"), today, Map.of("refType", "INVOICE")));
             // Keyed on the CREDIT: one invoice carries a credit for every borrower on its file, each its own movement.
@@ -159,6 +194,7 @@ final class PostingFactsExtractor {
             case "policyloan.LoanDisbursed" -> List.of(money(type, string(p.get("loanId")), null, p.get("amount"), today,
                 paid("LOAN", p.get("loanId"))));
             case "policyloan.LoanRepaid" -> List.of(loanRepaid(type, p, policy, today));
+            case "policyloan.LoanOverpaid" -> List.of(loanSurplus(type, p, policy, today));
             case "policyloan.LoanInterestAccrued" -> List.of(money(type, p.get("loanId") + ":" + p.get("period"), policy,
                 p.get("amount"), today, Map.of("refType", "LOAN")));
             case "policyloan.LoanForcedLapseTriggered" -> List.of(forcedLapse(type, p, policy, today));
@@ -277,13 +313,22 @@ final class PostingFactsExtractor {
 
     /** A repayment (E-03): interest accrued so far first, then principal -- as policyloan split it. */
     private static PostingFacts loanRepaid(String type, Map<String, Object> p, String policy, LocalDate today) {
-        PostingFacts f = money(type, string(p.get("loanTransactionId")), policy, p.get("amount"), today,
-            Map.of("refType", "LOAN"));
+        // How the money came in (money movement step 1): the RECEIPT line posts it to the account it reached.
+        Map<String, String> attrs = new HashMap<>(Map.of("refType", "LOAN"));
+        putIfPresent(attrs, "receiptMethod", p.get("receiptMethod"));
+        PostingFacts f = money(type, string(p.get("loanTransactionId")), policy, p.get("amount"), today, attrs);
         BigDecimal interest = decimal(p.get("interestAmount"));
         BigDecimal principal = p.get("principalAmount") != null ? decimal(p.get("principalAmount"))
             : f.amount(AMOUNT).subtract(interest);
         return new PostingFacts(type, f.sourceRef(), policy, f.currency(), today,
             Map.of(AMOUNT, f.amount(AMOUNT), "interest", interest, "principal", principal), f.attributes());
+    }
+
+    /** Money above what a loan owed (money movement step 1): keyed on the payment, so a redelivery posts once. */
+    private static PostingFacts loanSurplus(String type, Map<String, Object> p, String policy, LocalDate today) {
+        Map<String, String> attrs = new HashMap<>(Map.of("refType", "LOAN"));
+        putIfPresent(attrs, "receiptMethod", p.get("receiptMethod"));
+        return money(type, "loan-surplus:" + string(p.get("paymentId")), policy, p.get("amount"), today, attrs);
     }
 
     /** A loan foreclosed against the surrender value (E-06): the investment component repays principal and interest. */

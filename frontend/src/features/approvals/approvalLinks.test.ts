@@ -17,6 +17,12 @@ describe('approvalLink', () => {
 
   it('sends a payout to its own page', () => {
     expect(approvalLink('payout-approval', row({ reference: 'inst-9' }))).toBe('/staff/payouts/inst-9?from=approvals');
+    expect(approvalLink('loan-payout', row({ reference: 'loan-1', policyNumber: 'POL-7' })))
+      .toBe('/staff/policies/POL-7?tab=loans&from=approvals');
+    expect(approvalLink('balance-withdrawal', row({ policyNumber: 'POL-8' })))
+      .toBe('/staff/policies/POL-8?tab=billing&from=approvals');
+    expect(approvalLink('commission-payout', row({ reference: 'agent-1/stmt-2', policyNumber: null })))
+      .toBe('/staff/agents/agent-1?from=approvals');
   });
 
   it('sends a declaration to the product it declares for', () => {

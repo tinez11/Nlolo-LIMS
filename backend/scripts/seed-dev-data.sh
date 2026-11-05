@@ -16,45 +16,11 @@ KEYCLOAK="${KEYCLOAK_URL:-http://localhost:8081}"
 API="${API_URL:-http://localhost:8080}"
 DEV_TENANT="11111111-1111-1111-1111-111111111111"
 
-uuid() {
-  # macOS/Linux both have python3 or /proc/sys/kernel/random/uuid; Git-Bash on Windows has
-  # neither reliably, so fall back to a portable pure-bash UUIDv4 if both are unavailable.
-  if [ -r /proc/sys/kernel/random/uuid ]; then
-    cat /proc/sys/kernel/random/uuid
-  elif command -v uuidgen >/dev/null 2>&1; then
-    uuidgen | tr 'A-Z' 'a-z'
-  else
-    od -An -N16 -tx1 /dev/urandom | tr -d ' \n' | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/'
-  fi
-}
+source scripts/seed-lib.sh   # uuid, token_for, api, jsonval (money movement step 7: shared with the money-case scripts)
 
-token_for() {   # token_for <realm> <username> <client-secret>
-  curl -sf -X POST "$KEYCLOAK/realms/$1/protocol/openid-connect/token" \
-    -d grant_type=password -d client_id=lifeplatform-app -d client_secret="$3" \
-    -d username="$2" -d password=devpassword \
-  | sed 's/.*"access_token":"\([^"]*\)".*/\1/'
-}
-
-api() {         # api <token> <method> <path> [json-body]
-  local token="$1" method="$2" path="$3" body="${4:-}"
-  if [ -n "$body" ]; then
-    curl -sf -X "$method" "$API$path" -H "Authorization: Bearer $token" \
-      -H 'Content-Type: application/json' -H "Idempotency-Key: $(uuid)" -d "$body"
-  else
-    curl -sf -X "$method" "$API$path" -H "Authorization: Bearer $token"
-  fi
-}
-
-jsonval() {     # jsonval <json> <field>  -- crude, dependency-free single-level string/uuid extractor.
-  # Deliberately the FIRST match, not sed's greedy-.*-picks-the-last-one behaviour: /policies/
-  # {policyNumber}/invoices returns an array (a MONTHLY schedule can generate several invoices
-  # upfront) and the brief calls for the first one specifically.
-  grep -o "\"$2\" *: *\"[^\"]*\"" <<<"$1" | head -1 | sed -E 's/.*: *"([^"]*)"/\1/'
-}
-
-STAFF_SECRET=$(grep -o '"secret" *: *"[^"]*"' keycloak/staff-realm.json | head -1 | cut -d'"' -f4)
-CUSTOMERS_SECRET=$(grep -o '"secret" *: *"[^"]*"' keycloak/customers-realm.json | head -1 | cut -d'"' -f4)
-AGENTS_SECRET=$(grep -o '"secret" *: *"[^"]*"' keycloak/agents-realm.json | head -1 | cut -d'"' -f4)
+STAFF_SECRET=$(realm_secret staff)
+CUSTOMERS_SECRET=$(realm_secret customers)
+AGENTS_SECRET=$(realm_secret agents)
 
 STAFF_FINANCE_TOKEN=$(token_for staff staff.finance "$STAFF_SECRET")
 # Minted early, deliberately: party_id is NOT required to CALL /parties/individuals (only to
@@ -479,33 +445,36 @@ echo "lenderPartyId=$(jsonval "$LENDER_JSON" partyId)"
 
 echo "=== Step 2: Parties (agent.senior -- see the role-gate note above STAFF_FINANCE_TOKEN's mint) ==="
 OWNER_JSON=$(api "$AGENT_SENIOR_TOKEN" POST "/parties/individuals" \
-  '{"fullName":"Amina Owner","dateOfBirth":"1990-04-12","contactInfo":{"phoneNumber":"+255712345678","email":"customer.owner@example.tz"}}')
+  '{"fullName":"Amina Owner","dateOfBirth":"1990-04-12","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19900412-SEED-00001-01","contactInfo":{"phoneNumber":"+255712345678","email":"customer.owner@example.tz"}}')
 OWNER_PARTY_ID=$(jsonval "$OWNER_JSON" partyId)
 echo "ownerPartyId=$OWNER_PARTY_ID"
 
 OTHER_JSON=$(api "$AGENT_SENIOR_TOKEN" POST "/parties/individuals" \
-  '{"fullName":"Baraka Other","dateOfBirth":"1988-09-01","contactInfo":{"phoneNumber":"+255712345679","email":"customer.other@example.tz"}}')
+  '{"fullName":"Baraka Other","dateOfBirth":"1988-09-01","sex":"MALE","idType":"NATIONAL_ID","idNumber":"19880901-SEED-00002-02","contactInfo":{"phoneNumber":"+255712345679","email":"customer.other@example.tz"}}')
 OTHER_PARTY_ID=$(jsonval "$OTHER_JSON" partyId)
 echo "otherPartyId=$OTHER_PARTY_ID"
 
 SENIOR_AGENT_PARTY_JSON=$(api "$AGENT_SENIOR_TOKEN" POST "/parties/individuals" \
-  '{"fullName":"Juma Senior","dateOfBirth":"1975-01-10","contactInfo":{"phoneNumber":"+255712345680","email":"agent.senior@example.tz"}}')
+  '{"fullName":"Juma Senior","dateOfBirth":"1975-01-10","sex":"MALE","idType":"NATIONAL_ID","idNumber":"19750110-SEED-00003-03","contactInfo":{"phoneNumber":"+255712345680","email":"agent.senior@example.tz"}}')
 SENIOR_AGENT_PARTY_ID=$(jsonval "$SENIOR_AGENT_PARTY_JSON" partyId)
 echo "seniorAgentPartyId=$SENIOR_AGENT_PARTY_ID"
 
 JUNIOR_AGENT_PARTY_JSON=$(api "$AGENT_SENIOR_TOKEN" POST "/parties/individuals" \
-  '{"fullName":"Neema Junior","dateOfBirth":"1995-06-20","contactInfo":{"phoneNumber":"+255712345681","email":"agent.junior@example.tz"}}')
+  '{"fullName":"Neema Junior","dateOfBirth":"1995-06-20","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19950620-SEED-00004-04","contactInfo":{"phoneNumber":"+255712345681","email":"agent.junior@example.tz"}}')
 JUNIOR_AGENT_PARTY_ID=$(jsonval "$JUNIOR_AGENT_PARTY_JSON" partyId)
 echo "juniorAgentPartyId=$JUNIOR_AGENT_PARTY_ID"
 
-echo "=== Step 2b: KYC-verify the agent parties and the demo owner (staff.finance) ==="
+echo "=== Step 2b: KYC-verify the agent parties and the demo owner (staff.service) ==="
+# Customer service verifies KYC (clients.kyc): a finance officer only reads clients. The old dev database had
+# granted staff.finance more, which hid this until the 2026-11-05 reset.
+STAFF_SERVICE_TOKEN=$(token_for staff staff.service "$STAFF_SECRET")
 # Discovered empirically (a real 422), not in the brief: DistributionApiImpl.onboardAgent
 # requires the party's KYC status to already be VERIFIED ("Party ... has KYC status PENDING;
 # an agent must be VERIFIED to onboard") -- every freshly-registered party starts PENDING, so
 # this step is a real precondition, not optional polish.
-api "$STAFF_FINANCE_TOKEN" POST "/parties/$SENIOR_AGENT_PARTY_ID/kyc" \
+api "$STAFF_SERVICE_TOKEN" POST "/parties/$SENIOR_AGENT_PARTY_ID/kyc" \
   '{"status":"VERIFIED","evidenceDocumentRef":"seed:kyc-evidence-senior"}' >/dev/null
-api "$STAFF_FINANCE_TOKEN" POST "/parties/$JUNIOR_AGENT_PARTY_ID/kyc" \
+api "$STAFF_SERVICE_TOKEN" POST "/parties/$JUNIOR_AGENT_PARTY_ID/kyc" \
   '{"status":"VERIFIED","evidenceDocumentRef":"seed:kyc-evidence-junior"}' >/dev/null
 
 # Amina Owner too, and for the same class of reason. Several e2e specs onboard her as a
@@ -518,7 +487,7 @@ api "$STAFF_FINANCE_TOKEN" POST "/parties/$JUNIOR_AGENT_PARTY_ID/kyc" \
 #
 # Baraka Other is deliberately NOT verified, so the KYC review queue and the two nav badges
 # that count it still have something in them to demonstrate.
-api "$STAFF_FINANCE_TOKEN" POST "/parties/$OWNER_PARTY_ID/kyc" \
+api "$STAFF_SERVICE_TOKEN" POST "/parties/$OWNER_PARTY_ID/kyc" \
   '{"status":"VERIFIED","evidenceDocumentRef":"seed:kyc-evidence-owner"}' >/dev/null
 echo "both agent parties and the demo owner KYC-VERIFIED (Baraka Other stays PENDING on purpose)"
 
@@ -695,18 +664,40 @@ INVOICES_JSON=$(api "$STAFF_FINANCE_TOKEN" GET "/policies/$POLICY_NUMBER/invoice
 INVOICE_ID=$(jsonval "$INVOICES_JSON" invoiceId)
 echo "invoiceId=$INVOICE_ID"
 
+# A second finance person confirms money before it counts (2026-10-27): a mobile-money request the rail accepts waits
+# for them exactly as a typed deposit does. Every confirmation below is staff.finance-approver's, never the recorder's.
+STAFF_APPROVER_TOKEN=$(token_for staff staff.finance-approver "$STAFF_SECRET")
+
+confirm_waiting_on_invoice() {   # confirm_waiting_on_invoice <invoiceId>
+  local waiting id
+  for i in $(seq 1 20); do
+    waiting=$(api "$STAFF_FINANCE_TOKEN" GET "/receipts?invoiceId=$1")
+    id=$(jsonval "$waiting" receiptId)
+    [ -n "$id" ] && break
+    sleep 1
+  done
+  if [ -z "$id" ]; then echo "FATAL: nothing waiting to be confirmed on invoice $1" >&2; exit 1; fi
+  api "$STAFF_APPROVER_TOKEN" POST "/receipts/$id/approval" >/dev/null
+  echo "$id"
+}
+
 curl -sf -X POST "$API/invoices/$INVOICE_ID/payment-request" \
   -H "Authorization: Bearer $STAFF_FINANCE_TOKEN" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuid)" -d '{"payerRef":"+255712345678"}' >/dev/null
-echo "payment-request accepted for invoiceId=$INVOICE_ID (WireMock confirms synchronously; billing.PremiumCollected follows)"
+echo "payment-request accepted for invoiceId=$INVOICE_ID; confirmed by the approver: $(confirm_waiting_on_invoice "$INVOICE_ID")"
+
+echo "=== Step 7a: Money movement, one policy per case (design §12) ==="
+PRODUCT_ID="$PRODUCT_ID" PRODUCT_VERSION_ID="$PRODUCT_VERSION_ID" bash scripts/seed-money-cases.sh
 
 echo "=== Step 8: Claim, with evidence ==="
+# The day the seed runs: a death before the policy was issued is no claim on it (not on risk), which is what the
+# hard-coded 2026-08-10 became once the stack could be rebuilt after that date (found on the 2026-11-05 reset).
 CLAIM_JSON=$(curl -sf -X POST "$API/claims" \
   -H "Authorization: Bearer $CUSTOMER_OWNER_TOKEN" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuid)" -d "{
     \"policyNumber\":\"$POLICY_NUMBER\",\"claimantPartyId\":\"$OWNER_PARTY_ID\",\"claimType\":\"DEATH\",
-    \"dateOfEvent\":\"2026-08-10\",
-    \"details\":{\"claimType\":\"DEATH\",\"causeOfDeath\":\"Natural causes\",\"placeOfDeath\":\"Dar es Salaam\",\"dateOfDeath\":\"2026-08-10\",\"attendingPhysician\":\"Dr. Juma\"}
+    \"dateOfEvent\":\"$(date +%F)\",
+    \"details\":{\"claimType\":\"DEATH\",\"causeOfDeath\":\"Natural causes\",\"placeOfDeath\":\"Dar es Salaam\",\"dateOfDeath\":\"$(date +%F)\",\"attendingPhysician\":\"Dr. Juma\"}
   }")
 CLAIM_ID=$(jsonval "$CLAIM_JSON" claimId)
 echo "claimId=$CLAIM_ID"
@@ -760,3 +751,7 @@ echo " documentRef:        $DOCUMENT_REF"
 echo " policyLoan:         $LOAN_STATUS"
 echo "================================================================"
 echo "Paste policyNumber/claimId/documentRef above into pgAdmin or a browser to explore."
+
+echo ""
+echo "=== Do the books match? (money movement step 7) ==="
+bash scripts/books-match.sh

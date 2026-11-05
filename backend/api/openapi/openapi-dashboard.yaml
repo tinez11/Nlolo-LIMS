@@ -75,6 +75,22 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/AgentDashboardView' }
         '403': { $ref: '#/components/responses/Problem' }
+  /finance/books-match:
+    get:
+      summary: Do the books match? (ledger.view)
+      description: >
+        Money movement step 7: the ledger beside the records it summarises -- 2128 against the sum of every policy
+        balance, the trial balance's two sides, and the money events still unposted. allMatch only when every difference
+        is zero. Run after seeding and after every money test.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BooksMatchView' }
+        '403': { $ref: '#/components/responses/Problem' }
 components:
   parameters:
     From:
@@ -98,6 +114,25 @@ components:
         application/problem+json:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   schemas:
+    BooksMatchView:
+      type: object
+      additionalProperties: false
+      required: [allMatch, checks]
+      properties:
+        allMatch: { type: boolean }
+        checks:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, ledger, records, difference, unit, matches]
+            properties:
+              name: { type: string }
+              ledger: { type: string, description: What the ledger says, as a decimal string (or a count). }
+              records: { type: string, description: What the records it summarises say. }
+              difference: { type: string, description: ledger minus records; zero when they match. }
+              unit: { type: string, enum: [TZS, count] }
+              matches: { type: boolean }
     # anyOf, not oneOf: with oneOf the validator refused a real amount for matching "2 out of 2" branches. anyOf says
     # what is meant anyway -- null, or the common Money -- and keeps that schema the one definition of money.
     Money:

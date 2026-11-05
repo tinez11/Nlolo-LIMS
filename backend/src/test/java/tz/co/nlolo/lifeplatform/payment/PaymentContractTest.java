@@ -116,7 +116,10 @@ class PaymentContractTest {
             "db-migrations/payment/V9__account_purposes.sql",
             "db-migrations/payment/V17__manual_receipts.sql",
             "db-migrations/payment/V18__payout_routes.sql",
-            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql");
+            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
+            "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
+            "db-migrations/payment/V24__reversed_status.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -621,5 +624,25 @@ class PaymentContractTest {
         // A finance officer may ask: an unknown receipt is a 404, not a refusal of the role.
         mockMvc.perform(post("/receipts/" + UUID.randomUUID() + "/approval").with(staffOf(tenantId, "FINANCE_OFFICER")))
             .andExpect(status().isNotFound());
+    }
+
+    /** Money movement step 1: a receipt pays an invoice OR repays a loan. The spec takes loanId; naming both is refused
+     * in words, as a 409, before anything is read. */
+    @Test
+    void aReceiptNamesAnInvoiceOrALoanNotBoth() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String both = "{\"invoiceId\":\"" + UUID.randomUUID() + "\",\"loanId\":\"" + UUID.randomUUID() + "\","
+            + "\"method\":\"CASH\",\"reference\":\"CR-BOTH\",\"amount\":{\"amount\":\"100.00\",\"currencyCode\":\"TZS\"},"
+            + "\"receivedOn\":\"2026-10-27\"}";
+        mockMvc.perform(post("/receipts").contentType(MediaType.APPLICATION_JSON).content(both)
+                .with(staffOf(tenantId, "FINANCE_OFFICER")))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        String neither = "{\"method\":\"CASH\",\"reference\":\"CR-NEITHER\","
+            + "\"amount\":{\"amount\":\"100.00\",\"currencyCode\":\"TZS\"},\"receivedOn\":\"2026-10-27\"}";
+        mockMvc.perform(post("/receipts").contentType(MediaType.APPLICATION_JSON).content(neither)
+                .with(staffOf(tenantId, "FINANCE_OFFICER")))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 }

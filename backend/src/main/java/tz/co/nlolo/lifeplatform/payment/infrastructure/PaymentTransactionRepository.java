@@ -16,6 +16,11 @@ public interface PaymentTransactionRepository
     /** One invoice's receipts in one state -- those still waiting for their second signature (2026-10-28). */
     java.util.List<PaymentTransaction> findByTenantIdAndSourceRefAndStatusOrderByCreatedAtAsc(UUID tenantId, String sourceRef,
                                                                                             String status);
+    /** One policy's deposits in one state -- a balance's own view of what is in flight (money movement). */
+    java.util.List<PaymentTransaction> findByTenantIdAndPolicyNumberAndPurposeAndStatusOrderByCreatedAtAsc(UUID tenantId,
+                                                                                                        String policyNumber,
+                                                                                                        String purpose,
+                                                                                                        String status);
     Optional<PaymentTransaction> findByGatewayReferenceAndTenantId(String gatewayReference, UUID tenantId);
 
     // ---- Recorded receipts (2026-10-27) ----
@@ -48,4 +53,9 @@ public interface PaymentTransactionRepository
      * javadoc and db-migrations/payment/V4's section-2 comment. */
     @Query(value = "SELECT payment.resolve_payment_transaction_tenant_by_id(:paymentTransactionId)", nativeQuery = true)
     UUID resolveTenantByPaymentTransactionId(@Param("paymentTransactionId") UUID paymentTransactionId);
+
+    /** Confirmed collections in TZS by method (money movement step 7's cash check): [method, total]. */
+    @Query("SELECT t.method, SUM(t.amount) FROM PaymentTransaction t WHERE t.tenantId = :tenantId "
+        + "AND t.status = 'CONFIRMED' AND t.currency = 'TZS' GROUP BY t.method")
+    java.util.List<Object[]> confirmedByMethod(@Param("tenantId") UUID tenantId);
 }

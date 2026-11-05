@@ -151,6 +151,7 @@ class BillingContractTest {
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             "db-migrations/policyloan/V8__interest_month_published.sql",
+            "db-migrations/policyloan/V9__payout_approval.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
             // M5 (Task 7) addition: PremiumInvoice now maps amount_paid -- every JPA insert
@@ -164,6 +165,10 @@ class BillingContractTest {
             "db-migrations/billing/V8__schedule_premium_paying_until.sql",
             "db-migrations/billing/V10__premium_receipt.sql",
             "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql", "db-migrations/billing/V13__credit_refund_payout.sql",
+            "db-migrations/billing/V14__policy_balance.sql",
+            "db-migrations/billing/V15__balance_withdrawal.sql",
+            "db-migrations/billing/V16__deposit_reversal.sql",
+            "db-migrations/billing/V17__lender_refund_approval.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
@@ -174,7 +179,8 @@ class BillingContractTest {
             "db-migrations/distribution/V5__agent_channel_and_home_branch.sql",
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
-            "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql");
+            "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
+            "db-migrations/distribution/V11__commission_payout_approval.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -615,6 +621,47 @@ class BillingContractTest {
             .andExpect(jsonPath("$[0].balanceDue.amount").value("15000.00"))
             // A scheduled premium, not raised by a monthly file.
             .andExpect(jsonPath("$[0].enrolmentSubmissionId").doesNotExist());
+    }
+
+    @Autowired private tz.co.nlolo.lifeplatform.billing.application.BillingApiImpl billingApiImpl;
+
+    /** Money movement step 5: the balance and its statement, as the Billing tab reads them. */
+    @Test
+    void theBalanceAndItsStatementMatchTheSpec() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-CONTRACT-BALANCE-01");
+        mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/balance").with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.balance.amount").value("0.00"))
+            .andExpect(jsonPath("$.coversPremiumsTo").value(org.hamcrest.Matchers.nullValue()));
+
+        String invoices = mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
+                .with(staffOf(fixture.tenantId())))
+            .andReturn().getResponse().getContentAsString();
+        UUID invoiceId = UUID.fromString(JsonPath.read(invoices, "$[0].invoiceId"));
+        TenantContext.set(fixture.tenantId());
+        try {
+            billingApiImpl.applyConfirmedPayment(invoiceId, new java.math.BigDecimal("20000.00"), "TZS", "SLIP-CT-BAL",
+                "Amina", "CASH", UUID.randomUUID());
+        } finally {
+            TenantContext.clear();
+        }
+
+        mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/balance").with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.balance.amount").value("5000.00"));
+        mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/balance/statement").with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.total").value(2))
+            .andExpect(jsonPath("$.lines[0].type").value("PREMIUM_PAID"))
+            .andExpect(jsonPath("$.lines[0].amount.amount").value("-15000.00"))
+            .andExpect(jsonPath("$.lines[0].balanceAfter.amount").value("5000.00"))
+            .andExpect(jsonPath("$.lines[1].type").value("DEPOSIT"));
+        mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/balance/statement?size=0")
+                .with(staffOf(fixture.tenantId())))
+            .andExpect(status().isBadRequest());
     }
 
     /** A credit is readable, and the invoice it is credited against says so in its balance --

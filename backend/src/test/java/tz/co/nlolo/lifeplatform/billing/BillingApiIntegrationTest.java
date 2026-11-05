@@ -182,6 +182,7 @@ class BillingApiIntegrationTest {
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             "db-migrations/policyloan/V8__interest_month_published.sql",
+            "db-migrations/policyloan/V9__payout_approval.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
             "db-migrations/billing/V3__amount_paid.sql",
@@ -192,6 +193,10 @@ class BillingApiIntegrationTest {
             "db-migrations/billing/V9__schedules_due_for_invoicing.sql",
             "db-migrations/billing/V10__premium_receipt.sql",
             "db-migrations/billing/V11__premium_in_advance.sql", "db-migrations/billing/V12__schedule_anchor_date.sql", "db-migrations/billing/V13__credit_refund_payout.sql",
+            "db-migrations/billing/V14__policy_balance.sql",
+            "db-migrations/billing/V15__balance_withdrawal.sql",
+            "db-migrations/billing/V16__deposit_reversal.sql",
+            "db-migrations/billing/V17__lender_refund_approval.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V16__payment_policy_number.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
@@ -207,7 +212,10 @@ class BillingApiIntegrationTest {
             "db-migrations/payment/V9__account_purposes.sql",
             "db-migrations/payment/V17__manual_receipts.sql",
             "db-migrations/payment/V18__payout_routes.sql",
-            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql");
+            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
+            "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
+            "db-migrations/payment/V24__reversed_status.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql");
     }
 
     @AfterAll
@@ -955,6 +963,331 @@ class BillingApiIntegrationTest {
         assertThat(afterPayment.getStatus()).isEqualTo("WAIVED");
         // WAIVED is terminal -- a late payment must never quietly credit amountPaid either.
         assertThat(afterPayment.getAmountPaid()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    // =========================================================================================
+    // Money movement step 2 (2026-11-04) -- the policy balance. Premium money lands on the
+    // policy's balance, is posted for what arrived, and pays what has fallen due, oldest first.
+    // =========================================================================================
+
+    @Test
+    void moreThanIsOwedPaysTheInvoiceAndTheRestStaysOnTheBalanceForPremiumsNotYetDue() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BALANCE-OVER-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        TenantContext.set(tenantId);
+        List<PremiumInvoice> invoices = premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId);
+        assertThat(invoices).as("rolling billing raises instalments ahead, or this proves nothing").hasSizeGreaterThan(1);
+
+        eventRecorder.clear();
+        billingApi.applyConfirmedPayment(invoices.get(0).getInvoiceId(), new BigDecimal("40000.00"), "TZS", "SLIP-OVER-1",
+            "Amina", "CASH", UUID.randomUUID());
+
+        Map<UUID, String> after = statusById(tenantId, policyNumber);
+        assertThat(after.get(invoices.get(0).getInvoiceId())).isEqualTo("PAID");
+        // Next month's premium is not due yet: the balance waits for its due date rather than paying it today.
+        assertThat(after.get(invoices.get(1).getInvoiceId())).isEqualTo("DUE");
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balanceOf(policyNumber)).isEqualByComparingTo("25000.00");
+        // Posted for what arrived, and the premium for what it paid.
+        assertThat(eventRecorder.ofType("billing.DepositReceived")).hasSize(1);
+        assertThat((Map<String, Object>) payloadOf(eventRecorder.ofType("billing.DepositReceived").get(0)).get("amount"))
+            .containsEntry("amount", "40000.00");
+        assertThat(eventRecorder.ofType("billing.PremiumPaidFromBalance")).hasSize(1);
+        assertThat((Map<String, Object>) payloadOf(eventRecorder.ofType("billing.PremiumPaidFromBalance").get(0)).get("amount"))
+            .containsEntry("amount", "15000.00");
+        assertThat(eventRecorder.ofType("billing.PremiumCollected")).hasSize(1);
+    }
+
+    @Test
+    void theBalanceSaysHowFarAheadItPaysAndItsStatementRunsNewestFirst() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BALANCE-STMT-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        TenantContext.set(tenantId);
+        List<PremiumInvoice> invoices = premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId);
+        assertThat(invoices).hasSizeGreaterThan(2);
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balance(policyNumber).coversPremiumsTo()).as("nothing on the balance yet").isNull();
+
+        // 40,000 against 15,000 a month: the first premium is paid, 25,000 stays -- one whole premium more, not two.
+        billingApi.applyConfirmedPayment(invoices.get(0).getInvoiceId(), new BigDecimal("40000.00"), "TZS", "SLIP-STMT-1",
+            "Amina", "CASH", UUID.randomUUID());
+        TenantContext.set(tenantId);
+        var balance = billingApi.balance(policyNumber);
+        assertThat(balance.balance()).isEqualByComparingTo("25000.00");
+        assertThat(balance.coversPremiumsTo()).isEqualTo(invoices.get(1).getDueDate());
+        // The books-match check's side of 2128 (money movement step 7): this tenant's one balance, summed.
+        assertThat(billingApi.policyBalancesTotal()).isEqualByComparingTo("25000.00");
+
+        var statement = billingApi.balanceStatement(policyNumber, 0, 50);
+        assertThat(statement.total()).isEqualTo(2);
+        assertThat(statement.lines()).extracting(l -> l.type()).containsExactly("PREMIUM_PAID", "DEPOSIT");
+        assertThat(statement.lines().get(0).amount()).isEqualByComparingTo("-15000.00");
+        assertThat(statement.lines().get(0).balanceAfter()).isEqualByComparingTo("25000.00");
+        assertThat(statement.lines().get(0).invoiceId()).isEqualTo(invoices.get(0).getInvoiceId());
+        assertThat(statement.lines().get(1).amount()).isEqualByComparingTo("40000.00");
+        assertThat(statement.lines().get(1).balanceAfter()).isEqualByComparingTo("40000.00");
+        assertThat(statement.lines().get(1).seq()).isEqualTo(1);
+        // Paged: the second page of one line is the oldest.
+        assertThat(billingApi.balanceStatement(policyNumber, 1, 1).lines()).extracting(l -> l.type()).containsExactly("DEPOSIT");
+    }
+
+    @Test
+    void aPartPaymentIsPostedAtOnceAndLeavesNothingOnTheBalance() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BALANCE-PART-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+
+        TenantContext.set(tenantId);
+        eventRecorder.clear();
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("5000.00"), "TZS", "SLIP-PART-1",
+            null, "BANK_DEPOSIT", UUID.randomUUID());
+
+        // Review finding F1: the 5,000 is in the ledger the moment it arrives, not when the invoice is finally paid.
+        assertThat(eventRecorder.ofType("billing.DepositReceived")).hasSize(1);
+        assertThat(eventRecorder.ofType("billing.PremiumPaidFromBalance")).hasSize(1);
+        assertThat(eventRecorder.ofType("billing.PremiumCollected")).isEmpty();
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balanceOf(policyNumber)).isEqualByComparingTo("0.00");
+        assertThat(premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoice.invoiceId(), tenantId).orElseThrow()
+            .getStatus()).isEqualTo("PARTIALLY_PAID");
+    }
+
+    @Test
+    void aRedeliveredConfirmationDepositsOnce() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BALANCE-REDELIVER-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+        UUID paymentId = UUID.randomUUID();
+
+        TenantContext.set(tenantId);
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("20000.00"), "TZS", "SLIP-ONCE-1", null,
+            "CASH", paymentId);
+        TenantContext.set(tenantId);
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("20000.00"), "TZS", "SLIP-ONCE-2", null,
+            "CASH", paymentId);
+
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balanceOf(policyNumber)).isEqualByComparingTo("5000.00");
+    }
+
+    @Test
+    void namingANextPremiumPaysItEarlyAndOldestFirst() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BALANCE-NAMED-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        TenantContext.set(tenantId);
+        List<PremiumInvoice> invoices = premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId);
+
+        // Paid against next month's premium: the older one, due now, is paid first, then the one asked for.
+        billingApi.applyConfirmedPayment(invoices.get(1).getInvoiceId(), new BigDecimal("30000.00"), "TZS",
+            "SLIP-NAMED-1", null, "CASH", UUID.randomUUID());
+
+        Map<UUID, String> after = statusById(tenantId, policyNumber);
+        assertThat(after.get(invoices.get(0).getInvoiceId())).isEqualTo("PAID");
+        assertThat(after.get(invoices.get(1).getInvoiceId())).isEqualTo("PAID");
+        if (invoices.size() > 2) assertThat(after.get(invoices.get(2).getInvoiceId())).isEqualTo("DUE");
+    }
+
+    @Test
+    void moneyAfterAnInvoiceWasWaivedStaysOnTheBalanceInsteadOfVanishing() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BALANCE-WAIVED-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+        TenantContext.set(tenantId);
+        billingApi.waiveInvoice(invoice.invoiceId(), "Hardship write-off", "finance-one");
+
+        TenantContext.set(tenantId);
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("15000.00"), "TZS", "SLIP-LATE-1", null,
+            "MOBILE_MONEY", UUID.randomUUID());
+
+        // Review finding F3: it used to be a receipt row and nothing else. It is the payer's, on the balance.
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balanceOf(policyNumber)).isEqualByComparingTo("15000.00");
+    }
+
+    @Test
+    void aLoanSurplusLandsOnTheBalanceWithoutBeingPostedAgain() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BALANCE-LOAN-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+
+        TenantContext.set(tenantId);
+        eventRecorder.clear();
+        billingApiImpl.depositLoanSurplus(policyNumber, new BigDecimal("50000.00"), "TZS", UUID.randomUUID(), "CASH",
+            "SLIP-LOAN-1");
+
+        // policyloan's E-03-SURPLUS already posted it; a DepositReceived here would post the same cash twice.
+        assertThat(eventRecorder.ofType("billing.DepositReceived")).isEmpty();
+        // It pays the premium that is due, like any other deposit.
+        assertThat(eventRecorder.ofType("billing.PremiumPaidFromBalance")).hasSize(1);
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balanceOf(policyNumber)).isEqualByComparingTo("35000.00");
+    }
+
+    // =========================================================================================
+    // Money movement step 3a (2026-11-04) -- withdrawals from the policy balance.
+    // =========================================================================================
+
+    @Autowired private tz.co.nlolo.lifeplatform.billing.application.BalanceWithdrawals balanceWithdrawals;
+
+    /** A policy with 25,000 left on its balance after its first premium (15,000 of 40,000). */
+    private String policyWithBalance(UUID tenantId, String code) {
+        Fixture fixture = buildFixture(tenantId, code);
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+        TenantContext.set(tenantId);
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("40000.00"), "TZS", "SLIP-" + code, null,
+            "CASH", UUID.randomUUID());
+        return policyNumber;
+    }
+
+    @Test
+    void aWithdrawalLeavesTheBalanceOnlyWhenASecondPersonApprovesIt() {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = policyWithBalance(tenantId, "WITHDRAW-01");
+
+        TenantContext.set(tenantId);
+        var asked = balanceWithdrawals.request(policyNumber, new BigDecimal("10000.00"),
+            tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney("255754000001"), "finance-1");
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balanceOf(policyNumber)).as("asked is not paid").isEqualByComparingTo("25000.00");
+
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> balanceWithdrawals.approve(asked.getWithdrawalId(), "finance-1"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.BalanceRefusedException.class)
+            .hasMessageContaining("someone other than");
+
+        eventRecorder.clear();
+        TenantContext.set(tenantId);
+        balanceWithdrawals.approve(asked.getWithdrawalId(), "finance-2");
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balanceOf(policyNumber)).isEqualByComparingTo("15000.00");
+        assertThat(eventRecorder.ofType("billing.BalanceWithdrawalApproved")).hasSize(1);
+        assertThat(eventRecorder.ofType("billing.BalanceWithdrawalPayoutRequested")).hasSize(1);
+    }
+
+    @Test
+    void aWithdrawalCannotTakeMoreThanIsOnTheBalance() {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = policyWithBalance(tenantId, "WITHDRAW-02");
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> balanceWithdrawals.request(policyNumber, new BigDecimal("25000.01"),
+            tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney("255754000001"), "finance-1"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.BalanceRefusedException.class)
+            .hasMessageContaining("25000.00");
+    }
+
+    @Test
+    void aRefusedTransferPutsTheMoneyBackOnTheBalance() {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = policyWithBalance(tenantId, "WITHDRAW-03");
+        TenantContext.set(tenantId);
+        var asked = balanceWithdrawals.request(policyNumber, new BigDecimal("25000.00"),
+            tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney("255754000001"), "finance-1");
+        TenantContext.set(tenantId);
+        balanceWithdrawals.approve(asked.getWithdrawalId(), "finance-2");
+        eventRecorder.clear();
+        TenantContext.set(tenantId);
+        balanceWithdrawals.markFailed(asked.getWithdrawalId(), UUID.randomUUID());
+        TenantContext.set(tenantId);
+        balanceWithdrawals.markFailed(asked.getWithdrawalId(), UUID.randomUUID());
+
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balanceOf(policyNumber)).as("back once, not twice").isEqualByComparingTo("25000.00");
+        assertThat(eventRecorder.ofType("billing.BalanceWithdrawalReturned")).hasSize(1);
+    }
+
+    @Test
+    void aPolicyThatEndsWithMoneyOnItsBalanceRaisesAWithdrawalWaitingForAPayee() {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = policyWithBalance(tenantId, "WITHDRAW-04");
+
+        publishCommitted(tenantId, "policy.PolicyCancelledFreeLook", Map.of("policyNumber", policyNumber,
+            "cancelledAt", java.time.Instant.now().toString(), "cancelledBy", "staff-two"));
+
+        TenantContext.set(tenantId);
+        var raised = balanceWithdrawals.listFor(policyNumber);
+        assertThat(raised).hasSize(1);
+        assertThat(raised.get(0).getStatus()).isEqualTo("AWAITING_PAYEE");
+        assertThat(raised.get(0).getReason()).isEqualTo("POLICY_ENDED");
+        assertThat(raised.get(0).getAmount()).isEqualByComparingTo("25000.00");
+
+        // Finance names the payee; a second person then approves, as any withdrawal.
+        TenantContext.set(tenantId);
+        var named = balanceWithdrawals.namePayee(raised.get(0).getWithdrawalId(),
+            tz.co.nlolo.lifeplatform.PayoutRoute.mobileMoney("255754000002"), "finance-1");
+        assertThat(named.getStatus()).isEqualTo("REQUESTED");
+    }
+
+    // =========================================================================================
+    // Money movement step 3b (2026-11-04) -- reversing a deposit whose money never arrived.
+    // =========================================================================================
+
+    @Autowired private tz.co.nlolo.lifeplatform.billing.application.DepositReversals depositReversals;
+
+    @Test
+    void aBouncedChequeComesOffTheBalanceReopensThePremiumItPaidAndClawsBackItsCollection() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "REVERSE-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+        UUID cheque = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("40000.00"), "TZS", "CHQ-BOUNCE", null,
+            "CHEQUE", cheque);
+
+        TenantContext.set(tenantId);
+        var asked = depositReversals.request(cheque, "Cheque returned unpaid by the bank", "finance-1");
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> depositReversals.confirm(asked.getReversalId(), "finance-1"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.BalanceRefusedException.class)
+            .hasMessageContaining("someone other than");
+
+        eventRecorder.clear();
+        TenantContext.set(tenantId);
+        depositReversals.confirm(asked.getReversalId(), "finance-2");
+
+        // 40,000 came off; the 15,000 premium it paid is owed again, so the balance is back to nothing, not below.
+        TenantContext.set(tenantId);
+        assertThat(billingApi.balanceOf(policyNumber)).isEqualByComparingTo("0.00");
+        assertThat(premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoice.invoiceId(), tenantId).orElseThrow()
+            .getStatus()).isEqualTo("DUE");
+        assertThat(eventRecorder.ofType("billing.DepositReversed")).hasSize(1);
+        assertThat(eventRecorder.ofType("billing.PremiumPaidReversed")).hasSize(1);
+        List<DomainEventEnvelope<?>> undone = eventRecorder.ofType("billing.PremiumCollectionReversed");
+        assertThat(undone).hasSize(1);
+        assertThat(payloadOf(undone.get(0)).get("collection")).isEqualTo(1);
+
+        // Paid again for real: a new collection, numbered 2, so its commission is keyed apart from the one clawed back.
+        eventRecorder.clear();
+        TenantContext.set(tenantId);
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("15000.00"), "TZS", "SLIP-REAL", null,
+            "CASH", UUID.randomUUID());
+        assertThat(payloadOf(eventRecorder.ofType("billing.PremiumCollected").get(0)).get("collection")).isEqualTo(2);
+    }
+
+    @Test
+    void aDepositIsReversedOnceOnly() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "REVERSE-02");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+        UUID payment = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("15000.00"), "TZS", "SLIP-ONCE", null,
+            "CASH", payment);
+        TenantContext.set(tenantId);
+        depositReversals.request(payment, "Reversed by the bank", "finance-1");
+
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> depositReversals.request(payment, "Again", "finance-1"))
+            .isInstanceOf(tz.co.nlolo.lifeplatform.billing.api.BalanceRefusedException.class)
+            .hasMessageContaining("already");
     }
 
     /**

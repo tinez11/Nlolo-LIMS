@@ -33,8 +33,14 @@ import java.util.UUID;
 @RestController
 public class ReceiptController {
 
+    /**
+     * An invoice it pays, a loan it repays (money movement step 1) or a policy's balance it goes onto (step 5): one of
+     * the three, which Receipts.record enforces.
+     */
     public record RecordReceiptRequest(
-        @NotNull UUID invoiceId,
+        UUID invoiceId,
+        UUID loanId,
+        @Size(max = 40) String policyNumber,
         @NotNull ReceiptMethod method,
         @NotBlank @Size(max = 100) String reference,
         @NotNull MoneyDto amount,
@@ -45,15 +51,15 @@ public class ReceiptController {
 
     public record RejectReceiptRequest(@NotBlank @Size(max = 500) String reason) {}
 
-    public record ReceiptResponse(UUID receiptId, String method, String reference, String payerRef, MoneyDto amount,
-                                  UUID invoiceId, String policyNumber, LocalDate receivedOn, String note,
-                                  UUID fieldReceiptId, String status, String recordedBy, Instant recordedAt,
+    public record ReceiptResponse(UUID receiptId, String purpose, String method, String reference, String payerRef,
+                                  MoneyDto amount, UUID invoiceId, UUID loanId, String policyNumber, LocalDate receivedOn,
+                                  String note, UUID fieldReceiptId, String status, String recordedBy, Instant recordedAt,
                                   String decidedBy, Instant decidedAt, String decisionReason) {
         static ReceiptResponse from(ReceiptView v) {
-            return new ReceiptResponse(v.receiptId(), v.method(), v.reference(), v.payerRef(),
-                new MoneyDto(v.amount().toPlainString(), v.currency()), v.invoiceId(), v.policyNumber(), v.receivedOn(),
-                v.note(), v.fieldReceiptId(), v.status(), v.recordedBy(), v.recordedAt(), v.decidedBy(), v.decidedAt(),
-                v.decisionReason());
+            return new ReceiptResponse(v.receiptId(), v.purpose(), v.method(), v.reference(), v.payerRef(),
+                new MoneyDto(v.amount().toPlainString(), v.currency()), v.invoiceId(), v.loanId(), v.policyNumber(),
+                v.receivedOn(), v.note(), v.fieldReceiptId(), v.status(), v.recordedBy(), v.recordedAt(), v.decidedBy(),
+                v.decidedAt(), v.decisionReason());
         }
     }
 
@@ -67,17 +73,24 @@ public class ReceiptController {
     @PreAuthorize("@access.can('collections.manage')")
     public ResponseEntity<ReceiptResponse> record(@Valid @RequestBody RecordReceiptRequest body,
                                                   @AuthenticationPrincipal Jwt jwt) {
-        ReceiptView recorded = receipts.record(new Receipts.NewReceipt(body.invoiceId(), body.method(), body.reference(),
+        ReceiptView recorded = receipts.record(new Receipts.NewReceipt(body.invoiceId(), body.loanId(), body.method(), body.reference(),
             new BigDecimal(body.amount().amount()), body.receivedOn(), body.payerRef(), body.note(),
-            body.fieldReceiptId()), jwt.getSubject());
+            body.fieldReceiptId(), body.policyNumber()), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(ReceiptResponse.from(recorded));
     }
 
-    /** The receipts waiting to be confirmed on one invoice -- the invoice's own view of what is in flight. */
+    /**
+     * The receipts waiting to be confirmed on one invoice, or the deposits waiting on one policy's balance -- the
+     * record's own view of what is in flight. Exactly one of the two is named.
+     */
     @GetMapping("/receipts")
     @PreAuthorize("@access.canAny('collections.view', 'collections.manage')")
-    public ResponseEntity<java.util.List<ReceiptResponse>> waiting(@RequestParam UUID invoiceId) {
-        return ResponseEntity.ok(receipts.waitingOn(invoiceId).stream().map(ReceiptResponse::from).toList());
+    public ResponseEntity<java.util.List<ReceiptResponse>> waiting(@RequestParam(required = false) UUID invoiceId,
+                                                                   @RequestParam(required = false) String policyNumber) {
+        boolean byPolicy = policyNumber != null && !policyNumber.isBlank();
+        if ((invoiceId != null) == byPolicy) throw new IllegalArgumentException("Name one invoice or one policy");
+        java.util.List<ReceiptView> waiting = byPolicy ? receipts.waitingOnPolicy(policyNumber) : receipts.waitingOn(invoiceId);
+        return ResponseEntity.ok(waiting.stream().map(ReceiptResponse::from).toList());
     }
 
     @GetMapping("/receipts/{receiptId}")

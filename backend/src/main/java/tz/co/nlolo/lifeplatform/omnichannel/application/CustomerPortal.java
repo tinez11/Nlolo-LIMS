@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tz.co.nlolo.lifeplatform.accumulation.api.AccumulationApi;
 import tz.co.nlolo.lifeplatform.annuity.api.AnnuityApi;
 import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
+import tz.co.nlolo.lifeplatform.omnichannel.api.CustomerStatementView;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceNotFoundException;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimStatus;
@@ -155,7 +156,36 @@ public class CustomerPortal {
                 d.schedule().amountAtMaturity()))
             .orElse(null);
         return new CustomerPolicyView(summary, lifeAssured, policy.commencementDate(), policy.maturityDate(),
-            policy.policyTermMonths(), beneficiaries, lives, savings, units, annuity, claims, deposit);
+            policy.policyTermMonths(), beneficiaries, lives, savings, units, annuity, claims, deposit, balanceOf(policyNumber));
+    }
+
+    /** Money movement step 5 (D12): a savings-type policy keeps its money in its account and shows no balance. */
+    private CustomerPolicyView.Balance balanceOf(String policyNumber) {
+        if (billingApi.isSavingsType(policyNumber)) return null;
+        var b = billingApi.balance(policyNumber);
+        return new CustomerPolicyView.Balance(b.balance(), b.currency(), b.coversPremiumsTo());
+    }
+
+    /** One page of the customer's own policy balance statement, newest first (money movement step 5). */
+    @Transactional(readOnly = true)
+    public CustomerStatementView statement(UUID customerPartyId, String policyNumber, int page, int size) {
+        requireHeld(customerPartyId, policyNumber);
+        var s = billingApi.balanceStatement(policyNumber, page, size);
+        return new CustomerStatementView(s.currency(), s.total(), s.page(), s.size(), s.lines().stream()
+            .map(l -> new CustomerStatementView.Line(l.entryId(), l.type(), l.at(), l.amount(), l.balanceAfter()))
+            .toList());
+    }
+
+    /** The customer asks for money back off their policy's balance to their phone; staff approve it. */
+    public UUID requestWithdrawal(UUID customerPartyId, String policyNumber, BigDecimal amount, String phone, String by) {
+        requireHeld(customerPartyId, policyNumber);
+        return billingApi.requestWithdrawalToMobileMoney(policyNumber, amount, phone, by);
+    }
+
+    private void requireHeld(UUID customerPartyId, String policyNumber) {
+        if (!customerPartyId.equals(policyApi.getPolicy(policyNumber).policyholderPartyId())) {
+            throw new AccessDeniedException("Policy " + policyNumber + " is not held by this customer");
+        }
     }
 
     private CustomerPolicySummary summary(PolicyView policy, Map<UUID, String> productNames) {

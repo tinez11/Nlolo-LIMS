@@ -13,4 +13,6 @@ public interface CommissionStatementRepository extends JpaRepository<CommissionS
     Optional<CommissionStatement> findByTenantIdAndAgentIdAndPeriodAndTotalCurrency(
         UUID tenantId, UUID agentId, String period, String totalCurrency);
     List<CommissionStatement> findByTenantIdAndAgentIdOrderByPeriodDesc(UUID tenantId, UUID agentId);
+    List<CommissionStatement> findByTenantIdAndStatusOrderByPeriod(UUID tenantId,
+        tz.co.nlolo.lifeplatform.distribution.api.StatementStatus status);
 }

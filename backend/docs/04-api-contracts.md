@@ -51,7 +51,7 @@ Standard response set reused via `$ref` in every module spec: `400` (validation)
 | `product` | read catalog | read catalog | author + read | — |
 | `underwriting` | — | submit application, read own | assess, decide, referral | — |
 | `policy` | read own, endorse own (limited), surrender own, beneficiary changes | read/act scoped to book | full + manual-issue exception path | — |
-| `policyloan` | originate/repay own | originate/repay scoped | read | — |
+| `policyloan` | read own; ask to repay own by mobile money (`POST /loans/{loanId}/payment-request`) | read scoped; ask to repay scoped | originate (`loans.manage`); ask to repay; a repayment by hand is a deposit For: Loan (`POST /receipts` with `loanId`, `collections.manage`, confirmed by `collections.approve`) — money movement step 1, 2026-11-04 | — |
 | `billing` | read own invoices | read scoped, field-receipt capture | waiver, full read | — |
 | `claims` | register own, read own | register/read scoped | assess (assessor), decide (manager) | — |
 | `distribution` | — | read own commission/plan | onboard, administer | — |

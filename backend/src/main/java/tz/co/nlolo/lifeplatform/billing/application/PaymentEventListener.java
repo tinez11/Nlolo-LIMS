@@ -47,12 +47,14 @@ public class PaymentEventListener {
 
     private final BillingApi billingApi;
     private final BillingApiImpl billingApiImpl;
+    private final BalanceWithdrawals balanceWithdrawals;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
     public PaymentEventListener(BillingApi billingApi, BillingApiImpl billingApiImpl,
-                                PlatformTransactionManager transactionManager) {
+                                BalanceWithdrawals balanceWithdrawals, PlatformTransactionManager transactionManager) {
         this.billingApi = billingApi;
         this.billingApiImpl = billingApiImpl;
+        this.balanceWithdrawals = balanceWithdrawals;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
@@ -62,6 +64,9 @@ public class PaymentEventListener {
         switch (envelope.eventType()) {
             case "payment.PaymentConfirmed" -> withTenant(envelope, this::handleConfirmed);
             case "payment.PaymentFailed" -> withTenant(envelope, this::handleFailed);
+            // Money above what a loan owed (money movement step 2): the payer's, onto the policy's balance. policyloan's
+            // rule E-03-SURPLUS already posted it, so the deposit posts nothing more.
+            case "policyloan.LoanOverpaid" -> withTenant(envelope, this::handleLoanSurplus);
             // A lender's premium paid back (2026-10-30): the transfer finance made, or the rail's refusal of it.
             case "payment.DisbursementCompleted", "payment.DisbursementFailed" -> {
                 @SuppressWarnings("unchecked")
@@ -70,9 +75,35 @@ public class PaymentEventListener {
                     boolean completed = "payment.DisbursementCompleted".equals(envelope.eventType());
                     withTenant(envelope, payload -> handleCreditRefund(payload, completed));
                 }
+                // Money taken back off a policy's balance (money movement step 3a): paid, or refused by the rail.
+                if (BalanceWithdrawals.PURPOSE.equals(p.get("purpose"))) {
+                    boolean completed = "payment.DisbursementCompleted".equals(envelope.eventType());
+                    withTenant(envelope, payload -> handleWithdrawal(payload, completed));
+                }
             }
             default -> { /* not billing-relevant */ }
         }
+    }
+
+    private void handleWithdrawal(Map<String, Object> payload, boolean completed) {
+        UUID withdrawalId = UUID.fromString(String.valueOf(payload.get("sourceRef")));
+        Object id = payload.get("disbursementId");
+        UUID disbursementId = id == null ? null : id instanceof UUID u ? u : UUID.fromString(String.valueOf(id));
+        if (completed) {
+            balanceWithdrawals.markPaid(withdrawalId, disbursementId);
+        } else {
+            balanceWithdrawals.markFailed(withdrawalId, disbursementId);
+        }
+    }
+
+    private void handleLoanSurplus(Map<String, Object> payload) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> amount = (Map<String, Object>) payload.get("amount");
+        Object paymentId = payload.get("paymentId");
+        billingApiImpl.depositLoanSurplus(String.valueOf(payload.get("policyNumber")),
+            new BigDecimal(String.valueOf(amount.get("amount"))), String.valueOf(amount.get("currencyCode")),
+            paymentId instanceof UUID u ? u : UUID.fromString(String.valueOf(paymentId)),
+            (String) payload.get("receiptMethod"), (String) payload.get("paymentReference"));
     }
 
     private void handleCreditRefund(Map<String, Object> payload, boolean completed) {
@@ -104,6 +135,18 @@ public class PaymentEventListener {
     }
 
     private void handleConfirmed(Map<String, Object> payload) {
+        // A deposit naming no invoice (money movement step 5): onto the policy's balance by its number.
+        if ("DEPOSIT".equals(payload.get("purpose"))) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> amount = (Map<String, Object>) payload.get("amount");
+            Object paymentId = payload.get("paymentRequestId");
+            billingApiImpl.depositConfirmed(String.valueOf(payload.get("policyNumber")),
+                new BigDecimal(String.valueOf(amount.get("amount"))), String.valueOf(amount.get("currencyCode")),
+                paymentId instanceof UUID u ? u : UUID.fromString(String.valueOf(paymentId)),
+                (String) payload.get("method"), (String) payload.get("gatewayReference"), (String) payload.get("payerRef"));
+            reconcileFieldReceipt(payload);
+            return;
+        }
         if (!isPremium(payload)) {
             return;
         }
@@ -112,10 +155,19 @@ public class PaymentEventListener {
         Map<String, Object> amount = (Map<String, Object>) payload.get("amount");
         BigDecimal paidAmount = new BigDecimal((String) amount.get("amount"));
         String currency = (String) amount.get("currencyCode");
+        // Keyed on the confirmed payment itself (money movement step 2): its deposit lands on the balance once.
+        Object paymentId = payload.get("paymentRequestId");
         billingApi.applyConfirmedPayment(invoiceId, paidAmount, currency, (String) payload.get("gatewayReference"),
-            (String) payload.get("payerRef"), (String) payload.get("method"));
-        // An agent's cash, recorded as a receipt and approved (2026-10-27): the field receipt it brought in is matched
-        // now, by the money itself, rather than by somebody pressing "Mark matched" against nothing.
+            (String) payload.get("payerRef"), (String) payload.get("method"),
+            paymentId == null ? null : paymentId instanceof UUID u ? u : UUID.fromString(paymentId.toString()));
+        reconcileFieldReceipt(payload);
+    }
+
+    /**
+     * An agent's cash, recorded as a receipt and approved (2026-10-27): the field receipt it brought in is matched now,
+     * by the money itself, rather than by somebody pressing "Mark matched" against nothing.
+     */
+    private void reconcileFieldReceipt(Map<String, Object> payload) {
         Object fieldReceiptId = payload.get("fieldReceiptId");
         if (fieldReceiptId != null) {
             billingApi.reconcileFieldReceipt(UUID.fromString(fieldReceiptId.toString()),

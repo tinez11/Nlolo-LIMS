@@ -50,6 +50,8 @@ import { NewRolePage } from '@/features/admin/NewRolePage';
 import { ApprovalsPage } from '@/features/approvals/ApprovalsPage';
 import { PaymentsPage } from '@/features/payments/PaymentsPage';
 import { NewReceiptPage } from '@/features/receipts/NewReceiptPage';
+import { ReverseDepositPage } from '@/features/receipts/ReverseDepositPage';
+import { BalanceWithdrawalPage } from '@/features/policies/BalanceWithdrawalPage';
 import { ReceiptPage } from '@/features/receipts/ReceiptPage';
 import { NewUserPage } from '@/features/admin/NewUserPage';
 import { RoleDetailPage } from '@/features/admin/RoleDetailPage';
@@ -212,7 +214,8 @@ export type BadgeKey =
   | 'eft-awaiting'
   | 'needs-action'
   | 'approvals'
-  | 'payments-attention';
+  | 'payments-attention'
+  | 'payouts-attention';
 
 interface NavPlacement {
   group: NavGroupId;
@@ -361,6 +364,7 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
     'collections.manage', 'funds.approve', 'funds.manage', 'products.declare-approve', 'ledger.approve', 'ledger.manage',
     'ifrs17.approve', 'reinsurance.approve'],
   policies: ['policies.view'], 'policies/new': ['policies.issue'], 'policies/:policyNumber': ['policies.view'],
+  'policies/:policyNumber/withdraw': ['payouts.manage'],
   'held-vestings': ['accounts.view'],
   'group-schemes/new': ['schemes.manage'], 'group-funeral-schemes/new': ['schemes.manage'],
   'credit-life-schemes/new': ['schemes.manage'], 'group-schemes/:policyNumber': ['schemes.view'],
@@ -375,10 +379,11 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   underwriting: ['underwriting.view'], 'underwriting/new': ['underwriting.propose'],
   'underwriting/:caseId': ['underwriting.view'],
   agents: ['agents.view'], 'agents/new': ['agents.manage'], 'agents/:agentId': ['agents.view'],
-  payments: ['collections.view', 'payouts.view'],
+  payments: ['collections.view'],
   'receipts/new': ['collections.manage'], 'receipts/:receiptId': ['collections.view', 'collections.manage'],
+  'receipts/:receiptId/reverse': ['collections.manage'],
   arrears: ['collections.view'], 'field-receipts': ['collections.view'], 'bank-transfers': ['payouts.view'],
-  payouts: ['payouts.view'], 'payouts/:instalmentId': ['payouts.view'], 'payment-runs': ['payouts.view'],
+  payouts: ['payouts.view'], 'payouts/all': ['payouts.view'], 'payouts/:instalmentId': ['payouts.view'], 'payment-runs': ['payouts.view'],
   'payment-runs/:paymentRunId': ['payouts.view'], 'withholding-rules': ['payouts.view'], maturities: ['payouts.view'],
   funds: ['funds.view'],
   'gl-postings': ['ledger.view'], 'gl-postings/:journalEntryId': ['ledger.view'], 'chart-of-accounts': ['ledger.view'],
@@ -419,6 +424,8 @@ const STAFF_SCREENS: Screen[] = [
   },
   { path: 'policies/new', element: <IssuePolicyPage />, reach: 'drill-in' },
   { path: 'policies/:policyNumber', element: <PolicyDetailPage />, reach: 'drill-in' },
+  // Money movement step 5: a withdrawal from the policy's balance, asked on its own page and approved by a second person.
+  { path: 'policies/:policyNumber/withdraw', element: <BalanceWithdrawalPage />, reach: 'drill-in' },
   // Pensions the daily vesting sweep could not vest (product step 5 D2).
   {
     path: 'held-vestings',
@@ -630,7 +637,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'field-receipts',
     element: <FieldReceiptsPage />,
-    reach: { group: 'collections', label: 'Field receipts', icon: HandCoins, badge: 'receipts-overdue' },
+    reach: { group: 'collections', label: 'Agent cash', icon: HandCoins, badge: 'receipts-overdue' },
   },
   // The third work queue, and the only one where the platform is the one who owes. Arrears and
   // field receipts are both about money coming IN and the platform can chase either by itself;
@@ -643,15 +650,19 @@ const STAFF_SCREENS: Screen[] = [
   // A receipt for premium the gateway did not pull, and its confirmation by a second person (2026-10-27).
   { path: 'receipts/new', element: <NewReceiptPage />, reach: 'drill-in' },
   { path: 'receipts/:receiptId', element: <ReceiptPage />, reach: 'drill-in' },
-  { path: 'payments', element: <PaymentsPage />, reach: { group: 'collections', label: 'Payments', icon: ArrowLeftRight, badge: 'payments-attention' } },
+  // Money movement step 5: a deposit whose money never arrived, reversed on its own page and confirmed by a second person.
+  { path: 'receipts/:receiptId/reverse', element: <ReverseDepositPage />, reach: 'drill-in' },
+  // Money movement 6d: the payments register is two registers by direction -- Deposits here, money out under Payouts.
+  { path: 'payments', element: <PaymentsPage direction="IN" />, reach: { group: 'collections', label: 'Deposits', icon: ArrowLeftRight, badge: 'payments-attention' } },
   // Money owed to LIVING policyholders (product step 2), as distinct from the claims queue, which
   // pays on death. Under finance for the same reason bank transfers are: reviewing and approving a
   // payout both move real money, and the endpoints are FINANCE_OFFICER/ADMIN only.
   {
     path: 'payouts',
     element: <PayoutsQueuePage />,
-    reach: { group: 'paying-out', label: 'Payouts', icon: Coins },
+    reach: { group: 'paying-out', label: 'Payouts', icon: Coins, badge: 'payouts-attention' },
   },
+  { path: 'payouts/all', element: <PaymentsPage direction="OUT" />, reach: 'drill-in' },
   { path: 'payouts/:instalmentId', element: <PayoutPage />, reach: 'drill-in' },
   {
     path: 'payment-runs',

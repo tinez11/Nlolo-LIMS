@@ -124,12 +124,22 @@ public class PaymentRequestListener {
             case "billing.PremiumRefundPayoutRequested" -> withTenant(envelope, payload -> payOut(TenantContext.get(),
                 requireKey(payload), payload, "CREDIT_LIFE_PREMIUM_REFUND", (String) payload.get("creditId"),
                 "PremiumRefundPayoutRequested"));
+            // A deposit reversed in billing (money movement step 3b): the receipt it came from is REVERSED in the register.
+            case "billing.DepositReversed" -> withTenant(envelope, payload -> requiresNewTransactionTemplate.executeWithoutResult(
+                status -> paymentApiImpl.markReversed(TenantContext.get(), UUID.fromString(String.valueOf(payload.get("paymentId"))))));
+            // Money taken back off a policy's balance, approved (money movement step 3a): paid by the route finance named.
+            case "billing.BalanceWithdrawalPayoutRequested" -> withTenant(envelope, payload -> payOut(TenantContext.get(),
+                requireKey(payload), payload, "BALANCE_WITHDRAWAL", (String) payload.get("withdrawalId"),
+                "BalanceWithdrawalPayoutRequested"));
             case "accumulation.PayoutRequested" -> withTenant(envelope, this::handleAccountPayout);
             // Unit-linked (product step 6): the same shape -- purpose, sourceRef, idempotencyKey, payee, amount.
             case "unitlinked.PayoutRequested" -> withTenant(envelope, this::handleAccountPayout);
             case "accumulation.TopUpRequested" -> withTenant(envelope, this::handleTopUpCollection);
             // A unit-linked top-up (product step 6, U2): its own collection purpose, so only unitlinked takes it.
             case "unitlinked.TopUpRequested" -> withTenant(envelope, this::handleUnitLinkedTopUp);
+            // A loan repayment asked of the payer's phone (money movement step 1, 2026-11-04): a collection under its own
+            // purpose, so only policyloan takes the confirmation.
+            case "policyloan.RepaymentRequested" -> withTenant(envelope, this::handleLoanRepaymentCollection);
             default -> { /* not payment-relevant */ }
         }
     }
@@ -293,6 +303,20 @@ public class PaymentRequestListener {
         String sourceRef = payload.get("instalmentId") != null
             ? (String) payload.get("instalmentId") : (String) payload.get("cancellationId");
         payOut(tenantId, idempotencyKey, payload, (String) payload.get("purpose"), sourceRef, "PayoutRequested");
+    }
+
+    /** A loan repayment: a collection under LOAN_REPAYMENT, its source the loan. Same two phases as a premium. */
+    private void handleLoanRepaymentCollection(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String idempotencyKey = requireKey(payload);
+        String loanId = String.valueOf(payload.get("loanId"));
+        String payerRef = (String) payload.get("payerRef");
+        Money money = money(payload);
+        Optional<UUID> transactionId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordCollectionRequest(
+            tenantId, idempotencyKey, payerRef, money.amount(), money.currency(), loanId, "LOAN_REPAYMENT"));
+        transactionId.ifPresentOrElse(
+            id -> submitCollection(tenantId, id, payerRef, money),
+            () -> log.info("Dropping duplicate RepaymentRequested for tenant {} key {}", tenantId, idempotencyKey));
     }
 
     private void handlePremiumCollection(Map<String, Object> payload) {

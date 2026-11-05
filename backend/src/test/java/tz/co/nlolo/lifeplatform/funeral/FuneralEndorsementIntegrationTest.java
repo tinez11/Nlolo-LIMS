@@ -82,16 +82,11 @@ class FuneralEndorsementIntegrationTest {
     }
 
     /**
-     * What issueFamilyInForce collected (DR cash, CR receivable). Billing's own invoices never see it -- the
-     * fixture publishes the collection event without paying an invoice -- so the ledger's receivable is every
-     * invoice billed less this one collection.
-     */
-    private static final BigDecimal FIRST_PREMIUM_COLLECTED = new BigDecimal("12075.00");
-
-    /**
      * The ledger's premium receivable for one policy: debits less credits on 2142 LRC (PAA) premiums due -- funeral
      * cover is measured under PAA by the register's baseline, so since IFRS 17 I3a its premium posts to the PAA
-     * accounts (2122 between I1 and I3a, 1210 before I1).
+     * accounts (2122 between I1 and I3a, 1210 before I1). It is every invoice billed: issueFamilyInForce publishes its
+     * first collection without paying an invoice, and since money movement step 2 a collection posts nothing -- the
+     * cash posts on a deposit and the premium on its payment from the balance, neither of which the fixture makes.
      */
     private BigDecimal receivable(String policyNumber) {
         BigDecimal balance = jdbc.queryForObject("SELECT COALESCE(SUM(CASE WHEN direction = 'DR' THEN amount ELSE -amount END), 0)"
@@ -122,7 +117,7 @@ class FuneralEndorsementIntegrationTest {
             i.dueDate().isBefore(next) ? "12075.00" : "12600.00"));
         // The ledger carries exactly what billing is owed: every invoice, at its restated amount.
         BigDecimal owed = invoices.stream().map(InvoiceView::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        assertThat(receivable(policyNumber)).isEqualByComparingTo(owed.subtract(FIRST_PREMIUM_COLLECTED));
+        assertThat(receivable(policyNumber)).isEqualByComparingTo(owed);
     }
 
     @Test
@@ -134,7 +129,7 @@ class FuneralEndorsementIntegrationTest {
         // 138,000 + 2 x 90,000 = 318,000; x 1.05 / 12
         assertThat(asTenant(TENANT, () -> policyApi.getPolicy(policyNumber)).premiumAmount()).isEqualByComparingTo("27825.00");
         BigDecimal owed = invoices(policyNumber).stream().map(InvoiceView::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        assertThat(receivable(policyNumber)).isEqualByComparingTo(owed.subtract(FIRST_PREMIUM_COLLECTED));
+        assertThat(receivable(policyNumber)).isEqualByComparingTo(owed);
     }
 
     @Test
@@ -165,7 +160,7 @@ class FuneralEndorsementIntegrationTest {
         // 138,000 - 60,000 = 78,000; x 1.05 / 12
         assertThat(asTenant(TENANT, () -> policyApi.getPolicy(policyNumber)).premiumAmount()).isEqualByComparingTo("6825.00");
         BigDecimal owed = invoices(policyNumber).stream().map(InvoiceView::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        assertThat(receivable(policyNumber)).isEqualByComparingTo(owed.subtract(FIRST_PREMIUM_COLLECTED));
+        assertThat(receivable(policyNumber)).isEqualByComparingTo(owed);
         // A spouse already leaving cannot be removed twice.
         assertThatThrownBy(() -> asTenant(TENANT, () -> policyApi.removeCoveredLife(policyNumber, asha, null, "staff-one")))
             .isInstanceOf(InvalidPolicyStateException.class).hasMessage("Asha is already coming off cover");

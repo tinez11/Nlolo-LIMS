@@ -17,4 +17,5 @@ import java.util.UUID;
  */
 public record PremiumCreditView(UUID creditId, String policyNumber, UUID policyMemberId, UUID originalInvoiceId,
                                 BigDecimal amount, String currency, String exitReason, LocalDate exitDate,
-                                Instant createdAt) {}
+                                Instant createdAt, BigDecimal refundAmount, String refundStatus, String refundPayee,
+                                String refundRefusalReason) {}

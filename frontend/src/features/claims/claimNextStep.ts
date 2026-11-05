@@ -24,8 +24,8 @@ export function claimNextStep({
     case 'REOPENED':
       if (claim.claimType === 'MATURITY' && claim.status === 'REGISTERED') {
         return canDecide
-          ? { tone: 'act', text: 'A maturity claim needs no assessment: decide the settlement under Settlement.' }
-          : { tone: 'wait', text: 'Waiting for a claims manager to decide the settlement. A maturity claim needs no assessment.' };
+          ? { tone: 'act', text: 'A maturity claim needs no assessment: decide the payout under Payout.' }
+          : { tone: 'wait', text: 'Waiting for a claims manager to decide the payout. A maturity claim needs no assessment.' };
       }
       return canAssess
         ? { tone: 'act', text: 'Next: assess it under Assessment. A claims manager who did not assess it then decides.' }
@@ -37,7 +37,7 @@ export function claimNextStep({
       if (viewerAssessed) {
         return { tone: 'wait', text: 'You assessed it, so another claims manager decides it. Nothing more is needed from you.' };
       }
-      if (canDecide) return { tone: 'act', text: 'Assessed. Next: decide the settlement under Settlement.' };
+      if (canDecide) return { tone: 'act', text: 'Assessed. Next: decide the payout under Payout.' };
       return {
         tone: 'wait',
         text: canAssess

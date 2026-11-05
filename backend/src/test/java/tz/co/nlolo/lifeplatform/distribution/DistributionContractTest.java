@@ -207,6 +207,7 @@ class DistributionContractTest {
             "db-migrations/distribution/V6__commission_withholding.sql",
             "db-migrations/distribution/V7__projection_policyholder.sql",
             "db-migrations/distribution/V8__agent_login.sql", "db-migrations/distribution/V9__credit_life_pending_commission.sql", "db-migrations/distribution/V10__scheme_premium_may_be_nil.sql",
+            "db-migrations/distribution/V11__commission_payout_approval.sql",
             // IFRS 17 I3b: a payout reads the commission withholding rate from the accounting policy register.
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
@@ -234,7 +235,10 @@ class DistributionContractTest {
             "db-migrations/payment/V9__account_purposes.sql",
             "db-migrations/payment/V17__manual_receipts.sql",
             "db-migrations/payment/V18__payout_routes.sql",
-            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql");
+            "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
+            "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
+            "db-migrations/payment/V24__reversed_status.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql");
         // An agent login with no email texts its first password through communication (2026-10-28).
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             tz.co.nlolo.lifeplatform.accumulation.DepositTestMigrations.COMMUNICATION);
@@ -1040,6 +1044,18 @@ class DistributionContractTest {
                 .content("{\"payeeRef\":\"MPESA-0715000001\"}"))
             .andExpect(status().isAccepted())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        // Money movement step 4: asked, not yet sent -- a second person releases it.
+        wireMock.verify(exactly(0), postRequestedFor(urlPathEqualTo("/disburse")));
+        mockMvc.perform(post("/commission-statements/{statementId}/payout-approval", statementId)
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isConflict()); // the person who asked, without payouts.approve-own
+        mockMvc.perform(post("/commission-statements/{statementId}/payout-approval", statementId)
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.subject("admin-approver").claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isAccepted())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("PAYOUT_REQUESTED"));
 
         // The chain behind the 202 really ran -- without this the endpoint would answer 202 even
         // with payment entirely broken, since its listener swallows its own failures.

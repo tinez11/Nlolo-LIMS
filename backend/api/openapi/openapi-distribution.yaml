@@ -454,9 +454,11 @@ paths:
     post:
       summary: Request payout of a closed commission statement
       description: >
-        Staff/finance only. Moves the statement to PAYOUT_REQUESTED and publishes
-        distribution.CommissionPayoutRequested; the money settles asynchronously through the
-        payment module, so this returns 202 and the statement reaches PAID later.
+        Staff/finance only (commission.pay). Moves the statement to AWAITING_PAYOUT_APPROVAL; nothing
+        reaches the rail until a second person releases it (POST
+        /commission-statements/{statementId}/payout-approval, money movement step 4, 2026-11-04),
+        which publishes distribution.CommissionPayoutRequested. The money then settles
+        asynchronously through the payment module and the statement reaches PAID later.
 
 
         A retry after PAYOUT_FAILED MUST use a NEW `Idempotency-Key`. The payment module
@@ -486,6 +488,62 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
           description: "Statement is not payable in its current status - it is still OPEN, already PAYOUT_REQUESTED, or already PAID - or its total is zero or negative"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /commission-statements/{statementId}/payout-approval:
+    post:
+      summary: Release a commission payout -- the second person (payouts.approve)
+      description: >
+        AWAITING_PAYOUT_APPROVAL -> PAYOUT_REQUESTED, and payment is asked to pay the net. The person who
+        asked may release it only with payouts.approve-own, recorded against their name.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StatementId'
+      responses:
+        '202':
+          description: Released; settlement is asynchronous
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommissionStatementView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Not waiting for its payout to be approved, or the approver is the person who asked
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /commission-statements/{statementId}/payout-refusal:
+    post:
+      summary: Refuse a commission payout, saying why (payouts.approve); the statement returns to CLOSED
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StatementId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: Refused
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommissionStatementView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Not waiting for its payout to be approved, or the refuser is the person who asked
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
@@ -725,14 +783,18 @@ components:
           description: "May legitimately be zero or negative when clawbacks meet or exceed the period's accruals."
         status:
           type: string
-          enum: [OPEN, CLOSED, PAYOUT_REQUESTED, PAID, PAYOUT_FAILED]
+          enum: [OPEN, CLOSED, AWAITING_PAYOUT_APPROVAL, PAYOUT_REQUESTED, PAID, PAYOUT_FAILED]
           description: >
             The full request/confirm lifecycle. OPEN accrues; the monthly close sweep moves it to
-            CLOSED; requesting payout moves it to PAYOUT_REQUESTED; the payment rail's outcome
+            CLOSED; asking for payout moves it to AWAITING_PAYOUT_APPROVAL; a second person releases
+            it to PAYOUT_REQUESTED (or refuses it back to CLOSED); the payment rail's outcome
             moves it to PAID or PAYOUT_FAILED. A PAYOUT_FAILED statement can be retried with a new
             idempotency key.
         closedAt: { type: [string, "null"], format: date-time }
         paidAt: { type: [string, "null"], format: date-time }
+        payeeRef: { type: [string, "null"], description: Who the payout is paid to, once asked }
+        payoutRequestedBy: { type: [string, "null"], description: Who asked for the payout; a second person releases it }
+        payoutRefusalReason: { type: [string, "null"], description: Why the last payout asked was refused }
     CommissionAccrualView:
       type: object
       required: [accrualId, agentId, statementId, policyNumber, tierType, amount, period, sourceRef, accruedOn]

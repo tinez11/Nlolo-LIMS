@@ -7,14 +7,14 @@ import { approverPage } from './approverSession';
  * confirms it). Before this the mock rail's "accepted" paid at once, so every spec that collects a premium or a
  * top-up now passes through here, as the person who did not ask for it.
  *
- * Confirms every mobile-money collection still waiting on the policy, from the payments register.
+ * Confirms every mobile-money collection still waiting on the policy, from Deposits.
  */
 export async function confirmRequestedPayments(browser: Browser, policyNumber: string): Promise<void> {
   const { page, context } = await approverPage(browser);
   try {
-    const register = `/staff/payments?state=waiting&direction=IN&policy=${encodeURIComponent(policyNumber)}`;
+    const register = `/staff/payments?state=waiting&policy=${encodeURIComponent(policyNumber)}`;
     const waiting = page.getByRole('row').filter({ hasText: 'Mobile money' });
-    const none = page.getByText('No payments match');
+    const none = page.getByText('No deposits match');
     await page.goto(register);
     await expect(waiting.first()).toBeVisible({ timeout: 30_000 });
     for (;;) {
@@ -22,7 +22,7 @@ export async function confirmRequestedPayments(browser: Browser, policyNumber: s
       await waiting.first().getByRole('button').first().click();
       await expect(page).toHaveURL(/\/staff\/receipts\/[0-9a-f-]{36}/, { timeout: 15_000 });
       await page.getByRole('button', { name: 'Confirm', exact: true }).click({ timeout: 30_000 });
-      await page.getByRole('button', { name: 'Confirm receipt' }).click();
+      await page.getByRole('button', { name: 'Confirm deposit' }).click();
       await expect(page.getByRole('heading', { name: 'Confirmed' })).toBeVisible({ timeout: 15_000 });
       await page.goto(register);
       // Loaded, one way or the other, before asking whether another is waiting.

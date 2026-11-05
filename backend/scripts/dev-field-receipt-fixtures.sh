@@ -26,7 +26,7 @@ API="${API:-http://localhost:8080}"
 KEYCLOAK="${KEYCLOAK:-http://localhost:8081}"
 PSQL=(docker compose -f infra/docker-compose.yml exec -T postgres psql -U postgres -d lifeplatform -tAc)
 
-AGENTS_SECRET=$(grep -o '"secret" *: *"[^"]*"' keycloak/agents-realm.json | head -1 | cut -d'"' -f4)
+AGENTS_SECRET=$(source scripts/seed-lib.sh; realm_secret agents)
 
 token_for() {   # token_for <realm> <username> <client-secret>
   curl -sf -X POST "$KEYCLOAK/realms/$1/protocol/openid-connect/token" \
@@ -47,8 +47,9 @@ AGENT_ID=$(curl -sf "$API/agents/me" -H "Authorization: Bearer $AGENT_TOKEN" \
 echo "agent.senior = $AGENT_ID"
 
 echo "=== Step 2: four ACTIVE policies to collect against ==="
+# Individual policies only: a group scheme (GRP-) takes no agent's field cash, and a fresh stack sorts one first.
 mapfile -t POLICIES < <("${PSQL[@]}" \
-  "select policy_number from policy.policy where status = 'ACTIVE' order by policy_number limit 4;" | tr -d '\r')
+  "select policy_number from policy.policy where status = 'ACTIVE' and policy_number like 'POL-%' order by policy_number limit 4;" | tr -d '\r')
 [ "${#POLICIES[@]}" -eq 4 ] || { echo "expected 4 ACTIVE policies, found ${#POLICIES[@]}" >&2; exit 1; }
 printf '  %s\n' "${POLICIES[@]}"
 

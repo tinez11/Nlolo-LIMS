@@ -154,7 +154,7 @@ test.describe('group funeral schemes', () => {
       await manager.getByLabel('Mobile-money number').fill('+255700000781');
       await manager.getByRole('button', { name: 'Approve claim' }).click();
       await manager.getByRole('button', { name: 'Approve and pay' }).click();
-      await expect(manager.getByText(/Settlement requested|Settled/).first()).toBeVisible({ timeout: 60_000 });
+      await expect(manager.getByText(/Payout requested|Settled/).first()).toBeVisible({ timeout: 60_000 });
     });
 
     // ---- The child is off cover; Juma's membership and the bill carry on.

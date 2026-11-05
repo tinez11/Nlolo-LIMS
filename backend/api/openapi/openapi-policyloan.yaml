@@ -35,7 +35,7 @@ paths:
                 payeeRef: { type: string, description: "Mobile money / bank disbursement destination" }
       responses:
         '202':
-          description: Loan reservation confirmed and disbursement requested (async — see LoanDisbursed event / poll below)
+          description: Loan reserved; it waits at AWAITING_PAYOUT_APPROVAL until a second person releases the payout (POST /loans/{loanId}/payout-approval)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LoanView' }
@@ -148,9 +148,55 @@ paths:
               schema: { $ref: '#/components/schemas/LoanView' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
-  /loans/{loanId}/repayments:
+  /loans/{loanId}/payout-approval:
     post:
-      summary: Record a repayment (ad hoc or scheduled — RepaymentSchedule is optional per Deliverable 3 Rev 2 B3)
+      summary: Release a loan's payout -- the second person (payouts.approve); payment is then asked to pay it
+      description: Money movement step 4 (2026-11-04). A loan taken waits at AWAITING_PAYOUT_APPROVAL until released or refused.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: loanId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '202':
+          description: Released; the payout is asked of the rail, not yet paid
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoanView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /loans/{loanId}/payout-refusal:
+    post:
+      summary: Refuse a loan's payout, saying why (payouts.approve); the reserved loan value is freed
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: loanId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: Refused
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoanView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /loans/{loanId}/payment-request:
+    post:
+      summary: Ask the payer's phone for a loan repayment
+      description: >
+        Money movement step 1 (2026-11-04). Nothing is applied until payment confirms the money. A repayment recorded by
+        hand is a deposit For: Loan (POST /receipts with loanId). There is no way to book a repayment by typing it in.
       security:
         - customersAuth: [profile]
         - agentsAuth: [agent]
@@ -167,16 +213,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [amount, paymentReference]
+              additionalProperties: false
+              required: [payerRef, amount]
               properties:
+                payerRef: { type: string, minLength: 1, description: The payer's mobile-money number. }
                 amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
-                paymentReference: { type: string }
       responses:
-        '202':
-          description: Repayment accepted — pending payment gateway confirmation
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/LoanView' }
+        '202': { description: Asked; nothing is applied until the money is confirmed }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
@@ -194,4 +238,8 @@ components:
           description: The rate from the most recent LoanInterestTerm entry (Deliverable 3 Rev 2, L1).
         status:
           type: string
-          enum: [RESERVED_PENDING_ORIGINATION, ORIGINATED, DISBURSEMENT_REQUESTED, DISBURSED, REPAYING, SETTLED, FORCED_LAPSE_TRIGGERED, DISBURSEMENT_FAILED]
+          enum: [RESERVED_PENDING_ORIGINATION, ORIGINATED, AWAITING_PAYOUT_APPROVAL, PAYOUT_REFUSED, DISBURSEMENT_REQUESTED, DISBURSED, REPAYING, SETTLED, FORCED_LAPSE_TRIGGERED, DISBURSEMENT_FAILED]
+        payeeRef: { type: [string, "null"], description: Where the loan is paid out to }
+        takenBy: { type: [string, "null"], description: Who took the loan -- the first person; the payout needs another (or payouts.approve-own) }
+        payoutDecidedBy: { type: [string, "null"] }
+        payoutRefusalReason: { type: [string, "null"] }

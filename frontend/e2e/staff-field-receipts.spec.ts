@@ -22,18 +22,18 @@ test.describe('staff field receipts queue', () => {
     await page.goto('/staff/policies');
     await expectStaffShellReady(page);
 
-    await page.getByRole('link', { name: 'Field receipts' }).click();
+    await page.getByRole('link', { name: 'Agent cash' }).click();
     await expect(page).toHaveURL(/\/staff\/field-receipts$/);
-    await expect(page.getByRole('heading', { name: 'Field receipts' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: 'Agent cash' })).toBeVisible({ timeout: 30_000 });
 
     // Every other queue on this console opens on everything. This one opens on the SLA breach,
     // because that is what the alert pages somebody about -- and the count says so rather than
     // leaving the default filter to be discovered.
-    await expect(page.getByText(/overdue receipts · past the reconciliation SLA/)).toBeVisible({
+    await expect(page.getByText(/agent cash past its deadline · past the reconciliation SLA/)).toBeVisible({
       timeout: 20_000,
     });
 
-    const table = page.getByRole('table', { name: 'Field receipts' });
+    const table = page.getByRole('table', { name: 'Agent cash' });
     const empty = page.getByText('Nothing is overdue for reconciliation');
     await expect(table.or(empty)).toBeVisible({ timeout: 20_000 });
   });
@@ -41,7 +41,7 @@ test.describe('staff field receipts queue', () => {
   test('the status filter round-trips, and All widens past the default', async ({ page }) => {
     await page.goto('/staff/field-receipts');
     await expectStaffShellReady(page);
-    await expect(page.getByRole('heading', { name: 'Field receipts' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: 'Agent cash' })).toBeVisible({ timeout: 30_000 });
 
     // Addressed by ROLE, not by text: each filter chip carries the same StatusBadge the table
     // cells do, so `getByText('Pending reconciliation')` matches the chip AND every matching
@@ -52,7 +52,7 @@ test.describe('staff field receipts queue', () => {
     // visit -- which matters here precisely because the default is NOT everything.
     await page.getByRole('button', { name: 'All', exact: true }).click();
     await expect(page).toHaveURL(/status=ALL/);
-    await expect(page.getByText(/^[\d,]+ field receipts · /)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/^[\d,]+ agent cash · /)).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole('button', { name: 'Pending reconciliation' }).click();
     await expect(page).toHaveURL(/status=PENDING_RECONCILIATION/);
@@ -72,7 +72,7 @@ test.describe('staff field receipts queue is finance-gated', () => {
     await page.goto('/staff/policies');
     await expectStaffShellReady(page);
 
-    await expect(page.getByRole('link', { name: 'Field receipts' })).not.toBeVisible();
+    await expect(page.getByRole('link', { name: 'Agent cash' })).not.toBeVisible();
 
     await expectRouteDenied(page, '/staff/field-receipts');
   });

@@ -2,6 +2,8 @@ import type { RouteBody } from '@/features/payments/payoutRoute';
 import { get, post, put } from '@/lib/http';
 import type { MutationAttempt } from '@/lib/idempotency';
 import type {
+  BalanceStatementView,
+  BalanceWithdrawalView,
   BeneficiaryInput,
   BeneficiaryOfView,
   CoverageStatusView,
@@ -12,12 +14,13 @@ import type {
   IssueGroupSchemeRequest,
   MemberStatus,
   PolicyMemberView,
-  LoanRepaymentRequest,
+  LoanPaymentRequest,
   LoanView,
   ManualIssueRequest,
   OriginateLoanRequest,
   Page,
   PaymentRequest,
+  PolicyBalanceView,
   PolicyStatus,
   PolicyView,
   SurrenderQuote,
@@ -147,6 +150,44 @@ export function getCoverageStatus(
   );
 }
 
+/** `GET /policies/{n}/balance` -- the balance and the due date of the last premium it pays in full. */
+export function getPolicyBalance(policyNumber: string): Promise<PolicyBalanceView> {
+  return get<PolicyBalanceView>(`/policies/${encodeURIComponent(policyNumber)}/balance`);
+}
+
+/** `GET /policies/{n}/balance/statement` -- one page, newest first; amounts signed, the balance after each line. */
+export function getBalanceStatement(policyNumber: string, page: number, size: number): Promise<BalanceStatementView> {
+  return get<BalanceStatementView>(`/policies/${encodeURIComponent(policyNumber)}/balance/statement`, {
+    params: { page, size },
+  });
+}
+
+/** `GET /policies/{n}/balance/withdrawals` -- the policy's withdrawals from its balance, newest first. */
+export function listBalanceWithdrawals(policyNumber: string): Promise<BalanceWithdrawalView[]> {
+  return get<BalanceWithdrawalView[]>(`/policies/${encodeURIComponent(policyNumber)}/balance/withdrawals`);
+}
+
+/** `POST /policies/{n}/balance/withdrawals` -- payouts.manage asks; a second person approves before anything moves. */
+export function requestBalanceWithdrawal(
+  policyNumber: string,
+  body: { amount: { amount: string; currencyCode: string }; payee: RouteBody },
+): Promise<BalanceWithdrawalView> {
+  return post<BalanceWithdrawalView>(`/policies/${encodeURIComponent(policyNumber)}/balance/withdrawals`, body);
+}
+
+/** Approve (reason null) or reject (with the reason) a withdrawal -- payouts.approve. Approving asks the rail (202). */
+export function decideBalanceWithdrawal(withdrawalId: string, rejectReason: string | null): Promise<BalanceWithdrawalView> {
+  const id = encodeURIComponent(withdrawalId);
+  return rejectReason === null
+    ? post<BalanceWithdrawalView>(`/balance-withdrawals/${id}/approve`, {})
+    : post<BalanceWithdrawalView>(`/balance-withdrawals/${id}/reject`, { reason: rejectReason });
+}
+
+/** `POST /balance-withdrawals/{id}/payee` -- payouts.manage names who receives a policy-end withdrawal. */
+export function nameBalanceWithdrawalPayee(withdrawalId: string, payee: RouteBody): Promise<BalanceWithdrawalView> {
+  return post<BalanceWithdrawalView>(`/balance-withdrawals/${encodeURIComponent(withdrawalId)}/payee`, payee);
+}
+
 /** `GET /policies/{n}/invoices` -- a bare unpaged array, so the whole set arrives. */
 export function listInvoices(policyNumber: string): Promise<InvoiceView[]> {
   return get<InvoiceView[]>(`/policies/${encodeURIComponent(policyNumber)}/invoices`);
@@ -182,9 +223,9 @@ export function listLoans(policyNumber: string): Promise<LoanView[]> {
 
 /**
  * `POST /policies/{n}/loans` -- staff/agent/customer. Returns **202** with the
- * loan body: the reservation against cash value is confirmed synchronously, but
- * disbursement is handed to `payment` and completes asynchronously, so the loan
- * that comes back is normally `DISBURSEMENT_REQUESTED` rather than `DISBURSED`.
+ * loan body: the reservation against cash value is confirmed synchronously, and the
+ * loan comes back `AWAITING_PAYOUT_APPROVAL`: a second person releases the payout
+ * (money movement step 4), after which `payment` disburses it asynchronously.
  *
  * Rejections worth surfacing verbatim rather than rewording: 409 when the
  * requested amount exceeds available loan value (cash value net of existing
@@ -202,20 +243,41 @@ export function originateLoan(
 }
 
 /**
- * `POST /loans/{loanId}/repayments` -- staff/agent/customer. Also 202 with the
- * loan body, and the returned `outstandingBalance` is already net of this
- * repayment (the balance is folded from the loan's own append-only ledger, so
- * it is authoritative the moment the call returns).
- *
- * A repayment that clears the balance moves the loan straight to `SETTLED`;
- * partial repayments leave it `REPAYING` and are individually accepted, as many
- * times as needed.
+ * `POST /loans/{loanId}/payment-request` -- staff/customer/agent (money movement
+ * step 1, 2026-11-04). Asks the payer's phone for a repayment; 202 with no body.
+ * Nothing is repaid until finance confirms the money, so the loan's balance does
+ * not move on this call. `Idempotency-Key` is hard-required, as for an invoice.
+ * A repayment recorded by hand is a deposit For: Loan on the receipt page.
  */
-export function recordLoanRepayment(
+/** `POST /loans/{id}/payout-approval` -- payouts.approve releases a loan's payout; payment is then asked (202). */
+export function approveLoanPayout(loanId: string): Promise<LoanView> {
+  return post<LoanView>(`/loans/${encodeURIComponent(loanId)}/payout-approval`, {});
+}
+
+/** `POST /loans/{id}/payout-refusal` -- payouts.approve refuses it, saying why; the reserved loan value is freed. */
+export function refuseLoanPayout(loanId: string, reason: string): Promise<LoanView> {
+  return post<LoanView>(`/loans/${encodeURIComponent(loanId)}/payout-refusal`, { reason });
+}
+
+/**
+ * Approve (reason null) or reject (with the reason) a credit-life lender's premium refund -- payouts.approve, money
+ * movement step 4. Approving puts the bank transfer in finance's queue (202).
+ */
+export function decideLenderRefund(creditId: string, rejectReason: string | null): Promise<unknown> {
+  const id = encodeURIComponent(creditId);
+  return rejectReason === null
+    ? post<unknown>(`/lender-refunds/${id}/approve`, {})
+    : post<unknown>(`/lender-refunds/${id}/reject`, { reason: rejectReason });
+}
+
+export function requestLoanPayment(
   loanId: string,
-  request: LoanRepaymentRequest,
-): Promise<LoanView> {
-  return post<LoanView>(`/loans/${encodeURIComponent(loanId)}/repayments`, request);
+  request: LoanPaymentRequest,
+  attempt: MutationAttempt,
+): Promise<void> {
+  return post<void>(`/loans/${encodeURIComponent(loanId)}/payment-request`, request, {
+    headers: attempt.headers(),
+  });
 }
 
 /**

@@ -180,6 +180,44 @@ public class PaymentTransaction {
     }
 
     /**
+     * A deposit onto a policy's balance, naming no invoice (money movement step 5): its sourceRef is its own deposit id,
+     * and billing finds the balance by the policy number.
+     */
+    public static PaymentTransaction manualDeposit(UUID tenantId, String idempotencyKey, String method, String reference,
+                                                   String payerRef, java.math.BigDecimal amount, String currency,
+                                                   String policyNumber, java.time.LocalDate receivedOn, String note,
+                                                   UUID fieldReceiptId, String recordedBy) {
+        PaymentTransaction t = new PaymentTransaction(tenantId, idempotencyKey, payerRef, amount, currency,
+            UUID.randomUUID().toString(), "DEPOSIT");
+        t.method = method;
+        t.gatewayReference = reference;
+        t.policyNumber = policyNumber;
+        t.receivedOn = receivedOn;
+        t.note = note;
+        t.fieldReceiptId = fieldReceiptId;
+        t.recordedBy = recordedBy;
+        t.status = "AWAITING_APPROVAL";
+        return t;
+    }
+
+    /** A deposit For: Loan (money movement step 1): recorded by hand against a loan, confirmed by a second person. */
+    public static PaymentTransaction manualLoanReceipt(UUID tenantId, String idempotencyKey, String method, String reference,
+                                                      String payerRef, java.math.BigDecimal amount, String currency,
+                                                      UUID loanId, String policyNumber, java.time.LocalDate receivedOn,
+                                                      String note, String recordedBy) {
+        PaymentTransaction t = new PaymentTransaction(tenantId, idempotencyKey, payerRef, amount, currency,
+            loanId.toString(), "LOAN_REPAYMENT");
+        t.method = method;
+        t.gatewayReference = reference;
+        t.policyNumber = policyNumber;
+        t.receivedOn = receivedOn;
+        t.note = note;
+        t.recordedBy = recordedBy;
+        t.status = "AWAITING_APPROVAL";
+        return t;
+    }
+
+    /**
      * A savings top-up already received by hand (2026-10-28, user decision: one person). Receipted and confirmed at
      * once by the person who records it -- there is no second signature to wait for.
      */
@@ -254,6 +292,16 @@ public class PaymentTransaction {
     /** A receipt the platform asked the payer's phone for, rather than one a person recorded by hand. */
     public boolean isRequested() {
         return "MOBILE_MONEY".equals(method);
+    }
+
+    /**
+     * Its money never really arrived (money movement step 3b): billing reversed the deposit it made. Only a CONFIRMED
+     * payment can be; a redelivery changes nothing.
+     */
+    public void markReversed() {
+        if ("CONFIRMED".equals(status)) {
+            this.status = "REVERSED";
+        }
     }
 
     public void markConfirmed(String gatewayReference) {

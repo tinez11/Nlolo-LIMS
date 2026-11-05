@@ -105,4 +105,10 @@ public interface GlPostingRepository extends JpaRepository<GlPosting, GlPostingI
     /** Every period before {@code period} that holds postings, earliest first. */
     @Query("select distinct g.period from GlPosting g where g.tenantId = :tenantId and g.period < :period order by g.period")
     List<String> periodsWithPostingsBefore(@Param("tenantId") UUID tenantId, @Param("period") String period);
+
+    /** Net debit by policy over the given accounts, in TZS (money movement step 7's receivables check): [policy, net]. */
+    @Query("select g.policyNumber, sum(case when g.direction = tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection.DR then g.amount else -g.amount end) from GlPosting g "
+        + "where g.tenantId = :tenantId and g.accountCode in :accounts and g.policyNumber is not null "
+        + "and g.currency = 'TZS' group by g.policyNumber")
+    List<Object[]> netDebitByPolicy(@Param("tenantId") UUID tenantId, @Param("accounts") Collection<String> accounts);
 }

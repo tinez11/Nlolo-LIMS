@@ -87,6 +87,13 @@ public interface FinaccountingApi {
     TrialBalanceView trialBalance(String period);
 
     /**
+     * Each policy's net debit over the premium receivables, 2122 and 2142, in TZS (money movement step 7): what the
+     * ledger says the policy still owes. Only policies with a receivable posting appear -- an IFRS 9 contract's invoice
+     * posts none.
+     */
+    java.util.Map<String, java.math.BigDecimal> receivablesByPolicy();
+
+    /**
      * Every posting from inception through and including {@code period} -- the cumulative position a balance
      * sheet states.
      *

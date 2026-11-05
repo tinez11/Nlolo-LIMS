@@ -62,4 +62,13 @@ public interface PaymentApi {
      */
     org.springframework.data.domain.Page<PaymentRecordView> register(String direction, String state, String policyNumber,
                                                                     org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Money the rail actually moved in this tenant, in TZS, by direction and method (money movement step 7): confirmed
+     * collections IN -- a reversed one moved nothing in the end -- and completed payouts OUT. What the cash accounts
+     * should hold, before the ledger's mapping of each method to its account.
+     */
+    List<MovedByMethod> movedByMethod();
+
+    record MovedByMethod(String direction, String method, java.math.BigDecimal total) {}
 }
