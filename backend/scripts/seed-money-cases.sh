@@ -14,6 +14,7 @@ source scripts/seed-lib.sh
 
 STAFF_SECRET=$(realm_secret staff)
 FINANCE=$(token_for staff staff.finance "$STAFF_SECRET")
+SERVICE=$(token_for staff staff.service "$STAFF_SECRET")   # customer service verifies KYC (clients.kyc)
 APPROVER=$(token_for staff staff.finance-approver "$STAFF_SECRET")
 SENIOR=$(token_for staff staff.senior "$STAFF_SECRET")
 UNDERWRITER=$(token_for staff staff.underwriter "$STAFF_SECRET")
@@ -36,7 +37,7 @@ new_case_policy() {   # new_case_policy <full name> <phone>  -> prints the new p
   party=$(jsonval "$(api "$AGENT" POST "/parties/individuals" \
     "{\"fullName\":\"$1\",\"dateOfBirth\":\"1988-06-01\",\"sex\":\"FEMALE\",\"idType\":\"NATIONAL_ID\",\"idNumber\":\"SEED-$RUN-${2: -3}\",\"contactInfo\":{\"phoneNumber\":\"$2\"}}")" partyId)
   [ -n "$party" ] || { echo "FATAL: the client $1 was refused" >&2; exit 1; }
-  api "$FINANCE" POST "/parties/$party/kyc" \
+  api "$SERVICE" POST "/parties/$party/kyc" \
     '{"status":"VERIFIED","evidenceDocumentRef":"seed:kyc-evidence-money-case"}' >/dev/null
   case=$(jsonval "$(api "$AGENT" POST "/underwriting/cases" \
     "{\"applicantPartyId\":\"$party\",\"productId\":\"$PRODUCT_ID\",\"productVersionId\":\"$PRODUCT_VERSION_ID\",\"sumAssured\":{\"amount\":\"1500000.00\",\"currencyCode\":\"TZS\"}}")" caseId)

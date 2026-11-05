@@ -464,14 +464,17 @@ JUNIOR_AGENT_PARTY_JSON=$(api "$AGENT_SENIOR_TOKEN" POST "/parties/individuals" 
 JUNIOR_AGENT_PARTY_ID=$(jsonval "$JUNIOR_AGENT_PARTY_JSON" partyId)
 echo "juniorAgentPartyId=$JUNIOR_AGENT_PARTY_ID"
 
-echo "=== Step 2b: KYC-verify the agent parties and the demo owner (staff.finance) ==="
+echo "=== Step 2b: KYC-verify the agent parties and the demo owner (staff.service) ==="
+# Customer service verifies KYC (clients.kyc): a finance officer only reads clients. The old dev database had
+# granted staff.finance more, which hid this until the 2026-11-05 reset.
+STAFF_SERVICE_TOKEN=$(token_for staff staff.service "$STAFF_SECRET")
 # Discovered empirically (a real 422), not in the brief: DistributionApiImpl.onboardAgent
 # requires the party's KYC status to already be VERIFIED ("Party ... has KYC status PENDING;
 # an agent must be VERIFIED to onboard") -- every freshly-registered party starts PENDING, so
 # this step is a real precondition, not optional polish.
-api "$STAFF_FINANCE_TOKEN" POST "/parties/$SENIOR_AGENT_PARTY_ID/kyc" \
+api "$STAFF_SERVICE_TOKEN" POST "/parties/$SENIOR_AGENT_PARTY_ID/kyc" \
   '{"status":"VERIFIED","evidenceDocumentRef":"seed:kyc-evidence-senior"}' >/dev/null
-api "$STAFF_FINANCE_TOKEN" POST "/parties/$JUNIOR_AGENT_PARTY_ID/kyc" \
+api "$STAFF_SERVICE_TOKEN" POST "/parties/$JUNIOR_AGENT_PARTY_ID/kyc" \
   '{"status":"VERIFIED","evidenceDocumentRef":"seed:kyc-evidence-junior"}' >/dev/null
 
 # Amina Owner too, and for the same class of reason. Several e2e specs onboard her as a
@@ -484,7 +487,7 @@ api "$STAFF_FINANCE_TOKEN" POST "/parties/$JUNIOR_AGENT_PARTY_ID/kyc" \
 #
 # Baraka Other is deliberately NOT verified, so the KYC review queue and the two nav badges
 # that count it still have something in them to demonstrate.
-api "$STAFF_FINANCE_TOKEN" POST "/parties/$OWNER_PARTY_ID/kyc" \
+api "$STAFF_SERVICE_TOKEN" POST "/parties/$OWNER_PARTY_ID/kyc" \
   '{"status":"VERIFIED","evidenceDocumentRef":"seed:kyc-evidence-owner"}' >/dev/null
 echo "both agent parties and the demo owner KYC-VERIFIED (Baraka Other stays PENDING on purpose)"
 
@@ -687,12 +690,14 @@ echo "=== Step 7a: Money movement, one policy per case (design §12) ==="
 PRODUCT_ID="$PRODUCT_ID" PRODUCT_VERSION_ID="$PRODUCT_VERSION_ID" bash scripts/seed-money-cases.sh
 
 echo "=== Step 8: Claim, with evidence ==="
+# The day the seed runs: a death before the policy was issued is no claim on it (not on risk), which is what the
+# hard-coded 2026-08-10 became once the stack could be rebuilt after that date (found on the 2026-11-05 reset).
 CLAIM_JSON=$(curl -sf -X POST "$API/claims" \
   -H "Authorization: Bearer $CUSTOMER_OWNER_TOKEN" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuid)" -d "{
     \"policyNumber\":\"$POLICY_NUMBER\",\"claimantPartyId\":\"$OWNER_PARTY_ID\",\"claimType\":\"DEATH\",
-    \"dateOfEvent\":\"2026-08-10\",
-    \"details\":{\"claimType\":\"DEATH\",\"causeOfDeath\":\"Natural causes\",\"placeOfDeath\":\"Dar es Salaam\",\"dateOfDeath\":\"2026-08-10\",\"attendingPhysician\":\"Dr. Juma\"}
+    \"dateOfEvent\":\"$(date +%F)\",
+    \"details\":{\"claimType\":\"DEATH\",\"causeOfDeath\":\"Natural causes\",\"placeOfDeath\":\"Dar es Salaam\",\"dateOfDeath\":\"$(date +%F)\",\"attendingPhysician\":\"Dr. Juma\"}
   }")
 CLAIM_ID=$(jsonval "$CLAIM_JSON" claimId)
 echo "claimId=$CLAIM_ID"
