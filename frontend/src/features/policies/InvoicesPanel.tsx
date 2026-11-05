@@ -62,7 +62,14 @@ import { useReceiptStore } from '@/store/receiptStore';
  * -- the action stays enabled for every invoice, and staff judgement is the
  * only guard that exists.
  */
-export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
+export function InvoicesPanel({
+  policyNumber,
+  canRequestPayment = false,
+}: {
+  policyNumber: string;
+  /** Who may ask a payer's phone for an invoice -- the endpoint's rule, decided by the console that shows it. */
+  canRequestPayment?: boolean;
+}) {
   const loadInvoices = usePolicyStore((s) => s.loadInvoices);
   const invoices = usePolicyStore(selectInvoices(policyNumber));
   const category = usePolicyStore(selectDetail(policyNumber)).data?.productCategory;
@@ -141,6 +148,7 @@ export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
           key={invoice.invoiceId ?? JSON.stringify(invoice)}
           policyNumber={policyNumber}
           invoice={invoice}
+          canRequestPayment={canRequestPayment}
           credits={reconciliation.creditsByInvoice[invoice.invoiceId ?? ''] ?? []}
           onRefundDecided={reconciliation.reload}
           file={
@@ -159,12 +167,14 @@ export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
 function InvoiceRow({
   policyNumber,
   invoice,
+  canRequestPayment,
   credits,
   file,
   onRefundDecided,
 }: {
   policyNumber: string;
   invoice: InvoiceView;
+  canRequestPayment: boolean;
   credits: CreditLine[];
   file: EnrolmentSubmissionView | null;
   onRefundDecided: () => void;
@@ -257,8 +267,8 @@ function InvoiceRow({
       {invoiceId && action === null && (
         <div className="mt-1.5 flex items-center gap-1.5">
           {/* Waiving is finance-gated server-side, so this only avoids offering a button that
-              can now do nothing but 403. Requesting payment stays open to everyone, because it
-              takes nothing away from anyone -- agents and customers can both do it. */}
+              can now do nothing but 403. Requesting payment follows its endpoint too: a customer or
+              an agent may ask, staff only with collections or servicing -- canRequestPayment. */}
           {canWaive && (
             <Button size="sm" variant="ghost" className="-ml-2" onClick={() => setAction('waive')}>
               Waive
@@ -266,7 +276,7 @@ function InvoiceRow({
           )}
           {/* Only while something is owed. The request asks for the balance due, and the
               backend refuses one on an invoice payments and credits already cover. */}
-          {owing && !covered && (
+          {owing && !covered && canRequestPayment && (
             <Button
               size="sm"
               variant="ghost"
@@ -303,7 +313,14 @@ const NONE_WAITING: Receipt[] = [];
  * The receipts recorded against an invoice that a second person has not yet confirmed -- each with how it came in,
  * its reference, who recorded it and a way to it. The invoice is paid only when one is confirmed under Approvals.
  */
-function WaitingReceipts({ receipts }: { receipts: Receipt[] }) {
+/** Deposits recorded and waiting for a second finance person; `lands` says what each will pay once confirmed. */
+export function WaitingReceipts({
+  receipts,
+  lands = 'It pays this invoice once a second finance person confirms it under Approvals.',
+}: {
+  receipts: Receipt[];
+  lands?: string;
+}) {
   return (
     <div className="mt-2 rounded-md border border-border bg-band px-3 py-2" aria-label="Deposits waiting to be confirmed">
       <p className="text-xs font-medium">
@@ -325,9 +342,7 @@ function WaitingReceipts({ receipts }: { receipts: Receipt[] }) {
           </li>
         ))}
       </ul>
-      <p className="mt-1 text-xs text-muted-foreground">
-        It pays this invoice once a second finance person confirms it under Approvals.
-      </p>
+      <p className="mt-1 text-xs text-muted-foreground">{lands}</p>
     </div>
   );
 }

@@ -511,7 +511,12 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
               <PolicyScheduleDownload policyNumber={policyNumber} />
             </Panel>
             <Panel title="Invoices" subtitle="Request a payment, waive or follow up an invoice">
-              <InvoicesPanel policyNumber={policyNumber} />
+              {/* The endpoint's rule: a customer or an agent may ask, staff only with collections or servicing. An
+                  underwriter was offered the form and refused on submit. */}
+              <InvoicesPanel
+                policyNumber={policyNumber}
+                canRequestPayment={!isStaff || can('collections.manage') || can('policies.service')}
+              />
             </Panel>
             <Panel
               title="Payment schedule"

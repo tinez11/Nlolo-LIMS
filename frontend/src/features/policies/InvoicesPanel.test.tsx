@@ -28,10 +28,10 @@ const credit: PremiumCreditView = {
   refundRefusalReason: null,
 };
 
-function renderPanel() {
+function renderPanel(canRequestPayment = false) {
   render(
     <MemoryRouter>
-      <InvoicesPanel policyNumber="POL-CL-1" />
+      <InvoicesPanel policyNumber="POL-CL-1" canRequestPayment={canRequestPayment} />
     </MemoryRouter>,
   );
 }
@@ -68,5 +68,34 @@ describe('InvoicesPanel lender refunds (money movement step 4)', () => {
 
     expect(await screen.findByText(/refused; still owed to the lender \(Offset against next file\)/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Approve refund' })).not.toBeInTheDocument();
+  });
+});
+
+describe('InvoicesPanel requesting payment', () => {
+  const due: InvoiceView = {
+    ...invoice, status: 'DUE', amountPaid: TZS('0.00'), amountCredited: TZS('0.00'), balanceDue: TZS('84000.00'),
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    usePolicyStore.setState({ invoices: {}, detail: {} });
+    useReceiptStore.setState({ waiting: {} });
+    vi.mocked(policiesApi.listInvoices).mockResolvedValue([due]);
+    vi.mocked(policiesApi.listPolicyCredits).mockResolvedValue([]);
+    vi.mocked(policiesApi.getSchemeMember).mockRejectedValue(new Error('no member'));
+    vi.mocked(receiptsApi.listWaitingReceipts).mockResolvedValue([]);
+  });
+
+  it('offers it on a due invoice to someone the endpoint lets ask', async () => {
+    grantAccess('policies.service');
+    renderPanel(true);
+    expect(await screen.findByRole('button', { name: 'Request payment' })).toBeInTheDocument();
+  });
+
+  it('offers nothing to someone it would refuse -- an underwriter was shown the form and denied on submit', async () => {
+    grantAccess('policies.view');
+    renderPanel(false);
+    expect(await screen.findByText('TZS 84,000.00')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request payment' })).not.toBeInTheDocument();
   });
 });
