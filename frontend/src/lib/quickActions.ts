@@ -25,7 +25,7 @@ export function clientActions(client: { partyId: string; kycStatus?: string | nu
   }
   if (can('collections.manage')) {
     actions.push({
-      label: 'Record a payment',
+      label: 'Record deposit',
       to: onlyPolicy ? `/staff/receipts/new?policy=${enc(onlyPolicy)}` : `/staff/parties/${id}?tab=policies`,
       icon: HandCoins,
     });
@@ -67,9 +67,11 @@ export function policyActions(policy: {
     actions.push({ label: 'Register a claim', to: `/staff/claims/new?policy=${n}${claimant}`, icon: ClipboardPlus });
   }
   if (can('collections.manage')) {
-    actions.push({ label: 'Record a payment', to: `/staff/receipts/new?policy=${n}`, icon: HandCoins });
+    // The act's one name since money movement: the Balance panel's button says "Record deposit" too.
+    actions.push({ label: 'Record deposit', to: `/staff/receipts/new?policy=${n}`, icon: HandCoins });
   }
-  if (canAny('collections.view', 'policies.service') && tabs.includes('billing')) {
+  // The endpoint's rule (POST /invoices/{id}/payment-request): servicing or managing collections, not merely seeing them.
+  if (canAny('collections.manage', 'policies.service') && tabs.includes('billing')) {
     actions.push({ label: 'Request payment', to: `${here}?tab=billing`, icon: Wallet });
   }
   if (can('policies.service') && tabs.includes('beneficiaries')) {

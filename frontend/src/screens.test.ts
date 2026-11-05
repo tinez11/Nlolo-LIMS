@@ -238,6 +238,21 @@ describe('screen manifest', () => {
       'Underwriting',
     ]);
   });
+
+  /** The labels whose count this role sees, resolved as the sidebar resolves them. */
+  const countedFor = (...roles: string[]) => {
+    grantRoles(...roles);
+    return navFor('staff', { roles: [] } as unknown as Parameters<typeof navFor>[1])
+      .flatMap((g) => g.items).filter((i) => i.badge).map((i) => i.label).sort();
+  };
+
+  it('counts a queue only for whoever works it -- an underwriter saw KYC and claims backlogs (2026-11-05)', () => {
+    expect(countedFor('UNDERWRITER')).toEqual(['Underwriting']);
+    expect(countedFor('CUSTOMER_SERVICE_REP')).toEqual(['Corporate/Group', 'Individuals']);
+    expect(countedFor('CLAIMS_ASSESSOR')).toEqual(['Claims']);
+    expect(countedFor('FINANCE_OFFICER')).toEqual(
+      ['Agent cash', 'Approvals', 'Arrears', 'Deposits', 'Payments to make', 'Payouts']);
+  });
 });
 
 /** Signs in holding these built-in roles; the identity itself is no longer read. */

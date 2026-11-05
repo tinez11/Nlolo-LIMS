@@ -33,8 +33,10 @@ import { StaffName } from '@/components/StaffName';
  * a value. Free-look treats them as never having bought it, so what goes back is the premiums less
  * what the insurer actually spent.
  *
- * Preparing is open to any staff member; releasing the money is finance's, exactly as the
- * endpoints are.
+ * Preparing is policies.status (customer service); releasing the money is finance's
+ * (payouts.approve), exactly as the endpoints are. The form used to show to any staff member, so
+ * finance was offered one the server refused (2026-11-05); without policies.status the panel only
+ * says nothing has been prepared.
  */
 export function FreeLookPanel({ policy }: { policy: PolicyView }) {
   const policyNumber = policy.policyNumber ?? '';
@@ -70,8 +72,12 @@ export function FreeLookPanel({ policy }: { policy: PolicyView }) {
           viewerSubject={viewerSubject}
           isFinance={isFinance}
         />
-      ) : (
+      ) : can('policies.status') ? (
         <RequestForm policy={policy} />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          No free-look cancellation has been prepared on this policy.
+        </p>
       )}
     </div>
   );
