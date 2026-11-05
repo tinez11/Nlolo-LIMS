@@ -52,3 +52,6 @@ sample data/
 deploy/release.env
 deploy/.stage/
 deploy/.rehearsal/
+
+# Playwright MCP output: screenshots, console logs, the role sweep run against the dev stack.
+.playwright-mcp/
