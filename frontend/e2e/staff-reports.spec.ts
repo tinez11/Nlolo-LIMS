@@ -52,11 +52,17 @@ test.describe('staff reports', () => {
     const register = page.getByRole('table', { name: /^Policies on / });
     await expect(register.getByRole('columnheader', { name: 'Client' })).toBeVisible();
     await expect(register.getByRole('columnheader', { name: 'Status' })).toBeVisible();
-    // The dev book is far longer than the console draws; it says so rather than silently stopping. Scoped to the
-    // register's own section: on a test-polluted book the product summary runs past the limit too.
+    // A book longer than the console draws says so rather than silently stopping; a fresh stack's book is shorter
+    // and draws whole. Scoped to the register's own section: on a test-polluted book the product summary runs past
+    // the limit too.
     const registerSection = page.locator('section').filter({ has: page.getByRole('heading', { name: /^Policies on / }) });
-    await expect(registerSection.getByText(/^Showing the first 200 of [\d,]+ rows\./)).toBeVisible();
-    await expect(register.getByRole('row')).toHaveCount(201);
+    await expect(register.getByRole('row').nth(1)).toBeVisible();
+    if ((await register.getByRole('row').count()) > 200) {
+      await expect(registerSection.getByText(/^Showing the first 200 of [\d,]+ rows\./)).toBeVisible();
+      await expect(register.getByRole('row')).toHaveCount(201);
+    } else {
+      await expect(registerSection.getByText(/^Showing the first 200/)).toHaveCount(0);
+    }
 
     // Narrowed to one product, both sections are that product's alone -- a filter no report could apply from
     // the console before, though every report's query took it.

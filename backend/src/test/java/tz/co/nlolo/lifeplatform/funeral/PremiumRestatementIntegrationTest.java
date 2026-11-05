@@ -105,14 +105,16 @@ class PremiumRestatementIntegrationTest {
     @Test
     void anInstalmentPaidInAdvanceKeepsItsAmount() {
         String policyNumber = monthlyPolicyAt("1000.00");
+        // Money paid towards the second premium goes onto the balance, which pays the premiums oldest first (money
+        // movement step 2): enough for both, so the second is paid in advance.
         InvoiceView second = invoices(policyNumber).get(1);
-        asTenant(TENANT, () -> billingApi.applyConfirmedPayment(second.invoiceId(), new BigDecimal("1000.00"), "TZS", "PREPAID-1"));
+        asTenant(TENANT, () -> billingApi.applyConfirmedPayment(second.invoiceId(), new BigDecimal("2000.00"), "TZS", "PREPAID-1"));
 
         restate(policyNumber, "1500.00", invoices(policyNumber).get(0).dueDate());
 
         List<InvoiceView> after = invoices(policyNumber);
-        assertThat(after.get(0).amount()).isEqualByComparingTo("1500.00");
-        assertThat(after.get(1).amount()).isEqualByComparingTo("1000.00");
+        assertThat(after.get(0).amount()).isEqualByComparingTo("1000.00");
+        assertThat(after.get(1).amount()).as("paid in advance, it keeps its amount").isEqualByComparingTo("1000.00");
         assertThat(after.get(2).amount()).isEqualByComparingTo("1500.00");
     }
 

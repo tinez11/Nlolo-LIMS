@@ -72,8 +72,12 @@ class VestingIntegrationTest {
     }
 
     private static final UUID TENANT = UUID.randomUUID();
-    /** Fifty-five last month: inside the window (55-70) today, so an early vesting for today is allowed. */
-    private static final LocalDate BORN = TODAY.minusYears(55).minusDays(30);
+    /**
+     * Fifty-five last month: inside the window (55-70) today, so an early vesting for today is allowed. A calendar
+     * month, not 30 days: vesting at 56 then falls eleven months out, and the first instalment in arrears a month
+     * later lands on the twelve-month horizon rather than one day past it, as it did on days after a 31-day month.
+     */
+    private static final LocalDate BORN = TODAY.minusYears(55).minusMonths(1);
 
     @Autowired private AnnuityTestFixtures fixtures;
     @Autowired private AnnuityApi annuityApi;
