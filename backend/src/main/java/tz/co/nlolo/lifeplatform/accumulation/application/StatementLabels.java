@@ -9,12 +9,12 @@ final class StatementLabels {
     static String of(EntryType type) {
         return switch (type) {
             case CONTRIBUTION -> "Premiums";
-            case TOP_UP -> "Top-ups";
+            case TOP_UP -> "Savings deposits";
             case TRANSFER_IN -> "Transfers in";
             case ALLOCATION_CHARGE -> "Allocation charges";
             case POLICY_FEE -> "Policy fees";
             case INTEREST -> "Interest";
-            case WITHDRAWAL -> "Withdrawals";
+            case WITHDRAWAL -> "Savings withdrawals";
             case SURRENDER -> "Surrender";
             case MATURITY -> "Maturity";
             case VESTING -> "Pension vested";
