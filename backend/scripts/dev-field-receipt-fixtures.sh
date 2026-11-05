@@ -47,8 +47,9 @@ AGENT_ID=$(curl -sf "$API/agents/me" -H "Authorization: Bearer $AGENT_TOKEN" \
 echo "agent.senior = $AGENT_ID"
 
 echo "=== Step 2: four ACTIVE policies to collect against ==="
+# Individual policies only: a group scheme (GRP-) takes no agent's field cash, and a fresh stack sorts one first.
 mapfile -t POLICIES < <("${PSQL[@]}" \
-  "select policy_number from policy.policy where status = 'ACTIVE' order by policy_number limit 4;" | tr -d '\r')
+  "select policy_number from policy.policy where status = 'ACTIVE' and policy_number like 'POL-%' order by policy_number limit 4;" | tr -d '\r')
 [ "${#POLICIES[@]}" -eq 4 ] || { echo "expected 4 ACTIVE policies, found ${#POLICIES[@]}" >&2; exit 1; }
 printf '  %s\n' "${POLICIES[@]}"
 
