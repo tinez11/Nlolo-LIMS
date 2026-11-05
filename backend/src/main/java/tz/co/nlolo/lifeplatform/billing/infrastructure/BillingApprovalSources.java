@@ -19,7 +19,7 @@ class BillingApprovalSources {
 
     @Bean
     ApprovalSource fieldReceiptsToMatch(BillingApi billing) {
-        return ApprovalSource.of("field-receipt", "Field receipts to match", "Match", "collections.manage", false,
+        return ApprovalSource.of("field-receipt", "Agent cash to match", "Match", "collections.manage", false,
             limit -> {
                 PageRequest page = PageRequest.of(0, Math.max(1, limit));
                 Page<FieldReceiptView> overdue = billing.searchFieldReceipts("RECONCILIATION_OVERDUE", page);

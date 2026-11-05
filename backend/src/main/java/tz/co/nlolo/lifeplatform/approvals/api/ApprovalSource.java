@@ -16,7 +16,7 @@ public interface ApprovalSource {
     /** Stable key the console routes on, e.g. {@code account-withdrawal}. */
     String kind();
 
-    /** The group's heading, in the words a finance officer uses: "Account withdrawals". */
+    /** The group's heading, in the words a finance officer uses: "Savings withdrawals". */
     String label();
 
     /** What acting on one means, as a verb: "Approve", "Review", "Release", "Make the transfer". */

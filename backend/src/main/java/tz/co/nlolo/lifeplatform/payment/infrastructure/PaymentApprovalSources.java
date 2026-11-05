@@ -22,7 +22,7 @@ class PaymentApprovalSources {
     /** A receipt one finance officer recorded, waiting for another to confirm it (2026-10-27). */
     @Bean
     ApprovalSource receiptApprovals(Receipts receipts) {
-        return ApprovalSource.of("receipt", "Receipts to confirm", "Confirm", "collections.approve",
+        return ApprovalSource.of("receipt", "Deposits to confirm", "Confirm", "collections.approve",
             limit -> ApprovalSource.Pending.of(receipts.awaitingApproval().stream()
                 .map(r -> new ApprovalSource.Item(r.receiptId().toString(), r.policyNumber(),
                     Receipts.words(r.method()) + " " + r.reference() + (r.loanId() != null ? " · loan repayment" : ""),

@@ -22,7 +22,7 @@ class AccumulationApprovalSources {
 
     @Bean
     ApprovalSource accountWithdrawalApprovals(WithdrawalRequestRepository withdrawals, TransactionTemplate tx) {
-        return ApprovalSource.of("account-withdrawal", "Account withdrawals", "Approve", "accounts.approve",
+        return ApprovalSource.of("account-withdrawal", "Savings withdrawals", "Approve", "accounts.approve",
             limit -> tx.execute(s -> ApprovalSource.Pending.of(
                 withdrawals.findByStatusOrderByRequestedAtAsc("REQUESTED").stream()
                     .map(w -> new ApprovalSource.Item(w.getWithdrawalId().toString(), w.getPolicyNumber(),
