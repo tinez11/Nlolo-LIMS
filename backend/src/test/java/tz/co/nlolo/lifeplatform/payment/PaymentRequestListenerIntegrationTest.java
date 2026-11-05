@@ -159,7 +159,7 @@ class PaymentRequestListenerIntegrationTest {
             "db-migrations/payment/V22__loan_repayment_purpose.sql",
             "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
             "db-migrations/payment/V24__reversed_status.sql",
-            "db-migrations/payment/V25__deposit_purpose.sql");
+            "db-migrations/payment/V25__deposit_purpose.sql", "db-migrations/payment/V26__receipt_number.sql");
     }
 
     @AfterAll

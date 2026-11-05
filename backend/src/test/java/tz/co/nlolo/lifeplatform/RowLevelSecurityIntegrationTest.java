@@ -226,7 +226,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
             "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
             "db-migrations/payment/V24__reversed_status.sql",
-            "db-migrations/payment/V25__deposit_purpose.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql", "db-migrations/payment/V26__receipt_number.sql",
             // M7 (Task 10) additions. distribution/V1 enabled RLS on NONE of its four tables and
             // granted app_role nothing; V2 is what adds both, plus commission_accrual and
             // policy_projection with their own policies. Until now no test in this class or

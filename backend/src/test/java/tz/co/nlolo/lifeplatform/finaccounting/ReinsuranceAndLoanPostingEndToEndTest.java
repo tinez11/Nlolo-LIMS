@@ -276,7 +276,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/payment/V22__loan_repayment_purpose.sql",
             "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
             "db-migrations/payment/V24__reversed_status.sql",
-            "db-migrations/payment/V25__deposit_purpose.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql", "db-migrations/payment/V26__receipt_number.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",

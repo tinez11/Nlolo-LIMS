@@ -124,6 +124,13 @@ public class PaymentTransaction {
     @Column(name = "policy_number")
     private String policyNumber;
 
+    /**
+     * RC-year-sequence (payment V26, receipts step 1): given by the database the moment the payment is CONFIRMED, so
+     * read here, never written.
+     */
+    @Column(name = "receipt_number", insertable = false, updatable = false)
+    private String receiptNumber;
+
     @Version
     private long version;
 
@@ -148,6 +155,7 @@ public class PaymentTransaction {
     public String getPurpose() { return purpose; }
 
     public String getPolicyNumber() { return policyNumber; }
+    public String getReceiptNumber() { return receiptNumber; }
 
     public String getMethod() { return method; }
     public java.time.LocalDate getReceivedOn() { return receivedOn; }

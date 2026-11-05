@@ -16,8 +16,9 @@ import java.util.UUID;
  * @param sourceRef    the owning record's id (an invoice, a claim, an instalment, a withdrawal)
  * @param policyNumber the policy it is for, where the request named one; null on older rows and on commission
  * @param executedBy   who recorded a bank transfer as made; null otherwise
+ * @param receiptNumber money in once confirmed: its RC-year-sequence receipt (receipts step 1); null otherwise
  */
 public record PaymentRecordView(UUID id, String direction, String purpose, String method, String status,
                                 BigDecimal amount, String currency, String counterparty, String reference,
                                 String sourceRef, String policyNumber, Instant createdAt, String executedBy,
-                                Instant executedAt) {}
+                                Instant executedAt, String receiptNumber) {}

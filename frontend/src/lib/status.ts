@@ -263,6 +263,8 @@ export const STATUS_MAPS = {
     CONFIRMED: 'success',
     COMPLETED: 'success',
     FAILED: 'danger',
+    // Money that turned out not to have arrived (money movement 3b); the register's "all" lists it since receipts step 1.
+    REVERSED: 'danger',
   },
 
   // payment/domain/PaymentTransaction.java -- a receipt recorded by hand (2026-10-27). Refused is neutral: it paid
@@ -271,6 +273,12 @@ export const STATUS_MAPS = {
     AWAITING_APPROVAL: 'warning',
     CONFIRMED: 'success',
     REJECTED: 'neutral',
+    // Every amount received opens as a receipt since receipts step 1 (2026-11-05): a mobile-money request's own states,
+    // and money that turned out not to have arrived.
+    PENDING: 'pending',
+    IN_DOUBT: 'warning',
+    FAILED: 'danger',
+    REVERSED: 'danger',
   },
 
   // billing/domain/BalanceWithdrawal.java -- money off a policy's balance (money movement step 3a).

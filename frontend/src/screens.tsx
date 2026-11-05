@@ -53,6 +53,7 @@ import { NewReceiptPage } from '@/features/receipts/NewReceiptPage';
 import { ReverseDepositPage } from '@/features/receipts/ReverseDepositPage';
 import { BalanceWithdrawalPage } from '@/features/policies/BalanceWithdrawalPage';
 import { ReceiptPage } from '@/features/receipts/ReceiptPage';
+import { ReceiptByNumberPage } from '@/features/receipts/ReceiptByNumberPage';
 import { NewUserPage } from '@/features/admin/NewUserPage';
 import { RoleDetailPage } from '@/features/admin/RoleDetailPage';
 import { RolesPage } from '@/features/admin/RolesPage';
@@ -384,6 +385,7 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   agents: ['agents.view'], 'agents/new': ['agents.manage'], 'agents/:agentId': ['agents.view'],
   payments: ['collections.view'],
   'receipts/new': ['collections.manage'], 'receipts/:receiptId': ['collections.view', 'collections.manage'],
+  'receipt-numbers/:receiptNumber': ['collections.view', 'collections.manage'],
   'receipts/:receiptId/reverse': ['collections.manage'],
   arrears: ['collections.view'], 'field-receipts': ['collections.view'], 'bank-transfers': ['payouts.view'],
   payouts: ['payouts.view'], 'payouts/all': ['payouts.view'], 'payouts/:instalmentId': ['payouts.view'], 'payment-runs': ['payouts.view'],
@@ -653,6 +655,8 @@ const STAFF_SCREENS: Screen[] = [
   // A receipt for premium the gateway did not pull, and its confirmation by a second person (2026-10-27).
   { path: 'receipts/new', element: <NewReceiptPage />, reach: 'drill-in' },
   { path: 'receipts/:receiptId', element: <ReceiptPage />, reach: 'drill-in' },
+  // Go to… RC-2026-000014: the number a customer quotes, opened as the receipt it names (receipts step 1).
+  { path: 'receipt-numbers/:receiptNumber', element: <ReceiptByNumberPage />, reach: 'drill-in' },
   // Money movement step 5: a deposit whose money never arrived, reversed on its own page and confirmed by a second person.
   { path: 'receipts/:receiptId/reverse', element: <ReverseDepositPage />, reach: 'drill-in' },
   // Money movement 6d: the payments register is two registers by direction -- Deposits here, money out under Payouts.

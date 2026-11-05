@@ -22,12 +22,17 @@ import { formatMoney } from '@/lib/money';
 import { barredAsOwn } from '@/lib/ownWork';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useReceiptStore } from '@/store/receiptStore';
+import { downloadReceipt } from '@/api/documents';
+import { saveBlob } from '@/lib/download';
 import { depositTitle, methodOf, receiptOrigin, REQUESTED_MOBILE_MONEY } from './receiptForm';
 
 
 /**
  * One recorded receipt (2026-10-27): what came in, how, against which invoice, who recorded it -- and, for a second
  * finance person, confirming it (the invoice is paid from it and the ledger posts it) or refusing it with a reason.
+ *
+ * Since receipts step 1 (2026-11-05) every amount received opens here, a mobile-money payment as much as a cheque, and
+ * once confirmed it is titled by its receipt number and downloads as the customer's receipt.
  */
 export function ReceiptPage() {
   const { receiptId = '' } = useParams();
@@ -58,10 +63,15 @@ export function ReceiptPage() {
 
   return (
     <>
+      {/* Once confirmed it is known by its number -- the one on the PDF and in the customer's SMS (receipts step 1). */}
       <PageHeader
         breadcrumb={origin.crumbs}
-        title={depositTitle(method?.label ?? receipt.method)}
+        title={receipt.receiptNumber ? `Receipt ${receipt.receiptNumber}` : depositTitle(method?.label ?? receipt.method)}
+        {...(receipt.receiptNumber ? { description: depositTitle(method?.label ?? receipt.method) } : {})}
         status={<StatusBadge kind="receipt" value={receipt.status} />}
+        {...(receipt.receiptNumber && receipt.policyNumber
+          ? { actions: <DownloadReceipt policyNumber={receipt.policyNumber} receipt={receipt} /> }
+          : {})}
       />
       <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-5">
@@ -92,10 +102,12 @@ export function ReceiptPage() {
             )}
             {receipt.note && <Field label="Note" value={receipt.note} />}
             {receipt.fieldReceiptId && <Field label="Brings in" value="Cash an agent collected" />}
-            <Field
-              label={requested ? 'Requested by' : 'Recorded by'}
-              value={receipt.recordedBy === 'system' ? 'The platform' : <StaffName subject={receipt.recordedBy} />}
-            />
+            {receipt.recordedBy && (
+              <Field
+                label={requested ? 'Requested by' : 'Recorded by'}
+                value={receipt.recordedBy === 'system' ? 'The platform' : <StaffName subject={receipt.recordedBy} />}
+              />
+            )}
             <Field label={requested ? 'Requested' : 'Recorded'} value={formatInstant(receipt.recordedAt)} />
             {receipt.decidedBy && (
               <Field
@@ -108,6 +120,28 @@ export function ReceiptPage() {
         </Panel>
       </div>
     </>
+  );
+}
+
+/** The receipt the customer holds, as a PDF -- the same document the portal gives them. */
+function DownloadReceipt({ policyNumber, receipt }: { policyNumber: string; receipt: Receipt }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      pending={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          saveBlob(await downloadReceipt(policyNumber, receipt.receiptId), `${receipt.receiptNumber}.pdf`);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      Download PDF
+    </Button>
   );
 }
 
@@ -141,10 +175,35 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
       </>
     );
   }
+  if (receipt.status === 'REVERSED') {
+    return (
+      <>
+        <Panel title="Reversed">
+          <p className="px-4 pb-4 text-sm">The money did not reach us. What it paid was taken back; the receipt keeps its number.</p>
+        </Panel>
+        {onBalance && <DepositReversalPanel receipt={receipt} viewerSubject={viewerSubject} />}
+      </>
+    );
+  }
   if (receipt.status === 'REJECTED') {
     return (
       <Panel title="Refused">
         <p className="px-4 pb-4 text-sm">It paid nothing. If the money did come in, record it again with the right details.</p>
+      </Panel>
+    );
+  }
+  // A mobile-money request's own states: the provider answers, not a second person.
+  if (receipt.status === 'PENDING' || receipt.status === 'IN_DOUBT') {
+    return (
+      <Panel title="Waiting for the provider">
+        <p className="px-4 pb-4 text-sm">It pays nothing until the mobile-money provider confirms the payment.</p>
+      </Panel>
+    );
+  }
+  if (receipt.status === 'FAILED') {
+    return (
+      <Panel title="Failed">
+        <p className="px-4 pb-4 text-sm">The provider did not take the money. It paid nothing.</p>
       </Panel>
     );
   }

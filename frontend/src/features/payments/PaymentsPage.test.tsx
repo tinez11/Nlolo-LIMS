@@ -68,11 +68,23 @@ describe('PaymentsPage', () => {
     const user = userEvent.setup();
     renderPage('IN');
     await screen.findByText('Premium');
-    await user.type(screen.getByPlaceholderText('POL-XXXXXXXX'), 'pol-1');
+    await user.type(screen.getByLabelText('Policy or receipt number'), 'pol-1');
     await user.click(screen.getByRole('button', { name: 'Apply' }));
     expect(vi.mocked(paymentsApi.listPayments)).toHaveBeenLastCalledWith(
       expect.objectContaining({ policyNumber: 'POL-1', direction: 'IN' }),
     );
+  });
+
+  it('finds a receipt by its number, in any state -- the number a customer quotes (receipts step 1)', async () => {
+    const user = userEvent.setup();
+    renderPage('IN');
+    await screen.findByText('Premium');
+    await user.type(screen.getByLabelText('Policy or receipt number'), 'rc-2026-000014');
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(vi.mocked(paymentsApi.listPayments)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ receiptNumber: 'RC-2026-000014', state: 'all', direction: 'IN' }),
+    );
+    expect(vi.mocked(paymentsApi.listPayments).mock.lastCall?.[0]).not.toHaveProperty('policyNumber');
   });
 
   it('says plainly when nothing needs attention', async () => {

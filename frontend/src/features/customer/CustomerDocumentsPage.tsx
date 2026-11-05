@@ -126,7 +126,10 @@ function DocRow({ title, note, children }: { title: string; note: string; childr
   );
 }
 
-/** Premium receipts, loaded when opened -- most visits are for the schedule. */
+/**
+ * Receipts, loaded when opened -- most visits are for the schedule. One per payment received, under its number, since
+ * receipts step 1 (2026-11-05); before, only premiums paid had one.
+ */
 function Receipts({ policyNumber }: { policyNumber: string }) {
   const [open, setOpen] = useState(false);
   const [receipts, setReceipts] = useState<ReceiptLine[] | null>(null);
@@ -145,20 +148,23 @@ function Receipts({ policyNumber }: { policyNumber: string }) {
         className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-hover">
         {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
         <span className="min-w-0">
-          <span className="block text-sm font-medium">Premium receipts</span>
-          <span className="block text-xs text-muted-foreground">A receipt for every premium you have paid.</span>
+          <span className="block text-sm font-medium">Receipts</span>
+          <span className="block text-xs text-muted-foreground">A receipt for every payment we have received.</span>
         </span>
       </button>
       {open && (
         <div className="border-t border-border px-4 py-2">
           {error ? <InlineError error={error} />
             : receipts === null ? <p className="py-1 text-xs text-muted-foreground">Loading…</p>
-              : receipts.length === 0 ? <p className="py-1 text-xs text-muted-foreground">No premium received yet.</p>
+              : receipts.length === 0 ? <p className="py-1 text-xs text-muted-foreground">No payment received yet.</p>
                 : (
                   <ul className="divide-y divide-border">
                     {receipts.map((r) => (
                       <li key={r.receiptId} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                         <span>
+                          <span className="block font-mono text-xs text-muted-foreground">
+                            {r.receiptNumber}{r.status === 'REVERSED' ? ' · reversed' : ''}
+                          </span>
                           {money(r.amount, r.currency)} <span className="text-xs text-muted-foreground">
                             received {formatDate(r.receivedOn)}{r.reference ? ` · ${r.reference}` : ''}</span>
                           {r.coversFrom && r.coversTo && (
@@ -167,8 +173,8 @@ function Receipts({ policyNumber }: { policyNumber: string }) {
                             </span>
                           )}
                         </span>
-                        <Button size="sm" variant="ghost" aria-label={`Download the receipt of ${formatDate(r.receivedOn)}`}
-                          onClick={async () => saveBlob(await downloadReceipt(policyNumber, r.receiptId), `receipt-${policyNumber}-${r.receivedOn}.pdf`)}>
+                        <Button size="sm" variant="ghost" aria-label={`Download receipt ${r.receiptNumber}`}
+                          onClick={async () => saveBlob(await downloadReceipt(policyNumber, r.receiptId), `${r.receiptNumber}.pdf`)}>
                           <Download />
                           Receipt
                         </Button>

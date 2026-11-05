@@ -1732,6 +1732,9 @@ components:
         - type: object
           properties:
             paymentRequestId: {type: string, format: uuid}
+            # Receipts step 1 (payment V26, 2026-11-05): RC-year-sequence, given by the database as the payment turned
+            # CONFIRMED; what the customer's SMS and receipt quote. Empty only on a database that predates V26.
+            receiptNumber: {type: string}
             idempotencyKey: {type: string}
             # billing.application.PaymentEventListener resolves the invoice from this. It is the
             # requesting aggregate's own id as a string (invoiceId.toString()), NOT a uuid-formatted

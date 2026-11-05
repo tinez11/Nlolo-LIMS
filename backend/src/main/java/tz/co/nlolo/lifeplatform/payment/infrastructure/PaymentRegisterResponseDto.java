@@ -11,7 +11,7 @@ import java.util.UUID;
 public record PaymentRegisterResponseDto(UUID id, String direction, String purpose, String method, String status,
                                          MoneyDto amount, String counterparty, String reference, String sourceRef,
                                          String policyNumber, Instant createdAt, String executedBy,
-                                         Instant executedAt) {
+                                         Instant executedAt, String receiptNumber) {
 
     public record PageResponse(List<PaymentRegisterResponseDto> items, PageMetaDto page) {
 
@@ -26,6 +26,6 @@ public record PaymentRegisterResponseDto(UUID id, String direction, String purpo
     static PaymentRegisterResponseDto from(PaymentRecordView v) {
         return new PaymentRegisterResponseDto(v.id(), v.direction(), v.purpose(), v.method(), v.status(),
             new MoneyDto(v.amount().toPlainString(), v.currency()), v.counterparty(), v.reference(), v.sourceRef(),
-            v.policyNumber(), v.createdAt(), v.executedBy(), v.executedAt());
+            v.policyNumber(), v.createdAt(), v.executedBy(), v.executedAt(), v.receiptNumber());
     }
 }

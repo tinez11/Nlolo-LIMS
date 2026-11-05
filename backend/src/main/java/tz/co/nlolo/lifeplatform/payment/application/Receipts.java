@@ -48,7 +48,9 @@ public class Receipts {
     private final ApplicationEventPublisher events;
 
     Receipts(PaymentTransactionRepository transactions, BillingApi billing, PolicyLoanApi loans,
-             ApplicationEventPublisher events, tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork) {
+             ApplicationEventPublisher events, tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork,
+             ReceiptNotices receiptNotices) {
+        this.receiptNotices = receiptNotices;
         this.transactions = transactions;
         this.billing = billing;
         this.loans = loans;
@@ -58,6 +60,8 @@ public class Receipts {
 
     /** Confirming one's own receipt, for a company with one finance person (2026-11-04). */
     private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
+    /** Tells the customer under the receipt's number once it is confirmed (receipts step 1). */
+    private final ReceiptNotices receiptNotices;
 
     private void recordIfAlone(PaymentTransaction receipt, String how, String by) {
         if (receipt.isActedAlone()) {
@@ -231,9 +235,13 @@ public class Receipts {
         if (ownWork.mayActAlone("collections.approve-own")) receipt.allowActingAlone();
         receipt.approveReceipt(by);
         recordIfAlone(receipt, "confirmed", by);
-        transactions.save(receipt);
+        transactions.saveAndFlush(receipt);
         Map<String, Object> payload = new HashMap<>();
         payload.put("paymentRequestId", receipt.getPaymentTransactionId());
+        // Given by the database as the row turned CONFIRMED (receipts step 1); the customer's SMS quotes it, and the
+        // answer carries it -- the entity's own copy is only read when the row is next loaded.
+        String number = transactions.receiptNumberOf(receipt.getPaymentTransactionId());
+        payload.put("receiptNumber", java.util.Objects.requireNonNullElse(number, ""));
         payload.put("idempotencyKey", receipt.getIdempotencyKey());
         payload.put("sourceRef", receipt.getSourceRef());
         payload.put("gatewayReference", receipt.getGatewayReference());
@@ -246,7 +254,8 @@ public class Receipts {
         if (receipt.getFieldReceiptId() != null) payload.put("fieldReceiptId", receipt.getFieldReceiptId());
         payload.put("approvedBy", by);
         events.publishEvent(DomainEventEnvelope.of("payment.PaymentConfirmed", TenantContext.get(), payload));
-        return view(receipt);
+        receiptNotices.issued(receipt);
+        return view(receipt, number);
     }
 
     @Transactional
@@ -270,9 +279,22 @@ public class Receipts {
         return view(receipt);
     }
 
+    /**
+     * Any amount received, by its id -- one recorded by hand or one the gateway pulled (receipts step 1): every amount
+     * received has its receipt, so every one can be opened. Deciding one stays with the recorded kind ({@link #find}).
+     */
     @Transactional(readOnly = true)
     public ReceiptView get(UUID receiptId) {
-        return view(find(receiptId));
+        return view(transactions.findByPaymentTransactionIdAndTenantId(receiptId, TenantContext.get())
+            .orElseThrow(() -> new PaymentNotFoundException("Receipt " + receiptId + " not found")));
+    }
+
+    /** A receipt by its number, as printed on the PDF and sent by SMS; the case and spaces a person types are forgiven. */
+    @Transactional(readOnly = true)
+    public ReceiptView byNumber(String receiptNumber) {
+        String number = receiptNumber.trim().toUpperCase(java.util.Locale.ROOT);
+        return view(transactions.findByTenantIdAndReceiptNumber(TenantContext.get(), number)
+            .orElseThrow(() -> new PaymentNotFoundException("Receipt " + number + " not found")));
     }
 
     /**
@@ -310,6 +332,11 @@ public class Receipts {
     }
 
     static ReceiptView view(PaymentTransaction t) {
+        return view(t, t.getReceiptNumber());
+    }
+
+    /** With the receipt number as the database has it, when the entity's copy predates the confirming flush. */
+    static ReceiptView view(PaymentTransaction t, String receiptNumber) {
         // The source is an invoice only for a premium and a loan only for a loan repayment. A savings top-up recorded by
         // hand is a receipt too, and its source is a top-up id -- named neither, rather than shown as an invoice.
         UUID source = UUID.fromString(t.getSourceRef());
@@ -318,7 +345,7 @@ public class Receipts {
         return new ReceiptView(t.getPaymentTransactionId(), t.getPurpose(), t.getMethod(), t.getGatewayReference(),
             t.getPayerRef(), t.getAmount(), t.getCurrency(), invoiceId, loanId,
             t.getPolicyNumber(), t.getReceivedOn(), t.getNote(), t.getFieldReceiptId(), t.getStatus(), t.getRecordedBy(),
-            t.getCreatedAt(), t.getDecidedBy(), t.getDecidedAt(), t.getDecisionReason());
+            t.getCreatedAt(), t.getDecidedBy(), t.getDecidedAt(), t.getDecisionReason(), receiptNumber);
     }
 
     public static String words(ReceiptMethod method) {

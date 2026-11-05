@@ -141,7 +141,7 @@ class EftDisbursementIntegrationTest {
             "db-migrations/payment/V19__top_up_one_person.sql", "db-migrations/payment/V20__premium_refund_purpose.sql", "db-migrations/payment/V21__acted_alone.sql",
             "db-migrations/payment/V23__balance_withdrawal_purpose.sql",
             "db-migrations/payment/V24__reversed_status.sql",
-            "db-migrations/payment/V25__deposit_purpose.sql",
+            "db-migrations/payment/V25__deposit_purpose.sql", "db-migrations/payment/V26__receipt_number.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",

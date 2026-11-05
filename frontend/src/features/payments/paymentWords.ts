@@ -66,9 +66,9 @@ export function methodWords(method: string): string {
  * the platform cannot say -- an older row with no policy recorded, or an agent's commission.
  */
 export function paymentLink(p: PaymentRecord): string | null {
-  // A receipt has its own page: what came in, who recorded or requested it, and its confirmation. Every collection
-  // since 2026-10-27 is one -- a mobile-money request too; only older gateway rows, recorded by nobody, are not.
-  if (p.direction === 'IN' && (p.method !== 'MOBILE_MONEY' || p.executedBy)) return `/staff/receipts/${encodeURIComponent(p.id)}?from=payments`;
+  // A receipt has its own page: what came in, who recorded or requested it, and its confirmation. Since receipts step 1
+  // (2026-11-05) every amount received opens there, whoever or whatever recorded it.
+  if (p.direction === 'IN') return `/staff/receipts/${encodeURIComponent(p.id)}?from=payments`;
   if (p.purpose === 'CLAIM_SETTLEMENT') return `/staff/claims/${encodeURIComponent(p.sourceRef)}`;
   if (INSTALMENT_PURPOSES.has(p.purpose)) return fromList(`/staff/payouts/${encodeURIComponent(p.sourceRef)}`, 'payouts-all');
   if (p.policyNumber) return `/staff/policies/${encodeURIComponent(p.policyNumber)}`;

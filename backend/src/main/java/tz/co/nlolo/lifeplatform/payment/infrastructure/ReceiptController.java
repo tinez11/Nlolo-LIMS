@@ -54,12 +54,12 @@ public class ReceiptController {
     public record ReceiptResponse(UUID receiptId, String purpose, String method, String reference, String payerRef,
                                   MoneyDto amount, UUID invoiceId, UUID loanId, String policyNumber, LocalDate receivedOn,
                                   String note, UUID fieldReceiptId, String status, String recordedBy, Instant recordedAt,
-                                  String decidedBy, Instant decidedAt, String decisionReason) {
+                                  String decidedBy, Instant decidedAt, String decisionReason, String receiptNumber) {
         static ReceiptResponse from(ReceiptView v) {
             return new ReceiptResponse(v.receiptId(), v.purpose(), v.method(), v.reference(), v.payerRef(),
                 new MoneyDto(v.amount().toPlainString(), v.currency()), v.invoiceId(), v.loanId(), v.policyNumber(),
                 v.receivedOn(), v.note(), v.fieldReceiptId(), v.status(), v.recordedBy(), v.recordedAt(), v.decidedBy(),
-                v.decidedAt(), v.decisionReason());
+                v.decidedAt(), v.decisionReason(), v.receiptNumber());
         }
     }
 
@@ -97,6 +97,13 @@ public class ReceiptController {
     @PreAuthorize("@access.canAny('collections.view', 'collections.manage')")
     public ResponseEntity<ReceiptResponse> get(@PathVariable UUID receiptId) {
         return ResponseEntity.ok(ReceiptResponse.from(receipts.get(receiptId)));
+    }
+
+    /** A receipt by the number printed on it and sent by SMS (receipts step 1) -- how a person quoting one is found. */
+    @GetMapping("/receipt-numbers/{receiptNumber}")
+    @PreAuthorize("@access.canAny('collections.view', 'collections.manage')")
+    public ResponseEntity<ReceiptResponse> byNumber(@PathVariable @Size(max = 20) String receiptNumber) {
+        return ResponseEntity.ok(ReceiptResponse.from(receipts.byNumber(receiptNumber)));
     }
 
     @PostMapping("/receipts/{receiptId}/approval")

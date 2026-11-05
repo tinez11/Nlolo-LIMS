@@ -55,14 +55,17 @@ public class PolicyDocuments {
     private final PartyApi partyApi;
     private final ProductApi productApi;
     private final AccumulationApi accumulationApi;
+    /** Every amount received and its receipt number (receipts step 1). */
+    private final tz.co.nlolo.lifeplatform.payment.api.PaymentApi paymentApi;
 
     public PolicyDocuments(PolicyApi policyApi, BillingApi billingApi, PartyApi partyApi, ProductApi productApi,
-                           AccumulationApi accumulationApi) {
+                           AccumulationApi accumulationApi, tz.co.nlolo.lifeplatform.payment.api.PaymentApi paymentApi) {
         this.policyApi = policyApi;
         this.billingApi = billingApi;
         this.partyApi = partyApi;
         this.productApi = productApi;
         this.accumulationApi = accumulationApi;
+        this.paymentApi = paymentApi;
     }
 
     // ---- the payment schedule ----
@@ -297,37 +300,110 @@ public class PolicyDocuments {
 
     // ---- premium receipts (2026-10-08, the customer portal design step 3) ----
 
-    /** Every premium received on the policy, newest first, with the premium it paid. */
+    /**
+     * Every amount received for the policy, newest first, each under its receipt number (receipts step 1, 2026-11-05).
+     * Until then this listed premiums PAID, so money received and not yet used -- a part payment, money paid ahead --
+     * had no receipt at all; TIRA's Code B.5(b) asks for one for "all monies received". The cover period is that of
+     * the premiums the money paid on arrival, where it paid any.
+     */
     @Transactional(readOnly = true)
     public List<tz.co.nlolo.lifeplatform.omnichannel.api.ReceiptLine> receipts(String policyNumber) {
-        String frequency = policyApi.getPolicy(policyNumber).premiumFrequency();
-        Map<UUID, InvoiceView> invoices = billingApi.listInvoices(policyNumber, null).stream()
-            .collect(Collectors.toMap(InvoiceView::invoiceId, i -> i, (a, b) -> a));
-        return billingApi.listReceipts(policyNumber).stream()
-            .sorted(Comparator.comparing(ReceiptView::receivedAt).reversed())
-            .map(r -> new tz.co.nlolo.lifeplatform.omnichannel.api.ReceiptLine(r.receiptId(),
-                r.receivedAt().atZone(CIVIL_ZONE).toLocalDate(), r.amount(), r.currency(), r.paymentReference(),
-                r.payerRef(), coversFrom(invoices.get(r.invoiceId()), frequency), coversTo(invoices.get(r.invoiceId()), frequency)))
+        PremiumsPaid paid = premiumsPaid(policyNumber);
+        return paymentApi.receiptsForPolicy(policyNumber).stream()
+            .map(r -> {
+                List<PremiumPaid> premiums = paid.by(r.reference());
+                return new tz.co.nlolo.lifeplatform.omnichannel.api.ReceiptLine(r.receiptId(), receivedOn(r), r.amount(),
+                    r.currency(), r.reference(), r.payerRef(),
+                    premiums.stream().map(PremiumPaid::from).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null),
+                    premiums.stream().map(PremiumPaid::to).filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null),
+                    r.receiptNumber(), r.status());
+            })
             .toList();
     }
 
-    /** One premium receipt, to keep or hand over. */
+    /**
+     * One receipt, to keep or hand over: what came in, from whom and how, and what it was for -- each premium it paid
+     * apart from what it was otherwise (Code B.5(b): "distinguish the premium from any other payment").
+     */
     @Transactional(readOnly = true)
     public CustomerDocument receiptDocument(String policyNumber, UUID receiptId) {
         PolicyView policy = policyApi.getPolicy(policyNumber);
-        tz.co.nlolo.lifeplatform.omnichannel.api.ReceiptLine r = receipts(policyNumber).stream()
-            .filter(x -> x.receiptId().equals(receiptId)).findFirst()
+        tz.co.nlolo.lifeplatform.payment.api.ReceiptView r = paymentApi.findReceipt(receiptId)
+            .filter(x -> policyNumber.equals(x.policyNumber()) && x.receiptNumber() != null)
             .orElseThrow(() -> new IllegalArgumentException("Policy " + policyNumber + " has no receipt " + receiptId));
-        List<Column> columns = List.of(new Column("Cover paid for", Kind.TEXT, 2.2f),
-            new Column("Received on", Kind.DATE, 1.3f), new Column("Reference", Kind.TEXT, 1.9f),
+        List<Column> columns = List.of(new Column("For", Kind.TEXT, 4.0f),
             new Column("Amount (" + r.currency() + ")", Kind.MONEY, 1.4f));
-        String period = r.coversFrom() != null ? DMY.format(r.coversFrom()) + " to " + DMY.format(r.coversTo()) : "";
-        List<List<Object>> rows = List.of(java.util.Arrays.asList(period, r.receivedOn(), opt(r.reference()), r.amount()));
-        return new CustomerDocument(ISSUER, "Premium receipt", header(policy, productName(policy), List.of(
-                new Field("Received from", r.paidBy() != null ? r.paidBy() : "-"),
-                new Field("Receipt reference", r.reference() != null ? r.reference() : r.receiptId().toString()))),
-            columns, rows, List.of(new Field("Amount received", money(r.amount(), r.currency()))),
-            List.of("Received with thanks. This receipt is issued by the platform from the payment as recorded."), false);
+        List<List<Object>> rows = new ArrayList<>();
+        BigDecimal left = r.amount();
+        for (PremiumPaid p : premiumsPaid(policyNumber).by(r.reference())) {
+            rows.add(List.of(p.from() != null ? "Premium, cover " + DMY.format(p.from()) + " to " + DMY.format(p.to())
+                : "Premium", p.amount()));
+            left = left.subtract(p.amount());
+        }
+        if (left.signum() > 0) {
+            rows.add(List.of(otherwise(r.purpose()), left));
+        }
+        String how = methodWords(r.method()) + (r.reference() != null ? " " + r.reference() : "");
+        List<String> notes = new ArrayList<>();
+        if ("REVERSED".equals(r.status())) {
+            notes.add("REVERSED: this money did not reach us, and what it paid has been taken back.");
+        }
+        notes.add("Received with thanks. Quote the receipt number in any question about this payment.");
+        return new CustomerDocument(ISSUER, "Receipt " + r.receiptNumber(), header(policy, productName(policy), List.of(
+                new Field("Receipt number", r.receiptNumber()),
+                new Field("Received from", r.payerRef() != null ? r.payerRef() : "-"),
+                new Field("Received on", DMY.format(receivedOn(r))),
+                new Field("How", how))),
+            columns, rows, List.of(new Field("Amount received", money(r.amount(), r.currency()))), notes, false);
+    }
+
+    /** What money not spent on a premium on arrival was for, in the words a customer reads. */
+    private static String otherwise(String purpose) {
+        return switch (purpose) {
+            case "ACCOUNT_TOP_UP" -> "Savings deposit";
+            case "UL_TOP_UP" -> "Unit-linked top-up";
+            case "LOAN_REPAYMENT" -> "Loan repayment";
+            default -> "Held on the policy's balance for the next premiums";
+        };
+    }
+
+    private static String methodWords(String method) {
+        return switch (method == null ? "" : method) {
+            case "CASH" -> "Cash";
+            case "BANK_DEPOSIT" -> "Bank deposit";
+            case "CHEQUE" -> "Cheque";
+            case "LIPA_NUMBER" -> "Lipa number";
+            case "TANQR" -> "TANQR";
+            default -> "Mobile money";
+        };
+    }
+
+    /** The day the money was received: as recorded, else the day it was confirmed, else the day it was asked for. */
+    private static LocalDate receivedOn(tz.co.nlolo.lifeplatform.payment.api.ReceiptView r) {
+        if (r.receivedOn() != null) return r.receivedOn();
+        return (r.decidedAt() != null ? r.decidedAt() : r.recordedAt()).atZone(CIVIL_ZONE).toLocalDate();
+    }
+
+    /** One premium a payment paid on arrival, with the cover it bought. */
+    private record PremiumPaid(BigDecimal amount, LocalDate from, LocalDate to) {}
+
+    /** A policy's premiums paid, by the reference of the money that paid them -- billing writes the deposit's own. */
+    private record PremiumsPaid(Map<String, List<PremiumPaid>> byReference) {
+        List<PremiumPaid> by(String reference) {
+            return reference == null ? List.of() : byReference.getOrDefault(reference, List.of());
+        }
+    }
+
+    private PremiumsPaid premiumsPaid(String policyNumber) {
+        String frequency = policyApi.getPolicy(policyNumber).premiumFrequency();
+        Map<UUID, InvoiceView> invoices = billingApi.listInvoices(policyNumber, null).stream()
+            .collect(Collectors.toMap(InvoiceView::invoiceId, i -> i, (a, b) -> a));
+        return new PremiumsPaid(billingApi.listReceipts(policyNumber).stream()
+            .filter(p -> p.paymentReference() != null)
+            .sorted(Comparator.comparing(ReceiptView::receivedAt))
+            .collect(Collectors.groupingBy(ReceiptView::paymentReference, Collectors.mapping(p -> new PremiumPaid(
+                p.amount(), coversFrom(invoices.get(p.invoiceId()), frequency), coversTo(invoices.get(p.invoiceId()), frequency)),
+                Collectors.toList()))));
     }
 
     /**

@@ -19,37 +19,30 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Tells a customer their payment arrived.
+ * Tells a customer their money arrived, under its receipt number.
  *
- * <p><b>Its own listener rather than a fifth message inside the policy one, and that separation is
- * load-bearing.</b> Cover starts once; premiums are paid every month. The activation path is
- * deliberately silent on an already-ACTIVE policy, because re-publishing
- * {@code policy.PolicyActivated} would double-accrue the agent's commission and double-cede the
- * risk to the reinsurer — so a receipt could not be bolted onto it without either breaking that
- * guard or firing only once, which is the hole this closes.
+ * <p>On {@code payment.ReceiptIssued} since receipts step 1 (2026-11-05) -- once per amount received, whatever it is
+ * for. Until then it fired on {@code billing.PremiumCollected}, an invoice reaching PAID: money paid ahead or in part
+ * paid no invoice, so the customer heard nothing, and since money movement a premium is paid from the balance,
+ * not by the money that came in. The receipt is what TIRA's Code B.5(b) asks for: "acknowledge receipt ... of all
+ * monies received".
  *
- * <p>Fires on every collected premium INCLUDING the first, so a customer starting cover receives
- * both "payment received" and "you are covered". Two true and different facts: one confirms the
- * money, the other confirms they are insured, and collapsing them would lose the half that
- * matters on every subsequent month.
+ * <p>Still its own listener rather than a message inside the policy one: cover starts once, money arrives every
+ * month. A customer starting cover receives both "payment received" and "you are covered" -- two true and different
+ * facts.
  *
- * <p>{@code billing.PremiumCollected} fires only when an invoice actually reaches PAID — a partial
- * payment does not qualify — so this cannot thank somebody for money that has not fully arrived.
- *
- * <p>Bean name is explicit: {@code finaccounting} and {@code regreporting} each already declare a
- * {@code BillingEventListener}, and a third unqualified one is a bean-name collision that fails
- * context startup for the whole suite.
+ * <p>Bean name is explicit, as its predecessor's was: {@code finaccounting} and {@code regreporting} each declare
+ * listeners of their own, and an unqualified name risks a collision that fails context startup for the whole suite.
  */
-@Component("communicationBillingEventListener")
-public class BillingEventListener {
+@Component("communicationReceiptEventListener")
+public class ReceiptEventListener {
 
-    private static final Logger log = LoggerFactory.getLogger(BillingEventListener.class);
+    private static final Logger log = LoggerFactory.getLogger(ReceiptEventListener.class);
 
     private final NotificationApi notificationApi;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
-    public BillingEventListener(NotificationApi notificationApi,
-                                 PlatformTransactionManager transactionManager) {
+    public ReceiptEventListener(NotificationApi notificationApi, PlatformTransactionManager transactionManager) {
         this.notificationApi = notificationApi;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
@@ -57,11 +50,16 @@ public class BillingEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
-        if (!"billing.PremiumCollected".equals(envelope.eventType())) {
+        if (!"payment.ReceiptIssued".equals(envelope.eventType())) {
             return;
         }
         @SuppressWarnings("unchecked")
         Map<String, Object> payload = (Map<String, Object>) envelope.payload();
+        if (payload.get("policyholderPartyId") == null) {
+            log.warn("Receipt {} on policy {} names no policyholder; nobody to tell",
+                payload.get("receiptNumber"), payload.get("policyNumber"));
+            return;
+        }
 
         UUID previousTenant = TenantContext.getOrNull();
         TenantContext.set(envelope.tenantId());
@@ -71,12 +69,12 @@ public class BillingEventListener {
                     (String) payload.get("policyNumber"), "PAYMENT_RECEIVED",
                     Map.of(
                         "policyNumber", (String) payload.get("policyNumber"),
-                        "amount", money(payload.get("amount")))));
+                        "amount", money(payload.get("amount")),
+                        "receiptNumber", (String) payload.get("receiptNumber"))));
         } catch (Exception e) {
-            // The money is collected either way -- billing has committed, and rolling that back to
-            // save a receipt would be exactly backwards. Logged loudly; the dispatch row records
-            // the failure for the desk.
-            log.error("Failed to acknowledge a premium payment on policy {}",
+            // The money is confirmed either way -- payment has committed, and rolling that back to save a message would
+            // be exactly backwards. Logged loudly; the dispatch row records the failure for the desk.
+            log.error("Failed to acknowledge receipt {} on policy {}", payload.get("receiptNumber"),
                 payload.get("policyNumber"), e);
         } finally {
             if (previousTenant != null) {

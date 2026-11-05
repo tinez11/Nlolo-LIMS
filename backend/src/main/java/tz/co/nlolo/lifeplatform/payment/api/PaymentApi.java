@@ -59,8 +59,19 @@ public interface PaymentApi {
      * @param direction IN, OUT, or null for both
      * @param state     attention (IN_DOUBT, FAILED), waiting, done, or all (null)
      * @param policyNumber only this policy's payments, or null for every one
+     * @param receiptNumber only the money in with this receipt number (receipts step 1), or null
      */
+    /**
+     * Every amount received for a policy that has a receipt -- confirmed, or confirmed and later reversed -- newest
+     * first (receipts step 1, 2026-11-05). What the customer's receipts list and the receipt PDF are made from.
+     */
+    java.util.List<ReceiptView> receiptsForPolicy(String policyNumber);
+
+    /** One amount received, by its id, whatever its state. */
+    java.util.Optional<ReceiptView> findReceipt(java.util.UUID receiptId);
+
     org.springframework.data.domain.Page<PaymentRecordView> register(String direction, String state, String policyNumber,
+                                                                    String receiptNumber,
                                                                     org.springframework.data.domain.Pageable pageable);
 
     /**
