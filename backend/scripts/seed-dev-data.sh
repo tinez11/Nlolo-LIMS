@@ -16,45 +16,11 @@ KEYCLOAK="${KEYCLOAK_URL:-http://localhost:8081}"
 API="${API_URL:-http://localhost:8080}"
 DEV_TENANT="11111111-1111-1111-1111-111111111111"
 
-uuid() {
-  # macOS/Linux both have python3 or /proc/sys/kernel/random/uuid; Git-Bash on Windows has
-  # neither reliably, so fall back to a portable pure-bash UUIDv4 if both are unavailable.
-  if [ -r /proc/sys/kernel/random/uuid ]; then
-    cat /proc/sys/kernel/random/uuid
-  elif command -v uuidgen >/dev/null 2>&1; then
-    uuidgen | tr 'A-Z' 'a-z'
-  else
-    od -An -N16 -tx1 /dev/urandom | tr -d ' \n' | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/'
-  fi
-}
+source scripts/seed-lib.sh   # uuid, token_for, api, jsonval (money movement step 7: shared with the money-case scripts)
 
-token_for() {   # token_for <realm> <username> <client-secret>
-  curl -sf -X POST "$KEYCLOAK/realms/$1/protocol/openid-connect/token" \
-    -d grant_type=password -d client_id=lifeplatform-app -d client_secret="$3" \
-    -d username="$2" -d password=devpassword \
-  | sed 's/.*"access_token":"\([^"]*\)".*/\1/'
-}
-
-api() {         # api <token> <method> <path> [json-body]
-  local token="$1" method="$2" path="$3" body="${4:-}"
-  if [ -n "$body" ]; then
-    curl -sf -X "$method" "$API$path" -H "Authorization: Bearer $token" \
-      -H 'Content-Type: application/json' -H "Idempotency-Key: $(uuid)" -d "$body"
-  else
-    curl -sf -X "$method" "$API$path" -H "Authorization: Bearer $token"
-  fi
-}
-
-jsonval() {     # jsonval <json> <field>  -- crude, dependency-free single-level string/uuid extractor.
-  # Deliberately the FIRST match, not sed's greedy-.*-picks-the-last-one behaviour: /policies/
-  # {policyNumber}/invoices returns an array (a MONTHLY schedule can generate several invoices
-  # upfront) and the brief calls for the first one specifically.
-  grep -o "\"$2\" *: *\"[^\"]*\"" <<<"$1" | head -1 | sed -E 's/.*: *"([^"]*)"/\1/'
-}
-
-STAFF_SECRET=$(grep -o '"secret" *: *"[^"]*"' keycloak/staff-realm.json | head -1 | cut -d'"' -f4)
-CUSTOMERS_SECRET=$(grep -o '"secret" *: *"[^"]*"' keycloak/customers-realm.json | head -1 | cut -d'"' -f4)
-AGENTS_SECRET=$(grep -o '"secret" *: *"[^"]*"' keycloak/agents-realm.json | head -1 | cut -d'"' -f4)
+STAFF_SECRET=$(realm_secret staff)
+CUSTOMERS_SECRET=$(realm_secret customers)
+AGENTS_SECRET=$(realm_secret agents)
 
 STAFF_FINANCE_TOKEN=$(token_for staff staff.finance "$STAFF_SECRET")
 # Minted early, deliberately: party_id is NOT required to CALL /parties/individuals (only to
@@ -479,22 +445,22 @@ echo "lenderPartyId=$(jsonval "$LENDER_JSON" partyId)"
 
 echo "=== Step 2: Parties (agent.senior -- see the role-gate note above STAFF_FINANCE_TOKEN's mint) ==="
 OWNER_JSON=$(api "$AGENT_SENIOR_TOKEN" POST "/parties/individuals" \
-  '{"fullName":"Amina Owner","dateOfBirth":"1990-04-12","contactInfo":{"phoneNumber":"+255712345678","email":"customer.owner@example.tz"}}')
+  '{"fullName":"Amina Owner","dateOfBirth":"1990-04-12","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19900412-SEED-00001-01","contactInfo":{"phoneNumber":"+255712345678","email":"customer.owner@example.tz"}}')
 OWNER_PARTY_ID=$(jsonval "$OWNER_JSON" partyId)
 echo "ownerPartyId=$OWNER_PARTY_ID"
 
 OTHER_JSON=$(api "$AGENT_SENIOR_TOKEN" POST "/parties/individuals" \
-  '{"fullName":"Baraka Other","dateOfBirth":"1988-09-01","contactInfo":{"phoneNumber":"+255712345679","email":"customer.other@example.tz"}}')
+  '{"fullName":"Baraka Other","dateOfBirth":"1988-09-01","sex":"MALE","idType":"NATIONAL_ID","idNumber":"19880901-SEED-00002-02","contactInfo":{"phoneNumber":"+255712345679","email":"customer.other@example.tz"}}')
 OTHER_PARTY_ID=$(jsonval "$OTHER_JSON" partyId)
 echo "otherPartyId=$OTHER_PARTY_ID"
 
 SENIOR_AGENT_PARTY_JSON=$(api "$AGENT_SENIOR_TOKEN" POST "/parties/individuals" \
-  '{"fullName":"Juma Senior","dateOfBirth":"1975-01-10","contactInfo":{"phoneNumber":"+255712345680","email":"agent.senior@example.tz"}}')
+  '{"fullName":"Juma Senior","dateOfBirth":"1975-01-10","sex":"MALE","idType":"NATIONAL_ID","idNumber":"19750110-SEED-00003-03","contactInfo":{"phoneNumber":"+255712345680","email":"agent.senior@example.tz"}}')
 SENIOR_AGENT_PARTY_ID=$(jsonval "$SENIOR_AGENT_PARTY_JSON" partyId)
 echo "seniorAgentPartyId=$SENIOR_AGENT_PARTY_ID"
 
 JUNIOR_AGENT_PARTY_JSON=$(api "$AGENT_SENIOR_TOKEN" POST "/parties/individuals" \
-  '{"fullName":"Neema Junior","dateOfBirth":"1995-06-20","contactInfo":{"phoneNumber":"+255712345681","email":"agent.junior@example.tz"}}')
+  '{"fullName":"Neema Junior","dateOfBirth":"1995-06-20","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19950620-SEED-00004-04","contactInfo":{"phoneNumber":"+255712345681","email":"agent.junior@example.tz"}}')
 JUNIOR_AGENT_PARTY_ID=$(jsonval "$JUNIOR_AGENT_PARTY_JSON" partyId)
 echo "juniorAgentPartyId=$JUNIOR_AGENT_PARTY_ID"
 
@@ -718,78 +684,7 @@ curl -sf -X POST "$API/invoices/$INVOICE_ID/payment-request" \
 echo "payment-request accepted for invoiceId=$INVOICE_ID; confirmed by the approver: $(confirm_waiting_on_invoice "$INVOICE_ID")"
 
 echo "=== Step 7a: Money movement, one policy per case (design §12) ==="
-# Money in and out only through deposits and payouts, each confirmed by a second person, so the books-match check at
-# the end has every road to reconcile: paid, paid ahead, part paid, withdrawn, reversed. A loan with a surplus needs a
-# cash value, which no policy has on the day it is issued -- the loan specs build that case themselves.
-
-new_case_policy() {   # new_case_policy <full name> <phone>  -> prints the new policy's number
-  local party case decision number
-  party=$(jsonval "$(api "$AGENT_SENIOR_TOKEN" POST "/parties/individuals" \
-    "{\"fullName\":\"$1\",\"dateOfBirth\":\"1988-06-01\",\"contactInfo\":{\"phoneNumber\":\"$2\"}}")" partyId)
-  api "$STAFF_FINANCE_TOKEN" POST "/parties/$party/kyc" \
-    '{"status":"VERIFIED","evidenceDocumentRef":"seed:kyc-evidence-money-case"}' >/dev/null
-  case=$(jsonval "$(api "$AGENT_SENIOR_TOKEN" POST "/underwriting/cases" \
-    "{\"applicantPartyId\":\"$party\",\"productId\":\"$PRODUCT_ID\",\"productVersionId\":\"$PRODUCT_VERSION_ID\",\"sumAssured\":{\"amount\":\"1500000.00\",\"currencyCode\":\"TZS\"}}")" caseId)
-  api "$STAFF_SENIOR_TOKEN" POST "/underwriting/cases/$case/assessments" \
-    '{"assessmentType":"MEDICAL","findings":"Standard risk, no adverse findings","riskScore":10}' >/dev/null
-  decision=$(jsonval "$(api "$STAFF_UNDERWRITER_TOKEN" POST "/underwriting/cases/$case/decision" \
-    '{"outcome":"ACCEPT","reason":"Seed data: a money-movement case"}')" decisionOutcome)
-  [ "$decision" = "ACCEPT" ] || { echo "FATAL: case $case for $1 was not accepted" >&2; exit 1; }
-  for i in $(seq 1 30); do
-    number=$(jsonval "$(api "$STAFF_FINANCE_TOKEN" GET "/policies?policyholderPartyId=$party")" policyNumber)
-    [ -n "$number" ] && break
-    sleep 1
-  done
-  [ -n "$number" ] || { echo "FATAL: no policy issued for $1" >&2; exit 1; }
-  echo "$number"
-}
-
-first_premium() {   # first_premium <policyNumber> -> the first invoice's amount
-  jsonval "$(api "$STAFF_FINANCE_TOKEN" GET "/policies/$1/invoices")" amount
-}
-
-deposit() {   # deposit <policyNumber> <method> <reference> <amount>  -> the confirmed deposit's id
-  local id
-  id=$(jsonval "$(api "$STAFF_FINANCE_TOKEN" POST "/receipts" \
-    "{\"policyNumber\":\"$1\",\"method\":\"$2\",\"reference\":\"$3\",\"amount\":{\"amount\":\"$4\",\"currencyCode\":\"TZS\"},\"receivedOn\":\"$(date +%F)\",\"payerRef\":\"Seed payer\"}")" receiptId)
-  [ -n "$id" ] || { echo "FATAL: the deposit $3 on $1 was refused" >&2; exit 1; }
-  api "$STAFF_APPROVER_TOKEN" POST "/receipts/$id/approval" >/dev/null
-  echo "$id"
-}
-
-mul() { awk -v a="$1" -v f="$2" 'BEGIN { printf "%.2f", a * f }'; }
-SEED_RUN=$(date +%s)
-
-PAID_POLICY=$(new_case_policy "Neema Paid" "+255713000101")
-PAID_PREMIUM=$(first_premium "$PAID_POLICY")
-deposit "$PAID_POLICY" BANK_DEPOSIT "SEED-PAID-$SEED_RUN" "$PAID_PREMIUM" >/dev/null
-echo "paid:       $PAID_POLICY -- one premium by bank deposit"
-
-AHEAD_POLICY=$(new_case_policy "Juma Ahead" "+255713000102")
-AHEAD_PREMIUM=$(first_premium "$AHEAD_POLICY")
-deposit "$AHEAD_POLICY" CASH "SEED-AHEAD-$SEED_RUN" "$(mul "$AHEAD_PREMIUM" 3)" >/dev/null
-echo "paid ahead: $AHEAD_POLICY -- three premiums in cash; two wait on the balance"
-
-PART_POLICY=$(new_case_policy "Zawadi Part" "+255713000103")
-PART_PREMIUM=$(first_premium "$PART_POLICY")
-deposit "$PART_POLICY" LIPA_NUMBER "SEED-PART-$SEED_RUN" "$(mul "$PART_PREMIUM" 0.5)" >/dev/null
-echo "part paid:  $PART_POLICY -- half a premium by Lipa number"
-
-WITHDRAWN_POLICY=$(new_case_policy "Baraka Withdrawn" "+255713000104")
-WITHDRAWN_PREMIUM=$(first_premium "$WITHDRAWN_POLICY")
-deposit "$WITHDRAWN_POLICY" BANK_DEPOSIT "SEED-WDR-$SEED_RUN" "$(mul "$WITHDRAWN_PREMIUM" 2)" >/dev/null
-WITHDRAWAL_ID=$(jsonval "$(api "$STAFF_FINANCE_TOKEN" POST "/policies/$WITHDRAWN_POLICY/balance/withdrawals" \
-  "{\"amount\":{\"amount\":\"$WITHDRAWN_PREMIUM\",\"currencyCode\":\"TZS\"},\"payee\":{\"method\":\"MOBILE_MONEY\",\"payeeRef\":\"+255713000104\"}}")" withdrawalId)
-api "$STAFF_APPROVER_TOKEN" POST "/balance-withdrawals/$WITHDRAWAL_ID/approve" >/dev/null
-echo "withdrawn:  $WITHDRAWN_POLICY -- two premiums deposited, the second withdrawn to mobile money"
-
-REVERSED_POLICY=$(new_case_policy "Rehema Reversed" "+255713000105")
-REVERSED_PREMIUM=$(first_premium "$REVERSED_POLICY")
-CHEQUE_ID=$(deposit "$REVERSED_POLICY" CHEQUE "SEED-CHQ-$SEED_RUN" "$REVERSED_PREMIUM")
-REVERSAL_ID=$(jsonval "$(api "$STAFF_FINANCE_TOKEN" POST "/deposits/$CHEQUE_ID/reversal" \
-  '{"reason":"Seed data: the cheque bounced"}')" reversalId)
-api "$STAFF_APPROVER_TOKEN" POST "/deposit-reversals/$REVERSAL_ID/confirm" >/dev/null
-echo "reversed:   $REVERSED_POLICY -- a cheque deposited, then reversed when it bounced; the premium is owed again"
+PRODUCT_ID="$PRODUCT_ID" PRODUCT_VERSION_ID="$PRODUCT_VERSION_ID" bash scripts/seed-money-cases.sh
 
 echo "=== Step 8: Claim, with evidence ==="
 CLAIM_JSON=$(curl -sf -X POST "$API/claims" \
@@ -849,22 +744,9 @@ echo " invoiceId:          $INVOICE_ID"
 echo " claimId:            $CLAIM_ID"
 echo " documentRef:        $DOCUMENT_REF"
 echo " policyLoan:         $LOAN_STATUS"
-echo " money cases:        paid $PAID_POLICY, ahead $AHEAD_POLICY, part $PART_POLICY,"
-echo "                     withdrawn $WITHDRAWN_POLICY, reversed $REVERSED_POLICY"
 echo "================================================================"
 echo "Paste policyNumber/claimId/documentRef above into pgAdmin or a browser to explore."
 
 echo ""
 echo "=== Do the books match? (money movement step 7) ==="
-# The ledger posts after commit, so give it a moment, then fail loudly on any difference: seed data the books do not
-# agree with is a bug in the seed or in the platform, and either is worth stopping for.
-sleep 5
-BOOKS_JSON=$(api "$STAFF_FINANCE_TOKEN" GET "/finance/books-match")
-node -e '
-  const v = JSON.parse(process.argv[1]);
-  for (const c of v.checks) {
-    console.log(`${c.matches ? "ok  " : "FAIL"}  ${c.name}: ledger ${c.ledger}, records ${c.records}, difference ${c.difference}`);
-  }
-  if (!v.allMatch) { console.error("FATAL: the books do not match -- see FAIL above."); process.exit(1); }
-  console.log("The books match.");
-' "$BOOKS_JSON"
+bash scripts/books-match.sh
