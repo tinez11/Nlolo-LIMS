@@ -20,6 +20,9 @@ test.describe('IFRS 17 engine period cycle', () => {
   test.use({ storageState: 'e2e/.auth/staff-finance.json' });
 
   test('extract, results uploaded, approved with the sign-off, posted and agreed, period locked', async ({ page, browser }) => {
+    // Two approver sign-ins on top of the whole cycle: it ran out of the 60s budget waiting on the second one, alone
+    // and in a full run alike (2026-11-05). Slow, as the year-end close is for the same reason.
+    test.slow();
     const period = await untouchedPeriod(page);
     await startClosing(page, period);
 
