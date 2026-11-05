@@ -225,7 +225,10 @@ interface NavPlacement {
    * A count of work waiting. A FUNCTION when the queue depends on the viewer's job: the
    * Claims item counts unassessed claims for an assessor and settlement decisions for a
    * manager, because those are two different queues behind one nav item and a badge showing
-   * the other role's backlog is a number the reader cannot act on.
+   * the other role's backlog is a number the reader cannot act on. For the same reason every
+   * queue's count shows only to whoever holds the permission that works it (2026-11-05: an
+   * underwriter saw clients awaiting KYC and claims awaiting assessment, neither of them theirs);
+   * the item itself still shows to whoever may view the list.
    */
   badge?: BadgeKey | (() => BadgeKey | undefined);
 }
@@ -489,7 +492,7 @@ const STAFF_SCREENS: Screen[] = [
       // A manager's whole job is the settlement decision, and it had no work signal at all
       // while the assessor's queue had one. Manager wins when an identity carries both
       // roles (staff.admin does): a settlement decision is the more consequential queue.
-      badge: () => (can('claims.settle') ? 'claims-settlement-pending' : 'claims-unassessed'),
+      badge: () => (can('claims.settle') ? 'claims-settlement-pending' : can('claims.assess') ? 'claims-unassessed' : undefined),
     },
   },
   { path: 'claims/new', element: <RegisterClaimPage />, reach: 'drill-in' },
@@ -556,7 +559,7 @@ const STAFF_SCREENS: Screen[] = [
       group: 'clients',
       label: 'Individuals',
       icon: UserCheck,
-      badge: 'kyc-pending-individuals',
+      badge: () => (can('clients.kyc') ? 'kyc-pending-individuals' : undefined),
     },
   },
   {
@@ -571,7 +574,7 @@ const STAFF_SCREENS: Screen[] = [
       // where there is room for it.
       label: 'Corporate/Group',
       icon: Building2,
-      badge: 'kyc-pending-organisations',
+      badge: () => (can('clients.kyc') ? 'kyc-pending-organisations' : undefined),
     },
   },
   // The old register path, kept as a redirect rather than deleted: the badge's own
@@ -603,7 +606,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'underwriting',
     element: <UnderwritingQueuePage />,
-    reach: { group: 'new-business', label: 'Underwriting', icon: ClipboardCheck, badge: 'underwriting-open' },
+    reach: { group: 'new-business', label: 'Underwriting', icon: ClipboardCheck, badge: () => (can('underwriting.assess') ? 'underwriting-open' : undefined) },
   },
   { path: 'underwriting/new', element: <OpenUnderwritingCasePage />, reach: 'drill-in' },
   { path: 'underwriting/:caseId', element: <UnderwritingCaseDetailPage />, reach: 'drill-in' },
@@ -628,7 +631,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'arrears',
     element: <ArrearsPage />,
-    reach: { group: 'collections', label: 'Arrears', icon: TrendingDown, badge: 'arrears-at-lapse' },
+    reach: { group: 'collections', label: 'Arrears', icon: TrendingDown, badge: () => (can('collections.manage') ? 'arrears-at-lapse' : undefined) },
   },
   // Beside Arrears, because it is the module's other work queue and the same audience clears
   // both. It earned its nav item the same way: there was a medium-severity Prometheus alert
@@ -637,7 +640,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'field-receipts',
     element: <FieldReceiptsPage />,
-    reach: { group: 'collections', label: 'Agent cash', icon: HandCoins, badge: 'receipts-overdue' },
+    reach: { group: 'collections', label: 'Agent cash', icon: HandCoins, badge: () => (can('collections.manage') ? 'receipts-overdue' : undefined) },
   },
   // The third work queue, and the only one where the platform is the one who owes. Arrears and
   // field receipts are both about money coming IN and the platform can chase either by itself;
@@ -653,14 +656,14 @@ const STAFF_SCREENS: Screen[] = [
   // Money movement step 5: a deposit whose money never arrived, reversed on its own page and confirmed by a second person.
   { path: 'receipts/:receiptId/reverse', element: <ReverseDepositPage />, reach: 'drill-in' },
   // Money movement 6d: the payments register is two registers by direction -- Deposits here, money out under Payouts.
-  { path: 'payments', element: <PaymentsPage direction="IN" />, reach: { group: 'collections', label: 'Deposits', icon: ArrowLeftRight, badge: 'payments-attention' } },
+  { path: 'payments', element: <PaymentsPage direction="IN" />, reach: { group: 'collections', label: 'Deposits', icon: ArrowLeftRight, badge: () => (can('collections.manage') ? 'payments-attention' : undefined) } },
   // Money owed to LIVING policyholders (product step 2), as distinct from the claims queue, which
   // pays on death. Under finance for the same reason bank transfers are: reviewing and approving a
   // payout both move real money, and the endpoints are FINANCE_OFFICER/ADMIN only.
   {
     path: 'payouts',
     element: <PayoutsQueuePage />,
-    reach: { group: 'paying-out', label: 'Payouts', icon: Coins, badge: 'payouts-attention' },
+    reach: { group: 'paying-out', label: 'Payouts', icon: Coins, badge: () => (can('payouts.manage') ? 'payouts-attention' : undefined) },
   },
   { path: 'payouts/all', element: <PaymentsPage direction="OUT" />, reach: 'drill-in' },
   { path: 'payouts/:instalmentId', element: <PayoutPage />, reach: 'drill-in' },
@@ -675,7 +678,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'bank-transfers',
     element: <EftExecutionPage />,
-    reach: { group: 'paying-out', label: 'Payments to make', icon: Banknote, badge: 'eft-awaiting' },
+    reach: { group: 'paying-out', label: 'Payments to make', icon: Banknote, badge: () => (can('payouts.manage') ? 'eft-awaiting' : undefined) },
   },
   // The unit-linked fund register (product step 6): funds, their two-person daily prices, the
   // price-correction adjustments and the 2150 reconciliation. Finance's: it prices the units.

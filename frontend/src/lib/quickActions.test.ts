@@ -17,8 +17,9 @@ describe('clientActions', () => {
     expect(clientActions({ partyId: 'p-1' })).toEqual([]);
   });
 
-  it('records a payment against the one policy a client holds, else opens their policies', () => {
+  it('records a deposit against the one policy a client holds, else opens their policies', () => {
     grantAccess('collections.manage');
+    expect(clientActions({ partyId: 'p-1' }, 'POL-1')[0]?.label).toBe('Record deposit');
     expect(clientActions({ partyId: 'p-1' }, 'POL-1')[0]?.to).toBe('/staff/receipts/new?policy=POL-1');
     expect(clientActions({ partyId: 'p-1' })[0]?.to).toBe('/staff/parties/p-1?tab=policies');
   });
