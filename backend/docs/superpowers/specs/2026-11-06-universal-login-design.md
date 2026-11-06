@@ -33,6 +33,11 @@ brute-force lockout, 15-minute reset link/code, English and Swahili, the "Split 
 
 - New realm `lifeplatform` replaces the four. Four **workspace roles**: `staff`, `agent`, `customer`, `regulator`.
   Staff job roles (UNDERWRITER, ADMIN, …) remain realm roles as today.
+- Two layers, never confused: a **workspace** is what a realm was (which console area a person is in); **job roles**
+  live inside the staff workspace and all apply together. An administrator holding ADMIN, UNDERWRITER and FINANCE
+  signs in straight to the Staff console with all three active and never chooses a role. A choice appears only when an
+  account holds more than one *workspace* (e.g. staff and customer: "Continue as Staff / Policyholder"); in the
+  customer workspace that person's job roles grant nothing.
 - One public PKCE client `lifeplatform-spa`, plus the confidential backend client and the admin service account(s)
   needed by the login-creation services (one service account with `manage-users` on the one realm replaces the
   per-realm ones).
