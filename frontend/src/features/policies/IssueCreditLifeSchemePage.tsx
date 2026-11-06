@@ -237,7 +237,7 @@ export function IssueCreditLifeSchemePage() {
               </FormField>
 
               {/* No "why this scheme is in force" (2026-11-02): a credit-life scheme is always in force on set-up. */}
-              <FormField label="Note for the record" error={errors.reasonForManualIssue?.message}>
+              <FormField label="Reason for issuing by hand" error={errors.reasonForManualIssue?.message}>
                 <Input placeholder="Onboarding BUMACO's existing book" {...register('reasonForManualIssue')} />
               </FormField>
             </div>

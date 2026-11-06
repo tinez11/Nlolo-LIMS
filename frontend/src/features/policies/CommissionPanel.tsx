@@ -62,15 +62,15 @@ export function CommissionPanel({ facts, agreedCommissionPercent }: {
 
       <dl className="space-y-1 text-xs">
         <div className="flex justify-between gap-2">
-          <dt className="text-muted-foreground">Agent of record</dt>
+          <dt className="text-label">Agent of record</dt>
           <dd>{agent ? <PartyName partyId={agent.partyId ?? ''} /> : 'None — sold direct'}</dd>
         </div>
         <div className="flex justify-between gap-2">
-          <dt className="text-muted-foreground">Lender</dt>
+          <dt className="text-label">Lender</dt>
           <dd>{policy?.policyholderPartyId ? <PartyName partyId={policy.policyholderPartyId} /> : '—'}</dd>
         </div>
         <div className="flex justify-between gap-2">
-          <dt className="text-muted-foreground">Rate</dt>
+          <dt className="text-label">Rate</dt>
           <dd>
             {agreedCommissionPercent && isPositive(agreedCommissionPercent)
               ? `${trimZeros(agreedCommissionPercent)}%, as agreed`

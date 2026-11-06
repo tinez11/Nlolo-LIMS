@@ -51,17 +51,17 @@ export function SchemeCoverPanel({ policyNumber, category, groupFuneral }: {
       <div className="flex flex-wrap items-center gap-x-8 gap-y-2 px-4 pb-3">
         <dl className="flex flex-wrap items-baseline gap-x-8 gap-y-1 text-sm">
           <div className="flex items-baseline gap-2">
-            <dt className="text-xs text-muted-foreground">{creditLife ? 'Borrowers' : 'Members'}</dt>
+            <dt className="text-xs text-label">{creditLife ? 'Borrowers' : 'Members'}</dt>
             <dd className="font-semibold tabular-nums">{data?.activeMemberCount ?? '—'}</dd>
           </div>
           {groupFuneral && (
             <div className="flex items-baseline gap-2">
-              <dt className="text-xs text-muted-foreground">Lives</dt>
+              <dt className="text-xs text-label">Lives</dt>
               <dd className="font-semibold tabular-nums">{lives ?? '—'}</dd>
             </div>
           )}
           <div className="flex items-baseline gap-2">
-            <dt className="text-xs text-muted-foreground">Total covered</dt>
+            <dt className="text-xs text-label">Total covered</dt>
             <dd className="font-semibold tabular-nums">{data ? formatMoney(data.totalCovered) : '—'}</dd>
           </div>
         </dl>

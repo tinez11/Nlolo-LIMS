@@ -306,15 +306,15 @@ function WithdrawalCard({
         {withdrawal.approvedBy && <>, approved by <StaffName subject={withdrawal.approvedBy} /> — waiting for its price</>}.
       </p>
       <dl className="grid grid-cols-2 gap-x-4 text-xs sm:grid-cols-4">
-        <dt className="text-muted-foreground">Surrender charge ({withdrawal.chargePercent ?? '0'}%)</dt>
+        <dt className="text-label">Surrender charge ({withdrawal.chargePercent ?? '0'}%)</dt>
         <dd>{m(withdrawal.estimatedCharge)}</dd>
-        <dt className="text-muted-foreground">Paid out</dt>
+        <dt className="text-label">Paid out</dt>
         <dd>{m(withdrawal.estimatedNet)}</dd>
-        <dt className="text-muted-foreground">Value left</dt>
+        <dt className="text-label">Value left</dt>
         <dd>{m(withdrawal.estimatedRemaining)}</dd>
         {withdrawal.newSumAssured && (
           <>
-            <dt className="text-muted-foreground">New sum assured</dt>
+            <dt className="text-label">New sum assured</dt>
             <dd>{m(withdrawal.newSumAssured)}</dd>
           </>
         )}

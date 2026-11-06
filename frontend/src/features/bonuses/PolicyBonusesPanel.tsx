@@ -146,7 +146,7 @@ function Settlements({ settlements }: { settlements: BonusSettlementView[] }) {
 function SettlementLine({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-muted-foreground">{label}</dt>
+      <dt className="text-label">{label}</dt>
       <dd className="font-medium">{value}</dd>
     </div>
   );
