@@ -267,6 +267,11 @@ low-chroma status hues.
   the same slate as Label Ink, ~8:1 on a card. It was 0.50 until 2026-11-06, which sat
   1.13:1 from Subtle Ink: two tokens, one visible grey. The step is now ~1.5:1, the gap
   IBM Carbon keeps between secondary and helper text.
+- **Heading Ink** (`--heading`, 2026-11-06): page titles, panel titles and form section
+  titles in the dark brand teal `oklch(0.45 0.09 195)`, ~6.5:1 on white (dark theme
+  `oklch(0.83 0.08 190)`). Chosen by the user from a preview of teal on headings,
+  identifiers, amounts and all three. Headings only: labels, values and identifiers stay
+  navy and slate. The figures band and sidebar keep light ink; the customer portal keeps navy.
 - **Subtle Ink** (`subtle-ink`): field notes, trace ids, the em dash that means
   "absent". 12px is its floor, and it holds ~4.5:1 there.
 - **Rule** (`rule`) and **Rule Strong** (`rule-strong`): a card's hairline edge, row

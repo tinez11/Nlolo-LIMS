@@ -331,6 +331,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
             and the next Tab carries on through the nav as if nothing happened. */}
         <main
           id="main"
+          data-realm={realm}
           tabIndex={-1}
           className="min-h-0 min-w-0 flex-1 overflow-y-auto focus:outline-none"
         >

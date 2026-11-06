@@ -454,7 +454,7 @@ export function IssuePolicyPage() {
             annually renewable group scheme genuinely have none, so leaving these blank
             is a real answer rather than an omission. */}
         <fieldset data-outline="Term" className="border-t border-border pt-3">
-          <legend className="pr-2 text-eyebrow text-label uppercase">
+          <legend className="pr-2 text-eyebrow text-heading uppercase">
             Term
           </legend>
 

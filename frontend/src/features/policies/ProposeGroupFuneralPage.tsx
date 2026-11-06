@@ -221,7 +221,7 @@ export function ProposeGroupFuneralPage() {
           </div>
 
           <fieldset data-outline="Members and families" className="border-t border-border pt-3">
-            <legend className="pr-2 text-eyebrow text-label uppercase">
+            <legend className="pr-2 text-eyebrow text-heading uppercase">
               Members and their families
             </legend>
             <div className="mb-2.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
