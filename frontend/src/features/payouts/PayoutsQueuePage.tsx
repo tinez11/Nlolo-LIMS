@@ -172,7 +172,7 @@ export function PayoutsQueuePage() {
     <>
       <PageHeader
         title="Payouts"
-        description="Money owed to living policyholders: maturities, survival benefits, income and premium returns. Each one is reviewed by one person and approved by another. Every other payout is under All payouts."
+        description="Each one is reviewed by one person and approved by another."
         count={<CountLine {...count} />}
       />
 

@@ -48,7 +48,7 @@ export function PayoutsPanel({ policyNumber }: { policyNumber: string }) {
     return (
       <EmptyState
         title="No payouts scheduled"
-        description="This policy's product pays nothing while the life assured is alive. Term and whole-life cover pays on death; an endowment or money-back plan carries a schedule."
+        description="This product pays nothing while the life assured is alive."
       />
     );
   }

@@ -169,8 +169,7 @@ function RequestForm({ policy }: { policy: PolicyView }) {
 
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">
-            What the insurer spent getting this policy on the books. Itemised, so the customer can
-            be told what each one was for. Leave empty to refund everything.
+            Costs to deduct, itemised for the customer. Empty = refund everything.
           </p>
           {deductions.fields.map((field, index) => (
             <div key={field.id} className="flex items-end gap-2">

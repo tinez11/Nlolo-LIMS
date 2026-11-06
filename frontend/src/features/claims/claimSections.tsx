@@ -58,7 +58,7 @@ export function claimSections({
   // words apart for a reader and one substring apart for every locator.
   const seesHistory = roles.CLAIMS_ASSESSOR || roles.CLAIMS_MANAGER;
   const history = (
-    <Panel id="assessments" title="Assessments" subtitle="What the assessors found, and what they recommended paying">
+    <Panel id="assessments" title="Assessments">
       <AssessmentHistoryPanel claimId={claimId} />
     </Panel>
   );
@@ -79,7 +79,6 @@ export function claimSections({
             id="assessment"
             emphasis
             title="Submit an assessment"
-            subtitle="Claims may carry more than one before a decision is made."
           >
             <ClaimAssessmentPanel claimId={claimId} />
           </Panel>
@@ -99,7 +98,6 @@ export function claimSections({
             id="settlement"
             emphasis
             title="Decide the payout"
-            subtitle="Approve or reject — distinct from assessing."
           >
             <ClaimSettlementPanel
               claimId={claimId}
@@ -147,7 +145,6 @@ export function claimSections({
         <Panel
           id="payment"
           title="Payment"
-          subtitle="Where the payout is, and who it is waiting on"
         >
           <ClaimPaymentPanel claimId={claimId} claimStatus={claim.status} />
         </Panel>
@@ -164,7 +161,7 @@ export function claimSections({
         <Panel
           id="document-requests"
           title="Documents requested"
-          subtitle="What the claimant has been asked for; they answer from the customer portal"
+          subtitle="The claimant answers from the customer portal."
         >
           <DocumentRequestsPanel claimId={claimId} canRequest={claim.status !== 'SETTLED'} />
         </Panel>
@@ -179,7 +176,6 @@ export function claimSections({
       <Panel
         id="evidence"
         title="Evidence"
-        subtitle="Photos, certificates, and reports attached to this claim"
       >
         <EvidencePanel
           claimId={claimId}
@@ -200,7 +196,6 @@ export function claimSections({
         <Panel
           id="reinsurance"
           title="Reinsurance"
-          subtitle="Recoveries this claim's own payout produced"
         >
           <RecoveriesPanel claimId={claimId} />
         </Panel>

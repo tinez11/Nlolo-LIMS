@@ -199,7 +199,7 @@ function ReviewAction({ payout }: { payout: PayoutInstalmentView }) {
   });
 
   return (
-    <Panel title="Review this payout" subtitle="Confirm where the money goes. A second person releases it.">
+    <Panel title="Review this payout" subtitle="A second person releases it.">
       <div className="space-y-3 px-4 py-3">
         <GatePanel gates={gates} title="Before reviewing" />
         {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
@@ -337,9 +337,7 @@ function ProofOfLifeAction({
           Record proof of life
         </Button>
         <p className="text-xs text-muted-foreground">
-          Recording this restarts the stream&rsquo;s clock and releases what the overdue proof held.
-          A payout held because the premiums are behind stays held — proving someone is alive says
-          nothing about what they have paid.
+          Releases what the overdue proof held. A payout held for unpaid premiums stays held.
         </p>
       </div>
     </Panel>

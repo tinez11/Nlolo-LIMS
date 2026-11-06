@@ -77,7 +77,7 @@ export function PaymentRunsPage() {
       return (
         <EmptyState
           title="No payment runs yet"
-          description="A run is prepared each day income instalments fall due. Only an income plan produces one — a maturity or survival benefit is approved on its own page."
+          description="A run is prepared each day income instalments fall due."
         />
       );
     }
@@ -97,7 +97,6 @@ export function PaymentRunsPage() {
     <>
       <PageHeader
         title="Payment runs"
-        description="One batch of income instalments a day. The system assembles it; one person releases it."
         count={<CountLine {...count} />}
       />
       <div className="px-6 pb-6">

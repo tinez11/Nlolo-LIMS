@@ -75,7 +75,6 @@ export function CreateTreatyPage() {
         // and the person is in the middle of one when they want it.
         breadcrumb={[{ label: 'Treaties', to: '/staff/treaties' }]}
         title="New treaty"
-        description="Staff/finance only."
       />
 
       <FormLayout formId="create-treaty-form" outlineLabel="Treaty sections">
@@ -153,7 +152,7 @@ export function CreateTreatyPage() {
         <FormField required
           label="Reinsurance commission"
           error={errors.commissionPercent?.message}
-          hint="The commission not contingent on claims, a percent of each month's ceded premium. 0 when the reinsurer pays none."
+          hint="Percent of each month's ceded premium. 0 if none."
         >
           <div className="flex items-center gap-1">
             <Input placeholder="0" {...register('commissionPercent')} />

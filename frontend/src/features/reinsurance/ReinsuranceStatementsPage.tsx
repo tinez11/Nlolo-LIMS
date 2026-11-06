@@ -69,7 +69,7 @@ export function ReinsuranceStatementsPage() {
     <>
       <PageHeader
         title="Reinsurance statements"
-        description="Each treaty's quarter, settled into the reinsurer current account. One person prepares, a finance approver posts."
+        description="One person prepares, a finance approver posts."
       />
       <div className="space-y-4 px-6 pb-6">
         <div className="w-56">

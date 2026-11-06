@@ -122,8 +122,7 @@ export function ClaimPolicyChooser({
           beneficiary.
         </p>
         <p className="mt-1.5 text-xs text-muted-foreground">
-          A claim can still be filed — an executor or an assignee has no recorded connection,
-          and the platform does not require one.
+          A claim can still be filed.
         </p>
         <Button type="button" size="sm" variant="ghost" className="-ml-2 mt-1" onClick={onEnterManually}>
           Enter a policy number instead
