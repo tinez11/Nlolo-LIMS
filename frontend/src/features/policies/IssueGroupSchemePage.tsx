@@ -236,7 +236,7 @@ export function IssueGroupSchemePage() {
 
         {/* --- How the scheme values anybody ---------------------------------- */}
         <fieldset data-outline="Benefit basis" className="border-t border-border pt-3">
-          <legend className="pr-2 text-eyebrow text-label uppercase">
+          <legend className="pr-2 text-eyebrow text-heading uppercase">
             Benefit basis
           </legend>
 
@@ -328,7 +328,7 @@ export function IssueGroupSchemePage() {
 
         {/* --- The opening schedule ------------------------------------------- */}
         <fieldset data-outline="Opening schedule" className="border-t border-border pt-3">
-          <legend className="pr-2 text-eyebrow text-label uppercase">
+          <legend className="pr-2 text-eyebrow text-heading uppercase">
             Opening schedule
           </legend>
 
@@ -447,7 +447,7 @@ export function IssueGroupSchemePage() {
 
         {/* --- Premium and term ----------------------------------------------- */}
         <fieldset data-outline="Premium and term" className="border-t border-border pt-3">
-          <legend className="pr-2 text-eyebrow text-label uppercase">
+          <legend className="pr-2 text-eyebrow text-heading uppercase">
             Premium and term
           </legend>
 
