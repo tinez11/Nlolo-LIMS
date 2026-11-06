@@ -17,7 +17,7 @@ import { resolve } from 'node:path';
  *
  * ## What is still real
  *
- * Everything. The token is a real password grant against the real `staff` realm, minted for
+ * Everything. The token is a real password grant against the real `lifeplatform` realm, minted for
  * `staff.admin` — the same identity and the same confidential client the dev seeder uses. There
  * is no fabricated JWT here and there must never be one: this platform has twice shipped a green
  * suite over a credential path that did not work, because the tests minted their own identities
@@ -47,16 +47,16 @@ const PASSWORD = 'devpassword';
  */
 function staffClientSecret(): string {
   const realm = JSON.parse(
-    readFileSync(resolve('../backend/keycloak/staff-realm.json'), 'utf8'),
+    readFileSync(resolve('../backend/keycloak/lifeplatform-realm.json'), 'utf8'),
   ) as { clients?: { clientId?: string; secret?: string }[] };
   const secret = realm.clients?.find((c) => c.clientId === 'lifeplatform-app')?.secret;
-  if (!secret) throw new Error('lifeplatform-app has no secret in backend/keycloak/staff-realm.json');
+  if (!secret) throw new Error('lifeplatform-app has no secret in backend/keycloak/lifeplatform-realm.json');
   return secret;
 }
 
 /** A real access token for a real staff user. */
 export async function staffToken(http: APIRequestContext, username: string): Promise<string> {
-  const response = await http.post(`${KEYCLOAK}/realms/staff/protocol/openid-connect/token`, {
+  const response = await http.post(`${KEYCLOAK}/realms/lifeplatform/protocol/openid-connect/token`, {
     form: {
       grant_type: 'password',
       client_id: 'lifeplatform-app',

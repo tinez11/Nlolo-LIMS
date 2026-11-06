@@ -1,8 +1,8 @@
 import { expect, test as setup } from '@playwright/test';
 
 /**
- * Signs in through the REAL Keycloak `staff` realm. No mocked provider, no
- * fabricated JWT.
+ * Signs in through the REAL Keycloak realm (`lifeplatform`, one for everyone since
+ * 2026-11-06), into the staff workspace. No mocked provider, no fabricated JWT.
  *
  * Adapted from the deleted customer-portal's own auth.setup.ts, which proved this
  * out for the `customers` realm. Two differences now:
@@ -14,7 +14,7 @@ import { expect, test as setup } from '@playwright/test';
  *    exercise of the silent-SSO path rather than a replay of a saved session.
  *
  * If this fails at the Keycloak form, the usual causes are: the `lifeplatform-spa`
- * public client is missing from the staff realm, its redirect URI does not cover
+ * public client is missing from the lifeplatform realm, its redirect URI does not cover
  * :5173, or the realm import has not been re-run since that client was added.
  */
 const STAFF_USER = 'staff.underwriter';
@@ -25,7 +25,7 @@ setup(`authenticate as ${STAFF_USER}`, async ({ page }) => {
   await page.goto('/staff');
 
   // RequireAuth fires signinRedirect on mount, so we should land on Keycloak.
-  await page.waitForURL(/\/realms\/staff\/protocol\/openid-connect\/auth/, {
+  await page.waitForURL(/\/realms\/lifeplatform\/protocol\/openid-connect\/auth/, {
     timeout: 30_000,
     // The form, not every resource: the login theme's Google Fonts can take 30s+ from here, so "load" may never come.
     waitUntil: 'domcontentloaded',
