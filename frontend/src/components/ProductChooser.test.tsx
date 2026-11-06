@@ -30,7 +30,8 @@ describe('ProductChooser', () => {
 
     await user.click(screen.getByRole('button', { name: /Term life/ }));
     expect(screen.getByRole('button', { name: 'Term Shield (TERM-01)' })).toHaveTextContent('Pure cover for 5 to 20 years.');
-    expect(screen.getByRole('button', { name: 'Term Plus (TERM-02)' })).toHaveTextContent('No description yet');
+    // A product with no description shows none, rather than a line saying so.
+    expect(screen.getByRole('button', { name: 'Term Plus (TERM-02)' })).not.toHaveTextContent('No description');
     expect(screen.queryByRole('button', { name: 'Family Funeral (FUN-01)' })).not.toBeInTheDocument();
   });
 
