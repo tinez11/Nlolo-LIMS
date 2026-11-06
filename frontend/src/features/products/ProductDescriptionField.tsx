@@ -44,7 +44,7 @@ export function ProductDescriptionField({
   if (editing) {
     return (
       <div className="space-y-3 px-4 pt-1 pb-3">
-        <FormField label="Description" hint="Who it is for and what it pays, in a sentence or two. Blank for none.">
+        <FormField label="Description" hint="Shown to staff choosing this product. Blank for none.">
           <Textarea className="min-h-20 py-2" maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} />
         </FormField>
         {saveError && <InlineError error={saveError} lead="Not saved" />}

@@ -105,8 +105,7 @@ export function ProductDetailPage() {
         <div className="mt-4 rounded-xl border border-border bg-surface shadow-card px-6 py-10 text-center">
           <p className="text-sm font-medium">Not found among active products</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Either this product does not exist, or it has no published version yet — a DRAFT
-            product is invisible everywhere in this console until one is published.
+            It does not exist, or has no published version yet.
           </p>
         </div>
       </div>
@@ -156,7 +155,6 @@ export function ProductDetailPage() {
 
           <Panel
             title="Versions"
-            subtitle="Every version published, newest first; Current is what a sale today is priced on"
           >
             <ProductVersionsPanel productId={productId} category={product.category} refreshKey={published} />
           </Panel>
@@ -191,19 +189,19 @@ export function ProductDetailPage() {
         </Panel>
 
         {product.status === 'ACTIVE' && (
-          <Panel title="Customer portal" subtitle="Whether customers can see, price and ask for it online">
+          <Panel title="Customer portal">
             <OnlineListingPanel productId={productId} canEdit={canAuthor} />
           </Panel>
         )}
 
         {showsRates(valueTerms, identity) && (
-          <Panel title="Declared interest rates" subtitle="Credited on every account, never below its own version's guarantee">
+          <Panel title="Declared interest rates">
             <RateDeclarationsPanel productId={productId} />
           </Panel>
         )}
 
         {showsBonuses(valueTerms, identity) && (
-          <Panel title="Bonus declarations" subtitle="Attached to every with-profits policy on this product eligible on the valuation date">
+          <Panel title="Bonus declarations">
             <BonusDeclarationsPanel productId={productId} />
           </Panel>
         )}

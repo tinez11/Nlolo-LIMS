@@ -45,8 +45,7 @@ export function UnitLinkedTermsSection({
       <div>
         <p className="text-xs font-medium text-muted-foreground">Unit-linked terms</p>
         <p className="mt-0.5 text-xs text-subtle-foreground">
-          Premiums buy units at the first price approved after they are received (forward pricing). Each month the policy
-          fee and the cost of insurance are sold from the units. The fund management charge is already in the price.
+          The fund management charge is already in the unit price.
         </p>
       </div>
 
@@ -193,8 +192,7 @@ export function UnitLinkedTermsSection({
       <fieldset className="space-y-2 rounded-md border border-border p-3">
         <legend className="text-xs font-medium text-label">Switches, withdrawals, top-ups and the surrender charge</legend>
         <p className="text-xs text-subtle-foreground">
-          Optional. A feature is offered only when both of its fields are filled in; leave them all empty and the policy
-          offers none of them. Fixed once the version is published.
+          A feature is offered only when both its fields are filled. Fixed once published.
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <FormField label="Free switches per policy year" error={errors.ulFreeSwitches?.message}>

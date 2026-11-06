@@ -298,7 +298,7 @@ describe('rating basis', () => {
     // "No rows" would leave a reader to guess. The consequence is stated -- in
     // the panel, and again on the summary Field a reader may see first.
     expect(screen.getAllByText(/unpriced/)).toHaveLength(2);
-    expect(screen.getByText(/nothing on this platform can quote a premium/)).toBeInTheDocument();
+    expect(screen.getByText(/no premium can be quoted for it/)).toBeInTheDocument();
     expect(screen.queryByRole('table', { name: 'Base rate table' })).not.toBeInTheDocument();
 
     // An empty benefit schedule is a different fact from an absent one.

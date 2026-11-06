@@ -76,9 +76,7 @@ export function PremiumGrid({ register, control, errors, setValue, getValues }: 
     <div className="space-y-3">
       <div className="space-y-1.5">
         <p className="text-xs text-subtle-foreground">
-          Where does a role’s price change with age? Type the ages a new band starts at — e.g. <code>41, 56</code> — or
-          leave it empty for one price at every age. Bands run from the youngest entry age to the last age the role is
-          priced to, set under “Who may be covered”.
+          The ages a new price band starts at — e.g. <code>41, 56</code>. Empty = one price at every age.
         </p>
         <div className="flex flex-wrap gap-3">
           {columns.map(({ r, role, error }) => (

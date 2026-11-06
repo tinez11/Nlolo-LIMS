@@ -503,7 +503,7 @@ export function PublishVersionForm({
             </FormField>
             <FormField
               label="Description"
-              hint="What staff read when choosing this product. Changing it here updates the product from this version on."
+              hint="Shown to staff choosing this product."
               error={errors.description?.message}
               className="col-span-2"
             >

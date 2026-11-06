@@ -55,9 +55,7 @@ export function FuneralTermsSection({
       <div>
         <p className="text-xs font-medium text-muted-foreground">Funeral plan terms</p>
         <p className="mt-0.5 text-xs text-subtle-foreground">
-          One policy covers the main member and their family. Each plan sets what a death pays for each role; each
-          life pays the yearly premium for its role and age band. Every age a covered role can reach must be priced
-          — a gap is refused here, never defaulted at sale.
+          Every age a covered role can reach must be priced.
         </p>
       </div>
 

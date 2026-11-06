@@ -164,7 +164,6 @@ export function ProductsPage() {
     <>
       <PageHeader
         title="Products"
-        description="What you sell, and products still being set up."
         actions={
           canAuthor ? (
             <Button asChild variant="primary">
