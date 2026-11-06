@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.distribution.infrastructure;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -19,14 +20,19 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Agent logins through the Keycloak Admin API (2026-10-28), as the {@code lifeplatform-agents-admin} service account of
- * the {@code agents} realm -- a confidential client holding only {@code manage-users} there. Its secret comes from the
- * environment ({@code KEYCLOAK_AGENTS_ADMIN_SECRET}). The same shape as {@code KeycloakCustomerAccounts}.
+ * Agent logins through the Keycloak Admin API (2026-10-28), as the {@code lifeplatform-admin} service account of the one
+ * realm, {@code lifeplatform} (2026-11-06) -- a confidential client holding only {@code manage-users} and
+ * {@code view-users}. Its secret comes from the environment ({@code KEYCLOAK_ADMIN_CLIENT_SECRET}). An agent login is
+ * the {@code agent} workspace role on an account, which the same person's portal access may share. The same shape as
+ * {@code KeycloakCustomerAccounts}.
  */
 @Component
 public class KeycloakAgentLogins implements AgentLogins {
 
     private final RestClient http;
+    /** The workspace role this adapter gives and takes in the one realm (2026-11-06). */
+    private static final String WORKSPACE_ROLE = "agent";
+
     private final String realm;
     private final String clientId;
     private final String clientSecret;
@@ -73,16 +79,28 @@ public class KeycloakAgentLogins implements AgentLogins {
                 throw new IllegalStateException("Keycloak created the user but returned no Location");
             }
             String path = location.getPath();
-            return path.substring(path.lastIndexOf('/') + 1);
+            String userId = path.substring(path.lastIndexOf('/') + 1);
+            grantWorkspace(userId);
+            return userId;
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().value() == 409) {
-                return existingLoginOf(username, partyId);
+                String userId = existingLoginOf(username, partyId);
+                try {
+                    grantWorkspace(userId);
+                } catch (RestClientResponseException grant) {
+                    throw unavailable(grant);
+                }
+                return userId;
             }
             throw unavailable(e);
         }
     }
 
-    /** This agent's own earlier login is reused; anyone else's username is a refusal, never a takeover. */
+    /**
+     * The same person's earlier login -- their own agent login, or their customer-portal login (one account, two
+     * workspaces, matched by party_id; 2026-11-06) -- is joined. Anyone else's username, a staff login included (staff
+     * carry no party_id), is a refusal, never a takeover.
+     */
     @SuppressWarnings("unchecked")
     private String existingLoginOf(String username, UUID partyId) {
         List<Map<String, Object>> found = http.get()
@@ -127,16 +145,46 @@ public class KeycloakAgentLogins implements AgentLogins {
     @Override
     public void setEnabled(String userId, boolean enabled) {
         try {
-            http.put().uri("/admin/realms/{realm}/users/{id}", realm, userId)
-                .header("Authorization", "Bearer " + token()).contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("enabled", enabled)).retrieve().toBodilessEntity();
-            if (!enabled) {
+            if (enabled) {
+                grantWorkspace(userId);
+            } else {
+                // Take the agent workspace away, not the account: the same person's portal access stays (2026-11-06).
+                revokeWorkspace(userId);
                 http.post().uri("/admin/realms/{realm}/users/{id}/logout", realm, userId)
                     .header("Authorization", "Bearer " + token()).retrieve().toBodilessEntity();
             }
         } catch (RestClientResponseException e) {
             throw unavailable(e);
         }
+    }
+
+    /**
+     * The account's mapping of {@link #WORKSPACE_ROLE}, from its available ({@code "/available"}) or assigned
+     * ({@code ""}) realm roles -- endpoints the service account's view-users reaches, unlike {@code /roles/{name}}.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> workspaceRoleIn(String userId, String list) {
+        List<Map<String, Object>> roles = http.get()
+            .uri("/admin/realms/{realm}/users/{id}/role-mappings/realm" + list, realm, userId)
+            .header("Authorization", "Bearer " + token()).retrieve().body(List.class);
+        return roles == null ? null
+            : roles.stream().filter(r -> WORKSPACE_ROLE.equals(r.get("name"))).findFirst().orElse(null);
+    }
+
+    private void grantWorkspace(String userId) {
+        Map<String, Object> role = workspaceRoleIn(userId, "/available");
+        if (role == null) return; // already held
+        http.post().uri("/admin/realms/{realm}/users/{id}/role-mappings/realm", realm, userId)
+            .header("Authorization", "Bearer " + token()).contentType(MediaType.APPLICATION_JSON)
+            .body(List.of(role)).retrieve().toBodilessEntity();
+    }
+
+    private void revokeWorkspace(String userId) {
+        Map<String, Object> role = workspaceRoleIn(userId, "");
+        if (role == null) return; // not held
+        http.method(HttpMethod.DELETE).uri("/admin/realms/{realm}/users/{id}/role-mappings/realm", realm, userId)
+            .header("Authorization", "Bearer " + token()).contentType(MediaType.APPLICATION_JSON)
+            .body(List.of(role)).retrieve().toBodilessEntity();
     }
 
     /** The service account's token, reused until shortly before it expires. */

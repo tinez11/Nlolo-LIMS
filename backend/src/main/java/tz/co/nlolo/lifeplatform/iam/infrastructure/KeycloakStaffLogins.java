@@ -22,17 +22,23 @@ import static tz.co.nlolo.lifeplatform.iam.api.AccessChangeRefusedException.Reas
 import static tz.co.nlolo.lifeplatform.iam.api.AccessChangeRefusedException.Reason.USERNAME_TAKEN;
 
 /**
- * Staff logins through the Keycloak Admin API (2026-10-26), as the {@code lifeplatform-staff-admin} service account of
- * the {@code staff} realm -- a confidential client holding only {@code manage-users} there. Same shape as the
- * customer portal's {@code KeycloakCustomerAccounts}; its secret comes from {@code KEYCLOAK_STAFF_ADMIN_SECRET}.
+ * Staff logins through the Keycloak Admin API (2026-10-26), as the {@code lifeplatform-admin} service account of the one
+ * realm, {@code lifeplatform} (2026-11-06) -- a confidential client holding only {@code manage-users} and
+ * {@code view-users}. Same shape as the customer portal's {@code KeycloakCustomerAccounts}; its secret comes from
+ * {@code KEYCLOAK_ADMIN_CLIENT_SECRET}.
  *
- * <p>No roles are written to Keycloak: the platform holds them. The login carries only what the token needs --
- * {@code tenant_id} and {@code home_branch}.
+ * <p>No job roles are written to Keycloak: the platform holds them. The login carries the {@code staff} workspace role
+ * -- which opens the staff console in the one realm -- and what the token needs, {@code tenant_id} and
+ * {@code home_branch}. A staff login is never joined to an existing account (decision U10): a username or email that
+ * is taken is a refusal, even when it belongs to the same person's portal or agent login.
  */
 @Component
 public class KeycloakStaffLogins implements StaffLogins {
 
     private final RestClient http;
+    /** The workspace role every staff login holds in the one realm (2026-11-06). */
+    private static final String WORKSPACE_ROLE = "staff";
+
     private final String realm;
     private final String clientId;
     private final String clientSecret;
@@ -81,7 +87,16 @@ public class KeycloakStaffLogins implements StaffLogins {
                 .retrieve().toBodilessEntity().getHeaders().getLocation();
             if (location == null) throw new IllegalStateException("Keycloak created the user but returned no Location");
             String path = location.getPath();
-            return UUID.fromString(path.substring(path.lastIndexOf('/') + 1));
+            UUID userId = UUID.fromString(path.substring(path.lastIndexOf('/') + 1));
+            try {
+                grantStaffWorkspace(userId.toString());
+            } catch (RestClientResponseException e) {
+                // A login that opens nothing would only block a retry with "username taken": remove it, then refuse.
+                http.delete().uri("/admin/realms/{realm}/users/{id}", realm, userId)
+                    .header("Authorization", "Bearer " + token()).retrieve().toBodilessEntity();
+                throw refused(e);
+            }
+            return userId;
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().value() == 409) {
                 throw new AccessChangeRefusedException(USERNAME_TAKEN,
@@ -128,6 +143,23 @@ public class KeycloakStaffLogins implements StaffLogins {
         } catch (RestClientResponseException e) {
             throw refused(e);
         }
+    }
+
+    /**
+     * Gives the new login the {@code staff} workspace role (2026-11-06). Read from the account's available realm roles --
+     * reachable with view-users, unlike {@code /roles/{name}}. A failure here reaches {@code create}'s catch: refused.
+     */
+    @SuppressWarnings("unchecked")
+    private void grantStaffWorkspace(String userId) {
+        List<Map<String, Object>> available = http.get()
+            .uri("/admin/realms/{realm}/users/{id}/role-mappings/realm/available", realm, userId)
+            .header("Authorization", "Bearer " + token()).retrieve().body(List.class);
+        Map<String, Object> role = available == null ? null
+            : available.stream().filter(r -> WORKSPACE_ROLE.equals(r.get("name"))).findFirst().orElse(null);
+        if (role == null) return; // already held
+        http.post().uri("/admin/realms/{realm}/users/{id}/role-mappings/realm", realm, userId)
+            .header("Authorization", "Bearer " + token()).contentType(MediaType.APPLICATION_JSON)
+            .body(List.of(role)).retrieve().toBodilessEntity();
     }
 
     /** The service account's token, reused until shortly before it expires. */
