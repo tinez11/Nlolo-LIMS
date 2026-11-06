@@ -135,7 +135,7 @@ function InvoiceRow({ invoice, defaultPhone, onRefresh }: { invoice: InvoiceView
         </div>
       ) : paying && (
         <div className="flex flex-wrap items-end gap-2">
-          <FormField label={w.number} hint={w.numberHint} className="min-w-0 flex-1">
+          <FormField required label={w.number} hint={w.numberHint} className="min-w-0 flex-1">
             <Input inputMode="tel" className="h-12 text-base" value={number}
               onChange={(e) => { setNumber(e.target.value); setAttempt(null); }} placeholder="0754 123 456" />
           </FormField>

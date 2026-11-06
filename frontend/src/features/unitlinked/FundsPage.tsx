@@ -6,7 +6,7 @@ import { useAuth } from 'react-oidc-context';
 import type { FundPriceView, FundView, PriceAdjustmentView } from '@/api/types';
 import { canAuthorProducts, readIdentity } from '@/auth/claims';
 import { DatePicker } from '@/components/DatePicker';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { GatePanel } from '@/components/GatePanel';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
@@ -289,21 +289,23 @@ function ProposePriceForm({ fund, lastApproved }: { fund: FundView; lastApproved
         }),
       )}
     >
+      <RequiredNote />
       <p className="text-xs font-medium">Propose a price</p>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <FormField label="Valuation date" error={form.formState.errors.valuationDate?.message}>
+        <FormField required label="Valuation date" error={form.formState.errors.valuationDate?.message}>
           <Controller
             control={form.control}
             name="valuationDate"
             render={({ field }) => <DatePicker value={field.value || null} onChange={(iso) => field.onChange(iso ?? '')} />}
           />
         </FormField>
-        <FormField label={`Price (${fund.currency} per unit)`} error={form.formState.errors.price?.message}>
+        <FormField required label={`Price (${fund.currency} per unit)`} error={form.formState.errors.price?.message}>
           <Input inputMode="decimal" placeholder="1.000000" {...form.register('price')} />
         </FormField>
         <FormField
-          label={bigMove ? 'Why it moved (required)' : 'Why it moved (optional)'}
+          required={bigMove}
+          label="Why it moved"
           error={form.formState.errors.moveReason?.message}
         >
           <Input {...form.register('moveReason')} />
@@ -347,10 +349,10 @@ function CorrectionForm({ price, onDone }: { price: FundPriceView; onDone: () =>
       </p>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <FormField label="Corrected price" error={form.formState.errors.price?.message}>
+        <FormField required label="Corrected price" error={form.formState.errors.price?.message}>
           <Input inputMode="decimal" {...form.register('price')} />
         </FormField>
-        <FormField label="Reason" error={form.formState.errors.reason?.message}>
+        <FormField required label="Reason" error={form.formState.errors.reason?.message}>
           <Input {...form.register('reason')} />
         </FormField>
       </div>
@@ -388,19 +390,20 @@ function CreateFundForm() {
         }),
       )}
     >
+      <RequiredNote />
       <p className="text-xs font-medium">Add a fund</p>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <FormField label="Code" error={errors.code?.message}>
+        <FormField required label="Code" error={errors.code?.message}>
           <Input placeholder="EQ-GROWTH" {...form.register('code')} />
         </FormField>
-        <FormField label="Name" error={errors.name?.message}>
+        <FormField required label="Name" error={errors.name?.message}>
           <Input placeholder="Equity growth fund" {...form.register('name')} />
         </FormField>
-        <FormField label="Currency" error={errors.currency?.message}>
+        <FormField required label="Currency" error={errors.currency?.message}>
           <Input {...form.register('currency')} />
         </FormField>
-        <FormField label="Asset class" error={errors.assetClass?.message}>
+        <FormField required label="Asset class" error={errors.assetClass?.message}>
           <Select {...form.register('assetClass')}>
             <option value="">Choose…</option>
             {ASSET_CLASSES.map((c) => (
@@ -413,7 +416,7 @@ function CreateFundForm() {
         <FormField label="Management charge (% a year)" error={errors.annualManagementChargePercent?.message}>
           <Input inputMode="decimal" placeholder="1.5" {...form.register('annualManagementChargePercent')} />
         </FormField>
-        <FormField label="Daily cut-off (EAT)" error={errors.cutOffTime?.message}>
+        <FormField required label="Daily cut-off (EAT)" error={errors.cutOffTime?.message}>
           <Input placeholder="16:00" {...form.register('cutOffTime')} />
         </FormField>
       </div>
@@ -494,13 +497,13 @@ function AdjustmentRow({ adjustment, viewerSubject }: { adjustment: PriceAdjustm
         <>
           <GatePanel gates={gates} title="Before deciding" />
           <div className="flex flex-wrap items-end gap-2">
-            <FormField label={owedToCustomer ? 'Pay to (mobile money or account)' : 'Collected under reference'}>
+            <FormField required label={owedToCustomer ? 'Pay to (mobile money or account)' : 'Collected under reference'}>
               <Input inputSize="sm" value={payee} onChange={(e) => setPayee(e.target.value)} />
             </FormField>
             <Button size="sm" disabled={refused || busy || payee.trim() === ''} onClick={() => void settle(adjustment.adjustmentId, payee.trim())}>
               {owedToCustomer ? 'Pay' : 'Record as collected'}
             </Button>
-            <FormField label="Waiver reason">
+            <FormField required label="Waiver reason">
               <Input inputSize="sm" value={reason} onChange={(e) => setReason(e.target.value)} />
             </FormField>
             <Button

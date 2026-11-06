@@ -211,7 +211,7 @@ describe('QuotationCalculatorPage', { timeout: 20_000 }, () => {
   it('takes a phone written the everyday way and sends it as +255; holds back one that is not Tanzanian', async () => {
     await fillProspectAndPlan();
     await screen.findAllByText('TZS 1,000.00');
-    const phone = screen.getByLabelText('Phone number (optional)');
+    const phone = screen.getByLabelText('Phone number');
 
     await userEvent.type(phone, '0713 000 11');
     expect(screen.getByText(/Enter a Tanzanian number/)).toBeInTheDocument();

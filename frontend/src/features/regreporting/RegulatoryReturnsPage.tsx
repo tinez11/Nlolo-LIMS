@@ -154,7 +154,7 @@ function GenerateReturnForm({ onDone }: { onDone: (returnId?: string) => void })
         {/* Errors moved under their own fields, out of the shared block that used
             to sit below the row — that block could not be referenced by
             aria-describedby without guessing which field it belonged to. */}
-        <FormField label="Return type" error={errors.returnType?.message}>
+        <FormField required label="Return type" error={errors.returnType?.message}>
           <Input
             inputSize="sm"
             className="w-52"
@@ -162,7 +162,7 @@ function GenerateReturnForm({ onDone }: { onDone: (returnId?: string) => void })
             {...register('returnType')}
           />
         </FormField>
-        <FormField label="Period" error={errors.period?.message}>
+        <FormField required label="Period" error={errors.period?.message}>
           <Input inputSize="sm" className="w-32" placeholder="2026-Q1" {...register('period')} />
         </FormField>
       </div>

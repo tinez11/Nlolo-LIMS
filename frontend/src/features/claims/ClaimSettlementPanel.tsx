@@ -293,7 +293,7 @@ export function ClaimSettlementPanel({
       {approved ? (
         <>
           <div className="grid grid-cols-[1fr_auto] gap-2">
-            <FormField
+            <FormField required
               label="Approved amount"
               error={fieldError(errors, 'approvedAmount')}
               /*
@@ -315,7 +315,7 @@ export function ClaimSettlementPanel({
             >
               <Input {...register('approvedAmount')} />
             </FormField>
-            <FormField label="Currency" error={fieldError(errors, 'approvedCurrency')}>
+            <FormField required label="Currency" error={fieldError(errors, 'approvedCurrency')}>
               <Input
                 className="w-20 uppercase"
                 {...register('approvedCurrency')}
@@ -355,7 +355,7 @@ export function ClaimSettlementPanel({
           )}
           <LenderBalance cover={coverResource.data} />
           {lendersClaim && needsNote && (
-            <FormField label="Why pay more than the schedule">
+            <FormField required label="Why pay more than the schedule">
               <Textarea
                 className="min-h-16"
                 placeholder="Borrower missed two repayments; arrears shown on the statement"
@@ -390,14 +390,14 @@ export function ClaimSettlementPanel({
         </>
       ) : (
         <>
-          <FormField label="Rejection reason (optional)">
+          <FormField label="Rejection reason">
             <Textarea
               className="min-h-16"
               placeholder="Insufficient evidence"
               {...register('rejectionReason')}
             />
           </FormField>
-          <FormField label="Policy-term reason (optional)">
+          <FormField label="Policy-term reason">
             <Select inputSize="sm" {...register('declineReason')}>
               <option value="">None — the assessor&rsquo;s finding alone</option>
               {DECLINE_REASONS.map((r) => (

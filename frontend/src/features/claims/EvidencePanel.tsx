@@ -157,7 +157,7 @@ function UploadForm({ claimId, lendersClaim }: { claimId: string; lendersClaim: 
 
   return (
     <div className="space-y-2 px-4 pt-3">
-      <FormField label="Description (optional)">
+      <FormField label="Description">
         <Input
           inputSize="sm"
           placeholder="Death certificate, page 1"

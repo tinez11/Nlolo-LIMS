@@ -221,7 +221,7 @@ export function DecisionPanel({
           </p>
         ) : (
           <form className="space-y-4" onSubmit={(e) => void handleSubmit((v) => setPending(v))(e)}>
-            <FormField label="Decision" error={errors.outcome?.message}>
+            <FormField required label="Decision" error={errors.outcome?.message}>
               <Select {...register('outcome')}>
                 {/* No loading on a member's evidence case -- one member of a scheme has no
                     premium of their own, and the server refuses it. */}
@@ -239,13 +239,13 @@ export function DecisionPanel({
             </FormField>
 
             {outcome === 'LOADED' && (
-              <FormField label="Loading (%)" error={errors.loadingPercent?.message}>
+              <FormField required label="Loading (%)" error={errors.loadingPercent?.message}>
                 <Input className="w-32" placeholder="25" {...register('loadingPercent')} />
               </FormField>
             )}
 
             {annuity && outcome === 'ACCEPT' && (
-              <FormField label="Proof of age" error={errors.ageEvidenceConfirmed?.message}>
+              <FormField required label="Proof of age" error={errors.ageEvidenceConfirmed?.message}>
                 <CheckboxField
                   label="Age evidence confirmed — I have seen the annuitant's proof of age"
                   {...register('ageEvidenceConfirmed')}
@@ -253,7 +253,7 @@ export function DecisionPanel({
               </FormField>
             )}
 
-            <FormField label="Reason" error={errors.reason?.message}>
+            <FormField required label="Reason" error={errors.reason?.message}>
               <Textarea
                 className="min-h-20"
                 placeholder="Standard risk, in line with the recommendation"

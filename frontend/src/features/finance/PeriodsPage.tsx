@@ -216,7 +216,7 @@ function ReopenRequestForm({ period, busy }: { period: string; busy: boolean }) 
         if (await requestReopen(period, v.reason.trim())) form.reset();
       })}
     >
-      <FormField label="Reason to reopen" error={form.formState.errors.reason?.message}>
+      <FormField required label="Reason to reopen" error={form.formState.errors.reason?.message}>
         <Input inputSize="sm" className="w-80" {...form.register('reason')} />
       </FormField>
       <Button type="submit" size="sm" variant="ghost" disabled={busy}>

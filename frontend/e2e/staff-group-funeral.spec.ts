@@ -81,7 +81,7 @@ test.describe('group funeral schemes', () => {
     const family = page.getByLabel('Family M001');
     await family.getByLabel('Main member').fill(juma);
     await family.getByLabel('Date of birth').first().fill(dmy(`${year - 40}-03-10`));
-    await family.getByLabel('Beneficiary (optional)').fill('Amina Owner');
+    await family.getByLabel('Beneficiary', { exact: true }).fill('Amina Owner');
     await family.getByRole('button', { name: 'Add family member' }).click();
     await family.getByLabel('Role').selectOption('CHILD');
     await family.getByLabel('Name').fill(neema);

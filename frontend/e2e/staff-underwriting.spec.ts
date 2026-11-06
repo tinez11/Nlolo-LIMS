@@ -77,7 +77,7 @@ test.describe('staff underwriting', () => {
     await expect(page.getByText('None', { exact: true })).toBeVisible(); // referral status
 
     await page.getByLabel('Findings').fill('E2E test assessment, standard risk');
-    await page.getByLabel('Risk score (optional)').fill('10');
+    await page.getByLabel('Risk score', { exact: true }).fill('10');
     await page.getByRole('button', { name: 'Submit assessment' }).click();
 
     // Advice, and nothing more: no decision, and the case is still open for evidence.
@@ -111,7 +111,7 @@ test.describe('staff underwriting', () => {
   }) => {
     await openCaseForAmina(page);
     await page.getByLabel('Findings').fill('Standard risk');
-    await page.getByLabel('Risk score (optional)').fill('10');
+    await page.getByLabel('Risk score', { exact: true }).fill('10');
     await page.getByRole('button', { name: 'Submit assessment' }).click();
     await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
 
@@ -197,7 +197,7 @@ test.describe('staff underwriting', () => {
     await expect(page).toHaveURL(/\/staff\/underwriting\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 
     await page.getByLabel('Findings').fill('Standard risk');
-    await page.getByLabel('Risk score (optional)').fill('10');
+    await page.getByLabel('Risk score', { exact: true }).fill('10');
     await page.getByRole('button', { name: 'Submit assessment' }).click();
     await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
 
@@ -334,7 +334,7 @@ test.describe('staff underwriting', () => {
     await page.getByLabel('Findings').fill('Inconclusive -- awaiting specialist report');
     // >= 90 is SimpleRulesEngine's POSTPONE threshold, so POSTPONED agrees with the
     // recommendation and a junior underwriter may record it.
-    await page.getByLabel('Risk score (optional)').fill('95');
+    await page.getByLabel('Risk score', { exact: true }).fill('95');
     await page.getByRole('button', { name: 'Submit assessment' }).click();
     await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
     // Decided by a second underwriter; this one opened and assessed it.
@@ -360,7 +360,7 @@ test.describe('staff underwriting', () => {
     });
 
     await page.getByLabel('Findings').fill('Specialist report clear');
-    await page.getByLabel('Risk score (optional)').fill('10');
+    await page.getByLabel('Risk score', { exact: true }).fill('10');
     await page.getByRole('button', { name: 'Submit further evidence' }).click();
 
     // The recommendation moved on the new evidence -- and it weighed the LATEST assessment
@@ -411,7 +411,7 @@ test.describe('staff underwriting', () => {
     await page.getByLabel('Question code').fill('Q1');
     await page.getByLabel('Question as asked').fill('Have you ever been treated for heart disease?');
     await page.getByLabel('Answer').fill('Yes -- angioplasty 2021, omitted in error');
-    await page.getByLabel('Notes (optional)').fill('Corrected after the specialist report arrived');
+    await page.getByLabel('Notes', { exact: true }).fill('Corrected after the specialist report arrived');
     await page.getByRole('button', { name: /^Record 1 declaration/ }).click();
 
     await expect(page.getByText('Yes -- angioplasty 2021, omitted in error')).toBeVisible({
@@ -443,7 +443,7 @@ async function caseOpenedAndAssessedBySenior(browser: Browser): Promise<string> 
     });
     await openCaseForAmina(seniorPage);
     await seniorPage.getByLabel('Findings').fill('Standard risk');
-    await seniorPage.getByLabel('Risk score (optional)').fill('10');
+    await seniorPage.getByLabel('Risk score', { exact: true }).fill('10');
     await seniorPage.getByRole('button', { name: 'Submit assessment' }).click();
     await expect(seniorPage.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
     return seniorPage.url();

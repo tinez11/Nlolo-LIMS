@@ -123,7 +123,7 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
   return (
     <>
       <form className="space-y-3 p-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
-        <FormField label="Findings" error={errors.findings?.message}>
+        <FormField required label="Findings" error={errors.findings?.message}>
           <Textarea
             className="min-h-20"
             placeholder="Standard risk, no adverse findings"
@@ -132,7 +132,7 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
         </FormField>
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
-          <FormField
+          <FormField required
             label="Recommended amount"
             error={errors.recommendedAmount?.message}
             // Was a blank field with a placeholder of 1500000.00 -- a number
@@ -147,7 +147,7 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
           >
             <Input {...register('recommendedAmount')} />
           </FormField>
-          <FormField label="Currency" error={errors.recommendedCurrency?.message}>
+          <FormField required label="Currency" error={errors.recommendedCurrency?.message}>
             <Input
               className="w-20 uppercase"
               {...register('recommendedCurrency')}

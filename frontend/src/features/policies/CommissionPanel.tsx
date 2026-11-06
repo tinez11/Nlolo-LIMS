@@ -157,10 +157,10 @@ function LenderCommissionActions({
         <>
           <p className="text-sm">The lender is not registered as an agent yet, so it cannot be paid commission.</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <FormField label="Lender's licence number">
+            <FormField required label="Lender's licence number">
               <Input value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} />
             </FormField>
-            <FormField label="Licence expiry">
+            <FormField required label="Licence expiry">
               <DatePicker value={licenseExpiry} onChange={setLicenseExpiry} disabled={{ before: new Date() }} />
             </FormField>
           </div>

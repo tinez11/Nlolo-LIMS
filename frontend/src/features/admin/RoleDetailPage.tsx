@@ -93,7 +93,7 @@ export function RoleDetailPage() {
         )}
         <Panel title="About">
           <div className="space-y-4 px-4 pb-4">
-            <FormField label="Name">
+            <FormField required label="Name">
               <Input value={current.name} disabled={!editable}
                 onChange={(e) => setDraft({ ...current, name: e.target.value })} />
             </FormField>

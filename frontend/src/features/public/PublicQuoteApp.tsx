@@ -4,7 +4,7 @@ import { Outlet } from 'react-router-dom';
 import { getPublicProducts, quotePublicProduct, startPublicVisit, type PublicPerson } from '@/api/publicQuote';
 import { LanguageSwitch } from '@/components/AppShell';
 import { DatePicker } from '@/components/DatePicker';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { Turnstile } from '@/components/Turnstile';
 import { LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -116,10 +116,11 @@ function AboutYou({ initial, onDone }: { initial: AboutYouValues | null; onDone:
         <h1 className="text-display">{w.aboutYou}</h1>
         <p className="text-muted-foreground">{w.aboutYouHelp}</p>
       </div>
+      <RequiredNote label={w.required} />
       <FormField label={w.fullName}>
         <Input className="h-12 text-base" autoComplete="name" {...register('fullName')} />
       </FormField>
-      <FormField label={w.dateOfBirth}>
+      <FormField required label={w.dateOfBirth}>
         <Controller control={control} name="dateOfBirth"
           render={({ field }) => (
             <DatePicker value={field.value || null} onChange={(iso) => field.onChange(iso ?? '')} disabled={{ after: new Date() }} />

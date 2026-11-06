@@ -474,7 +474,7 @@ export function UnderwritingCaseDetailPage() {
               className="space-y-4 p-4"
               onSubmit={(e) => void handleSubmit(commitAssessment)(e)}
             >
-              <FormField label="Assessment type">
+              <FormField required label="Assessment type">
                 <Select
                   {...register('assessmentType')}
                 >
@@ -486,7 +486,7 @@ export function UnderwritingCaseDetailPage() {
                 </Select>
               </FormField>
 
-              <FormField label="Findings" error={errors.findings?.message}>
+              <FormField required label="Findings" error={errors.findings?.message}>
                 <Textarea
                   className="min-h-20"
                   placeholder="Standard risk, no adverse findings"
@@ -494,7 +494,7 @@ export function UnderwritingCaseDetailPage() {
                 />
               </FormField>
 
-              <FormField label="Risk score (optional)" error={errors.riskScore?.message}>
+              <FormField label="Risk score" error={errors.riskScore?.message}>
                 <Input
                   className="w-32"
                   placeholder="10"
@@ -706,7 +706,7 @@ function SaleSection({
       }}
     >
       {error && <InlineError error={error} />}
-      <FormField label="Sales channel">
+      <FormField required label="Sales channel">
         <Select value={channel} onChange={(e) => setChannel(e.target.value)}>
           {Object.keys(CHANNEL_LABEL).map((c) => (
             <option key={c} value={c}>
@@ -715,7 +715,7 @@ function SaleSection({
           ))}
         </Select>
       </FormField>
-      <FormField label="Sale branch">
+      <FormField required label="Sale branch">
         <BranchSelect value={branch} onChange={setBranch} allowNone noneLabel="Choose a branch" />
       </FormField>
       <div className="flex gap-2">

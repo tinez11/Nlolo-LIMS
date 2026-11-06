@@ -11,7 +11,7 @@ import {
   type ChargeAmountType,
   type ChargeWhen,
 } from '@/api/accountCharges';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
@@ -164,36 +164,37 @@ export function NewCharge({ onCreated, onCancel }: {
   return (
     <Panel title="New charge">
       <div className="space-y-3 px-4 py-3">
+        <RequiredNote />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <FormField label="Name">
+          <FormField required label="Name">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Withdrawal fee" />
           </FormField>
-          <FormField label="When it is taken">
+          <FormField required label="When it is taken">
             <Select value={when} onChange={(e) => setWhen(e.target.value as ChargeWhen)}>
               {WHENS.map((w) => <option key={w} value={w}>{CHARGE_WHEN[w]}</option>)}
             </Select>
           </FormField>
-          <FormField label="Type">
+          <FormField required label="Type">
             <Select value={amountType} onChange={(e) => setAmountType(e.target.value as ChargeAmountType)}>
               <option value="PERCENT">Percentage</option>
               <option value="FLAT">Flat amount</option>
             </Select>
           </FormField>
-          <FormField label={amountType === 'PERCENT' ? 'Percentage' : 'Amount'}
+          <FormField required label={amountType === 'PERCENT' ? 'Percentage' : 'Amount'}
             hint={amountType === 'PERCENT' ? `Percent ${PERCENT_OF[when]}` : `In ${currency || 'the currency below'}`}>
             <Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </FormField>
-          <FormField label="From policy year">
+          <FormField required label="From policy year">
             <Input inputMode="numeric" value={fromYear} onChange={(e) => setFromYear(e.target.value)} />
           </FormField>
           <FormField label="To policy year" hint="Blank: every year after"
             error={!yearsValid && toYear.trim() !== '' ? 'Ends before it starts' : undefined}>
             <Input inputMode="numeric" value={toYear} onChange={(e) => setToYear(e.target.value)} />
           </FormField>
-          <FormField label="Currency">
+          <FormField required label="Currency">
             <Input value={currency} maxLength={3} onChange={(e) => setCurrency(e.target.value)} />
           </FormField>
-          <FormField label="Description (optional)">
+          <FormField label="Description">
             <Input value={description} onChange={(e) => setDescription(e.target.value)} />
           </FormField>
         </div>

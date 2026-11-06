@@ -9,7 +9,7 @@ import { toApiError, type ApiError } from '@/lib/apiError';
 import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
 import { DatePicker } from '@/components/DatePicker';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { PartyPicker } from '@/components/PartyPicker';
 import { ProductChooser } from '@/components/ProductChooser';
@@ -454,15 +454,16 @@ export function QuotationCalculatorPage() {
           <TypeTab label="New person" active={who === 'PROSPECT'} onClick={() => setWho('PROSPECT')} />
           <TypeTab label="Existing client" active={who === 'CLIENT'} onClick={() => setWho('CLIENT')} />
         </div>
+        <RequiredNote />
 
         {who === 'PROSPECT' ? (
           <fieldset className="space-y-4">
             <legend className="pb-2 text-eyebrow text-subtle-foreground uppercase">The person</legend>
-            <FormField label="Full name">
+            <FormField required label="Full name">
               <Input placeholder="Amina Hassan" {...person.register('fullName')} />
             </FormField>
             <div className="grid grid-cols-2 gap-3">
-              <FormField label="Date of birth">
+              <FormField required label="Date of birth">
                 <Controller
                   control={person.control}
                   name="dateOfBirth"
@@ -475,10 +476,10 @@ export function QuotationCalculatorPage() {
                   )}
                 />
               </FormField>
-              <FormField label="Phone number (optional)" error={phoneError}>
+              <FormField label="Phone number" error={phoneError}>
                 <Input placeholder="0712 345 678" {...person.register('phoneNumber')} />
               </FormField>
-              <FormField label="Sex">
+              <FormField required label="Sex">
                 <Select {...person.register('sex')}>
                   <option value="">Not recorded</option>
                   <option value="FEMALE">Female</option>
@@ -496,7 +497,7 @@ export function QuotationCalculatorPage() {
             </div>
           </fieldset>
         ) : (
-          <FormField label="Client" hint="Your registered clients. Their details are read from their record.">
+          <FormField required label="Client" hint="Your registered clients. Their details are read from their record.">
             <Controller
               control={control}
               name="applicantPartyId"
@@ -513,7 +514,7 @@ export function QuotationCalculatorPage() {
 
         <fieldset className="space-y-4 border-t border-border pt-3">
           <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">The plan</legend>
-          <FormField
+          <FormField required
             label="Product"
             hint="Life, endowment, savings, deposit, funeral and annuity products. Unit-linked and group cover are quoted by the office."
           >
@@ -565,7 +566,7 @@ export function QuotationCalculatorPage() {
           )}
           {isAnnuity && annuityRead && annuityRead.forms.length > 0 && (
             <div className="grid grid-cols-2 gap-4">
-              <FormField label="Annuity form">
+              <FormField required label="Annuity form">
                 <Select {...register('annuityFormCode')}>
                   <option value="">Choose a form</option>
                   {annuityRead.forms.map((f) => (
@@ -578,7 +579,7 @@ export function QuotationCalculatorPage() {
                   ))}
                 </Select>
               </FormField>
-              <FormField label="Income paid">
+              <FormField required label="Income paid">
                 <Select {...register('annuityFrequency')}>
                   <option value="">Choose how often</option>
                   {annuityRead.frequencies.map((f) => (
@@ -612,7 +613,7 @@ export function QuotationCalculatorPage() {
                   }}
                 />
               </FormField>
-              <FormField
+              <FormField required
                 label="Rate (% a year)"
                 hint={`This product offers ${termAccountTerms.minRatePercent}% to ${termAccountTerms.maxRatePercent}%, fixed for the term.`}
               >
@@ -622,7 +623,7 @@ export function QuotationCalculatorPage() {
           )}
 
           <div className="grid grid-cols-[1fr_auto] gap-2">
-            <FormField
+            <FormField required
               label={isFuneral ? "Sum assured (the main member's benefit on the plan)"
                 : isTermAccount ? 'Contribution per payment' : isAnnuity ? 'Purchase price' : 'Sum assured or amount'}
               error={amountError}
@@ -640,7 +641,7 @@ export function QuotationCalculatorPage() {
                   },
                 })} />
             </FormField>
-            <FormField label="Currency">
+            <FormField required label="Currency">
               <Input className="w-20 uppercase" {...register('sumAssuredCurrency')} />
             </FormField>
           </div>
@@ -648,7 +649,7 @@ export function QuotationCalculatorPage() {
           <div className="grid grid-cols-2 gap-4">
             {!isFuneral && !isAnnuity && (
               <>
-                <FormField label="Term (months)" hint={termHint} error={termError}>
+                <FormField required={isTermAccount} label="Term (months)" hint={termHint} error={termError}>
                   <Input placeholder="120" readOnly={fixedTermMonths != null} {...register('requestedTermMonths')} />
                 </FormField>
                 <FormField label="Premium-paying term (months)" error={pptError}>

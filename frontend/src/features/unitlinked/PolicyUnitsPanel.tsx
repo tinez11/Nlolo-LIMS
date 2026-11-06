@@ -383,7 +383,7 @@ function NamePayee({ policyNumber }: { policyNumber: string }) {
       </p>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <div className="flex items-end gap-2">
-        <FormField label="Pay to">
+        <FormField required label="Pay to">
           <Input inputSize="sm" value={payee} onChange={(e) => setPayee(e.target.value)} />
         </FormField>
         <Button size="sm" disabled={payee.trim() === '' || acting?.status === 'loading'} onClick={() => void namePayee(policyNumber, payee.trim())}>

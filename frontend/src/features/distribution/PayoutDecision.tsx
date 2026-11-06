@@ -62,7 +62,7 @@ export function PayoutDecision({ agentId, statement }: { agentId: string; statem
             />
           ) : refusing ? (
             <div className="space-y-2">
-              <FormField label="Why is it refused?">
+              <FormField required label="Why is it refused?">
                 <Input inputSize="sm" value={reason} onChange={(e) => setReason(e.target.value)} />
               </FormField>
               <div className="flex gap-2">

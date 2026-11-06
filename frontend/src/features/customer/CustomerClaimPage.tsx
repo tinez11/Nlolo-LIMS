@@ -171,7 +171,7 @@ function SendDocument({ claimId, requestId, description, label, withDescription 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-end gap-2">
-        <FormField label={withDescription ? w.file : label} className="min-w-0 flex-1">
+        <FormField required label={withDescription ? w.file : label} className="min-w-0 flex-1">
           <Input type="file" accept={EVIDENCE_ACCEPT} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </FormField>
         {withDescription && (

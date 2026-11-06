@@ -88,7 +88,7 @@ test.describe('staff claim evidence', () => {
     await expect(page.getByText('No evidence')).toBeVisible();
 
     const description = `E2E evidence ${Date.now()}`;
-    await page.getByLabel('Description (optional)').fill(description);
+    await page.getByLabel('Description', { exact: true }).fill(description);
     await page.locator('input[type="file"]').setInputFiles({
       name: 'evidence.png',
       mimeType: 'image/png',

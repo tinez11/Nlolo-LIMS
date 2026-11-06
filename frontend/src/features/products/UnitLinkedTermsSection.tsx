@@ -113,7 +113,7 @@ export function UnitLinkedTermsSection({
 
       <fieldset className="space-y-2 rounded-md border border-border p-3">
         <legend className="text-xs font-medium text-muted-foreground">Cost of insurance</legend>
-        <FormField label="Mortality basis" error={errors.ulMortalityBasis?.message}>
+        <FormField required label="Mortality basis" error={errors.ulMortalityBasis?.message}>
           <Select inputSize="sm" {...register('ulMortalityBasis')}>
             <option value="">Choose…</option>
             <option value="UNISEX">Unisex</option>
@@ -144,26 +144,26 @@ export function UnitLinkedTermsSection({
       <fieldset className="space-y-2 rounded-md border border-border p-3">
         <legend className="text-xs font-medium text-muted-foreground">Death, lapse and surrender</legend>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <FormField label="Death pays" error={errors.ulDeathRule?.message}>
+          <FormField required label="Death pays" error={errors.ulDeathRule?.message}>
             <Select inputSize="sm" {...register('ulDeathRule')}>
               <option value="">Choose…</option>
               <option value="HIGHER_OF">The higher of the sum assured and the fund value</option>
               <option value="SUM_ASSURED_PLUS_FUND">The sum assured plus the fund value</option>
             </Select>
           </FormField>
-          <FormField label="The policy lapses" error={errors.ulLapseRule?.message}>
+          <FormField required label="The policy lapses" error={errors.ulLapseRule?.message}>
             <Select inputSize="sm" {...register('ulLapseRule')}>
               <option value="EXHAUSTION">When the units can no longer meet the charges</option>
               <option value="NON_PAYMENT">On non-payment of premium</option>
             </Select>
           </FormField>
-          <FormField label="Minimum premium-paying years (optional)" error={errors.ulMinimumPremiumYears?.message}>
+          <FormField label="Minimum premium-paying years" error={errors.ulMinimumPremiumYears?.message}>
             <Input inputSize="sm" inputMode="numeric" {...register('ulMinimumPremiumYears')} />
           </FormField>
-          <FormField label="Minimum years before surrender" error={errors.ulMinimumSurrenderYears?.message}>
+          <FormField required label="Minimum years before surrender" error={errors.ulMinimumSurrenderYears?.message}>
             <Input inputSize="sm" inputMode="numeric" {...register('ulMinimumSurrenderYears')} />
           </FormField>
-          <FormField label="Warn when the units cover fewer months of charges than" error={errors.ulLowFundMonths?.message}>
+          <FormField required label="Warn when the units cover fewer months of charges than" error={errors.ulLowFundMonths?.message}>
             <Input inputSize="sm" inputMode="numeric" {...register('ulLowFundMonths')} />
           </FormField>
         </div>
@@ -181,10 +181,10 @@ export function UnitLinkedTermsSection({
           ))}
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <FormField label="Sum assured, least multiple of the annual premium" error={errors.ulMultipleMin?.message}>
+          <FormField required label="Sum assured, least multiple of the annual premium" error={errors.ulMultipleMin?.message}>
             <Input inputSize="sm" inputMode="decimal" {...register('ulMultipleMin')} />
           </FormField>
-          <FormField label="Sum assured, greatest multiple of the annual premium" error={errors.ulMultipleMax?.message}>
+          <FormField required label="Sum assured, greatest multiple of the annual premium" error={errors.ulMultipleMax?.message}>
             <Input inputSize="sm" inputMode="decimal" {...register('ulMultipleMax')} />
           </FormField>
         </div>

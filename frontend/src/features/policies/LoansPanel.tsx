@@ -281,7 +281,7 @@ function PayoutDecision({ policyNumber, loan, loanId }: { policyNumber: string; 
             />
           ) : refusing ? (
             <div className="space-y-2">
-              <FormField label="Why is it refused?">
+              <FormField required label="Why is it refused?">
                 <Input inputSize="sm" value={reason} onChange={(e) => setReason(e.target.value)} />
               </FormField>
               <div className="flex gap-2">
@@ -347,11 +347,11 @@ function OriginateLoanForm({
       className="space-y-2 rounded-md border border-border p-2.5"
       onSubmit={(e) => void handleSubmit(onSubmit)(e)}
     >
-      <FormField label="Loan amount (TZS)" error={errors.amount?.message}>
+      <FormField required label="Loan amount (TZS)" error={errors.amount?.message}>
         <Input inputSize="sm" placeholder="500000" inputMode="decimal" {...register('amount')} />
       </FormField>
 
-      <FormField label="Payee reference" error={errors.payeeRef?.message}>
+      <FormField required label="Payee reference" error={errors.payeeRef?.message}>
         <Input inputSize="sm" placeholder="Mobile-money destination" {...register('payeeRef')} />
       </FormField>
 
@@ -424,11 +424,11 @@ function LoanPaymentForm({
       className="mt-2 space-y-2 rounded-md border border-border p-2.5"
       onSubmit={(e) => void handleSubmit(onSubmit)(e)}
     >
-      <FormField label="Payer reference" error={errors.payerRef?.message}>
+      <FormField required label="Payer reference" error={errors.payerRef?.message}>
         <Input inputSize="sm" placeholder="The mobile-money number to ask" {...register('payerRef')} />
       </FormField>
 
-      <FormField label={`Amount (${currency})`} error={errors.amount?.message}>
+      <FormField required label={`Amount (${currency})`} error={errors.amount?.message}>
         <Input inputSize="sm" inputMode="decimal" {...register('amount')} />
       </FormField>
 

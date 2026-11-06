@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import type { ChartOfAccountView } from '@/api/types';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { Panel } from '@/components/Panel';
 import { Button } from '@/components/ui/button';
@@ -78,6 +78,7 @@ export function CreateAccountForm({ onDone }: { onDone: () => void }) {
         className="max-w-3xl space-y-3 p-4"
         onSubmit={(e) => void handleSubmit(onSubmit)(e)}
       >
+        <RequiredNote />
         <p className="max-w-prose text-xs text-muted-foreground">
           Four digits, and the first one sets the type: 1 asset, 2 liability, 3 equity, 4 income,
           5 expense. The parent must already exist, and the code has to sit inside its block —
@@ -85,7 +86,7 @@ export function CreateAccountForm({ onDone }: { onDone: () => void }) {
         </p>
 
         <div className="flex flex-wrap items-start gap-3">
-          <FormField label="Account code" error={errors.accountCode?.message}>
+          <FormField required label="Account code" error={errors.accountCode?.message}>
             <Input
               inputSize="sm"
               className="w-28 font-mono"
@@ -103,7 +104,7 @@ export function CreateAccountForm({ onDone }: { onDone: () => void }) {
               {...register('parentCode')}
             />
           </FormField>
-          <FormField label="Name" className="min-w-56 max-w-md flex-1" error={errors.name?.message}>
+          <FormField required label="Name" className="min-w-56 max-w-md flex-1" error={errors.name?.message}>
             <Input inputSize="sm" placeholder="Sundry Receivables" {...register('name')} />
           </FormField>
         </div>
@@ -173,7 +174,8 @@ export function UpdateAccountForm({
       className="max-w-2xl space-y-3 rounded-md border border-border bg-surface p-3 text-left"
       onSubmit={(e) => void handleSubmit(onSubmit)(e)}
     >
-      <FormField label="Name" error={errors.name?.message}>
+      <RequiredNote />
+      <FormField required label="Name" error={errors.name?.message}>
         <Input inputSize="sm" {...register('name')} />
       </FormField>
       <FormField label="Description" error={errors.description?.message}>

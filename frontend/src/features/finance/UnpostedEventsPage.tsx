@@ -144,7 +144,7 @@ function DismissForm({ id, disabled }: { id: string; disabled: boolean }) {
       aria-label="Dismiss event"
       onSubmit={form.handleSubmit((v) => void dismiss(id, v.reason))}
     >
-      <FormField label="Reason to dismiss" error={form.formState.errors.reason?.message}>
+      <FormField required label="Reason to dismiss" error={form.formState.errors.reason?.message}>
         <Input inputSize="sm" disabled={disabled} {...form.register('reason')} />
       </FormField>
       <Button type="submit" size="sm" variant="ghost" disabled={disabled}>

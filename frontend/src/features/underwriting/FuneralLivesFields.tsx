@@ -80,7 +80,7 @@ export function FuneralLivesFields({
 
   return (
     <div className="space-y-4">
-      <FormField label="Plan" error={errors.funeralPlanCode?.message}>
+      <FormField required label="Plan" error={errors.funeralPlanCode?.message}>
         <Select {...register('funeralPlanCode')}>
           <option value="">Choose the plan</option>
           {terms.plans.map((p) => (
@@ -105,17 +105,17 @@ export function FuneralLivesFields({
         <legend className="text-sm font-medium">The family</legend>
         {dependants.fields.map((field, i) => (
           <div key={field.id} className="grid grid-cols-[8rem_1fr_10rem_6rem_auto] items-end gap-2">
-            <FormField label="Role">
+            <FormField required label="Role">
               <Select inputSize="sm" {...register(`funeralDependants.${i}.role`)}>
                 {rolesFor(rows?.[i]?.role ?? '').map((r) => (
                   <option key={r} value={r}>{FUNERAL_ROLE_LABELS[r as FuneralRoleName]}</option>
                 ))}
               </Select>
             </FormField>
-            <FormField label="Full name" error={errors.funeralDependants?.[i]?.fullName?.message}>
+            <FormField required label="Full name" error={errors.funeralDependants?.[i]?.fullName?.message}>
               <Input inputSize="sm" {...register(`funeralDependants.${i}.fullName`)} />
             </FormField>
-            <FormField label="Date of birth" error={errors.funeralDependants?.[i]?.dateOfBirth?.message}>
+            <FormField required label="Date of birth" error={errors.funeralDependants?.[i]?.dateOfBirth?.message}>
               <Controller control={control} name={`funeralDependants.${i}.dateOfBirth`}
                 render={({ field: f }) => <DatePicker value={f.value} onChange={f.onChange} />} />
             </FormField>

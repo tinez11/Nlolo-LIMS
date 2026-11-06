@@ -243,7 +243,7 @@ function PlacementForm({
       })}
     >
       {error && <InlineError error={error} />}
-      <FormField label="Sales channel">
+      <FormField required label="Sales channel">
         <Select {...form.register('salesChannel')}>
           {AGENT_CHANNELS.map((c) => (
             <option key={c} value={c}>
@@ -252,7 +252,7 @@ function PlacementForm({
           ))}
         </Select>
       </FormField>
-      <FormField label="Home branch" error={form.formState.errors.homeBranch?.message}>
+      <FormField required label="Home branch" error={form.formState.errors.homeBranch?.message}>
         <Controller
           control={form.control}
           name="homeBranch"

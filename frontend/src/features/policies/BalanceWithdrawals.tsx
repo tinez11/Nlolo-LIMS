@@ -116,7 +116,7 @@ function WithdrawalRow({ withdrawal }: { withdrawal: BalanceWithdrawalView }) {
             />
           ) : rejecting ? (
             <div className="space-y-2">
-              <FormField label="Why is it rejected?">
+              <FormField required label="Why is it rejected?">
                 <Input inputSize="sm" value={reason} onChange={(e) => setReason(e.target.value)} />
               </FormField>
               <div className="flex gap-2">

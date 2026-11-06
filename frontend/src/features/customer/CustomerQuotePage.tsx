@@ -274,15 +274,15 @@ function FamilyAnswer({ product, family, onChange, w }: {
         <fieldset key={i} className="space-y-3 rounded-xl border border-border bg-surface p-4">
           <legend className="sr-only">{w[m.role]}</legend>
           <div className="grid gap-3 sm:grid-cols-2">
-            <FormField label={w.role}>
+            <FormField required label={w.role}>
               <Select className="h-12 text-base" value={m.role} onChange={(e) => edit(i, { role: e.target.value as FamilyMember['role'] })}>
                 {offered.map((r) => <option key={r} value={r}>{w[r]}</option>)}
               </Select>
             </FormField>
-            <FormField label={w.name}>
+            <FormField required label={w.name}>
               <Input className="h-12 text-base" value={m.name} onChange={(e) => edit(i, { name: e.target.value })} />
             </FormField>
-            <FormField label={w.dateOfBirth}>
+            <FormField required label={w.dateOfBirth}>
               <DatePicker value={m.dateOfBirth || null} onChange={(d) => edit(i, { dateOfBirth: d ?? '' })}
                 disabled={{ after: new Date() }} />
             </FormField>

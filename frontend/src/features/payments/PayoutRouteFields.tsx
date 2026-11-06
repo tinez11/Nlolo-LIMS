@@ -54,18 +54,18 @@ export function PayoutRouteFields<T extends FieldValues & PayoutRouteValues>({
       </div>
 
       {method === 'MOBILE_MONEY' && (
-        <FormField label="Mobile-money number" hint={numberHint} error={errors.payeeRef?.message}>
+        <FormField required label="Mobile-money number" hint={numberHint} error={errors.payeeRef?.message}>
           <Input {...reg('payeeRef')} placeholder="+255712345678" inputMode="tel" autoComplete="off" />
         </FormField>
       )}
       {method === 'CHEQUE' && (
-        <FormField label="Cheque made out to" error={errors.payeeRef?.message}>
+        <FormField required label="Cheque made out to" error={errors.payeeRef?.message}>
           <Input {...reg('payeeRef')} placeholder="Full name, as the bank will read it" autoComplete="off" />
         </FormField>
       )}
       {method === 'EFT' && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <FormField label="Bank" error={errors.payeeBank?.message}>
+          <FormField required label="Bank" error={errors.payeeBank?.message}>
             <Input {...reg('payeeBank')} list={`${banksId}-banks`} placeholder="CRDB Bank" autoComplete="off" />
           </FormField>
           <datalist id={`${banksId}-banks`}>
@@ -73,13 +73,13 @@ export function PayoutRouteFields<T extends FieldValues & PayoutRouteValues>({
               <option key={b} value={b} />
             ))}
           </datalist>
-          <FormField label="Branch (optional)" error={errors.payeeBranch?.message}>
+          <FormField label="Branch" error={errors.payeeBranch?.message}>
             <Input {...reg('payeeBranch')} placeholder="Kariakoo" autoComplete="off" />
           </FormField>
-          <FormField label="Account name" error={errors.payeeAccountName?.message}>
+          <FormField required label="Account name" error={errors.payeeAccountName?.message}>
             <Input {...reg('payeeAccountName')} placeholder="As the bank holds it" autoComplete="off" />
           </FormField>
-          <FormField label="Account number" error={errors.payeeAccountNumber?.message}>
+          <FormField required label="Account number" error={errors.payeeAccountNumber?.message}>
             <Input {...reg('payeeAccountNumber')} className="font-mono" inputMode="numeric" autoComplete="off" />
           </FormField>
         </div>

@@ -45,7 +45,7 @@ export async function openCaseForAmina(
 /** Records one assessment against the case currently on screen. */
 export async function assess(page: Page, findings: string, riskScore: string): Promise<void> {
   await page.getByLabel('Findings').fill(findings);
-  await page.getByLabel('Risk score (optional)').fill(riskScore);
+  await page.getByLabel('Risk score', { exact: true }).fill(riskScore);
   await page.getByRole('button', { name: 'Submit assessment' }).click();
   // The recommendation panel is the acknowledgement that the evidence landed. Waiting on it
   // rather than on a toast keeps this honest: it is read back from the case, not the form.

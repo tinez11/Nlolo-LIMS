@@ -5,7 +5,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { listInvoices, listLoans } from '@/api/policies';
 import type { InvoiceView, LoanView } from '@/api/types';
 import { DatePicker } from '@/components/DatePicker';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
@@ -158,11 +158,12 @@ export function NewReceiptPage() {
       />
       <FormLayout formId="new-receipt-form" outlineLabel="Deposit sections">
         <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+          <RequiredNote />
           <UnsavedGuard when={isDirty && !isSubmitting} what="This deposit" />
 
           <div data-outline="What it pays" className="space-y-4">
             <div className="flex flex-wrap items-end gap-2">
-              <FormField label="Policy number" error={errors.policyNumber?.message}>
+              <FormField required label="Policy number" error={errors.policyNumber?.message}>
                 <Input
                   className="w-48 font-mono"
                   placeholder="POL-XXXXXXXX"
@@ -180,7 +181,7 @@ export function NewReceiptPage() {
                 Look up policy
               </Button>
             </div>
-            <FormField label="For" error={errors.paysFor?.message}>
+            <FormField required label="For" error={errors.paysFor?.message}>
               <Select {...register('paysFor')}>
                 <option value="PREMIUM">Premium</option>
                 <option value="LOAN">Loan repayment</option>
@@ -188,7 +189,7 @@ export function NewReceiptPage() {
             </FormField>
             {paysFor === 'LOAN' && loanError && <p className="text-sm text-status-warning-fg">{loanError}</p>}
             {paysFor === 'LOAN' && loans && loans.length > 0 && (
-              <FormField label="Loan it repays" error={errors.loanId?.message}>
+              <FormField required label="Loan it repays" error={errors.loanId?.message}>
                 <Select {...register('loanId')}>
                   {loans.map((l) => (
                     <option key={l.loanId} value={l.loanId}>
@@ -202,7 +203,7 @@ export function NewReceiptPage() {
           </div>
 
           <div data-outline="How it was paid" className="space-y-4">
-            <FormField label="How the money came in" hint={chosenMethod?.hint} error={errors.method?.message}>
+            <FormField required label="How the money came in" hint={chosenMethod?.hint} error={errors.method?.message}>
               <Select {...register('method')}>
                 {RECEIPT_METHODS.map((m) => (
                   <option key={m.value} value={m.value}>
@@ -211,11 +212,11 @@ export function NewReceiptPage() {
                 ))}
               </Select>
             </FormField>
-            <FormField label={chosenMethod?.reference ?? 'Reference'} error={errors.reference?.message}>
+            <FormField required label={chosenMethod?.reference ?? 'Reference'} error={errors.reference?.message}>
               <Input className="font-mono" {...register('reference')} />
             </FormField>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormField
+              <FormField required
                 label={`Amount (${owedNow?.currencyCode ?? 'TZS'})`}
                 hint={owedNow
                   ? loan
@@ -226,7 +227,7 @@ export function NewReceiptPage() {
               >
                 <Input inputMode="decimal" {...register('amount')} />
               </FormField>
-              <FormField label="Received on" error={errors.receivedOn?.message}>
+              <FormField required label="Received on" error={errors.receivedOn?.message}>
                 <Controller
                   control={control}
                   name="receivedOn"
@@ -234,10 +235,10 @@ export function NewReceiptPage() {
                 />
               </FormField>
             </div>
-            <FormField label="Paid by (optional)" hint="The payer's name or number, as the slip shows it." error={errors.payerRef?.message}>
+            <FormField label="Paid by" hint="The payer's name or number, as the slip shows it." error={errors.payerRef?.message}>
               <Input {...register('payerRef')} />
             </FormField>
-            <FormField label="Note (optional)" error={errors.note?.message}>
+            <FormField label="Note" error={errors.note?.message}>
               <Input {...register('note')} />
             </FormField>
           </div>

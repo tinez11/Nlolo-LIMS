@@ -56,7 +56,7 @@ export function ReturnToAgentPanel({ caseId, onReturned }: { caseId: string; onR
             <legend className="px-1 text-xs font-medium text-muted-foreground">Reason {i + 1}</legend>
             <div className="flex items-end gap-2">
               <div className="flex-1">
-                <FormField label="What it concerns">
+                <FormField required label="What it concerns">
                   <Select value={r.category} onChange={(e) => set(i, { category: e.target.value as ReturnCategory })}>
                     {CATEGORIES.map((c) => (
                       <option key={c} value={c}>
@@ -78,10 +78,10 @@ export function ReturnToAgentPanel({ caseId, onReturned }: { caseId: string; onR
                 </Button>
               )}
             </div>
-            <FormField label="What is wrong">
+            <FormField required label="What is wrong">
               <Textarea className="min-h-16" value={r.problem} onChange={(e) => set(i, { problem: e.target.value })} />
             </FormField>
-            <FormField label="What to change">
+            <FormField required label="What to change">
               <Textarea className="min-h-16" value={r.change} onChange={(e) => set(i, { change: e.target.value })} />
             </FormField>
           </fieldset>
@@ -90,7 +90,7 @@ export function ReturnToAgentPanel({ caseId, onReturned }: { caseId: string; onR
           <Plus />
           Add a reason
         </Button>
-        <FormField label="Note to the agent (optional)">
+        <FormField label="Note to the agent">
           <Textarea className="min-h-12" value={note} onChange={(e) => setNote(e.target.value)} />
         </FormField>
         {error && <InlineError error={error} />}

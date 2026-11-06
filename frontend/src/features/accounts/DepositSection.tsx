@@ -180,14 +180,14 @@ function MaturityPanel({ deposit }: { deposit: DepositView }) {
       <p className="text-xs font-medium text-muted-foreground">At maturity</p>
       <p className="text-sm">{describeInstruction(deposit)}</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <FormField label="What should happen" error={errors.action?.message}>
+        <FormField required label="What should happen" error={errors.action?.message}>
           <Select inputSize="sm" {...form.register('action')}>
             <option value="PAY_OUT">Pay out</option>
             <option value="REINVEST">Reinvest the deposit and its interest</option>
           </Select>
         </FormField>
         {action === 'REINVEST' ? (
-          <FormField label="New term" error={errors.termMonths?.message}>
+          <FormField required label="New term" error={errors.termMonths?.message}>
             <Select inputSize="sm" {...form.register('termMonths')}>
               <option value="">Choose…</option>
               {deposit.termsOffered.map((t) => (

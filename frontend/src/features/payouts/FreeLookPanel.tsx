@@ -159,7 +159,7 @@ function RequestForm({ policy }: { policy: PolicyView }) {
       <GatePanel gates={gates} title="Before cancelling" />
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <form onSubmit={onSubmit} className="space-y-3">
-        <FormField label="Refund to" error={form.formState.errors.payeeRef?.message}>
+        <FormField required label="Refund to" error={form.formState.errors.payeeRef?.message}>
           <Input
             {...form.register('payeeRef')}
             placeholder="Mobile money number or bank destination"
@@ -174,7 +174,7 @@ function RequestForm({ policy }: { policy: PolicyView }) {
           </p>
           {deductions.fields.map((field, index) => (
             <div key={field.id} className="flex items-end gap-2">
-              <FormField
+              <FormField required
                 label="What for"
                 error={form.formState.errors.deductions?.[index]?.description?.message}
               >
@@ -184,7 +184,7 @@ function RequestForm({ policy }: { policy: PolicyView }) {
                   disabled={refused}
                 />
               </FormField>
-              <FormField
+              <FormField required
                 label="Amount"
                 error={form.formState.errors.deductions?.[index]?.amount?.message}
               >

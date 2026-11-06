@@ -65,7 +65,7 @@ export function DocumentRequestsPanel({ claimId, canRequest }: { claimId: string
     <div className="space-y-3">
       {canRequest && (
         <div className="flex flex-wrap items-end gap-2 px-4 pt-3">
-          <FormField label="Document" className="min-w-48 flex-1">
+          <FormField required label="Document" className="min-w-48 flex-1">
             <Input value={document} onChange={(e) => setDocument(e.target.value)} placeholder="e.g. Burial permit" />
           </FormField>
           <FormField label="Why (the claimant reads this)" className="min-w-48 flex-[2]">

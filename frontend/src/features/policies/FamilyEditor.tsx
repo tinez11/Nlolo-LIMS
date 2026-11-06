@@ -37,13 +37,13 @@ export function FamilyEditor({
   return (
     <div className="rounded-md border border-border p-2.5" aria-label={`Family ${family.reference}`}>
       <div className="grid grid-cols-[7rem_1fr_10rem_auto] items-start gap-2">
-        <FormField label="Member no.">
+        <FormField required label="Member no.">
           <Input value={family.reference} onChange={(e) => set({ reference: e.target.value })} />
         </FormField>
-        <FormField label="Main member">
+        <FormField required label="Main member">
           <Input value={family.mainName} placeholder="Full name" onChange={(e) => set({ mainName: e.target.value })} />
         </FormField>
-        <FormField label="Date of birth">
+        <FormField required label="Date of birth">
           <DatePicker value={family.mainDateOfBirth || null} onChange={(iso) => set({ mainDateOfBirth: iso ?? '' })} />
         </FormField>
         <Button type="button" size="icon" variant="ghost" className="mt-5" aria-label={`Remove member ${family.reference}`}
@@ -52,7 +52,7 @@ export function FamilyEditor({
         </Button>
       </div>
       <div className="mt-2 grid gap-2 sm:grid-cols-3">
-        <FormField label="Beneficiary (optional)">
+        <FormField label="Beneficiary">
           <Input value={family.beneficiaryName} onChange={(e) => set({ beneficiaryName: e.target.value })} />
         </FormField>
         <FormField label="Relationship">
@@ -98,15 +98,15 @@ export function DependantFields({
   const options = roles.includes(dependant.role) ? roles : [...roles, dependant.role];
   return (
     <div className="mt-2 grid grid-cols-[9rem_1fr_10rem_auto_auto] items-end gap-2">
-      <FormField label="Role">
+      <FormField required label="Role">
         <Select value={dependant.role} onChange={(e) => onChange({ role: e.target.value as DependantRole })}>
           {options.map((r) => <option key={r} value={r}>{FUNERAL_ROLE_LABELS[r]}</option>)}
         </Select>
       </FormField>
-      <FormField label="Name">
+      <FormField required label="Name">
         <Input value={dependant.fullName} onChange={(e) => onChange({ fullName: e.target.value })} />
       </FormField>
-      <FormField label="Date of birth">
+      <FormField required label="Date of birth">
         <DatePicker value={dependant.dateOfBirth || null} onChange={(iso) => onChange({ dateOfBirth: iso ?? '' })} />
       </FormField>
       <CheckboxField label="Student" className="mb-1" checked={dependant.student} disabled={dependant.role !== 'CHILD'}

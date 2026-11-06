@@ -6,7 +6,7 @@ import { TREATY_TYPES } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { Button } from '@/components/ui/button';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { useReinsuranceStore } from '@/store/reinsuranceStore';
@@ -80,15 +80,16 @@ export function CreateTreatyPage() {
 
       <FormLayout formId="create-treaty-form" outlineLabel="Treaty sections">
       <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+        <RequiredNote />
         <UnsavedGuard when={isDirty && !isSubmitting} what="This treaty" />
-        <FormField label="Reinsurer name" error={errors.reinsurerName?.message}>
+        <FormField required label="Reinsurer name" error={errors.reinsurerName?.message}>
           <Input
             placeholder="Africa Re"
             {...register('reinsurerName')}
           />
         </FormField>
 
-        <FormField label="Treaty type">
+        <FormField required label="Treaty type">
           <Select
             value={treatyType}
             onChange={(e) => {
@@ -105,13 +106,13 @@ export function CreateTreatyPage() {
         </FormField>
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
-          <FormField label="Retention limit" error={errors.retentionLimitAmount?.message}>
+          <FormField required label="Retention limit" error={errors.retentionLimitAmount?.message}>
             <Input
               placeholder="5000000.00"
               {...register('retentionLimitAmount')}
             />
           </FormField>
-          <FormField label="Currency" error={errors.retentionLimitCurrency?.message}>
+          <FormField required label="Currency" error={errors.retentionLimitCurrency?.message}>
             <Input
               className="w-20 uppercase"
               {...register('retentionLimitCurrency')}
@@ -120,7 +121,7 @@ export function CreateTreatyPage() {
         </div>
 
         {treatyType === 'QUOTA_SHARE' && (
-          <FormField label="Cession percent" error={fieldError(errors, 'cessionPercent')}>
+          <FormField required label="Cession percent" error={fieldError(errors, 'cessionPercent')}>
             <div className="flex items-center gap-1">
               <Input
                 placeholder="25.00"
@@ -141,7 +142,7 @@ export function CreateTreatyPage() {
 
         {treatyType === 'XOL' && (
           <FormField
-            label="Annual XOL premium (optional)"
+            label="Annual XOL premium"
             error={fieldError(errors, 'xolAnnualPremium')}
             hint="Charged one twelfth on each monthly bordereau, in the treaty's currency."
           >
@@ -149,7 +150,7 @@ export function CreateTreatyPage() {
           </FormField>
         )}
 
-        <FormField
+        <FormField required
           label="Reinsurance commission"
           error={errors.commissionPercent?.message}
           hint="The commission not contingent on claims, a percent of each month's ceded premium. 0 when the reinsurer pays none."
@@ -161,7 +162,7 @@ export function CreateTreatyPage() {
         </FormField>
 
         <div className="grid grid-cols-2 gap-2">
-          <FormField label="Effective from" error={errors.effectiveFrom?.message}>
+          <FormField required label="Effective from" error={errors.effectiveFrom?.message}>
             <Controller
               control={control}
               name="effectiveFrom"
@@ -173,7 +174,7 @@ export function CreateTreatyPage() {
               )}
             />
           </FormField>
-          <FormField label="Effective to (optional)" error={errors.effectiveTo?.message}>
+          <FormField label="Effective to" error={errors.effectiveTo?.message}>
             <Controller
               control={control}
               name="effectiveTo"

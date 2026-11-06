@@ -75,7 +75,7 @@ export function ReverseDepositPage() {
             </dl>
           </div>
           <div data-outline="Why" className="max-w-xl">
-            <FormField label="Why is it reversed?" hint="For example: the cheque bounced.">
+            <FormField required label="Why is it reversed?" hint="For example: the cheque bounced.">
               <Input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} />
             </FormField>
           </div>

@@ -251,7 +251,7 @@ function ReceiptDecision({ receipt }: { receipt: Receipt }) {
           />
         ) : armed === 'refuse' ? (
           <div className="space-y-2">
-            <FormField label="Why it is refused">
+            <FormField required label="Why it is refused">
               <Input value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
             </FormField>
             <div className="flex gap-2">
@@ -351,7 +351,7 @@ function DepositReversalPanel({ receipt, viewerSubject }: { receipt: Receipt; vi
                 />
               ) : rejecting ? (
                 <div className="space-y-2">
-                  <FormField label="Why is it rejected?">
+                  <FormField required label="Why is it rejected?">
                     <Input value={reason} onChange={(e) => setReason(e.target.value)} />
                   </FormField>
                   <div className="flex gap-2">

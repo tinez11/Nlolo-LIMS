@@ -93,7 +93,10 @@ test.describe('agents onboard a customer', () => {
     await page.getByLabel('Smoker status').selectOption('NON_SMOKER');
     await page.getByLabel('Occupation', { exact: true }).fill('Secondary school teacher');
     await page.getByLabel('Employer').fill('Ilala Secondary School');
-    await page.getByLabel('Region').fill('Dar es Salaam');
+    // Region is chosen from the list now, and opens the district beneath it (2026-11-05).
+    await page.getByLabel('Region').selectOption('Dar es Salaam');
+    await page.getByLabel('District').selectOption('Kinondoni Municipal');
+    await page.getByLabel('Ward').selectOption('Mwananyamala');
 
     await page.getByRole('button', { name: 'Register individual' }).click();
     await expect(page.getByText('Registered', { exact: true })).toBeVisible({ timeout: 15_000 });

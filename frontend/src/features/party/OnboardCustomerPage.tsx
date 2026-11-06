@@ -12,7 +12,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { Field } from '@/components/Field';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { IndividualFields } from './IndividualFields';
 import { cn } from '@/lib/cn';
@@ -256,6 +256,7 @@ function RegisterIndividualForm({
 
   return (
     <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+      <RequiredNote />
       <UnsavedGuard
         when={(isDirty || initial !== undefined) && !isSubmitting && !leaving && registering.status !== 'success'}
         what={guardWhat}
@@ -319,29 +320,30 @@ function RegisterCorporateForm() {
 
   return (
     <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+      <RequiredNote />
       <UnsavedGuard when={isDirty && !isSubmitting} what="This customer" />
-      <FormField label="Registered name" error={errors.registeredName?.message}>
+      <FormField required label="Registered name" error={errors.registeredName?.message}>
         <Input
           placeholder="Kilimanjaro SACCO"
           {...register('registeredName')}
         />
       </FormField>
 
-      <FormField label="Registration number" error={errors.registrationNumber?.message}>
+      <FormField required label="Registration number" error={errors.registrationNumber?.message}>
         <Input
           placeholder="REG-0001"
           {...register('registrationNumber')}
         />
       </FormField>
 
-      <FormField label="Phone number (optional)" error={errors.phoneNumber?.message}>
+      <FormField label="Phone number" error={errors.phoneNumber?.message}>
         <Input
           placeholder="0712 345 678"
           {...register('phoneNumber')}
         />
       </FormField>
 
-      <FormField label="Email (optional)" error={errors.email?.message}>
+      <FormField label="Email" error={errors.email?.message}>
         <Input
           placeholder="finance@kilimanjaro-sacco.tz"
           {...register('email')}

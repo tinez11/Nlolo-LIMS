@@ -246,7 +246,7 @@ export function WithdrawalPanel({
           onSubmit={form.handleSubmit((v) => void request(policyNumber, toWithdrawalRequest(v)))}
         >
           <div className="flex flex-wrap gap-3">
-            <FormField label={`Gross amount (${currency})`} error={form.formState.errors.grossAmount?.message}>
+            <FormField required label={`Gross amount (${currency})`} error={form.formState.errors.grossAmount?.message}>
               <Input inputSize="sm" inputMode="decimal" {...form.register('grossAmount')} />
             </FormField>
           </div>
@@ -379,10 +379,10 @@ export function TopUpForm({
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <form aria-label="Request a top-up" className="space-y-2" onSubmit={(e) => void submit(e)}>
         <div className="flex flex-wrap gap-3">
-          <FormField label={`Amount (${currency})`} error={form.formState.errors.amount?.message}>
+          <FormField required label={`Amount (${currency})`} error={form.formState.errors.amount?.message}>
             <Input inputSize="sm" inputMode="decimal" {...form.register('amount')} />
           </FormField>
-          <FormField label="Collect from" error={form.formState.errors.payerRef?.message}>
+          <FormField required label="Collect from" error={form.formState.errors.payerRef?.message}>
             <Input inputSize="sm" placeholder="+255712345678" {...form.register('payerRef')} />
           </FormField>
         </div>
@@ -446,14 +446,14 @@ export function StatementsPanel({ policyNumber }: { policyNumber: string }) {
         className="flex flex-wrap items-end gap-3"
         onSubmit={form.handleSubmit((v) => void file(policyNumber, v.from, v.to))}
       >
-        <FormField label="From" error={form.formState.errors.from?.message}>
+        <FormField required label="From" error={form.formState.errors.from?.message}>
           <Controller
             control={form.control}
             name="from"
             render={({ field }) => <DatePicker value={field.value || null} onChange={(iso) => field.onChange(iso ?? '')} />}
           />
         </FormField>
-        <FormField label="To" error={form.formState.errors.to?.message}>
+        <FormField required label="To" error={form.formState.errors.to?.message}>
           <Controller
             control={form.control}
             name="to"

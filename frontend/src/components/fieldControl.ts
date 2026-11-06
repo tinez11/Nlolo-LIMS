@@ -22,6 +22,10 @@ export interface FieldControlContext {
    *  value came from. Unlike an error it is present before anything is typed, and
    *  it stays. Both ids are described-by when both exist. */
   hintId?: string | undefined;
+  /** The field must be filled before the form submits. Announced as `aria-required`, not the
+   *  HTML `required` attribute: the native attribute would fire the browser's own validation
+   *  bubble ahead of the form's rule, in different words from the message beneath the field. */
+  required?: boolean | undefined;
 }
 
 export const FieldControl = createContext<FieldControlContext | null>(null);
@@ -45,6 +49,7 @@ export interface FieldControlAttributes {
   id?: string;
   'aria-invalid'?: true;
   'aria-describedby'?: string;
+  'aria-required'?: true;
 }
 
 export function useFieldControl(ownId?: string | undefined): FieldControlAttributes {
@@ -58,5 +63,6 @@ export function useFieldControl(ownId?: string | undefined): FieldControlAttribu
     id: ownId ?? context.id,
     ...(context.invalid ? { 'aria-invalid': true as const } : {}),
     ...(describedBy ? { 'aria-describedby': describedBy } : {}),
+    ...(context.required ? { 'aria-required': true as const } : {}),
   };
 }

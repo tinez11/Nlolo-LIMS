@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useMemo, useState } from 'react';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { useNavigate, useParams } from 'react-router-dom';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
@@ -88,6 +88,7 @@ function Editor({ id, initial }: { id?: string; initial: ManualJournalValues }) 
           if (saved) navigate(id ? `../../${saved.id}` : `../${saved.id}`, { relative: 'path' });
         })}
       >
+        <RequiredNote />
         <UnsavedGuard
           when={form.formState.isDirty && !form.formState.isSubmitting}
           what="This journal"
@@ -108,10 +109,10 @@ function Editor({ id, initial }: { id?: string; initial: ManualJournalValues }) 
           </div>
         )}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <FormField label="Title" error={errors.title?.message}>
+          <FormField required label="Title" error={errors.title?.message}>
             <Input {...form.register('title')} />
           </FormField>
-          <FormField label="Period" hint="YYYY-MM; an open or closing period" error={errors.period?.message}>
+          <FormField required label="Period" hint="YYYY-MM; an open or closing period" error={errors.period?.message}>
             <Input {...form.register('period')} />
           </FormField>
           <FormField label="Reason" hint="Why this journal is needed" error={errors.reason?.message}>

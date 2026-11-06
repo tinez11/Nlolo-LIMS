@@ -4,7 +4,7 @@ import { attachClaimEvidence, registerClaim } from '@/api/claims';
 import { getCustomerDashboard, getCustomerPolicy, getMe, type CustomerPolicySummary, type CustomerPolicyView } from '@/api/portal';
 import { DatePicker } from '@/components/DatePicker';
 import { Field } from '@/components/Field';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
@@ -148,9 +148,10 @@ export function CustomerReportClaimPage() {
       <PageHeader breadcrumb={breadcrumb} title="Report a claim"
         description="Tell us what happened. We will ask for anything else we need." />
       <div className="w-full max-w-3xl space-y-4 px-4 pb-10 text-base sm:px-6">
+        <RequiredNote />
         <Panel title="Which policy">
           <div className="space-y-3 px-4 py-3">
-            <FormField label="Policy">
+            <FormField required label="Policy">
               <Select value={form.policyNumber}
                 onChange={(e) => set({ policyNumber: e.target.value, coveredLifeId: '' })}>
                 <option value="">Choose a policy</option>
@@ -163,14 +164,14 @@ export function CustomerReportClaimPage() {
             </FormField>
             {form.policyNumber && !current && <LoadingBlock label="Loading the policy" />}
             {current && !funeral && (
-              <FormField label="What are you claiming for?">
+              <FormField required label="What are you claiming for?">
                 <Select value={form.claimType} onChange={(e) => set({ claimType: e.target.value as CustomerClaimType })}>
                   {TYPES.map((t) => <option key={t} value={t}>{claimTypeText(t)}</option>)}
                 </Select>
               </FormField>
             )}
             {funeral && (
-              <FormField label="Who died?" hint={lives.length === 0 ? 'Nobody on this plan is covered today.' : undefined}>
+              <FormField required label="Who died?" hint={lives.length === 0 ? 'Nobody on this plan is covered today.' : undefined}>
                 <Select value={form.coveredLifeId} onChange={(e) => set({ coveredLifeId: e.target.value })}>
                   <option value="">Choose the person</option>
                   {lives.map((l) => (
@@ -185,19 +186,19 @@ export function CustomerReportClaimPage() {
         {current && (
           <Panel title="What happened">
             <div className="space-y-3 px-4 py-3">
-              <FormField label={type === 'MATURITY' ? 'Maturity date' : type === 'DEATH' ? 'Date of death'
+              <FormField required label={type === 'MATURITY' ? 'Maturity date' : type === 'DEATH' ? 'Date of death'
                 : type === 'DISABILITY' ? 'When it started' : 'Date diagnosed'}>
                 <DatePicker value={form.dateOfEvent || null} onChange={(iso) => set({ dateOfEvent: iso ?? '' })}
                   disabled={{ after: new Date() }} />
               </FormField>
               {type !== 'MATURITY' && (
-                <FormField label={whatLabel}>
+                <FormField required label={whatLabel}>
                   <Textarea rows={2} value={form.whatHappened} onChange={(e) => set({ whatHappened: e.target.value })} />
                 </FormField>
               )}
               {type === 'DEATH' && (
                 <>
-                  <FormField label="Where it happened">
+                  <FormField required label="Where it happened">
                     <Input value={form.placeOfDeath} onChange={(e) => set({ placeOfDeath: e.target.value })}
                       placeholder="e.g. Muhimbili Hospital, or at home in Kinondoni" />
                   </FormField>

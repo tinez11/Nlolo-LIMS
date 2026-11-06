@@ -230,8 +230,8 @@ test.describe('family funeral cover', () => {
       await expect(manager.getByText(/was inside the waiting period/)).toBeVisible({ timeout: 30_000 });
 
       await manager.getByRole('radio', { name: 'Reject' }).click();
-      await manager.getByLabel('Rejection reason (optional)').fill('Natural death inside the waiting period');
-      await manager.getByLabel('Policy-term reason (optional)').selectOption('WITHIN_WAITING_PERIOD');
+      await manager.getByLabel('Rejection reason', { exact: true }).fill('Natural death inside the waiting period');
+      await manager.getByLabel('Policy-term reason', { exact: true }).selectOption('WITHIN_WAITING_PERIOD');
       await manager.getByRole('button', { name: 'Reject claim' }).click();
       await manager.getByRole('button', { name: 'Record the rejection' }).click();
       await expect(manager.getByText('Rejected', { exact: true })).toBeVisible({ timeout: 15_000 });

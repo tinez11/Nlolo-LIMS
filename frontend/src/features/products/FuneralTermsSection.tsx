@@ -62,7 +62,7 @@ export function FuneralTermsSection({
       </div>
 
       <div className="w-64">
-        <FormField label="Sold as" error={errors.funeralSoldAs?.message}>
+        <FormField required label="Sold as" error={errors.funeralSoldAs?.message}>
           <Select inputSize="sm" {...register('funeralSoldAs')}>
             {FUNERAL_SOLD_AS.map((s) => <option key={s} value={s}>{FUNERAL_SOLD_AS_LABELS[s]}</option>)}
           </Select>
@@ -83,19 +83,19 @@ export function FuneralTermsSection({
         {plans.fields.map((field, i) => (
           <div key={field.id} className="space-y-2 rounded-md border border-border p-2">
             <div className="flex items-end gap-2">
-              <FormField label="Plan code" error={errors.funeralPlans?.[i]?.planCode?.message}>
+              <FormField required label="Plan code" error={errors.funeralPlans?.[i]?.planCode?.message}>
                 <Input inputSize="sm" placeholder="B" {...register(`funeralPlans.${i}.planCode`)} />
               </FormField>
-              <FormField label="Plan name" error={errors.funeralPlans?.[i]?.name?.message}>
+              <FormField required label="Plan name" error={errors.funeralPlans?.[i]?.name?.message}>
                 <Input inputSize="sm" placeholder="Familia B" {...register(`funeralPlans.${i}.name`)} />
               </FormField>
               {toGroups && (
                 <>
-                  <FormField label="Group rate per member" error={errors.funeralPlans?.[i]?.groupRate?.message}>
+                  <FormField required label="Group rate per member" error={errors.funeralPlans?.[i]?.groupRate?.message}>
                     <Input inputSize="sm" inputMode="decimal" placeholder="3000" {...register(`funeralPlans.${i}.groupRate`)} />
                   </FormField>
                   {/* Yearly (2026-10-08): one bill a year at members x rate, and the member list fixed while the scheme is in force. */}
-                  <FormField label="Charged">
+                  <FormField required label="Charged">
                     <Select inputSize="sm" {...register(`funeralPlans.${i}.groupRatePeriod`)}>
                       <option value="MONTHLY">per month</option>
                       <option value="YEARLY">per year (members fixed for the year)</option>
@@ -109,7 +109,7 @@ export function FuneralTermsSection({
             </div>
             <div className="grid grid-cols-5 gap-2">
               {FUNERAL_ROLES.map((role, r) => (
-                <FormField key={role} label={`${FUNERAL_ROLE_LABELS[role]} benefit`}
+                <FormField key={role} required={r === 0} label={`${FUNERAL_ROLE_LABELS[role]} benefit`}
                   error={errors.funeralPlans?.[i]?.benefits?.[r]?.message}>
                   <Input inputSize="sm" inputMode="decimal" {...register(`funeralPlans.${i}.benefits.${r}`)} />
                 </FormField>
@@ -198,14 +198,14 @@ export function FuneralTermsSection({
           <div className="pt-6">
             <CheckboxField label="An accidental death has no waiting period" {...register('funeralAccidentWaives')} />
           </div>
-          <FormField label="When a dependant dies, pay" error={errors.funeralPayee?.message}>
+          <FormField required label="When a dependant dies, pay" error={errors.funeralPayee?.message}>
             <Select inputSize="sm" {...register('funeralPayee')}>
               <option value="">Choose…</option>
               <option value="MAIN_MEMBER">The main member</option>
               <option value="MAIN_MEMBER_BENEFICIARY">A beneficiary the main member nominated</option>
             </Select>
           </FormField>
-          <FormField label="When the main member dies" error={errors.funeralOnMainMemberDeath?.message}>
+          <FormField required label="When the main member dies" error={errors.funeralOnMainMemberDeath?.message}>
             <Select inputSize="sm" {...register('funeralOnMainMemberDeath')}>
               <option value="">Choose…</option>
               <option value="POLICY_ENDS">The policy ends</option>
