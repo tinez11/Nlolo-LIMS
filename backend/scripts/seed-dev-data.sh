@@ -507,8 +507,8 @@ ADMIN_TOKEN=$(curl -sf -X POST "$KEYCLOAK/realms/master/protocol/openid-connect/
   -d grant_type=password -d client_id=admin-cli -d username=admin -d password=devadmin \
   | sed 's/.*"access_token":"\([^"]*\)".*/\1/')
 
-write_party_id() {   # write_party_id <realm> <username> <partyId>
-  local realm="$1" username="$2" partyId="$3"
+write_party_id() {   # write_party_id <workspace, unused since 2026-11-06> <username> <partyId>
+  local realm=lifeplatform username="$2" partyId="$3"
   local user_id user_json
   user_json=$(curl -sf "$KEYCLOAK/admin/realms/$realm/users?username=$username&exact=true" \
     -H "Authorization: Bearer $ADMIN_TOKEN")
