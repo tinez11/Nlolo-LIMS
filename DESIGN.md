@@ -498,10 +498,18 @@ Equal radii nested read as a misalignment.
 - **Style:** Control ground, 1px Input Edge, 10px radius; on focus the ground turns
   Card White, the edge Rule Strong, with a teal ring at 40%. Every empty field looks the
   same: pickers (party, agent) and the date field take the Control ground too, never white.
-- **The ink ladder (2026-11-06):** value Navy Ink > label **Label Ink** (`--label`, 500) >
-  hint Subtle Ink > placeholder **Placeholder Ink** (`--placeholder`, the lightest that keeps
-  4.5:1 on the Control ground). Labels and section legends use Label Ink; a placeholder never
-  looks like a typed value, and a label never looks like a hint.
+- **The ink ladder (2026-11-06):** value Navy Ink (~17:1) > label **Label Ink** (`--label`,
+  neutral slate grey, normal weight, ~8:1) > hint Subtle Ink (~5:1) > placeholder
+  **Placeholder Ink** (`--placeholder`, the lightest that keeps 4.5:1 on the Control ground).
+  The same ladder as IBM Carbon's text-primary / text-secondary (input labels) / text-helper.
+  Labels and section legends use Label Ink; a placeholder never looks like a typed value, and a
+  label never looks like a hint. **Not** near-black (too heavy) and **not** blue or teal (the
+  user found both read as links) — tried and rejected 2026-11-06.
+- **Words on a form (2026-11-06):** say what to enter and what happens, nothing about why the
+  platform works as it does. A blank-means rule is a hint in the form "Blank = no limit";
+  an instruction never lives in a placeholder (it vanishes on typing); a panel subtitle that
+  restates its title is deleted. Consequences (a second person approves; money leaves here;
+  cannot be changed once added) stay, in one line.
 - **Label and error:** `FormField` pairs a real `<label>` with the control; an error is
   Micro in the danger hue below the control, outside the label, wired by
   `aria-describedby` and `aria-invalid`. Forms validate when a field is left.

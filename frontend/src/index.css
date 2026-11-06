@@ -48,7 +48,7 @@
   --subtle-foreground: oklch(0.53 0.02 230);
   /*
     The ink ladder (2026-11-06), four steps a reader can tell apart:
-      value (--foreground, 0.22) > label (--label, 0.36, weight 500) > hint (--subtle-foreground, 0.53)
+      value (--foreground, 0.22) > label (--label, slate 0.42, normal weight) > hint (--subtle-foreground, 0.53)
       and, inside a field, the placeholder (--placeholder, 0.54).
     Before this, labels (0.50) and hints (0.53) were 1.13:1 apart -- one grey -- and the placeholder was
     Tailwind's 50% of the text colour, 3.25:1 on the field ground and only 1.63:1 off the label, so an
