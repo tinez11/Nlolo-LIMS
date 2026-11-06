@@ -3,22 +3,28 @@
 # tenant_id always, home_branch for staff, party_id for agents. Prints a one-time password; Keycloak makes them
 # choose their own at first sign-in.
 #
+# ONE REALM (2026-11-06). Everyone lives in the realm `lifeplatform`; the first argument is the WORKSPACE the login
+# opens, given as the realm role of that name (staff, agent, regulator). A staff login never holds another workspace
+# (decision U10), so `--roles ALL` means every JOB role and never a workspace role.
+#
 # WHY A SCRIPT. Typing these attributes into Keycloak's admin screens is where mistakes live: a token missing
 # tenant_id is refused by TenantContextFilter before it reaches a controller, with a 403 that says nothing about the
 # cause, and a staff member with no home_branch cannot post a journal. Nothing about that is discoverable from the
 # admin console, so the knowledge belongs here.
 #
 # Customers are NOT created here -- staff invite them from the console, which creates the login and writes party_id
-# from the record on screen, so nobody transcribes an id.
+# from the record on screen, so nobody transcribes an id. Agents are usually given a login from their page in the
+# console too; this script is for the first ones, before anyone can sign in.
 #
 # Run on the server, in the platform directory:
 #   ./add-user.sh staff asha.juma --roles UNDERWRITER --home-branch DSM --first-name Asha --last-name Juma
-#   ./add-user.sh agents john.mwita --roles '' --party-id 7ddd05c3-... --first-name John --last-name Mwita
+#   ./add-user.sh agent john.mwita --party-id 7ddd05c3-... --first-name John --last-name Mwita
 set -euo pipefail
 cd "$(dirname "$0")"
 set -a; . ./.env; . ./versions.env; set +a
 
-REALM="${1:?Usage: ./add-user.sh <staff|agents|regulators> <username> [options]}"
+REALM=lifeplatform
+WORKSPACE="${1:?Usage: ./add-user.sh <staff|agent|regulator> <username> [options]}"
 USERNAME="${2:?username}"
 shift 2
 
@@ -35,15 +41,18 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-case "$REALM" in
-  staff|agents|regulators) ;;
-  *) echo "realm must be staff, agents or regulators (customers are invited from the console)" >&2; exit 1 ;;
+case "$WORKSPACE" in
+  staff|agent|regulator) ;;
+  *) echo "workspace must be staff, agent or regulator (customers are invited from the console)" >&2; exit 1 ;;
 esac
-if [ "$REALM" = staff ] && [ -z "$HOME_BRANCH" ]; then
+if [ "$WORKSPACE" = staff ] && [ -z "$HOME_BRANCH" ]; then
   echo "staff need --home-branch (it goes in the token; without it they cannot post a journal)" >&2; exit 1
 fi
-if [ "$REALM" = agents ] && [ -z "$PARTY_ID" ]; then
+if [ "$WORKSPACE" = agent ] && [ -z "$PARTY_ID" ]; then
   echo "agents need --party-id -- the agent's party id, copied from their record in the console" >&2; exit 1
+fi
+if [ "$WORKSPACE" = agent ] && [ -n "$ROLES" ]; then
+  echo "agents hold no job roles; leave out --roles" >&2; exit 1
 fi
 
 DC="docker compose --env-file .env --env-file versions.env -f compose.yml"
@@ -66,17 +75,25 @@ printf '%s' "$BODY" | kc create users -r "$REALM" -f - > /dev/null
 PASSWORD="$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-14)Aa1"
 kc set-password -r "$REALM" --username "$USERNAME" --new-password "$PASSWORD" --temporary
 
+# The workspace first: it is what lets the login open a console at all.
+kc add-roles -r "$REALM" --uusername "$USERNAME" --rolename "$WORKSPACE"
+
 if [ "$ROLES" = "ALL" ]; then
-  ROLES=$(kc get roles -r "$REALM" --fields name --format csv --noquotes \
-    | tr -d '\r' | grep -vE '^(offline_access|uma_authorization|default-roles-.*|)$' | paste -sd, -)
+  # Job roles only: never the four workspace roles, never Keycloak's own.
+  ROLES=$(kc get roles -r "$REALM" --fields name --format csv --noquotes | tr -d '\r' \
+    | grep -vE '^(offline_access|uma_authorization|default-roles-.*|staff|agent|customer|regulator|)$' | paste -sd, -)
 fi
 if [ -n "$ROLES" ]; then
   IFS=',' read -ra GRANTED <<< "$ROLES"
   for role in "${GRANTED[@]}"; do
-    [ -n "$role" ] && kc add-roles -r "$REALM" --uusername "$USERNAME" --rolename "$role"
+    case "$role" in
+      staff|agent|customer|regulator) echo "skipping workspace role $role in --roles" >&2 ;;
+      "") ;;
+      *) kc add-roles -r "$REALM" --uusername "$USERNAME" --rolename "$role" ;;
+    esac
   done
 fi
 
-echo "Created $REALM login $USERNAME with roles [${ROLES:-none}]."
+echo "Created $WORKSPACE login $USERNAME with job roles [${ROLES:-none}]."
 echo "One-time password (shown once): $PASSWORD"
 echo "They must change it at first sign-in."

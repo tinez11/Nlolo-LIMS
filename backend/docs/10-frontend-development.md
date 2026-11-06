@@ -1,7 +1,7 @@
 # 10 — Frontend Development
 
-A runbook for running the console (`frontend/`, Vite + React, realm-scoped SPA: the
-staff, agents and customers consoles in one app) against the real local stack described
+A runbook for running the console (`frontend/`, Vite + React, one SPA with one sign-in:
+the staff, agents and customers workspaces in one app) against the real local stack described
 in `docs/09-local-development.md`.
 
 Unlike the Next.js portal this replaces, the SPA is **not** a BFF: it is a plain
@@ -28,11 +28,7 @@ server proxies `/api` to the backend to stay same-origin (`vite.config.ts`).
 #    service months after the object store became SeaweedFS.
 #    The seeder is REQUIRED -- it writes party_id back into Keycloak, see Gotcha 2.
 
-# 2. The lifeplatform-spa Keycloak client -- see Gotcha 1 for why this is a
-#    separate step and not just part of the realm import
-./scripts/apply-spa-client.sh staff
-
-# 3. Console
+# 2. Console (the lifeplatform-spa client comes with the realm import -- see Gotcha 1)
 cd ../frontend
 cp .env.example .env.local        # first run only
 npm install
@@ -94,35 +90,36 @@ Two independent layers, run differently on purpose:
 
 ## Gotchas
 
-**1. Editing `keycloak/staff-realm.json` has NO EFFECT on an already-started
+**1. Editing `keycloak/lifeplatform-realm.json` has NO EFFECT on an already-started
 stack, silently.** Keycloak keeps its own data in Postgres here (`KC_DB=postgres`,
 volume `infra_postgres-data`), and `--import-realm` imports a realm only if it
-does **not already exist**. So adding the `lifeplatform-spa` client to the realm
-JSON does nothing on any environment that has been started before -- no warning,
-no error, the console just fails with an opaque "invalid client" at the Keycloak
-login page. A fresh volume (and CI) imports it correctly, which is exactly what
-makes this easy to miss. Run `./scripts/apply-spa-client.sh staff` after any
-change to the client's config in that JSON file; it is idempotent (create-or-update
-via the Admin API) and verifies both the client's PKCE settings and its
-`tenant_id` protocol mapper by reading them back -- not by trusting the write's
-status code. That last check is not decorative: this platform's own history is
-that all four realms went ten milestones with zero protocol mappers before
-anyone noticed (see `project-synthetic-test-identity-trap`), because every test
-minted its own JWT instead of using a real one.
+does **not already exist**. So a change to a client in the realm JSON does nothing
+on any environment that has been started before -- no warning, no error, the console
+just fails with an opaque "invalid client" at the Keycloak login page. A fresh volume
+(and CI) imports it correctly, which is exactly what makes this easy to miss. Apply
+the change with `kcadm.sh` and read it back, or drop the volume. Reading it back is
+not decorative: this platform's own history is that all four of its former realms
+went ten milestones with zero protocol mappers before anyone noticed (see
+`project-synthetic-test-identity-trap`), because every test minted its own JWT
+instead of using a real one. Moving an existing stack from the four old realms:
+`keycloak/README.md`.
 
 **2. `party_id` comes from the seeder, not the realm import.**
-`keycloak/staff-realm.json` sets `tenant_id` on every staff user but no
-`party_id` -- staff has no party of its own, so this affects the customer/agent
-realms more directly, but it is the same underlying mechanism: only
+`keycloak/lifeplatform-realm.json` sets `tenant_id` on every user but no
+`party_id` -- staff have no party of their own, so this affects customers and
+agents most directly, but it is the same underlying mechanism: only
 `scripts/seed-dev-data.sh` writes the seeded data the console has anything to
 show. Skip the seeder and the Policies list is simply empty, which looks
 identical to a real backend problem; see `docs/09-local-development.md`'s
 Gotcha 4.
 
 **3. Real login only -- there is no mocked auth provider, in the app or in the
-E2E suite -- and tokens are held in memory only.** `RealmAuthProvider.tsx` mounts
-one `react-oidc-context` `AuthProvider` per realm-scoped route, against a public
-PKCE client. `e2e/auth.setup.ts` and `staff-policies.spec.ts` drive the actual
+E2E suite -- and tokens are held in memory only.** `PlatformAuthProvider.tsx` mounts
+one `react-oidc-context` `AuthProvider` at the root, against the one realm's public
+PKCE client (2026-11-06; one per realm-scoped route before). `/` is the sign-in for
+everyone; `/staff`, `/agents`, `/customers` are workspace prefixes, guarded by
+`RequireWorkspace`, and `lib/http.ts` sends the prefix's workspace as `X-Workspace`
+on every request. `e2e/auth.setup.ts` and `staff-policies.spec.ts` drive the actual
 Keycloak login form (`#username`, `#password`, `#kc-login`) through a real
 browser. Tokens are never written to `localStorage`/`sessionStorage` -- only the
 transient PKCE verifier is, and only until it is redeemed -- which means **every

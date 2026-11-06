@@ -1,9 +1,10 @@
-import { LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react';
+import { ArrowLeftRight, LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react';
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { avatarHue, avatarInitials, displayName, readIdentity } from '@/auth/claims';
 import { REALM_CONFIG, type Realm } from '@/auth/realms';
+import { availableWorkspaces } from '@/auth/workspaces';
 import { cn } from '@/lib/cn';
 import { humanizeStatus } from '@/lib/status';
 import { currentTheme, toggleTheme, type Theme } from '@/lib/theme';
@@ -439,6 +440,17 @@ function UserBlock({ identity, realm }: { identity: ReturnType<typeof readIdenti
       </div>
 
       {realm === 'customers' && <LanguageSwitch />}
+      {/* One account may open two workspaces (agent and policyholder, 2026-11-06): the other is one click away. */}
+      {availableWorkspaces(identity.roles)
+        .filter((other) => other !== realm)
+        .map((other) => (
+          <Button key={other} asChild size="sm" variant="ghost" className="mt-1 w-full justify-start">
+            <NavLink to={`/${REALM_CONFIG[other].slug}`}>
+              <ArrowLeftRight aria-hidden />
+              Switch to {REALM_CONFIG[other].label}
+            </NavLink>
+          </Button>
+        ))}
       <div className="mt-2.5 flex items-center gap-1">
         <Button
           size="sm"

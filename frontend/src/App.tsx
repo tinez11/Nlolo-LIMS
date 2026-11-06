@@ -6,14 +6,15 @@ import {
   Route,
   RouterProvider,
 } from 'react-router-dom';
-import { RealmAuthProvider } from '@/auth/RealmAuthProvider';
+import { PlatformAuthProvider } from '@/auth/PlatformAuthProvider';
 import { RequireAuth } from '@/auth/RequireAuth';
+import { RequireWorkspace } from '@/auth/RequireWorkspace';
 import { REALM_CONFIG, type Realm } from '@/auth/realms';
 import { AppShell } from '@/components/AppShell';
 import { RealmHome } from '@/components/RealmHome';
 import { RequirePermission, StaffAccessGate } from '@/components/StaffAccess';
-import { RealmPicker } from '@/features/RealmPicker';
-import { entryPath, hasRealmFallback, SHOW_REALM_PICKER } from '@/entryPath';
+import { WorkspaceHome } from '@/features/WorkspaceHome';
+import { hasRealmFallback } from '@/entryPath';
 import { REALM_HOME, SCREENS } from '@/screens';
 import { Suspense } from 'react';
 import { LoadingBlock } from '@/components/states';
@@ -22,24 +23,19 @@ import { CustomerQuotePage } from '@/features/customer/CustomerQuotePage';
 import { PublicQuoteApp } from '@/lazyPages';
 
 /**
- * Realm-scoped routes, built from the screen manifest in `@/screens`.
+ * Workspace-scoped routes, built from the screen manifest in `@/screens`.
  *
- * `react-oidc-context`'s AuthProvider takes exactly ONE authority, and the realm
- * must therefore be known before the user is authenticated -- a chicken-and-egg the
- * URL resolves. One provider is mounted per realm subtree, which also means a
- * customer never downloads the finance bundle, and no stale token from another
- * realm can reach the wrong provider.
+ * One Keycloak realm for everyone since 2026-11-06 (universal login), so one OIDC provider is mounted once, above the
+ * router. "/" is the sign-in for everyone; the `/staff`, `/agents`, `/customers` prefixes name the WORKSPACE a page is
+ * in, which the console sends the backend as `X-Workspace`. Each workspace's pages are lazily loaded, so a customer
+ * still never downloads the finance bundle.
  *
- * A realm with no screens gets no subtree at all: /customers and /regulators are
- * deliberately absent rather than stubbed, because an authenticating route into
- * an empty app is worse than a 404.
+ * A workspace with no screens gets no subtree at all: /regulators is deliberately absent rather than stubbed, because
+ * an authenticating route into an empty app is worse than a 404.
  */
 const realms = (Object.keys(REALM_CONFIG) as Realm[]).filter(
   (realm) => SCREENS[realm].length > 0,
 );
-
-/* Null in development, where "/" is the picker; in production the customer portal -- see entryPath. */
-const ENTRY = entryPath(SHOW_REALM_PICKER);
 
 /*
   A DATA router (2026-10-09, review C1), not <BrowserRouter>. The route tree is the same JSX as
@@ -50,7 +46,8 @@ const ENTRY = entryPath(SHOW_REALM_PICKER);
 const router = createBrowserRouter(
   createRoutesFromElements(
     <>
-        <Route path="/" element={ENTRY ? <Navigate to={ENTRY} replace /> : <RealmPicker />} />
+        {/* One sign-in for everyone (2026-11-06): "/" signs in, then opens the account's workspace or offers a choice. */}
+        <Route path="/" element={<RequireAuth><WorkspaceHome /></RequireAuth>} />
 
         {/* The public quote link (2026-11-02): no realm, no sign-in. The customer portal's own Get-cover and price
             screens, priced on what the visitor types -- see PublicQuoteApp for what guards it. */}
@@ -91,13 +88,17 @@ const router = createBrowserRouter(
 );
 
 export function App() {
-  return <RouterProvider router={router} />;
+  return (
+    <PlatformAuthProvider>
+      <RouterProvider router={router} />
+    </PlatformAuthProvider>
+  );
 }
 
 function RealmSubtree({ realm }: { realm: Realm }) {
   return (
-    <RealmAuthProvider realm={realm}>
-      <RequireAuth realm={realm}>
+    <RequireAuth>
+      <RequireWorkspace realm={realm}>
         {/* Staff pages are drawn for what the person holds, so their access arrives first. */}
         {realm === 'staff' ? (
           <StaffAccessGate>
@@ -110,7 +111,7 @@ function RealmSubtree({ realm }: { realm: Realm }) {
             <Outlet />
           </AppShell>
         )}
-      </RequireAuth>
-    </RealmAuthProvider>
+      </RequireWorkspace>
+    </RequireAuth>
   );
 }

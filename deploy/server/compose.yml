@@ -112,9 +112,7 @@ services:
       # every release would delete all of them.
       IMPORT_MANAGED_USER: no-delete
       APP_DOMAIN: ${APP_DOMAIN}
-      PORTAL_ADMIN_CLIENT_SECRET: ${PORTAL_ADMIN_CLIENT_SECRET}
-      STAFF_ADMIN_CLIENT_SECRET: ${STAFF_ADMIN_CLIENT_SECRET}
-      AGENTS_ADMIN_CLIENT_SECRET: ${AGENTS_ADMIN_CLIENT_SECRET}
+      ADMIN_CLIENT_SECRET: ${ADMIN_CLIENT_SECRET}
       MAIL_ENABLED: ${MAIL_ENABLED}
       MAIL_HOST: ${MAIL_HOST}
       MAIL_PORT: ${MAIL_PORT}
@@ -140,16 +138,12 @@ services:
       MINIO_ENDPOINT: http://objectstore:8333
       MINIO_ACCESS_KEY: ${OBJECT_STORE_ACCESS_KEY}
       MINIO_SECRET_KEY: ${OBJECT_STORE_SECRET_KEY}
-      KEYCLOAK_ISSUER_CUSTOMERS: https://${AUTH_DOMAIN}/realms/customers
-      KEYCLOAK_ISSUER_AGENTS: https://${AUTH_DOMAIN}/realms/agents
-      KEYCLOAK_ISSUER_STAFF: https://${AUTH_DOMAIN}/realms/staff
-      KEYCLOAK_ISSUER_REGULATORS: https://${AUTH_DOMAIN}/realms/regulators
-      # The portal's user administration goes straight to Keycloak inside the network: Caddy blocks /admin publicly,
+      # One realm for everyone (2026-11-06); the workspace comes from each request's X-Workspace header.
+      KEYCLOAK_ISSUER: https://${AUTH_DOMAIN}/realms/lifeplatform
+      # The platform's user administration goes straight to Keycloak inside the network: Caddy blocks /admin publicly,
       # and this call is the platform's own, not a browser's.
       KEYCLOAK_BASE_URL: http://keycloak:8080
-      KEYCLOAK_PORTAL_ADMIN_SECRET: ${PORTAL_ADMIN_CLIENT_SECRET}
-      KEYCLOAK_STAFF_ADMIN_SECRET: ${STAFF_ADMIN_CLIENT_SECRET}
-      KEYCLOAK_AGENTS_ADMIN_SECRET: ${AGENTS_ADMIN_CLIENT_SECRET}
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${ADMIN_CLIENT_SECRET}
       STAFF_CONSOLE_URL: https://${APP_DOMAIN}/staff
       AGENT_CONSOLE_URL: https://${APP_DOMAIN}/agents
       PORTAL_URL: https://${APP_DOMAIN}/customers

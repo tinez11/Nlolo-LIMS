@@ -40,16 +40,16 @@ components:
   securitySchemes:
     customersAuth:
       type: openIdConnect
-      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/customers/.well-known/openid-configuration
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/lifeplatform/.well-known/openid-configuration
     agentsAuth:
       type: openIdConnect
-      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/agents/.well-known/openid-configuration
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/lifeplatform/.well-known/openid-configuration
     staffAuth:
       type: openIdConnect
-      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/staff/.well-known/openid-configuration
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/lifeplatform/.well-known/openid-configuration
     regulatorsAuth:
       type: openIdConnect
-      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/regulators/.well-known/openid-configuration
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/lifeplatform/.well-known/openid-configuration
   schemas:
     ReferenceCodeSetView:
       type: object

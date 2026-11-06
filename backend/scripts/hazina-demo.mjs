@@ -33,12 +33,13 @@ export const FUNDS = [
   { code: "HZ-MMF", name: "Hazina Money Market Fund", assetClass: "MONEY_MARKET", charge: "0.5" },
 ];
 
-function secret(realm) {
-  const json = JSON.parse(readFileSync(resolve(ROOT, `keycloak/${realm}-realm.json`), "utf8"));
+// One realm since 2026-11-06; `realm` names the workspace the caller means and only labels errors.
+function secret() {
+  const json = JSON.parse(readFileSync(resolve(ROOT, "keycloak/lifeplatform-realm.json"), "utf8"));
   return json.clients.find((c) => c.clientId === "lifeplatform-app").secret;
 }
 async function token(realm, username) {
-  const res = await fetch(`${KEYCLOAK}/realms/${realm}/protocol/openid-connect/token`, {
+  const res = await fetch(`${KEYCLOAK}/realms/lifeplatform/protocol/openid-connect/token`, {
     method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "password", client_id: "lifeplatform-app", client_secret: secret(realm), username, password: "devpassword" }),
   });

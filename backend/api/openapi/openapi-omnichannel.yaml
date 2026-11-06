@@ -874,23 +874,23 @@ components:
       type: oauth2
       flows:
         authorizationCode:
-          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/staff/protocol/openid-connect/auth
-          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/staff/protocol/openid-connect/token
+          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/lifeplatform/protocol/openid-connect/auth
+          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/lifeplatform/protocol/openid-connect/token
           scopes: {}
     customersAuth:
       type: oauth2
       flows:
         authorizationCode:
-          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/customers/protocol/openid-connect/auth
-          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/customers/protocol/openid-connect/token
+          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/lifeplatform/protocol/openid-connect/auth
+          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/lifeplatform/protocol/openid-connect/token
           scopes:
             profile: The customer's own records
     agentsAuth:
       type: oauth2
       flows:
         authorizationCode:
-          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/agents/protocol/openid-connect/auth
-          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/agents/protocol/openid-connect/token
+          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/lifeplatform/protocol/openid-connect/auth
+          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/lifeplatform/protocol/openid-connect/token
           scopes: {}
   schemas:
     AgentQuotation:

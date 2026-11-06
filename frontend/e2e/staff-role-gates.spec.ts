@@ -59,7 +59,7 @@ test.describe('product authoring is offered to an admin', () => {
 });
 
 test.describe('waiving a premium is finance-only', () => {
-  test('an underwriter is offered no Waive action, but can still request payment', async ({
+  test('an underwriter is offered neither Waive nor Request payment', async ({
     page,
   }) => {
     // Its own policy, issued here. The literal POL-6BD5702F was 'the seeded policy' until
@@ -71,13 +71,13 @@ test.describe('waiving a premium is finance-only', () => {
     await page.goto(`/staff/policies/${policyNumber}?tab=billing`);
     await expect(page.getByRole('heading', { name: 'Invoices' })).toBeVisible({ timeout: 30_000 });
 
-    // Request payment stays open to everyone -- asking a customer to pay takes nothing away
-    // from anyone, and agents and customers can both do it already. Anchoring on it first is
-    // what stops the absence below being satisfied by an unrendered panel.
-    await expect(page.getByRole('button', { name: 'Request payment' }).first()).toBeVisible({
-      timeout: 20_000,
-    });
+    // Anchored on a rendered invoice row, so the absences below cannot be satisfied by an
+    // unrendered panel. Request payment is no longer offered to an underwriter either: since
+    // de1c6419 the console offers it only to whom its endpoint allows (collections.manage or
+    // policies.service), and an underwriter was being shown a form the server then refused.
+    await expect(page.getByText(/Grace ends/).first()).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole('button', { name: 'Waive', exact: true })).not.toBeVisible();
+    await expect(page.getByRole('button', { name: 'Request payment' })).toHaveCount(0);
   });
 });
 

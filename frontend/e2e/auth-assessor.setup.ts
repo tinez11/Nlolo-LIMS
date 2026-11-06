@@ -9,7 +9,7 @@ import { expect, test as setup } from '@playwright/test';
  * `staff.underwriter` (the default `staff` project identity) carries only the
  * UNDERWRITER role -- no claims role at all -- so claims adjudication e2e
  * coverage needs its own two single-role identities, matching how the backend
- * itself defines them (`backend/keycloak/staff-realm.json`: one role per user).
+ * itself defines them (`backend/keycloak/lifeplatform-realm.json`: one job role per user).
  */
 const ASSESSOR_USER = 'staff.assessor';
 const ASSESSOR_PASSWORD = 'devpassword';
@@ -18,7 +18,7 @@ setup(`authenticate as ${ASSESSOR_USER}`, async ({ page }) => {
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort()); // Keycloak's fonts can stall the sign-in page; it signs in fine without them
   await page.goto('/staff');
 
-  await page.waitForURL(/\/realms\/staff\/protocol\/openid-connect\/auth/, {
+  await page.waitForURL(/\/realms\/lifeplatform\/protocol\/openid-connect\/auth/, {
     timeout: 30_000,
     // The form, not every resource: the login theme's Google Fonts can take 30s+ from here, so "load" may never come.
     waitUntil: 'domcontentloaded',

@@ -90,11 +90,18 @@ ssh deploy@SERVER 'cd platform && ./add-user.sh staff asha.juma \
     --roles UNDERWRITER --home-branch DSM --first-name Asha --last-name Juma'
 ```
 
-Roles are the realm's own: `UNDERWRITER`, `SENIOR_UNDERWRITER`, `CLAIMS_ASSESSOR`, `CLAIMS_MANAGER`,
-`FINANCE_OFFICER`, `FINANCE_APPROVER`, `CUSTOMER_SERVICE_REP`, `ADMIN`. Comma-separate several.
+Everyone signs in at the same address, `https://APP_DOMAIN/`, through one Keycloak realm, `lifeplatform`
+(2026-11-06). The first argument is the **workspace** the login opens: `staff`, `agent` or `regulator`. After
+sign-in the console opens that workspace; an account holding two (an agent who is also a policyholder) is offered a
+choice. A staff login never holds a second workspace.
+
+Job roles are the realm's own: `UNDERWRITER`, `SENIOR_UNDERWRITER`, `CLAIMS_ASSESSOR`, `CLAIMS_MANAGER`,
+`FINANCE_OFFICER`, `FINANCE_APPROVER`, `CUSTOMER_SERVICE_REP`, `ADMIN`. Comma-separate several; `ALL` means every
+job role (never a workspace).
 
 - **Staff need `--home-branch`** — it goes in the token, and without it they cannot post a journal.
-- **Agents need `--party-id`**, the agent's party id from their record in the console.
+- **Agents need `--party-id`**, the agent's party id from their record in the console. Usually staff give an agent a
+  login from the agent's page instead; this is for the first ones.
 - **Customers are not created here.** Staff invite them from the console, which creates the login and writes the
   party id from the record on screen, so nobody transcribes an id.
 
@@ -110,9 +117,15 @@ ssh -L 8081:localhost:8081 deploy@SERVER
 
 then open `http://localhost:8081/admin` — user `admin`, password `KC_ADMIN_PASSWORD` from the server's `.env`.
 
-Realms themselves are configuration, not console work: they are generated from `backend/keycloak/*-realm.json`
+The realm itself is configuration, not console work: it is generated from `backend/keycloak/lifeplatform-realm.json`
 by `deploy/keycloak/build-realms.mjs` and applied on every release. A change made by hand in the console will be
 overwritten by the next release unless it is a user (users are never deleted).
+
+**Upgrading a server from the four realms (2026-11-06).** Before the first release that carries the one realm, add
+`ADMIN_CLIENT_SECRET=<a new random secret>` to the server's `.env` (`openssl rand -base64 36 | tr -d '/+=' | cut
+-c1-32`) and remove `PORTAL_ADMIN_CLIENT_SECRET`, `STAFF_ADMIN_CLIENT_SECRET` and `AGENTS_ADMIN_CLIENT_SECRET`. The
+release creates `lifeplatform`; the old `staff`, `agents`, `customers` and `regulators` realms are no longer read and
+can be deleted from the admin console. Their users are not moved: there were no real users when this changed.
 
 ## 8. Switching email on
 
@@ -134,7 +147,7 @@ Clients with an email address then get an emailed set-your-password link instead
 3. DNS `A` records for the new names.
 4. `deploy/release.sh v0.x.0`.
 
-Everyone signs in again once; nothing else is affected. Keycloak's realm redirect URIs follow `APP_DOMAIN`
+Everyone signs in again once; nothing else is affected. The realm's redirect URIs follow `APP_DOMAIN`
 automatically.
 
 ## 10. The SMS allowlist
@@ -162,7 +175,7 @@ ssh deploy@SERVER 'cd platform && sed -i "s/^SMS_GATEWAY_ALLOWED_RECIPIENTS=.*/S
 - **One backend instance.** The scheduled jobs have no cluster lock; a second instance would duplicate them.
 - **Mobile money is a mock.** Its callbacks are signed with the mock's own secret, so payments through that rail
   may not confirm. Record premiums as cash or field receipts until a real rail is integrated.
-- **No two-factor login.** The realms carry a password policy and brute-force lockout; a second factor is a realm
+- **No two-factor login.** The realm carries a password policy and brute-force lockout; a second factor is a realm
   setting away when you want it.
 - **No Grafana, no alerting, no JSON logs, no tracing.** The uptime monitor and `status.sh` are the pilot's
   whole observability story.

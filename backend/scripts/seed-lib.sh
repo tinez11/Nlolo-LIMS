@@ -13,8 +13,8 @@ uuid() {
   fi
 }
 
-token_for() {   # token_for <realm> <username> <client-secret>
-  curl -sf -X POST "$KEYCLOAK/realms/$1/protocol/openid-connect/token" \
+token_for() {   # token_for <workspace, unused since 2026-11-06: one realm> <username> <client-secret>
+  curl -sf -X POST "$KEYCLOAK/realms/lifeplatform/protocol/openid-connect/token" \
     -d grant_type=password -d client_id=lifeplatform-app -d client_secret="$3" \
     -d username="$2" -d password=devpassword \
   | sed 's/.*"access_token":"\([^"]*\)".*/\1/'
@@ -37,13 +37,13 @@ jsonval() {     # jsonval <json> <field>  -- crude, dependency-free single-level
   grep -o "\"$2\" *: *\"[^\"]*\"" <<<"$1" | head -1 | sed -E 's/.*: *"([^"]*)"/\1/'
 }
 
-realm_secret() {   # realm_secret <staff|customers|agents> -- lifeplatform-app's secret, the client token_for uses
-  # By client id, not "the first secret in the file": the agents realm gained lifeplatform-agents-admin ahead of
-  # lifeplatform-app, and the first-match version quietly handed every agent token request the wrong secret.
+realm_secret() {   # realm_secret <anything> -- lifeplatform-app's secret, the client token_for uses
+  # One realm since 2026-11-06, so the argument no longer matters; kept so the call sites need no edit. By client id,
+  # not "the first secret in the file": the first-match version once handed every agent token the wrong secret.
   node -e '
     const realm = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
     const app = (realm.clients || []).find((c) => c.clientId === "lifeplatform-app");
     if (!app || !app.secret) { console.error("no lifeplatform-app secret in " + process.argv[1]); process.exit(1); }
     process.stdout.write(app.secret);
-  ' "keycloak/$1-realm.json"
+  ' "keycloak/lifeplatform-realm.json"
 }

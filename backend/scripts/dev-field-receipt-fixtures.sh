@@ -29,7 +29,7 @@ PSQL=(docker compose -f infra/docker-compose.yml exec -T postgres psql -U postgr
 AGENTS_SECRET=$(source scripts/seed-lib.sh; realm_secret agents)
 
 token_for() {   # token_for <realm> <username> <client-secret>
-  curl -sf -X POST "$KEYCLOAK/realms/$1/protocol/openid-connect/token" \
+  curl -sf -X POST "$KEYCLOAK/realms/lifeplatform/protocol/openid-connect/token" \
     -d grant_type=password -d client_id=lifeplatform-app -d client_secret="$3" \
     -d username="$2" -d password=devpassword \
   | sed 's/.*"access_token":"\([^"]*\)".*/\1/'

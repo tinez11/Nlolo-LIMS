@@ -58,7 +58,7 @@ Two consequences that bind the design:
    single insurer's brand may be baked in. There is no logo or brand asset
    anywhere in the repo today; `Life Platform` is a placeholder wordmark
    appearing in exactly two files (`components/AppShell.tsx`,
-   `features/RealmPicker.tsx`).
+   `features/WorkspaceHome.tsx`).
 2. **Tenancy is invisible on purpose and must stay that way.**
    `TenantContextFilter` reads `tenant_id` from the validated JWT only. There is
    no `X-Tenant-Id` header, no client-supplied tenant input, and Postgres RLS

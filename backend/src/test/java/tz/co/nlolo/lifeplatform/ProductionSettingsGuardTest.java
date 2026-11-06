@@ -24,9 +24,7 @@ class ProductionSettingsGuardTest {
         s.put("communication.sms-gateway.live", "true");
         s.put("communication.sms-gateway.authorization", "Basic cmVhbA==");
         s.put("app.portal.url", "https://portal.example.tz/customers");
-        for (String realm : new String[] {"customers", "agents", "staff", "regulators"}) {
-            s.put("app.security.issuers." + realm, "https://login.example.tz/realms/" + realm);
-        }
+        s.put("app.security.issuer", "https://login.example.tz/realms/lifeplatform");
         return s;
     }
 
@@ -56,12 +54,12 @@ class ProductionSettingsGuardTest {
         Map<String, String> s = realLooking();
         s.remove("spring.datasource.password");
         s.put("communication.sms-gateway.authorization", "");
-        s.put("app.security.issuers.staff", "http://localhost:8081/realms/staff");
+        s.put("app.security.issuer", "http://localhost:8081/realms/lifeplatform");
         s.put("app.portal.url", "http://localhost:5173/customers");
         assertThat(ProductionSettingsGuard.problems(s::get)).containsExactlyInAnyOrder(
             "spring.datasource.password is not set",
             "communication.sms-gateway.live is true but communication.sms-gateway.authorization is empty",
-            "app.security.issuers.staff must be an https:// address",
+            "app.security.issuer must be an https:// address",
             "app.portal.url must be an https:// address");
     }
 

@@ -172,10 +172,7 @@ services:
       MINIO_ENDPOINT: http://objectstore:8333
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
-      KEYCLOAK_ISSUER_CUSTOMERS: http://keycloak:8080/realms/customers
-      KEYCLOAK_ISSUER_AGENTS: http://keycloak:8080/realms/agents
-      KEYCLOAK_ISSUER_STAFF: http://keycloak:8080/realms/staff
-      KEYCLOAK_ISSUER_REGULATORS: http://keycloak:8080/realms/regulators
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/lifeplatform
       MOBILE_MONEY_GATEWAY_BASE_URL: http://mock-mobile-money:8080
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"

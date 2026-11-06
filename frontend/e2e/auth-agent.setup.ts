@@ -2,7 +2,7 @@ import { test as setup } from '@playwright/test';
 import { signInAsAgent } from './agentSession';
 
 /**
- * Signs in through the REAL Keycloak `agents` realm, as `agent.senior` --
+ * Signs in through the REAL Keycloak realm (`lifeplatform`), into the agent workspace, as `agent.senior` --
  * seeded by `backend/scripts/seed-dev-data.sh`, which onboards a real
  * AgentProfile for this user (top of a 2-agent hierarchy, `agent.junior`
  * beneath it) and writes the resulting `partyId` back onto the Keycloak user

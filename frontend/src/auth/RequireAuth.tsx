@@ -4,10 +4,9 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { SessionSplash } from '@/components/SessionSplash';
 import { readReturnRouterState, readReturnTo, returnToState } from './returnTo';
-import { REALM_CONFIG, type Realm } from './realms';
 
 /**
- * Gate for a realm's routes.
+ * Gate for every signed-in route (one realm for everyone since 2026-11-06).
  *
  * Because tokens are held in memory only, a page reload always starts
  * unauthenticated. That is the intended trade: instead of a refresh token sitting
@@ -18,7 +17,7 @@ import { REALM_CONFIG, type Realm } from './realms';
  * produce a redirect loop the user cannot escape if the SSO session is genuinely
  * gone.
  */
-export function RequireAuth({ realm, children }: { realm: Realm; children: ReactNode }) {
+export function RequireAuth({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const attempted = useRef(false);
 
@@ -46,7 +45,7 @@ export function RequireAuth({ realm, children }: { realm: Realm; children: React
   // error first would tear down the whole console over a renew hiccup the user
   // never needed to see.
   if (auth.isAuthenticated) {
-    return <RestoreLocation realm={realm}>{children}</RestoreLocation>;
+    return <RestoreLocation>{children}</RestoreLocation>;
   }
 
   if (auth.error) {
@@ -57,7 +56,7 @@ export function RequireAuth({ realm, children }: { realm: Realm; children: React
           <p className="mt-1 text-xs text-muted-foreground">{auth.error.message}</p>
           <p className="mt-3 text-xs text-subtle-foreground">
             Check that Keycloak is running and that the <code>lifeplatform-spa</code> client
-            exists in the <code>{REALM_CONFIG[realm].realm}</code> realm.
+            exists in the <code>lifeplatform</code> realm.
           </p>
           <Button
             className="mt-4"
@@ -77,7 +76,7 @@ export function RequireAuth({ realm, children }: { realm: Realm; children: React
     );
   }
 
-  return <SessionSplash label="Signing you in" console={REALM_CONFIG[realm].label} />;
+  return <SessionSplash label="Signing you in" />;
 }
 
 /**
@@ -106,7 +105,7 @@ export function RequireAuth({ realm, children }: { realm: Realm; children: React
  * Note that onSigninCallback's history.replaceState does NOT clear these from the
  * router's own location, which is precisely why they are still readable here.
  */
-function RestoreLocation({ realm, children }: { realm: Realm; children: ReactNode }) {
+function RestoreLocation({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const location = useLocation();
 
@@ -117,7 +116,7 @@ function RestoreLocation({ realm, children }: { realm: Realm; children: ReactNod
     // The callback URL is never a real destination, so always leave it.
     return (
       <Navigate
-        to={readReturnTo(auth.user) ?? `/${REALM_CONFIG[realm].slug}`}
+        to={readReturnTo(auth.user) ?? '/'}
         state={readReturnRouterState(auth.user)}
         replace
       />

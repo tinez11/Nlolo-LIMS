@@ -1,16 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { entryPath, hasRealmFallback } from './entryPath';
+import { hasRealmFallback } from './entryPath';
 import { REALM_HOME } from './screens';
-
-describe('entryPath', () => {
-  it('shows the realm picker in development', () => {
-    expect(entryPath(true)).toBeNull();
-  });
-
-  it('opens the customer portal in production', () => {
-    expect(entryPath(false)).toBe('/customers');
-  });
-});
 
 describe('hasRealmFallback', () => {
   it('a realm with a home may redirect its unknown paths there', () => {

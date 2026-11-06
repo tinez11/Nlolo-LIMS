@@ -6,8 +6,10 @@
 
   The agents' and customers' realms send a link AND a code by text (lifeplatform-reset-delivery); staff and regulators
   are sent the link alone. The sentence says which, so nobody waits for a text that is not coming.
+
+  2026-11-06: the one realm, `lifeplatform`, runs the link-and-code flow for everyone, so it says "both".
 -->
-<#assign bothWays = realm.name == "agents" || realm.name == "customers">
+<#assign bothWays = realm.name == "lifeplatform" || realm.name == "agents" || realm.name == "customers">
 <@layout.registrationLayout displayMessage=!messagesPerField.existsError('username'); section>
     <#if section = "header">
         ${msg("emailForgotTitle")}

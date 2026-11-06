@@ -34,14 +34,26 @@ Standard response set reused via `$ref` in every module spec: `400` (validation)
 
 ## 3. Authentication & Authorization
 
-**Four Keycloak realms** (three specified in your original prompt, plus one I've added and want your sign-off on): `customers`, `agents`, `staff`, and **`regulators`** *(new — I split this out from `staff` since TIRA's read-only portal is an external body with fundamentally different trust and audit requirements than internal back-office staff; confirm you're comfortable with a fourth realm rather than a read-only role inside `staff`)*.
+**One Keycloak realm, `lifeplatform`, with four workspaces** (2026-11-06, universal login: one sign-in page for everyone). Until then there were four realms -- `customers`, `agents`, `staff`, `regulators` -- and the realm that issued a token said who its holder was. Now the account's **workspace roles** say which consoles it may open: `customer`, `agent`, `staff`, `regulator`. The table below still uses the four names; read them as workspaces.
+
+**Each request acts in exactly one workspace**, named by the `X-Workspace` request header (`staff` | `agent` | `customer` | `regulator`). The backend (`iam/infrastructure/Workspace.java`, `SecurityConfig`) turns it into the single authority every check reads -- `ROLE_REALM_STAFF`, `ROLE_REALM_AGENTS`, `ROLE_REALM_CUSTOMERS` or `ROLE_REALM_REGULATORS` -- never more than one:
+
+| Token's workspace roles | `X-Workspace` | Result |
+|---|---|---|
+| exactly one | absent | that workspace |
+| several (e.g. agent + customer) | absent | `400`, `errorCode: WORKSPACE_REQUIRED` |
+| any | names one the token holds | that workspace |
+| any | names one the token does not hold, or an unknown value | `403`, `errorCode: WORKSPACE_NOT_HELD` |
+| none | any | `403`, `errorCode: NO_WORKSPACE` |
+
+Job roles (`UNDERWRITER`, `ADMIN`, …, and `TIRA_READ_ONLY`) become authorities only in the staff and regulator workspaces, so an agent who is also a policyholder carries the same powers as either alone. A staff account never holds a second workspace (decision U10); an agent and a customer login of the same party share one account. The console derives the header from its URL prefix (`/staff`, `/agents`, `/customers`).
 
 **Tenant and identity never come from client input.** `tenant_id` and `party_id` are read exclusively from validated JWT claims — no endpoint accepts either as a header, query parameter, or body field that could be spoofed to access another tenant's or another party's data.
 
 **Object-level authorization (not just role-based) is mandatory** on every customer- and agent-scoped endpoint — this is called out explicitly in `openapi-common.yaml`'s `403` response description because it's the OWASP API Top-10 #1 risk (Broken Object Level Authorization) and the single easiest thing to get wrong in a multi-tenant, multi-channel system like this one:
-- A `customers`-realm token may only read/act on resources where `policyholderPartyId` / `claimantPartyId` / etc. equals the token's own `party_id` claim.
-- An `agents`-realm token is scoped to policies where the agent is `agentOfRecord`, or within their agency hierarchy for supervisors.
-- `staff`-realm tokens carry role claims (`UNDERWRITER`, `CLAIMS_ASSESSOR`, `CLAIMS_MANAGER`, `FINANCE_OFFICER`, `CUSTOMER_SERVICE_REP`, `ADMIN`) — note `CLAIMS_ASSESSOR` and `CLAIMS_MANAGER` are deliberately separate roles in the `claims` spec (assessment vs. settlement decision), a basic separation-of-duties control for a financial-approval workflow.
+- A request in the customer workspace may only read/act on resources where `policyholderPartyId` / `claimantPartyId` / etc. equals the token's own `party_id` claim.
+- A request in the agent workspace is scoped to policies where the agent is `agentOfRecord`, or within their agency hierarchy for supervisors.
+- Requests in the staff workspace carry role claims (`UNDERWRITER`, `CLAIMS_ASSESSOR`, `CLAIMS_MANAGER`, `FINANCE_OFFICER`, `CUSTOMER_SERVICE_REP`, `ADMIN`) — note `CLAIMS_ASSESSOR` and `CLAIMS_MANAGER` are deliberately separate roles in the `claims` spec (assessment vs. settlement decision), a basic separation-of-duties control for a financial-approval workflow.
 
 **Auth summary by module** (detail is in each spec's `security:` blocks):
 

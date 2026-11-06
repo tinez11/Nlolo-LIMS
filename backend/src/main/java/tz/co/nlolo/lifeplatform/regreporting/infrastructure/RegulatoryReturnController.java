@@ -36,8 +36,8 @@ import java.util.UUID;
  * the literal {@code REALM_REGULATORS} before writing this class: zero hits outside this class and
  * this task's own planning documents. The realm itself, and the {@code ROLE_REALM_REGULATORS}
  * granted authority it maps to, already exist end-to-end in {@code SecurityConfig}
- * (app.security.issuers.regulators, {@code authoritiesFor}'s {@code "ROLE_REALM_" + realmMarker})
- * from Deliverable 6 onward -- this controller is simply the first endpoint to gate on it.
+ * from Deliverable 6 onward -- since 2026-11-06 as the {@code regulator} workspace role of the one realm
+ * ({@code Workspace.REGULATOR}) -- and this controller is simply the first endpoint to gate on it.
  *
  * <p><b>Regulators are necessarily tenant-scoped.</b> {@code TenantContextFilter} 403s (errorCode
  * {@code TENANT_CLAIM_MISSING}) any authenticated request whose JWT lacks a valid {@code tenant_id}

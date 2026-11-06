@@ -1,19 +1,18 @@
 #!/usr/bin/env node
 /**
- * Generates the production realm files from the dev ones (2026-10-13, deployment pilot §3).
+ * Generates the production realm from the dev one (2026-10-13, deployment pilot §3; one realm since 2026-11-06).
  *
- * ONE SOURCE. The spec called for a hand-written production copy of each realm plus a test asserting the two agree.
- * Generating them instead removes the thing the test would have been guarding against: there is no second copy to
- * drift. Roles, clients and token mappers come from backend/keycloak/*-realm.json -- the files dev already proves
- * every day -- and only what production must differ in is applied here.
+ * ONE SOURCE. The spec called for a hand-written production copy plus a test asserting the two agree. Generating it
+ * instead removes the thing the test would have been guarding against: there is no second copy to drift. Roles,
+ * clients and token mappers come from backend/keycloak/lifeplatform-realm.json -- the file dev already proves every day
+ * -- and only what production must differ in is applied here.
  *
  * What production changes:
  *   - every dev user and every dev secret is dropped (keycloak-config-cli's IMPORT_MANAGED_USER=no-delete leaves the
  *     real users it never created alone)
- *   - lifeplatform-spa points at APP_DOMAIN alone, and the regulators realm GAINS it -- it had no console client at
- *     all, so a regulator could not have signed in
+ *   - lifeplatform-spa points at APP_DOMAIN alone
  *   - lifeplatform-app, the confidential password-grant client pointing at localhost:3000, is left out entirely
- *   - a password policy and brute-force lockout on all four realms (the user's D5; no second factor yet)
+ *   - a password policy and brute-force lockout (the user's D5; no second factor yet)
  *   - SMTP and self-service password reset, both driven by MAIL_ENABLED
  *
  * Output carries keycloak-config-cli's `$(env:NAME)` tokens, substituted on the server from its .env.
@@ -25,11 +24,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const DEV = resolve(here, '../../backend/keycloak');
-const REALMS = ['staff', 'agents', 'customers', 'regulators'];
+const DEV = resolve(here, '../../backend/keycloak/lifeplatform-realm.json');
 const APP = 'https://$(env:APP_DOMAIN)';
-
-const dev = (name) => JSON.parse(readFileSync(join(DEV, `${name}-realm.json`), 'utf8'));
 
 /** Keycloak assigns its own ids; carrying dev's would tie two unrelated installations together. */
 function withoutId(object) {
@@ -47,7 +43,7 @@ function productionSpa(client) {
   return spa;
 }
 
-export function buildRealm(realm, staffSpa) {
+export function buildRealm(realm) {
   const r = structuredClone(realm);
 
   // Dev users are dev's. The service account belongs to its client, not to a person, and must stay.
@@ -58,24 +54,10 @@ export function buildRealm(realm, staffSpa) {
   if (r.clientScopeMappings) delete r.clientScopeMappings['lifeplatform-app'];
   if (r.scopeMappings) r.scopeMappings = r.scopeMappings.filter((m) => m.client !== 'lifeplatform-app');
 
-  let spa = r.clients.find((c) => c.clientId === 'lifeplatform-spa');
-  if (!spa) {
-    // The regulators realm never had the console's client. Built from staff's, carrying only tenant_id: a regulator
-    // owns no policy, so party_id would mean nothing, and home_branch is a staff idea.
-    spa = withoutId(staffSpa);
-    spa.protocolMappers = (spa.protocolMappers ?? []).filter((m) => m.name === 'tenant_id');
-    r.clients.push(spa);
-  }
   r.clients = r.clients.map((c) => (c.clientId === 'lifeplatform-spa' ? productionSpa(c) : c));
   for (const client of r.clients) {
     if (client.clientId === 'lifeplatform-admin') {
-      client.secret = '$(env:PORTAL_ADMIN_CLIENT_SECRET)';
-    }
-    if (client.clientId === 'lifeplatform-staff-admin') {
-      client.secret = '$(env:STAFF_ADMIN_CLIENT_SECRET)';
-    }
-    if (client.clientId === 'lifeplatform-agents-admin') {
-      client.secret = '$(env:AGENTS_ADMIN_CLIENT_SECRET)';
+      client.secret = '$(env:ADMIN_CLIENT_SECRET)';
     }
   }
 
@@ -104,10 +86,8 @@ export function buildRealm(realm, staffSpa) {
 
 export function buildAll(outDir) {
   mkdirSync(outDir, { recursive: true });
-  const staffSpa = dev('staff').clients.find((c) => c.clientId === 'lifeplatform-spa');
-  for (const name of REALMS) {
-    writeFileSync(join(outDir, `${name}.json`), JSON.stringify(buildRealm(dev(name), staffSpa), null, 2) + '\n');
-  }
+  const dev = JSON.parse(readFileSync(DEV, 'utf8'));
+  writeFileSync(join(outDir, 'lifeplatform.json'), JSON.stringify(buildRealm(dev), null, 2) + '\n');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -117,5 +97,5 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exit(1);
   }
   buildAll(resolve(outDir));
-  console.log(`Wrote ${REALMS.length} production realms to ${outDir}`);
+  console.log(`Wrote the production realm to ${outDir}`);
 }

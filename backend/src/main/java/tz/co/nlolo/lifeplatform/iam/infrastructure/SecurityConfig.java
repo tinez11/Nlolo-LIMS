@@ -21,7 +21,6 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
-import org.springframework.security.oauth2.server.resource.authentication.JwtIssuerAuthenticationManagerResolver;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import tz.co.nlolo.lifeplatform.payment.infrastructure.MobileMoneyHmacFilter;
@@ -32,12 +31,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Multi-issuer JWT resource server, one AuthenticationManager per Keycloak
- * realm from docs/04-api-contracts.md §3. Every authenticated request gets a
- * synthetic ROLE_REALM_<X> authority (used by @PreAuthorize checks that need
- * "any token from this realm" -- customers/agents/regulators have no specific
- * role names defined anywhere in the Phase 0 docs, only staff does) plus a
- * ROLE_<Y> authority per Keycloak realm_access.roles entry (staff's six roles).
+ * JWT resource server for the one Keycloak realm, {@code lifeplatform} (2026-11-06; four realms before -- see
+ * docs/04-api-contracts.md §3). Each request acts in one workspace (see {@link Workspace}) and gets that workspace's
+ * synthetic ROLE_REALM_<X> authority -- the names every @PreAuthorize already reads -- plus, in the staff and regulator
+ * workspaces, a ROLE_<Y> authority per job role in realm_access.roles.
  *
  * Decoders are constructed lazily (see lazyDecoder below): NimbusJwtDecoder.
  * withIssuerLocation(...).build() makes an EAGER HTTP call to the issuer's
@@ -56,27 +53,19 @@ public class SecurityConfig {
 
     @Bean
     public AuthenticationManagerResolver<HttpServletRequest> issuerAuthenticationManagerResolver(
-            @Value("${app.security.issuers.customers}") String customersIssuer,
-            @Value("${app.security.issuers.agents}") String agentsIssuer,
-            @Value("${app.security.issuers.staff}") String staffIssuer,
-            @Value("${app.security.issuers.regulators}") String regulatorsIssuer) {
-
-        Map<String, AuthenticationManager> managersByIssuer = Map.of(
-            customersIssuer, authenticationManagerFor(customersIssuer, "CUSTOMERS"),
-            agentsIssuer, authenticationManagerFor(agentsIssuer, "AGENTS"),
-            staffIssuer, authenticationManagerFor(staffIssuer, "STAFF"),
-            regulatorsIssuer, authenticationManagerFor(regulatorsIssuer, "REGULATORS")
-        );
-        return new JwtIssuerAuthenticationManagerResolver(managersByIssuer::get);
-    }
-
-    private AuthenticationManager authenticationManagerFor(String issuer, String realmMarker) {
+            @Value("${app.security.issuer}") String issuer) {
         JwtDecoder decoder = lazyDecoder(issuer);
-        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-        converter.setJwtGrantedAuthoritiesConverter(jwt -> authoritiesFor(jwt, realmMarker));
-        JwtAuthenticationProvider provider = new JwtAuthenticationProvider(decoder);
-        provider.setJwtAuthenticationConverter(converter);
-        return provider::authenticate;
+        // Per request, because the authorities depend on the request's X-Workspace header. The decoder -- and with it
+        // the issuer check that refuses a token from any other realm -- is shared.
+        return request -> {
+            String workspace = request.getHeader(Workspace.HEADER);
+            JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+            converter.setJwtGrantedAuthoritiesConverter(jwt -> authoritiesFor(jwt, workspace));
+            JwtAuthenticationProvider provider = new JwtAuthenticationProvider(decoder);
+            provider.setJwtAuthenticationConverter(converter);
+            AuthenticationManager manager = provider::authenticate;
+            return manager;
+        };
     }
 
     private static JwtDecoder lazyDecoder(String issuer) {
@@ -99,15 +88,28 @@ public class SecurityConfig {
         };
     }
 
-    @SuppressWarnings("unchecked")
-    static Collection<GrantedAuthority> authoritiesFor(Jwt jwt, String realmMarker) {
-        List<GrantedAuthority> authorities = new ArrayList<>();
-        authorities.add(new SimpleGrantedAuthority("ROLE_REALM_" + realmMarker));
-
+    /** The token's realm roles, as a list. */
+    static List<String> realmRoles(Jwt jwt) {
         Map<String, Object> realmAccess = jwt.getClaim("realm_access");
-        if (realmAccess != null && realmAccess.get("roles") != null) {
-            for (String role : (Collection<String>) realmAccess.get("roles")) {
-                authorities.add(new SimpleGrantedAuthority("ROLE_" + role));
+        if (realmAccess == null || !(realmAccess.get("roles") instanceof Collection<?> roles)) return List.of();
+        return roles.stream().filter(String.class::isInstance).map(String.class::cast).toList();
+    }
+
+    /**
+     * One {@code ROLE_REALM_<X>} for the request's workspace -- the names every {@code @PreAuthorize} already reads --
+     * plus {@code ROLE_<role>} for each job role where the workspace carries them (staff, regulator). Nothing at all
+     * when the workspace cannot be resolved; {@link WorkspaceFilter} then answers the request with why.
+     */
+    static Collection<GrantedAuthority> authoritiesFor(Jwt jwt, String workspaceHeader) {
+        List<String> roles = realmRoles(jwt);
+        if (!(Workspace.resolve(roles, workspaceHeader) instanceof Workspace.Resolution.Active active)) {
+            return List.of();
+        }
+        List<GrantedAuthority> authorities = new ArrayList<>();
+        authorities.add(new SimpleGrantedAuthority("ROLE_REALM_" + active.workspace().marker()));
+        if (active.workspace().carriesJobRoles()) {
+            for (String role : roles) {
+                if (!Workspace.isWorkspaceRole(role)) authorities.add(new SimpleGrantedAuthority("ROLE_" + role));
             }
         }
         return authorities;
@@ -197,7 +199,8 @@ public class SecurityConfig {
             .oauth2ResourceServer(oauth2 -> oauth2
                 .authenticationManagerResolver(issuerAuthenticationManagerResolver))
             .addFilterBefore(mobileMoneyHmacFilter, BearerTokenAuthenticationFilter.class)
-            .addFilterAfter(new TenantContextFilter(objectMapper), BearerTokenAuthenticationFilter.class);
+            .addFilterAfter(new WorkspaceFilter(objectMapper), BearerTokenAuthenticationFilter.class)
+            .addFilterAfter(new TenantContextFilter(objectMapper), WorkspaceFilter.class);
         return http.build();
     }
 }

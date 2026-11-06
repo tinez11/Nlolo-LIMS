@@ -3,8 +3,7 @@ import { expect, test as setup } from '@playwright/test';
 /**
  * Signs in as the finance approver (IFRS 17 I4): FINANCE_OFFICER and FINANCE_APPROVER, the only role that approves
  * or rejects a manual journal -- and never one it prepared, which is why it is a second, separate identity from
- * staff.finance. Seeded by keycloak/staff-realm.json, and added to a running dev Keycloak by
- * backend/scripts/apply-finance-approver.sh.
+ * staff.finance. Seeded by keycloak/lifeplatform-realm.json.
  */
 const FINANCE_USER = 'staff.finance-approver';
 const FINANCE_PASSWORD = 'devpassword';
@@ -13,7 +12,7 @@ setup(`authenticate as ${FINANCE_USER}`, async ({ page }) => {
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort()); // Keycloak's fonts can stall the sign-in page; it signs in fine without them
   await page.goto('/staff');
 
-  await page.waitForURL(/\/realms\/staff\/protocol\/openid-connect\/auth/, {
+  await page.waitForURL(/\/realms\/lifeplatform\/protocol\/openid-connect\/auth/, {
     timeout: 30_000,
     // The form, not every resource: the login theme's Google Fonts can take 30s+ from here, so "load" may never come.
     waitUntil: 'domcontentloaded',
