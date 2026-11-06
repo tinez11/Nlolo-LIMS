@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Field } from '@/components/Field';
-import { Panel } from '@/components/Panel';
 import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
@@ -36,7 +35,12 @@ export function ClientOverview({
     <div className="space-y-5">
       <KycBand party={party} isStaff={isStaff} documents={documents} />
 
-      <div className="grid items-start gap-5 lg:grid-cols-2 xl:grid-cols-3">
+      {/* One sheet, not four cards (2026-11-06). Cards of uneven height in a three-column grid left holes
+          between them and columns too narrow for an email address; on one card the sections read down
+          two columns like a printed policy schedule, and an empty one leaves no gap behind. */}
+      {/* Columns, not a grid: sections flow down the first column then the second, so a short one never
+          leaves a hole beside a long one. */}
+      <div className="gap-x-12 rounded-xl bg-surface px-6 py-5 shadow-card lg:columns-2 [&>section]:mb-6 [&>section]:break-inside-avoid [&>section:last-child]:mb-0">
         <Section title="Identity">
           <Field label="Type" value={partyTypeLabel(party.partyType)} />
           {/* Only where it applies to this kind of party, or where one is recorded anyway: a company's "Date of
@@ -78,20 +82,16 @@ export function ClientOverview({
         {/* Individuals only, and only when something is on record: a corporate has none of this, and a panel of em
             dashes would read as data the platform lost rather than never asked for. */}
         {isIndividual && hasPersonRecord(party) && (
-          <Section title="Underwriting facts" subtitle="What a premium is rated on.">
+          <Section title="Underwriting facts">
             <Field label="Sex" value={party.sex ? SEX_LABELS[party.sex] : '—'} />
+            {/* The absence said as the value, not explained in a note under a dash: "Not asked" stays distinct
+                from "Declined to say", which is a recorded answer a product may price. */}
             <Field
               label="Smoker status"
-              value={party.smokerStatus ? SMOKER_LABELS[party.smokerStatus] : '—'}
-              // UNKNOWN is a recorded answer a product may price; absent means nobody asked.
-              {...(party.smokerStatus ? {} : { note: 'Never asked — not the same as declined.' })}
+              value={party.smokerStatus ? SMOKER_LABELS[party.smokerStatus] : <Quiet>Not asked</Quiet>}
             />
             <Field label="Occupation" value={party.occupation ?? '—'} />
-            <Field
-              label="Occupation class"
-              value={party.occupationClass ?? '—'}
-              {...(party.occupationClass ? {} : { note: 'Unclassified — no occupation loading can apply.' })}
-            />
+            <Field label="Occupation class" value={party.occupationClass ?? <Quiet>Unclassified</Quiet>} />
             <Field label="Employer" value={party.employerName ?? '—'} />
           </Section>
         )}
@@ -115,13 +115,11 @@ export function ClientOverview({
                   <span className="text-muted-foreground"> · agent</span>
                 </span>
               }
-              note="Commission on this client’s policies accrues to this agent."
             />
           ) : (
             <Field
               label="Registered by"
-              value={party.createdByName ?? 'Name not recorded'}
-              note="No agent introduced this client, so their business is direct."
+              value={<span>{party.createdByName ?? 'Name not recorded'}<span className="text-muted-foreground"> · direct</span></span>}
             />
           )}
           <Field label="Client id" value={<span className="font-mono text-xs select-all">{partyId}</span>} />
@@ -131,12 +129,19 @@ export function ClientOverview({
   );
 }
 
-function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
+/** A group on the client sheet: its own heading and rows, flat on the sheet's card (no card inside a card). */
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Panel title={title} {...(subtitle ? { subtitle } : {})}>
-      <dl className="px-4 pb-2">{children}</dl>
-    </Panel>
+    <section className="min-w-0">
+      <h2 className="mb-1 border-b border-border pb-1.5 font-display text-sm font-semibold">{title}</h2>
+      <dl>{children}</dl>
+    </section>
   );
+}
+
+/** A value that is a state of the record ("Not asked", "Unclassified") rather than a fact about the client. */
+function Quiet({ children }: { children: ReactNode }) {
+  return <span className="text-subtle-foreground">{children}</span>;
 }
 
 const KYC_LINE: Record<string, string> = {
