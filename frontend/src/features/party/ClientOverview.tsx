@@ -133,7 +133,7 @@ export function ClientOverview({
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="min-w-0">
-      <h2 className="mb-1 border-b border-border pb-1.5 font-display text-sm font-semibold">{title}</h2>
+      <h2 className="mb-1 border-b-2 border-accent/40 pb-1.5 font-display text-sm font-semibold">{title}</h2>
       <dl>{children}</dl>
     </section>
   );

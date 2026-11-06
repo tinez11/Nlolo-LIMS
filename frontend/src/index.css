@@ -35,7 +35,7 @@
   the page, a field edge stays at 3:1 -- only the hue and the material changed.
 */
 :root {
-  --background: oklch(0.975 0.006 200);
+  --background: oklch(0.972 0.014 200);
   --foreground: oklch(0.22 0.03 230);
 
   --surface: oklch(1 0 0);
@@ -55,7 +55,10 @@
     empty field read as a filled one. The placeholder is pinned at the lightest value that still keeps
     4.5:1 on the --control ground (Y ~ L^3: 0.54 -> 4.5:1), never lighter.
   */
-  --label: oklch(0.36 0.03 230);
+  /* Slate blue, not near-black (user, 2026-11-06): a label is told apart from the navy value by its HUE
+     as well as its lightness, so it can stay at normal weight. ~6.8:1 on white. Never teal -- teal
+     means "act here" on this platform, and a teal label would read as a link. */
+  --label: oklch(0.5 0.15 255);
   --placeholder: oklch(0.54 0.012 220);
 
   --border: oklch(0.915 0.01 210);
@@ -75,20 +78,20 @@
     failing. 3:1 needs L <= 0.67.
   */
   --input: oklch(0.66 0.015 220);
-  --ring: oklch(0.52 0.11 190);
+  --ring: oklch(0.52 0.14 190);
 
   /* Teal. White on it is ~5.5:1. */
-  --accent: oklch(0.52 0.11 190);
+  --accent: oklch(0.52 0.14 190);
   --accent-foreground: oklch(0.99 0 0);
   /* Both teal-tinted, selected one step deeper so a hovered row never reads as the chosen one. */
-  --hover: oklch(0.96 0.022 190);
-  --selected: oklch(0.935 0.04 190);
+  --hover: oklch(0.96 0.03 190);
+  --selected: oklch(0.93 0.055 190);
 
   /* The filled ground of a control -- Espresso's #f3f3f3. A GROUND, never a boundary: at
      1.11:1 against paper it cannot identify a field on its own (WCAG 1.4.11), which is why
      text fields keep their --input border on top of it. Buttons need no boundary: their
      label identifies them. */
-  --control: oklch(0.96 0.008 200);
+  --control: oklch(0.965 0.02 230);
   --control-hover: oklch(0.935 0.01 200);
   /* A filled control while it is held down: one step past hover, so a press reads as a press. */
   --control-press: oklch(0.9 0.012 200);
@@ -142,7 +145,7 @@
   --muted-foreground: oklch(0.74 0.02 220);
   --subtle-foreground: oklch(0.7 0.02 220);
   /* The same ladder inverted: label brighter than hint, placeholder the dimmest that keeps 4.5:1 on a field. */
-  --label: oklch(0.87 0.012 210);
+  --label: oklch(0.78 0.12 250);
   --placeholder: oklch(0.68 0.015 220);
 
   --border: oklch(1 0 0 / 10%);
@@ -151,10 +154,10 @@
      1.4.11 failure as the light theme, and worse. Alpha rather than a flat
      lightness so it keeps working over both --surface and --surface-muted. */
   --input: oklch(1 0 0 / 38%);
-  --ring: oklch(0.75 0.11 190);
+  --ring: oklch(0.75 0.14 190);
 
   /* The teal lifts in the dark and carries navy ink rather than white. */
-  --accent: oklch(0.72 0.11 190);
+  --accent: oklch(0.72 0.14 190);
   --accent-foreground: oklch(0.18 0.03 230);
   --hover: oklch(0.72 0.11 190 / 8%);
   --selected: oklch(0.72 0.11 190 / 16%);
@@ -205,7 +208,7 @@
   --ring: oklch(0.78 0.1 190);
   /* The page teal, not a lighter one: white on 0.6 measured 3.59:1 (axe, the LP monogram on every page), and 14px
      text needs 4.5:1. On 0.52 it is ~5.5:1. */
-  --accent: oklch(0.52 0.11 190);
+  --accent: oklch(0.52 0.14 190);
   --accent-foreground: oklch(0.99 0 0);
   --hover: oklch(0.27 0.04 228);
   --selected: oklch(0.3 0.04 228);
