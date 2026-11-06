@@ -1,6 +1,7 @@
 import axios, { AxiosError, type AxiosRequestConfig } from 'axios';
 import { toApiError, type ApiError } from './apiError';
 import { IDEMPOTENCY_HEADER, requiresIdempotencyKey } from './idempotency';
+import { workspaceHeaderFor } from '@/auth/realms';
 
 /**
  * The single Axios instance every domain client uses.
@@ -41,6 +42,9 @@ export function setUnauthenticatedHandler(handler: () => void): void {
 http.interceptors.request.use((config) => {
   const token = accessTokenProvider();
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  // One realm for everyone (2026-11-06): the page's workspace says which part of the account this request acts in.
+  const workspace = workspaceHeaderFor(window.location.pathname);
+  if (token && workspace) config.headers['X-Workspace'] = workspace;
 
   // Dev-time guard, not a key generator. Auto-generating here would mint a fresh
   // key on every retry and defeat the whole mechanism -- the key belongs to the

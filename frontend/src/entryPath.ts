@@ -1,23 +1,12 @@
 /**
- * Where the bare site address goes (2026-10-13, the user's D8).
+ * Whether a workspace may have a catch-all route sending unknown paths to its own home.
  *
- * Development shows the realm picker, which is the right tool for someone who signs in as four different kinds of
- * user in an afternoon. Production opens the customer portal: that address is what goes on an SMS invite, a letter
- * and the company's website, so the people who arrive at it are policyholders. Staff, agents and TIRA bookmark their
- * own paths, and are not advertised to the public alongside a list of logins that are not theirs.
- */
-export const SHOW_REALM_PICKER = import.meta.env.VITE_REALM_PICKER !== 'false';
-
-export function entryPath(showPicker: boolean): string | null {
-  return showPicker ? null : '/customers';
-}
-
-/**
- * Whether a realm may have a catch-all route sending unknown paths to its own home.
- *
- * Only when it HAS a home. A realm whose `REALM_HOME` is null (regulators) has no index route, so a splat would
- * match the realm's own root -- `/regulators` matches `*` with an empty remainder -- and redirect it to itself, for
+ * Only when it HAS a home. A workspace whose `REALM_HOME` is null (regulators) has no index route, so a splat would
+ * match the workspace's own root -- `/regulators` matches `*` with an empty remainder -- and redirect it to itself, for
  * ever. Without the catch-all such a path falls through to the site entrance instead, which is what it did before.
+ *
+ * (The bare site address used to be decided here too -- a realm picker in development, the customer portal in
+ * production. Since 2026-11-06 "/" is the one sign-in for everyone; see App.tsx.)
  */
 export function hasRealmFallback(home: string | null): boolean {
   return home !== null;

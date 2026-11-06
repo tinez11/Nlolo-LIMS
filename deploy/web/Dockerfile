@@ -15,8 +15,7 @@ COPY frontend frontend
 ARG AUTH_DOMAIN
 ENV VITE_KEYCLOAK_BASE_URL=https://${AUTH_DOMAIN} \
     VITE_KEYCLOAK_CLIENT_ID=lifeplatform-spa \
-    VITE_API_BASE_URL=/api \
-    VITE_REALM_PICKER=false
+    VITE_API_BASE_URL=/api
 # Fails the build rather than quietly baking "https://undefined" into every sign-in.
 RUN test -n "${AUTH_DOMAIN}" || (echo "AUTH_DOMAIN build arg is required" >&2; exit 1)
 RUN cd frontend && npm run generate:api && npm run build

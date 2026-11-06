@@ -41,7 +41,7 @@ class MemoryStateStore implements StateStore {
   }
 }
 
-/** Where the User (and therefore the tokens) lives: memory, per realm. */
+/** Where the User (and therefore the tokens) lives: memory. */
 export function createUserStore(): StateStore {
   return new MemoryStateStore();
 }
@@ -51,9 +51,9 @@ export function createUserStore(): StateStore {
  * than localStorage so a second tab cannot consume this tab's in-flight login, and
  * so it dies with the tab.
  */
-export function createStateStore(realm: string): StateStore {
+export function createStateStore(): StateStore {
   return new WebStorageStateStore({
     store: window.sessionStorage,
-    prefix: `lifeplatform.${realm}.`,
+    prefix: 'lifeplatform.',
   });
 }
