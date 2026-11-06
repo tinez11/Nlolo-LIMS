@@ -15,6 +15,7 @@ import org.keycloak.events.Errors;
 import org.keycloak.events.EventType;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.RoleModel;
 import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.models.UserModel;
 import org.keycloak.sessions.AuthenticationSessionCompoundId;
@@ -44,6 +45,8 @@ final class ResetDeliveryAuthenticator implements Authenticator {
     private static final Logger log = Logger.getLogger(ResetDeliveryAuthenticator.class);
 
     static final String TEMPLATE = "lp-reset-code.ftl";
+    /** The workspace role of staff in the one realm (2026-11-06). */
+    static final String STAFF_ROLE = "staff";
     private static final String NOTE_SALT = "lp.reset.salt";
     private static final String NOTE_HASH = "lp.reset.hash";
     private static final String NOTE_EXPIRES = "lp.reset.expires";
@@ -132,6 +135,14 @@ final class ResetDeliveryAuthenticator implements Authenticator {
             context.getEvent().clone().event(EventType.SEND_RESET_PASSWORD).error(Errors.USER_NOT_FOUND);
             return;
         }
+        // Staff reset through an administrator only (user decision U4, 2026-11-06): a staff account is sent nothing --
+        // no link, no code -- and the page is the same as anyone's, so it says nothing about who is staff.
+        RoleModel staff = context.getRealm().getRole(STAFF_ROLE);
+        if (staff != null && user.hasRole(staff)) {
+            context.getEvent().clone().event(EventType.SEND_RESET_PASSWORD).user(user)
+                .error("staff_reset_by_administrator");
+            return;
+        }
         if (!withinHourlyCap(context.getSession(), context.getRealm(), user)) {
             context.getEvent().clone().event(EventType.SEND_RESET_PASSWORD).user(user).error("too_many_reset_requests");
             return;
@@ -170,14 +181,17 @@ final class ResetDeliveryAuthenticator implements Authenticator {
         }
     }
 
-    /** At most three sends an hour to one account, across browsers: counted where every Keycloak node can see it. */
+    /**
+     * At most three sends an hour, and one a minute, to one account across browsers: counted where every Keycloak node
+     * can see it.
+     */
     private static boolean withinHourlyCap(KeycloakSession session, RealmModel realm, UserModel user) {
         SingleUseObjectProvider store = session.singleUseObjects();
         String key = "lp-reset-sends:" + realm.getId() + ":" + user.getId();
         long now = Time.currentTime();
         Map<String, String> notes = store.get(key);
         List<Long> sends = new ArrayList<>(ResetCodes.recentSends(notes == null ? null : notes.get("at"), now));
-        if (!ResetCodes.maySend(sends)) return false;
+        if (!ResetCodes.maySend(sends, now)) return false;
         sends.add(now);
         Map<String, String> next = new HashMap<>();
         next.put("at", ResetCodes.store(sends));

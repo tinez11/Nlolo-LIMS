@@ -101,7 +101,8 @@
   ],
   "eventsListeners": [
     "jboss-logging",
-    "email"
+    "email",
+    "lifeplatform-password-changed"
   ],
   "eventsExpiration": 7776000,
   "eventsEnabled": true,

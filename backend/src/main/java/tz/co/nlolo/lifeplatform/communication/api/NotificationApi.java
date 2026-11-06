@@ -51,6 +51,15 @@ public interface NotificationApi {
      */
     String sendUnloggedSms(UUID partyId, String phoneNumber, String templateKey, String body, String loggedBody);
 
+    /**
+     * Sends one SMS now to someone the platform holds no client record for -- a staff member (2026-11-06: a staff
+     * password reset, and "your password was changed"). The message log is keyed by client, so nothing is recorded
+     * here; the caller keeps its own record (the staff access history does). Never throws.
+     *
+     * @return null when the gateway accepted the message, otherwise why it did not
+     */
+    String sendSystemSms(String phoneNumber, String templateKey, String body);
+
     /** Every template for the current tenant, ordered so one message's variants sit together. */
     java.util.List<NotificationTemplateView> listTemplates();
 

@@ -126,6 +126,9 @@ app:
       # Cloudflare's published test secret, which always passes -- for development only.
       secret: ${TURNSTILE_SECRET:1x0000000000000000000000000000000AA}
     visit-secret: ${PUBLIC_VISIT_SECRET:}
+  # The number "your password was changed" tells a person to call if it wasn't them (2026-11-06). Production refuses to
+  # start without one (ProductionSettingsGuard); empty in dev, where the text says "contact us straight away" instead.
+  support-phone: ${SUPPORT_PHONE:}
   security:
     # One realm for everyone (2026-11-06, universal login); the workspace comes from the X-Workspace header.
     issuer: ${KEYCLOAK_ISSUER:http://localhost:8081/realms/lifeplatform}

@@ -25,7 +25,7 @@ final class ResetCodes {
     static final int MAX_ATTEMPTS = 5;
     /** Texts an account may be sent in an hour, so the reset page cannot be used to bombard someone's phone. */
     static final int MAX_SENDS_PER_HOUR = 3;
-    /** The gap before "Send a new code" works again. */
+    /** The gap before "Send a new code" works again, per browser and (since 2026-11-06) per account. */
     static final int RESEND_GAP_SECONDS = 60;
 
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -76,8 +76,14 @@ final class ResetCodes {
         return recent;
     }
 
-    static boolean maySend(List<Long> recentSends) {
-        return recentSends.size() < MAX_SENDS_PER_HOUR;
+    /**
+     * Whether one more text may go to an account: under the hourly cap, and a minute since the last one. Both counted
+     * per ACCOUNT (2026-11-06), so a fresh browser session -- or a script opening many -- buys nothing.
+     */
+    static boolean maySend(List<Long> recentSends, long nowSeconds) {
+        if (recentSends.size() >= MAX_SENDS_PER_HOUR) return false;
+        long newest = recentSends.stream().mapToLong(Long::longValue).max().orElse(Long.MIN_VALUE / 2);
+        return nowSeconds - newest >= RESEND_GAP_SECONDS;
     }
 
     static String store(List<Long> sends) {

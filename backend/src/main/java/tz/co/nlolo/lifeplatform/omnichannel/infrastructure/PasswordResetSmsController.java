@@ -12,12 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.omnichannel.application.PasswordResetTexts;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Clock;
-import java.util.HexFormat;
 import java.util.UUID;
 
 /**
@@ -33,26 +28,23 @@ import java.util.UUID;
 public class PasswordResetSmsController {
 
     public static final String PATH = "/internal/password-reset/sms";
-    private static final long WINDOW_SECONDS = 300;
 
     private final PasswordResetTexts texts;
     private final ObjectMapper json;
-    private final byte[] secret;
-    private final Clock clock;
+    private final KeycloakSignature signature;
 
     public PasswordResetSmsController(PasswordResetTexts texts, ObjectMapper json,
                                       @Value("${password-reset.sms-secret}") String secret) {
         this.texts = texts;
         this.json = json;
-        this.secret = secret.getBytes(StandardCharsets.UTF_8);
-        this.clock = Clock.systemUTC();
+        this.signature = new KeycloakSignature(secret, Clock.systemUTC());
     }
 
     @PostMapping(PATH)
     public ResponseEntity<Void> text(@RequestBody String body,
-                                     @RequestHeader(value = "X-Reset-Timestamp", required = false) String timestamp,
-                                     @RequestHeader(value = "X-Reset-Signature", required = false) String signature) {
-        if (!signedAndFresh(body, timestamp, signature)) {
+                                     @RequestHeader(value = KeycloakSignature.TIMESTAMP_HEADER, required = false) String timestamp,
+                                     @RequestHeader(value = KeycloakSignature.SIGNATURE_HEADER, required = false) String sig) {
+        if (!signature.signedAndFresh(body, timestamp, sig)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         UUID tenantId;
@@ -76,25 +68,5 @@ public class PasswordResetSmsController {
             TenantContext.clear();
         }
         return ResponseEntity.accepted().build();
-    }
-
-    private boolean signedAndFresh(String body, String timestamp, String signature) {
-        if (body == null || timestamp == null || signature == null) return false;
-        long at;
-        try {
-            at = Long.parseLong(timestamp.trim());
-        } catch (NumberFormatException e) {
-            return false;
-        }
-        if (Math.abs(clock.instant().getEpochSecond() - at) > WINDOW_SECONDS) return false;
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(secret, "HmacSHA256"));
-            byte[] expected = mac.doFinal((at + "." + body).getBytes(StandardCharsets.UTF_8));
-            byte[] given = HexFormat.of().parseHex(signature.trim());
-            return MessageDigest.isEqual(expected, given);
-        } catch (Exception e) {
-            return false;
-        }
     }
 }

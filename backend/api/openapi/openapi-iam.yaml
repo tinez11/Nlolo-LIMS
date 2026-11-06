@@ -364,23 +364,28 @@ components:
         permissions: { type: array, items: { type: string } }
     PasswordDelivery:
       type: string
-      enum: [EMAIL_LINK, TEMPORARY_PASSWORD]
+      enum: [EMAIL_LINK, SMS_PASSWORD, TEMPORARY_PASSWORD]
       description: >-
-        The portal invite's rule, less SMS: an email link where mail is on and the user has an address, otherwise a
-        one-time password returned once to the administrator.
+        The portal invite's rule: an email link where mail is on and the user has an address; otherwise a one-time
+        password texted to the phone on the staff record (SMS_PASSWORD, 2026-11-06); otherwise -- or when the text
+        fails -- a one-time password returned once to the administrator.
     PasswordIssued:
       type: object
-      required: [delivery, temporaryPassword]
+      required: [delivery, temporaryPassword, smsSentTo, notice]
       properties:
         delivery: { $ref: '#/components/schemas/PasswordDelivery' }
         temporaryPassword: { type: [string, "null"], description: Only for TEMPORARY_PASSWORD; shown once }
+        smsSentTo: { type: [string, "null"], description: The number the one-time password was texted to, for SMS_PASSWORD }
+        notice: { type: [string, "null"], description: Why a text did not go, when the password is shown instead }
     CreatedUser:
       type: object
-      required: [user, delivery, temporaryPassword, awaitingApproval]
+      required: [user, delivery, temporaryPassword, smsSentTo, notice, awaitingApproval]
       properties:
         user: { $ref: '#/components/schemas/UserView' }
         delivery: { $ref: '#/components/schemas/PasswordDelivery' }
         temporaryPassword: { type: [string, "null"], description: Only for TEMPORARY_PASSWORD; shown once }
+        smsSentTo: { type: [string, "null"], description: The number the one-time password was texted to, for SMS_PASSWORD }
+        notice: { type: [string, "null"], description: Why a text did not go, when the password is shown instead }
         awaitingApproval: { type: boolean }
     AccessChange:
       type: object

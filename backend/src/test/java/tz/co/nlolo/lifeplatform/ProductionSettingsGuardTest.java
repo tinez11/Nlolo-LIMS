@@ -25,6 +25,7 @@ class ProductionSettingsGuardTest {
         s.put("communication.sms-gateway.authorization", "Basic cmVhbA==");
         s.put("app.portal.url", "https://portal.example.tz/customers");
         s.put("app.security.issuer", "https://login.example.tz/realms/lifeplatform");
+        s.put("app.support-phone", "+255 22 000 0000");
         return s;
     }
 
@@ -53,11 +54,13 @@ class ProductionSettingsGuardTest {
     void missingValuesLiveSmsWithoutCredentialsAndPlainHttpAreRefused() {
         Map<String, String> s = realLooking();
         s.remove("spring.datasource.password");
+        s.remove("app.support-phone");
         s.put("communication.sms-gateway.authorization", "");
         s.put("app.security.issuer", "http://localhost:8081/realms/lifeplatform");
         s.put("app.portal.url", "http://localhost:5173/customers");
         assertThat(ProductionSettingsGuard.problems(s::get)).containsExactlyInAnyOrder(
             "spring.datasource.password is not set",
+            "app.support-phone is not set (SUPPORT_PHONE: the number the password-changed text gives)",
             "communication.sms-gateway.live is true but communication.sms-gateway.authorization is empty",
             "app.security.issuer must be an https:// address",
             "app.portal.url must be an https:// address");
