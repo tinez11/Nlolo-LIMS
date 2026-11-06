@@ -23,9 +23,9 @@ code=$(curl -sS $K $R -o /dev/null -w '%{http_code}' "https://$APP_DOMAIN/api/po
 $DC exec -T backend wget -qO- http://localhost:9090/actuator/health | grep -q '"status":"UP"' \
   || fail "the backend does not report itself UP"
 
-curl -sS $K $R "https://$AUTH_DOMAIN/realms/staff/.well-known/openid-configuration" \
-  | grep -q "\"issuer\":\"https://$AUTH_DOMAIN/realms/staff\"" \
-  || fail "the staff realm does not report issuer https://$AUTH_DOMAIN/realms/staff -- every token would be refused"
+curl -sS $K $R "https://$AUTH_DOMAIN/realms/lifeplatform/.well-known/openid-configuration" \
+  | grep -q "\"issuer\":\"https://$AUTH_DOMAIN/realms/lifeplatform\"" \
+  || fail "the realm does not report issuer https://$AUTH_DOMAIN/realms/lifeplatform -- every token would be refused"
 
 code=$(curl -sS $K $R -o /dev/null -w '%{http_code}' "https://$AUTH_DOMAIN/admin/")
 [ "$code" = "404" ] || fail "the Keycloak admin console answered $code from the internet, expected 404"

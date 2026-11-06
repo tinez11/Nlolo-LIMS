@@ -50,7 +50,7 @@ import java.util.function.Function;
  *
  * <p>(2) <b>Supervisor access is decided by the HIERARCHY ITSELF, not by a separate scope.</b>
  * openapi-distribution.yaml declares {@code agentsAuth: [agent, supervisor]}, but
- * {@code keycloak/agents-realm.json} defines NO roles whatsoever, so there is no {@code supervisor}
+ * {@code keycloak/lifeplatform-realm.json} gives agents no role beyond the {@code agent} workspace, so there is no {@code supervisor}
  * role to hold -- requiring one would make descendant reads permanently 403 for every real token
  * until someone invents realm config with no business input behind it. docs/04-api-contracts.md:43
  * says an agents token is scoped to "policies where the agent is agentOfRecord, or within their

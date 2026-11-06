@@ -12,48 +12,62 @@ servers:
 paths: {}
 components:
   securitySchemes:
+    # One Keycloak realm, "lifeplatform", for everyone since 2026-11-06 (universal login). The four schemes below are
+    # the four WORKSPACES of that realm: the same token endpoint, told apart by the account's workspace role and the
+    # request's X-Workspace header (parameter WorkspaceHeader; docs/04-api-contracts.md §3).
     customersAuth:
       type: oauth2
       description: >
-        Keycloak realm "customers". Tenant and party identity come ONLY from validated
+        The customer workspace (realm role "customer"). Tenant and party identity come ONLY from validated
         JWT claims (tenant_id, party_id) — never from a client-supplied header or query
         param, to prevent tenant/party spoofing.
       flows:
         authorizationCode:
-          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/customers/protocol/openid-connect/auth
-          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/customers/protocol/openid-connect/token
+          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/lifeplatform/protocol/openid-connect/auth
+          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/lifeplatform/protocol/openid-connect/token
           scopes:
             profile: Basic profile / self-service access
     agentsAuth:
       type: oauth2
-      description: Keycloak realm "agents" — agents, brokers, bancassurance partner staff, agency supervisors.
+      description: The agent workspace (realm role "agent") — agents, brokers, bancassurance partner staff, agency supervisors.
       flows:
         authorizationCode:
-          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/agents/protocol/openid-connect/auth
-          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/agents/protocol/openid-connect/token
+          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/lifeplatform/protocol/openid-connect/auth
+          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/lifeplatform/protocol/openid-connect/token
           scopes:
             agent: Agent-scoped access
             supervisor: Agency supervisor access (hierarchy visibility)
     staffAuth:
       type: oauth2
       description: >
-        Keycloak realm "staff" — back-office roles: UNDERWRITER, CLAIMS_ASSESSOR,
+        The staff workspace (realm role "staff") — back-office roles: UNDERWRITER, CLAIMS_ASSESSOR,
         CLAIMS_MANAGER, FINANCE_OFFICER, CUSTOMER_SERVICE_REP, ADMIN. Fine-grained
-        authorization is role-based on top of this realm (see each spec's per-endpoint notes).
+        authorization is role-based on top of this workspace (see each spec's per-endpoint notes).
       flows:
         authorizationCode:
-          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/staff/protocol/openid-connect/auth
-          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/staff/protocol/openid-connect/token
+          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/lifeplatform/protocol/openid-connect/auth
+          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/lifeplatform/protocol/openid-connect/token
           scopes: {}
     regulatorAuth:
       type: oauth2
-      description: Keycloak realm "regulators" — TIRA read-only portal. No write scopes exist in this realm at all.
+      description: The regulator workspace (realm role "regulator") — TIRA read-only portal. No write scopes exist for it at all.
       flows:
         clientCredentials:
-          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/regulators/protocol/openid-connect/token
+          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/lifeplatform/protocol/openid-connect/token
           scopes:
             read-only: Read-only regulatory access
   parameters:
+    WorkspaceHeader:
+      name: X-Workspace
+      in: header
+      required: false
+      description: >
+        The workspace this request acts in (2026-11-06). Required when the account holds more than one workspace
+        (400 WORKSPACE_REQUIRED without it); a workspace the account does not hold is 403 WORKSPACE_NOT_HELD.
+        Accepted on every authenticated operation; the console sends it from its URL prefix.
+      schema:
+        type: string
+        enum: [staff, agent, customer, regulator]
     IdempotencyKey:
       name: Idempotency-Key
       in: header

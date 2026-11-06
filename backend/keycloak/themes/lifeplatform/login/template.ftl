@@ -65,7 +65,12 @@
   lockup in the form column does NOT -- one mark per screen. `lp-shell--photo`
   carries that through to the stylesheet.
 -->
-<#assign photoRealm = ["staff", "agents", "customers"]?seq_contains((realm.name)!'')>
+<#--
+  2026-11-06: one realm, `lifeplatform`, for everyone (universal login), so the photograph shows on it. The three old
+  names stay in the list only so a stack not yet moved off them looks the same; regulators sign in through the one
+  realm now too.
+-->
+<#assign photoRealm = ["lifeplatform", "staff", "agents", "customers"]?seq_contains((realm.name)!'')>
 <!DOCTYPE html>
 <html class="lp-html"<#if realm.internationalizationEnabled> lang="${locale.currentLanguageTag}"<#else> lang="en"</#if>>
 <head>

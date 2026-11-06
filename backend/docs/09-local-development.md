@@ -118,7 +118,7 @@ which records each module's current version as applied without running anything.
 database Flyway already manages is refused.
 
 **2. Run the application on the HOST, not as the compose `app` service, whenever a browser is
-involved.** `application.yml` defaults the Keycloak issuers to `http://localhost:8081/realms/...`,
+involved.** `application.yml` defaults the Keycloak issuer to `http://localhost:8081/realms/lifeplatform`,
 which is what your browser and Keycloak both use. The compose `app` service overrides them to
 `http://keycloak:8080/...` for in-network use. Run the app in Docker and the browser is redirected
 to `localhost:8081`, Keycloak stamps the token `iss: http://localhost:8081/...`, and the app
@@ -139,8 +139,8 @@ worktree its own project name, either by exporting `COMPOSE_PROJECT_NAME=<worktr
 running compose commands, or by passing `-p <worktree-name>` on every `docker compose` invocation
 in that worktree.
 
-**4. The Keycloak realms alone are NOT enough to log in as a customer or an agent — you must run
-the seeder.** `keycloak/customers-realm.json` and `keycloak/agents-realm.json` set each test user's
+**4. The Keycloak realm alone is NOT enough to log in as a customer or an agent — you must run
+the seeder.** `keycloak/lifeplatform-realm.json` (one realm for everyone since 2026-11-06) sets each test user's
 `tenant_id` attribute, but deliberately set **no** `party_id`: a party's UUID does not exist until
 `POST /parties/individuals` creates it, so only `scripts/seed-dev-data.sh` (step 4, "Write
 `party_id` back into Keycloak") can fill it in. Skip the seeder and `customer.owner` still
@@ -153,14 +153,14 @@ permissions bug or a broken realm import; it is neither. Recognize it by decodin
 `party_id`, you skipped or half-ran the seeder. The fix is not to hand-edit the user in the admin
 console — run the seeder, and if it refuses with "Already seeded", drop the volume per the reset
 sequence above and start clean. (Hand-editing *would* work — that is what
-`unmanagedAttributePolicy: ADMIN_EDIT` in the realm files is for, see `keycloak/README.md` — but
+`unmanagedAttributePolicy: ADMIN_EDIT` in the realm file is for, see `keycloak/README.md` — but
 the `party_id` has to match a real party row, so guessing one just moves the `403` to a `404`.)
 
 ## Consoles
 
 | Service | URL | Credentials |
 |---|---|---|
-| Console (staff, agents, customers) | http://localhost:5173 | the realm users -- see `keycloak/README.md` |
+| Console (one sign-in at `/` for staff, agents, customers) | http://localhost:5173 | the realm's users -- see `keycloak/README.md` |
 | Application API | http://localhost:8080 | bearer token from Keycloak |
 | Keycloak admin | http://localhost:8081 | `admin` / `devadmin` |
 | pgAdmin | http://localhost:5050 | `dev@nlolo-lifeplatform.tz` / `devadmin` (server pre-registered) |

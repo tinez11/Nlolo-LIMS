@@ -242,7 +242,7 @@ components:
   securitySchemes:
     staffAuth:
       type: openIdConnect
-      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/staff/.well-known/openid-configuration
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/lifeplatform/.well-known/openid-configuration
   schemas:
     StaffName:
       type: object

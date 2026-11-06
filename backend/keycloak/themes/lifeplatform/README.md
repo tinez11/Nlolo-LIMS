@@ -62,8 +62,9 @@ moment it stops being true.
 
 ## The brand photograph
 
-`login/resources/img/brand.jpg` (1536×1024) leads the brand panel on the three
-realms a person signs into — `staff`, `agents`, `customers`. It is a real
+`login/resources/img/brand.jpg` (1536×1024) leads the brand panel on the one
+realm everyone signs into, `lifeplatform` (2026-11-06; before that, the three
+realms `staff`, `agents`, `customers`). It is a real
 `<img>`, not a CSS background: it carries the Nlolo wordmark, so it is content
 and has to reach a screen reader. Where it shows, the SVG lockup in the form
 column is suppressed — **one mark per screen**.
@@ -181,15 +182,15 @@ Two things have to be true, and they are independent:
 1. **The theme is on disk where Keycloak can see it.** `docker-compose.yml` mounts
    `../keycloak/themes/lifeplatform` at `/opt/keycloak/themes/lifeplatform:ro`.
    A folder theme needs no `kc.sh build` — it is read at runtime.
-2. **The realm points at it.** `loginTheme: "lifeplatform"` in each of the four
-   realm JSONs.
+2. **The realm points at it.** `loginTheme: "lifeplatform"` in
+   `lifeplatform-realm.json`.
 
 ### The trap: `--import-realm` does not re-import
 
 Keycloak imports a realm JSON only when the realm does not already exist. On any
-environment where the realms have been imported once — which is every dev machine
-that has run this stack — editing `staff-realm.json` changes nothing. The realm
-lives in Postgres now.
+environment where the realm has been imported once — which is every dev machine
+that has run this stack — editing `lifeplatform-realm.json` changes nothing. The
+realm lives in Postgres now.
 
 To apply it to a running instance:
 
@@ -198,10 +199,7 @@ docker exec infra-keycloak-1 bash -c '
   KC=/opt/keycloak/bin/kcadm.sh
   $KC config credentials --server http://localhost:8080 --realm master \
     --user admin --password devadmin
-  $KC update realms/staff      -s loginTheme=lifeplatform -s "displayName=Staff console"
-  $KC update realms/agents     -s loginTheme=lifeplatform -s "displayName=Agent portal"
-  $KC update realms/customers  -s loginTheme=lifeplatform -s "displayName=Customer access"
-  $KC update realms/regulators -s loginTheme=lifeplatform -s "displayName=Regulator access"
+  $KC update realms/lifeplatform -s loginTheme=lifeplatform -s "displayName=Nlolo Life"
 '
 ```
 
@@ -211,7 +209,7 @@ rewrites `/opt/...` and `http://...` into Windows paths.
 Or do it in the admin console at <http://localhost:8081> → *Realm settings* →
 *Themes* → *Login theme*.
 
-The realm JSONs still carry `loginTheme`, so a fresh volume gets it automatically.
+The realm JSON carries `loginTheme`, so a fresh volume gets it automatically.
 
 ## Iterating
 
@@ -228,7 +226,7 @@ docker cp keycloak/themes/lifeplatform/login/. \
 ```
 
 Fastest page to look at, no client set-up needed:
-<http://localhost:8081/realms/staff/account> — the account console bounces
+<http://localhost:8081/realms/lifeplatform/account> — the account console bounces
 straight to the login form.
 
 ## Production hardening, not done here
@@ -240,10 +238,8 @@ straight to the login form.
   `login/resources/fonts` and `@font-face` them.
 - **`realmLabel` comes from Keycloak.** The running head shows `displayName`, or
   the machine realm name where an administrator set none. Nothing about the realm
-  is hard-coded, which is what keeps one theme serving four realms and the
-  console white-label.
-- **`customers` and `regulators` authenticate into an app with no screens.**
-  That is a recorded product decision, not a theme bug (`PRODUCT.md`,
-  `frontend/PLAN.md` §12.3). Their `displayName`s here are deliberately neutral —
-  "Customer access", not "Customer portal" — but if either realm stays empty, the
-  honest fix is upstream of this theme.
+  is hard-coded, which is what keeps the theme white-label. (The one realm's
+  `displayName` is "Nlolo Life".)
+- **Regulators authenticate into an app with no screens.** Since 2026-11-06 a
+  regulator signs in on the same page as everyone and is told the account has no
+  access yet; that is a recorded product decision, not a theme bug.

@@ -17,7 +17,7 @@ Spec: `backend/docs/superpowers/specs/2026-11-06-universal-login-design.md`. Ste
 - Job roles (every realm role that is not a workspace role) are granted only when the active workspace is `staff` or `regulator`; none in `agent`/`customer`.
 - Header absent + exactly one workspace role → that workspace. Header absent + several → 400. Header names a workspace not held (or an unknown value) → 403. No workspace role at all → 403.
 - U10: a staff account never holds another workspace; agent + customer combine on one account only via a matching `party_id`.
-- Sign-in identifier: username or email (`loginWithEmailAllowed: true`, `duplicateEmails: false`).
+- Sign-in identifier: username or email (`loginWithEmailAllowed: true`, `duplicateEmailsAllowed: false`).
 - Password policy unchanged: `length(8) and notUsername(undefined) and notEmail(undefined) and passwordHistory(3)`; brute-force: failureFactor 5, waitIncrementSeconds 60, maxFailureWaitSeconds 900, permanentLockout false.
 - Never hardcode a production hostname (`APP_DOMAIN` / `AUTH_DOMAIN` only).
 - Edit files with Write/Edit, never shell heredocs/sed (memory: feedback_edit_files_with_tools_not_shell). Never run Prettier.
@@ -114,7 +114,7 @@ delete realm.id;
 realm.realm = 'lifeplatform';
 realm.displayName = 'Nlolo Life';
 realm.loginWithEmailAllowed = true;
-realm.duplicateEmails = false;
+realm.duplicateEmailsAllowed = false; // Keycloak's field name; `duplicateEmails` is refused at import
 realm.roles = { realm: [
   ...WORKSPACES.map(([name, description]) => ({ name, description })),
   ...staff.roles.realm.map(strip),

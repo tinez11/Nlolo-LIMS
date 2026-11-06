@@ -7,9 +7,12 @@ and the code win.
 
 ## 1. What it is
 
-One single-page app that serves **three consoles**, one per Keycloak realm:
+One single-page app that serves **three consoles**, one per workspace, behind **one sign-in** at `/` (2026-11-06:
+one Keycloak realm, `lifeplatform`, for everyone; one realm per console before). A workspace is a realm role on the
+account; after sign-in `/` opens the account's only workspace, offers a choice when it holds two (an agent who is
+also a policyholder), or says it has no access yet.
 
-| Realm | URL prefix | Who | Screens | Sidebar items | Lands on |
+| Workspace | URL prefix | Who | Screens | Sidebar items | Lands on |
 |---|---|---|---|---|---|
 | `staff` | `/staff` | underwriters, claims, finance, admin | 71 | 38 | a role's dashboard (else its own queue) |
 | `agents` | `/agents` | tied agents | 14 | 9 | `dashboard` |
@@ -29,12 +32,13 @@ does the same (`deploy/web/Caddyfile`).
 
 ```
 URL /staff/policies/POL-1
-  -> App.tsx: the realm route -> RealmAuthProvider (Keycloak realm "staff") -> RequireAuth -> AppShell (sidebar, header)
+  -> App.tsx: PlatformAuthProvider (the one realm) -> the workspace route -> RequireAuth -> RequireWorkspace("staff") -> AppShell
   -> screens.tsx: the manifest entry for 'policies/:policyNumber' -> lazyPages.ts: PolicyDetailPage (own chunk)
   -> page reads a Zustand store slice:        usePolicyStore(s => s.detail[policyNumber])
   -> page asks the store to load:             loadPolicy(policyNumber)
   -> store action calls the API module:       api/policies.ts getPolicy()
-  -> lib/http.ts (Axios): adds the bearer token, checks the Idempotency-Key on mutations, turns failures into ApiError
+  -> lib/http.ts (Axios): adds the bearer token and X-Workspace (from the URL prefix), checks the Idempotency-Key on
+     mutations, turns failures into ApiError
   -> backend /policies/POL-1 (via the /api proxy)
   -> the response, typed by src/types/api/policy.ts (generated from backend/api/openapi/openapi-policy.yaml)
   -> store writes Resource<T> {data, status, error, loadedAt}; the page re-renders
@@ -44,12 +48,12 @@ URL /staff/policies/POL-1
 
 | Path | What lives there |
 |---|---|
-| `src/main.tsx`, `App.tsx` | Mount; the router: one subtree per realm, each wrapped in auth and the shell. |
-| `src/screens.tsx` | **The screen manifest** -- every route of every realm, its sidebar placement, nav groups and their role gates, each realm's home. The sidebar is derived from it. |
+| `src/main.tsx`, `App.tsx` | Mount; the one OIDC provider; the router: `/` (sign-in, then `WorkspaceHome`) and one subtree per workspace, each wrapped in auth, the workspace guard and the shell. |
+| `src/screens.tsx` | **The screen manifest** -- every route of every workspace, its sidebar placement, nav groups and their role gates, each workspace's home. The sidebar is derived from it. |
 | `src/lazyPages.ts` | Every page as a `React.lazy` import, so a console downloads only the screens it opens. |
-| `src/entryPath.ts` | What `/` does: the realm picker in development, the customer portal in production. |
+| `src/entryPath.ts` | Whether a workspace may send unknown paths to its own home. |
 | `src/navBadges.ts` | Sidebar counts of work waiting (each a real paged search's `totalElements`). |
-| `src/auth/` | Realms and Keycloak settings (`realms.ts`), the per-realm OIDC provider, `RequireAuth`, reading roles from the token (`claims.ts`), the in-memory token store, return-to-after-login. |
+| `src/auth/` | Workspaces and Keycloak settings (`realms.ts`, `workspaces.ts`), the one OIDC provider, `RequireAuth`, `RequireWorkspace`, reading roles from the token (`claims.ts`), the in-memory token store, return-to-after-login. |
 | `src/api/` | One module per backend area: thin typed functions over `lib/http`. `api/types.ts` re-exports the generated schema types under readable names (about 230). |
 | `src/types/api/` | **Generated** from the 25 OpenAPI specs by `npm run generate:api`. Gitignored; never edit by hand. |
 | `src/store/` | One Zustand store per domain (about 30), all built on `createResourceSlice.ts`. |
@@ -71,9 +75,12 @@ URL /staff/policies/POL-1
   expressions word for word. **They hide; they do not protect** -- the backend refuses regardless.
 - **Homes.** `REALM_HOME` is the realm's index route; `homeFor()` sends a staff member to their own queue (an
   underwriter to Underwriting, a claims manager to settlement requests, ...) or their dashboard.
-- **Realm-scoped login.** `RealmAuthProvider` mounts one OIDC provider per realm, against that realm's
-  `lifeplatform-spa` client (public, PKCE). Tokens live **in memory only**; `sessionStorage` holds just the one-time
-  PKCE verifier. Every page load therefore re-authenticates silently against Keycloak's SSO cookie.
+- **One login, workspace-scoped pages.** `PlatformAuthProvider` mounts one OIDC provider at the root, against the
+  realm's `lifeplatform-spa` client (public, PKCE). `RequireWorkspace` sends an account that lacks a workspace back to
+  `/`; the account card offers "Switch to …" when it holds another. Every request carries `X-Workspace` from the URL
+  prefix, which the backend turns into exactly one `ROLE_REALM_*`. Tokens live **in memory only**; `sessionStorage`
+  holds just the one-time PKCE verifier. Every page load therefore re-authenticates silently against Keycloak's SSO
+  cookie.
 - **The data router** (`createBrowserRouter`) is what lets `UnsavedGuard` block navigation away from a half-filled form.
 
 ## 5. Data, mutations and rules
@@ -138,7 +145,7 @@ of the same name.
 | `documents` | document, omnichannel | downloads: policy schedule, payment schedule, statements | staff, customers |
 | `customer` | omnichannel (customer portal) | the customer portal: home, policies, claims, documents, products, applications, paying a premium, messages | customers |
 
-`features/RealmPicker.tsx` is the development entry page at `/`.
+`features/WorkspaceHome.tsx` is where `/` lands after sign-in: the account's only workspace, a choice, or "no access yet".
 
 ## 8. Rules the build enforces
 
@@ -168,7 +175,7 @@ of the same name.
 
 ## 11. Known gaps
 
-- `regulators` has a realm and a Keycloak client but no screens.
+- The `regulator` workspace has a role and signs in, but has no screens: a regulator is told "no access yet".
 - The customer portal is untested end to end.
 - `PLAN.md` describes the 2026-08 design and is not kept current.
 - Generated types are not committed: a fresh checkout, or any change under `backend/api/openapi/`, needs
