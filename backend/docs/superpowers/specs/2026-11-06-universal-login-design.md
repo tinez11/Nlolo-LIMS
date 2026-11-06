@@ -21,6 +21,7 @@ the finished system follows as a separate, final step.
 | U6 | No email provider yet. SMS is the only required channel; email stays a switch (`MAIL_ENABLED`) that, when on, adds a link/notice beside the SMS. Nothing depends on email. |
 | U7 | Workspace selection by an `X-Workspace` request header (option a), not one Keycloak client per workspace. |
 | U8 | The "if this wasn't you" SMS gives a support number from a setting, `SUPPORT_PHONE`, filled in later. |
+| U10 | Staff accounts never combine with another workspace; staff who are also policyholders/agents get a separate login. Agent + customer combine on one account via `party_id`. |
 | U9 | Security audit runs **after** steps 1–3 are merged, audits the finished system and produces a ranked report; fixes are decided from the report. |
 
 Earlier decisions carried over unchanged: 8-character minimum, `notUsername`, `notEmail`, `passwordHistory(3)`,
@@ -76,7 +77,12 @@ brute-force lockout, 15-minute reset link/code, English and Swahili, the "Split 
 - `TenantContextFilter` is unchanged (still reads `tenant_id`).
 - `KeycloakStaffLogins`, `KeycloakAgentLogins`, `KeycloakCustomerAccounts` target the one realm and add/remove the
   workspace role instead of creating a user in a separate realm. Giving an existing person a second workspace adds a
-  role to their existing account (matched by `party_id`, then username).
+  role to their existing account, matched by `party_id` (agent and customer logins both carry it).
+- **Staff accounts stay separate (U10).** A staff account never holds another workspace, and an agent or customer
+  account never gains `staff`. Giving agent or portal access to someone who is staff creates a separate account;
+  because emails are unique in the realm, that account uses a different email or none (username = phone number).
+  Users & access likewise never reuses an existing agent/customer account. Only agent + customer (and regulator, if
+  ever needed) combine on one account.
 - CORS is not involved (Caddy serves console and `/api` on one origin); `X-Workspace` needs no allow-listing.
 
 ## §2 Forgot password, admin resets, change password, notices
