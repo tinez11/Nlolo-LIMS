@@ -78,7 +78,7 @@ function Editor({ id, initial }: { id?: string; initial: ManualJournalValues }) 
     <>
       <PageHeader
         title={id ? 'Edit manual journal' : 'New manual journal'}
-        description="Accounts and amounts, why, and when. Only manual (MAN) or mixed (BOTH) accounts can be used."
+        description="Only manual (MAN) or mixed (BOTH) accounts can be used."
       />
       <form
         className="space-y-4 px-6 pb-6"
@@ -96,7 +96,7 @@ function Editor({ id, initial }: { id?: string; initial: ManualJournalValues }) 
         {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
         {!id && (
           <div className="max-w-xl">
-            <FormField label="Start from a template" hint="The guide's manual entries (Part 4) and your saved templates.">
+            <FormField label="Start from a template">
               <Select value={templateId} onChange={(e) => applyTemplate(e.target.value)}>
                 <option value="">Blank journal</option>
                 {offered.map((t) => (
@@ -115,7 +115,7 @@ function Editor({ id, initial }: { id?: string; initial: ManualJournalValues }) 
           <FormField required label="Period" hint="YYYY-MM; an open or closing period" error={errors.period?.message}>
             <Input {...form.register('period')} />
           </FormField>
-          <FormField label="Reason" hint="Why this journal is needed" error={errors.reason?.message}>
+          <FormField label="Reason" error={errors.reason?.message}>
             <Input {...form.register('reason')} />
           </FormField>
           <FormField label="Reason code" hint="Required when a line is on a mixed (BOTH) account">
@@ -128,7 +128,7 @@ function Editor({ id, initial }: { id?: string; initial: ManualJournalValues }) 
               ))}
             </Select>
           </FormField>
-          <FormField label="Reverse automatically on" hint="An accrual: the platform reverses it on this date. Blank: never.">
+          <FormField label="Reverse automatically on" hint="Blank = never reversed">
             <Input type="date" {...form.register('autoReverseOn')} />
           </FormField>
         </div>

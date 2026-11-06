@@ -47,7 +47,6 @@ export function MonthEndPage() {
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
         <Panel
           title={locked ? `${monthName(period)} is closed` : `Step ${view.current} of 8 is next`}
-          subtitle="In the order the finance guide closes a month"
         >
           <ol className="px-4 pb-4" aria-label="Month-end steps">
             {view.steps.map((step, i) => (

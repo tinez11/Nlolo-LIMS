@@ -344,7 +344,7 @@ export function ChartOfAccountsPage() {
         // in the console -- which is exactly what the first draft of this sentence
         // did at 1440px. The code rule it used to carry lives in the New account
         // panel now, where it is actionable.
-        description="The ledger structure every posting books against. Type and normal balance are derived from an account's code, never entered."
+        description="Type and normal balance come from the account code."
         count={<CountLine {...count} />}
         actions={
           !creatingOpen && (

@@ -74,7 +74,7 @@ export function PeriodsPage() {
     <>
       <PageHeader
         title="Accounting periods"
-        description="Close and lock each month. A locked period takes no journal until a second person approves reopening it."
+        description="A locked period takes no journal until a second person approves reopening it."
       />
       <div className="space-y-4 px-6 pb-6">
         <form

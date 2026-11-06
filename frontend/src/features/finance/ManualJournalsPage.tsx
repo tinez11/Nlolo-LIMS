@@ -83,7 +83,7 @@ export function ManualJournalsPage() {
     <>
       <PageHeader
         title="Manual journals"
-        description="Journals the policy system cannot make. One person prepares, a finance approver posts."
+        description="One person prepares, a finance approver posts."
       />
       <div className="space-y-4 px-6 pb-6">
         <div className="flex flex-wrap items-end justify-between gap-3">

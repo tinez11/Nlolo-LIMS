@@ -128,7 +128,7 @@ export function UserDetailPage() {
           </p>
         )}
 
-        <Panel title="Roles" subtitle="Each role is a set of permissions. Most people hold one.">
+        <Panel title="Roles">
           <div className="grid grid-cols-1 gap-1 px-4 pb-4 sm:grid-cols-2">
             {(roles.data ?? []).filter((r) => r.active || roleCodes.has(r.code)).map((r) => (
               <CheckboxField
@@ -147,7 +147,7 @@ export function UserDetailPage() {
           </div>
         </Panel>
 
-        <Panel title="Single permissions" subtitle="Added to what their roles give. There is no taking away: remove the role instead.">
+        <Panel title="Single permissions" subtitle="To take access away, remove the role.">
           <div className="px-4 pb-4">
             <PermissionPicker catalogue={catalogue.data ?? []} selected={extra} fromRoles={fromRoles} disabled={!editable}
               onChange={setChosenPermissions} />
@@ -175,7 +175,7 @@ export function UserDetailPage() {
           </div>
         )}
 
-        <Panel title="History" subtitle="Every change to their access, newest first">
+        <Panel title="History">
           <ul className="divide-y divide-border">
             {(detail.data?.history ?? []).map((c) => (
               <li key={c.changeId} className="flex items-start gap-3 px-4 py-2.5">

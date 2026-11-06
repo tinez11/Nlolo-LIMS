@@ -751,8 +751,7 @@ function AdjustmentForm({ policyNumber, onDone }: { policyNumber: string; onDone
   return (
     <ActionBox title="Propose an adjustment" onClose={onDone}>
       <p className="text-xs text-muted-foreground">
-        A correction is a new entry, never an edit. A negative amount takes money out. It is posted only once a second
-        person approves it.
+        A negative amount takes money out. Posted once a second person approves it.
       </p>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <form

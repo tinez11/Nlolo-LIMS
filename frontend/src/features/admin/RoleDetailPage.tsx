@@ -105,7 +105,7 @@ export function RoleDetailPage() {
               onChange={(e) => setDraft({ ...current, active: e.target.checked })} />
           </div>
         </Panel>
-        <Panel title="Permissions" subtitle="What everyone holding this role may see and do.">
+        <Panel title="Permissions">
           <div className="px-4 pb-4">
             <PermissionPicker catalogue={catalogue.data ?? []} selected={current.permissions} disabled={!editable}
               onChange={(permissions) => setDraft({ ...current, permissions })} />

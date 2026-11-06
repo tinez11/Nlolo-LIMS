@@ -77,7 +77,7 @@ export function DepositSection({ deposit, isFinance }: { deposit: DepositView; i
     return (
       <EmptyState
         title="Waiting for the deposit"
-        description="This is a fixed-term deposit. Its term, rate and interest start on the day the deposit is received. Collect it from the Billing tab with Request payment."
+        description="Term, rate and interest start the day the deposit is received. Collect it from Billing with Request payment."
       />
     );
   }
@@ -102,8 +102,7 @@ export function DepositSection({ deposit, isFinance }: { deposit: DepositView; i
             )}
           </dl>
           <p className="text-xs text-muted-foreground">
-            Nothing can be added or partly withdrawn. It can be closed early at any time with Surrender, which pays the
-            deposit and the interest earned to that day; otherwise it matures on {formatDate(running.maturityDate)}.
+            No top-ups or part withdrawals. Surrender closes it early with interest to that day; otherwise it matures on {formatDate(running.maturityDate)}.
           </p>
           {deposit.schedule && <EarlyClosingTable schedule={deposit.schedule} />}
           <DepositScheduleDownload policyNumber={deposit.policyNumber} />

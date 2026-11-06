@@ -95,7 +95,7 @@ export function UnpostedEventsPage() {
     <>
       <PageHeader
         title="Unposted events"
-        description="Events the posting rules could not post. Retry once the cause is fixed, or dismiss with a reason. A period cannot lock while one of its events waits here."
+        description="A period cannot lock while one of its events waits here."
       />
       <div className="space-y-4 px-6 pb-6">{renderBody()}</div>
     </>

@@ -58,7 +58,7 @@ export function RolesPage() {
     <>
       <PageHeader
         title="Roles"
-        description="Each role is a set of permissions. Change what a role carries and everyone holding it changes with it."
+        description="Change a role and everyone holding it changes with it."
         count={<CountLine {...count} />}
         actions={can('roles.manage') ? (
           <Button asChild size="sm" variant="primary">

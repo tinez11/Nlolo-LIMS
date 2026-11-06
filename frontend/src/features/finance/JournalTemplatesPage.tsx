@@ -38,7 +38,7 @@ export function JournalTemplatesPage() {
     <>
       <PageHeader
         title="Journal templates"
-        description="Start a manual journal from one of these: accounts and sides are filled in, you enter the amounts."
+        description="Accounts and sides are filled in; you enter the amounts."
       />
       <div className="space-y-4 px-6 pb-6">{renderBody()}</div>
     </>
