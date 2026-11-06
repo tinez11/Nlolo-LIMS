@@ -203,7 +203,6 @@ export function AgentsPage() {
     <>
       <PageHeader
         title="Agents"
-        description="Every agent in your tenant. Select one to open it."
         actions={
           can('agents.manage') ? (
             <Button asChild size="sm" variant="primary">

@@ -92,7 +92,7 @@ export function PayoutForm({
             happened yet, and says so. Calling this "Paid" would be the lie --
             the disbursement settles later through payment's confirm loop.
           */
-          note="Requested, not yet paid: a second person approves it in Approvals, then the payout is made and the statement moves to PAID when payment confirms. A retry after a failure needs a fresh attempt — reopen this agent to mint one."
+          note="Requested, not yet paid: a second person approves it in Approvals."
         />
       </div>
     );

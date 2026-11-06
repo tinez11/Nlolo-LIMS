@@ -62,12 +62,11 @@ export function TemplatesPage() {
     <>
       <PageHeader
         title="Message templates"
-        description="The exact words customers receive. Editing one changes every message sent from then on."
+        description="Editing one changes every message sent from then on."
       />
       {!isAdmin && (
         <p className="px-4 pb-3 text-xs text-muted-foreground">
-          You can read every template here. Changing one needs an administrator — an edit reaches
-          every customer who gets that message from then on.
+          Changing a template needs an administrator.
         </p>
       )}
       <div className="space-y-4 px-4 pb-6">

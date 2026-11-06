@@ -273,7 +273,7 @@ export function FieldReceiptsPage() {
     <>
       <PageHeader
         title="Agent cash"
-        description="Premium an agent collected in the field, and whether the platform has matched it to a payment. Oldest unmatched first."
+        description="Oldest unmatched first."
         count={<CountLine {...count} />}
       />
 

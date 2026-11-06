@@ -134,7 +134,7 @@ export function EditClientPage() {
 
       <PageHeader
         title={party ? `Correct ${party.displayName}` : 'Correct a client'}
-        description="Amending what is on record. This does not change their KYC — that is a decision about a document, and correcting the record does not un-verify it."
+        description="Correcting the record does not change their KYC."
       />
 
       {loadError && (

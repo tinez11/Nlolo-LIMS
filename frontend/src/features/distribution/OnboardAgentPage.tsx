@@ -74,7 +74,7 @@ export function OnboardAgentPage() {
       <PageHeader
         breadcrumb={[{ label: 'Agents', to: '/staff/agents' }]}
         title="Onboard an agent"
-        description="Staff/finance only. The party must already have KYC status VERIFIED."
+        description="The person must already be KYC verified."
       />
 
       <FormLayout formId="onboard-agent-form" outlineLabel="Agent sections">
@@ -155,8 +155,7 @@ export function OnboardAgentPage() {
             )}
           />
           <p className="mt-1 text-xs text-subtle-foreground">
-            Their supervisor, who earns override commission on this agent's business. Leave it
-            empty for an agent at the top of the hierarchy.
+            Earns override commission on this agent. Blank = top of the hierarchy.
           </p>
         </FormField>
 
@@ -174,13 +173,9 @@ export function OnboardAgentPage() {
           ever indicated that the rest are, from the agent's point of view, not yet onboarded.
         */}
         <div className="rounded-md border border-border bg-surface-muted px-3 py-2 text-xs">
-          <p className="font-medium">This is step one of two</p>
+          <p className="font-medium">Next: give them a login</p>
           <p className="mt-1 text-subtle-foreground">
-            Onboarding creates the agent's commission record. It does not create their login —
-            an administrator must separately create their user in the <code>agents</code> realm
-            and set its <code>party_id</code> to the party above. Until that is done they cannot
-            sign in or register clients, and business they introduce cannot be attributed to
-            them automatically.
+            From the Agent login panel on their page. Until then they cannot sign in or register clients.
           </p>
         </div>
 

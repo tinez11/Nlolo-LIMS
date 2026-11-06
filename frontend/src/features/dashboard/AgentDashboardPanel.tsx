@@ -146,7 +146,7 @@ export function AgentDashboardPanel({ range }: PanelProps) {
           </Panel>
         </div>
         <div className="xl:col-span-5">
-          <Panel title="Your business now" subtitle="Each opens its list">
+          <Panel title="Your business now">
             <ul className="divide-y divide-border">
               {[
                 { n: v.clients, text: 'My clients', to: '/agents/clients' },

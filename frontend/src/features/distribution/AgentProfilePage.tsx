@@ -84,7 +84,7 @@ export function AgentProfilePage() {
           </Panel>
         }
       >
-        <Panel title="Commission plan" subtitle="Per product — a plan hangs off a product, not you.">
+        <Panel title="Commission plan">
           <CommissionPlanPanel agentId={agent.agentId ?? ''} products={products.data ?? []} canManage={false} />
         </Panel>
 

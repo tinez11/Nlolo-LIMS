@@ -85,8 +85,7 @@ export function AnnuityPurchaseFields({
     <fieldset className="space-y-4 rounded-md border border-border p-3">
       <legend className="px-1 text-sm font-medium">Annuity</legend>
       <p className="text-xs text-muted-foreground">
-        The sum assured above is the purchase price, paid as one single premium. There is no term: the income is paid
-        for life, and the policy cannot be surrendered once the free-look period has passed.
+        The sum assured is the purchase price. Income is for life; no surrender after the free-look period.
       </p>
       <div className="grid grid-cols-2 gap-4">
         <FormField required label="Annuity form" error={errors.annuityFormCode?.message}>

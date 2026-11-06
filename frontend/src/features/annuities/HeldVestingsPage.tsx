@@ -25,7 +25,6 @@ export function HeldVestingsPage() {
       <PageHeader
         breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title="Held vestings"
-        description="Pensions due to vest that the daily sweep could not vest, and why."
       />
       <div className="px-6 pb-8">
         {isInitialLoad(held) ? (

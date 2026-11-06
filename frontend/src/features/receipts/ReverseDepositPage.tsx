@@ -56,7 +56,7 @@ export function ReverseDepositPage() {
           { label: depositTitle(method?.label ?? receipt.method), to: back },
         ]}
         title="Reverse deposit"
-        description="For money that never really arrived. Nothing comes off the balance until a second person confirms it."
+        description="Nothing comes off the balance until a second person confirms it."
       />
       <FormLayout formId="reverse-deposit-form" outlineLabel="Reversal sections">
         <form

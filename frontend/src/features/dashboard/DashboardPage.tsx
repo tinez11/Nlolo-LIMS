@@ -63,7 +63,7 @@ export function DashboardPage({ realm }: { realm: 'staff' | 'agents' }) {
 
   return (
     <>
-      <PageHeader title="Dashboard" description="What is waiting for you, and the figures behind your work." />
+      <PageHeader title="Dashboard" />
       <div className="space-y-5 px-6 pt-1 pb-8">
         {kinds.length > 0 && (
           <RangePicker

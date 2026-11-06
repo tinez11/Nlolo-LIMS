@@ -92,8 +92,7 @@ export function IndividualFields({
           <FormField label="Client reference" error={errors.clientReference?.message}>
             <Input {...register('clientReference')} />
             <p className="mt-1 text-xs text-subtle-foreground">
-              Your own number for this client, if they already have one. Used to reconcile
-              against your existing records; leave blank if there is none.
+              Your own number for this client, if any.
             </p>
           </FormField>
         </div>

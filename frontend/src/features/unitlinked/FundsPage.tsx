@@ -101,7 +101,7 @@ export function FundsPage() {
     <>
       <PageHeader
         title="Funds"
-        description="The fund register and its daily prices. One person proposes a price, a second approves it after the cut-off."
+        description="One person proposes a price; a second approves it after the cut-off."
       />
       <div className="space-y-4 px-6 pb-8">
         {renderFunds()}
@@ -458,8 +458,7 @@ function AdjustmentQueue({ viewerSubject }: { viewerSubject: string | undefined 
     <section aria-label="Price-correction adjustments" className="space-y-2 rounded-xl border border-border bg-surface shadow-card p-4">
       <p className="text-sm font-medium">Price-correction adjustments</p>
       <p className="text-xs text-muted-foreground">
-        A correction that moves money already paid out is never taken back silently: it waits here to be paid, recorded as
-        collected, or waived with a reason, by someone other than whoever approved the correction.
+        Money a correction moves after payout waits here: paid, collected, or waived with a reason.
       </p>
       {body}
     </section>

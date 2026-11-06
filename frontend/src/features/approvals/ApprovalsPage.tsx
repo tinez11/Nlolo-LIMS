@@ -71,7 +71,6 @@ export function ApprovalsPage() {
     <>
       <PageHeader
         title="Approvals"
-        description="Everything waiting for your signature, across every policy, oldest first. Each opens the page where it is done."
         count={<CountLine {...count} />}
       />
       <div className="space-y-4 px-6 pb-6">

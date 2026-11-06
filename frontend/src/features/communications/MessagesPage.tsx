@@ -159,7 +159,6 @@ export function MessagesPage() {
           the count sat flush against the menu at a larger size, and the table ran edge to edge. */}
       <PageHeader
         title="Messages sent"
-        description="Every message this platform has sent a customer, and every one it could not."
         count={<CountLine {...count} />}
       />
       <div className="px-6 pb-6">
