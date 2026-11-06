@@ -114,7 +114,6 @@ export function CommissionEarnerPanel({ facts, onChanged }: { facts: CommissionF
   return (
     <Panel
       title="Who is paid the commission"
-      subtitle="The lender is paid the commission its agreement states, as the insurer's agent on this scheme."
     >
       <LenderCommissionActions policy={policy} lenderAgent={lenderAgent} onChanged={onChanged} />
     </Panel>

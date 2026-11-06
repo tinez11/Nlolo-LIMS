@@ -278,7 +278,7 @@ export function GroupSchemePage() {
     return (
       <>
         {addOpen && data && (
-          <Panel title="Add a member" subtitle="Values them against the scheme and tests the free cover limit">
+          <Panel title="Add a member">
             <AddMemberForm scheme={data} onDone={() => setAddOpen(false)} />
           </Panel>
         )}
@@ -398,14 +398,13 @@ export function GroupSchemePage() {
                     NO_VALUE
                   )
                 }
-                note="The employer owns the contract. The lives are the schedule, not this person."
               />
             </dl>
           )}
         </Panel>
 
         {data?.benefitBasis === 'GRADED' && (
-          <Panel title="Grades" subtitle="What each staff category is worth">
+          <Panel title="Grades">
             {data.grades && data.grades.length > 0 ? (
               <dl className="px-4 pb-2">
                 {data.grades.map((grade) => (
@@ -897,9 +896,7 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
 
         <FormField label="Cover starts" error={errors.joinedOn?.message}>
           <Input type="date" inputSize="sm" {...register('joinedOn')} />
-          <p className="mt-1 text-xs text-subtle-foreground">
-            Leave blank for today. Backdating is fine; a future date is not.
-          </p>
+          <p className="mt-1 text-xs text-subtle-foreground">Blank = today; no future dates</p>
         </FormField>
       </div>
 

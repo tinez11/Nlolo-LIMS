@@ -66,7 +66,7 @@ export function BalanceWithdrawalPage() {
       <PageHeader
         breadcrumb={[{ label: 'Policies', to: '/staff/policies' }, { label: policyNumber, to: back }]}
         title="Withdraw"
-        description="Pay money back off the policy's balance. Nothing moves until a second person approves it."
+        description="Nothing moves until a second person approves it."
       />
       <FormLayout formId="balance-withdrawal-form" outlineLabel="Withdrawal sections">
         <form className="space-y-4" onSubmit={(e) => void form.handleSubmit((v) => setArmed(v))(e)}>

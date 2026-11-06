@@ -152,7 +152,6 @@ export function MaturitiesPage() {
     <>
       <PageHeader
         title="Maturities"
-        description="Policies still in force that reach their maturity date in this window — what the insurer will have to pay, and when."
         count={<CountLine {...count} />}
       />
 

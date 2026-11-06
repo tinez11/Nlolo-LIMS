@@ -111,8 +111,7 @@ export function GroupFuneralFamiliesPanel({ policyNumber, onChanged }: { policyN
         : 'Each family under its main member; the bill counts members, not lives.'}>
       {yearly && inForce && (
         <p className="border-b border-border px-4 py-2.5 text-xs text-muted-foreground" role="status">
-          A yearly plan: the association is billed once for the year, and these members and their families are fixed
-          while the policy is in force. A death claim still ends that life.
+          Yearly plan: members are fixed while it is in force.
         </p>
       )}
       {canUnderwrite && !(yearly && inForce) && (

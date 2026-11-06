@@ -147,8 +147,7 @@ export function LoansPanel({
             could not hover it. */}
         {!originating && !hasCashValue && (
           <p className="mt-1 text-xs text-muted-foreground">
-            A loan is limited to the policy&rsquo;s cash value, which is 0.00. A savings policy
-            builds value from its first two or three full years; a term policy never does.
+            No loan available: the cash value is 0.00.
           </p>
         )}
         {originating && (
@@ -363,9 +362,7 @@ function OriginateLoanForm({
       )}
 
       <p className="text-xs text-muted-foreground">
-        Limited to the policy&rsquo;s available cash value. A second person releases the payout
-        before anything is sent, and the payment rail confirms it, so the loan stays pending
-        until the money is sent.
+        Up to the available cash value. A second person releases the payout.
       </p>
 
       <div className="flex items-center gap-1.5">
