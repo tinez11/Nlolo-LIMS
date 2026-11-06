@@ -12,7 +12,7 @@ import { formatInstant } from '@/lib/dates';
 export function ProposalHistoryPanel({ events }: { events: CaseEvent[] }) {
   if (events.length === 0) return null;
   return (
-    <Panel title="Proposal history" subtitle="Each return, correction and resubmission, oldest first.">
+    <Panel title="Proposal history">
       <ol className="divide-y divide-border">
         {events.map((e) => (
           <li key={e.eventId} className="space-y-1.5 px-4 py-3 text-sm">

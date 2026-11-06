@@ -48,7 +48,7 @@ export function ReturnToAgentPanel({ caseId, onReturned }: { caseId: string; onR
   return (
     <Panel
       title="Return to the agent"
-      subtitle="Send the proposal back for corrections. It cannot be decided until the agent resubmits it."
+      subtitle="It cannot be decided until the agent resubmits it."
     >
       <div className="space-y-4 px-4 pb-4">
         {reasons.map((r, i) => (

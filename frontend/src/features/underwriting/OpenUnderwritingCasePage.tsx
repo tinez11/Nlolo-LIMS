@@ -301,7 +301,6 @@ export function OpenUnderwritingCasePage() {
       <PageHeader
         breadcrumb={[{ label: 'Underwriting', to: '/staff/underwriting' }]}
         title="Open an underwriting case"
-        description="Browsable afterward from the Underwriting queue — but a policy later issued from it never re-exposes this case's id."
       />
 
       <FormLayout formId="open-case-form" outlineLabel="Underwriting case sections">
@@ -471,8 +470,7 @@ export function OpenUnderwritingCasePage() {
               <PartyName partyId={introducingAgentPartyId} />
             </div>
             <p className="mt-1 text-xs text-subtle-foreground">
-              The agent who introduced this client. Commission on the policy this case issues
-              accrues to them, and that is not editable here.
+              The client&rsquo;s agent. Not editable here.
             </p>
           </FormField>
         ) : (
@@ -489,8 +487,7 @@ export function OpenUnderwritingCasePage() {
               }
             />
             <p className="mt-1 text-xs text-subtle-foreground">
-              No agent introduced this client, so the sale is attributed here. Leave it empty for
-              a direct sale — a policy issued with no agent of record accrues no commission.
+              Blank = direct sale, no commission
             </p>
           </FormField>
         )}
@@ -681,7 +678,7 @@ export function OpenUnderwritingCasePage() {
               <FormField required
                 label="Rate (% a year)"
                 error={errors.proposedRatePercent?.message}
-                hint={`This product offers a rate between ${termAccountTerms.minRatePercent}% and ${termAccountTerms.maxRatePercent}%. The policy keeps it for life; nothing can be withdrawn until the term ends.`}
+                hint={`This product offers ${termAccountTerms.minRatePercent}% to ${termAccountTerms.maxRatePercent}%. No withdrawals before the term ends.`}
               >
                 <Input inputMode="decimal" placeholder={String(termAccountTerms.minRatePercent)} {...register('proposedRatePercent')} />
               </FormField>

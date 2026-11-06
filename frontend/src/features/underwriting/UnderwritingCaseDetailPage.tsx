@@ -238,7 +238,7 @@ export function UnderwritingCaseDetailPage() {
         {view?.evidenceForPolicyNumber && (
           <Panel
             title="Evidence for a scheme member"
-            subtitle="This decides one member's cover above the scheme's free cover limit. It issues no policy."
+            subtitle="One member's cover above the free cover limit. Issues no policy."
           >
             <div className="space-y-1 px-4 py-3 text-xs">
               <p>
@@ -262,7 +262,6 @@ export function UnderwritingCaseDetailPage() {
         {annuityChoice?.data && (
           <Panel
             title="Annuity purchase"
-            subtitle="The sum assured is the purchase price. The income is locked from the rate table when the premium arrives."
           >
             <dl className="px-4 pb-2">
               <Field label="Form" value={annuityChoice.data.formCode} />
@@ -284,7 +283,7 @@ export function UnderwritingCaseDetailPage() {
             canReplace={view.status !== 'DECIDED' && can('schemes.manage')} />
         )}
         {funeralApplication && (
-          <Panel title="Funeral plan" subtitle="The plan, the family it covers, and what each life costs today">
+          <Panel title="Funeral plan">
             <div className="px-4 pb-4">
               <FuneralApplicationSummary application={funeralApplication} />
             </div>
@@ -293,7 +292,6 @@ export function UnderwritingCaseDetailPage() {
         {deferredChoice?.data && (
           <Panel
             title="Pension"
-            subtitle="The sum assured is the contribution per payment. The form is chosen when it vests, at the rates in force that day."
           >
             <dl className="px-4 pb-2">
               <Field label="Retirement age" value={deferredChoice.data.retirementAge} />
@@ -348,7 +346,7 @@ export function UnderwritingCaseDetailPage() {
           below the place they were being assessed.
         */}
         {view && !view.groupScheme && !view.evidenceForPolicyNumber && (
-          <Panel title="The proposal" subtitle="The cover applied for. Read it, and the quotation below, before assessing.">
+          <Panel title="The proposal">
             <dl className="px-4 pb-2">
               <Field
                 label={view.proposedRatePercent != null ? 'Contribution per payment' : 'Sum assured'}
@@ -394,7 +392,6 @@ export function UnderwritingCaseDetailPage() {
             was nothing behind it. */}
         <Panel
           title="Declarations"
-          subtitle="What the applicant declared. Read back on a claim, so it records the question as it was put."
         >
           <DisclosurePanel caseId={caseId} />
         </Panel>
@@ -441,7 +438,7 @@ export function UnderwritingCaseDetailPage() {
             form opened before the answer would keep the wrong ones. Keyed so it rebuilds if it changes. */}
         {/* With the agent: nothing to decide until it comes back (the server refuses a decision on it too). */}
         {isReturned && (
-          <Panel title="With the agent" subtitle="Returned for corrections. It comes back to the queue when the agent resubmits it.">
+          <Panel title="With the agent" subtitle="Returned for corrections.">
             <p className="px-4 pb-4 text-xs text-muted-foreground">
               What was asked is in the proposal history below. Further evidence can still be recorded.
             </p>
@@ -468,7 +465,6 @@ export function UnderwritingCaseDetailPage() {
           <Panel
             emphasis
             title={isPostponed ? 'Submit further evidence' : 'Submit an assessment'}
-            subtitle="Evidence for the decision. This records the finding and refreshes the engine's recommendation; it does not decide the case."
           >
             <form
               className="space-y-4 p-4"

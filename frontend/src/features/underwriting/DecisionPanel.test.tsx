@@ -55,7 +55,7 @@ describe('the engine recommendation', () => {
     renderPanel();
     expect(screen.getByText(/The rules engine recommends/)).toBeInTheDocument();
     expect(screen.getByText('Standard risk profile')).toBeInTheDocument();
-    expect(screen.getByText(/A recommendation, not a decision/)).toBeInTheDocument();
+    expect(screen.getByText(/A recommendation only; it binds nothing/)).toBeInTheDocument();
   });
 
   it('says plainly when there is none, rather than rendering an empty box', () => {

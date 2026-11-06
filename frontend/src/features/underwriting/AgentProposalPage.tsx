@@ -223,7 +223,7 @@ function PlanForm({ view, versionId, onSaved }: {
   }
 
   return (
-    <Panel outline title="The plan" subtitle="Correct the cover, term or payments if the underwriter asked.">
+    <Panel outline title="The plan">
       <div className="space-y-4 px-4 pb-4">
         <div className="grid grid-cols-2 gap-3">
           <FormField required label={termAccountTerms ? 'Contribution per payment' : 'Sum assured or amount'} error={sumError}>
@@ -351,7 +351,7 @@ function ClientFormLoaded({ caseId, initial, onSaved }: {
     <Panel
       outline
       title="The client"
-      subtitle="Correct the client's details if the underwriter asked. A changed name or date of birth sends their ID back for verification."
+      subtitle="A changed name or date of birth sends their ID back for verification."
     >
       <form className="space-y-4 px-4 pb-4" onSubmit={(e) => void handleSubmit(save)(e)}>
         <RequiredNote />
@@ -383,7 +383,7 @@ function ResubmitForm({ caseId, onDone }: { caseId: string; onDone: (v: Underwri
   }
 
   return (
-    <Panel outline title="Resubmit" subtitle="When everything asked is corrected, send it back to the underwriter.">
+    <Panel outline title="Resubmit">
       <form className="space-y-4 px-4 pb-4" onSubmit={(e) => void handleSubmit(resubmit)(e)}>
         <FormField label="Note to the underwriter">
           <Controller control={control} name="note" render={({ field }) => <Textarea className="min-h-12" {...field} />} />

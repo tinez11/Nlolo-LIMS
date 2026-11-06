@@ -322,8 +322,7 @@ export function QuotationPreview({
 
       {basis === 'PER_SCHEME' && (
         <p className="px-4 pb-4 text-xs text-muted-foreground">
-          This cover is priced per scheme, not per life: the premium is the scheme contract&apos;s rate applied to the
-          lives or the balances it covers, so there is no individual premium to quote here.
+          Priced per scheme, not per life: there is no individual premium to quote.
         </p>
       )}
 
@@ -429,8 +428,7 @@ function PremiumQuotation({
         <div className="px-4 pb-4">
           <InlineError sticky error={toApiError(quotation.error)} lead="Not priced" />
           <p className="pt-2 text-xs text-muted-foreground">
-            This product cannot price this person as entered; the message above says why. Check the date of birth,
-            sex and smoker status first. If they are right, the product is not priced for this person.
+            Check the date of birth, sex and smoker status. If they are right, this product does not price this person.
           </p>
         </div>
       )}
@@ -801,8 +799,7 @@ function SavingsQuotation({
           {q.minimumBalance && <Row label="Minimum balance" value={formatMoney(q.minimumBalance)} />}
           <div className="px-4 py-2">
             <p className="text-xs text-muted-foreground">
-              An account has no premium and no maturity value: it is funded by deposits, earns interest on its
-              balance at the declared rate, and runs until it is closed.
+              No premium and no maturity value: funded by deposits, earning the declared rate until closed.
             </p>
           </div>
         </>

@@ -57,7 +57,6 @@ export function NeedsActionPage() {
     <>
       <PageHeader
         title="Needs your action"
-        description="Proposals returned to you for corrections or postponed, and recent declines with their reasons."
       />
       <div className="px-6 pb-8">
         {error ? (

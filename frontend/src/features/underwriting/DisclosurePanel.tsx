@@ -70,8 +70,7 @@ export function DisclosurePanel({ caseId }: { caseId: string }) {
 
       {disclosures.status === 'success' && sets.length === 0 && (
         <p className="text-xs text-muted-foreground">
-          Nothing declared on this case. That is not the same as “declared nothing” — it means no
-          proposal answers were ever recorded here.
+          No proposal answers were recorded on this case.
         </p>
       )}
 
