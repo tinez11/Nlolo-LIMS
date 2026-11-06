@@ -1,4 +1,4 @@
-import { LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react';
+import { ArrowLeftRight, LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react';
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
@@ -445,7 +445,10 @@ function UserBlock({ identity, realm }: { identity: ReturnType<typeof readIdenti
         .filter((other) => other !== realm)
         .map((other) => (
           <Button key={other} asChild size="sm" variant="ghost" className="mt-1 w-full justify-start">
-            <NavLink to={`/${REALM_CONFIG[other].slug}`}>Switch to {REALM_CONFIG[other].label}</NavLink>
+            <NavLink to={`/${REALM_CONFIG[other].slug}`}>
+              <ArrowLeftRight aria-hidden />
+              Switch to {REALM_CONFIG[other].label}
+            </NavLink>
           </Button>
         ))}
       <div className="mt-2.5 flex items-center gap-1">
