@@ -55,10 +55,9 @@
     empty field read as a filled one. The placeholder is pinned at the lightest value that still keeps
     4.5:1 on the --control ground (Y ~ L^3: 0.54 -> 4.5:1), never lighter.
   */
-  /* Slate blue, not near-black (user, 2026-11-06): a label is told apart from the navy value by its HUE
-     as well as its lightness, so it can stay at normal weight. ~6.8:1 on white. Never teal -- teal
-     means "act here" on this platform, and a teal label would read as a link. */
-  --label: oklch(0.5 0.15 255);
+  /* Neutral slate grey (user, 2026-11-06): not near-black (too heavy), not blue or teal (both read as
+     links). Between the navy value and the lighter hint, at normal weight. ~8:1 on white. */
+  --label: oklch(0.42 0.02 240);
   --placeholder: oklch(0.54 0.012 220);
 
   --border: oklch(0.915 0.01 210);
@@ -145,7 +144,7 @@
   --muted-foreground: oklch(0.74 0.02 220);
   --subtle-foreground: oklch(0.7 0.02 220);
   /* The same ladder inverted: label brighter than hint, placeholder the dimmest that keeps 4.5:1 on a field. */
-  --label: oklch(0.78 0.12 250);
+  --label: oklch(0.82 0.015 230);
   --placeholder: oklch(0.68 0.015 220);
 
   --border: oklch(1 0 0 / 10%);
