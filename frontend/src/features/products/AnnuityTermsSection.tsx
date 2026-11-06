@@ -88,10 +88,9 @@ export function AnnuityTermsSection({
       </FormField>
       {deferred && (
         <fieldset className="space-y-2 rounded-md border border-border p-3">
-          <legend className="text-xs font-medium text-muted-foreground">Vesting</legend>
+          <legend className="text-xs font-medium text-label">Vesting</legend>
           <p className="text-xs text-subtle-foreground">
-            The pension vests on the retirement age chosen at sale, or as staff instruct inside this window. With no
-            instruction it vests into the default form and frequency with no lump sum, at the rates in force that day.
+            With no instruction it vests into the default form and frequency, with no lump sum.
           </p>
           <div className="grid grid-cols-3 gap-3">
             <FormField required label="Minimum vesting age" error={errors.vestingMinAge?.message}>
@@ -153,7 +152,7 @@ export function AnnuityTermsSection({
       </div>
 
       <fieldset className="space-y-2">
-        <legend className="text-xs font-medium text-muted-foreground">Payment frequencies</legend>
+        <legend className="text-xs font-medium text-label">Payment frequencies</legend>
         <p className="text-xs text-subtle-foreground">
           The factor scales the annual income for paying more often. Leave blank for a frequency not offered; annual is 1.
         </p>

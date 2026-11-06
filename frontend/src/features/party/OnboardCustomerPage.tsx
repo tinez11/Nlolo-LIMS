@@ -64,7 +64,6 @@ export function OnboardCustomerPage() {
     <>
       <PageHeader
         title="Onboard a customer"
-        description="Registers a new individual or corporate party, PENDING KYC verification by staff."
       />
 
       <FormLayout formId="onboard-customer-form" outlineLabel="Customer sections" card={!quotationId}>

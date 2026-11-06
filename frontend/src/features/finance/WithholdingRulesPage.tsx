@@ -74,7 +74,7 @@ export function WithholdingRulesPage() {
     <>
       <PageHeader
         title="Withholding rules"
-        description="Tax withheld from payouts, by rule. The rule is the law's; a second person approves it."
+        description="A second person approves each rule."
       />
       <div className="space-y-4 px-6 pb-6">
         <div className="rounded-xl border border-border bg-surface shadow-card p-4">{renderList()}</div>

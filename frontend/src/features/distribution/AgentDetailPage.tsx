@@ -108,11 +108,11 @@ export function AgentDetailPage() {
 
       <DetailLayout record={renderRecord()}>
         {/* First (2026-10-28): an agent with no login cannot sign in at all, so a new agent's page opens on it. */}
-        <Panel title="Agent login" subtitle="Signing in to the agent console">
+        <Panel title="Agent login">
           <AgentLoginPanel agentId={agentId} />
         </Panel>
 
-        <Panel title="Commission plan" subtitle="Per product — a plan hangs off a product, not this agent.">
+        <Panel title="Commission plan">
           <CommissionPlanPanel agentId={agentId} products={products.data ?? []} canManage={canManage} />
         </Panel>
 

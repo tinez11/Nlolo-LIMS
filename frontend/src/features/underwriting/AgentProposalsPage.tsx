@@ -211,7 +211,6 @@ export function AgentProposalsPage() {
     <>
       <PageHeader
         title="Proposals"
-        description="Every proposal you have submitted, most recently submitted first."
         count={<CountLine {...count} />}
       />
       <div className="px-6 pb-6">

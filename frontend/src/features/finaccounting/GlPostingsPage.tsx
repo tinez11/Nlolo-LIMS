@@ -204,7 +204,6 @@ export function GlPostingsPage() {
     <>
       <PageHeader
         title="GL postings"
-        description="Every journal entry: what it records, the account it debited and the one it credited, and how much. Select one to see every line."
         count={<CountLine {...count} />}
       />
 

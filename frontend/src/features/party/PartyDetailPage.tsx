@@ -452,7 +452,7 @@ function clientTabs({
     value: 'claims',
     label: 'Claims',
     content: (
-      <Panel title="Claims" subtitle="Claims this client has made.">
+      <Panel title="Claims">
         <ClaimList resource={claims} onRetry={onRetryClaims} />
       </Panel>
     ),
@@ -464,7 +464,6 @@ function clientTabs({
     content: (
       <Panel
         title="Underwriting"
-        subtitle="Applications assessed for this client. Open one to decide it."
       >
         <CaseList resource={cases} onRetry={onRetryCases} />
       </Panel>
@@ -481,7 +480,7 @@ function clientTabs({
     content: (
       <Panel
         title="Named as beneficiary"
-        subtitle="Policies that would pay out to this client — not policies they own."
+        subtitle="Policies that pay out to this client, not ones they own."
       >
         <BeneficiaryOfList resource={beneficiaryOf} onRetry={onRetryBeneficiaryOf} />
       </Panel>
@@ -495,7 +494,7 @@ function clientTabs({
       value: 'agent',
       label: 'Agent',
       content: (
-        <Panel title="Also an agent" subtitle="Whether this client sells for us as well.">
+        <Panel title="Also an agent">
           <AgentRecordList resource={agentRecords} onRetry={onRetryAgentRecords} />
         </Panel>
       ),
@@ -508,7 +507,7 @@ function clientTabs({
       value: 'portal',
       label: 'Portal',
       content: (
-        <Panel title="Customer portal" subtitle="Whether this client can sign in to see their own policies, claims and payments.">
+        <Panel title="Customer portal">
           <PortalAccessPanel partyId={partyId} />
         </Panel>
       ),

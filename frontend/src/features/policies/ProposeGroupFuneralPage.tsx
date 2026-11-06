@@ -146,7 +146,6 @@ export function ProposeGroupFuneralPage() {
       <PageHeader
         breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title="Propose a group funeral scheme"
-        description="An association's members and their families on one plan. An underwriter decides it; cover starts when the association's first premium clears."
       />
       {!canUnderwrite && <NoAccess what="Proposing a group funeral scheme" who="underwriters" />}
       {canUnderwrite && (
@@ -199,13 +198,11 @@ export function ProposeGroupFuneralPage() {
                 </Select>
               )}
             </FormField>
-            <FormField label="Cover commences">
+            <FormField label="Cover commences" hint="Blank = today; no future dates">
               <DatePicker value={commencementDate || null} onChange={(iso) => setCommencementDate(iso ?? '')} />
-              <p className="mt-1 text-xs text-subtle-foreground">Blank means today. A future date is not supported.</p>
             </FormField>
-            <FormField label="Term in months">
-              <Input inputMode="numeric" value={termMonths} onChange={(e) => setTermMonths(e.target.value)}
-                placeholder="Leave blank — renews annually" />
+            <FormField label="Term in months" hint="Blank = renews annually">
+              <Input inputMode="numeric" value={termMonths} onChange={(e) => setTermMonths(e.target.value)} />
             </FormField>
           </div>
 
@@ -224,7 +221,7 @@ export function ProposeGroupFuneralPage() {
           </div>
 
           <fieldset data-outline="Members and families" className="border-t border-border pt-3">
-            <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
+            <legend className="pr-2 text-eyebrow text-label uppercase">
               Members and their families
             </legend>
             <div className="mb-2.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

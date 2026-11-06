@@ -79,7 +79,7 @@ export function NewUserPage() {
                 <Input {...register('lastName', { onChange: suggest })} />
               </FormField>
             </div>
-            <FormField required label="Login name" hint="What they type to sign in." error={errors.username?.message}>
+            <FormField required label="Login name" error={errors.username?.message}>
               <Input className="font-mono" {...register('username')} />
             </FormField>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

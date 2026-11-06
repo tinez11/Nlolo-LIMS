@@ -52,7 +52,7 @@ export function NewRolePage() {
       <PageHeader
         breadcrumb={[{ label: 'Roles', to: '/staff/roles' }]}
         title="New role"
-        description="A set of permissions for a job the built-in roles do not fit. Give it to people on their own pages."
+        description="For a job the built-in roles do not fit."
       />
       <FormLayout formId="new-role-form" outlineLabel="Role sections">
         <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>

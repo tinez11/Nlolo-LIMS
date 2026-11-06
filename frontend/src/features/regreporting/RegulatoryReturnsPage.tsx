@@ -91,7 +91,7 @@ export function RegulatoryReturnsPage() {
     <>
       <PageHeader
         title="Regulatory returns"
-        description="TIRA prudential returns. Regenerating an existing (return type, period) pair replaces its lines."
+        description="Regenerating a return type and period replaces its lines."
         actions={
           !creatingOpen && (
             <Button size="sm" variant="primary" onClick={() => setCreatingOpen(true)}>

@@ -158,7 +158,7 @@ export function ClaimsDashboardPanel({ range }: PanelProps) {
           </Panel>
         </div>
         <div className="xl:col-span-6">
-          <Panel title="Where open claims are" subtitle="As at now. Each opens its list.">
+          <Panel title="Where open claims are" subtitle="As at now.">
             <div className="px-4 pb-4">
               <ShareBars
                 label="Open claims by stage"

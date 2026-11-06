@@ -246,7 +246,6 @@ export function IssuePolicyPage() {
       <PageHeader
         breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title="Issue a policy"
-        description="The staff exception path — outside the normal underwriting-decision pipeline."
       />
 
       <FormLayout formId="issue-policy-form" outlineLabel="Policy sections">
@@ -455,13 +454,9 @@ export function IssuePolicyPage() {
             annually renewable group scheme genuinely have none, so leaving these blank
             is a real answer rather than an omission. */}
         <fieldset data-outline="Term" className="border-t border-border pt-3">
-          <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
+          <legend className="pr-2 text-eyebrow text-label uppercase">
             Term
           </legend>
-          <p className="mb-2.5 text-xs text-muted-foreground">
-            Leave blank for a product that does not term — whole life, an annuity, a
-            renewable group scheme.
-          </p>
 
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Commencement date" error={errors.commencementDate?.message}>
@@ -477,7 +472,7 @@ export function IssuePolicyPage() {
               />
             </FormField>
 
-            <FormField label="Policy term (months)" error={errors.policyTermMonths?.message}>
+            <FormField label="Policy term (months)" hint="Blank = no fixed term" error={errors.policyTermMonths?.message}>
               <Input
                 inputMode="numeric"
                 
@@ -530,11 +525,7 @@ export function IssuePolicyPage() {
             <div className="rounded-md border border-border bg-surface-muted px-3 py-2 text-xs">
               <PartyName partyId={introducingAgentPartyId} />
             </div>
-            <p className="mt-1 text-xs text-subtle-foreground">
-              The agent who introduced this client. Commission on this policy accrues to them, and
-              that is not editable here — an attribution an issue form could rewrite is a
-              commission an issue form could reassign.
-            </p>
+            <p className="mt-1 text-xs text-subtle-foreground">The client&rsquo;s agent. Not editable here.</p>
           </FormField>
         ) : (
           <FormField label="Agent of record" error={errors.agentOfRecordId?.message}>
@@ -551,10 +542,7 @@ export function IssuePolicyPage() {
               }
               placeholder="Search agents by name or licence…"
             />
-            <p className="mt-1 text-xs text-subtle-foreground">
-              No agent introduced this client, so the sale is attributed here. Leave it empty for
-              a direct sale, which accrues no commission.
-            </p>
+            <p className="mt-1 text-xs text-subtle-foreground">Blank = direct sale, no commission</p>
           </FormField>
         )}
 

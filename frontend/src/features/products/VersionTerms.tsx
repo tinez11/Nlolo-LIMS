@@ -31,7 +31,7 @@ export function FuneralTermsDetail({ terms }: { terms: FuneralTermsView }) {
 
   return (
     <div className="space-y-1 pb-2">
-      <SectionHeading hint="What each plan pays for each person it covers.">Plans and benefits</SectionHeading>
+      <SectionHeading>Plans and benefits</SectionHeading>
       <p className="px-4 text-xs text-muted-foreground">Sold to: {SOLD_AS[terms.soldAs] ?? terms.soldAs}</p>
       <div className="overflow-x-auto px-4">
         <table className="text-xs">
@@ -66,7 +66,7 @@ export function FuneralTermsDetail({ terms }: { terms: FuneralTermsView }) {
 
       {terms.premiums.length > 0 && (
         <>
-          <SectionHeading hint="The yearly premium for each life, by plan, role and age.">Premium table</SectionHeading>
+          <SectionHeading>Premium table</SectionHeading>
           <div className="overflow-x-auto px-4">
             <table className="text-xs">
               <caption className="sr-only">Yearly premium per plan, role and age band</caption>
@@ -97,7 +97,6 @@ export function FuneralTermsDetail({ terms }: { terms: FuneralTermsView }) {
 
       <FactorSection
         title="Who may be covered"
-        hint="Entry ages, when cover stops, and how many of each."
         empty="No roles."
         rows={terms.roles.map((r) => ({
           key: r.role,
@@ -110,7 +109,6 @@ export function FuneralTermsDetail({ terms }: { terms: FuneralTermsView }) {
       />
       <FactorSection
         title="Claims"
-        hint="When a death is paid, and to whom."
         empty=""
         rows={[
           { key: 'wait', label: 'Waiting period', note: terms.accidentWaivesWaiting ? 'an accidental death is paid from day one' : null,
@@ -130,7 +128,6 @@ export function AnnuityTermsDetail({ terms }: { terms: AnnuityTermsView }) {
     <div className="pb-2">
       <FactorSection
         title="Annuity forms"
-        hint="The kinds of income a buyer can choose."
         empty="No forms."
         rows={terms.forms.map((f) => ({
           key: f.formCode,
@@ -145,7 +142,6 @@ export function AnnuityTermsDetail({ terms }: { terms: AnnuityTermsView }) {
       />
       <FactorSection
         title="Payments"
-        hint="When income is paid, and the factor for paying it more often."
         empty="No frequencies."
         rows={[
           { key: 'timing', label: 'Paid', note: null, value: terms.timing === 'ADVANCE' ? 'In advance' : 'In arrears' },
@@ -223,7 +219,6 @@ export function UnitLinkedTermsDetail({ terms }: { terms: UnitLinkedTermsView })
     <div className="pb-2">
       <FactorSection
         title="Funds and premiums"
-        hint="What the policy invests in, what it must be paid, and the cover it buys."
         empty=""
         rows={[
           { key: 'funds', label: 'Funds offered', note: null, value: terms.fundCodes.join(', ') || '—' },
@@ -257,7 +252,6 @@ export function UnitLinkedTermsDetail({ terms }: { terms: UnitLinkedTermsView })
 
       <FactorSection
         title="Rules"
-        hint="What death pays, when the policy lapses, and when it can be surrendered."
         empty=""
         rows={[
           { key: 'death', label: 'On death pays', note: null,
@@ -273,7 +267,7 @@ export function UnitLinkedTermsDetail({ terms }: { terms: UnitLinkedTermsView })
       />
 
       {optionRows.length > 0 && (
-        <FactorSection title="Options" hint="Switching funds, taking money out, and paying in more." empty="" rows={optionRows} />
+        <FactorSection title="Options" empty="" rows={optionRows} />
       )}
 
       {surrender.length > 0 && (
@@ -317,7 +311,7 @@ export function ValueTermsDetail({ terms }: { terms: VersionValueTermsView }) {
 
       {payouts && payouts.rows.length > 0 && (
         <section>
-          <SectionHeading hint="What the policy pays while the life assured is alive. A yearly amount is split across that year’s instalments.">
+          <SectionHeading hint="A yearly amount is split across that year’s instalments.">
             Payouts
           </SectionHeading>
           <BandsShown caption="Payouts while the life assured is alive" columns={['Payout', 'When', 'Amount', 'Paid']}
@@ -325,7 +319,7 @@ export function ValueTermsDetail({ terms }: { terms: VersionValueTermsView }) {
         </section>
       )}
       {policyRows.length > 0 && (
-        <FactorSection title="Cancelling and death" hint="The customer’s right to change their mind, and what death pays."
+        <FactorSection title="Cancelling and death"
           empty="" rows={policyRows} />
       )}
     </div>
@@ -360,7 +354,7 @@ function AccountTerms({ account, termAccount }: { account: Account; termAccount:
       />
       {!account.usesAccountCharges && charged && (
         <section>
-          <SectionHeading hint="Kept back from each payment before it reaches the account, and the fee taken every month.">
+          <SectionHeading>
             Account charges by year
           </SectionHeading>
           <BandsShown caption="Account charges by policy year"
@@ -396,7 +390,6 @@ function CashValueTerms({ table }: { table: CashValue }) {
     <>
       <FactorSection
         title="Cash value"
-        hint="What the policy is worth if it is surrendered or made paid-up."
         empty=""
         rows={[
           { key: 'from', label: 'Has a value', note: null,

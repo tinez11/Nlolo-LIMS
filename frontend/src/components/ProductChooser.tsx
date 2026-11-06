@@ -191,9 +191,8 @@ export function ProductChooser({ products, value, onChange, allow, disabled = fa
 }
 
 function Description({ text, clamp = false, className }: { text?: string | null | undefined; clamp?: boolean; className?: string }) {
-  if (!text) {
-    return <span className={cn('block text-xs text-muted-foreground', className)}>No description yet</span>;
-  }
+  // Nothing when there is nothing: "No description yet" under every product is noise about missing data.
+  if (!text) return null;
   return (
     <span className={cn('block text-xs text-muted-foreground', clamp && 'line-clamp-2', 'whitespace-pre-line', className)}>
       {text}

@@ -181,7 +181,6 @@ export function AuditLogPage() {
     <>
       <PageHeader
         title="Event journal"
-        description="Every domain event this tenant has recorded, newest first."
         count={<CountLine {...count} />}
       />
 
@@ -189,9 +188,8 @@ export function AuditLogPage() {
           this is the compliance register, and it cannot be one. */}
       <div className="px-6 pb-1">
         <p className="max-w-3xl rounded-md border border-border bg-surface-muted px-3 py-2 text-xs text-muted-foreground">
-          This is a journal of what the platform <strong className="font-medium text-foreground">did</strong>, not of
-          who did it. Each row is a domain event with its own payload — there is no actor, no before-and-after value
-          and no stated reason recorded, so this cannot serve as a compliance audit trail.
+          What the platform <strong className="font-medium text-foreground">did</strong>, not who did it — not a
+          compliance audit trail.
         </p>
       </div>
 

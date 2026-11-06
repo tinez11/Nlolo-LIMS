@@ -76,7 +76,7 @@ test.describe('staff finaccounting', () => {
 
     await page.getByRole('link', { name: 'Full detail' }).click();
     await expect(page.getByRole('heading', { name: description, level: 1 })).toBeVisible();
-    await expect(page.getByText('Debits equal credits')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Postings', exact: true })).toBeVisible();
     await expect(page.getByText('Policy register version')).toBeVisible();
   });
 

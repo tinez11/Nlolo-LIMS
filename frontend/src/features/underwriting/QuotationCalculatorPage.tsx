@@ -435,7 +435,7 @@ export function QuotationCalculatorPage() {
     <>
       <PageHeader
         title="Quotation calculator"
-        description="What a product costs and what it pays, before anybody is registered. Nothing is saved."
+        description="Nothing is saved."
       />
 
       {/*
@@ -458,7 +458,7 @@ export function QuotationCalculatorPage() {
 
         {who === 'PROSPECT' ? (
           <fieldset className="space-y-4">
-            <legend className="pb-2 text-eyebrow text-subtle-foreground uppercase">The person</legend>
+            <legend className="pb-2 text-eyebrow text-label uppercase">The person</legend>
             <FormField required label="Full name">
               <Input placeholder="Amina Hassan" {...person.register('fullName')} />
             </FormField>
@@ -497,7 +497,7 @@ export function QuotationCalculatorPage() {
             </div>
           </fieldset>
         ) : (
-          <FormField required label="Client" hint="Your registered clients. Their details are read from their record.">
+          <FormField required label="Client">
             <Controller
               control={control}
               name="applicantPartyId"
@@ -513,10 +513,10 @@ export function QuotationCalculatorPage() {
         )}
 
         <fieldset className="space-y-4 border-t border-border pt-3">
-          <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">The plan</legend>
+          <legend className="pr-2 text-eyebrow text-label uppercase">The plan</legend>
           <FormField required
             label="Product"
-            hint="Life, endowment, savings, deposit, funeral and annuity products. Unit-linked and group cover are quoted by the office."
+            hint="Unit-linked and group cover are quoted by the office."
           >
             {isInitialLoad(products) ? (
               <p className="text-xs text-muted-foreground">Loading products…</p>
@@ -680,7 +680,7 @@ export function QuotationCalculatorPage() {
               </Select>
             </FormField>
             )}
-            <FormField label="Cover from" hint="Blank means today.">
+            <FormField label="Cover from" hint="Blank = today">
               <Controller
                 control={control}
                 name="proposedCommencementDate"
@@ -817,7 +817,7 @@ function formatAmount(amount: number): string {
 /** The road from this quotation to a policy, in the order it is travelled. */
 function WhatHappensNext() {
   return (
-    <Panel title="What happens next" subtitle="From this quotation to a policy.">
+    <Panel title="What happens next">
       <ol className="list-decimal space-y-1.5 px-4 pb-4 pl-8 text-sm">
         <li>Quote, and give the customer the quotation PDF to take away. Nothing is saved.</li>
         <li>When the customer agrees, proceed and confirm: the accepted quotation is saved.</li>

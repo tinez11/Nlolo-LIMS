@@ -48,7 +48,6 @@ export function EnginePage() {
     <>
       <PageHeader
         title="IFRS 17 engine"
-        description="Month-end steps 6 and 7: the extract the engine is sent, its results loaded through 9160, the ledger reconciled."
       />
       <div className="space-y-4 px-6 pb-6">
         <div className="flex flex-wrap items-end gap-3">

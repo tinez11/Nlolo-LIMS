@@ -264,9 +264,8 @@ export function RatingBasis({
           // `max-w-prose` because this is the one paragraph of real prose in the
           // panel, and at the panel's full width it set a ~140-character measure.
           <p className="max-w-prose px-4 text-xs text-muted-foreground">
-            This version is <strong className="font-medium text-foreground">unpriced</strong>. It was
-            published without a base rate table, so nothing on this platform can quote a premium for
-            it. A rate table has to be supplied at publish time, and this version had none.
+            This version is <strong className="font-medium text-foreground">unpriced</strong>: it has no
+            base rate table, so no premium can be quoted for it.
           </p>
         ) : (
           <div className="border-t border-border">

@@ -53,7 +53,7 @@ export function AssessmentHistoryPanel({ claimId }: { claimId: string }) {
         title="Not assessed yet"
         // Says which claims legitimately have none, so an empty panel is not read
         // as a failure to load.
-        description="A claim is assessed before it can be approved — except MATURITY, which approves straight from registration."
+        description="A maturity claim needs no assessment."
       />
     );
   }

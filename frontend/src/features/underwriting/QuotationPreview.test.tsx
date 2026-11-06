@@ -128,7 +128,7 @@ describe('QuotationPreview', () => {
     vi.mocked(quotePremium).mockRejectedValue({ status: 422, detail: 'No base rate for age 36' });
     render0();
 
-    expect(await screen.findByText(/cannot price this person as entered/)).toBeInTheDocument();
+    expect(await screen.findByText(/this product does not price this person/)).toBeInTheDocument();
     expect(screen.getByText(/Check the date of birth/)).toBeInTheDocument();
   });
 
@@ -286,7 +286,7 @@ describe('QuotationPreview, per pricing basis', () => {
   it('says a credit-life premium belongs to the scheme, not to this life', () => {
     render0(COMPLETE, 'CRL');
 
-    expect(screen.getByText(/priced per scheme, not per life/)).toBeInTheDocument();
+    expect(screen.getByText(/Priced per scheme, not per life/)).toBeInTheDocument();
     expect(quotePremium).not.toHaveBeenCalled();
   });
 

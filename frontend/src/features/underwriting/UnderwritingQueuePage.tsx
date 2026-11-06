@@ -275,7 +275,6 @@ export function UnderwritingQueuePage() {
     <>
       <PageHeader
         title="Underwriting"
-        description="Every underwriting case in your tenant. Select one to preview it."
         actions={
           can('underwriting.propose') ? (
             <Button asChild size="sm" variant="primary">

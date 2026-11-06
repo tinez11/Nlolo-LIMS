@@ -167,7 +167,7 @@ export function SchemeQuotation({
   return (
     <Panel
       title="Quotation"
-      subtitle="What the association would be billed on the plan above. Nothing is created by looking at it."
+      subtitle="What the association would be billed on the plan above."
     >
       {body}
       <DownloadQuotationButton

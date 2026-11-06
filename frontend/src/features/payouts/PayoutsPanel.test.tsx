@@ -63,7 +63,7 @@ describe('PayoutsPanel', () => {
     // A term policy carries no schedule at all. The tab has to say which, or it reads as broken.
     expect(await screen.findByText('No payouts scheduled')).toBeInTheDocument();
     expect(
-      screen.getByText(/Term and whole-life cover pays on death/),
+      screen.getByText(/pays nothing while the life assured is alive/),
     ).toBeInTheDocument();
   });
 

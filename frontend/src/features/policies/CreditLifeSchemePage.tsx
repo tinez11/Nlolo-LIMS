@@ -219,7 +219,7 @@ export function CreditLifeSchemePage() {
       label: 'Agreement',
       content: (
         <div className="pt-4">
-          <Panel title="Yearly agreements" subtitle="The price, the limits and the lender’s commission, agreed each year">
+          <Panel title="Yearly agreements">
             <CreditLifeAgreementsPanel policyNumber={policyNumber} currency={currency} />
           </Panel>
         </div>
@@ -230,7 +230,7 @@ export function CreditLifeSchemePage() {
       label: 'Commission',
       content: (
         <div className="space-y-6 pt-4">
-          <Panel title="Commission" subtitle="Who earns on each file, at what rate">
+          <Panel title="Commission">
             <CommissionPanel facts={commission.facts} agreedCommissionPercent={agreedCommission} />
           </Panel>
           <CommissionEarnerPanel facts={commission.facts} onChanged={commission.refresh} />

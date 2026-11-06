@@ -63,7 +63,7 @@ export function AccountChargesPage() {
 
   const header = (
     <PageHeader title="Account charges"
-      description="Charges for savings accounts. A product picks its charges here; a policy can be given its own." />
+      />
   );
   if (error) return <>{header}<div className="px-4 pt-4 sm:px-6"><ErrorPanel error={error} onRetry={() => setReload((n) => n + 1)} /></div></>;
   if (!charges || belowMinimum === null) return <LoadingBlock label="Loading charges" />;
@@ -73,7 +73,7 @@ export function AccountChargesPage() {
       {header}
       <div className="space-y-4 px-4 pb-8 sm:px-6">
         {actionError && <InlineError error={actionError} lead="Not saved" />}
-        <Panel title="Minimum balance" subtitle="Applies to every savings account in the organisation">
+        <Panel title="Minimum balance">
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
             <span>
               {belowMinimum

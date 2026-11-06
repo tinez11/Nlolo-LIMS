@@ -154,7 +154,7 @@ export function NewReceiptPage() {
       <PageHeader
         breadcrumb={origin.crumbs}
         title="Record deposit"
-        description="Premium or a loan repayment paid by cash, bank deposit, cheque, Lipa number or TANQR. It counts once a second finance person confirms it."
+        description="It counts once a second finance person confirms it."
       />
       <FormLayout formId="new-receipt-form" outlineLabel="Deposit sections">
         <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>

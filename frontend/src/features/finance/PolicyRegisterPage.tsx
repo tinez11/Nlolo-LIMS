@@ -108,7 +108,7 @@ export function PolicyRegisterPage() {
     <>
       <PageHeader
         title="Accounting policies"
-        description="The IFRS 17 elections in force. A change applies from today or later, and a second person approves it."
+        description="A change applies from today or later, and a second person approves it."
       />
       <div className="space-y-4 px-6 pb-6">
         {renderBody()}

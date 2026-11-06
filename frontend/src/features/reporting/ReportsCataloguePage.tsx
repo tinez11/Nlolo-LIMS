@@ -53,7 +53,7 @@ export function ReportsCataloguePage() {
 
   return (
     <>
-      <PageHeader title="Reports" description="Management and accounting reports, on screen or as Excel, CSV or PDF." />
+      <PageHeader title="Reports" />
       <div className="space-y-4 px-6 pb-6">
         {body()}
         {isAdmin && <RebuildPanel />}

@@ -153,7 +153,6 @@ export function TreatiesPage() {
     <>
       <PageHeader
         title="Treaties"
-        description="Reinsurance treaties in your tenant. Select one to preview it."
         actions={
           can('reinsurance.manage') ? (
             <Button asChild size="sm" variant="primary">

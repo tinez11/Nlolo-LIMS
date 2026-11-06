@@ -95,7 +95,6 @@ export function PaymentRunPage() {
               <Field
                 label="Total"
                 value={formatMoney(run.total)}
-                note="Computed by the server, not summed from the rows below."
               />
               <Field label="Released by" value={<StaffName subject={run.approvedBy} />} />
             </dl>
@@ -111,7 +110,7 @@ export function PaymentRunPage() {
         <ApprovedRunReceipt run={run} />
         {run.status === 'PREPARED' && <ApproveRunAction run={run} />}
 
-        <Panel title="In this run" subtitle="Each instalment is paid separately">
+        <Panel title="In this run">
           {!instalments || isInitialLoad(instalments) ? (
             <LoadingBlock />
           ) : instalments.status === 'error' && instalments.error && instalments.data === null ? (
@@ -185,7 +184,7 @@ function ApprovedRunReceipt({ run }: { run: PaymentRunView }) {
         { label: 'Total', value: formatMoney(run.total) },
         { label: 'Released by', value: <StaffName subject={run.approvedBy} /> },
       ]}
-      note="Requested, not yet paid. Each instalment shows PAID once the payment provider confirms it, and one that fails can be tried again from its own page without touching the rest."
+      note="Requested, not yet paid. A failed instalment can be retried from its own page."
     />
   );
 }

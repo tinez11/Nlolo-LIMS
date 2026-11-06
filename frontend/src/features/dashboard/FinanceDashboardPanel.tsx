@@ -203,7 +203,7 @@ export function FinanceDashboardPanel({ range }: PanelProps) {
           </Panel>
         </div>
         <div className="xl:col-span-6">
-          <Panel emphasis title="Needs a look" subtitle="Each opens its list, already filtered">
+          <Panel emphasis title="Needs a look">
             <ul className="divide-y divide-border">
               {waiting.filter((row) => row.show).map((row) => {
                 const n = countValue(row.n);

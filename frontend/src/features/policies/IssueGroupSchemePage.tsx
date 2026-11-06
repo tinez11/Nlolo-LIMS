@@ -165,7 +165,6 @@ export function IssueGroupSchemePage() {
       <PageHeader
         breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title="Propose a group scheme"
-        description="An underwriter decides it, and cover starts when the employer&apos;s first premium clears."
       />
 
       {!canUnderwrite && (
@@ -201,10 +200,6 @@ export function IssueGroupSchemePage() {
               />
             )}
           />
-          <p className="mt-1 text-xs text-subtle-foreground">
-            They own the contract and pay the premium. They are not a life assured — the lives
-            are the schedule below.
-          </p>
         </FormField>
 
         <FormField required label="Product" error={errors.productId?.message ?? errors.productVersionId?.message}>
@@ -236,13 +231,9 @@ export function IssueGroupSchemePage() {
 
         {/* --- How the scheme values anybody ---------------------------------- */}
         <fieldset data-outline="Benefit basis" className="border-t border-border pt-3">
-          <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
+          <legend className="pr-2 text-eyebrow text-label uppercase">
             Benefit basis
           </legend>
-          <p className="mb-2.5 text-xs text-muted-foreground">
-            One basis for the whole scheme. Flat suits SACCO, funeral and credit-linked cover;
-            a salary multiple is standard for employer schemes; graded splits by staff category.
-          </p>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <FormField required label="Basis">
@@ -266,8 +257,6 @@ export function IssueGroupSchemePage() {
               <FormField required label="Benefit per member" error={errors.flatBenefitAmount?.message}>
                 <Input
                   inputMode="decimal"
-                  
-                  placeholder="5000000.00"
                   {...register('flatBenefitAmount')}
                 />
               </FormField>
@@ -277,26 +266,14 @@ export function IssueGroupSchemePage() {
               <FormField required label="Multiple of annual salary" error={errors.salaryMultiple?.message}>
                 <Input
                   inputMode="decimal"
-                  
-                  placeholder="3"
                   {...register('salaryMultiple')}
                 />
               </FormField>
             )}
 
-            <FormField label="Free cover limit" error={errors.fclAmount?.message}>
-              <Input
-                inputMode="decimal"
-                
-                placeholder="100000000.00"
-                {...register('fclAmount')}
-              />
-              {/* Blank and zero are opposites here, so the field says which one
-                  blank means rather than leaving it to be guessed. */}
-              <p className="mt-1 text-xs text-subtle-foreground">
-                Leave blank if this scheme has no limit — everyone is then covered in full with
-                no medical evidence.
-              </p>
+            {/* Blank and zero are opposites here, so the hint says which one blank means. */}
+            <FormField label="Free cover limit" hint="Blank = no limit" error={errors.fclAmount?.message}>
+              <Input inputMode="decimal" {...register('fclAmount')} />
             </FormField>
           </div>
 
@@ -324,8 +301,6 @@ export function IssueGroupSchemePage() {
                     <FormField required label="Benefit" error={errors.grades?.[index]?.benefitAmount?.message}>
                       <Input
                         inputMode="decimal"
-                        
-                        placeholder="50000000.00"
                         {...register(`grades.${index}.benefitAmount`)}
                       />
                     </FormField>
@@ -348,13 +323,9 @@ export function IssueGroupSchemePage() {
 
         {/* --- The opening schedule ------------------------------------------- */}
         <fieldset data-outline="Opening schedule" className="border-t border-border pt-3">
-          <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
+          <legend className="pr-2 text-eyebrow text-label uppercase">
             Opening schedule
           </legend>
-          <p className="mb-2.5 text-xs text-muted-foreground">
-            The lives covered from day one. At least one — a scheme's sum assured is the total
-            of its members, so it cannot be issued empty. More can be added afterwards.
-          </p>
 
           {typeof errors.openingSchedule?.message === 'string' && (
             <p className="mb-1 text-xs text-status-danger-fg">{errors.openingSchedule.message}</p>
@@ -400,8 +371,6 @@ export function IssueGroupSchemePage() {
                   >
                     <Input
                       inputMode="decimal"
-                      
-                      placeholder="4000000.00"
                       {...register(`openingSchedule.${index}.salaryAmount`)}
                     />
                   </FormField>
@@ -460,18 +429,20 @@ export function IssueGroupSchemePage() {
               <span className="text-muted-foreground">Total sum insured</span>
               <strong>{formatMoney({ amount: runningTotal, currencyCode: currency || 'TZS' })}</strong>
             </div>
-            <p className="mt-0.5 text-xs text-subtle-foreground">
-              Derived from the schedule — the platform calculates it, nobody types it.
-              {unpriced > 0 && ` ${unpriced} row${unpriced === 1 ? '' : 's'} not yet priced.`}
-              {overLimit > 0 &&
-                ` ${overLimit} member${overLimit === 1 ? '' : 's'} over the free cover limit.`}
-            </p>
+            {/* Status only -- a read-only total needs no sentence saying nobody types it. */}
+            {(unpriced > 0 || overLimit > 0) && (
+              <p className="mt-0.5 text-xs text-subtle-foreground">
+                {unpriced > 0 && `${unpriced} row${unpriced === 1 ? '' : 's'} not yet priced.`}
+                {overLimit > 0 &&
+                  ` ${overLimit} member${overLimit === 1 ? '' : 's'} over the free cover limit.`}
+              </p>
+            )}
           </div>
         </fieldset>
 
         {/* --- Premium and term ----------------------------------------------- */}
         <fieldset data-outline="Premium and term" className="border-t border-border pt-3">
-          <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
+          <legend className="pr-2 text-eyebrow text-label uppercase">
             Premium and term
           </legend>
 
@@ -479,8 +450,6 @@ export function IssueGroupSchemePage() {
             <FormField required label="Premium" error={errors.premiumAmount?.message}>
               <Input
                 inputMode="decimal"
-                
-                placeholder="1200000.00"
                 {...register('premiumAmount')}
               />
             </FormField>
@@ -501,7 +470,7 @@ export function IssueGroupSchemePage() {
                 ))}
               </Select>
             </FormField>
-            <FormField label="Risk commences" error={errors.commencementDate?.message}>
+            <FormField label="Risk commences" hint="Blank = today; no future dates" error={errors.commencementDate?.message}>
               <Controller
                 control={control}
                 name="commencementDate"
@@ -509,17 +478,11 @@ export function IssueGroupSchemePage() {
                   <DatePicker value={field.value || null} onChange={(iso) => field.onChange(iso ?? '')} />
                 )}
               />
-              <p className="mt-1 text-xs text-subtle-foreground">
-                Blank means today. Backdating is fine; a future date is not supported yet.
-              </p>
             </FormField>
-            <FormField label="Term in months" error={errors.policyTermMonths?.message}>
-              <Input
-                inputMode="numeric"
-                
-                placeholder="Leave blank — most schemes renew annually"
-                {...register('policyTermMonths')}
-              />
+            {/* An instruction belongs in the hint, not the placeholder -- a placeholder is gone the moment
+                anyone types. */}
+            <FormField label="Term in months" hint="Blank = renews annually" error={errors.policyTermMonths?.message}>
+              <Input inputMode="numeric" {...register('policyTermMonths')} />
             </FormField>
             <FormField label="Note for the record" error={errors.reasonForManualIssue?.message}>
               <Input

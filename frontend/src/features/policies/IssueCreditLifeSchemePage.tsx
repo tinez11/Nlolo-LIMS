@@ -149,7 +149,6 @@ export function IssueCreditLifeSchemePage() {
       <PageHeader
         breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title="Set up a credit-life scheme"
-        description="Once per lender. Borrowers then arrive on monthly files."
       />
 
       {!canUnderwrite && <NoAccess what="Setting up a credit-life scheme" who="underwriters" />}
@@ -172,9 +171,6 @@ export function IssueCreditLifeSchemePage() {
                 />
               )}
             />
-            <p className="mt-1 text-xs text-subtle-foreground">
-              Holds the contract, pays the premium and receives the claims.
-            </p>
             {lenderPartyId && lenderAgentKnown && (
               <p className="mt-1 text-xs text-muted-foreground">
                 {lenderAgentId
@@ -216,21 +212,17 @@ export function IssueCreditLifeSchemePage() {
 
           {/* --- What the insurer agreed with the lender ----------------------- */}
           <fieldset data-outline="Scheme terms" className="border-t border-border pt-3">
-            <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
+            <legend className="pr-2 text-eyebrow text-label uppercase">
               Scheme terms
             </legend>
-            <p className="mb-2.5 text-xs text-muted-foreground">
-              The rate, ages, loan lengths and commission are set in the yearly agreement on the next page.
-            </p>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <FormField required label="Currency" error={errors.currency?.message}>
                 <Input className="uppercase" {...register('currency')} />
               </FormField>
 
-              <FormField label="Free cover limit" error={errors.fclAmount?.message}>
-                <Input placeholder="600000000.00" {...register('fclAmount')} />
-                <p className="mt-1 text-xs text-subtle-foreground">Leave blank for no limit.</p>
+              <FormField label="Free cover limit" hint="Blank = no limit" error={errors.fclAmount?.message}>
+                <Input {...register('fclAmount')} />
               </FormField>
 
               <FormField required label="Risk commences" error={errors.commencementDate?.message}>

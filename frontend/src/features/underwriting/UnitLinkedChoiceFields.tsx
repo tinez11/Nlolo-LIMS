@@ -72,7 +72,7 @@ export function UnitLinkedChoiceFields({
       )}
 
       <fieldset className="space-y-2">
-        <legend className="text-xs font-medium text-muted-foreground">How each premium is split</legend>
+        <legend className="text-xs font-medium text-label">How each premium is split</legend>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {split.map((row, i) => (
             <FormField key={row.fundCode} label={`${row.fundCode} (%)`} error={errors.ulSplit?.[i]?.percent?.message}>

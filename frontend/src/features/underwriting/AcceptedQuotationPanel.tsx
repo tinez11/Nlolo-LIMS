@@ -21,8 +21,7 @@ export function QuotationUnavailable({ error }: { error: ApiError }) {
     <div role="alert" className="space-y-2 rounded-md border border-border bg-surface-muted p-3 text-xs">
       <p className="font-medium">This quotation is no longer available.</p>
       <p className="text-muted-foreground">
-        A confirmed quotation is discarded when it is cancelled, or at the end of the day if it was not submitted as a
-        proposal. Quote again to continue.
+        Discarded if cancelled, or at the end of the day if not submitted. Quote again to continue.
       </p>
       <Button asChild size="sm" variant="outline">
         <Link to="/agents/quotation">Back to the calculator</Link>

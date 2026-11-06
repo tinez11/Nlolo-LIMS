@@ -377,7 +377,7 @@ function TreatyCessions({ treatyId }: { treatyId: string }) {
         ) : rows.length === 0 ? (
           <EmptyState
             title="Nothing ceded yet"
-            description="Cessions are recorded automatically as covered policies go on risk. An active treaty with none is an ordinary state, not a gap."
+            description="Recorded automatically as covered policies go on risk."
           />
         ) : (
           <>

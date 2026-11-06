@@ -142,7 +142,6 @@ export function UsersPage() {
     <>
       <PageHeader
         title="Users"
-        description="Everyone who signs in to this console, and what they hold. Select one to change their access."
         count={<CountLine {...count} />}
         actions={can('users.manage') ? (
           <Button asChild size="sm" variant="primary">

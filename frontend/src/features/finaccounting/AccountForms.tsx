@@ -70,7 +70,7 @@ export function CreateAccountForm({ onDone }: { onDone: () => void }) {
     // wire. They are the whole reason a code is refused, so they belong beside the
     // field that carries it -- and at a readable measure rather than stretched across
     // the full 1600px panel, which is what `Panel`'s own subtitle would have done.
-    <Panel title="New account" subtitle="Type and normal balance come from the code itself.">
+    <Panel title="New account">
       {/* Bounded, because a form is read left to right: an unbounded name field was
           1230px and the description box 1570px, which is a worse target than a
           narrower one and a much worse read. */}

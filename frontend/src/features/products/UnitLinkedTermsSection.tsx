@@ -45,13 +45,12 @@ export function UnitLinkedTermsSection({
       <div>
         <p className="text-xs font-medium text-muted-foreground">Unit-linked terms</p>
         <p className="mt-0.5 text-xs text-subtle-foreground">
-          Premiums buy units at the first price approved after they are received (forward pricing). Each month the policy
-          fee and the cost of insurance are sold from the units. The fund management charge is already in the price.
+          The fund management charge is already in the unit price.
         </p>
       </div>
 
       <fieldset className="space-y-2 rounded-md border border-border p-3">
-        <legend className="text-xs font-medium text-muted-foreground">Funds offered</legend>
+        <legend className="text-xs font-medium text-label">Funds offered</legend>
         <Alert message={errors.ulFundCodes?.message ?? errors.ulFundCodes?.root?.message} />
         {funds.status === 'loading' && offerable.length === 0 ? (
           <p className="text-xs text-muted-foreground">Reading the fund register…</p>
@@ -89,7 +88,7 @@ export function UnitLinkedTermsSection({
       </fieldset>
 
       <fieldset className="space-y-2 rounded-md border border-border p-3">
-        <legend className="text-xs font-medium text-muted-foreground">Allocation and charges</legend>
+        <legend className="text-xs font-medium text-label">Allocation and charges</legend>
         <p className="text-xs font-medium">Allocation bands</p>
         <p className="text-xs text-subtle-foreground">From year 1; leave the last band’s end blank. What is not allocated is the charge.</p>
         <Controller
@@ -112,7 +111,7 @@ export function UnitLinkedTermsSection({
       </fieldset>
 
       <fieldset className="space-y-2 rounded-md border border-border p-3">
-        <legend className="text-xs font-medium text-muted-foreground">Cost of insurance</legend>
+        <legend className="text-xs font-medium text-label">Cost of insurance</legend>
         <FormField required label="Mortality basis" error={errors.ulMortalityBasis?.message}>
           <Select inputSize="sm" {...register('ulMortalityBasis')}>
             <option value="">Choose…</option>
@@ -142,7 +141,7 @@ export function UnitLinkedTermsSection({
       </fieldset>
 
       <fieldset className="space-y-2 rounded-md border border-border p-3">
-        <legend className="text-xs font-medium text-muted-foreground">Death, lapse and surrender</legend>
+        <legend className="text-xs font-medium text-label">Death, lapse and surrender</legend>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <FormField required label="Death pays" error={errors.ulDeathRule?.message}>
             <Select inputSize="sm" {...register('ulDeathRule')}>
@@ -170,7 +169,7 @@ export function UnitLinkedTermsSection({
       </fieldset>
 
       <fieldset className="space-y-2 rounded-md border border-border p-3">
-        <legend className="text-xs font-medium text-muted-foreground">Premiums and sum assured</legend>
+        <legend className="text-xs font-medium text-label">Premiums and sum assured</legend>
         <p className="text-xs text-subtle-foreground">The least premium per frequency; leave a frequency empty if it is not offered.</p>
         <Alert message={errors.ulMinimums?.message ?? errors.ulMinimums?.root?.message} />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -191,10 +190,9 @@ export function UnitLinkedTermsSection({
       </fieldset>
 
       <fieldset className="space-y-2 rounded-md border border-border p-3">
-        <legend className="text-xs font-medium text-muted-foreground">Switches, withdrawals, top-ups and the surrender charge</legend>
+        <legend className="text-xs font-medium text-label">Switches, withdrawals, top-ups and the surrender charge</legend>
         <p className="text-xs text-subtle-foreground">
-          Optional. A feature is offered only when both of its fields are filled in; leave them all empty and the policy
-          offers none of them. Fixed once the version is published.
+          A feature is offered only when both its fields are filled. Fixed once published.
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <FormField label="Free switches per policy year" error={errors.ulFreeSwitches?.message}>

@@ -147,7 +147,6 @@ export function DecisionPanel({
     <Panel
       emphasis
       title="Decide this case"
-      subtitle="The decision is what settles the case and, on an acceptance, issues the policy."
     >
       <div className="space-y-4 p-4">
         {/*
@@ -168,8 +167,7 @@ export function DecisionPanel({
                 <p className="mt-0.5 text-xs text-muted-foreground">{view.recommendationReason}</p>
               )}
               <p className="mt-1 text-xs text-subtle-foreground">
-                A recommendation, not a decision. It is recomputed each time evidence arrives
-                and binds nothing.
+                A recommendation only; it binds nothing.
               </p>
             </>
           ) : (

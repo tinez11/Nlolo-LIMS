@@ -251,7 +251,7 @@ export function EftExecutionPage() {
     <>
       <PageHeader
         title="Payments to make"
-        description="Payouts by bank transfer or cheque, oldest first. The platform cannot make these: make the transfer in the bank or write the cheque, then press Record payment made with its reference. That completes the claim, withdrawal or payout it pays, and books it to the ledger."
+        description="Make the transfer in the bank or write the cheque, then press Record payment made with its reference."
         count={<CountLine {...count} />}
       />
 

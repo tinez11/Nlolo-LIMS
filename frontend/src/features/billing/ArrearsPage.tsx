@@ -258,7 +258,7 @@ export function ArrearsPage() {
     <>
       <PageHeader
         title="Arrears"
-        description="Policies behind on premium, worst escalation first. Open one to waive the invoice or request payment."
+        description="Worst escalation first."
         count={<CountLine {...count} />}
       />
 

@@ -76,7 +76,6 @@ export function CreateProductPage() {
       <PageHeader
         breadcrumb={[{ label: 'Products', to: '/staff/products' }]}
         title="New product"
-        description="Define it, then publish its first version to start selling."
       />
 
       {/* The version form carries its own steps (2026-10-22), so no outline rail beside it. */}
@@ -141,7 +140,7 @@ export function CreateProductPage() {
               </FormField>
               <FormField
                 label="Description"
-                hint="What staff read when choosing this product: who it is for and what it pays. Each new version can update it."
+                hint="Shown to staff choosing this product."
                 error={errors.description?.message}
               >
                 <Textarea className="min-h-20 py-2" {...register('description')} />

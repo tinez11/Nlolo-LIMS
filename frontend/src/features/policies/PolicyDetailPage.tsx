@@ -312,7 +312,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     // first thing a reader came for, and at 320px it was a benefits list in a margin. It
     // also means Overview always has content, so the default tab is never empty.
     const overview: ReactNode[] = [
-      <Panel key="coverage" title="Coverage" subtitle="Active benefits as of today">
+      <Panel key="coverage" title="Coverage">
         {renderCoverage()}
       </Panel>,
     ];
@@ -325,7 +325,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     }
     if (policy && isStaff) {
       overview.push(
-        <Panel key="sale-ifrs17" title="Sale & IFRS 17" subtitle="Classified at issue and never changed">
+        <Panel key="sale-ifrs17" title="Sale & IFRS 17">
           <Ifrs17Classification policy={policy} showAccounting={can('ledger.view')} />
         </Panel>,
       );
@@ -343,9 +343,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       overview.push(
         <Panel key="not-yet" title="Not yet on cover">
           <p className="px-4 pb-4 text-xs text-muted-foreground">
-            This is an offer, not a policy in force. Cover starts when the first premium
-            clears — until then no claim can be settled against it. The invoices under Billing
-            are what the customer pays to accept.
+            Cover starts when the first premium clears. No claim can be settled until then.
           </p>
         </Panel>,
       );
@@ -354,9 +352,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       overview.push(
         <Panel key="expired" title="Offer expired unpaid">
           <p className="px-4 pb-4 text-xs text-muted-foreground">
-            This offer was never taken up: no first premium arrived within the offer window, so
-            it closed. Cover never started, which is why this is not a lapse — it does not
-            count against persistency. A new application is needed to insure this person.
+            No first premium arrived in time, so cover never started. A new application is needed.
           </p>
         </Panel>,
       );
@@ -397,7 +393,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           && canAny('policies.surrender', 'policies.status', 'policies.surrender-approve')) {
         overview.push(
           <FocusTarget key="value" id="value">
-            <Panel title="Value" subtitle="Stop paying and keep reduced cover, or cash it in">
+            <Panel title="Value">
               <ValueActions policy={policy} />
             </Panel>
           </FocusTarget>,
@@ -413,7 +409,6 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           <Panel
             key="free-look"
             title="Changed their mind"
-            subtitle="Undo the sale from inception, inside the free-look window"
           >
             <div className="px-4 pb-4 pt-1">
               <FreeLookPanel policy={policy} />
@@ -439,7 +434,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         label: 'Covered lives',
         content: (
           <div className="pt-5">
-            <Panel title="Covered lives" subtitle="The main member and their family: what each death pays, and each life's own waiting period">
+            <Panel title="Covered lives">
               <div className="p-4">
                 <CoveredLivesPanel policyNumber={policyNumber} canChange={isStaff && can('policies.service')} />
               </div>
@@ -456,7 +451,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         label: 'Units',
         content: (
           <div className="pt-5">
-            <Panel title="Units" subtitle="What the policy holds in each fund, what is waiting for a price, and every movement">
+            <Panel title="Units">
               <div className="p-4">
                 <PolicyUnitsPanel policy={policy} isStaff={isStaff} />
               </div>
@@ -503,14 +498,14 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             {/* Money movement step 5 (design §7.1): bounded panels before unbounded ones. A savings-type policy keeps
                 its money on the Account tab and has no balance (D12). */}
             {hasBalance && (
-              <Panel title="Balance" subtitle="Money received and not yet used, paying premiums as they fall due">
+              <Panel title="Balance">
                 <BalancePanel policyNumber={policyNumber} />
               </Panel>
             )}
-            <Panel title="Policy schedule" subtitle="The one-page summary to give the client">
+            <Panel title="Policy schedule">
               <PolicyScheduleDownload policyNumber={policyNumber} />
             </Panel>
-            <Panel title="Invoices" subtitle="Request a payment, waive or follow up an invoice">
+            <Panel title="Invoices">
               {/* The endpoint's rule: a customer or an agent may ask, staff only with collections or servicing. An
                   underwriter was offered the form and refused on submit. */}
               <InvoicesPanel
@@ -520,13 +515,12 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             </Panel>
             <Panel
               title="Payment schedule"
-              subtitle="Every premium due, what was paid, when and from which deposit"
               actions={<PaymentScheduleDownloads policyNumber={policyNumber} />}
             >
               <PaymentScheduleTable policyNumber={policyNumber} />
             </Panel>
             {hasBalance && (
-              <Panel title="Statement" subtitle="Every deposit, premium paid and withdrawal on the balance">
+              <Panel title="Statement">
                 <BalanceStatementPanel policyNumber={policyNumber} />
               </Panel>
             )}
@@ -541,7 +535,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             label: 'Loans',
             content: (
               <div className="pt-5">
-                <Panel title="Loans" subtitle="Policy loans taken against cash value">
+                <Panel title="Loans">
                   <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} canChange={isStaff && can('loans.manage')}
                     canRecordDeposit={isStaff && can('collections.manage')}
                     canRequestPayment={isStaff && (can('collections.manage') || can('policies.service'))} />
@@ -558,7 +552,6 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
               <div className="pt-5">
                 <Panel
                   title="Payouts"
-                  subtitle="What this contract pays while the life assured is alive, dated at issue"
                 >
                   <PayoutsPanel policyNumber={policyNumber} />
                 </Panel>
@@ -573,18 +566,18 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
               label: 'Account',
               content: (
                 <div className="space-y-5 pt-5">
-                  <Panel title="Account" subtitle="The savings account behind this policy, and every movement on it">
+                  <Panel title="Account">
                     <div className="p-4">
                       <AccountPanel policyNumber={policyNumber} />
                     </div>
                   </Panel>
-                  <Panel title="Charges" subtitle="What this account is charged">
+                  <Panel title="Charges">
                     <div className="px-4 py-2">
                       <PolicyChargesPanel policyNumber={policyNumber} productId={detail.data?.productId}
                         versionId={detail.data?.productVersionId ?? undefined} />
                     </div>
                   </Panel>
-                  <Panel title="Statement" subtitle="A period of the account, reconciled, and filed as a PDF on request">
+                  <Panel title="Statement">
                     <div className="p-4">
                       <StatementSection policyNumber={policyNumber} />
                     </div>
@@ -601,7 +594,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
               label: 'Bonuses',
               content: (
                 <div className="pt-5">
-                  <Panel title="Bonuses" subtitle="Every bonus attached to this policy, why each declaration did or did not attach, and what was paid out">
+                  <Panel title="Bonuses">
                     <div className="p-4">
                       <PolicyBonusesPanel policyNumber={policyNumber} />
                     </div>
@@ -620,7 +613,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
               content:
                 annuityContract.data.status === 'ACCUMULATING' ? (
                   <div className="pt-5">
-                    <Panel title="Pension" subtitle="When it vests, into what, and with what balance">
+                    <Panel title="Pension">
                       <div className="p-4">
                         <PolicyVestingPanel policyNumber={policyNumber} productId={policy?.productId ?? ''} />
                       </div>
@@ -628,7 +621,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                   </div>
                 ) : (
                   <div className="pt-5">
-                    <Panel title="Annuity" subtitle="The income this purchase locked, the rate it came from, and who it pays now">
+                    <Panel title="Annuity">
                       <div className="p-4">
                         <PolicyAnnuityPanel policyNumber={policyNumber} />
                       </div>
@@ -643,7 +636,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         label: 'Messages',
         content: (
           <div className="pt-5">
-            <Panel title="Messages" subtitle="What this customer has been told about this policy">
+            <Panel title="Messages">
               <MessagesPanel policyNumber={policyNumber} />
             </Panel>
           </div>
@@ -657,7 +650,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         label: 'Reinsurance',
         content: (
           <div className="pt-5">
-            <Panel title="Reinsurance" subtitle="Cessions this policy's own coverage produced">
+            <Panel title="Reinsurance">
               <CessionsPanel policyNumber={policyNumber} />
             </Panel>
           </div>

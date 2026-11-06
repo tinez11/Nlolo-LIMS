@@ -92,7 +92,6 @@ export function SubmitProposalPage() {
       <PageHeader
         breadcrumb={[{ label: 'Quotation calculator', to: '/agents/quotation' }]}
         title="Submit the proposal"
-        description="The customer and the quotation they agreed to, to the underwriter."
       />
       <FormLayout formId="submit-proposal" outlineLabel="Proposal sections" card={false}>
       <div className="space-y-4">
@@ -122,7 +121,7 @@ export function SubmitProposalPage() {
               { label: 'Proposal', value: quotation.proposalNumber ?? '—' },
               { label: 'Customer', value: <PartyName partyId={applicantPartyId} /> },
             ]}
-            note="An underwriter decides it. If it is returned for corrections, it appears under Needs your action."
+            note="If it is returned for corrections, it appears under Needs your action."
             onward={
               <div className="flex flex-wrap gap-2">
                 <Button asChild size="sm" variant="outline">

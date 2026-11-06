@@ -49,7 +49,7 @@ export function DashboardRail({ alerts, actions, absent }: {
           </ul>
         </Panel>
       )}
-      <Panel title="Quick actions" subtitle="Only what your role can do.">
+      <Panel title="Quick actions">
         <ul className="px-2 pb-2">
           {actions.map((action) => (
             <li key={action.to}>

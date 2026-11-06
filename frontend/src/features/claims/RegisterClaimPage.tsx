@@ -310,7 +310,6 @@ export function RegisterClaimPage() {
       <PageHeader
         breadcrumb={[{ label: 'Claims', to: '/staff/claims' }]}
         title="Register a claim"
-        description="Replaces nothing — this always creates a new claim."
       />
 
       {/*
@@ -482,8 +481,7 @@ export function RegisterClaimPage() {
               ))}
             </Select>
             <p className="mt-1 text-xs text-subtle-foreground">
-              Members who have left are listed too — a claim can arrive after somebody leaves,
-              and what decides it is whether they were covered on the date of event.
+              Members who have left are listed too.
               {(members.data?.page?.totalElements ?? 0) > (members.data?.items?.length ?? 0) && (
                 <>
                   {' '}
@@ -665,7 +663,7 @@ export function RegisterClaimPage() {
           <Panel
             outline
             title="Lender's statement"
-            subtitle="What the borrower still owed on the date of the event, never more than was lent. Upload the statement under Evidence after registering: the claim is approved only with it."
+            subtitle="Upload the lender's statement under Evidence after registering — it is needed for approval."
           >
             <div className="grid gap-3 p-4 sm:grid-cols-2">
               <FormField required label="Principal still owed" error={errors.loanPrincipalOutstanding?.message}>
