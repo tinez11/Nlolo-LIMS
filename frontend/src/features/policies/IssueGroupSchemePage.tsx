@@ -133,7 +133,12 @@ export function IssueGroupSchemePage() {
   // What the server will derive, shown while the schedule is being built. Rows
   // that cannot yet be valued contribute nothing rather than a zero -- the total
   // says how many of them there are instead of quietly understating itself.
-  const previews = (scheduleRows ?? []).map((row) =>
+  // Only rows someone has started count: the form opens with one blank row, and a blank form
+  // used to report "Members 1, Not yet priced 1" before anything had been entered.
+  const startedRows = (scheduleRows ?? []).filter(
+    (row) => row.memberPartyId || row.gradeCode || row.salaryAmount,
+  );
+  const previews = startedRows.map((row) =>
     previewBenefit(basis, { salaryAmount: row.salaryAmount, gradeCode: row.gradeCode }),
   );
   const valued = previews.filter((p): p is NonNullable<typeof p> => p !== null);
@@ -177,7 +182,7 @@ export function IssueGroupSchemePage() {
         outlineLabel="Scheme proposal sections"
         aside={
           <SchemeSoFar
-            members={scheduleRows?.length ?? 0}
+            members={startedRows.length}
             total={formatMoney({ amount: runningTotal, currencyCode: currency || 'TZS' })}
             unpriced={unpriced}
             overLimit={overLimit}
@@ -484,7 +489,7 @@ export function IssueGroupSchemePage() {
             <FormField label="Term in months" hint="Blank = renews annually" error={errors.policyTermMonths?.message}>
               <Input inputMode="numeric" {...register('policyTermMonths')} />
             </FormField>
-            <FormField label="Note for the record" error={errors.reasonForManualIssue?.message}>
+            <FormField label="Reason for issuing by hand" error={errors.reasonForManualIssue?.message}>
               <Input
                 placeholder="Signed schedule received 1 September"
                 {...register('reasonForManualIssue')}
@@ -531,19 +536,19 @@ function SchemeSoFar({
   return (
     <section aria-label="The scheme so far" className="rounded-xl border border-border bg-surface p-4 shadow-card">
       <p className="text-eyebrow text-subtle-foreground uppercase">The scheme so far</p>
-      <p className="mt-2 text-xs text-muted-foreground">Total sum insured</p>
+      <p className="mt-2 text-xs text-label">Total sum insured</p>
       <p className="text-title">{total}</p>
       <dl className="mt-3 space-y-1.5 border-t border-border pt-3 text-sm">
         <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">Members</dt>
+          <dt className="text-label">Members</dt>
           <dd>{members}</dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">Not yet priced</dt>
+          <dt className="text-label">Not yet priced</dt>
           <dd>{unpriced}</dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">Over the free cover limit</dt>
+          <dt className="text-label">Over the free cover limit</dt>
           <dd>{overLimit}</dd>
         </div>
       </dl>

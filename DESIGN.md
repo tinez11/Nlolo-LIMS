@@ -8,7 +8,7 @@ colors:
   mist-page: "oklch(0.975 0.006 200)"
   card-white: "oklch(1 0 0)"
   quiet-mist: "oklch(0.965 0.006 200)"
-  muted-ink: "oklch(0.5 0.025 230)"
+  muted-ink: "oklch(0.42 0.02 240)"
   subtle-ink: "oklch(0.53 0.02 230)"
   rule: "oklch(0.915 0.01 210)"
   rule-strong: "oklch(0.85 0.012 210)"
@@ -264,7 +264,9 @@ low-chroma status hues.
 - **Card White** (`card-white`): every card, panel, table and slide-over.
 - **Quiet Mist** (`quiet-mist`): skeleton fills and the quietest grounds.
 - **Muted Ink** (`muted-ink`): labels, descriptions, inactive tabs, table headers —
-  ~4.7:1 on the page, ~5:1 on a card.
+  the same slate as Label Ink, ~8:1 on a card. It was 0.50 until 2026-11-06, which sat
+  1.13:1 from Subtle Ink: two tokens, one visible grey. The step is now ~1.5:1, the gap
+  IBM Carbon keeps between secondary and helper text.
 - **Subtle Ink** (`subtle-ink`): field notes, trace ids, the em dash that means
   "absent". 12px is its floor, and it holds ~4.5:1 there.
 - **Rule** (`rule`) and **Rule Strong** (`rule-strong`): a card's hairline edge, row

@@ -1274,7 +1274,7 @@ function ReviewSummary({ control, kind, category }: { control: Control<PublishVe
     <dl className="divide-y divide-border rounded-lg border border-border">
       {rows.map(([label, value]) => (
         <div key={label} className="flex justify-between gap-4 px-3 py-2 text-sm">
-          <dt className="text-muted-foreground">{label}</dt>
+          <dt className="text-label">{label}</dt>
           <dd className="text-right">{value}</dd>
         </div>
       ))}

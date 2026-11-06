@@ -357,12 +357,12 @@ function InvoiceReconciliationLines({ invoice, credits }: { invoice: InvoiceView
   return (
     <dl className="mt-1.5 space-y-0.5 rounded-md bg-surface-muted px-2.5 py-1.5 text-xs">
       <div className="flex justify-between gap-2">
-        <dt className="text-muted-foreground">Charged</dt>
+        <dt className="text-label">Charged</dt>
         <dd>{formatMoney(invoice.amount)}</dd>
       </div>
       {credits.map(({ credit, member }) => (
         <div key={credit.creditId} className="flex justify-between gap-2">
-          <dt className="text-muted-foreground">
+          <dt className="text-label">
             Credited · {member?.memberName ?? 'a member'}
             {member?.memberReference && ` (${member.memberReference})`}
             {' · '}
@@ -376,7 +376,7 @@ function InvoiceReconciliationLines({ invoice, credits }: { invoice: InvoiceView
       ))}
       {invoice.amountPaid && compareAmounts(invoice.amountPaid.amount, '0.00') > 0 && (
         <div className="flex justify-between gap-2">
-          <dt className="text-muted-foreground">Paid</dt>
+          <dt className="text-label">Paid</dt>
           <dd>−{formatMoney(invoice.amountPaid)}</dd>
         </div>
       )}

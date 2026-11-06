@@ -400,7 +400,7 @@ export function FactorSection({
               key={row.key}
               className="flex items-baseline justify-between gap-4 border-b border-border py-2"
             >
-              <dt className="w-32 shrink-0 text-xs text-muted-foreground">
+              <dt className="w-32 shrink-0 text-xs text-label">
                 {row.label}
                 {row.note && (
                   // The band the actuary typed, and the age bounds where they

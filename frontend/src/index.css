@@ -42,7 +42,11 @@
   --surface-foreground: oklch(0.22 0.03 230);
   --surface-muted: oklch(0.965 0.006 200);
 
-  --muted-foreground: oklch(0.5 0.025 230);
+  /* The label's slate (2026-11-06). At 0.50 it sat 1.13:1 from the hint grey below, so outside forms
+     -- dashboards, table headers, descriptions -- the console still had one grey where it meant two.
+     Now the step to --subtle-foreground is ~1.5:1, the same gap IBM Carbon keeps between its
+     text-secondary and text-helper. ~8:1 on white. */
+  --muted-foreground: oklch(0.42 0.02 240);
   /* ~4.7:1 on the page, ~5:1 on a card. It carries trace ids, error text and the em dash
      meaning "absent" at 12px, so there is no large-text exemption to hide behind. */
   --subtle-foreground: oklch(0.53 0.02 230);
@@ -141,7 +145,8 @@
   --surface-foreground: oklch(0.95 0.01 200);
   --surface-muted: oklch(0.19 0.022 234);
 
-  --muted-foreground: oklch(0.74 0.02 220);
+  /* The label's value here too: at 0.74 against a 0.70 hint the dark theme had the same one-grey collapse. */
+  --muted-foreground: oklch(0.82 0.015 230);
   --subtle-foreground: oklch(0.7 0.02 220);
   /* The same ladder inverted: label brighter than hint, placeholder the dimmest that keeps 4.5:1 on a field. */
   --label: oklch(0.82 0.015 230);
