@@ -1,64 +1,114 @@
 {
-  "realm": "staff",
-  "displayName": "Staff console",
+  "realm": "lifeplatform",
+  "displayName": "Nlolo Life",
   "loginTheme": "lifeplatform",
   "emailTheme": "lifeplatform",
-  "maxFailureWaitSeconds": 900,
-  "waitIncrementSeconds": 60,
-  "failureFactor": 5,
+  "resetCredentialsFlow": "lifeplatform reset credentials",
+  "authenticationFlows": [
+    {
+      "alias": "lifeplatform reset credentials",
+      "description": "Forgot password: a reset link to the email on file and a code by text to the phone the platform holds (2026-10-28)",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "reset-credentials-choose-user",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "lifeplatform-reset-delivery",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "reset-password",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 30,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticatorFlow": true,
+          "autheticatorFlow": true,
+          "requirement": "CONDITIONAL",
+          "priority": 40,
+          "flowAlias": "lifeplatform reset - conditional otp",
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "alias": "lifeplatform reset - conditional otp",
+      "description": "Asks for the second factor too, once someone has one; nobody does yet",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "conditional-user-configured",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "reset-otp",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false
+        }
+      ]
+    }
+  ],
   "permanentLockout": false,
-  "bruteForceProtected": true,
-  "passwordPolicy": "length(8) and notUsername(undefined) and notEmail(undefined) and passwordHistory(3)",
   "defaultLocale": "en",
-  "supportedLocales": ["en","sw"],
+  "supportedLocales": [
+    "en",
+    "sw"
+  ],
   "internationalizationEnabled": true,
   "adminEventsDetailsEnabled": false,
   "adminEventsEnabled": true,
-  "enabledEventTypes": ["LOGIN","LOGIN_ERROR","LOGOUT","SEND_RESET_PASSWORD","SEND_RESET_PASSWORD_ERROR","RESET_PASSWORD","RESET_PASSWORD_ERROR","UPDATE_PASSWORD","UPDATE_PASSWORD_ERROR","UPDATE_CREDENTIAL","UPDATE_CREDENTIAL_ERROR","EXECUTE_ACTIONS","EXECUTE_ACTION_TOKEN","EXECUTE_ACTION_TOKEN_ERROR","UPDATE_EMAIL","USER_DISABLED_BY_TEMPORARY_LOCKOUT"],
-  "eventsListeners": ["jboss-logging","email"],
+  "enabledEventTypes": [
+    "LOGIN",
+    "LOGIN_ERROR",
+    "LOGOUT",
+    "SEND_RESET_PASSWORD",
+    "SEND_RESET_PASSWORD_ERROR",
+    "RESET_PASSWORD",
+    "RESET_PASSWORD_ERROR",
+    "UPDATE_PASSWORD",
+    "UPDATE_PASSWORD_ERROR",
+    "UPDATE_CREDENTIAL",
+    "UPDATE_CREDENTIAL_ERROR",
+    "EXECUTE_ACTIONS",
+    "EXECUTE_ACTION_TOKEN",
+    "EXECUTE_ACTION_TOKEN_ERROR",
+    "UPDATE_EMAIL",
+    "USER_DISABLED_BY_TEMPORARY_LOCKOUT"
+  ],
+  "eventsListeners": [
+    "jboss-logging",
+    "email"
+  ],
   "eventsExpiration": 7776000,
   "eventsEnabled": true,
   "actionTokenGeneratedByUserLifespan": 900,
-  "resetPasswordAllowed": true,
-  "smtpServer": {
-    "host": "mailpit",
-    "port": "1025",
-    "from": "no-reply@nlolo.local",
-    "fromDisplayName": "Nlolo Life"
-  },
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,
-  "roles": {
-    "realm": [
-      {
-        "name": "UNDERWRITER"
-      },
-      {
-        "name": "SENIOR_UNDERWRITER",
-        "description": "May decide an underwriting case against the rules engine's recommendation. Additive to UNDERWRITER, never a replacement: the decision endpoint is gated on UNDERWRITER, and this only lifts the bar on overriding."
-      },
-      {
-        "name": "CLAIMS_ASSESSOR"
-      },
-      {
-        "name": "CLAIMS_MANAGER"
-      },
-      {
-        "name": "FINANCE_OFFICER"
-      },
-      {
-        "name": "FINANCE_APPROVER",
-        "description": "IFRS 17 I4: approves or rejects a manual journal prepared by someone else. Additive to FINANCE_OFFICER; given to finance managers."
-      },
-      {
-        "name": "CUSTOMER_SERVICE_REP"
-      },
-      {
-        "name": "ADMIN"
-      }
-    ]
-  },
   "clients": [
     {
       "clientId": "lifeplatform-app",
@@ -75,7 +125,7 @@
       "webOrigins": [
         "http://localhost:3000"
       ],
-      "secret": "dev-secret-staff",
+      "secret": "dev-secret-app",
       "protocolMappers": [
         {
           "name": "tenant_id",
@@ -85,6 +135,20 @@
           "config": {
             "user.attribute": "tenant_id",
             "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "party_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "party_id",
+            "claim.name": "party_id",
             "jsonType.label": "String",
             "id.token.claim": "true",
             "access.token.claim": "true",
@@ -110,7 +174,7 @@
     {
       "clientId": "lifeplatform-spa",
       "name": "Life Platform SPA (browser, PKCE)",
-      "description": "Public client for the browser SPA at frontend/. A browser cannot hold a secret, so this is publicClient with PKCE S256 required; lifeplatform-app stays confidential for backend/service use.",
+      "description": "The customer portal in the console: a public client, PKCE S256. Maps tenant_id and party_id -- the party a customer is authorised as.",
       "enabled": true,
       "publicClient": true,
       "protocol": "openid-connect",
@@ -144,6 +208,20 @@
           }
         },
         {
+          "name": "party_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "party_id",
+            "claim.name": "party_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
           "name": "home_branch",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-usermodel-attribute-mapper",
@@ -160,9 +238,9 @@
       ]
     },
     {
-      "clientId": "lifeplatform-staff-admin",
-      "name": "Life Platform staff user admin (service account)",
-      "description": "The backend adds, closes and resets staff logins through this service account (manage-users in this realm only) when an administrator uses the Users screen. No browser flows. Roles are not written here: the platform holds them.",
+      "clientId": "lifeplatform-admin",
+      "name": "Life Platform portal admin (service account)",
+      "description": "The backend creates, opens and closes customer logins through this service account (manage-users in this realm only) when staff invite a client to the portal. No browser flows.",
       "enabled": true,
       "publicClient": false,
       "protocol": "openid-connect",
@@ -170,7 +248,7 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
-      "secret": "dev-secret-staff-admin"
+      "secret": "dev-secret-admin"
     }
   ],
   "users": [
@@ -197,7 +275,8 @@
         }
       ],
       "realmRoles": [
-        "UNDERWRITER"
+        "UNDERWRITER",
+        "staff"
       ]
     },
     {
@@ -224,7 +303,8 @@
       ],
       "realmRoles": [
         "UNDERWRITER",
-        "SENIOR_UNDERWRITER"
+        "SENIOR_UNDERWRITER",
+        "staff"
       ]
     },
     {
@@ -250,7 +330,8 @@
         }
       ],
       "realmRoles": [
-        "CLAIMS_ASSESSOR"
+        "CLAIMS_ASSESSOR",
+        "staff"
       ]
     },
     {
@@ -276,7 +357,8 @@
         }
       ],
       "realmRoles": [
-        "CLAIMS_MANAGER"
+        "CLAIMS_MANAGER",
+        "staff"
       ]
     },
     {
@@ -302,7 +384,8 @@
         }
       ],
       "realmRoles": [
-        "FINANCE_OFFICER"
+        "FINANCE_OFFICER",
+        "staff"
       ]
     },
     {
@@ -329,7 +412,8 @@
       ],
       "realmRoles": [
         "FINANCE_OFFICER",
-        "FINANCE_APPROVER"
+        "FINANCE_APPROVER",
+        "staff"
       ]
     },
     {
@@ -355,7 +439,8 @@
         }
       ],
       "realmRoles": [
-        "CUSTOMER_SERVICE_REP"
+        "CUSTOMER_SERVICE_REP",
+        "staff"
       ]
     },
     {
@@ -386,13 +471,130 @@
         "UNDERWRITER",
         "CLAIMS_ASSESSOR",
         "CLAIMS_MANAGER",
-        "CUSTOMER_SERVICE_REP"
+        "CUSTOMER_SERVICE_REP",
+        "staff"
       ]
     },
     {
-      "username": "service-account-lifeplatform-staff-admin",
+      "username": "agent.senior",
       "enabled": true,
-      "serviceAccountClientId": "lifeplatform-staff-admin",
+      "emailVerified": true,
+      "email": "agent.senior@example.tz",
+      "firstName": "Juma",
+      "lastName": "Senior",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "devpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "agent"
+      ]
+    },
+    {
+      "username": "agent.junior",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "agent.junior@example.tz",
+      "firstName": "Neema",
+      "lastName": "Junior",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "devpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "agent"
+      ]
+    },
+    {
+      "username": "customer.owner",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "customer.owner@example.tz",
+      "firstName": "Amina",
+      "lastName": "Owner",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "devpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "customer"
+      ]
+    },
+    {
+      "username": "customer.other",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "customer.other@example.tz",
+      "firstName": "Baraka",
+      "lastName": "Other",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "devpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "customer"
+      ]
+    },
+    {
+      "username": "regulator.tira",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "regulator.tira@example.tz",
+      "firstName": "Salum",
+      "lastName": "Tira",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "devpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "TIRA_READ_ONLY",
+        "regulator"
+      ]
+    },
+    {
+      "username": "service-account-lifeplatform-admin",
+      "enabled": true,
+      "serviceAccountClientId": "lifeplatform-admin",
       "clientRoles": {
         "realm-management": [
           "manage-users",
@@ -410,6 +612,69 @@
             "{\"attributes\":[{\"name\":\"username\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"email\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"firstName\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"lastName\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"multivalued\":false}],\"groups\":[],\"unmanagedAttributePolicy\":\"ADMIN_EDIT\"}"
           ]
         }
+      }
+    ]
+  },
+  "resetPasswordAllowed": true,
+  "passwordPolicy": "length(8) and notUsername(undefined) and notEmail(undefined) and passwordHistory(3)",
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "smtpServer": {
+    "host": "mailpit",
+    "port": "1025",
+    "from": "no-reply@nlolo.local",
+    "fromDisplayName": "Nlolo Life"
+  },
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "name": "staff",
+        "description": "Insurer staff: the staff console. Job roles apply only here."
+      },
+      {
+        "name": "agent",
+        "description": "Agents: the agent console."
+      },
+      {
+        "name": "customer",
+        "description": "Policyholders: the customer portal."
+      },
+      {
+        "name": "regulator",
+        "description": "Regulators: regulatory returns."
+      },
+      {
+        "name": "UNDERWRITER"
+      },
+      {
+        "name": "SENIOR_UNDERWRITER",
+        "description": "May decide an underwriting case against the rules engine's recommendation. Additive to UNDERWRITER, never a replacement: the decision endpoint is gated on UNDERWRITER, and this only lifts the bar on overriding."
+      },
+      {
+        "name": "CLAIMS_ASSESSOR"
+      },
+      {
+        "name": "CLAIMS_MANAGER"
+      },
+      {
+        "name": "FINANCE_OFFICER"
+      },
+      {
+        "name": "FINANCE_APPROVER",
+        "description": "IFRS 17 I4: approves or rejects a manual journal prepared by someone else. Additive to FINANCE_OFFICER; given to finance managers."
+      },
+      {
+        "name": "CUSTOMER_SERVICE_REP"
+      },
+      {
+        "name": "ADMIN"
+      },
+      {
+        "name": "TIRA_READ_ONLY"
       }
     ]
   }
