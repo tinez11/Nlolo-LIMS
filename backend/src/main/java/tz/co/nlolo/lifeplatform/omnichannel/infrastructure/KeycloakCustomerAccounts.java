@@ -83,7 +83,7 @@ public class KeycloakCustomerAccounts implements CustomerAccounts {
             return userId;
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().value() == 409) {
-                String userId = existingLoginOf(username, partyId);
+                String userId = existingLoginOf(username, email, partyId);
                 try {
                     grantWorkspace(userId);
                 } catch (RestClientResponseException grant) {
@@ -99,16 +99,25 @@ public class KeycloakCustomerAccounts implements CustomerAccounts {
      * A login with this username exists. If it is this client's own -- an earlier invite that created the login and then
      * failed (the email could not be sent, say), or their agent login (one account, two workspaces; 2026-11-06) -- it is
      * joined; anyone else's, a staff login included (staff carry no party_id), is a refusal, never a takeover.
+     *
+     * <p>Looked up by username AND by email: emails are unique in the one realm, so the conflict may be the address
+     * alone -- the person's agent login may keep another username (2026-11-06, found by the agent-lifecycle e2e).
      */
     @SuppressWarnings("unchecked")
-    private String existingLoginOf(String username, UUID partyId) {
-        List<Map<String, Object>> found = http.get()
+    private String existingLoginOf(String username, String email, UUID partyId) {
+        List<Map<String, Object>> found = new java.util.ArrayList<>();
+        List<Map<String, Object>> byUsername = http.get()
             .uri("/admin/realms/{realm}/users?username={u}&exact=true", realm, username)
             .header("Authorization", "Bearer " + token()).retrieve().body(List.class);
-        if (found != null && !found.isEmpty()) {
-            Map<String, Object> user = found.get(0);
-            Object attributes = user.get("attributes");
-            if (attributes instanceof Map<?, ?> map && map.get("party_id") instanceof List<?> ids
+        if (byUsername != null) found.addAll(byUsername);
+        if (email != null) {
+            List<Map<String, Object>> byEmail = http.get()
+                .uri("/admin/realms/{realm}/users?email={e}&exact=true", realm, email.toLowerCase(java.util.Locale.ROOT))
+                .header("Authorization", "Bearer " + token()).retrieve().body(List.class);
+            if (byEmail != null) found.addAll(byEmail);
+        }
+        for (Map<String, Object> user : found) {
+            if (user.get("attributes") instanceof Map<?, ?> map && map.get("party_id") instanceof List<?> ids
                     && ids.contains(partyId.toString())) {
                 return (String) user.get("id");
             }
