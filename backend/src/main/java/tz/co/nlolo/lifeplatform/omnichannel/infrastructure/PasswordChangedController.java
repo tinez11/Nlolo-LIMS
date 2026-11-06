@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.omnichannel.infrastructure;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +30,7 @@ public class PasswordChangedController {
     private final ObjectMapper json;
     private final KeycloakSignature signature;
 
+    @Autowired
     public PasswordChangedController(PasswordChangedNotices notices, ObjectMapper json,
                                      @Value("${password-reset.sms-secret}") String secret) {
         this(notices, json, new KeycloakSignature(secret, Clock.systemUTC()));
