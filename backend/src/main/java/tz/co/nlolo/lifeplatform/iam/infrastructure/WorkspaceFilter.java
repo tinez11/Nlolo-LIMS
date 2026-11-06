@@ -34,7 +34,11 @@ class WorkspaceFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
+        // A granted ROLE_REALM_* is the converter's word that the workspace resolved -- the same authorities every check
+        // reads (and what a test's mock JWT carries). Only a request without one is explained here.
+        boolean resolved = authentication != null && authentication.getAuthorities().stream()
+            .anyMatch(a -> a.getAuthority().startsWith("ROLE_REALM_"));
+        if (!resolved && authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
             Workspace.Resolution resolution =
                 Workspace.resolve(SecurityConfig.realmRoles(jwt), request.getHeader(Workspace.HEADER));
             switch (resolution) {
