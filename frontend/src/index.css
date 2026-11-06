@@ -46,6 +46,17 @@
   /* ~4.7:1 on the page, ~5:1 on a card. It carries trace ids, error text and the em dash
      meaning "absent" at 12px, so there is no large-text exemption to hide behind. */
   --subtle-foreground: oklch(0.53 0.02 230);
+  /*
+    The ink ladder (2026-11-06), four steps a reader can tell apart:
+      value (--foreground, 0.22) > label (--label, 0.36, weight 500) > hint (--subtle-foreground, 0.53)
+      and, inside a field, the placeholder (--placeholder, 0.54).
+    Before this, labels (0.50) and hints (0.53) were 1.13:1 apart -- one grey -- and the placeholder was
+    Tailwind's 50% of the text colour, 3.25:1 on the field ground and only 1.63:1 off the label, so an
+    empty field read as a filled one. The placeholder is pinned at the lightest value that still keeps
+    4.5:1 on the --control ground (Y ~ L^3: 0.54 -> 4.5:1), never lighter.
+  */
+  --label: oklch(0.36 0.03 230);
+  --placeholder: oklch(0.54 0.012 220);
 
   --border: oklch(0.915 0.01 210);
   --border-strong: oklch(0.85 0.012 210);
@@ -130,6 +141,9 @@
 
   --muted-foreground: oklch(0.74 0.02 220);
   --subtle-foreground: oklch(0.7 0.02 220);
+  /* The same ladder inverted: label brighter than hint, placeholder the dimmest that keeps 4.5:1 on a field. */
+  --label: oklch(0.87 0.012 210);
+  --placeholder: oklch(0.68 0.015 220);
 
   --border: oklch(1 0 0 / 10%);
   --border-strong: oklch(1 0 0 / 18%);
@@ -233,6 +247,8 @@
   --color-surface-muted: var(--surface-muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-subtle-foreground: var(--subtle-foreground);
+  --color-label: var(--label);
+  --color-placeholder: var(--placeholder);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-input: var(--input);
@@ -321,6 +337,14 @@
 @layer base {
   * {
     border-color: var(--color-border);
+  }
+
+  /* Every placeholder on the platform, typed or hand-rolled, in the one placeholder ink. Tailwind's
+     preflight drew it at 50% of the text colour, which made an empty field look already filled. */
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-placeholder);
+    opacity: 1;
   }
 
   body {
@@ -449,6 +473,8 @@
     --border: oklch(0.8 0 0);
     --muted-foreground: oklch(0.42 0 0);
     --subtle-foreground: oklch(0.45 0 0);
+    --label: oklch(0.28 0 0);
+    --placeholder: oklch(0.48 0 0);
     --input: oklch(0.55 0 0);
   }
 
@@ -456,6 +482,8 @@
     --border: oklch(1 0 0 / 28%);
     --muted-foreground: oklch(0.8 0 0);
     --subtle-foreground: oklch(0.76 0 0);
+    --label: oklch(0.92 0 0);
+    --placeholder: oklch(0.74 0 0);
     --input: oklch(1 0 0 / 55%);
   }
 }

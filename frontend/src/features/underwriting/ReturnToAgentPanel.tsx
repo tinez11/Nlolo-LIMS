@@ -53,7 +53,7 @@ export function ReturnToAgentPanel({ caseId, onReturned }: { caseId: string; onR
       <div className="space-y-4 px-4 pb-4">
         {reasons.map((r, i) => (
           <fieldset key={i} className="space-y-2 rounded-md border border-border p-3">
-            <legend className="px-1 text-xs font-medium text-muted-foreground">Reason {i + 1}</legend>
+            <legend className="px-1 text-xs font-medium text-label">Reason {i + 1}</legend>
             <div className="flex items-end gap-2">
               <div className="flex-1">
                 <FormField required label="What it concerns">

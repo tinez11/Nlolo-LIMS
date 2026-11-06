@@ -458,7 +458,7 @@ export function QuotationCalculatorPage() {
 
         {who === 'PROSPECT' ? (
           <fieldset className="space-y-4">
-            <legend className="pb-2 text-eyebrow text-subtle-foreground uppercase">The person</legend>
+            <legend className="pb-2 text-eyebrow text-label uppercase">The person</legend>
             <FormField required label="Full name">
               <Input placeholder="Amina Hassan" {...person.register('fullName')} />
             </FormField>
@@ -513,7 +513,7 @@ export function QuotationCalculatorPage() {
         )}
 
         <fieldset className="space-y-4 border-t border-border pt-3">
-          <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">The plan</legend>
+          <legend className="pr-2 text-eyebrow text-label uppercase">The plan</legend>
           <FormField required
             label="Product"
             hint="Life, endowment, savings, deposit, funeral and annuity products. Unit-linked and group cover are quoted by the office."

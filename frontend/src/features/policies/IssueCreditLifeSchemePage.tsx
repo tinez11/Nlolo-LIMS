@@ -216,7 +216,7 @@ export function IssueCreditLifeSchemePage() {
 
           {/* --- What the insurer agreed with the lender ----------------------- */}
           <fieldset data-outline="Scheme terms" className="border-t border-border pt-3">
-            <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
+            <legend className="pr-2 text-eyebrow text-label uppercase">
               Scheme terms
             </legend>
             <p className="mb-2.5 text-xs text-muted-foreground">

@@ -137,14 +137,16 @@ export function AgentPicker({
             // test that finds this control does not break the first time an
             // agent is renamed.
             aria-label={placeholder}
-            className="flex h-9 w-full items-center rounded-md border border-input bg-surface px-2.5 text-left text-sm"
+            // The ground and prompt of every empty field (2026-11-06): a white trigger with a prompt
+            // darker than its own label read as a field already filled in.
+            className="flex h-9 w-full items-center rounded-md border border-input bg-control px-2.5 text-left text-sm hover:border-border-strong"
           >
             {value ? (
               <span className="min-w-0 truncate pr-6">
                 <AgentName agentId={value} />
               </span>
             ) : (
-              <span className="min-w-0 truncate text-muted-foreground">{placeholder}</span>
+              <span className="min-w-0 truncate text-placeholder">{placeholder}</span>
             )}
           </button>
         </Popover.Trigger>

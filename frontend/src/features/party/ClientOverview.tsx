@@ -36,7 +36,7 @@ export function ClientOverview({
     <div className="space-y-5">
       <KycBand party={party} isStaff={isStaff} documents={documents} />
 
-      <div className="grid items-start gap-5 lg:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid items-start gap-5 lg:grid-cols-2 xl:grid-cols-3">
         <Section title="Identity">
           <Field label="Type" value={partyTypeLabel(party.partyType)} />
           {/* Only where it applies to this kind of party, or where one is recorded anyway: a company's "Date of

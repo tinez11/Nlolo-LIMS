@@ -499,7 +499,7 @@ export function OpenUnderwritingCasePage() {
         {/* Where the business came from. Last and grouped: all three are optional, and the
             risk — who, what product, how much — is what the form is actually for. */}
         <fieldset data-outline="Source" className="border-t border-border pt-3">
-          <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">
+          <legend className="pr-2 text-eyebrow text-label uppercase">
             Source
           </legend>
 
@@ -564,7 +564,7 @@ export function OpenUnderwritingCasePage() {
           with the nomination blank is routine rather than incomplete.
         */}
         <fieldset data-outline="What they are asking for" className="space-y-4 border-t border-border pt-3">
-          <legend className="pr-2 text-eyebrow text-subtle-foreground uppercase">What the applicant is asking for</legend>
+          <legend className="pr-2 text-eyebrow text-label uppercase">What the applicant is asking for</legend>
 
           {isAnnuity && annuityTerms?.error != null && (
             <InlineError sticky error={annuityTerms.error as Parameters<typeof InlineError>[0]['error']} />

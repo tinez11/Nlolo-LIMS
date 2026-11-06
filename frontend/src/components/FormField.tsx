@@ -74,7 +74,7 @@ export function FormField({
   return (
     <div className={cn('block', className)}>
       <div className="mb-1 flex items-baseline gap-0.5">
-        <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
+        <label htmlFor={id} className="text-xs font-medium text-label">
           {label}
         </label>
         {required && <RequiredMark />}

@@ -35,7 +35,7 @@ export function AccountChargePicker({ value, onChange, legend = 'Account charges
       : `The product's charges apply: ${productCharges.map((c) => c.name).join(', ')}.`;
   return (
     <fieldset className="space-y-2">
-      <legend className="mb-1 text-xs font-medium text-muted-foreground">{legend}</legend>
+      <legend className="mb-1 text-xs font-medium text-label">{legend}</legend>
       <ChargeChooser charges={charges} value={value} onChange={onChange} empty={productsOwn} />
       {value.length > 0 && <p className="text-xs text-subtle-foreground">These replace the product's charges.</p>}
     </fieldset>

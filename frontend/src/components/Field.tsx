@@ -53,17 +53,24 @@ export function Field({
     );
   }
 
+  // An absent value is an em dash in Subtle Ink (DESIGN.md), never navy: in navy it carried the same
+  // weight as real data, so a card of dashes read as a card of facts.
+  const absent = value === '—' || value === null || value === undefined || value === '';
+
   return (
-    // No rule between rows (2026-10-09): a record rail ruled under every field read as lined paper,
-    // one line every row. The label/value pairing across the row is carried by the baseline.
-    <div className={`flex flex-wrap items-baseline justify-between gap-x-4 py-2${className ? ` ${className}` : ''}`}>
-      <dt className="shrink-0 text-xs text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-right">
-        <span className={emphasis ? 'text-title' : 'text-sm'}>{value}</span>
+    // Two columns, the value set beside its label (2026-11-06). The row used to push the label to the
+    // left edge and the value to the right edge of the card -- 486px apart on a 1440px screen -- so the
+    // eye had to cross a gap to pair them and there was no column of values to read down. No rule
+    // between rows (2026-10-09): ruled under every field, a record rail read as lined paper.
+    <div className={`grid grid-cols-[8rem_minmax(0,1fr)] items-baseline gap-x-4 py-1.5${className ? ` ${className}` : ''}`}>
+      <dt className="text-xs text-label">{label}</dt>
+      <dd className="min-w-0 break-words">
+        {absent
+          ? <span className="text-sm text-subtle-foreground">—</span>
+          : <span className={emphasis ? 'text-title' : 'text-sm'}>{value}</span>}
       </dd>
-      {/* Left, under the label it explains. Right-aligned under the value it read as a ragged
-          block hanging off the figure, two or three lines deep in a 320px rail. */}
-      {note && <dd className="mt-0.5 w-full text-xs text-subtle-foreground">{note}</dd>}
+      {/* Under the value it qualifies, in the value's column. */}
+      {note && <dd className="col-start-2 mt-0.5 text-xs text-subtle-foreground">{note}</dd>}
     </div>
   );
 }

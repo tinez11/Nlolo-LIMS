@@ -77,7 +77,7 @@ export function FuneralTermsSection({
       </div>
 
       <fieldset className="space-y-2 rounded-md border border-border p-3">
-        <legend className="text-xs font-medium text-muted-foreground">Plans and benefits</legend>
+        <legend className="text-xs font-medium text-label">Plans and benefits</legend>
         <p className="text-xs text-subtle-foreground">Leave a benefit empty where the plan does not cover that role.</p>
         <Alert message={errors.funeralPlans?.message ?? errors.funeralPlans?.root?.message} />
         {plans.fields.map((field, i) => (
@@ -124,13 +124,13 @@ export function FuneralTermsSection({
 
       {toIndividuals && (
         <fieldset className="space-y-2 rounded-md border border-border p-3">
-          <legend className="text-xs font-medium text-muted-foreground">Premium table</legend>
+          <legend className="text-xs font-medium text-label">Premium table</legend>
           <PremiumGrid register={register} control={control} errors={errors} setValue={setValue} getValues={getValues} />
         </fieldset>
       )}
 
       <fieldset className="space-y-2 rounded-md border border-border p-3">
-        <legend className="text-xs font-medium text-muted-foreground">Who may be covered</legend>
+        <legend className="text-xs font-medium text-label">Who may be covered</legend>
         <p className="text-xs text-subtle-foreground">
           One main member and one spouse per policy. Leave “Cover stops at” empty where cover never stops for age.
         </p>
@@ -190,7 +190,7 @@ export function FuneralTermsSection({
       </fieldset>
 
       <fieldset className="space-y-2 rounded-md border border-border p-3">
-        <legend className="text-xs font-medium text-muted-foreground">Claims</legend>
+        <legend className="text-xs font-medium text-label">Claims</legend>
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Waiting period (months)" error={errors.funeralWaitingMonths?.message}>
             <Input inputSize="sm" inputMode="numeric" placeholder="Empty for none" {...register('funeralWaitingMonths')} />

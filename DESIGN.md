@@ -496,7 +496,12 @@ Equal radii nested read as a misalignment.
 ### Inputs / Fields
 
 - **Style:** Control ground, 1px Input Edge, 10px radius; on focus the ground turns
-  Card White, the edge Rule Strong, with a teal ring at 40%.
+  Card White, the edge Rule Strong, with a teal ring at 40%. Every empty field looks the
+  same: pickers (party, agent) and the date field take the Control ground too, never white.
+- **The ink ladder (2026-11-06):** value Navy Ink > label **Label Ink** (`--label`, 500) >
+  hint Subtle Ink > placeholder **Placeholder Ink** (`--placeholder`, the lightest that keeps
+  4.5:1 on the Control ground). Labels and section legends use Label Ink; a placeholder never
+  looks like a typed value, and a label never looks like a hint.
 - **Label and error:** `FormField` pairs a real `<label>` with the control; an error is
   Micro in the danger hue below the control, outside the label, wired by
   `aria-describedby` and `aria-invalid`. Forms validate when a field is left.
@@ -508,8 +513,10 @@ Equal radii nested read as a misalignment.
 `Panel` is the titled card every record is built from: 16px radius, Card White,
 hairline, Card shadow, a header of `<h2>` (Sora; Title tier when `emphasis`), optional
 subtitle and actions. Content brings its own padding. `Panel outline` lists it in a
-`FormLayout` rail. `Field` rows are label-left, value-right on one baseline; `Field
-stacked` puts the label above a Display-tier value for the figures band.
+`FormLayout` rail. `Field` rows are two columns on one baseline: an 8rem label column, the value
+set beside it, left-aligned (2026-11-06). A value pinned to the card's right edge sat ~490px from
+its label on a 1440px screen, so nothing paired and no column of values could be read down.
+`Field stacked` puts the label above a Display-tier value for the figures band.
 
 ### Figures Band (Signature)
 

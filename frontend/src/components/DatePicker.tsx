@@ -427,7 +427,9 @@ export function DatePicker({ value, onChange, disabled }: DatePickerProps) {
           button alone pushes it out to the right of the input. */}
       <Popover.Anchor
         className={cn(
-          'flex h-10 items-center rounded-md border bg-surface pl-3 pr-1',
+          // The control ground while it waits, paper once focused -- the same as every text field.
+          'flex h-10 items-center rounded-md border pl-3 pr-1',
+          focused ? 'bg-surface' : 'bg-control',
           invalid ? 'border-status-danger-fg' : 'border-input',
           !invalid && !focused && 'hover:border-border-strong',
           // A hairline border plus a 1px ring reads as MUI's doubled focus
@@ -461,7 +463,8 @@ export function DatePicker({ value, onChange, disabled }: DatePickerProps) {
           aria-describedby={invalid ? errorId : undefined}
           className={cn(
             'w-full bg-transparent text-sm outline-none focus-visible:outline-none',
-            isEmpty(committed) && 'text-muted-foreground',
+            // The DD/MM/YYYY mask is a value-shaped prompt, so it takes the placeholder ink.
+            isEmpty(committed) && 'text-placeholder',
           )}
         />
         <Popover.Trigger asChild>
