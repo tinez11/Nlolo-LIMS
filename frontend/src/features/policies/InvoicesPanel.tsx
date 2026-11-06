@@ -428,7 +428,7 @@ function WaiveForm({
 
   return (
     <form className="mt-2 space-y-2 rounded-md border border-border p-2.5" onSubmit={(e) => void handleSubmit(setPending)(e)}>
-      <FormField label="Reason" error={errors.reason?.message}>
+      <FormField required label="Reason" error={errors.reason?.message}>
         <Input
           inputSize="sm"
           placeholder="Goodwill gesture, customer hardship"
@@ -529,7 +529,7 @@ function MobileMoneyRequestForm({
 
   return (
     <form className="mt-2 space-y-2 rounded-md border border-border p-2.5" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
-      <FormField label="Payer reference" error={errors.payerRef?.message}>
+      <FormField required label="Payer reference" error={errors.payerRef?.message}>
         <Input inputSize="sm" placeholder="The mobile-money number to ask" {...register('payerRef')} />
       </FormField>
 
@@ -605,7 +605,7 @@ function LenderRefundLine({ credit, onDecided }: { credit: PremiumCreditView; on
           />
         ) : rejecting ? (
           <div className="space-y-2">
-            <FormField label="Why is it rejected?">
+            <FormField required label="Why is it rejected?">
               <Input inputSize="sm" value={reason} onChange={(e) => setReason(e.target.value)} />
             </FormField>
             <div className="flex gap-2">

@@ -97,7 +97,7 @@ export async function acceptProposedScheme(page: Page): Promise<string> {
   await expect(page).toHaveURL(/\/staff\/underwriting\/[0-9a-f-]{36}$/, { timeout: 20_000 });
 
   await page.getByLabel('Findings').fill('Employer accounts and claims experience reviewed');
-  await page.getByLabel('Risk score (optional)').fill('10');
+  await page.getByLabel('Risk score', { exact: true }).fill('10');
 
   /*
    * WAIT FOR THE ASSESSMENT TO LAND before deciding, rather than clicking straight on.

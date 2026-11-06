@@ -87,7 +87,7 @@ describe('OnboardCustomerPage from a confirmed quotation', { timeout: 20_000 }, 
     renderOnboarding();
 
     expect(await screen.findByLabelText('Full name')).toHaveValue('Halima Prospect');
-    expect(screen.getByLabelText('Phone number (optional)')).toHaveValue('+255713000111');
+    expect(screen.getByLabelText('Phone number')).toHaveValue('+255713000111');
     expect(screen.getByLabelText('Sex')).toHaveValue('FEMALE');
     expect(screen.getByLabelText('Smoker status')).toHaveValue('NON_SMOKER');
     expect(screen.queryByLabelText('Occupation class')).not.toBeInTheDocument();
@@ -147,7 +147,7 @@ describe('OnboardCustomerPage from a confirmed quotation', { timeout: 20_000 }, 
     await screen.findByLabelText('Full name');
     await userEvent.selectOptions(screen.getByLabelText('ID type'), 'NATIONAL_ID');
     await userEvent.type(screen.getByLabelText('ID number'), '19850501-12345-00001-24');
-    const reference = screen.getByLabelText('Client reference (optional)');
+    const reference = screen.getByLabelText('Client reference');
     await userEvent.type(reference, 'BLIC001');
 
     await userEvent.click(screen.getByRole('button', { name: 'Register individual' }));

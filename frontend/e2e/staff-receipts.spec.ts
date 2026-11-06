@@ -28,7 +28,7 @@ test.describe('receipts', () => {
     await page.getByLabel('How the money came in').selectOption('CHEQUE');
     await page.getByLabel('Cheque number').fill(cheque);
     await page.getByLabel(/^Amount/).fill('800.00');
-    await page.getByLabel('Paid by (optional)').fill('Amina Owner');
+    await page.getByLabel('Paid by', { exact: true }).fill('Amina Owner');
     await page.getByRole('button', { name: 'Record deposit' }).click();
 
     // Recorded, and waiting: the recorder is told someone else confirms it.

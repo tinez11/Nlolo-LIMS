@@ -233,7 +233,7 @@ test.describe('staff claims adjudication', () => {
     // "Reject claim" and its confirmation below.
     await managerPage.getByRole('radio', { name: 'Reject' }).click();
     await expect(managerPage.getByRole('radio', { name: 'Reject' })).toHaveAttribute('aria-checked', 'true');
-    await managerPage.getByLabel('Rejection reason (optional)').fill('Insufficient evidence');
+    await managerPage.getByLabel('Rejection reason', { exact: true }).fill('Insufficient evidence');
     await managerPage.getByRole('button', { name: 'Reject claim' }).click();
 
     // Rejection IS recoverable -- a claims manager can reopen it -- and the

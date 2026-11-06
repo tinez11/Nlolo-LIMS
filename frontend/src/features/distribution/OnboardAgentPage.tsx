@@ -7,7 +7,7 @@ import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { AgentPicker } from '@/components/AgentPicker';
 import { Button } from '@/components/ui/button';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { useDistributionStore } from '@/store/distributionStore';
@@ -79,8 +79,9 @@ export function OnboardAgentPage() {
 
       <FormLayout formId="onboard-agent-form" outlineLabel="Agent sections">
       <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+        <RequiredNote />
         <UnsavedGuard when={isDirty && !isSubmitting} what="This agent" />
-        <FormField label="Party id" error={errors.partyId?.message}>
+        <FormField required label="Party id" error={errors.partyId?.message}>
           <Controller
             control={control}
             name="partyId"
@@ -95,14 +96,14 @@ export function OnboardAgentPage() {
           />
         </FormField>
 
-        <FormField label="License number" error={errors.licenseNumber?.message}>
+        <FormField required label="License number" error={errors.licenseNumber?.message}>
           <Input
             placeholder="LIC-0001"
             {...register('licenseNumber')}
           />
         </FormField>
 
-        <FormField label="License expiry date" error={errors.licenseExpiryDate?.message}>
+        <FormField required label="License expiry date" error={errors.licenseExpiryDate?.message}>
           <Controller
             control={control}
             name="licenseExpiryDate"
@@ -117,7 +118,7 @@ export function OnboardAgentPage() {
         </FormField>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <FormField label="Sales channel" error={errors.salesChannel?.message}>
+          <FormField required label="Sales channel" error={errors.salesChannel?.message}>
             <Select {...register('salesChannel')}>
               {AGENT_CHANNELS.map((c) => (
                 <option key={c} value={c}>
@@ -126,7 +127,7 @@ export function OnboardAgentPage() {
               ))}
             </Select>
           </FormField>
-          <FormField label="Home branch" error={errors.homeBranch?.message}>
+          <FormField required label="Home branch" error={errors.homeBranch?.message}>
             <Controller
               control={control}
               name="homeBranch"
@@ -135,7 +136,7 @@ export function OnboardAgentPage() {
           </FormField>
         </div>
 
-        <FormField label="Reports to (optional)" error={errors.hierarchyParentId?.message}>
+        <FormField label="Reports to" error={errors.hierarchyParentId?.message}>
           {/*
             An agent picker, not a uuid box, for the same reason the agent of record got one:
             nobody knows a supervisor's uuid, and the hierarchy decides who earns OVERRIDE and

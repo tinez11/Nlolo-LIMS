@@ -165,10 +165,10 @@ export function MaturitiesPage() {
             {/* The picker reports null while a date is half-typed. The window needs two real
                 dates, so a cleared field falls back to the default rather than sending nothing
                 and getting a 400 the reader did not ask for. */}
-            <FormField label="From">
+            <FormField required label="From">
               <DatePicker value={fromInput} onChange={(iso) => setFromInput(iso ?? todayIso())} />
             </FormField>
-            <FormField label="To">
+            <FormField required label="To">
               <DatePicker value={toInput} onChange={(iso) => setToInput(iso ?? isoMonthsFromToday(3))} />
             </FormField>
             <Button type="submit" size="sm">

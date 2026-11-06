@@ -168,14 +168,14 @@ function AddAgreementForm({ policyNumber, currency, previous, onDone }: {
       {acting.status === 'error' && acting.error && <InlineError error={acting.error} />}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <FormField label="From" error={errors.validFrom?.message}>
+        <FormField required label="From" error={errors.validFrom?.message}>
           <Controller
             control={form.control}
             name="validFrom"
             render={({ field }) => <DatePicker value={field.value || null} onChange={(iso) => field.onChange(iso ?? '')} />}
           />
         </FormField>
-        <FormField label="To" error={errors.validTo?.message}>
+        <FormField required label="To" error={errors.validTo?.message}>
           <Controller
             control={form.control}
             name="validTo"
@@ -183,10 +183,10 @@ function AddAgreementForm({ policyNumber, currency, previous, onDone }: {
           />
         </FormField>
 
-        <FormField label="Premium rate (% a year)" error={errors.premiumRatePercent?.message}>
+        <FormField required label="Premium rate (% a year)" error={errors.premiumRatePercent?.message}>
           <Input inputMode="decimal" placeholder="0.6" {...form.register('premiumRatePercent')} />
         </FormField>
-        <FormField label="How the rate is charged" error={errors.premiumBasis?.message}>
+        <FormField required label="How the rate is charged" error={errors.premiumBasis?.message}>
           <Select {...form.register('premiumBasis')}>
             {CREDIT_LIFE_PREMIUM_BASES.map((b) => (
               <option key={b} value={b}>
@@ -196,21 +196,21 @@ function AddAgreementForm({ policyNumber, currency, previous, onDone }: {
           </Select>
         </FormField>
 
-        <FormField label="Youngest borrower (age when the loan starts)" error={errors.minAge?.message}>
+        <FormField required label="Youngest borrower (age when the loan starts)" error={errors.minAge?.message}>
           <Input inputMode="numeric" {...form.register('minAge')} />
         </FormField>
-        <FormField label="Oldest borrower (age when the loan starts)" error={errors.maxAge?.message}>
+        <FormField required label="Oldest borrower (age when the loan starts)" error={errors.maxAge?.message}>
           <Input inputMode="numeric" placeholder="75" {...form.register('maxAge')} />
         </FormField>
 
-        <FormField label="Shortest loan (months)" error={errors.minTermMonths?.message}>
+        <FormField required label="Shortest loan (months)" error={errors.minTermMonths?.message}>
           <Input inputMode="numeric" {...form.register('minTermMonths')} />
         </FormField>
-        <FormField label="Longest loan (months)" error={errors.maxTermMonths?.message}>
+        <FormField required label="Longest loan (months)" error={errors.maxTermMonths?.message}>
           <Input inputMode="numeric" placeholder="120" {...form.register('maxTermMonths')} />
         </FormField>
 
-        <FormField label={`Least a loan pays (${currency}, optional)`} error={errors.minimumPremium?.message}>
+        <FormField label={`Least a loan pays (${currency})`} error={errors.minimumPremium?.message}>
           <Input inputMode="decimal" placeholder="2000" {...form.register('minimumPremium')} />
         </FormField>
         <FormField

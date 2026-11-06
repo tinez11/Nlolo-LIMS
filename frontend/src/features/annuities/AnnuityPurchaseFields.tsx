@@ -89,7 +89,7 @@ export function AnnuityPurchaseFields({
         for life, and the policy cannot be surrendered once the free-look period has passed.
       </p>
       <div className="grid grid-cols-2 gap-4">
-        <FormField label="Annuity form" error={errors.annuityFormCode?.message}>
+        <FormField required label="Annuity form" error={errors.annuityFormCode?.message}>
           <Select {...register('annuityFormCode')}>
             <option value="">Choose a form</option>
             {terms.forms.map((f) => (
@@ -102,7 +102,7 @@ export function AnnuityPurchaseFields({
             ))}
           </Select>
         </FormField>
-        <FormField label="Income paid" error={errors.annuityFrequency?.message}>
+        <FormField required label="Income paid" error={errors.annuityFrequency?.message}>
           <Select {...register('annuityFrequency')}>
             <option value="">Choose a frequency</option>
             {terms.frequencies.map((f) => (
@@ -114,7 +114,7 @@ export function AnnuityPurchaseFields({
         </FormField>
       </div>
       {joint && (
-        <FormField label="Joint life" error={errors.annuityJointLifePartyId?.message}>
+        <FormField required label="Joint life" error={errors.annuityJointLifePartyId?.message}>
           <Controller
             control={control}
             name="annuityJointLifePartyId"

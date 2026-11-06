@@ -208,7 +208,7 @@ test.describe('staff group schemes', () => {
     // 120,000,000 and is therefore 20,000,000 over it.
     await page.getByLabel('Basis').selectOption('SALARY_MULTIPLE');
     await page.getByLabel('Multiple of annual salary').fill('4');
-    await page.getByLabel('Free cover limit (optional)').fill('100000000.00');
+    await page.getByLabel('Free cover limit', { exact: true }).fill('100000000.00');
 
     await pickParty(page, 'Search employees by name', 'Amina', 'Amina Owner');
     // exact: true -- "Multiple of annual salary" also contains "Annual salary",

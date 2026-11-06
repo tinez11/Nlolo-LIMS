@@ -187,7 +187,7 @@ function ApproveForm({ electionId, disabled }: { electionId: string; disabled: b
       aria-label="Approve election"
       onSubmit={form.handleSubmit((v) => void approve(electionId, v.signOffRef.trim()))}
     >
-      <FormField label="Sign-off reference" error={form.formState.errors.signOffRef?.message}>
+      <FormField required label="Sign-off reference" error={form.formState.errors.signOffRef?.message}>
         <Input inputSize="sm" placeholder="Audit committee minute 14/2026" disabled={disabled} {...form.register('signOffRef')} />
       </FormField>
       <Button type="submit" size="sm" disabled={disabled}>
@@ -206,7 +206,7 @@ function RejectForm({ electionId, disabled }: { electionId: string; disabled: bo
       aria-label="Reject election"
       onSubmit={form.handleSubmit((v) => void reject(electionId, v.reason.trim()))}
     >
-      <FormField label="Reason to reject" error={form.formState.errors.reason?.message}>
+      <FormField required label="Reason to reject" error={form.formState.errors.reason?.message}>
         <Input inputSize="sm" disabled={disabled} {...form.register('reason')} />
       </FormField>
       <Button type="submit" size="sm" variant="ghost" disabled={disabled}>
@@ -245,7 +245,7 @@ function ProposeForm() {
       <p className="text-xs font-medium">Propose a change</p>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <FormField label="Election" error={form.formState.errors.key?.message}>
+        <FormField required label="Election" error={form.formState.errors.key?.message}>
           <Select
             {...form.register('key', {
               onChange: () => form.setValue('value', ''),
@@ -261,7 +261,7 @@ function ProposeForm() {
         <FormField label="Scope" hint="A portfolio code (TERM, ULIP ...), a model for acquisition cash flows, or * for the company">
           <Input placeholder="*" {...form.register('scope')} />
         </FormField>
-        <FormField label="Value" error={form.formState.errors.value?.message}>
+        <FormField required label="Value" error={form.formState.errors.value?.message}>
           {key === 'MODEL_OVERRIDE_ALLOWED' ? (
             <Input placeholder="NONE, or GMM,PAA" {...form.register('value')} />
           ) : RATE_KEYS.includes(key) ? (
@@ -277,7 +277,7 @@ function ProposeForm() {
             </Select>
           )}
         </FormField>
-        <FormField label="Effective from" error={form.formState.errors.effectiveFrom?.message}>
+        <FormField required label="Effective from" error={form.formState.errors.effectiveFrom?.message}>
           <Controller
             control={form.control}
             name="effectiveFrom"

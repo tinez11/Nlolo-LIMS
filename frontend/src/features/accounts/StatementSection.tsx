@@ -72,10 +72,10 @@ export function StatementSection({ policyNumber }: { policyNumber: string }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
-        <FormField label="From">
+        <FormField required label="From">
           <DatePicker value={period.from} onChange={(iso) => iso && setPeriod((p) => ({ ...p, from: iso }))} />
         </FormField>
-        <FormField label="To">
+        <FormField required label="To">
           <DatePicker value={period.to} onChange={(iso) => iso && setPeriod((p) => ({ ...p, to: iso }))} />
         </FormField>
         <Button size="sm" onClick={() => void show()} disabled={loading}>

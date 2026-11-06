@@ -280,7 +280,7 @@ test.describe('staff credit-life scheme', () => {
     ]) {
       await expect(page.getByLabel(gone)).toHaveCount(0);
     }
-    await page.getByLabel('Free cover limit (optional)').fill('600000000.00');
+    await page.getByLabel('Free cover limit', { exact: true }).fill('600000000.00');
     // Before the opening borrower's loan. A book being onboarded always has loans older than
     // today, and a member cannot join a scheme that did not exist yet -- the form asks for this
     // rather than letting the server refuse the whole submission over a date it never showed.

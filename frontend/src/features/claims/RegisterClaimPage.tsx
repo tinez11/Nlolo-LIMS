@@ -13,7 +13,7 @@ import { Panel } from '@/components/Panel';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { GatePanel } from '@/components/GatePanel';
 import { claimGates } from '@/gates/claimGates';
@@ -332,13 +332,14 @@ export function RegisterClaimPage() {
         className="space-y-5"
         onSubmit={(e) => void handleSubmit(onSubmit)(e)}
       >
+        <RequiredNote />
         <UnsavedGuard when={isDirty && !isSubmitting} what="This claim" />
         <Panel outline title="Who and which policy">
         <div className="space-y-4 p-4">
         {/* Claimant BEFORE policy, which is the order the conversation actually happens in:
             somebody arrives and says who they are, not which contract number they hold. It is
             also the only order in which the policy field can be a list rather than a guess. */}
-        <FormField label="Claimant" error={errors.claimantPartyId?.message}>
+        <FormField required label="Claimant" error={errors.claimantPartyId?.message}>
           <Controller
             control={control}
             name="claimantPartyId"
@@ -375,7 +376,7 @@ export function RegisterClaimPage() {
             it typechecked, rendered nothing, and would have gone unnoticed but for looking at
             the screen. The scope caption lives inside the chooser instead, which is what it
             describes. */}
-        <FormField label="Policy" error={errors.policyNumber?.message}>
+        <FormField required label="Policy" error={errors.policyNumber?.message}>
           {manualPolicyEntry ? (
             <div className="space-y-1.5">
               <Input className="font-mono" placeholder="POL-XXXXXXXX" {...register('policyNumber')} />
@@ -417,7 +418,7 @@ export function RegisterClaimPage() {
         {isScheme && <SchemeFamilyChooser families={families} family={family} onChoose={chooseFamily} />}
         {isFuneral && (
           <>
-            <FormField label="Who died?" error={errors.coveredLifeId?.message}>
+            <FormField required label="Who died?" error={errors.coveredLifeId?.message}>
               {/* A family's policy: the claimant files, but the claim is for one covered life. */}
               <Select inputSize="sm" {...register('coveredLifeId')} disabled={isScheme && !family}>
                 <option value="">{isScheme && !family ? 'Choose the family first' : 'Choose who died…'}</option>
@@ -456,7 +457,7 @@ export function RegisterClaimPage() {
                 : `${matchCount(memberTotal, 'member', 'members')} — choose below${memberTotal === 1 ? ', or press Enter' : ''}.`}
             </p>
           )}
-          <FormField label="Who died" error={errors.policyMemberId?.message}>
+          <FormField required label="Who died" error={errors.policyMemberId?.message}>
             {/* A scheme insures many lives, so "a claim on GL-000123" names none of them, and
                 nothing else on the claim can say which employee it was. The claimant field
                 above is who is FILING -- the widow -- not who died. */}
@@ -499,7 +500,7 @@ export function RegisterClaimPage() {
 
         <Panel outline title="The event">
         <div className="space-y-4 p-4">
-        <FormField label="Date of event" error={errors.dateOfEvent?.message}>
+        <FormField required label="Date of event" error={errors.dateOfEvent?.message}>
           <Controller
             control={control}
             name="dateOfEvent"
@@ -528,7 +529,7 @@ export function RegisterClaimPage() {
           })}
         />
 
-        <FormField
+        <FormField required
           label="Claim type"
           hint={coverage.data && policy.data && onRecord
             ? `What this policy covers: ${claimable.map((t) => humanizeStatus(t).toLowerCase()).join(', ')}`
@@ -561,13 +562,13 @@ export function RegisterClaimPage() {
         <div className="p-4">
           {claimType === 'DEATH' && (
             <div className="space-y-3">
-              <FormField label="Cause of death" error={detailError('causeOfDeath')}>
+              <FormField required label="Cause of death" error={detailError('causeOfDeath')}>
                 <Input  {...register('details.causeOfDeath')} />
               </FormField>
-              <FormField label="Place of death" error={detailError('placeOfDeath')}>
+              <FormField required label="Place of death" error={detailError('placeOfDeath')}>
                 <Input  {...register('details.placeOfDeath')} />
               </FormField>
-              <FormField label="Date of death" error={detailError('dateOfDeath')}>
+              <FormField required label="Date of death" error={detailError('dateOfDeath')}>
                 <Controller
                   control={control}
                   name="details.dateOfDeath"
@@ -580,7 +581,7 @@ export function RegisterClaimPage() {
                   )}
                 />
               </FormField>
-              <FormField label="Attending physician" error={detailError('attendingPhysician')}>
+              <FormField required label="Attending physician" error={detailError('attendingPhysician')}>
                 <Input  {...register('details.attendingPhysician')} />
               </FormField>
             </div>
@@ -588,10 +589,10 @@ export function RegisterClaimPage() {
 
           {claimType === 'DISABILITY' && (
             <div className="space-y-3">
-              <FormField label="Disability type" error={detailError('disabilityType')}>
+              <FormField required label="Disability type" error={detailError('disabilityType')}>
                 <Input  {...register('details.disabilityType')} />
               </FormField>
-              <FormField label="Onset date" error={detailError('onsetDate')}>
+              <FormField required label="Onset date" error={detailError('onsetDate')}>
                 <Controller
                   control={control}
                   name="details.onsetDate"
@@ -605,7 +606,7 @@ export function RegisterClaimPage() {
                 />
               </FormField>
               <CheckboxField label="Permanent" {...register('details.permanent')} />
-              <FormField label="Impairment percent" error={detailError('impairmentPercent')}>
+              <FormField required label="Impairment percent" error={detailError('impairmentPercent')}>
                 <div className="flex items-center gap-1">
                   <Input
                     placeholder="62.50"
@@ -619,10 +620,10 @@ export function RegisterClaimPage() {
 
           {claimType === 'CRITICAL_ILLNESS' && (
             <div className="space-y-3">
-              <FormField label="Diagnosis" error={detailError('diagnosis')}>
+              <FormField required label="Diagnosis" error={detailError('diagnosis')}>
                 <Input  {...register('details.diagnosis')} />
               </FormField>
-              <FormField label="Diagnosis date" error={detailError('diagnosisDate')}>
+              <FormField required label="Diagnosis date" error={detailError('diagnosisDate')}>
                 <Controller
                   control={control}
                   name="details.diagnosisDate"
@@ -635,14 +636,14 @@ export function RegisterClaimPage() {
                   )}
                 />
               </FormField>
-              <FormField label="ICD code" error={detailError('icdCode')}>
+              <FormField required label="ICD code" error={detailError('icdCode')}>
                 <Input className="font-mono" {...register('details.icdCode')} />
               </FormField>
             </div>
           )}
 
           {claimType === 'MATURITY' && (
-            <FormField label="Maturity date" error={detailError('maturityDate')}>
+            <FormField required label="Maturity date" error={detailError('maturityDate')}>
               <Controller
                 control={control}
                 name="details.maturityDate"
@@ -667,11 +668,11 @@ export function RegisterClaimPage() {
             subtitle="What the borrower still owed on the date of the event, never more than was lent. Upload the statement under Evidence after registering: the claim is approved only with it."
           >
             <div className="grid gap-3 p-4 sm:grid-cols-2">
-              <FormField label="Principal still owed" error={errors.loanPrincipalOutstanding?.message}>
+              <FormField required label="Principal still owed" error={errors.loanPrincipalOutstanding?.message}>
                 <Input inputMode="decimal" placeholder="1600000.00" {...register('loanPrincipalOutstanding')} />
               </FormField>
               <FormField
-                label="Interest owed (optional)"
+                label="Interest owed"
                 error={errors.loanInterestOutstanding?.message}
                 hint="Paid only where the lender's agreement covers interest."
               >

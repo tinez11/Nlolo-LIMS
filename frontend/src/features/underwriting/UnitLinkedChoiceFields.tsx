@@ -53,7 +53,7 @@ export function UnitLinkedChoiceFields({
         </p>
       </div>
 
-      <FormField label={`Premium per payment (${currency})`} error={errors.ulPremium?.message}>
+      <FormField required label={`Premium per payment (${currency})`} error={errors.ulPremium?.message}>
         <Input inputMode="decimal" placeholder="100000.00" {...register('ulPremium')} />
       </FormField>
       {frequency !== '' && !minimum && (

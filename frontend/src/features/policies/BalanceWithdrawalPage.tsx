@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
@@ -70,13 +70,14 @@ export function BalanceWithdrawalPage() {
       />
       <FormLayout formId="balance-withdrawal-form" outlineLabel="Withdrawal sections">
         <form className="space-y-4" onSubmit={(e) => void form.handleSubmit((v) => setArmed(v))(e)}>
+          <RequiredNote />
           <UnsavedGuard when={form.formState.isDirty && !armed && asking?.status !== 'loading'} what="This withdrawal" />
           <div data-outline="How much" className="space-y-4">
             <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
               <Field label="On the balance now" value={formatMoney(balance.data.balance)} />
             </dl>
             <div className="max-w-xs">
-              <FormField
+              <FormField required
                 label={`Amount (${currency})`}
                 hint="At most what is on the balance; it is checked again when a second person approves it."
                 error={form.formState.errors.amount?.message}

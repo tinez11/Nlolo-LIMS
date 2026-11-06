@@ -56,7 +56,7 @@ export function ClaimReopenPanel({ claimId, wasSettled }: { claimId: string; was
         </p>
       )}
 
-      <FormField label="Reason" error={errors.reason?.message}>
+      <FormField required label="Reason" error={errors.reason?.message}>
         <Textarea
           className="min-h-16"
           placeholder="New evidence submitted"

@@ -50,7 +50,7 @@ export function SchemeFamilyChooser({ families, family, onChoose }: {
               : `${matchCount(matches.length, 'family', 'families')} — choose one below.`}
         </p>
       )}
-      <FormField label="Family">
+      <FormField required label="Family">
         <Select inputSize="sm" value={family?.policyMemberId ?? ''} onChange={(e) => onChoose(e.target.value || null)}>
           <option value="">{families === null ? 'Loading families…' : 'Choose the family…'}</option>
           {choices.map((f) => (

@@ -495,16 +495,18 @@ function TextField<T extends FieldValues>({
   label,
   placeholder,
   inputMode,
+  required,
 }: {
   form: UseFormReturn<T>;
   name: string;
   label: string;
   placeholder?: string;
   inputMode?: 'decimal' | 'text';
+  required?: boolean;
 }) {
   const error = (form.formState.errors as Record<string, { message?: string } | undefined>)[name]?.message;
   return (
-    <FormField label={label} error={error}>
+    <FormField required={required} label={label} error={error}>
       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any -- a generic field name */}
       <Input {...form.register(name as any)} placeholder={placeholder} inputMode={inputMode} />
     </FormField>
@@ -580,7 +582,7 @@ function WithdrawalForm({
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <form onSubmit={form.handleSubmit((v) => setArmed(v))} className="space-y-4">
         <div className="max-w-xs">
-          <FormField
+          <FormField required
             label={`Amount (${account.balance.currencyCode})`}
             hint="The account keeps its product’s minimum balance, after any policy loan."
             error={form.formState.errors.amount?.message}
@@ -654,7 +656,7 @@ function TopUpForm({
         className="space-y-3"
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <FormField label="How is it being paid?" hint={received?.hint} error={errors.method?.message}>
+          <FormField required label="How is it being paid?" hint={received?.hint} error={errors.method?.message}>
             <Select {...form.register('method')}>
               {canRequest && (
                 <optgroup label="Ask for it now">
@@ -672,7 +674,7 @@ function TopUpForm({
               )}
             </Select>
           </FormField>
-          <TextField form={form} name="amount" label="Amount" placeholder="20000.00" inputMode="decimal" />
+          <TextField required form={form} name="amount" label="Amount" placeholder="20000.00" inputMode="decimal" />
           {!canReceive && (
             <p className="text-xs text-muted-foreground sm:col-span-2">
               Money already received — cash, a bank deposit, a cheque — is recorded by finance.
@@ -680,20 +682,20 @@ function TopUpForm({
           )}
           {received ? (
             <>
-              <FormField label={received.reference} error={errors.reference?.message}>
+              <FormField required label={received.reference} error={errors.reference?.message}>
                 <Input className="font-mono" {...form.register('reference')} />
               </FormField>
-              <FormField label="Received on" error={errors.receivedOn?.message}>
+              <FormField required label="Received on" error={errors.receivedOn?.message}>
                 <Controller
                   control={form.control}
                   name="receivedOn"
                   render={({ field }) => <DatePicker value={field.value} onChange={(iso) => field.onChange(iso ?? '')} />}
                 />
               </FormField>
-              <TextField form={form} name="payerRef" label="Paid by (optional)" placeholder="As the slip shows it" />
+              <TextField form={form} name="payerRef" label="Paid by" placeholder="As the slip shows it" />
             </>
           ) : (
-            <TextField form={form} name="payerRef" label="Collect from" placeholder="Mobile money number" />
+            <TextField required form={form} name="payerRef" label="Collect from" placeholder="Mobile money number" />
           )}
         </div>
         <Button type="submit" size="sm" variant="primary" disabled={acting?.status === 'loading'}>
@@ -729,9 +731,9 @@ function TransferInForm({ policyNumber, onDone }: { policyNumber: string; onDone
         className="space-y-3"
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <TextField form={form} name="amount" label="Amount received" placeholder="300000.00" inputMode="decimal" />
-          <TextField form={form} name="sourceScheme" label="From scheme" placeholder="NSSF member 1234" />
-          <TextField form={form} name="documentRef" label="Document reference (optional)" />
+          <TextField required form={form} name="amount" label="Amount received" placeholder="300000.00" inputMode="decimal" />
+          <TextField required form={form} name="sourceScheme" label="From scheme" placeholder="NSSF member 1234" />
+          <TextField form={form} name="documentRef" label="Document reference" />
         </div>
         <Button type="submit" size="sm" variant="primary" disabled={acting?.status === 'loading'}>
           Record transfer in
@@ -762,8 +764,8 @@ function AdjustmentForm({ policyNumber, onDone }: { policyNumber: string; onDone
         className="space-y-3"
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <TextField form={form} name="amount" label="Amount" placeholder="-250.00" inputMode="decimal" />
-          <TextField form={form} name="reason" label="Reason" placeholder="Fee charged twice in error" />
+          <TextField required form={form} name="amount" label="Amount" placeholder="-250.00" inputMode="decimal" />
+          <TextField required form={form} name="reason" label="Reason" placeholder="Fee charged twice in error" />
         </div>
         <Button type="submit" size="sm" variant="primary" disabled={acting?.status === 'loading'}>
           Propose adjustment
@@ -844,7 +846,7 @@ export function WithdrawalRow({
             />
           ) : rejecting ? (
             <div className="space-y-2">
-              <FormField label="Why is it rejected?">
+              <FormField required label="Why is it rejected?">
                 <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="The customer cancelled it" />
               </FormField>
               <div className="flex gap-2">

@@ -72,7 +72,7 @@ export function AnnuityTermsSection({
             : 'The income each 1,000 of purchase price buys a year, by form and age. Every entry age this version accepts must have a rate in every form — a gap is refused here, never defaulted at purchase.'}
         </p>
       </div>
-      <FormField label="Annuity kind">
+      <FormField required label="Annuity kind">
         <Select
           inputSize="sm"
           {...kindField}
@@ -94,16 +94,16 @@ export function AnnuityTermsSection({
             instruction it vests into the default form and frequency with no lump sum, at the rates in force that day.
           </p>
           <div className="grid grid-cols-3 gap-3">
-            <FormField label="Minimum vesting age" error={errors.vestingMinAge?.message}>
+            <FormField required label="Minimum vesting age" error={errors.vestingMinAge?.message}>
               <Input inputSize="sm" inputMode="numeric" {...register('vestingMinAge')} />
             </FormField>
-            <FormField label="Maximum vesting age" error={errors.vestingMaxAge?.message}>
+            <FormField required label="Maximum vesting age" error={errors.vestingMaxAge?.message}>
               <Input inputSize="sm" inputMode="numeric" {...register('vestingMaxAge')} />
             </FormField>
-            <FormField label="Lump-sum cap (%)" error={errors.vestingCap?.message}>
+            <FormField required label="Lump-sum cap (%)" error={errors.vestingCap?.message}>
               <Input inputSize="sm" inputMode="decimal" placeholder="25" {...register('vestingCap')} />
             </FormField>
-            <FormField label="Default form" error={errors.vestingDefaultForm?.message}>
+            <FormField required label="Default form" error={errors.vestingDefaultForm?.message}>
               <Select inputSize="sm" {...register('vestingDefaultForm')}>
                 <option value="">Choose…</option>
                 {(formValues ?? []).filter((f) => f.formCode !== '').map((f) => (
@@ -111,7 +111,7 @@ export function AnnuityTermsSection({
                 ))}
               </Select>
             </FormField>
-            <FormField label="Default frequency" error={errors.vestingDefaultFrequency?.message}>
+            <FormField required label="Default frequency" error={errors.vestingDefaultFrequency?.message}>
               <Select inputSize="sm" {...register('vestingDefaultFrequency')}>
                 <option value="">Choose…</option>
                 {(['MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL', 'ANNUAL'] as const).map((f) => (
@@ -119,7 +119,7 @@ export function AnnuityTermsSection({
                 ))}
               </Select>
             </FormField>
-            <FormField label="Locked before vesting" error={errors.vestingLocked?.message}>
+            <FormField required label="Locked before vesting" error={errors.vestingLocked?.message}>
               <Select inputSize="sm" {...register('vestingLocked')}>
                 <option value="">Choose…</option>
                 <option value="YES">Yes — no surrender or withdrawal before it vests</option>
@@ -130,20 +130,20 @@ export function AnnuityTermsSection({
         </fieldset>
       )}
       <div className="grid grid-cols-2 gap-3">
-        <FormField label="Income paid" error={errors.annuityTiming?.message}>
+        <FormField required label="Income paid" error={errors.annuityTiming?.message}>
           <Select inputSize="sm" {...register('annuityTiming')}>
             <option value="">Choose…</option>
             <option value="ARREARS">In arrears — one period after purchase</option>
             <option value="ADVANCE">In advance — from the purchase date</option>
           </Select>
         </FormField>
-        <FormField label="Proof of life every (months)" error={errors.annuityProofOfLifeMonths?.message}>
+        <FormField required label="Proof of life every (months)" error={errors.annuityProofOfLifeMonths?.message}>
           <Input inputSize="sm" inputMode="numeric" {...register('annuityProofOfLifeMonths')} />
         </FormField>
-        <FormField label="Rate basis reference" error={errors.annuityBasisReference?.message}>
+        <FormField required label="Rate basis reference" error={errors.annuityBasisReference?.message}>
           <Input inputSize="sm" placeholder="e.g. a(90) ult, 4% net" {...register('annuityBasisReference')} />
         </FormField>
-        <FormField label="Rate basis date" error={errors.annuityBasisDate?.message}>
+        <FormField required label="Rate basis date" error={errors.annuityBasisDate?.message}>
           <Controller
             control={control}
             name="annuityBasisDate"
@@ -173,10 +173,10 @@ export function AnnuityTermsSection({
 
       {anyJoint && (
         <div className="grid grid-cols-2 gap-3">
-          <FormField label="Smallest age difference (annuitant − joint life)" error={errors.annuityJointDiffMin?.message}>
+          <FormField required label="Smallest age difference (annuitant − joint life)" error={errors.annuityJointDiffMin?.message}>
             <Input inputSize="sm" inputMode="numeric" {...register('annuityJointDiffMin')} />
           </FormField>
-          <FormField label="Largest age difference" error={errors.annuityJointDiffMax?.message}>
+          <FormField required label="Largest age difference" error={errors.annuityJointDiffMax?.message}>
             <Input inputSize="sm" inputMode="numeric" {...register('annuityJointDiffMax')} />
           </FormField>
         </div>
@@ -198,16 +198,16 @@ export function AnnuityTermsSection({
                 </Button>
               </div>
               <div className="grid grid-cols-4 gap-3">
-                <FormField label="Form code" error={formErrors?.formCode?.message}>
+                <FormField required label="Form code" error={formErrors?.formCode?.message}>
                   <Input inputSize="sm" placeholder="L10" {...register(`annuityForms.${index}.formCode`)} />
                 </FormField>
-                <FormField label="Guaranteed years" error={formErrors?.guaranteeYears?.message}>
+                <FormField required label="Guaranteed years" error={formErrors?.guaranteeYears?.message}>
                   <Input inputSize="sm" inputMode="numeric" {...register(`annuityForms.${index}.guaranteeYears`)} />
                 </FormField>
-                <FormField label="Escalation (% a year)" error={formErrors?.escalationPercent?.message}>
+                <FormField required label="Escalation (% a year)" error={formErrors?.escalationPercent?.message}>
                   <Input inputSize="sm" inputMode="decimal" {...register(`annuityForms.${index}.escalationPercent`)} />
                 </FormField>
-                <FormField label="Rate basis">
+                <FormField required label="Rate basis">
                   <Select inputSize="sm" {...register(`annuityForms.${index}.rateBasis`)}>
                     <option value="UNISEX">Unisex</option>
                     <option value="BY_SEX">By sex</option>
@@ -218,7 +218,7 @@ export function AnnuityTermsSection({
                 <CheckboxField label="Joint life" {...register(`annuityForms.${index}.joint`)} />
                 <CheckboxField label="Capital protected" {...register(`annuityForms.${index}.capitalProtected`)} />
                 {value.joint && (
-                  <FormField label="To the survivor (%)" error={formErrors?.survivorPercent?.message}>
+                  <FormField required label="To the survivor (%)" error={formErrors?.survivorPercent?.message}>
                     <Input inputSize="sm" inputMode="decimal" className="w-28" {...register(`annuityForms.${index}.survivorPercent`)} />
                   </FormField>
                 )}

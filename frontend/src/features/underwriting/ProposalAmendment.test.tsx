@@ -124,7 +124,7 @@ describe('AgentProposalPage', { timeout: 20_000 }, () => {
 
     expect(await screen.findByRole('heading', { name: 'What the underwriter asked' })).toBeInTheDocument();
     expect(screen.getAllByText(/Make it fifteen years/).length).toBeGreaterThan(0);
-    await userEvent.type(screen.getByLabelText('Note to the underwriter (optional)'), 'Done as asked');
+    await userEvent.type(screen.getByLabelText('Note to the underwriter'), 'Done as asked');
     await userEvent.click(screen.getByRole('button', { name: 'Resubmit to underwriting' }));
 
     await waitFor(() => expect(resubmitProposal).toHaveBeenCalledWith('case-1', 'Done as asked'));

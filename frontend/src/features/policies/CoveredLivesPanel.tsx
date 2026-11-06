@@ -181,17 +181,17 @@ function AddLifeForm({ onSubmit, onCancel }: { onSubmit: (v: CoveredLifeFormValu
         Covered from the next premium date, with its own waiting period. The premium rises from then.
       </p>
       <div className="grid grid-cols-2 gap-3">
-        <FormField label="Role">
+        <FormField required label="Role">
           <Select inputSize="sm" {...register('role')}>
             {(['SPOUSE', 'CHILD', 'PARENT', 'EXTENDED'] as const).map((r) => (
               <option key={r} value={r}>{FUNERAL_ROLE_LABELS[r]}</option>
             ))}
           </Select>
         </FormField>
-        <FormField label="Full name" error={errors.fullName?.message}>
+        <FormField required label="Full name" error={errors.fullName?.message}>
           <Input inputSize="sm" {...register('fullName')} />
         </FormField>
-        <FormField label="Date of birth" error={errors.dateOfBirth?.message}>
+        <FormField required label="Date of birth" error={errors.dateOfBirth?.message}>
           <Controller control={control} name="dateOfBirth"
             render={({ field }) => <DatePicker value={field.value} onChange={field.onChange} />} />
         </FormField>
@@ -202,7 +202,7 @@ function AddLifeForm({ onSubmit, onCancel }: { onSubmit: (v: CoveredLifeFormValu
             <option value="MALE">Male</option>
           </Select>
         </FormField>
-        <FormField label="ID number (optional)">
+        <FormField label="ID number">
           <Input inputSize="sm" {...register('idNumber')} />
         </FormField>
         <div className="pt-6"><CheckboxField label="Student (a child only)" {...register('student')} /></div>
@@ -226,7 +226,7 @@ export function IdentifyForm({ submitLabel, onSubmit, onCancel }: {
   return (
     <form className="space-y-2" onSubmit={handleSubmit(onSubmit)}>
       <div className="grid grid-cols-2 gap-2">
-        <FormField label="Identity document" error={errors.idType?.message}>
+        <FormField required label="Identity document" error={errors.idType?.message}>
           <Select inputSize="sm" {...register('idType')}>
             <option value="">Choose…</option>
             <option value="NATIONAL_ID">National ID</option>
@@ -235,7 +235,7 @@ export function IdentifyForm({ submitLabel, onSubmit, onCancel }: {
             <option value="VOTER_ID">Voter ID</option>
           </Select>
         </FormField>
-        <FormField label="Document number" error={errors.idNumber?.message}>
+        <FormField required label="Document number" error={errors.idNumber?.message}>
           <Input inputSize="sm" {...register('idNumber')} />
         </FormField>
         <FormField label="Phone number">

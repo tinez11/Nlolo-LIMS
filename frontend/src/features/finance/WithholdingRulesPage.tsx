@@ -5,7 +5,7 @@ import { useAuth } from 'react-oidc-context';
 import type { WithholdingRuleView } from '@/api/types';
 import { readIdentity } from '@/auth/claims';
 import { DatePicker } from '@/components/DatePicker';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { GatePanel } from '@/components/GatePanel';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
@@ -141,7 +141,7 @@ function EndRuleForm({ rule, busy }: { rule: WithholdingRuleView; busy: boolean 
       aria-label={`End rule ${rule.ratePercent}% from ${formatDate(rule.effectiveFrom)}`}
       onSubmit={form.handleSubmit((v) => void endRule(rule.ruleId, v.effectiveTo))}
     >
-      <FormField label="Last day" error={form.formState.errors.effectiveTo?.message}>
+      <FormField required label="Last day" error={form.formState.errors.effectiveTo?.message}>
         <Controller
           control={form.control}
           name="effectiveTo"
@@ -182,26 +182,27 @@ function ProposeForm() {
         }),
       )}
     >
+      <RequiredNote />
       <p className="text-xs font-medium">Propose a rule</p>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
-      <FormField label="Payout kinds" error={form.formState.errors.annuity?.message}>
+      <FormField required label="Payout kinds" error={form.formState.errors.annuity?.message}>
         <CheckboxField label="Annuity income" {...form.register('annuity')} />
       </FormField>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <FormField label="Rate (%)" error={form.formState.errors.ratePercent?.message}>
+        <FormField required label="Rate (%)" error={form.formState.errors.ratePercent?.message}>
           <Input inputMode="decimal" placeholder="10" {...form.register('ratePercent')} />
         </FormField>
-        <FormField label="Legal reference" error={form.formState.errors.legalReference?.message}>
+        <FormField required label="Legal reference" error={form.formState.errors.legalReference?.message}>
           <Input placeholder="Income Tax Act, s.82" {...form.register('legalReference')} />
         </FormField>
-        <FormField label="Effective from" error={form.formState.errors.effectiveFrom?.message}>
+        <FormField required label="Effective from" error={form.formState.errors.effectiveFrom?.message}>
           <Controller
             control={form.control}
             name="effectiveFrom"
             render={({ field }) => <DatePicker value={field.value || null} onChange={(iso) => field.onChange(iso ?? '')} />}
           />
         </FormField>
-        <FormField label="Effective to (optional)" error={form.formState.errors.effectiveTo?.message}>
+        <FormField label="Effective to" error={form.formState.errors.effectiveTo?.message}>
           <Controller
             control={form.control}
             name="effectiveTo"

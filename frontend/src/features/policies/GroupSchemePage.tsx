@@ -857,7 +857,7 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
   return (
     <form className="space-y-3 px-4 pb-4 pt-3" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <FormField label="Person" error={errors.memberPartyId?.message}>
+        <FormField required label="Person" error={errors.memberPartyId?.message}>
           <Controller
             control={control}
             name="memberPartyId"
@@ -872,7 +872,7 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
         </FormField>
 
         {scheme.benefitBasis === 'SALARY_MULTIPLE' && (
-          <FormField label="Annual salary" error={errors.salaryAmount?.message}>
+          <FormField required label="Annual salary" error={errors.salaryAmount?.message}>
             <Input
               inputMode="decimal"
               inputSize="sm"
@@ -883,7 +883,7 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
         )}
 
         {scheme.benefitBasis === 'GRADED' && (
-          <FormField label="Grade" error={errors.gradeCode?.message}>
+          <FormField required label="Grade" error={errors.gradeCode?.message}>
             <Select inputSize="sm" {...register('gradeCode')}>
               <option value="">Choose a grade…</option>
               {gradeCodes.map((code) => (

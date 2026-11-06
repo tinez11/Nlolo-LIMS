@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { BranchSelect } from '@/components/BranchSelect';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
@@ -68,28 +68,29 @@ export function NewUserPage() {
       />
       <FormLayout formId="new-user-form" outlineLabel="User sections">
         <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+          <RequiredNote />
           <UnsavedGuard when={isDirty && !isSubmitting} what="This user" />
           <div data-outline="Who they are" className="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormField label="First name" error={errors.firstName?.message}>
+              <FormField required label="First name" error={errors.firstName?.message}>
                 <Input {...register('firstName', { onChange: suggest })} />
               </FormField>
-              <FormField label="Last name" error={errors.lastName?.message}>
+              <FormField required label="Last name" error={errors.lastName?.message}>
                 <Input {...register('lastName', { onChange: suggest })} />
               </FormField>
             </div>
-            <FormField label="Login name" hint="What they type to sign in." error={errors.username?.message}>
+            <FormField required label="Login name" hint="What they type to sign in." error={errors.username?.message}>
               <Input className="font-mono" {...register('username')} />
             </FormField>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormField label="Email (optional)" error={errors.email?.message}>
+              <FormField label="Email" error={errors.email?.message}>
                 <Input type="email" {...register('email')} />
               </FormField>
-              <FormField label="Phone (optional)" error={errors.phone?.message}>
+              <FormField label="Phone" error={errors.phone?.message}>
                 <Input inputMode="tel" {...register('phone')} />
               </FormField>
             </div>
-            <FormField label="Home branch (optional)" error={errors.homeBranch?.message}>
+            <FormField label="Home branch" error={errors.homeBranch?.message}>
               <Controller
                 control={control}
                 name="homeBranch"

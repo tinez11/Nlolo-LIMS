@@ -153,17 +153,17 @@ function ProposeForm({ productId }: { productId: string }) {
       <p className="text-xs font-medium">Declare a bonus</p>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <FormField label="Valuation date" error={form.formState.errors.valuationDate?.message}>
+        <FormField required label="Valuation date" error={form.formState.errors.valuationDate?.message}>
           <Controller
             control={form.control}
             name="valuationDate"
             render={({ field }) => <DatePicker value={field.value || null} onChange={(iso) => field.onChange(iso ?? '')} />}
           />
         </FormField>
-        <FormField label="Reversionary rate (%)" error={form.formState.errors.reversionaryRatePercent?.message}>
+        <FormField required label="Reversionary rate (%)" error={form.formState.errors.reversionaryRatePercent?.message}>
           <Input inputMode="decimal" placeholder="3" {...form.register('reversionaryRatePercent')} />
         </FormField>
-        <FormField label="Terminal rate (% of attached bonuses)" error={form.formState.errors.terminalRatePercent?.message}>
+        <FormField required label="Terminal rate (% of attached bonuses)" error={form.formState.errors.terminalRatePercent?.message}>
           <Input inputMode="decimal" placeholder="50" {...form.register('terminalRatePercent')} />
         </FormField>
       </div>

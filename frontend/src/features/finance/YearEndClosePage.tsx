@@ -142,7 +142,7 @@ function Decision({ close: c, id }: { close: YearEndCloseView; id: string }) {
           e.preventDefault();
           void reject(id, reason.trim());
         }}>
-        <FormField label="Reason to reject">
+        <FormField required label="Reason to reject">
           <Input inputSize="sm" value={reason} onChange={(e) => setReason(e.target.value)} />
         </FormField>
         <Button type="submit" size="sm" variant="ghost" disabled={busy || reason.trim() === ''}>

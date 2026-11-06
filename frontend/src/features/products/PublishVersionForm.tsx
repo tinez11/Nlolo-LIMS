@@ -18,7 +18,7 @@ import { revealIfHidden } from '@/lib/reveal';
 import { DatePicker } from '@/components/DatePicker';
 import { Button } from '@/components/ui/button';
 import { Tip } from '@/components/ui/tooltip';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { selectPublishing, useProductStore } from '@/store/productStore';
 import {
   ACCOUNT_CATEGORIES,
@@ -377,6 +377,7 @@ export function PublishVersionForm({
         when={isDirty && publishing.status !== 'loading' && publishing.status !== 'success'}
         what="The product version you were building"
       />
+      <RequiredNote />
 
       <ol aria-label="Steps" className="flex flex-wrap gap-1 rounded-xl bg-control p-1">
         {steps.map((s, i) => {
@@ -461,7 +462,7 @@ export function PublishVersionForm({
         </div>
         {errors.valueBasis?.message && <p role="alert" className="text-xs text-status-danger-fg">{errors.valueBasis.message}</p>}
         {portfolioMismatch && draft && requiredPortfolios && (
-          <FormField label="IFRS 17 portfolio" hint={`Moves from ${portfolioLabel(portfolioCode)} when this version is published.`}>
+          <FormField required label="IFRS 17 portfolio" hint={`Moves from ${portfolioLabel(portfolioCode)} when this version is published.`}>
             <Select value={portfolioTarget} onChange={(e) => setPortfolioPick(e.target.value)}>
               {requiredPortfolios.map((p) => (
                 <option key={p} value={p}>{PORTFOLIO_LABEL[p as PortfolioCode] ?? p}</option>
@@ -485,7 +486,7 @@ export function PublishVersionForm({
       <>
         <Section title="Basics">
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Effective date" error={errors.effectiveDate?.message}>
+            <FormField required label="Effective date" error={errors.effectiveDate?.message}>
               <Controller
                 control={control}
                 name="effectiveDate"
@@ -493,7 +494,7 @@ export function PublishVersionForm({
               />
             </FormField>
             {/* `retirementDate` on the server: the day this version stops being sold. Not a pension's retirement. */}
-            <FormField label="Stop selling on (optional)" error={errors.retirementDate?.message}>
+            <FormField label="Stop selling on" error={errors.retirementDate?.message}>
               <Controller
                 control={control}
                 name="retirementDate"
@@ -501,17 +502,17 @@ export function PublishVersionForm({
               />
             </FormField>
             <FormField
-              label="Description (optional)"
+              label="Description"
               hint="What staff read when choosing this product. Changing it here updates the product from this version on."
               error={errors.description?.message}
               className="col-span-2"
             >
               <Textarea className="min-h-20 py-2" {...register('description')} />
             </FormField>
-            <FormField label="TIRA filing reference" error={errors.tiraReference?.message}>
+            <FormField required label="TIRA filing reference" error={errors.tiraReference?.message}>
               <Input placeholder="TIRA/LIFE/2026/0001" {...register('tiraReference')} />
             </FormField>
-            <FormField label="TIRA approval date" error={errors.tiraApprovalDate?.message}>
+            <FormField required label="TIRA approval date" error={errors.tiraApprovalDate?.message}>
               <Controller
                 control={control}
                 name="tiraApprovalDate"
@@ -522,7 +523,7 @@ export function PublishVersionForm({
         </Section>
         <Section title="Accounting (IFRS 17)">
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Expected profitability">
+            <FormField required label="Expected profitability">
               <Select {...register('expectedProfitabilityBucket')}>
                 {(Object.keys(BUCKET_LABEL) as (keyof typeof BUCKET_LABEL)[]).map((b) => (
                   <option key={b} value={b}>{BUCKET_LABEL[b]}</option>
@@ -566,16 +567,17 @@ export function PublishVersionForm({
           : 'An age or term outside these is refused at sale. An amount outside them is flagged, not refused, so reinsurance can take it.'}
       >
         <div className="grid grid-cols-2 gap-3">
-          <FormField label="Minimum entry age" error={errors.minEntryAge?.message}>
+          {/* A priced version must say whom it sells to; a term account, for how long. */}
+          <FormField required={priced || category === 'ANNUITY'} label="Minimum entry age" error={errors.minEntryAge?.message}>
             <Input inputMode="numeric" placeholder="18" {...register('minEntryAge')} />
           </FormField>
-          <FormField label="Maximum entry age" error={errors.maxEntryAge?.message}>
+          <FormField required={priced || category === 'ANNUITY'} label="Maximum entry age" error={errors.maxEntryAge?.message}>
             <Input inputMode="numeric" placeholder="65" {...register('maxEntryAge')} />
           </FormField>
-          <FormField label="Minimum term (months)" error={errors.minTermMonths?.message}>
+          <FormField required={valueBasis === 'TERM_ACCOUNT'} label="Minimum term (months)" error={errors.minTermMonths?.message}>
             <Input inputMode="numeric" placeholder="60" {...register('minTermMonths')} />
           </FormField>
-          <FormField label="Maximum term (months)" error={errors.maxTermMonths?.message}>
+          <FormField required={valueBasis === 'TERM_ACCOUNT'} label="Maximum term (months)" error={errors.maxTermMonths?.message}>
             <Input inputMode="numeric" placeholder="360" {...register('maxTermMonths')} />
           </FormField>
           {kind !== 'CREDIT_LIFE' && (
@@ -815,20 +817,20 @@ export function PublishVersionForm({
         <div className="grid grid-cols-2 gap-3">
           {valueBasis === 'TERM_ACCOUNT' && (
             <>
-              <FormField label="Minimum rate (% a year)" error={errors.minRatePercent?.message}>
+              <FormField required label="Minimum rate (% a year)" error={errors.minRatePercent?.message}>
                 <Input inputMode="decimal" placeholder="3" {...register('minRatePercent')} />
               </FormField>
-              <FormField label="Maximum rate (% a year)" error={errors.maxRatePercent?.message}>
+              <FormField required label="Maximum rate (% a year)" error={errors.maxRatePercent?.message}>
                 <Input inputMode="decimal" placeholder="7" {...register('maxRatePercent')} />
               </FormField>
             </>
           )}
           {valueBasis === 'ACCOUNT' && (
-            <FormField label="Guaranteed interest rate (% a year)" error={errors.guaranteedRatePercent?.message}>
+            <FormField required label="Guaranteed interest rate (% a year)" error={errors.guaranteedRatePercent?.message}>
               <Input inputMode="decimal" placeholder="3" {...register('guaranteedRatePercent')} />
             </FormField>
           )}
-          <FormField label="Minimum balance after a withdrawal" error={errors.minimumBalance?.message}>
+          <FormField required label="Minimum balance after a withdrawal" error={errors.minimumBalance?.message}>
             <Input inputMode="decimal" placeholder="50000" {...register('minimumBalance')} />
           </FormField>
         </div>
@@ -917,7 +919,7 @@ export function PublishVersionForm({
         hint={pays.payouts ? 'What it pays while the life assured is alive. An endowment needs a maturity payout.' : 'Days the customer may cancel and get premiums back.'}
       >
         <div className="grid grid-cols-2 gap-3">
-          <FormField label="Free-look days" error={errors.freeLookDays?.message}>
+          <FormField required={FREE_LOOK_CATEGORIES.includes(category)} label="Free-look days" error={errors.freeLookDays?.message}>
             <Input type="number" min={1} max={365} placeholder="15" {...register('freeLookDays')} />
           </FormField>
           <FormField label="Death benefit at least this % of premiums" error={errors.deathBenefitPremiumPercent?.message}>
@@ -985,7 +987,7 @@ export function PublishVersionForm({
             </Button>
             <div className="grid grid-cols-2 gap-3">
               {watchedPayoutKinds?.includes('SURVIVAL') && (
-                <FormField label="Survival benefits paid come off the death benefit" error={errors.survivalBenefitsDeductedFromDeath?.message}>
+                <FormField required label="Survival benefits paid come off the death benefit" error={errors.survivalBenefitsDeductedFromDeath?.message}>
                   <Select {...register('survivalBenefitsDeductedFromDeath')}>
                     <option value="">Choose…</option>
                     <option value="true">Yes, deduct them</option>
@@ -994,7 +996,7 @@ export function PublishVersionForm({
                 </FormField>
               )}
               {watchedPayoutKinds?.includes('INCOME') && (
-                <FormField label="Proof of life every (months)" error={errors.proofOfLifeIntervalMonths?.message}>
+                <FormField required label="Proof of life every (months)" error={errors.proofOfLifeIntervalMonths?.message}>
                   <Input type="number" min={1} max={60} placeholder="12" {...register('proofOfLifeIntervalMonths')} />
                 </FormField>
               )}
@@ -1088,14 +1090,14 @@ export function PublishVersionForm({
         {withProfits && (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <FormField label="Bonus method" error={errors.bonusMethod?.message}>
+              <FormField required label="Bonus method" error={errors.bonusMethod?.message}>
                 <Select {...register('bonusMethod')}>
                   <option value="">Choose…</option>
                   <option value="SIMPLE">Simple (on the sum assured)</option>
                   <option value="COMPOUND">Compound (sum assured plus bonuses)</option>
                 </Select>
               </FormField>
-              <FormField label="Bonus surrender basis" error={errors.bonusSurrenderBasis?.message}>
+              <FormField required label="Bonus surrender basis" error={errors.bonusSurrenderBasis?.message}>
                 <Select {...register('bonusSurrenderBasis')}>
                   <option value="">Choose…</option>
                   <option value="NONE">None — bonuses add nothing to a surrender</option>

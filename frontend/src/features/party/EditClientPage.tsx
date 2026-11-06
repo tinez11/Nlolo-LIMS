@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -147,6 +147,7 @@ export function EditClientPage() {
           className="space-y-4"
           onSubmit={(e) => void handleSubmit(saveIndividual)(e)}
         >
+          <RequiredNote />
           <UnsavedGuard when={isDirty && !isSubmitting} what="These corrections" />
           <IndividualFields register={register} control={control} errors={errors} />
 
@@ -164,11 +165,12 @@ export function EditClientPage() {
       {party && party.partyType !== 'INDIVIDUAL' && (
         <FormLayout formId="edit-company-form" outlineLabel="Company sections">
         <form className="space-y-4" onSubmit={(e) => void saveCorporate(e)}>
-          <FormField label="Registered name">
+          <RequiredNote />
+          <FormField required label="Registered name">
             <Input value={corporateName} onChange={(e) => setCorporateName(e.target.value)} />
           </FormField>
 
-          <FormField label="Phone number (optional)">
+          <FormField label="Phone number">
             <Input
               placeholder="0712 345 678"
               value={corporatePhone}
@@ -176,7 +178,7 @@ export function EditClientPage() {
             />
           </FormField>
 
-          <FormField label="Email (optional)">
+          <FormField label="Email">
             <Input value={corporateEmail} onChange={(e) => setCorporateEmail(e.target.value)} />
           </FormField>
 

@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import type { AnnuityTermsView, VestingView } from '@/api/types';
 import { DatePicker } from '@/components/DatePicker';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
@@ -77,8 +77,9 @@ export function VestingInstructionForm({
 
   return (
     <form className="space-y-3" aria-label="Vesting instruction" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+      <RequiredNote />
       <div className="grid grid-cols-2 gap-3">
-        <FormField label="Vesting date" error={errors.vestingDate?.message}>
+        <FormField required label="Vesting date" error={errors.vestingDate?.message}>
           <Controller
             control={control}
             name="vestingDate"
@@ -89,7 +90,7 @@ export function VestingInstructionForm({
           <Input inputMode="decimal" {...register('lumpSumPercent')} />
           <p className="mt-1 text-xs text-subtle-foreground">Up to {vesting.maxCommutationPercent}% of the balance on the day.</p>
         </FormField>
-        <FormField label="Form" error={errors.formCode?.message}>
+        <FormField required label="Form" error={errors.formCode?.message}>
           <Select {...register('formCode')}>
             <option value="">Choose…</option>
             {terms.forms.map((f) => (
@@ -97,7 +98,7 @@ export function VestingInstructionForm({
             ))}
           </Select>
         </FormField>
-        <FormField label="Payment frequency" error={errors.frequency?.message}>
+        <FormField required label="Payment frequency" error={errors.frequency?.message}>
           <Select {...register('frequency')}>
             <option value="">Choose…</option>
             {terms.frequencies.map((f) => (
@@ -107,7 +108,7 @@ export function VestingInstructionForm({
         </FormField>
       </div>
       {joint && (
-        <FormField label="Joint life" error={errors.jointLifePartyId?.message}>
+        <FormField required label="Joint life" error={errors.jointLifePartyId?.message}>
           <Controller
             control={control}
             name="jointLifePartyId"

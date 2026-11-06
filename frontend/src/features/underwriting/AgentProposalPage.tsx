@@ -16,7 +16,7 @@ import {
 import type { AgentQuotation } from '@/api/agentQuotations';
 import { PREMIUM_FREQUENCIES, PREMIUM_FREQUENCY_LABELS, type UnderwritingCaseView } from '@/api/types';
 import { DatePicker } from '@/components/DatePicker';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
 import { FormLayout } from '@/components/FormLayout';
 import { PageHeader } from '@/components/PageHeader';
@@ -226,23 +226,23 @@ function PlanForm({ view, versionId, onSaved }: {
     <Panel outline title="The plan" subtitle="Correct the cover, term or payments if the underwriter asked.">
       <div className="space-y-4 px-4 pb-4">
         <div className="grid grid-cols-2 gap-3">
-          <FormField label={termAccountTerms ? 'Contribution per payment' : 'Sum assured or amount'} error={sumError}>
+          <FormField required label={termAccountTerms ? 'Contribution per payment' : 'Sum assured or amount'} error={sumError}>
             <Input value={sum} readOnly={!!termAccountTerms && target.trim() !== ''} onChange={(e) => setSum(e.target.value)} />
           </FormField>
           {termAccountTerms && (
             <>
-              <FormField
+              <FormField required
                 label="Rate (% a year)"
                 hint={`This product offers ${termAccountTerms.minRatePercent}% to ${termAccountTerms.maxRatePercent}%, fixed for the term.`}
               >
                 <Input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} />
               </FormField>
-              <FormField label="Wanted at maturity (optional)">
+              <FormField label="Wanted at maturity">
                 <Input inputMode="decimal" placeholder="5000000" value={target} onChange={(e) => setTarget(e.target.value)} />
               </FormField>
             </>
           )}
-          <FormField label="Premium frequency">
+          <FormField required label="Premium frequency">
             <Select value={frequency} onChange={(e) => setFrequency(e.target.value as typeof frequency)}>
               <option value="">Not stated</option>
               {PREMIUM_FREQUENCIES.map((f) => (
@@ -354,6 +354,7 @@ function ClientFormLoaded({ caseId, initial, onSaved }: {
       subtitle="Correct the client's details if the underwriter asked. A changed name or date of birth sends their ID back for verification."
     >
       <form className="space-y-4 px-4 pb-4" onSubmit={(e) => void handleSubmit(save)(e)}>
+        <RequiredNote />
         <IndividualFields register={register} control={control} errors={errors} />
         {error && <InlineError error={error} />}
         {saved && <p role="status" className="text-xs text-muted-foreground">The client's details are saved.</p>}
@@ -384,7 +385,7 @@ function ResubmitForm({ caseId, onDone }: { caseId: string; onDone: (v: Underwri
   return (
     <Panel outline title="Resubmit" subtitle="When everything asked is corrected, send it back to the underwriter.">
       <form className="space-y-4 px-4 pb-4" onSubmit={(e) => void handleSubmit(resubmit)(e)}>
-        <FormField label="Note to the underwriter (optional)">
+        <FormField label="Note to the underwriter">
           <Controller control={control} name="note" render={({ field }) => <Textarea className="min-h-12" {...field} />} />
         </FormField>
         {error && <InlineError error={error} />}

@@ -6,7 +6,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { canUnderwriteGroupSchemes, readIdentity } from '@/auth/claims';
 import { DatePicker } from '@/components/DatePicker';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyPicker } from '@/components/PartyPicker';
@@ -157,9 +157,10 @@ export function IssueCreditLifeSchemePage() {
       {canUnderwrite && (
         <FormLayout formId="credit-life-scheme-form" outlineLabel="Credit-life scheme sections">
         <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+          <RequiredNote />
           <UnsavedGuard when={isDirty && !isSubmitting} what="This credit-life scheme" />
           <div data-outline="Lender and product" className="space-y-4">
-          <FormField label="The lender" error={errors.policyholderPartyId?.message}>
+          <FormField required label="The lender" error={errors.policyholderPartyId?.message}>
             <Controller
               control={control}
               name="policyholderPartyId"
@@ -183,7 +184,7 @@ export function IssueCreditLifeSchemePage() {
             )}
           </FormField>
 
-          <FormField
+          <FormField required
             label="Product"
             error={errors.productId?.message ?? errors.productVersionId?.message}
           >
@@ -223,16 +224,16 @@ export function IssueCreditLifeSchemePage() {
             </p>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <FormField label="Currency" error={errors.currency?.message}>
+              <FormField required label="Currency" error={errors.currency?.message}>
                 <Input className="uppercase" {...register('currency')} />
               </FormField>
 
-              <FormField label="Free cover limit (optional)" error={errors.fclAmount?.message}>
+              <FormField label="Free cover limit" error={errors.fclAmount?.message}>
                 <Input placeholder="600000000.00" {...register('fclAmount')} />
                 <p className="mt-1 text-xs text-subtle-foreground">Leave blank for no limit.</p>
               </FormField>
 
-              <FormField label="Risk commences" error={errors.commencementDate?.message}>
+              <FormField required label="Risk commences" error={errors.commencementDate?.message}>
                 <Controller
                   control={control}
                   name="commencementDate"
@@ -244,7 +245,7 @@ export function IssueCreditLifeSchemePage() {
               </FormField>
 
               {/* No "why this scheme is in force" (2026-11-02): a credit-life scheme is always in force on set-up. */}
-              <FormField label="Note for the record (optional)" error={errors.reasonForManualIssue?.message}>
+              <FormField label="Note for the record" error={errors.reasonForManualIssue?.message}>
                 <Input placeholder="Onboarding BUMACO's existing book" {...register('reasonForManualIssue')} />
               </FormField>
             </div>

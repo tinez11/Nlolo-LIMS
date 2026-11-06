@@ -331,7 +331,7 @@ function FamilyBlock({ family, policyNumber, currency, canUnderwrite, canPromote
             </Button>
           ) : (
             <>
-              <FormField label="Leaves on (covered to that month's end)">
+              <FormField required label="Leaves on (covered to that month's end)">
                 <DatePicker value={leaving || null} onChange={(iso) => setLeaving(iso ?? '')} />
               </FormField>
               <Button size="sm" variant="primary" disabled={!leaving}

@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
@@ -56,17 +56,18 @@ export function NewRolePage() {
       />
       <FormLayout formId="new-role-form" outlineLabel="Role sections">
         <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+          <RequiredNote />
           <UnsavedGuard when={isDirty && !isSubmitting} what="This role" />
           <div data-outline="The role" className="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormField label="Name" error={errors.name?.message}>
+              <FormField required label="Name" error={errors.name?.message}>
                 <Input placeholder="Branch manager" {...register('name')} />
               </FormField>
-              <FormField label="Code" hint="Fixed once made." error={errors.code?.message}>
+              <FormField required label="Code" hint="Fixed once made." error={errors.code?.message}>
                 <Input className="font-mono uppercase" placeholder="BRANCH_MANAGER" {...register('code')} />
               </FormField>
             </div>
-            <FormField label="What it is for (optional)" error={errors.description?.message}>
+            <FormField label="What it is for" error={errors.description?.message}>
               <Textarea className="min-h-16 py-2" {...register('description')} />
             </FormField>
           </div>

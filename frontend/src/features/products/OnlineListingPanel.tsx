@@ -65,7 +65,7 @@ export function OnlineListingPanel({ productId, canEdit }: { productId: string; 
       <div className="space-y-3 p-4">
         <CheckboxField label="Offer it in the customer portal" checked={available}
           onChange={(e) => setAvailable(e.target.checked)} />
-        <FormField label="What it is for" hint="One or two sentences a customer reads first. Needed to offer it.">
+        <FormField required={available} label="What it is for" hint="One or two sentences a customer reads first. Needed to offer it.">
           <Textarea rows={2} value={summary} onChange={(e) => setSummary(e.target.value)} />
         </FormField>
         <FormField label="Key benefits" hint="One per line.">

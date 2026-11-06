@@ -1012,7 +1012,7 @@ function SuspendForm({ policyNumber, onDone }: { policyNumber: string; onDone: (
       className="mx-4 mb-4 space-y-2 rounded-md border border-border p-2.5"
       onSubmit={(e) => void handleSubmit(onSubmit)(e)}
     >
-      <FormField label="Reason" error={errors.reason?.message}>
+      <FormField required label="Reason" error={errors.reason?.message}>
         <Input
           inputSize="sm"
           placeholder="Employer group scheme in arrears"

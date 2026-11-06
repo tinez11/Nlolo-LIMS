@@ -110,7 +110,7 @@ export function DisclosurePanel({ caseId }: { caseId: string }) {
         {drafts.map((draft, index) => (
           <div key={index} className="space-y-2 rounded-md border border-border p-3">
             <div className="flex items-start gap-2">
-              <FormField label="Question code">
+              <FormField required label="Question code">
                 <Input
                   inputSize="sm" className="w-28 font-mono"
                   placeholder="Q1"
@@ -123,7 +123,7 @@ export function DisclosurePanel({ caseId }: { caseId: string }) {
                 />
               </FormField>
               <div className="flex-1">
-                <FormField label="Question as asked">
+                <FormField required label="Question as asked">
                   <Input
                     inputSize="sm"
                     placeholder="Have you ever been treated for heart disease?"
@@ -146,7 +146,7 @@ export function DisclosurePanel({ caseId }: { caseId: string }) {
                 <X />
               </Button>
             </div>
-            <FormField label="Answer">
+            <FormField required label="Answer">
               <Input
                 inputSize="sm"
                 placeholder="No — or the answer in the applicant's own terms"
@@ -156,7 +156,7 @@ export function DisclosurePanel({ caseId }: { caseId: string }) {
                 }
               />
             </FormField>
-            <FormField label="Notes (optional)">
+            <FormField label="Notes">
               <Input
                 inputSize="sm"
                 value={draft.notes}

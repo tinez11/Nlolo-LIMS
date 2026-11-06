@@ -108,7 +108,7 @@ export function ExpenseAllocationSection({ period }: { period: string }) {
           <CheckboxField label="No allocation this month" checked={none} onChange={(e) => setNone(e.target.checked)} />
           {none ? (
             <div className="max-w-xl">
-              <FormField label="Reason there is none">
+              <FormField required label="Reason there is none">
                 <Input inputSize="sm" value={nilReason} onChange={(e) => setNilReason(e.target.value)} />
               </FormField>
             </div>
@@ -123,7 +123,7 @@ export function ExpenseAllocationSection({ period }: { period: string }) {
                   ] as const
                 ).map(([field, label]) => (
                   <div key={field} className="w-40">
-                    <FormField
+                    <FormField required
                       label={label}
                       error={parseAmount(totals[field]) === null ? 'Up to two decimals, not negative' : undefined}
                     >
@@ -138,7 +138,7 @@ export function ExpenseAllocationSection({ period }: { period: string }) {
                   </div>
                 ))}
                 <div className="w-56">
-                  <FormField label="Study reference">
+                  <FormField required label="Study reference">
                     <Input inputSize="sm" value={study} onChange={(e) => setStudy(e.target.value)} />
                   </FormField>
                 </div>

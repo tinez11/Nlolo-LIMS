@@ -191,7 +191,7 @@ describe('AccountPanel', () => {
     expect(screen.getByLabelText('Mobile-money number')).toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: 'Bank transfer' }));
     expect(screen.queryByLabelText('Mobile-money number')).not.toBeInTheDocument();
-    for (const label of ['Bank', 'Branch (optional)', 'Account name', 'Account number']) {
+    for (const label of ['Bank', 'Branch', 'Account name', 'Account number']) {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
     }
     await user.type(screen.getByLabelText(/Amount/), '1000');

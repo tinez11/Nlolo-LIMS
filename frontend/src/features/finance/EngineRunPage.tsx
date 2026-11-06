@@ -139,7 +139,7 @@ function Decision({ run: r }: { run: EngineRunView }) {
           if (report) void approve(r.runId, signOff.trim(), report);
         }}>
         <div className="w-72">
-          <FormField label="Sign-off reference">
+          <FormField required label="Sign-off reference">
             <Input inputSize="sm" value={signOff} onChange={(e) => setSignOff(e.target.value)} />
           </FormField>
         </div>
@@ -157,7 +157,7 @@ function Decision({ run: r }: { run: EngineRunView }) {
           e.preventDefault();
           void reject(r.runId, reason.trim());
         }}>
-        <FormField label="Reason to reject">
+        <FormField required label="Reason to reject">
           <Input inputSize="sm" value={reason} onChange={(e) => setReason(e.target.value)} />
         </FormField>
         <Button type="submit" size="sm" variant="ghost" disabled={busy || reason.trim() === ''}>
@@ -214,7 +214,7 @@ function ReconciliationRow({ runId, row, viewer, approver }: {
               e.preventDefault();
               void explain(runId, row.group, row.figure, text.trim());
             }}>
-            <FormField label={`Explanation for ${row.group} ${row.figure}`}>
+            <FormField required label={`Explanation for ${row.group} ${row.figure}`}>
               <Input inputSize="sm" value={text} onChange={(e) => setText(e.target.value)} />
             </FormField>
             <Button type="submit" size="sm" variant="outline" disabled={text.trim() === ''}>Explain</Button>

@@ -42,7 +42,7 @@ export function YearEndPage() {
       <div className="space-y-4 px-6 pb-6">
         <div className="flex flex-wrap items-end gap-3">
           <div className="w-32">
-            <FormField label="Year">
+            <FormField required label="Year">
               <Input inputSize="sm" value={yearText} placeholder="YYYY" onChange={(e) => setParams({ year: e.target.value.trim() })} />
             </FormField>
           </div>

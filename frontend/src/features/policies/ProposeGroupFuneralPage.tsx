@@ -8,7 +8,7 @@ import { saveBlob } from '@/lib/download';
 import type { FuneralTermsView } from '@/api/types';
 import { canUnderwriteGroupSchemes, readIdentity } from '@/auth/claims';
 import { DatePicker } from '@/components/DatePicker';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
@@ -152,6 +152,7 @@ export function ProposeGroupFuneralPage() {
       {canUnderwrite && (
         <FormLayout formId="group-funeral-form" outlineLabel="Funeral scheme sections">
         <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void onSubmit(); }}>
+          <RequiredNote />
           {/* Not react-hook-form, so "dirty" is spelt out; and it stands down while the case is
               being opened or once it has been, so the jump to the new case is not held. */}
           <UnsavedGuard
@@ -163,13 +164,13 @@ export function ProposeGroupFuneralPage() {
             what="This scheme proposal"
           />
           <div data-outline="Association and plan" className="space-y-4">
-          <FormField label="Association (the policyholder, who pays)">
+          <FormField required label="Association (the policyholder, who pays)">
             <PartyPicker value={association || null} onChange={(id) => setAssociation(id ?? '')}
               placeholder="Search for the association by name" />
           </FormField>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <FormField label="Funeral product">
+            <FormField required label="Funeral product">
               {isInitialLoad(products) ? (
                 <p className="text-xs text-muted-foreground">Loading products…</p>
               ) : funeralProducts.length === 0 ? (
@@ -182,7 +183,7 @@ export function ProposeGroupFuneralPage() {
                   onChange={(id) => { setProductId(id); setPlanCode(''); setTerms(null); }} />
               )}
             </FormField>
-            <FormField label="Plan">
+            <FormField required label="Plan">
               {productId && terms && plans.length === 0 ? (
                 <p className="text-xs text-status-danger-fg">
                   This product is not sold to group schemes. Choose one whose terms are sold to groups, with a group rate.
@@ -202,7 +203,7 @@ export function ProposeGroupFuneralPage() {
               <DatePicker value={commencementDate || null} onChange={(iso) => setCommencementDate(iso ?? '')} />
               <p className="mt-1 text-xs text-subtle-foreground">Blank means today. A future date is not supported.</p>
             </FormField>
-            <FormField label="Term in months (optional)">
+            <FormField label="Term in months">
               <Input inputMode="numeric" value={termMonths} onChange={(e) => setTermMonths(e.target.value)}
                 placeholder="Leave blank — renews annually" />
             </FormField>

@@ -30,6 +30,7 @@ export function FormField({
   label,
   error,
   hint,
+  required,
   className,
   children,
 }: {
@@ -50,6 +51,17 @@ export function FormField({
    * exact failure this prop was added to fix.
    */
   hint?: string | undefined;
+  /**
+   * The form will not submit without this field. Draws a `*` after the label and marks the
+   * control `aria-required`; every field without it is optional, so no label says "(optional)".
+   *
+   * The `*` is a SIBLING of the `<label>`, never inside it, and hidden from assistive tech:
+   * inside the label it would become part of the field's accessible name and its text, so
+   * "Full name" would be announced "Full name star" and every test that finds the field by its
+   * label would stop finding it. `aria-required` says the same thing to a screen reader, in
+   * words.
+   */
+  required?: boolean | undefined;
   /** For a field that has to participate in its parent's layout — `flex-1`, a
    *  grid span. Not for restyling the field itself. */
   className?: string | undefined;
@@ -61,15 +73,19 @@ export function FormField({
 
   return (
     <div className={cn('block', className)}>
-      <label htmlFor={id} className="mb-1 block text-xs font-medium text-muted-foreground">
-        {label}
-      </label>
+      <div className="mb-1 flex items-baseline gap-0.5">
+        <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
+          {label}
+        </label>
+        {required && <RequiredMark />}
+      </div>
       <FieldControl
         value={{
           id,
           invalid: Boolean(error),
           errorId: error ? errorId : undefined,
           hintId: hint ? hintId : undefined,
+          required,
         }}
       >
         {children}
@@ -87,5 +103,34 @@ export function FormField({
         </p>
       )}
     </div>
+  );
+}
+
+/** The `*` beside a required field's label. Decorative to assistive tech — the control's own
+ *  `aria-required` carries the meaning — so it is hidden rather than read out as "star". */
+export function RequiredMark() {
+  return (
+    <span aria-hidden="true" className="text-xs font-semibold text-status-danger-fg">
+      *
+    </span>
+  );
+}
+
+/**
+ * The key to the `*`, once per form, above its first field. Without it the mark is a
+ * convention the reader is assumed to know; with it the form says what it means.
+ */
+export function RequiredNote({
+  label = 'Required',
+  className,
+}: {
+  /** The word for "required" in the page's language — the customer portal speaks English and Swahili. */
+  label?: string | undefined;
+  className?: string | undefined;
+}) {
+  return (
+    <p className={cn('text-xs text-muted-foreground', className)}>
+      <RequiredMark /> {label}
+    </p>
   );
 }

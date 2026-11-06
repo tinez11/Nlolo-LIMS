@@ -6,7 +6,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { PREMIUM_FREQUENCIES, PREMIUM_FREQUENCY_LABELS } from '@/api/types';
 import { DatePicker } from '@/components/DatePicker';
 import { InlineError } from '@/components/InlineError';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyPicker } from '@/components/PartyPicker';
@@ -186,9 +186,10 @@ export function IssueGroupSchemePage() {
         }
       >
       <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+        <RequiredNote />
         <UnsavedGuard when={isDirty && !isSubmitting} what="This scheme proposal" />
         <div data-outline="Policyholder and product" className="space-y-4">
-        <FormField label="Policyholder (the employer or association)" error={errors.policyholderPartyId?.message}>
+        <FormField required label="Policyholder (the employer or association)" error={errors.policyholderPartyId?.message}>
           <Controller
             control={control}
             name="policyholderPartyId"
@@ -206,7 +207,7 @@ export function IssueGroupSchemePage() {
           </p>
         </FormField>
 
-        <FormField label="Product" error={errors.productId?.message ?? errors.productVersionId?.message}>
+        <FormField required label="Product" error={errors.productId?.message ?? errors.productVersionId?.message}>
           {isInitialLoad(products) ? (
             <p className="text-xs text-muted-foreground">Loading products…</p>
           ) : products.status === 'error' ? (
@@ -244,7 +245,7 @@ export function IssueGroupSchemePage() {
           </p>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <FormField label="Basis">
+            <FormField required label="Basis">
               <Select
                 {...register('benefitBasis')}
               >
@@ -254,7 +255,7 @@ export function IssueGroupSchemePage() {
               </Select>
             </FormField>
 
-            <FormField label="Currency" error={errors.currency?.message}>
+            <FormField required label="Currency" error={errors.currency?.message}>
               <Input
                 className="uppercase"
                 {...register('currency')}
@@ -262,7 +263,7 @@ export function IssueGroupSchemePage() {
             </FormField>
 
             {benefitBasis === 'FLAT' && (
-              <FormField label="Benefit per member" error={errors.flatBenefitAmount?.message}>
+              <FormField required label="Benefit per member" error={errors.flatBenefitAmount?.message}>
                 <Input
                   inputMode="decimal"
                   
@@ -273,7 +274,7 @@ export function IssueGroupSchemePage() {
             )}
 
             {benefitBasis === 'SALARY_MULTIPLE' && (
-              <FormField label="Multiple of annual salary" error={errors.salaryMultiple?.message}>
+              <FormField required label="Multiple of annual salary" error={errors.salaryMultiple?.message}>
                 <Input
                   inputMode="decimal"
                   
@@ -283,7 +284,7 @@ export function IssueGroupSchemePage() {
               </FormField>
             )}
 
-            <FormField label="Free cover limit (optional)" error={errors.fclAmount?.message}>
+            <FormField label="Free cover limit" error={errors.fclAmount?.message}>
               <Input
                 inputMode="decimal"
                 
@@ -314,13 +315,13 @@ export function IssueGroupSchemePage() {
               <div className="space-y-2">
                 {grades.fields.map((field, index) => (
                   <div key={field.id} className="grid grid-cols-[1fr_1fr_auto] items-start gap-2">
-                    <FormField label="Grade" error={errors.grades?.[index]?.gradeCode?.message}>
+                    <FormField required label="Grade" error={errors.grades?.[index]?.gradeCode?.message}>
                       <Input
                         placeholder="MANAGEMENT"
                         {...register(`grades.${index}.gradeCode`)}
                       />
                     </FormField>
-                    <FormField label="Benefit" error={errors.grades?.[index]?.benefitAmount?.message}>
+                    <FormField required label="Benefit" error={errors.grades?.[index]?.benefitAmount?.message}>
                       <Input
                         inputMode="decimal"
                         
@@ -363,7 +364,7 @@ export function IssueGroupSchemePage() {
             {schedule.fields.map((field, index) => (
               <div key={field.id} className="rounded-md border border-border p-2.5">
                 <div className="grid grid-cols-[1fr_auto] items-start gap-2">
-                  <FormField
+                  <FormField required
                     label={`Member ${index + 1}`}
                     error={errors.openingSchedule?.[index]?.memberPartyId?.message}
                   >
@@ -393,7 +394,7 @@ export function IssueGroupSchemePage() {
                 </div>
 
                 {benefitBasis === 'SALARY_MULTIPLE' && (
-                  <FormField
+                  <FormField required
                     label="Annual salary"
                     error={errors.openingSchedule?.[index]?.salaryAmount?.message}
                   >
@@ -407,7 +408,7 @@ export function IssueGroupSchemePage() {
                 )}
 
                 {benefitBasis === 'GRADED' && (
-                  <FormField label="Grade" error={errors.openingSchedule?.[index]?.gradeCode?.message}>
+                  <FormField required label="Grade" error={errors.openingSchedule?.[index]?.gradeCode?.message}>
                     <Select
                       {...register(`openingSchedule.${index}.gradeCode`)}
                     >
@@ -475,7 +476,7 @@ export function IssueGroupSchemePage() {
           </legend>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <FormField label="Premium" error={errors.premiumAmount?.message}>
+            <FormField required label="Premium" error={errors.premiumAmount?.message}>
               <Input
                 inputMode="decimal"
                 
@@ -483,13 +484,13 @@ export function IssueGroupSchemePage() {
                 {...register('premiumAmount')}
               />
             </FormField>
-            <FormField label="Premium currency" error={errors.premiumCurrency?.message}>
+            <FormField required label="Premium currency" error={errors.premiumCurrency?.message}>
               <Input
                 className="uppercase"
                 {...register('premiumCurrency')}
               />
             </FormField>
-            <FormField label="Frequency">
+            <FormField required label="Frequency">
               <Select
                 {...register('premiumFrequency')}
               >
@@ -512,7 +513,7 @@ export function IssueGroupSchemePage() {
                 Blank means today. Backdating is fine; a future date is not supported yet.
               </p>
             </FormField>
-            <FormField label="Term in months (optional)" error={errors.policyTermMonths?.message}>
+            <FormField label="Term in months" error={errors.policyTermMonths?.message}>
               <Input
                 inputMode="numeric"
                 
@@ -520,7 +521,7 @@ export function IssueGroupSchemePage() {
                 {...register('policyTermMonths')}
               />
             </FormField>
-            <FormField label="Note for the record (optional)" error={errors.reasonForManualIssue?.message}>
+            <FormField label="Note for the record" error={errors.reasonForManualIssue?.message}>
               <Input
                 placeholder="Signed schedule received 1 September"
                 {...register('reasonForManualIssue')}

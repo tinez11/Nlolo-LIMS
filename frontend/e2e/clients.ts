@@ -22,7 +22,7 @@ export async function registerIndividualAsAgent(
   await page.getByLabel('Full name').fill(fullName);
   await page.getByLabel('Date of birth').fill(dmy(options.dateOfBirth ?? '1990-05-12'));
   if (options.phoneNumber) {
-    await page.getByLabel('Phone number (optional)').fill(options.phoneNumber);
+    await page.getByLabel('Phone number', { exact: true }).fill(options.phoneNumber);
   }
 
   // Required of an agent, and unique per tenant -- `ux_party_identity_document` refuses two

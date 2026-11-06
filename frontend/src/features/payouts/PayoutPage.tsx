@@ -204,7 +204,7 @@ function ReviewAction({ payout }: { payout: PayoutInstalmentView }) {
         <GatePanel gates={gates} title="Before reviewing" />
         {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
         <form onSubmit={onSubmit} className="space-y-3">
-          <FormField label="Payee reference" error={form.formState.errors.payeeRef?.message}>
+          <FormField required label="Payee reference" error={form.formState.errors.payeeRef?.message}>
             <Input
               {...form.register('payeeRef')}
               placeholder="Mobile money number or bank destination"
@@ -212,7 +212,7 @@ function ReviewAction({ payout }: { payout: PayoutInstalmentView }) {
             />
           </FormField>
           {needsProofOfLife && (
-            <FormField
+            <FormField required
               label="How was the life assured confirmed alive?"
               error={form.formState.errors.proofOfLifeMethod?.message}
             >
@@ -308,7 +308,7 @@ function ProofOfLifeAction({
     >
       <div className="space-y-3 px-4 py-3">
         {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
-        <FormField label="How was the life assured confirmed alive?">
+        <FormField required label="How was the life assured confirmed alive?">
           <Select
             value={method}
             onChange={(event) => setMethod(event.target.value as '' | ProofOfLifeMethod)}

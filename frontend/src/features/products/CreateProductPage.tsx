@@ -9,7 +9,7 @@ import { canAuthorProducts, readIdentity } from '@/auth/claims';
 import { PageHeader } from '@/components/PageHeader';
 import { NoAccess } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { useProductStore } from '@/store/productStore';
 import {
   blankCreateProductForm,
@@ -85,22 +85,23 @@ export function CreateProductPage() {
         <Step number={1} title="Product definition" done={created !== null}>
           {created === null ? (
             <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+              <RequiredNote />
               {/* Only while step 1 is unsaved: once the product exists it IS saved, and the jump
                   to it after a version is published must not be held. */}
               <UnsavedGuard when={isDirty && !isSubmitting && created === null} what="This product" />
-              <FormField label="Product code" error={errors.productCode?.message}>
+              <FormField required label="Product code" error={errors.productCode?.message}>
                 <Input
                   className="font-mono"
                   placeholder="NEW-TERM-01"
                   {...register('productCode')}
                 />
               </FormField>
-              <FormField label="Product name" error={errors.productName?.message}>
+              <FormField required label="Product name" error={errors.productName?.message}>
                 <Input
                   {...register('productName')}
                 />
               </FormField>
-              <FormField label="Category">
+              <FormField required label="Category">
                 <Select
                   {...register('category', {
                     // The portfolio follows the category until somebody picks one by hand.
@@ -119,7 +120,7 @@ export function CreateProductPage() {
                   ))}
                 </Select>
               </FormField>
-              <FormField
+              <FormField required
                 label="IFRS 17 portfolio"
                 hint="Savings, deposit and pension products are booked as savings, not insurance."
                 error={errors.portfolioCode?.message}
@@ -132,14 +133,14 @@ export function CreateProductPage() {
                   ))}
                 </Select>
               </FormField>
-              <FormField label="Default currency" error={errors.defaultCurrency?.message}>
+              <FormField required label="Default currency" error={errors.defaultCurrency?.message}>
                 <Input
                   className="w-24 uppercase"
                   {...register('defaultCurrency')}
                 />
               </FormField>
               <FormField
-                label="Description (optional)"
+                label="Description"
                 hint="What staff read when choosing this product: who it is for and what it pays. Each new version can update it."
                 error={errors.description?.message}
               >

@@ -3,6 +3,7 @@ import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
 import { Input, Select } from '@/components/ui/input';
 import type { RegisterIndividualFormValues } from './registerIndividualForm';
+import { councilsOf, isListedRegion, TANZANIA_REGIONS, wardsOf } from './tanzaniaLocations';
 
 /**
  * The person, as a set of form controls.
@@ -29,11 +30,11 @@ export function IndividualFields({
 }) {
   return (
     <>
-      <FormField label="Full name" error={errors.fullName?.message}>
+      <FormField required label="Full name" error={errors.fullName?.message}>
         <Input placeholder="Amina Hassan" {...register('fullName')} />
       </FormField>
 
-      <FormField label="Date of birth" error={errors.dateOfBirth?.message}>
+      <FormField required label="Date of birth" error={errors.dateOfBirth?.message}>
         <Controller
           control={control}
           name="dateOfBirth"
@@ -47,23 +48,24 @@ export function IndividualFields({
         />
       </FormField>
 
-      <FormField label="Phone number (optional)" error={errors.phoneNumber?.message}>
+      <FormField label="Phone number" error={errors.phoneNumber?.message}>
         <Input placeholder="0712 345 678" {...register('phoneNumber')} />
       </FormField>
 
-      <FormField label="Email (optional)" error={errors.email?.message}>
+      <FormField label="Email" error={errors.email?.message}>
         <Input placeholder="amina@example.tz" {...register('email')} />
       </FormField>
 
-      {/* Everything below is optional, and grouped rather than run on as one flat
-          list of thirteen more inputs. The groups are the order a person is
-          actually asked: who they are, what they do, where they live. */}
+      {/* Grouped rather than run on as one flat list of thirteen more inputs. The
+          groups are the order a person is actually asked: who they are, what they
+          do, where they live. Most of it is optional; the identity document and sex
+          are not (see registerIndividualForm), and carry the `*` that says so. */}
       <FieldGroup
         title="Identity"
         hint="One document per person. A national ID already on the register is refused."
       >
         <div className="grid grid-cols-2 gap-3">
-          <FormField label="ID type" error={errors.idType?.message}>
+          <FormField required label="ID type" error={errors.idType?.message}>
             <Select {...register('idType')}>
               <option value="">Not recorded</option>
               <option value="NATIONAL_ID">National ID</option>
@@ -73,7 +75,7 @@ export function IndividualFields({
             </Select>
           </FormField>
 
-          <FormField label="ID number" error={errors.idNumber?.message}>
+          <FormField required label="ID number" error={errors.idNumber?.message}>
             <Input {...register('idNumber')} />
           </FormField>
 
@@ -87,7 +89,7 @@ export function IndividualFields({
             says whose number it is: this is the one place somebody could mistake it for the
             platform's own id, and a reference filled in with a party id reconciles nothing.
           */}
-          <FormField label="Client reference (optional)" error={errors.clientReference?.message}>
+          <FormField label="Client reference" error={errors.clientReference?.message}>
             <Input {...register('clientReference')} />
             <p className="mt-1 text-xs text-subtle-foreground">
               Your own number for this client, if they already have one. Used to reconcile
@@ -105,7 +107,7 @@ export function IndividualFields({
         hint="Sex and smoker status are rating factors — a quote needs them."
       >
         <div className="grid grid-cols-2 gap-3">
-          <FormField label="Sex" error={errors.sex?.message}>
+          <FormField required label="Sex" error={errors.sex?.message}>
             <Select {...register('sex')}>
               <option value="">Not recorded</option>
               <option value="FEMALE">Female</option>
@@ -144,17 +146,7 @@ export function IndividualFields({
             </FormField>
           </div>
 
-          <FormField label="Ward" error={errors.ward?.message}>
-            <Input {...register('ward')} />
-          </FormField>
-
-          <FormField label="District" error={errors.district?.message}>
-            <Input {...register('district')} />
-          </FormField>
-
-          <FormField label="Region" error={errors.region?.message}>
-            <Input {...register('region')} />
-          </FormField>
+          <LocationFields control={control} errors={errors} />
 
           <FormField label="Postal code" error={errors.postalCode?.message}>
             <Input {...register('postalCode')} />
@@ -162,6 +154,106 @@ export function IndividualFields({
         </div>
       </FieldGroup>
     </>
+  );
+}
+
+/**
+ * Region, then district, then ward — each opened by the one before it (user, 2026-11-05).
+ *
+ * All three are chosen from {@link TANZANIA_REGIONS} (NBS, 2022 census), so the same place is
+ * spelt one way across the register. "District" offers the region's councils, because the census
+ * lists wards under councils (Moshi District and Moshi Municipal have different wards); in
+ * Zanzibar the ward box offers shehia. Changing the region empties the district and ward, and
+ * changing the district empties the ward: a ward left over from another council is an address
+ * that does not exist.
+ *
+ * A record written before the list existed may hold a value that is not on it. That value is
+ * offered as its own option, marked "not on the list", instead of being silently blanked by the
+ * next correction.
+ */
+function LocationFields({
+  control,
+  errors,
+}: {
+  control: Control<RegisterIndividualFormValues>;
+  errors: FieldErrors<RegisterIndividualFormValues>;
+}) {
+  // Nested so each change handler can reach the fields below it: choosing a region has to empty
+  // the district and ward in the same event, and only these render props hold their onChange.
+  return (
+    <Controller control={control} name="region" render={({ field: region }) => (
+      <Controller control={control} name="district" render={({ field: district }) => (
+        <Controller control={control} name="ward" render={({ field: ward }) => {
+          const districts = councilsOf(region.value).map((c) => c.name);
+          const wards = wardsOf(region.value, district.value);
+          const unlistedRegion = region.value !== '' && !isListedRegion(region.value);
+          const unlistedDistrict = district.value !== '' && !districts.includes(district.value);
+          const unlistedWard = ward.value !== '' && !wards.includes(ward.value);
+          const noRegion = region.value === '';
+          const noDistrict = district.value === '';
+          return (
+            <>
+              <FormField label="Region" error={errors.region?.message}>
+                <Select
+                  name={region.name}
+                  ref={region.ref}
+                  onBlur={region.onBlur}
+                  value={region.value}
+                  onChange={(e) => {
+                    region.onChange(e.target.value);
+                    district.onChange('');
+                    ward.onChange('');
+                  }}
+                >
+                  <option value="">Choose a region…</option>
+                  {unlistedRegion && <option value={region.value}>{region.value} (not on the list)</option>}
+                  {TANZANIA_REGIONS.map((r) => (
+                    <option key={r.region} value={r.region}>{r.region}</option>
+                  ))}
+                </Select>
+              </FormField>
+
+              <FormField label="District" error={errors.district?.message}>
+                <Select
+                  name={district.name}
+                  ref={district.ref}
+                  onBlur={district.onBlur}
+                  value={district.value}
+                  disabled={noRegion}
+                  onChange={(e) => {
+                    district.onChange(e.target.value);
+                    ward.onChange('');
+                  }}
+                >
+                  <option value="">{noRegion ? 'Choose the region first' : 'Choose a district…'}</option>
+                  {unlistedDistrict && <option value={district.value}>{district.value} (not on the list)</option>}
+                  {districts.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </Select>
+              </FormField>
+
+              <FormField label="Ward" error={errors.ward?.message}>
+                <Select
+                  name={ward.name}
+                  ref={ward.ref}
+                  onBlur={ward.onBlur}
+                  value={ward.value}
+                  disabled={noDistrict}
+                  onChange={(e) => ward.onChange(e.target.value)}
+                >
+                  <option value="">{noDistrict ? 'Choose the district first' : 'Choose a ward…'}</option>
+                  {unlistedWard && <option value={ward.value}>{ward.value} (not on the list)</option>}
+                  {wards.map((w) => (
+                    <option key={w} value={w}>{w}</option>
+                  ))}
+                </Select>
+              </FormField>
+            </>
+          );
+        }} />
+      )} />
+    )} />
   );
 }
 

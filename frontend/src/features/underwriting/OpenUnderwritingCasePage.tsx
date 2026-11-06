@@ -13,7 +13,7 @@ import { AgentPicker } from '@/components/AgentPicker';
 import { BranchSelect } from '@/components/BranchSelect';
 import { CHANNEL_LABEL } from '@/lib/ifrs17';
 import { Button } from '@/components/ui/button';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { isSingleLifeProduct, PREMIUM_FREQUENCIES, PREMIUM_FREQUENCY_LABELS } from '@/api/types';
 import { BeneficiaryRow } from '@/features/policies/BeneficiaryRow';
@@ -316,12 +316,13 @@ export function OpenUnderwritingCasePage() {
           void handleSubmit(onSubmit)(e);
         }}
       >
+        <RequiredNote />
         <UnsavedGuard when={isDirty && !isSubmitting} what="This underwriting case" />
         <div data-outline="Applicant and product" className="space-y-4">
         {/* "Applicant" is who proposes; "life assured" is whose mortality is assessed.
             Labelled by what they mean rather than by the column name, which is the
             broader problem this console still has elsewhere. */}
-        <FormField label="Applicant" error={errors.applicantPartyId?.message}>
+        <FormField required label="Applicant" error={errors.applicantPartyId?.message}>
           <Controller
             control={control}
             name="applicantPartyId"
@@ -352,7 +353,7 @@ export function OpenUnderwritingCasePage() {
           />
         </FormField>
 
-        <FormField label="Product" error={errors.productId?.message}>
+        <FormField required label="Product" error={errors.productId?.message}>
           {isInitialLoad(products) ? (
             <p className="text-xs text-muted-foreground">Loading products…</p>
           ) : products.status === 'error' ? (
@@ -418,7 +419,7 @@ export function OpenUnderwritingCasePage() {
         )}
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
-          <FormField
+          <FormField required
             label={isDeferredAnnuity || isTermAccount ? 'Contribution per payment'
               : isSavingsAccount ? 'Opening deposit, or contribution per payment' : isAnnuity ? 'Purchase price'
               : isFuneral ? "Sum assured (the main member's benefit on the plan)" : 'Sum assured'}
@@ -445,7 +446,7 @@ export function OpenUnderwritingCasePage() {
               })}
             />
           </FormField>
-          <FormField label="Currency" error={errors.sumAssuredCurrency?.message}>
+          <FormField required label="Currency" error={errors.sumAssuredCurrency?.message}>
             <Input
               className="w-20 uppercase"
               {...register('sumAssuredCurrency')}
@@ -475,7 +476,7 @@ export function OpenUnderwritingCasePage() {
             </p>
           </FormField>
         ) : (
-          <FormField label="Agent of record (optional)" error={errors.agentOfRecordId?.message}>
+          <FormField label="Agent of record" error={errors.agentOfRecordId?.message}>
             {/*
               A picker, not a uuid box — see IssuePolicyPage's note. The case carries this value
               all the way to issuance, so a uuid mistyped here surfaced as a policy attributed to
@@ -586,7 +587,7 @@ export function OpenUnderwritingCasePage() {
           {/* A deferred annuity (D2): saves to the retirement age; its form is chosen when it vests. */}
           {isDeferredAnnuity && vestingTerms && (
             <div className="grid grid-cols-2 gap-4">
-              <FormField label="Retirement age" error={errors.retirementAge?.message}>
+              <FormField required label="Retirement age" error={errors.retirementAge?.message}>
                 <Input inputMode="numeric" placeholder={String(vestingTerms.minVestingAge)} {...register('retirementAge')} />
                 <p className="mt-1 text-xs text-subtle-foreground">
                   Between {vestingTerms.minVestingAge} and {vestingTerms.maxVestingAge}.{' '}
@@ -626,6 +627,7 @@ export function OpenUnderwritingCasePage() {
             {!isDeferredAnnuity && !isFuneral && (
               <>
                 <FormField
+                  required={isTermAccount}
                   label={isUnitLinked ? 'Term (months; blank for whole of life)' : 'Term (months)'}
                   error={errors.requestedTermMonths?.message}
                   hint={termHint}
@@ -653,6 +655,7 @@ export function OpenUnderwritingCasePage() {
             )}
 
             <FormField
+              required={isFuneral || isUnitLinked || isDeferredAnnuity}
               label={isDeferredAnnuity ? 'Contribution frequency' : 'Premium frequency'}
               error={errors.premiumFrequency?.message}
               hint={isDeposit ? 'Paid once — a fixed-term deposit takes no recurring premium.' : undefined}
@@ -675,7 +678,7 @@ export function OpenUnderwritingCasePage() {
             </FormField>
 
             {isTermAccount && termAccountTerms && (
-              <FormField
+              <FormField required
                 label="Rate (% a year)"
                 error={errors.proposedRatePercent?.message}
                 hint={`This product offers a rate between ${termAccountTerms.minRatePercent}% and ${termAccountTerms.maxRatePercent}%. The policy keeps it for life; nothing can be withdrawn until the term ends.`}

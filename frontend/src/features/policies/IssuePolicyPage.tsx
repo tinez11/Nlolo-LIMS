@@ -20,7 +20,7 @@ import { AgentPicker } from '@/components/AgentPicker';
 import { UnderwritingCasePicker } from '@/components/UnderwritingCasePicker';
 import { listCaseBeneficiaries } from '@/api/underwriting';
 import { Button } from '@/components/ui/button';
-import { FormField } from '@/components/FormField';
+import { FormField, RequiredNote } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { GatePanel } from '@/components/GatePanel';
 import { BeneficiaryRow } from './BeneficiaryRow';
@@ -251,6 +251,7 @@ export function IssuePolicyPage() {
 
       <FormLayout formId="issue-policy-form" outlineLabel="Policy sections">
       <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+        <RequiredNote />
         <UnsavedGuard when={isDirty && !isSubmitting} what="This policy" />
         <div data-outline="Parties and product" className="space-y-4">
         {/*
@@ -266,7 +267,7 @@ export function IssuePolicyPage() {
           difference between this screen being a review step and being a second, parallel
           data-entry form that happens to disagree with the case.
         */}
-        <FormField
+        <FormField required
           label="Underwriting case this policy is issued from"
           error={errors.underwritingCaseId?.message}
         >
@@ -352,7 +353,7 @@ export function IssuePolicyPage() {
         {/* Labelled by meaning, not by column name. The policyholder owns the contract;
             the life assured below is whose death the policy pays on, and on most life
             business those are two different people. */}
-        <FormField label="Policyholder" error={errors.policyholderPartyId?.message}>
+        <FormField required label="Policyholder" error={errors.policyholderPartyId?.message}>
           <Controller
             control={control}
             name="policyholderPartyId"
@@ -383,7 +384,7 @@ export function IssuePolicyPage() {
           />
         </FormField>
 
-        <FormField label="Product" error={errors.productId?.message}>
+        <FormField required label="Product" error={errors.productId?.message}>
           {isInitialLoad(products) ? (
             <p className="text-xs text-muted-foreground">Loading products…</p>
           ) : products.status === 'error' ? (
@@ -408,13 +409,13 @@ export function IssuePolicyPage() {
         </FormField>
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
-          <FormField label="Sum assured" error={errors.sumAssuredAmount?.message}>
+          <FormField required label="Sum assured" error={errors.sumAssuredAmount?.message}>
             <Input
               placeholder="2000000.00"
               {...register('sumAssuredAmount')}
             />
           </FormField>
-          <FormField label="Currency" error={errors.sumAssuredCurrency?.message}>
+          <FormField required label="Currency" error={errors.sumAssuredCurrency?.message}>
             <Input
               className="w-20 uppercase"
               {...register('sumAssuredCurrency')}
@@ -423,13 +424,13 @@ export function IssuePolicyPage() {
         </div>
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
-          <FormField label="Premium" error={errors.premiumAmount?.message}>
+          <FormField required label="Premium" error={errors.premiumAmount?.message}>
             <Input
               placeholder="800.00"
               {...register('premiumAmount')}
             />
           </FormField>
-          <FormField label="Currency" error={errors.premiumCurrency?.message}>
+          <FormField required label="Currency" error={errors.premiumCurrency?.message}>
             <Input
               className="w-20 uppercase"
               {...register('premiumCurrency')}
@@ -437,7 +438,7 @@ export function IssuePolicyPage() {
           </FormField>
         </div>
 
-        <FormField label="Premium frequency">
+        <FormField required label="Premium frequency">
           <Select
             {...register('premiumFrequency')}
           >
@@ -536,7 +537,7 @@ export function IssuePolicyPage() {
             </p>
           </FormField>
         ) : (
-          <FormField label="Agent of record (optional)" error={errors.agentOfRecordId?.message}>
+          <FormField label="Agent of record" error={errors.agentOfRecordId?.message}>
             {/*
               A picker, not a uuid box. Nobody knows an agent's uuid, so one got copied from
               somewhere else -- and a wrong one was accepted in silence: the policy was
@@ -575,7 +576,7 @@ export function IssuePolicyPage() {
               productId={productId || undefined} versionId={watch('productVersionId') || undefined} />
           </div>
         )}
-        <FormField label="Why is this being issued by hand?" error={errors.issuanceBasis?.message}>
+        <FormField required label="Why is this being issued by hand?" error={errors.issuanceBasis?.message}>
           <Select {...register('issuanceBasis')}>
             <option value="">Select a basis…</option>
             {ISSUANCE_BASES.map((basis) => (
@@ -593,7 +594,7 @@ export function IssuePolicyPage() {
           )}
         </FormField>
 
-        <FormField label="Reason for manual issue" error={errors.reasonForManualIssue?.message}>
+        <FormField required label="Reason for manual issue" error={errors.reasonForManualIssue?.message}>
           <Input
             placeholder={
               breaches.length > 0
