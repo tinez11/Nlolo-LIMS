@@ -31,7 +31,8 @@ has never had one.
    It installs Docker, creates the key-only `deploy` user, closes the firewall to everything but 22/80/443,
    generates every secret into `/home/deploy/platform/.env`, and installs the nightly backup.
 3. **Fill in the rest of `.env`**: `APP_DOMAIN`, `AUTH_DOMAIN`, `ACME_EMAIL`, `IMAGE_PREFIX`, the `SMS_GATEWAY_*`
-   settings and the `BACKUP_S3_*` settings.
+   settings, the `BACKUP_S3_*` settings, and `SUPPORT_PHONE` -- the number "your password was changed -- if this
+   wasn't you, call ..." gives. The backend refuses to start without it.
 4. **DNS**: an `A` record for each hostname pointing at the server. Caddy cannot obtain certificates until they
    resolve.
 5. **Registry access**: `ssh deploy@SERVER` then `docker login ghcr.io` with a token that has `read:packages`.
@@ -40,8 +41,9 @@ has never had one.
    cp deploy/release.env.example deploy/release.env   # fill in DEPLOY_HOST, IMAGE_PREFIX, AUTH_DOMAIN
    deploy/release.sh v0.1.0
    ```
-7. It prints the **first staff login's one-time password, once**. Sign in at `https://$APP_DOMAIN/staff` as
-   `staff.admin` and change it immediately.
+7. It prints the **first staff login's one-time password, once**. Sign in at `https://$APP_DOMAIN/` as
+   `staff.admin` and change it immediately. Staff cannot reset their own password: an administrator does it from
+   Users & access, and it is texted to the phone on their staff record. Keep a second administrator.
 
 ## 3. Releasing
 

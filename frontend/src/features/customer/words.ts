@@ -10,7 +10,7 @@ const en = {
     group: 'My cover',
     home: 'Home', policies: 'My policies', claims: 'My claims', documents: 'Documents', products: 'Get cover',
     applications: 'My applications', pay: 'Pay a premium', messages: 'Messages',
-    console: 'Customer console', language: 'Language',
+    console: 'Customer console', language: 'Language', changePassword: 'Change password',
   },
   // The public quote link (2026-11-02): no account, nothing kept.
   publicQuote: {
@@ -258,7 +258,7 @@ const sw: Words = {
     group: 'Bima yangu',
     home: 'Mwanzo', policies: 'Sera zangu', claims: 'Madai yangu', documents: 'Nyaraka', products: 'Pata bima',
     applications: 'Maombi yangu', pay: 'Lipa ada', messages: 'Ujumbe',
-    console: 'Lango la mteja', language: 'Lugha',
+    console: 'Lango la mteja', language: 'Lugha', changePassword: 'Badilisha nenosiri',
   },
   publicQuote: {
     required: 'Inahitajika',

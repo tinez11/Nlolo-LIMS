@@ -48,6 +48,11 @@ public class ProductionSettingsGuard {
                 problems.add(devValue[0] + " still holds the dev value");
             }
         }
+        // "Your password was changed -- if this wasn't you, call ..." (2026-11-06) must name a number to call.
+        String supportPhone = settings.apply("app.support-phone");
+        if (supportPhone == null || supportPhone.isBlank()) {
+            problems.add("app.support-phone is not set (SUPPORT_PHONE: the number the password-changed text gives)");
+        }
         if ("true".equalsIgnoreCase(settings.apply("communication.sms-gateway.live"))) {
             String authorization = settings.apply("communication.sms-gateway.authorization");
             if (authorization == null || authorization.isBlank()) {

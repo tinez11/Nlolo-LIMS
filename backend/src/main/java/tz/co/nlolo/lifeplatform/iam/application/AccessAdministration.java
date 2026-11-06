@@ -11,6 +11,7 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.iam.api.AccessApi.RoleRef;
 import tz.co.nlolo.lifeplatform.iam.api.AccessChangeRefusedException;
 import tz.co.nlolo.lifeplatform.iam.api.Permission;
+import tz.co.nlolo.lifeplatform.iam.api.StaffTexts;
 
 import java.security.SecureRandom;
 import java.sql.Timestamp;
@@ -67,16 +68,23 @@ public class AccessAdministration {
                           String homeBranch, List<String> roleCodes, List<String> permissions) {}
 
     /**
-     * How a first or new password reaches a staff member -- the portal invite's rule (PortalAccessService.deliveryFor)
-     * less the SMS, which needs a client record to log against and staff have none: the identity provider's own email
-     * link where mail is on and they have an address, otherwise a one-time password shown to the administrator once
-     * and kept nowhere, as deploy/server/add-user.sh has always done.
+     * How a first or new password reaches a staff member -- the portal invite's rule (PortalAccessService.deliveryFor):
+     * the identity provider's own email link where mail is on and they have an address; otherwise a one-time password
+     * texted to the phone on the staff record (SMS_PASSWORD, 2026-11-06 -- staff cannot reset their own password, so
+     * this is how an administrator's reset reaches them; sent through the StaffTexts port, which keeps no message-log
+     * row, since staff have no client record); otherwise one shown to the administrator once and kept nowhere.
      */
-    public enum Delivery { EMAIL_LINK, TEMPORARY_PASSWORD }
+    public enum Delivery { EMAIL_LINK, SMS_PASSWORD, TEMPORARY_PASSWORD }
 
-    public record PasswordIssued(Delivery delivery, String temporaryPassword) {}
+    /**
+     * @param temporaryPassword shown once to the administrator: only when it could not be texted
+     * @param smsSentTo         the number it was texted to, for SMS_PASSWORD
+     * @param notice            why a text did not go, when the password is shown instead
+     */
+    public record PasswordIssued(Delivery delivery, String temporaryPassword, String smsSentTo, String notice) {}
 
-    public record CreatedUser(UserView user, Delivery delivery, String temporaryPassword, boolean awaitingApproval) {}
+    public record CreatedUser(UserView user, Delivery delivery, String temporaryPassword, String smsSentTo,
+                              String notice, boolean awaitingApproval) {}
 
     public record AccessChange(List<String> roleCodes, List<String> permissions) {}
 
@@ -95,17 +103,23 @@ public class AccessAdministration {
     private final StaffLogins logins;
     private final ObjectMapper json;
     private final boolean emailEnabled;
+    private final StaffTexts texts;
+    private final String consoleUrl;
     private final SecureRandom random = new SecureRandom();
 
     public AccessAdministration(NamedParameterJdbcTemplate jdbc, AccessService access, StaffLogins logins,
-                                ObjectMapper json,
+                                ObjectMapper json, StaffTexts texts,
                                 @org.springframework.beans.factory.annotation.Value("${communication.email.enabled:true}")
-                                boolean emailEnabled) {
+                                boolean emailEnabled,
+                                @org.springframework.beans.factory.annotation.Value("${app.staff-admin.console-url}")
+                                String consoleUrl) {
         this.emailEnabled = emailEnabled;
         this.jdbc = jdbc;
         this.access = access;
         this.logins = logins;
         this.json = json;
+        this.texts = texts;
+        this.consoleUrl = consoleUrl;
     }
 
     // ---- the catalogue and roles ---------------------------------------------------------------------------------
@@ -261,8 +275,9 @@ public class AccessAdministration {
                 .addValue("actor", actor.userId().toString()));
         record(tenant, userId, null, "USER_CREATED", Map.of("username", username), "APPLIED", actor);
         Outcome outcome = changeAccess(actor, tenant, userId, roleIds, permissions);
-        PasswordIssued first = issuePassword(userId, blankToNull(request.email()));
-        return new CreatedUser(userView(tenant, userId), first.delivery(), first.temporaryPassword(), !outcome.applied());
+        PasswordIssued first = issuePassword(userId, username, blankToNull(request.email()), blankToNull(request.phone()));
+        return new CreatedUser(userView(tenant, userId), first.delivery(), first.temporaryPassword(), first.smsSentTo(),
+            first.notice(), !outcome.applied());
     }
 
     @Transactional
@@ -292,19 +307,38 @@ public class AccessAdministration {
         UUID tenant = TenantContext.get();
         refuseSelf(actor, userId);
         UserView user = userView(tenant, userId);
-        PasswordIssued issued = issuePassword(userId, user.email());
+        PasswordIssued issued = issuePassword(userId, user.username(), user.email(), blankToNull(user.phone()));
         record(tenant, userId, null, "PASSWORD_RESET", Map.of("delivery", issued.delivery().name()), "APPLIED", actor);
         return issued;
     }
 
-    private PasswordIssued issuePassword(UUID userId, String email) {
+    /**
+     * The portal invite's order (2026-11-06: SMS added, since staff cannot reset their own password): the identity
+     * provider's emailed link where mail is on and there is an address; else a one-time password texted to the phone on
+     * the staff record; else -- or when the text fails -- the password shown once to the administrator, with the reason.
+     */
+    private PasswordIssued issuePassword(UUID userId, String username, String email, String phone) {
         if (email != null && emailEnabled) {
             logins.sendSetPasswordLink(userId);
-            return new PasswordIssued(Delivery.EMAIL_LINK, null);
+            return new PasswordIssued(Delivery.EMAIL_LINK, null, null, null);
         }
         String password = temporaryPassword();
         logins.setTemporaryPassword(userId, password);
-        return new PasswordIssued(Delivery.TEMPORARY_PASSWORD, password);
+        if (phone == null) {
+            return new PasswordIssued(Delivery.TEMPORARY_PASSWORD, password, null, null);
+        }
+        String failure = texts.send(phone, loginText(username, password));
+        if (failure == null) {
+            return new PasswordIssued(Delivery.SMS_PASSWORD, null, phone, null);
+        }
+        // Never a dead end on a gateway: the login has its password, so the administrator hands it over.
+        return new PasswordIssued(Delivery.TEMPORARY_PASSWORD, password, null,
+            "The text was not sent (" + failure + "). Give them this password yourself.");
+    }
+
+    private String loginText(String username, String password) {
+        return "Your Nlolo staff login: username " + username + ", one-time password " + password + ". Sign in at "
+            + consoleUrl + " - you will choose your own password first.";
     }
 
     // ---- the second administrator ---------------------------------------------------------------------------------

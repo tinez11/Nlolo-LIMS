@@ -144,6 +144,18 @@ public class NotificationApiImpl implements NotificationApi {
         return result.sent() ? null : result.detail();
     }
 
+    @Override
+    public String sendSystemSms(String phoneNumber, String templateKey, String body) {
+        try {
+            NotificationSender.SendResult result = senderFor(NotificationChannel.SMS)
+                .map(sender -> sender.send(phoneNumber, body))
+                .orElseGet(() -> NotificationSender.SendResult.failed("No sender configured for SMS"));
+            return result.sent() ? null : result.detail();
+        } catch (RuntimeException e) {
+            return "the SMS gateway failed (" + e.getClass().getSimpleName() + ")";
+        }
+    }
+
     private void sendOne(UUID eventId, UUID tenantId, UUID partyId, String policyNumber, String templateKey,
                           Map<String, String> values, Reachable target) {
         NotificationDispatch dispatch =

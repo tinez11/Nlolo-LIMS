@@ -87,7 +87,7 @@ export const useIamStore = create<IamState>((set, getState) => {
       track('iam.createUser', getState().creatingUser, (next) => set({ creatingUser: next }), async () => {
         const created = await createStaffUser(user);
         set((s) => ({ issued: { ...s.issued, [created.user.userId]: { delivery: created.delivery,
-          temporaryPassword: created.temporaryPassword } } }));
+          temporaryPassword: created.temporaryPassword, smsSentTo: created.smsSentTo, notice: created.notice } } }));
         return created;
       }),
 

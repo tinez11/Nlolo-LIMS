@@ -113,8 +113,20 @@ A separation-of-duties rule is only tested if two different users act: keep usin
 
 "Forgot your password?" runs the `lifeplatform reset credentials` flow: one request emails the link to the address on
 file and texts a six-digit code to the phone the platform holds, and every name typed sees the same page. The link and
-the code last 15 minutes; at most three texts an hour reach one account. (Staff carry no `party_id`, so no code is
-texted to them; universal login step 2 makes staff reset through an administrator only.)
+the code last 15 minutes; one account is texted at most once a minute and three times an hour, counted per account
+across browsers. **Staff are sent nothing** (2026-11-06, decision U4): an account holding the `staff` role gets the
+same page and no link or code, and an administrator resets them from Users & access -- by SMS to the phone on their
+staff record, or shown once when there is none.
+
+## "Your password was changed" (2026-11-06)
+
+The extension's event listener `lifeplatform-password-changed` (named in the realm's `eventsListeners`) hears every
+`UPDATE_PASSWORD` -- a change from the account menu, the new password at the end of a reset, the first change after a
+temporary password -- and asks the platform, signed with the reset secret, to text the person: "Your Nlolo password was
+changed on 6 Nov at 14:32. If this wasn't you, call {SUPPORT_PHONE}." (Swahili for Swahili sign-ins). The platform
+sends to the client record's phone for agents and customers and the staff record's phone for staff. Keycloak reaches it
+at `LP_PASSWORD_CHANGED_URL` (dev: `host.docker.internal:8080/internal/password-changed`). The `email` listener still
+emails the same news when mail is on.
 
 The text needs the platform's Keycloak extension, `extensions/` here. Build it before starting the stack -- the compose
 file mounts the jar, and a missing one becomes an empty folder Keycloak cannot load:

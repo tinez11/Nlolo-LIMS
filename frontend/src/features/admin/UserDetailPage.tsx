@@ -111,13 +111,19 @@ export function UserDetailPage() {
 
       <DetailLayout record={renderRecord()}>
         {issued?.temporaryPassword && (
-          <OneTimePassword password={issued.temporaryPassword}>
+          <OneTimePassword password={issued.temporaryPassword} notice={issued.notice}>
             Give it to them in person or by phone. They sign in as {user.username} and must choose their own password
             straight away. It is not kept anywhere: if it is lost, send a new password.
           </OneTimePassword>
         )}
         {issued?.delivery === 'EMAIL_LINK' && (
           <p role="status" className="text-sm">A link to set their password was emailed to {user.email}.</p>
+        )}
+        {issued?.delivery === 'SMS_PASSWORD' && (
+          <p role="status" className="text-sm">
+            A one-time password was texted to {issued.smsSentTo}. They sign in as {user.username} and choose their own
+            password straight away.
+          </p>
         )}
 
         {pending.map((c) => <PendingChange key={c.changeId} change={c} subjectIsMe={self} />)}

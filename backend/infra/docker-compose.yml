@@ -101,6 +101,8 @@ services:
       # numbers, to text the code. Signed with a secret the backend holds as PASSWORD_RESET_SMS_SECRET.
       LP_RESET_SMS_URL: ${LP_RESET_SMS_URL:-http://host.docker.internal:8080/internal/password-reset/sms}
       LP_RESET_SMS_SECRET: ${PASSWORD_RESET_SMS_SECRET:-dev-only-reset-sms-secret}
+      # "Your password was changed" by text (2026-11-06): the same signature, the platform's own endpoint.
+      LP_PASSWORD_CHANGED_URL: ${LP_PASSWORD_CHANGED_URL:-http://host.docker.internal:8080/internal/password-changed}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: postgres

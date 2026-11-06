@@ -22,6 +22,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.iam.application.StaffLogins;
+import tz.co.nlolo.lifeplatform.iam.api.StaffTexts;
 
 import java.util.Arrays;
 import java.util.UUID;
@@ -70,6 +71,7 @@ class AccessAdministrationIntegrationTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper json;
     @MockBean private StaffLogins logins;
+    @MockBean private StaffTexts texts;
 
     private UUID tenant;
     private UUID asha;      // an administrator
@@ -137,6 +139,40 @@ class AccessAdministrationIntegrationTest {
             .andExpect(jsonPath("$.temporaryPassword").isString())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
         verify(logins).setTemporaryPassword(eq(id), any());
+    }
+
+    /** 2026-11-06: staff cannot reset their own password, so with no email a phone on the record gets it by text. */
+    @Test
+    void withNoEmailButAPhoneTheOneTimePasswordIsTextedNotShown() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(logins.create(any())).thenReturn(id);
+        when(texts.send(any(), any())).thenReturn(null);
+        mockMvc.perform(post("/access/users").with(asha()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"username\":\"rehema.sms\",\"firstName\":\"Rehema\",\"lastName\":\"Ally\","
+                    + "\"phone\":\"+255700000555\",\"roleCodes\":[\"CLAIMS_ASSESSOR\"],\"permissions\":[]}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.delivery").value("SMS_PASSWORD"))
+            .andExpect(jsonPath("$.smsSentTo").value("+255700000555"))
+            .andExpect(jsonPath("$.temporaryPassword").doesNotExist())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
+        verify(logins).setTemporaryPassword(eq(id), any());
+        verify(texts).send(eq("+255700000555"), org.mockito.ArgumentMatchers.contains("username rehema.sms"));
+    }
+
+    /** A gateway failure is never a dead end: the administrator is shown the password and told why. */
+    @Test
+    void aFailedTextShowsTheAdministratorThePasswordAndSaysWhy() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(logins.create(any())).thenReturn(id);
+        when(texts.send(any(), any())).thenReturn("gateway down");
+        mockMvc.perform(post("/access/users").with(asha()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"username\":\"rehema.fail\",\"firstName\":\"Rehema\",\"lastName\":\"Ally\","
+                    + "\"phone\":\"+255700000556\",\"roleCodes\":[\"CLAIMS_ASSESSOR\"],\"permissions\":[]}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.delivery").value("TEMPORARY_PASSWORD"))
+            .andExpect(jsonPath("$.temporaryPassword").isString())
+            .andExpect(jsonPath("$.notice").value(org.hamcrest.Matchers.containsString("gateway down")))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC));
     }
 
     @Test

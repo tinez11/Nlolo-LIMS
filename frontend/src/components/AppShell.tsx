@@ -1,10 +1,11 @@
-import { ArrowLeftRight, LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react';
+import { ArrowLeftRight, KeyRound, LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react';
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { avatarHue, avatarInitials, displayName, readIdentity } from '@/auth/claims';
 import { REALM_CONFIG, type Realm } from '@/auth/realms';
 import { availableWorkspaces } from '@/auth/workspaces';
+import { changePasswordArgs } from '@/auth/changePassword';
 import { cn } from '@/lib/cn';
 import { humanizeStatus } from '@/lib/status';
 import { currentTheme, toggleTheme, type Theme } from '@/lib/theme';
@@ -415,6 +416,7 @@ function UserBlock({ identity, realm }: { identity: ReturnType<typeof readIdenti
   const seed = identity.preferredUsername ?? name;
   const access = useMyAccess(realm === 'staff');
   const roleLine = badgeRole(realm, identity, access?.primaryRole?.name);
+  const language = useLanguage();
 
   return (
     // No rule above it (2026-10-09): the nav's own scroll shadow marks the edge when there is more
@@ -451,6 +453,16 @@ function UserBlock({ identity, realm }: { identity: ReturnType<typeof readIdenti
             </NavLink>
           </Button>
         ))}
+      {/* Keycloak's own change-password page (2026-11-06): it asks for the current password, and comes back here. */}
+      <Button
+        size="sm"
+        variant="ghost"
+        className="mt-1 w-full justify-start"
+        onClick={() => void auth.signinRedirect(changePasswordArgs()).catch(() => undefined)}
+      >
+        <KeyRound />
+        {realm === 'customers' ? wordsFor(language).nav.changePassword : 'Change password'}
+      </Button>
       <div className="mt-2.5 flex items-center gap-1">
         <Button
           size="sm"
