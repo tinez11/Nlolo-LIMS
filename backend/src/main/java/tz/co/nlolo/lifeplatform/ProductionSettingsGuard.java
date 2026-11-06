@@ -28,9 +28,7 @@ public class ProductionSettingsGuard {
         new String[] {"mobile-money.callback-hmac-secret", "dev-only-placeholder-secret"},
         new String[] {"password-reset.sms-secret", "dev-only-reset-sms-secret"});
 
-    private static final List<String> MUST_BE_HTTPS = List.of(
-        "app.security.issuers.customers", "app.security.issuers.agents", "app.security.issuers.staff",
-        "app.security.issuers.regulators", "app.portal.url");
+    private static final List<String> MUST_BE_HTTPS = List.of("app.security.issuer", "app.portal.url");
 
     public ProductionSettingsGuard(Environment environment) {
         List<String> problems = problems(environment::getProperty);

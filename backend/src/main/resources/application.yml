@@ -127,11 +127,8 @@ app:
       secret: ${TURNSTILE_SECRET:1x0000000000000000000000000000000AA}
     visit-secret: ${PUBLIC_VISIT_SECRET:}
   security:
-    issuers:
-      customers: ${KEYCLOAK_ISSUER_CUSTOMERS:http://localhost:8081/realms/customers}
-      agents: ${KEYCLOAK_ISSUER_AGENTS:http://localhost:8081/realms/agents}
-      staff: ${KEYCLOAK_ISSUER_STAFF:http://localhost:8081/realms/staff}
-      regulators: ${KEYCLOAK_ISSUER_REGULATORS:http://localhost:8081/realms/regulators}
+    # One realm for everyone (2026-11-06, universal login); the workspace comes from the X-Workspace header.
+    issuer: ${KEYCLOAK_ISSUER:http://localhost:8081/realms/lifeplatform}
 
 minio:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
