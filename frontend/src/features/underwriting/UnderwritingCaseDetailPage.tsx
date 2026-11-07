@@ -1,4 +1,3 @@
-import { zodResolver } from '@hookform/resolvers/zod';
 import { useBreadcrumb } from '@/lib/cameFrom';
 import { useEffect, useState } from 'react';
 import type { UnderwritingCaseView } from '@/api/types';
@@ -8,10 +7,8 @@ import { getFuneralApplication } from '@/api/funeral';
 import type { FuneralApplicationView } from '@/api/types';
 import { FuneralApplicationSummary } from './FuneralApplicationSummary';
 import { GroupFuneralProposalPanel } from './GroupFuneralProposalPanel';
-import { useForm } from 'react-hook-form';
 import { useAuth } from 'react-oidc-context';
 import { Link, useParams } from 'react-router-dom';
-import { ASSESSMENT_TYPES } from '@/api/types';
 import type { DecideRequest } from '@/api/types';
 import { readIdentity } from '@/auth/claims';
 import { can } from '@/auth/access';
@@ -34,26 +31,19 @@ import {
   selectCase,
   selectDeciding,
   selectReferring,
-  selectSubmittingAssessment,
   useUnderwritingStore,
 } from '@/store/underwritingStore';
-import {
-  blankSubmitAssessmentForm,
-  submitAssessmentFormSchema,
-  toApiRequest,
-  type SubmitAssessmentFormValues,
-} from './submitAssessmentForm';
 import { DecisionPanel } from './DecisionPanel';
+import { UnderwritingAssessmentPanel } from './UnderwritingAssessmentPanel';
 import { useAnnuityStore } from '@/store/annuityStore';
 import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
-import { Input, Select, Textarea } from '@/components/ui/input';
+import { Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
 import { recordSale } from '@/api/underwriting';
 import { BranchSelect } from '@/components/BranchSelect';
 import type { ApiError } from '@/lib/apiError';
 import { CHANNEL_LABEL, channelLabel } from '@/lib/ifrs17';
-import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
 import { getCaseHistory, getCaseQuotation, type CaseEvent, type CaseQuotation } from '@/api/proposalAmendments';
 import type { AgentQuotation } from '@/api/agentQuotations';
 import { AcceptedQuotationPanel } from './AcceptedQuotationPanel';
@@ -116,12 +106,10 @@ export function UnderwritingCaseDetailPage() {
     return () => { live = false; };
   }, [caseId]);
   const loadCase = useUnderwritingStore((s) => s.loadCase);
-  const submitAssessment = useUnderwritingStore((s) => s.submitAssessment);
   const resetSubmitAssessment = useUnderwritingStore((s) => s.resetSubmitAssessment);
   const decide = useUnderwritingStore((s) => s.decide);
   const resetDecide = useUnderwritingStore((s) => s.resetDecide);
   const deciding = useUnderwritingStore(selectDeciding(caseId));
-  const submitting = useUnderwritingStore(selectSubmittingAssessment(caseId));
   const referCase = useUnderwritingStore((s) => s.referCase);
   const resetReferCase = useUnderwritingStore((s) => s.resetReferCase);
   const referring = useUnderwritingStore(selectReferring(caseId));
@@ -154,24 +142,6 @@ export function UnderwritingCaseDetailPage() {
     resetReferCase(caseId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
-
-  const {
-    register,
-    handleSubmit,
-    reset: resetAssessmentForm,
-    formState: { errors },
-  } = useForm<SubmitAssessmentFormValues>({
-    ...VALIDATE_ON_TOUCH,
-    resolver: zodResolver(submitAssessmentFormSchema),
-    defaultValues: blankSubmitAssessmentForm(),
-  });
-
-  async function commitAssessment(values: SubmitAssessmentFormValues) {
-    await submitAssessment(caseId, toApiRequest(values));
-    if (useUnderwritingStore.getState().submittingAssessment[caseId]?.status === 'success') {
-      resetAssessmentForm(blankSubmitAssessmentForm());
-    }
-  }
 
   async function commitDecision(request: DecideRequest) {
     await decide(caseId, request);
@@ -462,70 +432,13 @@ export function UnderwritingCaseDetailPage() {
             in status only: it means "come back with more evidence", so refusing further
             assessments made it the one outcome that could never resolve. */}
         {(view?.status !== 'DECIDED' || isPostponed) && can('underwriting.assess') ? (
-          <Panel
-            emphasis
-            title={isPostponed ? 'Submit further evidence' : 'Submit an assessment'}
-          >
-            <form
-              className="space-y-4 p-4"
-              onSubmit={(e) => void handleSubmit(commitAssessment)(e)}
-            >
-              <FormField required label="Assessment type">
-                <Select
-                  {...register('assessmentType')}
-                >
-                  {ASSESSMENT_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </Select>
-              </FormField>
-
-              <FormField required label="Findings" error={errors.findings?.message}>
-                <Textarea
-                  className="min-h-20"
-                  placeholder="Standard risk, no adverse findings"
-                  {...register('findings')}
-                />
-              </FormField>
-
-              <FormField label="Risk score" error={errors.riskScore?.message}>
-                <Input
-                  className="w-32"
-                  placeholder="10"
-                  {...register('riskScore')}
-                />
-              </FormField>
-
-              {submitting.status === 'error' && submitting.error && (
-                <InlineError error={submitting.error} />
-              )}
-
-              {/*
-                No confirmation step any more, and the removal is the point.
-
-                This used to raise a ConfirmAct reading "Submitting a MEDICAL assessment
-                decides the case outright ... The decision is final: a second assessment on a
-                decided case is refused, and an acceptance issues a policy automatically."
-                Every word of that was true, and it described the defect: an assessment ran a
-                placeholder rules engine, settled the case and put a contract in force.
-
-                Recording evidence is now an ordinary, reversible act -- submit another and
-                the recommendation recomputes -- so demanding confirmation for it would be
-                ceremony. The confirmation belongs on the decision, which is where the
-                consequence now lives.
-              */}
-              <Button type="submit" variant="primary" pending={submitting.status === 'loading'}>
-                {isPostponed ? 'Submit further evidence' : 'Submit assessment'}
-              </Button>
-            </form>
-          </Panel>
+          <UnderwritingAssessmentPanel caseId={caseId} isPostponed={isPostponed} />
         ) : null}
 
-        {/* Back to the agent for corrections, where the case is still the underwriter's to decide (2026-10-20). */}
-        {view && (view.status === 'OPEN' || view.status === 'IN_REVIEW') && !view.evidenceForPolicyNumber
-          && !view.groupScheme && can('underwriting.decide') && (
+        {/* Back to the agent for corrections, where the case is still the underwriter's to decide (2026-10-20). Only
+            on a case that came from an agent (2026-11-07): there is nobody to return any other one to. */}
+        {view && view.source === 'AGENT' && (view.status === 'OPEN' || view.status === 'IN_REVIEW')
+          && !view.evidenceForPolicyNumber && !view.groupScheme && can('underwriting.decide') && (
           <ReturnToAgentPanel caseId={caseId} onReturned={() => void loadCase(caseId)} />
         )}
 

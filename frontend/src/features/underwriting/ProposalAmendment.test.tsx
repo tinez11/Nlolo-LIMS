@@ -66,6 +66,10 @@ describe('ReturnToAgentPanel', () => {
     const onReturned = vi.fn();
     renderScreen(<ReturnToAgentPanel caseId="case-1" onReturned={onReturned} />);
 
+    // A button first (2026-11-07); the form opens on it.
+    expect(screen.queryByLabelText('What is wrong')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Return to the agent' }));
+
     const button = screen.getByRole('button', { name: 'Return to the agent' });
     expect(button).toBeDisabled();
     await userEvent.selectOptions(screen.getByLabelText('What it concerns'), 'COVER_OR_TERM');
@@ -77,6 +81,16 @@ describe('ReturnToAgentPanel', () => {
     await waitFor(() => expect(returnForAmendment).toHaveBeenCalledWith('case-1',
       [{ category: 'COVER_OR_TERM', problem: 'Ten years is too short', change: 'Make it fifteen years' }], null));
     expect(onReturned).toHaveBeenCalled();
+  });
+
+  it('closes back to its button on Cancel, forgetting what was typed', async () => {
+    renderScreen(<ReturnToAgentPanel caseId="case-1" onReturned={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Return to the agent' }));
+    await userEvent.type(screen.getByLabelText('What is wrong'), 'Half a thought');
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText('What is wrong')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Return to the agent' }));
+    expect(screen.getByLabelText('What is wrong')).toHaveValue('');
   });
 });
 
