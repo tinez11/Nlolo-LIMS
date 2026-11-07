@@ -533,7 +533,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             content: (
               <div className="pt-5">
                 <Panel title="Loans">
-                  <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} canChange={isStaff && can('loans.manage')}
+                  <LoansPanel policyNumber={policyNumber} canChange={isStaff && can('loans.manage')}
                     canRecordDeposit={isStaff && can('collections.manage')}
                     canRequestPayment={isStaff && (can('collections.manage') || can('policies.service'))} />
                 </Panel>

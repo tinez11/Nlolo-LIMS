@@ -252,6 +252,16 @@ public class PolicyLoanApiImpl implements PolicyLoanApi, tz.co.nlolo.lifeplatfor
     private static final java.util.Set<String> BEING_TAKEN = java.util.Set.of(
         "RESERVED_PENDING_ORIGINATION", "ORIGINATED", "AWAITING_PAYOUT_APPROVAL", "DISBURSEMENT_REQUESTED");
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<LoanHistoryLine> history(UUID loanId) {
+        PolicyLoan loan = findLoanOrThrow(loanId, TenantContext.get());
+        return loanTransactionRepository.findByLoanIdOrderByOccurredAt(loan.getLoanId()).stream()
+            .map(t -> new LoanHistoryLine(t.getTransactionType(), t.getAmount(), t.getCurrency(), t.getOccurredAt(),
+                t.getReference()))
+            .toList();
+    }
+
     /** The interest accrued and not yet repaid on the policy's loans being repaid. */
     private BigDecimal interestOwedOn(String policyNumber, UUID tenantId) {
         BigDecimal interest = BigDecimal.ZERO;
@@ -675,8 +685,14 @@ public class PolicyLoanApiImpl implements PolicyLoanApi, tz.co.nlolo.lifeplatfor
         BigDecimal outstanding = computeOutstandingBalance(loan).max(BigDecimal.ZERO);
         BigDecimal currentRate = loanInterestTermRepository.findByLoanIdOrderByEffectiveFromDesc(loan.getLoanId()).stream()
             .findFirst().map(LoanInterestTerm::getRate).orElse(BigDecimal.ZERO);
+        // Only a loan paid out owes anything; before that its principal is borrowed but not yet lent.
+        boolean lent = "DISBURSED".equals(loan.getStatus()) || "REPAYING".equals(loan.getStatus());
+        LoanPosition position = lent ? position(loan) : null;
         return new LoanView(loan.getLoanId(), loan.getPolicyNumber(), loan.getPrincipalAmount(), loan.getPrincipalCurrency(),
             outstanding, loan.getPrincipalCurrency(), currentRate, LoanStatus.valueOf(loan.getStatus()), loan.getPayeeRef(),
-            loan.getCreatedBy(), loan.getPayoutDecidedBy(), loan.getPayoutRefusalReason());
+            loan.getCreatedBy(), loan.getPayoutDecidedBy(), loan.getPayoutRefusalReason(),
+            loan.getOriginatedAt(),
+            position == null ? BigDecimal.ZERO : position.principalOutstanding().max(BigDecimal.ZERO),
+            position == null ? BigDecimal.ZERO : position.interestOutstanding().max(BigDecimal.ZERO));
     }
 }

@@ -346,6 +346,27 @@ class PolicyLoanContractTest {
             .andExpect(jsonPath("$.loanId").exists());
     }
 
+    /** 2026-11-07: the Loans page's summary, every figure the server's, and each loan's history. */
+    @Test
+    void theLoanLimitAndALoansHistoryMatchTheContract() throws Exception {
+        Fixture fixture = issuePolicyWithCashValue("LOAN-CONTRACT-LIMIT", "1000000.00");
+        mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/loan-limit").with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "LoanLimit"))
+            .andExpect(jsonPath("$.lends").value(true))
+            .andExpect(jsonPath("$.canBorrowNow.amount").value("1000000.00"));
+
+        String loanId = com.jayway.jsonpath.JsonPath.read(mockMvc.perform(post("/policies/" + fixture.policyNumber() + "/loans")
+                .with(staffOf(fixture.tenantId())).contentType(MediaType.APPLICATION_JSON).content(ORIGINATE_BODY))
+            .andExpect(status().isAccepted())
+            .andExpect(jsonPath("$.takenAt").exists())
+            .andReturn().getResponse().getContentAsString(), "$.loanId");
+        mockMvc.perform(get("/loans/" + loanId + "/history").with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
     @Test
     void originateLoanRejectsAnAmountExceedingAvailableWith409() throws Exception {
         // Cash value 100,000.00 against a 200,000.00 request -- PolicyApiImpl.reserveLoanValue

@@ -108,6 +108,17 @@ public class PolicyLoanController {
         return ResponseEntity.ok(LoanResponseDto.from(policyLoanApi.evaluateForcedLapse(loanId)));
     }
 
+    /** A loan's history, oldest first (2026-11-07): paid out, interest added, repaid, repaid out of a payout. */
+    @GetMapping("/loans/{loanId}/history")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('accounts.view')")
+    public ResponseEntity<List<LoanHistoryLineDto>> history(@PathVariable UUID loanId, @AuthenticationPrincipal Jwt jwt,
+                                                            Authentication authentication) {
+        LoanView loan = policyLoanApi.getLoan(loanId);
+        enforceCustomerOwnPolicyOnly(loan.policyNumber(), jwt, authentication);
+        AgentBook.require(policyApi, loan.policyNumber(), jwt, authentication);
+        return ResponseEntity.ok(policyLoanApi.history(loanId).stream().map(LoanHistoryLineDto::from).toList());
+    }
+
     @GetMapping("/loans/{loanId}")
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('accounts.view')")
     public ResponseEntity<LoanResponseDto> getLoan(@PathVariable UUID loanId, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {

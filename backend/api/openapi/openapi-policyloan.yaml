@@ -90,6 +90,28 @@ paths:
               schema: { $ref: '#/components/schemas/LoanLimit' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /loans/{loanId}/history:
+    get:
+      summary: A loan's history, oldest first -- paid out, interest added, repaid, repaid out of a payout
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LoanHistoryLine' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /loans/forced-lapse-review-queue:
     get:
       summary: Loans whose balance has grown and whose forced-lapse shortfall test is outstanding
@@ -281,3 +303,22 @@ components:
         takenBy: { type: [string, "null"], description: Who took the loan -- the first person; the payout needs another (or payouts.approve-own) }
         payoutDecidedBy: { type: [string, "null"] }
         payoutRefusalReason: { type: [string, "null"] }
+        takenAt: { type: [string, "null"], format: date-time, description: "When the loan was taken (2026-11-07)" }
+        principalOutstanding:
+          $ref: 'openapi-common.yaml#/components/schemas/Money'
+          description: "What of the outstanding balance is principal; zero until the loan is paid out"
+        interestOutstanding:
+          $ref: 'openapi-common.yaml#/components/schemas/Money'
+          description: "What of the outstanding balance is interest -- paid first by every repayment"
+    LoanHistoryLine:
+      type: object
+      additionalProperties: false
+      required: [kind, amount, at, reference]
+      properties:
+        kind:
+          type: string
+          enum: [DISBURSEMENT, INTEREST_ACCRUAL, REPAYMENT, SETTLEMENT, REVERSAL]
+          description: "SETTLEMENT: repaid out of a payout -- a claim, maturity or surrender (2026-11-07, E7)"
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        at: { type: string, format: date-time }
+        reference: { type: [string, "null"], description: "The payment or payout it came from, e.g. CLAIM:<id>" }

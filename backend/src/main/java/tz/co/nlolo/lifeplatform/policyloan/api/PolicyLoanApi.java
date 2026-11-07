@@ -15,6 +15,9 @@ public interface PolicyLoanApi {
      * and the interest owed on it. Origination is refused above {@link LoanLimitView#canBorrowNow()}.
      */
     LoanLimitView loanLimit(String policyNumber);
+
+    /** The loan's history, oldest first (2026-11-07): what was paid out, the interest added, every repayment. */
+    List<LoanHistoryLine> history(java.util.UUID loanId);
     /**
      * Money confirmed for this loan (money movement step 1, 2026-11-04): a deposit For: Loan a second person approved,
      * or a mobile-money request the rail confirmed. Applies at most what the loan owes, interest first; anything above

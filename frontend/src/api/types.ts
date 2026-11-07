@@ -140,6 +140,10 @@ export const FIELD_RECEIPT_STATUSES: readonly FieldReceiptStatus[] = [
   'RECONCILED',
 ];
 export type LoanView = PolicyLoanComponents['schemas']['LoanView'];
+/** How much a policy can borrow now, and how that is reached (2026-11-07): the server's figures. */
+export type LoanLimit = PolicyLoanComponents['schemas']['LoanLimit'];
+/** One line of a loan's history (2026-11-07). */
+export type LoanHistoryLine = PolicyLoanComponents['schemas']['LoanHistoryLine'];
 
 export type PageMeta = CommonComponents['schemas']['PageMeta'];
 export type Money = CommonComponents['schemas']['Money'];
