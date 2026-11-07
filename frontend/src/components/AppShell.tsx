@@ -372,7 +372,7 @@ const ROLE_PRECEDENCE = [
  * Agents and customers hold no staff role, and are simply named for the console they are in.
  */
 function badgeRole(realm: Realm, identity: ReturnType<typeof readIdentity>, platformRole: string | null | undefined): string | null {
-  if (realm === 'agents') return 'Agent';
+  if (realm === 'agents') return 'Sales';
   if (realm === 'customers') return 'Customer';
   if (platformRole) return platformRole;
   const held = ROLE_PRECEDENCE.find((role) => identity.roles.includes(role));

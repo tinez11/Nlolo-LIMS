@@ -36,7 +36,9 @@ export const REALM_CONFIG: Record<Realm, RealmConfig> = {
   agents: {
     realm: 'agents',
     slug: 'agents',
-    label: 'Agent',
+    // The user's names for the workspaces (2026-11-07): Sales and Customer. The insurance terms inside the screens
+    // ("Policyholder" on a policy, the staff Agents pages) are unchanged -- they name a party's role, not a console.
+    label: 'Sales',
     description: 'Your book of business and commission statements',
     realmAuthority: 'REALM_AGENTS',
     workspaceRole: 'agent',
@@ -44,7 +46,7 @@ export const REALM_CONFIG: Record<Realm, RealmConfig> = {
   customers: {
     realm: 'customers',
     slug: 'customers',
-    label: 'Policyholder',
+    label: 'Customer',
     description: 'Your policies, claims and payments',
     realmAuthority: 'REALM_CUSTOMERS',
     workspaceRole: 'customer',
