@@ -1535,13 +1535,8 @@ public class PolicyApiImpl implements PolicyApi {
             .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
 
         // A loan no longer stops a surrender (2026-11-07, decision E7, replacing Q1's "repay it first"): the surrender
-        // repays it, and only the rest is paid -- see approveSurrender. Checked against the quote below. Not yet on an
-        // account, whose surrender accumulation pays and does not yet net: there the loan is still repaid first.
-        if (account.getLoanEncumbranceAmount().signum() > 0
-                && productApi.resolveAccumulationPlan(policy.getProductVersionId()).isAccount()) {
-            throw new InvalidPolicyStateException("Policy " + policyNumber + " has an outstanding loan of "
-                + account.getLoanEncumbranceAmount() + "; it must be repaid before the account can be surrendered");
-        }
+        // repays it, and only the rest is paid -- here at approval, or by accumulation for an account. Checked against
+        // the quote below.
         if (loanValueReservationRepository.sumReservedAmountForPolicy(policyNumber, tenantId).signum() > 0) {
             throw new InvalidPolicyStateException("A loan reservation is in flight on policy " + policyNumber
                 + "; it must resolve before the policy can be surrendered");

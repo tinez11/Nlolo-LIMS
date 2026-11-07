@@ -69,15 +69,15 @@ releases the principal's pledge, and publishes the usual `policyloan.LoanRepaid`
 | Payout | Payable cleared (E-03-…) | Paid event |
 | --- | --- | --- |
 | Death claim | 2211 (IFRS 9: 2340) | `ClaimSettled.paidAmount` = what the rail paid; `settledAmount` stays gross for reinsurance and returns |
-| Surrender | 2213 (IFRS 9: 2340) | to do |
-| Maturity | 2212 | to do |
-| Account payout | 2340 | to do |
+| Surrender | 2213 (IFRS 9: 2340) | `SurrenderPayoutRequested.grossAmount` books the payable; `SurrenderPaid` carries what the rail paid; an account's surrender sends `loanRepaidAmount` so it is not taken for charge |
+| Maturity | 2212 | `PayoutPaid.paidAmount` is what the rail paid, so the ledger's gross (paid + withheld) leaves the loan's part to E-03-MATURITY |
+| Account payout (fixed deposit, term account) | 2340 | `accumulation.PayoutPaid` carries what the rail paid; netting keyed on the deposit period or the term, never the attempt, so a retry pays only the rest |
 
 Only a policy with a value asks (cash value or a pledge above zero), so a protection policy never touches policyloan;
 "has a loan now" would be wrong, since a retried settlement must be answered with what was already taken.
 
-Built: death and maturity claims through `claims` (2026-11-07). Next: surrender, benefitpayout maturity, account
-payouts, then the claim and payout screens' "Loan repaid from this payout" line.
+Built 2026-11-07: claims, surrender (scale and account), benefitpayout maturity, fixed deposit and term account
+maturities. Payment asks the rail for nothing when nothing is left. Next: the screens' "Loan repaid from this payout" line.
 - Loans larger than the policy's value get a finance screen (the existing forced-lapse review queue).
 
 ## Part C: Loans page

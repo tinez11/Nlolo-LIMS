@@ -387,7 +387,11 @@ final class PostingFactsExtractor {
         }
         PostingFacts paidOut = money(type, string(p.get("sourceRef")), policy, p.get("amount"), today, Map.of());
         PostingFacts gross = money(type, string(p.get("sourceRef")), policy, p.get("grossAmount"), today, Map.of());
-        BigDecimal charge = gross.amount(AMOUNT).subtract(paidOut.amount(AMOUNT)).max(BigDecimal.ZERO);
+        // The loans a surrender repaid (2026-11-07, E7) are not charge: E-03-SURRENDER clears them from the payable.
+        BigDecimal loanRepaid = p.get("loanRepaidAmount") != null
+            ? money(type, string(p.get("sourceRef")), policy, p.get("loanRepaidAmount"), today, Map.of()).amount(AMOUNT)
+            : BigDecimal.ZERO;
+        BigDecimal charge = gross.amount(AMOUNT).subtract(paidOut.amount(AMOUNT)).subtract(loanRepaid).max(BigDecimal.ZERO);
         return List.of(new PostingFacts(type, paidOut.sourceRef(), policy, paidOut.currency(), today,
             Map.of("charge", charge), Map.of("refType", "ACCOUNT")));
     }
