@@ -68,7 +68,8 @@ final class PostingFactsExtractor {
         Map.entry("distribution.CommissionAccrued", amount("direction", "channel", "movement")),
         Map.entry("distribution.CommissionPaid", new EventShape(Set.of("gross", "paid", "withheld"), Set.of("channel"))),
         Map.entry("policyloan.LoanDisbursed", amount()),
-        Map.entry("policyloan.LoanRepaid", new EventShape(Set.of(AMOUNT, "interest", "principal"), Set.of())),
+        // receiptMethod names the payout a loan was repaid out of (CLAIM_OFFSET...), 2026-11-07: its rules test it.
+        Map.entry("policyloan.LoanRepaid", new EventShape(Set.of(AMOUNT, "interest", "principal"), Set.of("receiptMethod"))),
         // Money above what a loan owed (money movement step 1): its method rides as receiptMethod, as on LoanRepaid.
         Map.entry("policyloan.LoanOverpaid", amount()),
         Map.entry("policyloan.LoanInterestAccrued", amount()),
@@ -178,7 +179,10 @@ final class PostingFactsExtractor {
             }
             case "claims.ClaimApproved" -> List.of(split(type, string(p.get("claimId")), policy, p.get("approvedAmount"),
                 decimal(p.get("investmentComponent")), today, Map.of("refType", "CLAIM")));
-            case "claims.ClaimSettled" -> List.of(money(type, string(p.get("claimId")), policy, p.get("settledAmount"), today,
+            // What left the bank: the settled amount less any loan it repaid (2026-11-07), which cleared its own part of
+            // the payable (E-03-CLAIM). settledAmount stays the claim's gross, for reinsurance and returns.
+            case "claims.ClaimSettled" -> List.of(money(type, string(p.get("claimId")), policy,
+                p.get("paidAmount") != null ? p.get("paidAmount") : p.get("settledAmount"), today,
                 paid("CLAIM", p.get("claimId"))));
             // A surrender value is all investment component (C-05): it is the payable as it stands.
             case "policy.SurrenderPayoutRequested" -> List.of(money(type, string(p.get("surrenderRequestId")), policy,

@@ -56,7 +56,28 @@ its reference may be used again. The approvals inbox names it "savings deposit".
   The loan interest rate stays company-wide (`TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE`) in this work.
 - Available to borrow = value × max% − (borrowed + interest owed) − reserved.
 - Death claim, maturity and surrender take the unpaid loan off what they pay; the loan settles from it, shown as a
-  line "Loan repaid from this payout".
+  line "Loan repaid from this payout". E7 replaces the earlier decision Q1 ("repay the loan before surrendering").
+
+**How the netting is built (docs 05 §6 "loan netting").** A port, `policy.api.LoanNetting`, declared where every
+payout module already looks and implemented by policyloan (which already depends on policy), so claims,
+benefitpayout, accumulation and policy itself net a loan with no new module dependency.
+`settleFromPayout(policy, gross, currency, payout, payoutRef, by)` repays the policy's loans oldest first, interest then
+principal, writes a SETTLEMENT transaction keyed `PAYOUT:ref` (asked twice, it answers what it took the first time),
+releases the principal's pledge, and publishes the usual `policyloan.LoanRepaid` with `receiptMethod` `CLAIM_OFFSET`,
+`SURRENDER_OFFSET`, `MATURITY_OFFSET` or `ACCOUNT_OFFSET`. The ledger clears that payout's payable instead of cash:
+
+| Payout | Payable cleared (E-03-…) | Paid event |
+| --- | --- | --- |
+| Death claim | 2211 (IFRS 9: 2340) | `ClaimSettled.paidAmount` = what the rail paid; `settledAmount` stays gross for reinsurance and returns |
+| Surrender | 2213 (IFRS 9: 2340) | to do |
+| Maturity | 2212 | to do |
+| Account payout | 2340 | to do |
+
+Only a policy with a value asks (cash value or a pledge above zero), so a protection policy never touches policyloan;
+"has a loan now" would be wrong, since a retried settlement must be answered with what was already taken.
+
+Built: death and maturity claims through `claims` (2026-11-07). Next: surrender, benefitpayout maturity, account
+payouts, then the claim and payout screens' "Loan repaid from this payout" line.
 - Loans larger than the policy's value get a finance screen (the existing forced-lapse review queue).
 
 ## Part C: Loans page

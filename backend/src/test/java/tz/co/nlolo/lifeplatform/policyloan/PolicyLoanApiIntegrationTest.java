@@ -346,6 +346,48 @@ class PolicyLoanApiIntegrationTest {
         assertThat(policyLoanApi.loanLimit(loan.policyNumber()).canBorrowNow()).isEqualByComparingTo("1000000");
     }
 
+    // 2026-11-07, decision E7: a payout repays the policy's loans first, interest then principal, and only once.
+    @Test
+    void aPayoutRepaysTheLoanFirstInterestThenPrincipalAndOnlyOnce() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LoanView loan = originateAndDisburse500k(tenantId, "LOAN-NETTING-01");
+        loanTransactionRepository.save(new LoanTransaction(tenantId, loan.loanId(), "INTEREST_ACCRUAL",
+            new BigDecimal("40000"), "TZS", "accrual-test"));
+        tz.co.nlolo.lifeplatform.policy.api.LoanNetting netting = (tz.co.nlolo.lifeplatform.policy.api.LoanNetting) policyLoanApi;
+        assertThat(netting.owedOn(loan.policyNumber())).isEqualByComparingTo("540000");
+
+        var netted = netting.settleFromPayout(loan.policyNumber(), new BigDecimal("2000000"), "TZS",
+            tz.co.nlolo.lifeplatform.policy.api.LoanNetting.Payout.CLAIM, "claim-1", "manager-1");
+
+        assertThat(netted.total()).isEqualByComparingTo("540000");
+        assertThat(netted.interest()).isEqualByComparingTo("40000");
+        assertThat(netted.principal()).isEqualByComparingTo("500000");
+        assertThat(policyLoanApi.getLoan(loan.loanId()).status()).isEqualTo(LoanStatus.SETTLED);
+        assertThat(policyApi.getCashValue(loan.policyNumber()).loanEncumbranceAmount()).isEqualByComparingTo("0");
+        Map<?, ?> repaid = (Map<?, ?>) eventRecorder.ofType("policyloan.LoanRepaid").get(0).payload();
+        assertThat(repaid.get("receiptMethod")).isEqualTo("CLAIM_OFFSET");
+        assertThat(repaid.get("interestAmount")).isEqualTo("40000.00");
+
+        // Asked again for the same claim (a retried settlement): the same answer, nothing more taken or announced.
+        var again = netting.settleFromPayout(loan.policyNumber(), new BigDecimal("2000000"), "TZS",
+            tz.co.nlolo.lifeplatform.policy.api.LoanNetting.Payout.CLAIM, "claim-1", "manager-1");
+        assertThat(again.total()).isEqualByComparingTo("540000");
+        assertThat(eventRecorder.ofType("policyloan.LoanRepaid")).hasSize(1);
+    }
+
+    @Test
+    void aPayoutSmallerThanTheLoanRepaysWhatItCanAndLeavesTheRestOwed() throws Exception {
+        LoanView loan = originateAndDisburse500k(UUID.randomUUID(), "LOAN-NETTING-02");
+        tz.co.nlolo.lifeplatform.policy.api.LoanNetting netting = (tz.co.nlolo.lifeplatform.policy.api.LoanNetting) policyLoanApi;
+
+        var netted = netting.settleFromPayout(loan.policyNumber(), new BigDecimal("200000"), "TZS",
+            tz.co.nlolo.lifeplatform.policy.api.LoanNetting.Payout.MATURITY, "instalment-1", "system");
+
+        assertThat(netted.total()).isEqualByComparingTo("200000");
+        assertThat(policyLoanApi.getLoan(loan.loanId()).outstandingBalance()).isEqualByComparingTo("300000");
+        assertThat(policyLoanApi.getLoan(loan.loanId()).status()).isEqualTo(LoanStatus.REPAYING);
+    }
+
     @Test
     void originateLoanReservesConfirmsAndWaitsForItsPayoutToBeApproved() throws Exception {
         UUID tenantId = UUID.randomUUID();

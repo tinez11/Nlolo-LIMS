@@ -623,6 +623,68 @@ rules:
       - {dr: "RECEIPT", amount: amount}
       - {cr: "2128", amount: amount}
 
+  # A loan repaid out of a payout (2026-11-07, decision E7; docs 05 §6 "loan netting"): no cash comes in -- the payout's
+  # payable, booked gross when it fell due, is cleared by the part that repays the loan, and only the rest is paid out.
+  - id: E-03-CLAIM
+    event: policyloan.LoanRepaid
+    models: [GMM, VFA, PAA]
+    when: {receiptMethod: CLAIM_OFFSET}
+    description: Loan repaid from a claim -- out of the claim payable, not cash
+    lines:
+      - {dr: "2211", amount: amount}
+      - {cr: "2126", amount: interest}
+      - {cr: "2125", amount: principal}
+
+  - id: E-03-CLAIM-IFRS9
+    event: policyloan.LoanRepaid
+    models: [IFRS9]
+    when: {receiptMethod: CLAIM_OFFSET}
+    description: Loan repaid from an IFRS 9 account's claim -- out of what its account ledger made payable
+    lines:
+      - {dr: "2340", amount: amount}
+      - {cr: "2126", amount: interest}
+      - {cr: "2125", amount: principal}
+
+  - id: E-03-SURRENDER
+    event: policyloan.LoanRepaid
+    models: [GMM, VFA, PAA]
+    when: {receiptMethod: SURRENDER_OFFSET}
+    description: Loan repaid from a surrender value -- out of the surrender payable, not cash
+    lines:
+      - {dr: "2213", amount: amount}
+      - {cr: "2126", amount: interest}
+      - {cr: "2125", amount: principal}
+
+  - id: E-03-SURRENDER-IFRS9
+    event: policyloan.LoanRepaid
+    models: [IFRS9]
+    when: {receiptMethod: SURRENDER_OFFSET}
+    description: Loan repaid from an IFRS 9 account's surrender -- out of what its account ledger made payable
+    lines:
+      - {dr: "2340", amount: amount}
+      - {cr: "2126", amount: interest}
+      - {cr: "2125", amount: principal}
+
+  - id: E-03-MATURITY
+    event: policyloan.LoanRepaid
+    models: [ANY]
+    when: {receiptMethod: MATURITY_OFFSET}
+    description: Loan repaid from a maturity -- out of the maturity payable, not cash
+    lines:
+      - {dr: "2212", amount: amount}
+      - {cr: "2126", amount: interest}
+      - {cr: "2125", amount: principal}
+
+  - id: E-03-ACCOUNT
+    event: policyloan.LoanRepaid
+    models: [ANY]
+    when: {receiptMethod: ACCOUNT_OFFSET}
+    description: Loan repaid from an account's payout -- out of what its account ledger made payable
+    lines:
+      - {dr: "2340", amount: amount}
+      - {cr: "2126", amount: interest}
+      - {cr: "2125", amount: principal}
+
   - id: E-06
     event: policyloan.LoanForcedLapseTriggered
     models: [ANY]
