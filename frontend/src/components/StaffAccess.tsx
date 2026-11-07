@@ -26,8 +26,9 @@ export function StaffAccessGate({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  // The same screen as signing in, one line further on: the person sees one continuous moment, not two pages.
-  return <SessionSplash label="Opening your console" console="Staff" />;
+  // Exactly the screen signing in showed (2026-11-07): a second wording here read as a second page, so the moment
+  // stays one splash from the login form to the console.
+  return <SessionSplash label="Signing you in" />;
 }
 
 /**
