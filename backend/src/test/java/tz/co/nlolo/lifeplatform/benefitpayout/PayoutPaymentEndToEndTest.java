@@ -153,6 +153,15 @@ class PayoutPaymentEndToEndTest {
             "db-migrations/policy/V40__commencement_never_null.sql",
             "db-migrations/policy/V41__policy_account_charges.sql",
             "db-migrations/policy/V42__surrender_payout_route.sql", "db-migrations/policy/V45__acted_alone.sql",
+            // A maturity repays the policy's loans first (2026-11-07, E7): the loans this test takes need policyloan.
+            "db-migrations/policyloan/V1__create_policyloan_schema.sql",
+            "db-migrations/policyloan/V3__money_check_constraints.sql",
+            "db-migrations/policyloan/V4__persist_reservation_id.sql",
+            "db-migrations/policyloan/V5__loan_interest_accrual.sql",
+            "db-migrations/policyloan/V7__q4_2026_partitions.sql",
+            "db-migrations/policyloan/V8__interest_month_published.sql",
+            "db-migrations/policyloan/V9__payout_approval.sql",
+            "db-migrations/payment/V22__loan_repayment_purpose.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql",
@@ -261,6 +270,80 @@ class PayoutPaymentEndToEndTest {
             assertThat(entries).extracting(JournalEntryView::sourceRef).containsOnly(id.toString());
             assertThat(entries).extracting(JournalEntryView::sourceEvent)
                 .containsExactlyInAnyOrder("benefitpayout.PayoutRequested", "benefitpayout.PayoutPaid");
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    @Autowired private tz.co.nlolo.lifeplatform.policyloan.api.PolicyLoanApi policyLoanApi;
+
+    /** One row changed over the container's own credentials, past the app role's RLS -- a fixture's direct seed. */
+    private static void superuser(String sql, String policyNumber) throws Exception {
+        try (java.sql.Connection connection = java.sql.DriverManager.getConnection(POSTGRES.getJdbcUrl(),
+                 POSTGRES.getUsername(), POSTGRES.getPassword());
+             java.sql.PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, policyNumber);
+            assertThat(statement.executeUpdate()).isEqualTo(1);
+        }
+    }
+
+    /**
+     * 2026-11-07, decision E7: a maturity repays the policy's loan first. The rail is asked for the rest; the maturity
+     * payable 2212 is cleared by the loan's part (E-03-MATURITY, no cash) and by what was paid (C-03).
+     */
+    @Test
+    void aMaturityRepaysThePolicyLoanFirstAndOnlyTheRestIsPaid() throws Exception {
+        // Maturing tomorrow: in force today, so the loan can be taken; its maturity payout is then brought forward
+        // to yesterday, so it falls due now.
+        String policyNumber = fixtures.issueEndowment(TENANT, MATURING_ENDOWMENT, new BigDecimal("500000.00"), 12,
+            LocalDate.now().minusYears(1).plusDays(1));
+        fixtures.collectPremium(TENANT, policyNumber, new BigDecimal("600000.00"), LocalDate.now().minusDays(1));
+        superuser("UPDATE policy.policy_account SET cash_value_amount = 400000 WHERE policy_number = ?", policyNumber);
+        gatewayAccepts("MM-LOAN-AND-MATURITY");
+        TenantContext.set(TENANT);
+        UUID loanId;
+        try {
+            loanId = policyLoanApi.originateLoan(policyNumber, new BigDecimal("300000"), "TZS", "+255700000011", "agent")
+                .loanId();
+            policyLoanApi.approvePayout(loanId, "approver");
+            assertThat(policyLoanApi.getLoan(loanId).status())
+                .isEqualTo(tz.co.nlolo.lifeplatform.policyloan.api.LoanStatus.DISBURSED);
+        } finally {
+            TenantContext.clear();
+        }
+        superuser("UPDATE benefitpayout.payout_instalment SET due_date = current_date - 1 WHERE policy_number = ?", policyNumber);
+        wireMock.resetRequests();
+
+        drain.drain();
+        UUID id = only(policyNumber).instalmentId();
+        TenantContext.set(TENANT);
+        try {
+            api.review(id, "+255700000009", null, null, "rev-1");
+            api.approve(id, "apr-2");
+            assertThat(api.getInstalment(id).status()).isEqualTo(InstalmentStatus.PAID);
+            assertThat(policyLoanApi.getLoan(loanId).status()).as("the maturity repaid the loan")
+                .isEqualTo(tz.co.nlolo.lifeplatform.policyloan.api.LoanStatus.SETTLED);
+        } finally {
+            TenantContext.clear();
+        }
+        // The 500,000 maturity less the 300,000 the loan owed.
+        wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/disburse")).withRequestBody(containing("200000")));
+
+        TenantContext.set(TENANT);
+        try {
+            var postings = finaccountingApi.listJournalEntries(null, policyNumber, Pageable.unpaged()).getContent().stream()
+                .flatMap(e -> e.postings().stream()).toList();
+            java.util.function.Function<String, BigDecimal> net = account -> postings.stream()
+                .filter(p -> account.equals(p.accountCode()))
+                .map(p -> p.direction() == tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection.DR
+                    ? p.amount() : p.amount().negate())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            assertThat(net.apply("2212")).as("the maturity payable is cleared exactly").isEqualByComparingTo("0");
+            // The loan's payout (E-01) is posted with no policy, so this policy's journals show only its repayment: the
+            // receivable falls by exactly what the loan owed, out of the maturity, with no cash.
+            assertThat(net.apply("2125")).as("the loan receivable falls by what the loan owed").isEqualByComparingTo("-300000");
+            assertThat(postings).filteredOn(p -> "policyloan.LoanRepaid".equals(p.sourceEvent()))
+                .extracting(p -> p.accountCode()).doesNotContain("1120", "1140");
         } finally {
             TenantContext.clear();
         }

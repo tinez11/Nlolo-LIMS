@@ -425,6 +425,12 @@ public class PaymentRequestListener {
                         String sourceRef, String what) {
         tz.co.nlolo.lifeplatform.PayoutRoute route = tz.co.nlolo.lifeplatform.PayoutRoute.fromPayload(payload);
         Money money = money(payload);
+        // Nothing left to pay (2026-11-07): a payout the policy's loans took whole (E7) is still announced, for its
+        // ledger, and settled by its own module. Asking the rail for zero would only fail.
+        if (money.amount().signum() <= 0) {
+            log.info("{} {} has nothing left to pay; no disbursement is requested", what, sourceRef);
+            return;
+        }
         Optional<UUID> disbursementId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordDisbursementRequest(
             tenantId, idempotencyKey, route, money.amount(), money.currency(), purpose, sourceRef));
         disbursementId.ifPresentOrElse(

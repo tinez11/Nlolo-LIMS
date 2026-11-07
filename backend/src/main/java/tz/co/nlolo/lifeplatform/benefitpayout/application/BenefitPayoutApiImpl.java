@@ -362,6 +362,15 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     /** The disbursement landed. Publishes {@code PayoutPaid}, which finaccounting books. */
     @Transactional
     public void markPaid(UUID instalmentId, UUID disbursementId) {
+        markPaid(instalmentId, disbursementId, null);
+    }
+
+    /**
+     * As above, with what the rail paid (2026-11-07, decision E7): a maturity less the policy's loans it repaid. Null is
+     * the whole payable amount -- every payout with no loan to repay.
+     */
+    @Transactional
+    public void markPaid(UUID instalmentId, UUID disbursementId, BigDecimal railPaid) {
         PayoutInstalment i = load(instalmentId);
         if (i.status() != InstalmentStatus.APPROVED) {
             return; // a redelivered completion, already closed out
@@ -378,7 +387,14 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
         paid.put("instalmentId", instalmentId.toString());
         paid.put("policyNumber", i.getPolicyNumber());
         paid.put("kind", i.kind().name());
-        paid.put("paidAmount", Map.of("amount", i.payableAmount().toPlainString(), "currencyCode", i.getCurrency()));
+        // What left the bank. The ledger's gross is this plus what was withheld, so a maturity's loan repayment, already
+        // cleared from the payable (E-03-MATURITY), is not paid out of it a second time.
+        BigDecimal paidOut = railPaid != null ? railPaid : i.payableAmount();
+        paid.put("paidAmount", Map.of("amount", paidOut.toPlainString(), "currencyCode", i.getCurrency()));
+        if (paidOut.compareTo(i.payableAmount()) < 0) {
+            paid.put("loanRepaidAmount", Map.of("amount", i.payableAmount().subtract(paidOut).toPlainString(),
+                "currencyCode", i.getCurrency()));
+        }
         if (i.getGrossAmount() != null) {
             paid.put("grossAmount", Map.of("amount", i.getGrossAmount().toPlainString(), "currencyCode", i.getCurrency()));
             paid.put("withheldAmount", Map.of("amount", i.getWithheldAmount().toPlainString(), "currencyCode", i.getCurrency()));
@@ -437,19 +453,51 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
         // is an investment component (posting guide C-01, D-01, D-05, H-02). Computed here, never by finaccounting.
         BigDecimal gross = i.getGrossAmount() != null ? i.getGrossAmount() : i.payableAmount();
         BigDecimal withheld = i.getWithheldAmount() != null ? i.getWithheldAmount() : BigDecimal.ZERO;
+        // A maturity repays the policy's loans first (2026-11-07, decision E7), out of what is payable after tax; the
+        // rail is asked for the rest. Idempotent on the instalment, so a retried payout repays nothing twice.
+        BigDecimal toRail = i.payableAmount().subtract(maturityLoanNetting(i)).max(BigDecimal.ZERO);
         eventPublisher.publishEvent(DomainEventEnvelope.of("benefitpayout.PayoutRequested", TenantContext.get(),
             Map.of("instalmentId", i.getInstalmentId().toString(),
                    "idempotencyKey", i.getInstalmentId() + ":" + i.getAttempts(),
                    "policyNumber", i.getPolicyNumber(),
                    "payeeRef", i.getPayeeRef(),
                    "purpose", purposeFor(i.kind()),
-                   // The NET when tax was withheld (product step 5): the rail pays what leaves the bank.
-                   "amount", Map.of("amount", i.payableAmount().toPlainString(),
+                   // The NET when tax was withheld (product step 5), less any loan repaid (E7): what leaves the bank.
+                   "amount", Map.of("amount", toRail.toPlainString(),
                         "currencyCode", i.getCurrency()),
                    "kind", i.kind().name(),
                    "grossAmount", gross.toPlainString(),
                    "withheldAmount", withheld.toPlainString(),
                    "investmentComponent", investmentComponent(i, gross).toPlainString())));
+        if (toRail.signum() == 0) {
+            // The loans took it all (E7): announced above for its ledger, and paid now -- payment asks the rail for
+            // nothing.
+            markPaid(i.getInstalmentId(), null, BigDecimal.ZERO);
+        }
+    }
+
+    /**
+     * What a maturity repaid of the policy's loans. Only a maturity, and only a policy with a value, asks policyloan --
+     * not "has a loan now", since a retried payout must be answered with what was already taken.
+     */
+    private BigDecimal maturityLoanNetting(PayoutInstalment i) {
+        if (i.kind() != PayoutKind.MATURITY || loanNetting == null) return BigDecimal.ZERO;
+        tz.co.nlolo.lifeplatform.policy.api.CashValueView value = policyApi.getCashValue(i.getPolicyNumber());
+        if (value.cashValueAmount().signum() <= 0 && value.loanEncumbranceAmount().signum() <= 0) return BigDecimal.ZERO;
+        return loanNetting.settleFromPayout(i.getPolicyNumber(), i.payableAmount(), i.getCurrency(),
+            tz.co.nlolo.lifeplatform.policy.api.LoanNetting.Payout.MATURITY, i.getInstalmentId().toString(), "system")
+            .total();
+    }
+
+    /**
+     * Repays the policy's loans out of a maturity (2026-11-07, decision E7). Implemented by policyloan; optional, so a
+     * slice of the application without that module still starts and nets nothing.
+     */
+    private tz.co.nlolo.lifeplatform.policy.api.LoanNetting loanNetting;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setLoanNetting(tz.co.nlolo.lifeplatform.policy.api.LoanNetting loanNetting) {
+        this.loanNetting = loanNetting;
     }
 
     /**
