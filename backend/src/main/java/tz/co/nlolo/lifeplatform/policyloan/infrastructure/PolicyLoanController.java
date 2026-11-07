@@ -68,6 +68,16 @@ public class PolicyLoanController {
         return ResponseEntity.ok(policyLoanApi.listLoansForPolicy(policyNumber).stream().map(LoanResponseDto::from).toList());
     }
 
+    /** How much the policy can borrow now, and how that is reached (2026-11-07): the Loans page's summary. */
+    @GetMapping("/policies/{policyNumber}/loan-limit")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('accounts.view')")
+    public ResponseEntity<LoanLimitResponseDto> loanLimit(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt,
+                                                          Authentication authentication) {
+        enforceCustomerOwnPolicyOnly(policyNumber, jwt, authentication);
+        AgentBook.require(policyApi, policyNumber, jwt, authentication);
+        return ResponseEntity.ok(LoanLimitResponseDto.from(policyLoanApi.loanLimit(policyNumber)));
+    }
+
     /**
      * The forced-lapse review queue the interest-accrual sweep fills. STAFF only, and
      * deliberately not exposed to customers or agents: it is an operational worklist across the

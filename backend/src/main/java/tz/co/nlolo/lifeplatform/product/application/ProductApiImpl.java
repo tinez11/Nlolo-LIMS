@@ -198,7 +198,7 @@ public class ProductApiImpl implements ProductApi {
             .map(v -> new ProductVersionSummaryView(v.getProductVersionId(), v.getEffectiveDate(), v.getRetirementDate(),
                 v.getProductVersionId().equals(current), v.getCreatedAt(), v.getCreatedBy(), v.getGracePeriodDays(),
                 v.getExpectedProfitabilityBucket(), v.getMeasurementModelOverride(), v.getSurvivalInvestmentComponentPercent(),
-                v.getDescription()))
+                v.getDescription(), v.getMaxLoanToValuePercent()))
             .toList();
     }
 
@@ -1757,6 +1757,18 @@ public class ProductApiImpl implements ProductApi {
             .orElseThrow(() -> new ProductNotFoundException(productId));
         product.describe(description);
         return toSummaryView(productDefinitionRepository.save(product));
+    }
+
+    @Override
+    @Transactional
+    public void limitNewestVersionLoans(UUID productId, BigDecimal maxLoanToValuePercent) {
+        if (maxLoanToValuePercent == null) return;
+        UUID tenantId = TenantContext.get();
+        productVersionRepository.findByTenantIdAndProductIdOrderByCreatedAtDesc(tenantId, productId).stream().findFirst()
+            .ifPresent(v -> {
+                v.limitLoans(maxLoanToValuePercent);
+                productVersionRepository.save(v);
+            });
     }
 
     @Override

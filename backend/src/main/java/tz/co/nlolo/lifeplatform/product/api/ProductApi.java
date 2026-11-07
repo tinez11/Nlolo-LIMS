@@ -250,6 +250,12 @@ public interface ProductApi {
      */
     void describeNewestVersion(UUID productId, String description);
 
+    /**
+     * The most a policy loan may be on the version just published, as a share of the policy's value (2026-11-07): 0
+     * lends nothing. Null leaves it lending the whole value, as every earlier version does.
+     */
+    void limitNewestVersionLoans(UUID productId, java.math.BigDecimal maxLoanToValuePercent);
+
     /** The published products offered online, by name -- what a customer may browse, quote and ask for. */
     List<OnlineListingView> listOnlineProducts();
 

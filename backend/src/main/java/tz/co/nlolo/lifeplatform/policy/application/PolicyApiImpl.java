@@ -851,6 +851,22 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public LoanValueView getLoanValue(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        PolicyAccount account = policyAccountRepository.findById(policyNumber)
+            .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
+        BigDecimal percent = productApi.getSnapshotByVersionId(policy.getProductVersionId()).maxLoanToValuePercent();
+        BigDecimal reserved = loanValueReservationRepository.sumReservedAmountForPolicy(policyNumber, tenantId);
+        // The same sum reserveLoanValue checks against, so what is shown is what a loan is refused or granted on.
+        BigDecimal available = account.availableLoanValue(reserved, percent).max(BigDecimal.ZERO);
+        BigDecimal limit = account.loanLimit(percent);
+        return new LoanValueView(policyNumber, account.getCashValueCurrency(), account.getCashValueAmount(), percent,
+            limit, account.getLoanEncumbranceAmount(), reserved, available);
+    }
+
+    @Override
     public SurrenderQuoteView quoteSurrenderValue(String policyNumber) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
@@ -1087,6 +1103,16 @@ public class PolicyApiImpl implements PolicyApi {
     @Override
     @Transactional
     public UUID reserveLoanValue(String policyNumber, BigDecimal amount, String currency, Duration ttl) {
+        return reserve(policyNumber, amount, currency, ttl, BigDecimal.ZERO);
+    }
+
+    @Override
+    @Transactional
+    public UUID reserveLoanValue(String policyNumber, BigDecimal amount, String currency, Duration ttl, BigDecimal interestOwed) {
+        return reserve(policyNumber, amount, currency, ttl, interestOwed == null ? BigDecimal.ZERO : interestOwed);
+    }
+
+    private UUID reserve(String policyNumber, BigDecimal amount, String currency, Duration ttl, BigDecimal interestOwed) {
         // M3 final review, I3. Task 7's Critical (a negative requestedAmount reaching
         // PolicyAccount.increaseEncumbrance, DECREASING loan_encumbrance_amount and thereby
         // RAISING the customer's own available loan value) was closed only at the HTTP
@@ -1122,10 +1148,18 @@ public class PolicyApiImpl implements PolicyApi {
         // OWN version (step 1 -- the M3 simplification that ignored it is closed). A null percent
         // means the whole cash value is borrowable.
         BigDecimal ltvPercent = productApi.getSnapshotByVersionId(policy.getProductVersionId()).maxLoanToValuePercent();
-        BigDecimal available = account.availableLoanValue(currentlyReserved, ltvPercent);
+        // 0 lends nothing (2026-11-07, the user: each product says how much may be lent).
+        if (ltvPercent != null && ltvPercent.signum() == 0) {
+            throw new InsufficientLoanValueException("This product does not lend against its value: its maximum loan is 0%");
+        }
+        // The interest owed on the policy's loans counts too (2026-11-07): the limit is on what the policy owes, and
+        // only policyloan knows the interest, so it is handed in and taken off here, under the same lock.
+        BigDecimal available = account.availableLoanValue(currentlyReserved, ltvPercent).subtract(interestOwed)
+            .max(BigDecimal.ZERO);
         if (amount.compareTo(available) > 0) {
-            throw new InsufficientLoanValueException(
-                "Requested " + amount + " " + currency + " exceeds available loan value " + available + " for policy " + policyNumber);
+            throw new InsufficientLoanValueException("This policy can borrow at most " + available.toPlainString() + " "
+                + currency + " now: " + (ltvPercent == null ? "its whole value"
+                : ltvPercent.stripTrailingZeros().toPlainString() + "% of its value") + ", less what it already owes");
         }
 
         LoanValueReservation reservation = new LoanValueReservation(tenantId, policyNumber, amount, currency, Instant.now().plus(ttl));
@@ -1172,11 +1206,8 @@ public class PolicyApiImpl implements PolicyApi {
     @Override
     @Transactional
     public void releaseEncumbrance(String policyNumber, BigDecimal amount, String currency) {
-        // M4's ledger note ("loan_encumbrance_amount only ever increases in M3 -- no
-        // repayment-side consumption path") is now partially closed here, for the FAILURE
-        // direction only: a disbursement that never actually paid out must not permanently
-        // consume the policyholder's loan value. Full repayment-side consumption (decrementing
-        // encumbrance as the loan is repaid) remains out of scope for M5.
+        // Called when a disbursement never paid out (M5), and since 2026-11-07 for the principal each
+        // repayment pays off: a repaid loan no longer keeps the policy's value pledged.
         UUID tenantId = TenantContext.get();
         // Same lockByPolicyNumber PESSIMISTIC_WRITE discipline confirmReservation uses -- the
         // caller (policyloan.PolicyLoanApiImpl.markDisbursementFailed) already announces its own

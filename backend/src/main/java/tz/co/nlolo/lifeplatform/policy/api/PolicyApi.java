@@ -710,7 +710,17 @@ public interface PolicyApi {
      */
     CashValueView getCashValue(String policyNumber);
 
+    /** What the policy may be lent against now, and how that is reached (2026-11-07). A pure read. */
+    LoanValueView getLoanValue(String policyNumber);
+
     UUID reserveLoanValue(String policyNumber, BigDecimal amount, String currency, Duration ttl);
+
+    /**
+     * As {@link #reserveLoanValue(String, BigDecimal, String, Duration)}, with the interest already owed on the
+     * policy's loans taken off what may be reserved (2026-11-07): only policyloan knows it, so it is handed in and
+     * checked under the same lock. A product whose maximum loan is 0 reserves nothing.
+     */
+    UUID reserveLoanValue(String policyNumber, BigDecimal amount, String currency, Duration ttl, BigDecimal interestOwed);
     void confirmReservation(UUID reservationId);
     void releaseReservation(UUID reservationId);
 

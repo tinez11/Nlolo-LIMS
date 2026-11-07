@@ -4,7 +4,7 @@ import { getAnnuityTerms } from '@/api/annuity';
 import { getFuneralTerms } from '@/api/funeral';
 import { getValueTerms, listProductVersions } from '@/api/products';
 import type {
-  AnnuityTermsView, FuneralTermsView, ProductVersionSummaryView, UnitLinkedTermsView, VersionValueTermsView,
+  AnnuityTermsView, FuneralTermsView, ProductCategory, ProductVersionSummaryView, UnitLinkedTermsView, VersionValueTermsView,
 } from '@/api/types';
 import { getUnitLinkedTerms } from '@/api/unitlinked';
 import { Field } from '@/components/Field';
@@ -13,6 +13,7 @@ import { toApiError, type ApiError } from '@/lib/apiError';
 import { formatDate, todayIso } from '@/lib/dates';
 import { bucketLabel, modelLabel } from '@/lib/ifrs17';
 import { selectVersionRating, useProductStore } from '@/store/productStore';
+import { LENDING_CATEGORIES } from './publishVersionSchema';
 import { RatingBasis } from './RatingBasis';
 import { funeralSummary, pricedOtherwise } from './versionText';
 import { AnnuityTermsDetail, FuneralTermsDetail, UnitLinkedTermsDetail, ValueTermsDetail } from './VersionTerms';
@@ -151,6 +152,11 @@ function VersionDetails({ productId, category, version }: {
           value={version.measurementModelOverride ? modelLabel(version.measurementModelOverride) : 'None — the register decides'} />
         {version.survivalInvestmentComponentPercent != null && (
           <Field label="Survival investment component" value={`${version.survivalInvestmentComponentPercent}%`} />
+        )}
+        {/* 2026-11-07: how much of a policy's value may be lent; versions before it lend the whole value. */}
+        {LENDING_CATEGORIES.includes(category as ProductCategory) && (
+          <Field label="Maximum loan" value={version.maxLoanToValuePercent == null ? 'The whole value'
+            : version.maxLoanToValuePercent === 0 ? 'No loans' : `${version.maxLoanToValuePercent}% of the value`} />
         )}
         {/* Only where base rates price the version: a funeral plan has none and is priced all the same. */}
         {!pricedOtherwise(category) && (

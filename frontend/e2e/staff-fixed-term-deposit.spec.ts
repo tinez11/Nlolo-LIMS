@@ -39,6 +39,8 @@ test.describe('a fixed-term deposit', () => {
     await expect(page.getByRole('radio', { name: /Fixed deposit/ })).toBeChecked();
     await fillBasics(page, 'TIRA/E2E/FTD');
     await step(page, 'What it pays');
+    // Every product a loan can be taken on says how much of the value may be lent (2026-11-07).
+    await page.getByLabel(/Maximum loan/).fill('80');
     await page.getByLabel('Free-look days').fill('15');
 
     await step(page, 'Rates');

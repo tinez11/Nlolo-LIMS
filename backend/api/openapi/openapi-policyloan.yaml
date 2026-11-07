@@ -67,6 +67,29 @@ paths:
                 items: { $ref: '#/components/schemas/LoanView' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /policies/{policyNumber}/loan-limit:
+    get:
+      summary: How much the policy can borrow now, and how that is reached
+      description: >
+        2026-11-07: the policy's value × its product's maximum loan, less the principal borrowed and the interest owed.
+        Origination is refused above canBorrowNow. Every figure is the server's.
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoanLimit' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /loans/forced-lapse-review-queue:
     get:
       summary: Loans whose balance has grown and whose forced-lapse shortfall test is outstanding
@@ -226,6 +249,21 @@ paths:
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
 components:
   schemas:
+    LoanLimit:
+      type: object
+      additionalProperties: false
+      required: [policyNumber, lends, value, maxLoanToValuePercent, limit, borrowed, interestOwed, canBorrowNow,
+                 annualInterestRate]
+      properties:
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        lends: { type: boolean, description: "False when the product version's maximum loan is 0" }
+        value: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        maxLoanToValuePercent: { type: [number, "null"], description: "Null: the whole value may be borrowed" }
+        limit: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        borrowed: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        interestOwed: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        canBorrowNow: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        annualInterestRate: { type: number, description: "% a year, charged on a new loan" }
     LoanView:
       type: object
       properties:

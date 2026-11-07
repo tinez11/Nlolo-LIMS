@@ -251,13 +251,19 @@ class PolicyLoanApiIntegrationTest {
     }
 
     private String issuePolicyWithCashValue(UUID tenantId, BigDecimal cashValue, String productCode) throws Exception {
+        return issuePolicyWithCashValue(tenantId, cashValue, productCode, null);
+    }
+
+    private String issuePolicyWithCashValue(UUID tenantId, BigDecimal cashValue, String productCode,
+                                            BigDecimal maxLoanPercent) throws Exception {
         TenantContext.set(tenantId);
-        PartyView applicant = partyApi.registerIndividual("Loan Test Applicant", LocalDate.of(1990, 1, 1), "+255713098" + Math.abs(productCode.hashCode() % 1000), null, "test-agent");
+        PartyView applicant = partyApi.registerIndividual("Loan Test Applicant", LocalDate.of(1990, 1, 1), "+255713098" + String.format("%03d", Math.abs(productCode.hashCode() % 1000)), null, "test-agent");
         ProductSummaryView product = productApi.createProduct(productCode, "Loan Test Product", ProductCategory.TERM_LIFE, "TZS", "actuary");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)), null, ANY_FILING, "actuary");
+        productApi.limitNewestVersionLoans(product.productId(), maxLoanPercent);
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(applicant.partyId(), product.productId(), snapshot.productVersionId(),
             cashValue, "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY", null, List.of(), "Loan test issuance");
@@ -285,6 +291,59 @@ class PolicyLoanApiIntegrationTest {
                 .isEqualTo(1);
         }
         return policyNumber;
+    }
+
+    // 2026-11-07, the user: a product sets how much of the value may be lent, and 0 lends nothing.
+    @Test
+    void theProductsMaximumLoanCapsWhatMayBeBorrowedAndZeroLendsNothing() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String half = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "LOAN-LTV-50", new BigDecimal("50"));
+        TenantContext.set(tenantId);
+        LoanLimitView limit = policyLoanApi.loanLimit(half);
+        assertThat(limit.limit()).isEqualByComparingTo("500000");
+        assertThat(limit.canBorrowNow()).isEqualByComparingTo("500000");
+        assertThrows(tz.co.nlolo.lifeplatform.policy.api.InsufficientLoanValueException.class, () ->
+            policyLoanApi.originateLoan(half, new BigDecimal("500000.01"), "TZS", "MPESA-0712345678", "test-agent"));
+        policyLoanApi.originateLoan(half, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
+        assertThat(policyLoanApi.loanLimit(half).canBorrowNow()).isEqualByComparingTo("0");
+
+        String none = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "LOAN-LTV-00", BigDecimal.ZERO);
+        TenantContext.set(tenantId);
+        assertThat(policyLoanApi.loanLimit(none).lends()).isFalse();
+        assertThat(policyLoanApi.loanLimit(none).canBorrowNow()).isEqualByComparingTo("0");
+        assertThrows(tz.co.nlolo.lifeplatform.policy.api.InsufficientLoanValueException.class, () ->
+            policyLoanApi.originateLoan(none, new BigDecimal("1000"), "TZS", "MPESA-0712345678", "test-agent"));
+    }
+
+    /** The interest owed comes off what may still be borrowed (2026-11-07): the limit is on what the policy owes. */
+    @Test
+    void interestOwedReducesWhatMayStillBeBorrowed() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LoanView loan = originateAndDisburse500k(tenantId, "LOAN-INTEREST-LIMIT");
+        loanTransactionRepository.save(new LoanTransaction(tenantId, loan.loanId(), "INTEREST_ACCRUAL",
+            new BigDecimal("40000"), "TZS", "accrual-test"));
+
+        LoanLimitView limit = policyLoanApi.loanLimit(loan.policyNumber());
+        assertThat(limit.borrowed()).isEqualByComparingTo("500000");
+        assertThat(limit.interestOwed()).isEqualByComparingTo("40000");
+        assertThat(limit.canBorrowNow()).isEqualByComparingTo("460000");
+        assertThrows(tz.co.nlolo.lifeplatform.policy.api.InsufficientLoanValueException.class, () ->
+            policyLoanApi.originateLoan(loan.policyNumber(), new BigDecimal("460000.01"), "TZS", "MPESA-0712345678", "test-agent"));
+    }
+
+    /** A repaid loan no longer pledges the value (2026-11-07): before this the pledge outlived the loan. */
+    @Test
+    void repayingALoanFreesItsValueForSurrenderAndTheNextLoan() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LoanView loan = originateAndDisburse500k(tenantId, "LOAN-RELEASE-01");
+        policyLoanApi.applyConfirmedRepayment(loan.loanId(), new BigDecimal("200000"), "TZS", "R-1", "CASH",
+            UUID.randomUUID(), "finance-1");
+        assertThat(policyApi.getCashValue(loan.policyNumber()).loanEncumbranceAmount()).isEqualByComparingTo("300000");
+
+        policyLoanApi.applyConfirmedRepayment(loan.loanId(), new BigDecimal("300000"), "TZS", "R-2", "CASH",
+            UUID.randomUUID(), "finance-1");
+        assertThat(policyApi.getCashValue(loan.policyNumber()).loanEncumbranceAmount()).isEqualByComparingTo("0");
+        assertThat(policyLoanApi.loanLimit(loan.policyNumber()).canBorrowNow()).isEqualByComparingTo("1000000");
     }
 
     @Test

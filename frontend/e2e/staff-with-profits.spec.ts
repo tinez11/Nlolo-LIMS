@@ -38,6 +38,8 @@ test.describe('a with-profits policy', () => {
     await expect(page.getByRole('radio', { name: /Cash-value plan/ })).toBeChecked();
     await fillBasics(page, 'TIRA/E2E/WP');
     await step(page, 'What it pays');
+    // Every product a loan can be taken on says how much of the value may be lent (2026-11-07).
+    await page.getByLabel(/Maximum loan/).fill('80');
     await page.getByLabel('Free-look days').fill('15');
 
     // The maturity row is already there (2026-11-07): only its amount is chosen.

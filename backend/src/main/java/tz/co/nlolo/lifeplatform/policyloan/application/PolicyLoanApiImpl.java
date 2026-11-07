@@ -74,6 +74,10 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         if ("UNIT_LINKED".equals(policyApi.productCategoryOf(policyNumber))) {
             throw new LoanNotEligibleException("A unit-linked policy has no paid-up or loan value in U1; its value is its units");
         }
+        // The interest already owed counts against the limit too (2026-11-07). Read from this module's own loans only:
+        // the policy's account must not be loaded before reserveLoanValue locks it (see productCategoryOf above), so
+        // the product's maximum and the interest are both checked inside that lock.
+        BigDecimal interestOwed = interestOwedOn(policyNumber, tenantId);
 
         // Module-Architecture-B1's reserve/persist/confirm sequence below runs in ONE physical
         // DB transaction spanning policy and policyloan, DELIBERATELY -- per this plan's own
@@ -98,7 +102,7 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         // propagates as-is -- policy.infrastructure.PolicyExceptionHandler maps it to 409
         // application-wide, so policyloan does not need its own duplicate mapping for a
         // policy-owned exception type.
-        UUID reservationId = policyApi.reserveLoanValue(policyNumber, requestedAmount, currency, RESERVATION_TTL);
+        UUID reservationId = policyApi.reserveLoanValue(policyNumber, requestedAmount, currency, RESERVATION_TTL, interestOwed);
         BigDecimal rate = new BigDecimal(referenceDataApi.getValue("TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE", "TZ"));
         PolicyLoan loan = new PolicyLoan(tenantId, policyNumber, requestedAmount, currency, originatedBy);
         // M5: persisted for FORENSICS, not for any code path.
@@ -244,6 +248,45 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         return policyLoanRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId).stream().map(this::toView).toList();
     }
 
+    /** Statuses whose principal is pledged but not yet paid out: still borrowed, with no interest yet. */
+    private static final java.util.Set<String> BEING_TAKEN = java.util.Set.of(
+        "RESERVED_PENDING_ORIGINATION", "ORIGINATED", "AWAITING_PAYOUT_APPROVAL", "DISBURSEMENT_REQUESTED");
+
+    /** The interest accrued and not yet repaid on the policy's loans being repaid. */
+    private BigDecimal interestOwedOn(String policyNumber, UUID tenantId) {
+        BigDecimal interest = BigDecimal.ZERO;
+        for (PolicyLoan loan : policyLoanRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId)) {
+            if ("DISBURSED".equals(loan.getStatus()) || "REPAYING".equals(loan.getStatus())) {
+                interest = interest.add(position(loan).interestOutstanding().max(BigDecimal.ZERO));
+            }
+        }
+        return interest;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public LoanLimitView loanLimit(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        tz.co.nlolo.lifeplatform.policy.api.LoanValueView value = policyApi.getLoanValue(policyNumber);
+        BigDecimal borrowed = BigDecimal.ZERO;
+        BigDecimal interest = BigDecimal.ZERO;
+        for (PolicyLoan loan : policyLoanRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId)) {
+            if ("DISBURSED".equals(loan.getStatus()) || "REPAYING".equals(loan.getStatus())) {
+                LoanPosition p = position(loan);
+                borrowed = borrowed.add(p.principalOutstanding().max(BigDecimal.ZERO));
+                interest = interest.add(p.interestOutstanding().max(BigDecimal.ZERO));
+            } else if (BEING_TAKEN.contains(loan.getStatus())) {
+                borrowed = borrowed.add(loan.getPrincipalAmount());
+            }
+        }
+        // The interest owed comes off what may still be borrowed (2026-11-07): the limit is on what the policy owes, not
+        // only on what it was lent. The policy's own figure is the one reserveLoanValue checks, so the two never disagree.
+        BigDecimal canBorrow = value.lends() ? value.available().subtract(interest).max(BigDecimal.ZERO) : BigDecimal.ZERO;
+        return new LoanLimitView(policyNumber, value.currency(), value.lends(), value.value(),
+            value.maxLoanToValuePercent(), value.limit(), borrowed, interest, canBorrow.setScale(2, java.math.RoundingMode.DOWN),
+            new BigDecimal(referenceDataApi.getValue("TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE", "TZ")));
+    }
+
     @Override
     @Transactional
     public LoanView applyConfirmedRepayment(UUID loanId, BigDecimal amount, String currency, String paymentReference,
@@ -274,6 +317,13 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
                 loan.markSettled();
             }
             policyLoanRepository.save(loan);
+            // The principal this repays stops being pledged against the policy's value (2026-11-07). Before this only a
+            // reversed or failed loan released it, so a loan repaid in full still blocked surrender, held back savings
+            // withdrawals and refused the next loan.
+            BigDecimal principalPart = applied.subtract(interestPart);
+            if (principalPart.signum() > 0) {
+                policyApi.releaseEncumbrance(loan.getPolicyNumber(), principalPart, currency);
+            }
             // Published on every repayment, partial ones included: each is cash arriving. loanTransactionId is the
             // posting's idempotency key -- unique per repayment, stable across a redelivery (M9: keyed on loanId, the
             // second partial repayment was dropped as a false redelivery and the loan receivable never cleared).
