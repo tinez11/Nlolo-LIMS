@@ -538,6 +538,16 @@ class UnderwritingContractTest {
                     """))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        // Off the 0-100 scale the engine's bands are on (2026-11-07): refused, and nothing is recorded.
+        mockMvc.perform(post("/underwriting/cases/" + caseId + "/assessments")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_UNDERWRITER"), new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"assessmentType":"MEDICAL","findings":"Routine","riskScore":500}
+                    """))
+            .andExpect(status().isBadRequest());
     }
 
     /**

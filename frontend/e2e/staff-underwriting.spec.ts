@@ -83,7 +83,9 @@ test.describe('staff underwriting', () => {
     // Advice, and nothing more: no decision, and the case is still open for evidence.
     await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Decision' })).not.toBeVisible();
-    await expect(page.getByRole('button', { name: 'Submit assessment' })).toBeVisible();
+    // Still open for evidence (2026-11-07): the form closes into a receipt, and another assessment is one click away.
+    await expect(page.getByText('Assessment recorded')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add another assessment' })).toBeVisible();
 
     // Separation of duties. This identity opened the case and wrote its evidence, so the
     // decision is not theirs: no form, and a sentence saying who it belongs to.
@@ -382,7 +384,8 @@ test.describe('staff underwriting', () => {
     await openCaseForAmina(page);
 
     await expect(page.getByRole('heading', { name: 'Declarations' })).toBeVisible();
-    await expect(page.getByText(/Nothing declared on this case/)).toBeVisible({ timeout: 15_000 });
+    // The empty state's own words since 9528ab00 (the test still waited for the old ones).
+    await expect(page.getByText('No proposal answers were recorded on this case.')).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole('button', { name: 'Add a declaration' }).click();
     await page.getByLabel('Question code').fill('Q1');

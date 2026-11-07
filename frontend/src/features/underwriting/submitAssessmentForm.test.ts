@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { submitAssessmentFormSchema, toApiRequest } from './submitAssessmentForm';
+import { scoreRecommendation, submitAssessmentFormSchema, toApiRequest } from './submitAssessmentForm';
 
 const valid = () => ({
   assessmentType: 'MEDICAL' as const,
@@ -44,6 +44,29 @@ describe('submitAssessmentFormSchema', () => {
     expect(submitAssessmentFormSchema.safeParse({ ...valid(), riskScore: '-5' }).success).toBe(
       false,
     );
+  });
+
+  // 2026-11-07: the scale is 0 to 100 (the engine's bands), and 500 used to be accepted.
+  it('keeps the score on its 0 to 100 scale', () => {
+    expect(submitAssessmentFormSchema.safeParse({ ...valid(), riskScore: '100' }).success).toBe(true);
+    const over = submitAssessmentFormSchema.safeParse({ ...valid(), riskScore: '101' });
+    expect(over.success).toBe(false);
+    expect(over.error?.issues[0]?.message).toBe('A risk score is from 0 to 100');
+  });
+});
+
+describe('scoreRecommendation', () => {
+  it('says what each band recommends, in the engine’s own cut-offs', () => {
+    expect(scoreRecommendation('')).toBeNull();
+    expect(scoreRecommendation('abc')).toBeNull();
+    expect(scoreRecommendation('0')).toBe('Accept at the standard price');
+    expect(scoreRecommendation('39.9')).toBe('Accept at the standard price');
+    expect(scoreRecommendation('40')).toBe('Accept with +5% premium'); // the 5% floor
+    expect(scoreRecommendation('60')).toBe('Accept with +20% premium');
+    expect(scoreRecommendation('52.5')).toBe('Accept with +12.5% premium');
+    expect(scoreRecommendation('75')).toBe('Decline');
+    expect(scoreRecommendation('90')).toBe('Postpone for more evidence');
+    expect(scoreRecommendation('101')).toBeNull();
   });
 });
 

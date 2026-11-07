@@ -1,4 +1,4 @@
-import { Plus, X } from 'lucide-react';
+import { Plus, Undo2, X } from 'lucide-react';
 import { useState } from 'react';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
@@ -23,10 +23,19 @@ const blank = (): ReturnReason => ({ category: 'PERSONAL_DETAILS', problem: '', 
  * hears of it.
  */
 export function ReturnToAgentPanel({ caseId, onReturned }: { caseId: string; onReturned: () => void }) {
+  // A button until it is wanted (2026-11-07): most cases are decided, not returned, and the open form sat on every one.
+  const [open, setOpen] = useState(false);
   const [reasons, setReasons] = useState<ReturnReason[]>([blank()]);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
+
+  function close() {
+    setOpen(false);
+    setReasons([blank()]);
+    setNote('');
+    setError(null);
+  }
 
   const complete = reasons.every((r) => r.problem.trim() && r.change.trim());
   const set = (i: number, patch: Partial<ReturnReason>) =>
@@ -43,6 +52,17 @@ export function ReturnToAgentPanel({ caseId, onReturned }: { caseId: string; onR
     } finally {
       setBusy(false);
     }
+  }
+
+  if (!open) {
+    return (
+      <div>
+        <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
+          <Undo2 aria-hidden />
+          Return to the agent
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -94,9 +114,14 @@ export function ReturnToAgentPanel({ caseId, onReturned }: { caseId: string; onR
           <Textarea className="min-h-12" value={note} onChange={(e) => setNote(e.target.value)} />
         </FormField>
         {error && <InlineError error={error} />}
-        <Button type="button" variant="outline" disabled={!complete} pending={busy} onClick={() => void submit()}>
-          Return to the agent
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="primary" disabled={!complete} pending={busy} onClick={() => void submit()}>
+            Return to the agent
+          </Button>
+          <Button type="button" variant="ghost" disabled={busy} onClick={close}>
+            Cancel
+          </Button>
+        </div>
       </div>
     </Panel>
   );

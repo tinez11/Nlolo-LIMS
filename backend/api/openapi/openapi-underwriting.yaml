@@ -1406,7 +1406,14 @@ components:
       properties:
         assessmentType: { type: string, enum: [MEDICAL, FINANCIAL, OCCUPATIONAL] }
         findings: { type: string }
-        riskScore: { type: [number, "null"] }
+        riskScore:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 100
+          description: >-
+            0 to 100 (2026-11-07). The rules engine's bands: under 40 accept, 40-74 load (1% per point above 40,
+            at least 5%), 75-89 decline, 90 and over postpone for more evidence -- placeholder values pending the
+            actuary's own.
     DecideRequest:
       type: object
       required: [outcome, reason]
