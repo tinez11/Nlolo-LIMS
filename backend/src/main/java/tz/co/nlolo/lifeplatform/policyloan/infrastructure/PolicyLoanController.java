@@ -38,10 +38,14 @@ public class PolicyLoanController {
 
     private final PolicyLoanApi policyLoanApi;
     private final PolicyApi policyApi;
+    /** Looked up when read: a test that mocks PolicyLoanApi leaves no netting bean, and nothing else here needs one. */
+    private final org.springframework.beans.factory.ObjectProvider<tz.co.nlolo.lifeplatform.policy.api.LoanNetting> loanNetting;
 
-    public PolicyLoanController(PolicyLoanApi policyLoanApi, PolicyApi policyApi) {
+    public PolicyLoanController(PolicyLoanApi policyLoanApi, PolicyApi policyApi,
+            org.springframework.beans.factory.ObjectProvider<tz.co.nlolo.lifeplatform.policy.api.LoanNetting> loanNetting) {
         this.policyLoanApi = policyLoanApi;
         this.policyApi = policyApi;
+        this.loanNetting = loanNetting;
     }
 
     @PostMapping("/policies/{policyNumber}/loans")
@@ -106,6 +110,26 @@ public class PolicyLoanController {
     @PreAuthorize("@access.can('loans.manage')")
     public ResponseEntity<LoanResponseDto> evaluateForcedLapse(@PathVariable UUID loanId) {
         return ResponseEntity.ok(LoanResponseDto.from(policyLoanApi.evaluateForcedLapse(loanId)));
+    }
+
+    /**
+     * What a payout repaid of the policy's loans (2026-11-07, E7) -- the claim, maturity or surrender screen's "Loan
+     * repaid from this payout" line. Zero when it repaid nothing. Staff who can see the payout's area may read it.
+     */
+    @GetMapping("/payouts/{payout}/{payoutRef}/loan-repaid")
+    @PreAuthorize("@access.canAny('accounts.view', 'claims.view', 'payouts.view', 'policies.view')")
+    public ResponseEntity<java.util.Map<String, Object>> loanRepaidFromPayout(@PathVariable String payout,
+                                                                             @PathVariable String payoutRef) {
+        tz.co.nlolo.lifeplatform.policy.api.LoanNetting.Payout kind;
+        try {
+            kind = tz.co.nlolo.lifeplatform.policy.api.LoanNetting.Payout.valueOf(payout);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("A payout is CLAIM, MATURITY, SURRENDER or ACCOUNT, not " + payout);
+        }
+        var netting = loanNetting.getIfAvailable();
+        BigDecimal repaid = netting == null ? BigDecimal.ZERO : netting.nettedFor(kind, payoutRef);
+        return ResponseEntity.ok(java.util.Map.of("repaid",
+            new MoneyDto(repaid.setScale(2, java.math.RoundingMode.HALF_EVEN).toPlainString(), "TZS")));
     }
 
     /** A loan's history, oldest first (2026-11-07): paid out, interest added, repaid, repaid out of a payout. */

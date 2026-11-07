@@ -832,6 +832,8 @@ const AGENTS_SCREENS: Screen[] = [
     reach: { group: 'my-business', label: 'Policies', icon: FileText },
   },
   { path: 'policies/:policyNumber', element: <PolicyDetailPage realm="agents" />, reach: 'drill-in' },
+  // The agent console's Deposit (2026-11-07): the one Deposit page, asking the payer's phone for a premium.
+  { path: 'deposit', element: <NewReceiptPage realm="agents" />, reach: 'drill-in' },
   {
     path: 'claims',
     element: (

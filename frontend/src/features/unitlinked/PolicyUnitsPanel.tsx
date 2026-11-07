@@ -250,7 +250,7 @@ function U2Actions({
         />
       )}
       {inForce && offered.topUps && plan.options && (
-        <TopUpForm policyNumber={policyNumber} fundCodes={fundCodes} options={plan.options} currency={currency} />
+        <TopUpForm policyNumber={policyNumber} options={plan.options} currency={currency} />
       )}
       <StatementsPanel policyNumber={policyNumber} />
     </>

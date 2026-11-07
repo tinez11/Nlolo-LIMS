@@ -15,6 +15,7 @@ import type {
   UnitLinkedChoiceView,
   UnitLinkedReconciliationView,
   UnitLinkedTermsView,
+  UnitLinkedReceivedTopUpRequest,
   UnitLinkedTopUpRequest,
   UnitLinkedTopUpView,
   UnitLinkedWithdrawalView,
@@ -159,6 +160,15 @@ export function requestTopUp(
   attempt: MutationAttempt,
 ): Promise<UnitLinkedTopUpView> {
   return post<UnitLinkedTopUpView>(`/policies/${enc(policyNumber)}/top-ups`, body, { headers: attempt.headers() });
+}
+
+/** Money already received into the funds -- finance's; a second person confirms it (2026-11-07). */
+export function recordReceivedTopUp(
+  policyNumber: string,
+  body: UnitLinkedReceivedTopUpRequest,
+  attempt: MutationAttempt,
+): Promise<UnitLinkedTopUpView> {
+  return post<UnitLinkedTopUpView>(`/policies/${enc(policyNumber)}/top-ups/received`, body, { headers: attempt.headers() });
 }
 
 export function listStatements(policyNumber: string): Promise<UnitStatementView[]> {

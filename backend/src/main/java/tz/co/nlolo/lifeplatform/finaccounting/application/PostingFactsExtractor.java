@@ -97,7 +97,7 @@ final class PostingFactsExtractor {
         Map.entry("unitlinked.SwitchExecuted", new EventShape(Set.of("fee"), Set.of())),
         Map.entry("unitlinked.WithdrawalPriced", new EventShape(Set.of("proceeds", "surrenderCharge"), Set.of("part"))),
         Map.entry("unitlinked.SurrenderCharged", amount()),
-        Map.entry("unitlinked.TopUpReceived", amount()),
+        Map.entry("unitlinked.TopUpReceived", new EventShape(Set.of(AMOUNT), Set.of("receiptMethod"))),
         Map.entry("unitlinked.AdjustmentCollected", amount()),
         Map.entry("unitlinked.AdjustmentWaived", amount("direction")));
 
@@ -432,8 +432,14 @@ final class PostingFactsExtractor {
                 yield List.of(facts(type, ref, policy, currency, today,
                     Map.of("returned", returned, "allocationCharge", charge, "total", returned.add(charge)), ul));
             }
+            // A top-up names the account it reached (2026-11-07): mobile money, or the bank a receipt by hand went to.
+            case "unitlinked.TopUpReceived" -> {
+                Map<String, String> attrs = new HashMap<>(ul);
+                putIfPresent(attrs, "receiptMethod", p.get("receiptMethod"));
+                yield List.of(facts(type, ref, policy, currency, today, Map.of(AMOUNT, decimal(p.get("amount"))), attrs));
+            }
             case "unitlinked.ChargeRefunded", "unitlinked.UnitsReinvested", "unitlinked.SurrenderCharged",
-                 "unitlinked.TopUpReceived", "unitlinked.AdjustmentCollected" ->
+                 "unitlinked.AdjustmentCollected" ->
                 List.of(facts(type, ref, policy, currency, today, Map.of(AMOUNT, decimal(p.get("amount"))), ul));
             case "unitlinked.PayoutPaid" -> {
                 Map<String, String> attrs = withPurpose(p, ul);

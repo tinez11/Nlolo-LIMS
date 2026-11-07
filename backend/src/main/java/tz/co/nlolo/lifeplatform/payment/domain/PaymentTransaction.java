@@ -233,8 +233,17 @@ public class PaymentTransaction {
                                                    String payerRef, java.math.BigDecimal amount, String currency,
                                                    String topUpId, String policyNumber, java.time.LocalDate receivedOn,
                                                    String recordedBy) {
+        return receivedTopUp(tenantId, idempotencyKey, method, reference, payerRef, amount, currency, topUpId, policyNumber,
+            receivedOn, recordedBy, TOP_UP);
+    }
+
+    /** As above, for a savings account (ACCOUNT_TOP_UP) or a unit-linked policy's funds (UL_TOP_UP, 2026-11-07). */
+    public static PaymentTransaction receivedTopUp(UUID tenantId, String idempotencyKey, String method, String reference,
+                                                   String payerRef, java.math.BigDecimal amount, String currency,
+                                                   String topUpId, String policyNumber, java.time.LocalDate receivedOn,
+                                                   String recordedBy, String purpose) {
         PaymentTransaction t = new PaymentTransaction(tenantId, idempotencyKey, payerRef, amount, currency, topUpId,
-            TOP_UP);
+            purpose);
         t.method = method;
         t.gatewayReference = reference;
         t.policyNumber = policyNumber;
@@ -248,9 +257,12 @@ public class PaymentTransaction {
 
     private static final String TOP_UP = "ACCOUNT_TOP_UP";
 
-    /** A savings deposit recorded by hand: refusing it must fail the top-up waiting on it, as a refused request does. */
+    /**
+     * A savings or fund deposit recorded by hand: refusing it must fail the top-up waiting on it, as a refused request
+     * does.
+     */
     public boolean isSavingsDeposit() {
-        return TOP_UP.equals(purpose);
+        return TOP_UP.equals(purpose) || "UL_TOP_UP".equals(purpose);
     }
 
     /** The second person confirms it: the money now counts, and the invoice is paid from it. */

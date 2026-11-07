@@ -90,6 +90,37 @@ paths:
               schema: { $ref: '#/components/schemas/LoanLimit' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /payouts/{payout}/{payoutRef}/loan-repaid:
+    get:
+      summary: What a payout repaid of the policy's loans -- zero when nothing
+      description: >
+        2026-11-07, decision E7: a claim, maturity or surrender repays the policy's loans first. This is the screen's
+        "Loan repaid from this payout" line. payoutRef is the claim id, payout instalment id, surrender request id, or
+        for an account the deposit period id or "<policy>:term-maturity".
+      security:
+        - staffAuth: []
+      parameters:
+        - name: payout
+          in: path
+          required: true
+          schema: { type: string, enum: [CLAIM, MATURITY, SURRENDER, ACCOUNT] }
+        - name: payoutRef
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [repaid]
+                properties:
+                  repaid: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /loans/{loanId}/history:
     get:
       summary: A loan's history, oldest first -- paid out, interest added, repaid, repaid out of a payout

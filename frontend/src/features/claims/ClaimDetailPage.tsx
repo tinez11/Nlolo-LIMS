@@ -6,6 +6,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { readIdentity, staffRoles } from '@/auth/claims';
 import { Field } from '@/components/Field';
+import { LoanRepaidField } from '@/features/policies/LoanRepaidField';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyName } from '@/components/PartyName';
 import { RecordTabs } from '@/components/RecordTabs';
@@ -150,6 +151,10 @@ export function ClaimDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
                 <dl className="px-4 pb-2">
                   {claim.approvedAmount && (
                     <Field label="Approved amount" value={formatMoney(claim.approvedAmount)} emphasis />
+                  )}
+                  {/* The policy's loans are repaid out of the claim first (2026-11-07, E7). Staff only: its endpoint. */}
+                  {claim.approvedAmount && realm === 'staff' && (
+                    <LoanRepaidField payout="CLAIM" payoutRef={claim.claimId} />
                   )}
                   <Field
                     label="Claimant"

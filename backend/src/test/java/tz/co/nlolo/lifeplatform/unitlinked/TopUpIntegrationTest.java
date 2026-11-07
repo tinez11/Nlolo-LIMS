@@ -135,6 +135,34 @@ class TopUpIntegrationTest {
             .satisfies(t -> assertThat(t.status()).isEqualTo("RECEIVED"));
     }
 
+    @Autowired private tz.co.nlolo.lifeplatform.payment.application.Receipts receipts;
+
+    /**
+     * 2026-11-07, the user: every method on the one Deposit page. Cash already received into the funds is receipted
+     * for a second finance person; only their confirmation buys units.
+     */
+    @Test
+    void cashReceivedIntoTheFundsWaitsForASecondPersonThenBuysUnits() {
+        Sold s = invested(true);
+        String reference = "RC-" + UUID.randomUUID();
+        TopUpView recorded = asTenant(s.tenant(), () -> api.requestTopUp(s.policyNumber(),
+            new TopUpInput(new BigDecimal("200000.00"), null, List.of(), "CASH", reference, TODAY), "finance-one",
+            UUID.randomUUID().toString()));
+
+        assertThat(jdbc.queryForObject("SELECT status || ' ' || method FROM payment.payment_transaction"
+            + " WHERE purpose = 'UL_TOP_UP' AND source_ref = ?", String.class, recorded.topUpId().toString()))
+            .isEqualTo("AWAITING_APPROVAL CASH");
+        assertThat(asTenant(s.tenant(), () -> api.units(s.policyNumber())).pending()).isEmpty();
+
+        var receipt = asTenant(s.tenant(), () -> receipts.awaitingApproval()).stream()
+            .filter(r -> reference.equals(r.reference())).findFirst().orElseThrow();
+        asTenant(s.tenant(), () -> receipts.approve(receipt.receiptId(), "finance-two"));
+
+        assertThat(asTenant(s.tenant(), () -> api.units(s.policyNumber())).pending())
+            .extracting(o -> o.fundCode() + ":" + o.amount().toPlainString())
+            .containsExactlyInAnyOrder("EQ1:117600.00", "BD1:78400.00");
+    }
+
     @Test
     void aTopUpWhoseMoneyArrivesAfterThePolicyFrozeGoesBackWithTheExit() {
         Sold s = invested(true);

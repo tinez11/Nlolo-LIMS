@@ -35,7 +35,8 @@ export function methodOf(value: string): { value: string; label: string; referen
 }
 
 /** What a deposit pays (2026-11-07): the policy's premiums, a loan, or the savings account. */
-export type PaysFor = 'PREMIUM' | 'LOAN' | 'SAVINGS';
+/** FUNDS (2026-11-07): a unit-linked policy's top-up, buying units. */
+export type PaysFor = 'PREMIUM' | 'LOAN' | 'SAVINGS' | 'FUNDS';
 
 /**
  * The one Deposit page (2026-11-07, the user: one place, every method, and the method decides what happens behind).
@@ -45,7 +46,7 @@ export type PaysFor = 'PREMIUM' | 'LOAN' | 'SAVINGS';
  */
 export const receiptFormSchema = z.object({
   policyNumber: z.string().trim().min(1, 'Enter the policy number'),
-  paysFor: z.enum(['PREMIUM', 'LOAN', 'SAVINGS']),
+  paysFor: z.enum(['PREMIUM', 'LOAN', 'SAVINGS', 'FUNDS']),
   loanId: z.string(),
   method: z.enum(['MOBILE_MONEY', 'CASH', 'BANK_DEPOSIT', 'CHEQUE', 'LIPA_NUMBER', 'TANQR'], {
     message: 'Choose how it is being paid',

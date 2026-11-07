@@ -365,6 +365,14 @@ class PolicyLoanContractTest {
         mockMvc.perform(get("/loans/" + loanId + "/history").with(staffOf(fixture.tenantId())))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        // A payout that repaid nothing says so, rather than 404: the screen shows its line only above zero.
+        mockMvc.perform(get("/payouts/CLAIM/" + UUID.randomUUID() + "/loan-repaid").with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.repaid.amount").value("0.00"));
+        mockMvc.perform(get("/payouts/BONUS/x/loan-repaid").with(staffOf(fixture.tenantId())))
+            .andExpect(status().isBadRequest());
     }
 
     @Test

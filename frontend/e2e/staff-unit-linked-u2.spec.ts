@@ -204,11 +204,17 @@ test.describe('unit-linked U2', () => {
       withdrawal.getByText('This withdrawal would leave about 0.00 TZS; at least 500,000.00 TZS must stay in the policy'),
     ).toBeVisible({ timeout: 15_000 });
 
-    // ---- A top-up, collected through the mock rail once.
+    // ---- A top-up, on the one Deposit page For: Funds (2026-11-07), collected through the mock rail once.
+    await page.getByRole('region', { name: 'Top-up' }).getByRole('link', { name: 'Deposit' }).click();
+    await expect(page.getByLabel('For', { exact: true })).toHaveValue('FUNDS');
+    await page.getByLabel('How is it being paid?').selectOption('MOBILE_MONEY');
+    await page.getByLabel('Phone number').fill('+255700000700');
+    await page.getByLabel(/^Amount/).fill('200000');
+    await page.getByRole('button', { name: 'Send request' }).click();
+    await expect(page.getByText('Mobile-money request sent')).toBeVisible({ timeout: 60_000 });
+    await page.goto(policyUrl);
+    await page.getByRole('tab', { name: 'Units' }).click();
     const topUp = page.getByRole('region', { name: 'Top-up' });
-    await topUp.getByLabel('Amount (TZS)').fill('200000');
-    await topUp.getByLabel('Collect from').fill('+255700000700');
-    await topUp.getByRole('button', { name: 'Request top-up' }).click();
     await expect(topUp.getByRole('list', { name: 'Top-ups' }).getByRole('listitem')).toHaveCount(1, { timeout: 15_000 });
     await expect(topUp.getByRole('list', { name: 'Top-ups' })).toContainText('TZS 200,000.00 from +255700000700');
     // Received only once a second finance person confirms the money came (2026-10-27), like the first premium above.

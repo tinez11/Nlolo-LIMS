@@ -46,7 +46,9 @@ class PaymentEventListener {
                 UUID topUpId = UUID.fromString(String.valueOf(p.get("sourceRef")));
                 if (confirmed) {
                     Object at = p.get("confirmedAt");
-                    topUps.onConfirmed(topUpId, at == null ? java.time.Instant.now() : java.time.Instant.parse(String.valueOf(at)));
+                    Object method = p.get("method");
+                    topUps.onConfirmed(topUpId, at == null ? java.time.Instant.now() : java.time.Instant.parse(String.valueOf(at)),
+                        method == null ? null : String.valueOf(method));
                 } else {
                     topUps.onFailed(topUpId);
                 }

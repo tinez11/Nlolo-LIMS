@@ -1,5 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { canAny } from '@/auth/access';
 import { Controller, useForm } from 'react-hook-form';
 import type { UnitLinkedOptionsView, UnitLinkedWithdrawalView } from '@/api/types';
 import { downloadUnitStatement } from '@/api/unitlinked';
@@ -13,7 +15,6 @@ import { approveWithdrawalGates, eatNow } from '@/gates/unitLinkedGates';
 import type { ApiError } from '@/lib/apiError';
 import { formatDate, formatInstant } from '@/lib/dates';
 import { saveBlob } from '@/lib/download';
-import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { formatMoney } from '@/lib/money';
 import { useUnitLinkedStore } from '@/store/unitLinkedStore';
 import {
@@ -22,14 +23,11 @@ import {
   switchSchema,
   toSplit,
   toSwitchRequest,
-  toTopUpRequest,
   toWithdrawalRequest,
-  topUpSchema,
   withdrawalSchema,
   type SplitValues,
   type StatementValues,
   type SwitchValues,
-  type TopUpValues,
   type WithdrawalValues,
 } from './u2Forms';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
@@ -339,66 +337,33 @@ function WithdrawalCard({
 
 // ---- Top-up ----
 
+/**
+ * Top-ups: taken on the one Deposit page, For: Funds (2026-11-07, the user: every method in one place) -- mobile money
+ * asks the payer's phone, money received by hand waits for a second finance person. Here, what the version takes and
+ * the top-ups so far.
+ */
 export function TopUpForm({
   policyNumber,
-  fundCodes,
   options,
   currency,
 }: {
   policyNumber: string;
-  fundCodes: string[];
   options: UnitLinkedOptionsView;
   currency: string;
 }) {
   const topUps = useUnitLinkedStore((s) => s.topUps[policyNumber]);
-  const request = useUnitLinkedStore((s) => s.requestTopUp);
-  const acting = useUnitLinkedStore((s) => s.acting[`topUp.${policyNumber}`]);
-  // One key per intent: a retry after a failure or a timeout reuses it, so the money is collected once.
-  const [attempt, setAttempt] = useState<MutationAttempt | null>(null);
   const minimum = options.minimumTopUp ?? null;
-  const form = useForm<TopUpValues>({
-    ...VALIDATE_ON_TOUCH,
-    resolver: zodResolver(topUpSchema(minimum, currency)),
-    defaultValues: { amount: '', payerRef: '', split: fundCodes.map((fundCode) => ({ fundCode, percent: '' })) },
-  });
-  const submit = form.handleSubmit(async (v) => {
-    const current = attempt ?? startMutation();
-    setAttempt(current);
-    await request(policyNumber, toTopUpRequest(v), current);
-    if (useUnitLinkedStore.getState().acting[`topUp.${policyNumber}`]?.status === 'success') {
-      setAttempt(null);
-      form.reset();
-    }
-  });
   return (
     <section aria-label="Top-up" className={sectionClass}>
       <Heading
         title="Top-up"
-        note={`At least ${formatMoney({ amount: String(minimum ?? 0), currencyCode: currency })}. Collected from the payer; ${String(options.topUpAllocationPercent ?? '')}% of it buys units at the first price after the money arrives.`}
+        note={`At least ${formatMoney({ amount: String(minimum ?? 0), currencyCode: currency })}. ${String(options.topUpAllocationPercent ?? '')}% of it buys units, by the policy's split, at the first price after the money is confirmed.`}
       />
-      {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
-      <form aria-label="Request a top-up" className="space-y-2" onSubmit={(e) => void submit(e)}>
-        <div className="flex flex-wrap gap-3">
-          <FormField required label={`Amount (${currency})`} error={form.formState.errors.amount?.message}>
-            <Input inputSize="sm" inputMode="decimal" {...form.register('amount')} />
-          </FormField>
-          <FormField required label="Collect from" error={form.formState.errors.payerRef?.message}>
-            <Input inputSize="sm" placeholder="+255712345678" {...form.register('payerRef')} />
-          </FormField>
-        </div>
-        <p className="text-xs text-muted-foreground">Its own split (optional; leave empty for the policy&apos;s split):</p>
-        <div className="flex flex-wrap gap-3">
-          {fundCodes.map((code, i) => (
-            <FormField key={code} label={`Top-up into ${code} (%)`}>
-              <Input inputSize="sm" inputMode="numeric" className="w-20" {...form.register(`split.${i}.percent`)} />
-            </FormField>
-          ))}
-        </div>
-        <ArrayError error={form.formState.errors.split} />
-        <Button type="submit" size="sm" disabled={acting?.status === 'loading'}>
-          {attempt ? 'Retry top-up' : 'Request top-up'}
+      {canAny('accounts.transact', 'collections.manage') && (
+        <Button asChild size="sm" variant="outline">
+          <Link to={`/staff/receipts/new?for=FUNDS&policy=${encodeURIComponent(policyNumber)}&from=policy`}>Deposit</Link>
         </Button>
-      </form>
+      )}
       {(topUps?.data?.length ?? 0) > 0 && (
         <ul aria-label="Top-ups" className="space-y-0.5 text-xs text-muted-foreground">
           {topUps?.data?.map((t) => (

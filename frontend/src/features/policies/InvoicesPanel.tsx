@@ -14,22 +14,14 @@ import { ConfirmAct } from '@/components/ConfirmAct';
 import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
-import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { compareAmounts, formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectDetail,
   selectInvoices,
-  selectRequestingPayment,
   selectWaivingInvoice,
   usePolicyStore,
 } from '@/store/policyStore';
-import {
-  blankRequestPaymentForm,
-  requestPaymentFormSchema,
-  toApiRequest as toPaymentApiRequest,
-  type RequestPaymentFormValues,
-} from './requestPaymentForm';
 import { hasMovement, owesSomething } from './invoiceReconciliation';
 import { exitReasonLabel } from './memberStanding';
 import { useInvoiceReconciliation, type CreditLine } from './useInvoiceReconciliation';
@@ -64,11 +56,8 @@ import { useReceiptStore } from '@/store/receiptStore';
  */
 export function InvoicesPanel({
   policyNumber,
-  canRequestPayment = false,
 }: {
   policyNumber: string;
-  /** Who may ask a payer's phone for an invoice -- the endpoint's rule, decided by the console that shows it. */
-  canRequestPayment?: boolean;
 }) {
   const loadInvoices = usePolicyStore((s) => s.loadInvoices);
   const invoices = usePolicyStore(selectInvoices(policyNumber));
@@ -148,7 +137,6 @@ export function InvoicesPanel({
           key={invoice.invoiceId ?? JSON.stringify(invoice)}
           policyNumber={policyNumber}
           invoice={invoice}
-          canRequestPayment={canRequestPayment}
           credits={reconciliation.creditsByInvoice[invoice.invoiceId ?? ''] ?? []}
           onRefundDecided={reconciliation.reload}
           file={
@@ -167,23 +155,20 @@ export function InvoicesPanel({
 function InvoiceRow({
   policyNumber,
   invoice,
-  canRequestPayment,
   credits,
   file,
   onRefundDecided,
 }: {
   policyNumber: string;
   invoice: InvoiceView;
-  canRequestPayment: boolean;
   credits: CreditLine[];
   file: EnrolmentSubmissionView | null;
   onRefundDecided: () => void;
 }) {
-  const [action, setAction] = useState<'waive' | 'payment' | null>(null);
+  const [action, setAction] = useState<'waive' | null>(null);
   // Mirrors the endpoint exactly: REALM_STAFF and (FINANCE_OFFICER or ADMIN).
   const canWaive = can('collections.manage');
   const invoiceId = invoice.invoiceId ?? '';
-  const requested = usePolicyStore(selectRequestingPayment(invoiceId)).status === 'success';
   // What has been recorded against this invoice and still waits for a second person (2026-10-28). Without it a
   // recorded receipt showed nowhere here, the invoice still read Due, and POL-C0B3B81A was receipted twice.
   const loadWaiting = useReceiptStore((s) => s.loadWaiting);
@@ -193,10 +178,6 @@ function InvoiceRow({
   useEffect(() => {
     if (invoiceId && owing && can('collections.view')) void loadWaiting(invoiceId);
   }, [invoiceId, owing, loadWaiting]);
-  const owed = invoice.balanceDue ?? invoice.amount;
-  const waitingTotal = waiting.reduce((sum, r) => sum + Number(r.amount.amount), 0);
-  // Covered once what waits reaches what is owed: another receipt would be refused, so it is not offered.
-  const covered = waiting.length > 0 && owed != null && waitingTotal >= Number(owed.amount);
 
   return (
     <div className="px-4 py-3">
@@ -244,14 +225,6 @@ function InvoiceRow({
         <LenderRefundLine key={credit.creditId} credit={credit} onDecided={onRefundDecided} />
       ))}
 
-      {/* Accepted is not paid (2026-10-27): with no live mobile-money integration yet, finance confirms the money
-          like any receipt, and only that pays the invoice. */}
-      {requested && action === null && (
-        <p className="mt-0.5 text-xs text-muted-foreground" role="status">
-          Requested from the payer’s phone. Finance confirms it when the money arrives, and the invoice is paid then.
-        </p>
-      )}
-
       {waiting.length > 0 && <WaitingReceipts receipts={waiting} />}
 
       {invoice.gracePeriodEndsAt && (
@@ -260,32 +233,13 @@ function InvoiceRow({
         </p>
       )}
 
-      {/* Hidden while a form is open, not merely redundant: "Request payment" is
-          otherwise both this toggle's label and the open form's own submit
-          button label, an ambiguous duplicate on screen and for any test
-          querying by accessible name. */}
-      {invoiceId && action === null && (
+      {/* Every deposit, mobile money included, is taken on the one Deposit page (2026-11-07): an invoice row only
+          waives. Waiving is finance-gated server-side, so this only avoids offering a button that would 403. */}
+      {invoiceId && action === null && canWaive && (
         <div className="mt-1.5 flex items-center gap-1.5">
-          {/* Waiving is finance-gated server-side, so this only avoids offering a button that
-              can now do nothing but 403. Requesting payment follows its endpoint too: a customer or
-              an agent may ask, staff only with collections or servicing -- canRequestPayment. */}
-          {canWaive && (
-            <Button size="sm" variant="ghost" className="-ml-2" onClick={() => setAction('waive')}>
-              Waive
-            </Button>
-          )}
-          {/* Only while something is owed. The request asks for the balance due, and the
-              backend refuses one on an invoice payments and credits already cover. */}
-          {owing && !covered && canRequestPayment && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className={canWaive ? undefined : '-ml-2'}
-              onClick={() => setAction('payment')}
-            >
-              Request payment
-            </Button>
-          )}
+          <Button size="sm" variant="ghost" className="-ml-2" onClick={() => setAction('waive')}>
+            Waive
+          </Button>
         </div>
       )}
 
@@ -293,13 +247,6 @@ function InvoiceRow({
         <WaiveForm
           policyNumber={policyNumber}
           invoice={invoice}
-          onDone={() => setAction(null)}
-        />
-      )}
-      {action === 'payment' && invoiceId && (
-        <MobileMoneyRequestForm
-          policyNumber={policyNumber}
-          invoiceId={invoiceId}
           onDone={() => setAction(null)}
         />
       )}
@@ -485,69 +432,6 @@ function WaiveForm({
   );
 }
 
-/**
- * Asks the payer’s phone for what the invoice owes. Money received some other way is a deposit, recorded on its
- * own page from the Balance panel (money movement step 5) -- not here.
- */
-function MobileMoneyRequestForm({
-  policyNumber,
-  invoiceId,
-  onDone,
-}: {
-  policyNumber: string;
-  invoiceId: string;
-  onDone: () => void;
-}) {
-  const requestPaymentForInvoice = usePolicyStore((s) => s.requestPaymentForInvoice);
-  const resetRequestPaymentForInvoice = usePolicyStore((s) => s.resetRequestPaymentForInvoice);
-  const requesting = usePolicyStore(selectRequestingPayment(invoiceId));
-  // Minted once per mount, reused across retries -- same idiom as every other
-  // MutationAttempt on this console. A genuinely new attempt (e.g. retrying
-  // with a fresh key after a decline) naturally gets one by reopening this
-  // form, which remounts it.
-  const [attempt] = useState<MutationAttempt>(() => startMutation());
-
-  useEffect(() => {
-    resetRequestPaymentForInvoice(invoiceId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoiceId]);
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<RequestPaymentFormValues>({
-    ...VALIDATE_ON_TOUCH,
-    resolver: zodResolver(requestPaymentFormSchema),
-    defaultValues: blankRequestPaymentForm(),
-  });
-
-  async function onSubmit(values: RequestPaymentFormValues) {
-    await requestPaymentForInvoice(policyNumber, invoiceId, toPaymentApiRequest(values), attempt);
-    if (usePolicyStore.getState().requestingPayment[invoiceId]?.status === 'success') onDone();
-  }
-
-  return (
-    <form className="mt-2 space-y-2 rounded-md border border-border p-2.5" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
-      <FormField required label="Payer reference" error={errors.payerRef?.message}>
-        <Input inputSize="sm" placeholder="The mobile-money number to ask" {...register('payerRef')} />
-      </FormField>
-
-      {requesting.status === 'error' && requesting.error && (
-        <InlineError error={requesting.error} />
-      )}
-
-      <div className="flex items-center gap-1.5">
-        <Button type="submit" size="sm" pending={requesting.status === 'loading'}>
-          Request payment
-        </Button>
-        <Button type="button" size="sm" variant="ghost" onClick={onDone}>
-          Cancel
-        </Button>
-      </div>
-    </form>
-  );
-}
 
 const REFUND_WORDS: Record<NonNullable<PremiumCreditView['refundStatus']>, string> = {
   AWAITING_APPROVAL: 'waiting for a second person to approve it',

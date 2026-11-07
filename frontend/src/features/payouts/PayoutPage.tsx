@@ -7,6 +7,7 @@ import type { PayoutInstalmentView, PayoutKind, ProofOfLifeMethod } from '@/api/
 import { readIdentity } from '@/auth/claims';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';
+import { LoanRepaidField } from '@/features/policies/LoanRepaidField';
 import { FormField } from '@/components/FormField';
 import { GatePanel } from '@/components/GatePanel';
 import { InlineError } from '@/components/InlineError';
@@ -127,6 +128,8 @@ export function PayoutPage() {
                 <Field label="Net paid" value={formatMoney(payout.netAmount)} emphasis />
               </>
             )}
+            {/* A maturity repays the policy's loans first (2026-11-07, E7). */}
+            {payout.kind === 'MATURITY' && <LoanRepaidField payout="MATURITY" payoutRef={payout.instalmentId} />}
             {payout.statusReason && <Field label="Why" value={payout.statusReason} />}
             <Field label="Payee" value={payout.payeeRef ?? '—'} />
             <Field label="Reviewed by" value={<StaffName subject={payout.reviewedBy} />} />

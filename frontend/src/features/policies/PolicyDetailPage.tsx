@@ -505,10 +505,17 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
             <Panel title="Policy schedule">
               <PolicyScheduleDownload policyNumber={policyNumber} />
             </Panel>
-            <Panel title="Invoices">
-              {/* Staff take every deposit, mobile money included, on the one Deposit page (2026-11-07): Balance or
-                  Account. The agent console keeps the invoice's own request until it has that page. */}
-              <InvoicesPanel policyNumber={policyNumber} canRequestPayment={!isStaff} />
+            {/* Every deposit is taken on the one Deposit page (2026-11-07): staff from Balance or Account, an agent from
+                here -- asking the payer's phone for the premium owed. No invoice row asks on its own any more. */}
+            <Panel
+              title="Invoices"
+              actions={!isStaff ? (
+                <Button asChild size="sm" variant="outline">
+                  <Link to={`/agents/deposit?policy=${encodeURIComponent(policyNumber)}`}>Deposit</Link>
+                </Button>
+              ) : undefined}
+            >
+              <InvoicesPanel policyNumber={policyNumber} />
             </Panel>
             <Panel
               title="Payment schedule"
