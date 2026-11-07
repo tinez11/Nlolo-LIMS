@@ -19,8 +19,8 @@ describe('clientActions', () => {
 
   it('records a deposit against the one policy a client holds, else opens their policies', () => {
     grantAccess('collections.manage');
-    expect(clientActions({ partyId: 'p-1' }, 'POL-1')[0]?.label).toBe('Record deposit');
-    expect(clientActions({ partyId: 'p-1' }, 'POL-1')[0]?.to).toBe('/staff/receipts/new?policy=POL-1');
+    expect(clientActions({ partyId: 'p-1' }, 'POL-1')[0]?.label).toBe('Deposit');
+    expect(clientActions({ partyId: 'p-1' }, 'POL-1')[0]?.to).toBe('/staff/receipts/new?policy=POL-1&from=policy');
     expect(clientActions({ partyId: 'p-1' })[0]?.to).toBe('/staff/parties/p-1?tab=policies');
   });
 
@@ -67,9 +67,9 @@ describe('policyActions', () => {
 
   it('offers a tab only where the policy has it', () => {
     grantAccess('accounts.transact', 'loans.manage', 'policies.service');
-    expect(labels(policyActions({ policyNumber: 'POL-1' }, ['overview'], false))).toEqual([]);
+    expect(labels(policyActions({ policyNumber: 'POL-1' }, ['overview'], false))).toEqual(['Deposit']);
     expect(labels(policyActions({ policyNumber: 'POL-1' }, ['account', 'loans', 'beneficiaries'], false)))
-      .toEqual(['Change beneficiaries', 'Withdrawal', 'Loan']);
+      .toEqual(['Deposit', 'Change beneficiaries', 'Withdraw', 'Loan']);
   });
 
   it('opens surrender and reinstatement at their panels, only where the status allows them', () => {

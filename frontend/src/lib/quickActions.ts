@@ -1,11 +1,14 @@
 import {
-  ArrowDownToLine, BadgeCheck, Banknote, ClipboardPlus, FilePlus2, HandCoins, Landmark, Pencil, Play, RotateCcw, Send, Users, Wallet,
+  ArrowDownToLine, BadgeCheck, Banknote, ClipboardPlus, FilePlus2, HandCoins, Landmark, Pencil, Play, RotateCcw, Send, Users,
 } from 'lucide-react';
 import { can, canAny } from '@/auth/access';
 import type { QuickAction } from '@/components/QuickActions';
 import { claimableStatus } from '@/lib/policyCapacity';
 
 const enc = encodeURIComponent;
+
+/** Who may take a deposit on the one Deposit page: record money received, or ask a phone for it (2026-11-07). */
+const DEPOSIT_PERMISSIONS = ['collections.manage', 'policies.service', 'accounts.transact'];
 
 /**
  * The everyday acts on a person or group, for staff (2026-11-04, the user: find someone, see your actions, skip the
@@ -23,10 +26,10 @@ export function clientActions(client: { partyId: string; kycStatus?: string | nu
   if (can('underwriting.propose')) {
     actions.push({ label: 'New case', to: `/staff/underwriting/new?applicant=${id}`, icon: FilePlus2 });
   }
-  if (can('collections.manage')) {
+  if (canAny(...DEPOSIT_PERMISSIONS)) {
     actions.push({
-      label: 'Record deposit',
-      to: onlyPolicy ? `/staff/receipts/new?policy=${enc(onlyPolicy)}` : `/staff/parties/${id}?tab=policies`,
+      label: 'Deposit',
+      to: onlyPolicy ? `/staff/receipts/new?policy=${enc(onlyPolicy)}&from=policy` : `/staff/parties/${id}?tab=policies`,
       icon: HandCoins,
     });
   }
@@ -66,19 +69,16 @@ export function policyActions(policy: {
       ? `&claimant=${enc(policy.policyholderPartyId)}` : '';
     actions.push({ label: 'Register a claim', to: `/staff/claims/new?policy=${n}${claimant}`, icon: ClipboardPlus });
   }
-  if (can('collections.manage')) {
-    // The act's one name since money movement: the Balance panel's button says "Record deposit" too.
-    actions.push({ label: 'Record deposit', to: `/staff/receipts/new?policy=${n}`, icon: HandCoins });
-  }
-  // The endpoint's rule (POST /invoices/{id}/payment-request): servicing or managing collections, not merely seeing them.
-  if (canAny('collections.manage', 'policies.service') && tabs.includes('billing')) {
-    actions.push({ label: 'Request payment', to: `${here}?tab=billing`, icon: Wallet });
+  // One Deposit (2026-11-07, the user): every method on one page -- finance records money received, servicing asks a
+  // phone for it. "Request payment" went with it.
+  if (canAny(...DEPOSIT_PERMISSIONS)) {
+    actions.push({ label: 'Deposit', to: `/staff/receipts/new?policy=${n}&from=policy`, icon: HandCoins });
   }
   if (can('policies.service') && tabs.includes('beneficiaries')) {
     actions.push({ label: 'Change beneficiaries', to: `${here}?tab=beneficiaries`, icon: Users });
   }
   if (can('accounts.transact') && tabs.includes('account')) {
-    actions.push({ label: 'Withdrawal', to: `${here}?tab=account`, icon: ArrowDownToLine });
+    actions.push({ label: 'Withdraw', to: `${here}?tab=account`, icon: ArrowDownToLine });
   }
   if (can('loans.manage') && tabs.includes('loans')) {
     actions.push({ label: 'Loan', to: `${here}?tab=loans`, icon: Landmark });

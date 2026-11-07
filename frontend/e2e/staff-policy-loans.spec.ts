@@ -73,7 +73,7 @@ test.describe('staff policy loans', () => {
     // unreachable by keyboard and silent to a screen reader, so a disabled button whose
     // only explanation lived there explained nothing to the people most in need of it.
     await expect(takeLoan).toBeDisabled();
-    await expect(panel.getByText(/cash value, which is 0\.00/)).toBeVisible();
+    await expect(panel.getByText(/the cash value is 0\.00/)).toBeVisible();
   });
 
   test('a repayment is never typed in, and its actions appear only on a loan that can take one', async ({

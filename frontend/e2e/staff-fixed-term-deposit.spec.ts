@@ -97,7 +97,7 @@ test.describe('a fixed-term deposit', () => {
     }).toPass({ timeout: 90_000 });
     // Paid back to the number it came from, unless told otherwise; nothing in or out meanwhile.
     await expect(page.getByText('No instruction: it will be paid out to +255700000777.')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Deposit', exact: true })).toHaveCount(0);
+    await expect(page.locator('section').filter({ has: page.getByRole('heading', { name: 'Account', exact: true }) }).getByRole('link', { name: 'Deposit', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Withdraw', exact: true })).toHaveCount(0);
 
     // ---- The client's choice: reinvest the deposit and its interest for six months.

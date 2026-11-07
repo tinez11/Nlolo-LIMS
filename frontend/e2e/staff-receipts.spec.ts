@@ -22,7 +22,7 @@ test.describe('receipts', () => {
     // Balance panel -- the invoice list only asks a phone for payment now.
     await page.goto(`/staff/policies/${policyNumber}?tab=billing`);
     await expect(page.getByRole('heading', { name: 'Balance' })).toBeVisible({ timeout: 30_000 });
-    await page.getByRole('link', { name: 'Deposit', exact: true }).click();
+    await page.locator('section').filter({ has: page.getByRole('heading', { name: 'Balance', exact: true }) }).getByRole('link', { name: 'Deposit', exact: true }).click();
     await expect(page).toHaveURL(/\/staff\/receipts\/new\?/);
     await expect(page.getByLabel('Policy number')).toHaveValue(policyNumber);
     await page.getByLabel('How is it being paid?').selectOption('CHEQUE');

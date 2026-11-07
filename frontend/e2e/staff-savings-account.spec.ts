@@ -60,7 +60,7 @@ test.describe('a savings account', () => {
 
     // Money in: a top-up, collected by the mock rail and credited on confirmation.
     // On the one Deposit page (2026-11-07), For: Savings, by mobile money.
-    await page.getByRole('link', { name: 'Deposit', exact: true }).click();
+    await page.locator('section').filter({ has: page.getByRole('heading', { name: 'Account', exact: true }) }).getByRole('link', { name: 'Deposit', exact: true }).click();
     await expect(page.getByLabel('For', { exact: true })).toHaveValue('SAVINGS');
     await page.getByLabel('How is it being paid?').selectOption('MOBILE_MONEY');
     await page.getByLabel('Phone number').fill('+255700000002');

@@ -105,9 +105,9 @@ test.describe('staff billing', () => {
   test('asks the payer’s phone for the premium owed, from Deposit', async ({ page }) => {
     await issueRealPolicyWithInvoices(page);
 
-    await expect(page.getByRole('link', { name: 'Deposit', exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('section').filter({ has: page.getByRole('heading', { name: 'Balance', exact: true }) }).getByRole('link', { name: 'Deposit', exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('button', { name: 'Request payment' })).toHaveCount(0);
-    await page.getByRole('link', { name: 'Deposit', exact: true }).click();
+    await page.locator('section').filter({ has: page.getByRole('heading', { name: 'Balance', exact: true }) }).getByRole('link', { name: 'Deposit', exact: true }).click();
 
     await expect(page.getByRole('heading', { name: 'Deposit', exact: true })).toBeVisible();
     await page.getByLabel('How is it being paid?').selectOption('MOBILE_MONEY');

@@ -77,7 +77,7 @@ export function DepositSection({ deposit, isFinance }: { deposit: DepositView; i
     return (
       <EmptyState
         title="Waiting for the deposit"
-        description="Term, rate and interest start the day the deposit is received. Collect it from Billing with Request payment."
+        description="Term, rate and interest start the day the deposit is received. Take it with Deposit, at the top of this policy."
       />
     );
   }
