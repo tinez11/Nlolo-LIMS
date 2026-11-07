@@ -9,8 +9,14 @@ export const rateDeclarationSchema = z.object({
   ratePercent: z
     .string()
     .trim()
-    .regex(/^\d{1,3}(\.\d{1,4})?$/, 'A rate with at most four decimals, for example 6.5')
-    .refine((v) => Number(v) >= 0 && Number(v) <= 100, 'A declared rate must be between 0% and 100%'),
+    // One message, the first that applies (2026-11-07): an empty field was told about four decimals, which read as a
+    // complaint about a value never typed.
+    .superRefine((v, ctx) => {
+      if (v === '') ctx.addIssue({ code: 'custom', message: 'Enter the rate (% a year)' });
+      else if (!/^\d{1,3}(\.\d{1,4})?$/.test(v)) {
+        ctx.addIssue({ code: 'custom', message: 'A rate with at most four decimals, for example 6.5' });
+      } else if (Number(v) > 100) ctx.addIssue({ code: 'custom', message: 'A declared rate must be between 0% and 100%' });
+    }),
   effectiveFrom: z.string().trim().min(1, 'When does it take effect?'),
 });
 export type RateDeclarationValues = z.infer<typeof rateDeclarationSchema>;
