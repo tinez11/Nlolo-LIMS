@@ -17,6 +17,7 @@ import type {
   LoanPaymentRequest,
   LoanHistoryLine,
   LoanLimit,
+  Money,
   LoanView,
   ManualIssueRequest,
   OriginateLoanRequest,
@@ -226,6 +227,14 @@ export function getLoanLimit(policyNumber: string): Promise<LoanLimit> {
 /** `GET /loans/{id}/history` (2026-11-07): paid out, interest added, repaid, repaid out of a payout -- oldest first. */
 export function getLoanHistory(loanId: string): Promise<LoanHistoryLine[]> {
   return get<LoanHistoryLine[]>(`/loans/${encodeURIComponent(loanId)}/history`);
+}
+
+/** The payout a policy's loans were repaid out of (2026-11-07, decision E7). */
+export type LoanRepaidPayout = 'CLAIM' | 'MATURITY' | 'SURRENDER' | 'ACCOUNT';
+
+/** `GET /payouts/{payout}/{ref}/loan-repaid` -- staff: what the payout repaid of the policy's loans; zero if nothing. */
+export function getLoanRepaidFromPayout(payout: LoanRepaidPayout, payoutRef: string): Promise<{ repaid: Money }> {
+  return get<{ repaid: Money }>(`/payouts/${payout}/${encodeURIComponent(payoutRef)}/loan-repaid`);
 }
 
 /** `GET /policies/{n}/loans` -- also a bare unpaged array. */

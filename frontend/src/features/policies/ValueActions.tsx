@@ -19,6 +19,7 @@ import { GatePanel } from '@/components/GatePanel';
 import { useAccumulationStore } from '@/store/accumulationStore';
 import { InlineError } from '@/components/InlineError';
 import { Receipt } from '@/components/Receipt';
+import { useLoanRepaid } from './useLoanRepaid';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { approveSurrenderGates, paidUpGates, surrenderGates } from '@/gates/valueGates';
@@ -187,6 +188,10 @@ function SurrenderAction({
     : surrenderGates(policy, quote, request);
   const refused = gates.some((g) => !g.ok && g.hard);
   const amount = formatMoney(request?.quotedValue ?? quote?.quotedValue);
+  // The policy's loans are repaid out of the surrender first (2026-11-07, E7): read once it is approved.
+  const approvedId = (approving.status === 'success' ? approving.data?.surrenderRequestId : undefined)
+    ?? (request && request.status !== 'REQUESTED' ? request.surrenderRequestId : undefined);
+  const loanRepaid = useLoanRepaid('SURRENDER', approvedId);
 
   // The money is requested, not paid: the payout returns through the payment rail, so the
   // request's own status is the only honest answer about where it got to.
@@ -196,7 +201,8 @@ function SurrenderAction({
         heading="Surrender approved"
         lines={[
           { label: 'Policy', value: policyNumber },
-          { label: 'Paying', value: formatMoney(approving.data.quotedValue) },
+          { label: 'Surrender value', value: formatMoney(approving.data.quotedValue) },
+          ...(loanRepaid ? [{ label: 'Loan repaid first', value: formatMoney(loanRepaid) }] : []),
           { label: 'Paid by', value: routeWords(approving.data) },
           { label: 'Approved by', value: <StaffName subject={approving.data.approvedBy} /> },
         ]}
@@ -216,6 +222,7 @@ function SurrenderAction({
         <p className="text-xs text-muted-foreground">
           {formatMoney(request.quotedValue)} by {request ? routeWords(request) : '—'}, requested by{' '}
           <StaffName subject={request.requestedBy} />.
+          {loanRepaid && <> {formatMoney(loanRepaid)} of it repaid the policy&apos;s loan first; the payee is paid the rest.</>}
         </p>
       )}
 
