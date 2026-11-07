@@ -34,31 +34,42 @@ export function methodOf(value: string): { value: string; label: string; referen
   return value === REQUESTED_MOBILE_MONEY.value ? REQUESTED_MOBILE_MONEY : RECEIPT_METHODS.find((m) => m.value === value);
 }
 
+/** What a deposit pays (2026-11-07): the policy's premiums, a loan, or the savings account. */
+export type PaysFor = 'PREMIUM' | 'LOAN' | 'SAVINGS';
+
 /**
- * Mirrors Receipts.record: a policy's balance or a loan (money movement steps 1 and 5 -- "Invoice it pays" went with
- * design 7.2), a method and its reference, an amount above zero, a day no later than today.
+ * The one Deposit page (2026-11-07, the user: one place, every method, and the method decides what happens behind).
+ * Mobile money asks the payer's phone and needs only the number (and, but for a premium, the amount -- a premium
+ * request asks for what the premium owes); any other method records money already received, with its reference and
+ * day. Mirrors Receipts.record, the top-up endpoints and the two payment-request endpoints.
  */
 export const receiptFormSchema = z.object({
   policyNumber: z.string().trim().min(1, 'Enter the policy number'),
-  paysFor: z.enum(['PREMIUM', 'LOAN']),
+  paysFor: z.enum(['PREMIUM', 'LOAN', 'SAVINGS']),
   loanId: z.string(),
-  method: z.enum(['CASH', 'BANK_DEPOSIT', 'CHEQUE', 'LIPA_NUMBER', 'TANQR'], { message: 'Choose how the money came in' }),
-  reference: z.string().trim().min(1, 'Enter the reference, so the same money cannot be recorded twice').max(100),
-  amount: z
-    .string()
-    .trim()
-    .regex(/^\d+(\.\d{1,2})?$/, 'An amount like 120000 or 120000.50')
-    .refine((v) => Number(v) > 0, 'More than zero'),
-  receivedOn: z
-    .string()
-    .min(1, 'The day the money was received')
-    .refine((v) => v <= todayIso(), 'It cannot be later than today'),
+  method: z.enum(['MOBILE_MONEY', 'CASH', 'BANK_DEPOSIT', 'CHEQUE', 'LIPA_NUMBER', 'TANQR'], {
+    message: 'Choose how it is being paid',
+  }),
+  reference: z.string().trim().max(100),
+  amount: z.string().trim(),
+  receivedOn: z.string(),
   payerRef: z.string().trim().max(255),
   note: z.string().trim().max(500),
   fieldReceiptId: z.string(),
 }).superRefine((v, ctx) => {
-  if (v.paysFor === 'LOAN' && !v.loanId) {
-    ctx.addIssue({ code: 'custom', path: ['loanId'], message: 'Choose the loan this repays' });
+  const issue = (path: string, message: string) => ctx.addIssue({ code: 'custom', path: [path], message });
+  if (v.paysFor === 'LOAN' && !v.loanId) issue('loanId', 'Choose the loan this repays');
+  const mobile = v.method === 'MOBILE_MONEY';
+  if (mobile && !v.payerRef) issue('payerRef', 'Enter the phone number to ask');
+  // A premium request asks for what the premium owes; every other deposit says its amount.
+  if (!(mobile && v.paysFor === 'PREMIUM')) {
+    if (!/^\d+(\.\d{1,2})?$/.test(v.amount)) issue('amount', 'An amount like 120000 or 120000.50');
+    else if (Number(v.amount) <= 0) issue('amount', 'More than zero');
+  }
+  if (!mobile) {
+    if (!v.reference) issue('reference', 'Enter the reference, so the same money cannot be recorded twice');
+    if (!v.receivedOn) issue('receivedOn', 'The day the money was received');
+    else if (v.receivedOn > todayIso()) issue('receivedOn', 'It cannot be later than today');
   }
 });
 
@@ -80,7 +91,9 @@ export function blankReceiptForm(prefill: Partial<ReceiptFormValues> = {}): Rece
   };
 }
 
+/** Money already received, for a premium or a loan: the receipt road. Never called for mobile money or savings. */
 export function toApiRequest(values: ReceiptFormValues, currency: string): RecordReceipt {
+  if (values.method === 'MOBILE_MONEY') throw new Error('Mobile money is asked of the phone, not recorded');
   return {
     // A premium deposit goes onto the policy's balance, which pays what is due oldest first (money movement step 5).
     policyNumber: values.paysFor === 'PREMIUM' ? values.policyNumber.trim().toUpperCase() : null,

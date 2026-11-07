@@ -2,18 +2,22 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useMemo, useState, type FocusEvent } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { listInvoices, listLoans } from '@/api/policies';
-import type { InvoiceView, LoanView } from '@/api/types';
+import { getAccount, recordReceivedTopUp, requestTopUp } from '@/api/accumulation';
+import { listInvoices, listLoans, requestLoanPayment, requestPaymentForInvoice } from '@/api/policies';
+import type { AccountView, InvoiceView, LoanView } from '@/api/types';
+import { can } from '@/auth/access';
 import { DatePicker } from '@/components/DatePicker';
 import { FormField, RequiredNote } from '@/components/FormField';
 import { FormLayout } from '@/components/FormLayout';
 import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
+import { Receipt, type ReceiptLine } from '@/components/Receipt';
 import { UnsavedGuard } from '@/components/UnsavedGuard';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
 import { todayIso } from '@/lib/dates';
 import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
+import { startMutation } from '@/lib/idempotency';
 import { formatMoney } from '@/lib/money';
 import { useReceiptStore } from '@/store/receiptStore';
 import {
@@ -22,7 +26,9 @@ import {
   RECEIPT_METHODS,
   receiptFormSchema,
   receiptOrigin,
+  REQUESTED_MOBILE_MONEY,
   toApiRequest,
+  type PaysFor,
   type ReceiptFormValues,
 } from './receiptForm';
 
@@ -31,6 +37,8 @@ const OPEN = new Set(['DUE', 'PARTIALLY_PAID', 'IN_GRACE', 'OVERDUE']);
 
 /** Loans a deposit can still repay -- the two statuses the server accepts a repayment on. */
 const REPAYABLE = new Set(['DISBURSED', 'REPAYING']);
+
+const FOR_LABEL: Record<PaysFor, string> = { PREMIUM: 'Premium', LOAN: 'Loan repayment', SAVINGS: 'Savings' };
 
 /** What is still owed on an invoice, as the server stated it; the charge itself where no balance is stated. */
 function owed(i: InvoiceView) {
@@ -44,31 +52,57 @@ function totalOwed(due: InvoiceView[]) {
   return { amount: sum.toFixed(2), currencyCode: owed(due[0]!).currencyCode };
 }
 
+/** Who may take a deposit which way (2026-11-07): finance records money received; a phone may be asked by servicing. */
+function mayAsk(paysFor: PaysFor) {
+  return paysFor === 'SAVINGS'
+    ? can('accounts.transact') || can('collections.manage')
+    : can('policies.service') || can('collections.manage');
+}
+
+/** What was sent, kept on screen in place of the form (the Receipt pattern). */
+type Sent = { heading: string; lines: ReceiptLine[]; note: string };
+
 /**
- * Record a receipt for premium the gateway did not pull (2026-10-27): cash, a bank deposit, a cheque, a Lipa-number
- * payment or a TANQR scan.
+ * Deposit (2026-11-07, the user: one place, every method, and the method decides what happens behind).
  *
- * Opened three ways, each prefilling what it knows through the URL: from a policy's invoice (policy and invoice), from
- * an agent's field receipt (policy, amount, cash, and the field receipt it closes), or bare from Payments. Saving
- * records it as awaiting approval -- a second finance person confirms it on its own page before it pays anything.
+ * For: Premium, Loan repayment or Savings, offered as the policy has them. Mobile money asks the payer's phone and
+ * counts when they approve; any other method records money already received, which counts when a second finance
+ * person confirms it. A premium or loan deposit recorded by hand opens its own page; anything else closes into a
+ * receipt here. Opened bare from Deposits, from a policy (Balance, Account or Loans), or from an agent's cash receipt.
  */
 export function NewReceiptPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const record = useReceiptStore((s) => s.record);
   const recording = useReceiptStore((s) => s.recording);
+  const send = useReceiptStore((s) => s.send);
+  const sending = useReceiptStore((s) => s.sending);
+  const resetSending = useReceiptStore((s) => s.resetSending);
+  const mayRecord = can('collections.manage');
+  const [sent, setSent] = useState<Sent | null>(null);
+  // One attempt per page visit, reused across retries so a double click is one request.
+  const [attempt] = useState(() => startMutation());
+
+  useEffect(() => {
+    resetSending();
+  }, [resetSending]);
 
   const prefill = useMemo(() => {
-    // Only a method recorded by hand: a mobile-money request is never typed in here.
-    const method = RECEIPT_METHODS.find((m) => m.value === params.get('method'))?.value;
+    const askedFor = params.get('for');
+    const paysFor: PaysFor = askedFor === 'LOAN' || askedFor === 'SAVINGS' ? askedFor : 'PREMIUM';
+    const named = params.get('method');
+    const method = named === 'MOBILE_MONEY' || RECEIPT_METHODS.some((m) => m.value === named)
+      ? (named as ReceiptFormValues['method'])
+      // Mobile money first where it may be asked; finance alone opens on a received method.
+      : mayAsk(paysFor) ? 'MOBILE_MONEY' : 'BANK_DEPOSIT';
     return blankReceiptForm({
       policyNumber: params.get('policy') ?? '',
-      paysFor: params.get('for') === 'LOAN' ? 'LOAN' : 'PREMIUM',
+      paysFor,
       loanId: params.get('loan') ?? '',
       amount: params.get('amount') ?? '',
       reference: params.get('reference') ?? '',
       fieldReceiptId: params.get('fieldReceipt') ?? '',
-      ...(method ? { method } : {}),
+      method,
     });
   }, [params]);
 
@@ -84,20 +118,24 @@ export function NewReceiptPage() {
   const method = useWatch({ control, name: 'method' });
   const paysFor = useWatch({ control, name: 'paysFor' });
   const loanId = useWatch({ control, name: 'loanId' });
+  const mobile = method === 'MOBILE_MONEY';
   const chosenMethod = methodOf(method);
+  const askable = mayAsk(paysFor);
 
-  // The policy's open invoices, read once the policy number is asked for -- not to choose one (a deposit goes onto the
-  // policy's balance, money movement step 5), but to say what it owes now and to catch a policy number that is wrong.
+  // What the policy has, read once its number is in: its open invoices (what a premium owes now, and the one a
+  // mobile-money request asks for), its loans that can take a repayment, and its savings account.
   const [lookedUp, setLookedUp] = useState(prefill.policyNumber);
   const [invoices, setInvoices] = useState<InvoiceView[] | null>(null);
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
+  const [loans, setLoans] = useState<LoanView[] | null>(null);
+  const [account, setAccount] = useState<AccountView | null>(null);
   useEffect(() => {
     if (!lookedUp) return;
     let cancelled = false;
     listInvoices(lookedUp)
       .then((all) => {
         if (cancelled) return;
-        setInvoices(all.filter((i) => OPEN.has(i.status ?? '') && (i.dueDate ?? '') <= todayIso()));
+        setInvoices(all.filter((i) => OPEN.has(i.status ?? '')));
         setInvoiceError(all.length === 0 ? `No policy ${lookedUp} is billed here.` : null);
       })
       .catch(() => {
@@ -106,60 +144,154 @@ export function NewReceiptPage() {
           setInvoiceError(`No policy ${lookedUp} could be read.`);
         }
       });
+    listLoans(lookedUp)
+      .then((all) => {
+        if (!cancelled) setLoans(all.filter((l) => REPAYABLE.has(l.status ?? '')));
+      })
+      .catch(() => {
+        if (!cancelled) setLoans([]);
+      });
+    getAccount(lookedUp)
+      .then((a) => {
+        if (!cancelled) setAccount(a && a.status === 'OPEN' ? a : null);
+      })
+      .catch(() => {
+        if (!cancelled) setAccount(null);
+      });
     return () => {
       cancelled = true;
     };
   }, [lookedUp]);
 
-  // The policy's loans that can still take a repayment (money movement step 1), read once a loan deposit is asked for.
-  const [loans, setLoans] = useState<LoanView[] | null>(null);
-  const [loanError, setLoanError] = useState<string | null>(null);
+  // A loan chosen by the link stays chosen; otherwise the first loan that can take a repayment.
   useEffect(() => {
-    if (!lookedUp || paysFor !== 'LOAN') return;
-    let cancelled = false;
-    listLoans(lookedUp)
-      .then((all) => {
-        if (cancelled) return;
-        const repayable = all.filter((l) => REPAYABLE.has(l.status ?? ''));
-        setLoans(repayable);
-        setLoanError(repayable.length === 0 ? `No loan on ${lookedUp} has anything to repay.` : null);
-        if (repayable.length > 0 && !repayable.some((l) => l.loanId === prefill.loanId)) {
-          setValue('loanId', repayable[0]!.loanId ?? '', { shouldDirty: true });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setLoans(null);
-          setLoanError(`No policy ${lookedUp} could be read.`);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [lookedUp, paysFor, prefill.loanId, setValue]);
+    if (paysFor !== 'LOAN' || !loans || loans.length === 0) return;
+    if (!loans.some((l) => l.loanId === loanId)) setValue('loanId', loans[0]!.loanId ?? '', { shouldDirty: true });
+  }, [paysFor, loans, loanId, setValue]);
 
+  // A person who may not ask a phone, or may not record by hand, is moved to a way they may use.
+  useEffect(() => {
+    if (mobile && !askable && mayRecord) setValue('method', 'BANK_DEPOSIT');
+    if (!mobile && !mayRecord && askable) setValue('method', 'MOBILE_MONEY');
+  }, [mobile, askable, mayRecord, setValue]);
+
+  // For offers what the policy has; the one the link named stays offered while the policy is read.
+  const forOptions: PaysFor[] = ['PREMIUM'];
+  if ((loans && loans.length > 0) || prefill.paysFor === 'LOAN') forOptions.push('LOAN');
+  if (account || prefill.paysFor === 'SAVINGS') forOptions.push('SAVINGS');
+
+  const dueNow = invoices?.filter((i) => (i.dueDate ?? '') <= todayIso()) ?? null;
+  // The oldest premium still owed: what a mobile-money request for a premium asks for.
+  const oldestOpen = invoices && invoices.length > 0
+    ? [...invoices].sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))[0]!
+    : null;
   const loan = paysFor === 'LOAN' ? (loans?.find((l) => l.loanId === loanId) ?? null) : null;
-  // The loan's balance, which caps a repayment, or what the policy's premiums owe today, which caps nothing.
-  const owedNow = loan ? (loan.outstandingBalance ?? null) : invoices ? totalOwed(invoices) : null;
+  const currency = loan?.outstandingBalance?.currencyCode ?? account?.balance.currencyCode ?? oldestOpen?.amount?.currencyCode ?? 'TZS';
   const from = params.get('from');
   const origin = receiptOrigin(from, prefill.policyNumber || null);
+  const back = paysFor === 'LOAN' && lookedUp
+    ? `/staff/policies/${encodeURIComponent(lookedUp)}?tab=loans`
+    : paysFor === 'SAVINGS' && lookedUp
+      ? `/staff/policies/${encodeURIComponent(lookedUp)}?tab=account`
+      : origin.back;
+
+  const forProblem =
+    paysFor === 'LOAN' && loans && loans.length === 0 ? `No loan on ${lookedUp} has anything to repay.`
+      : paysFor === 'SAVINGS' && lookedUp && invoices !== null && !account ? `${lookedUp} has no open savings account.`
+        : paysFor === 'PREMIUM' && mobile && invoices !== null && !oldestOpen
+          ? 'No premium is owed now, so there is nothing to ask the phone for.'
+          : paysFor === 'PREMIUM' ? invoiceError : null;
+
+  const amountHint = loan
+    ? `At most ${formatMoney(loan.outstandingBalance)}, what the loan owes.`
+    : paysFor === 'SAVINGS'
+      ? 'It goes into the savings account, less any charge the product takes on a deposit.'
+      : dueNow && totalOwed(dueNow)
+        ? `Owed now ${formatMoney(totalOwed(dueNow))}. It goes onto the policy's balance, which pays what is due oldest first; the rest pays the next premiums.`
+        : undefined;
 
   async function onSubmit(values: ReceiptFormValues) {
-    const saved = await record(toApiRequest(values, owedNow?.currencyCode ?? 'TZS'));
-    if (saved) navigate(`/staff/receipts/${saved.receiptId}${from ? `?from=${encodeURIComponent(from)}` : ''}`);
+    const policy = values.policyNumber.trim().toUpperCase();
+    const amount = Number(values.amount || '0').toFixed(2);
+    const payer = values.payerRef.trim();
+
+    if (values.method !== 'MOBILE_MONEY' && values.paysFor !== 'SAVINGS') {
+      const saved = await record(toApiRequest(values, currency));
+      if (saved) navigate(`/staff/receipts/${saved.receiptId}${from ? `?from=${encodeURIComponent(from)}` : ''}`);
+      return;
+    }
+
+    if (values.method !== 'MOBILE_MONEY') {
+      const ok = await send(() => recordReceivedTopUp(policy, {
+        amount, method: values.method as Exclude<ReceiptFormValues['method'], 'MOBILE_MONEY'>,
+        reference: values.reference.trim(), receivedOn: values.receivedOn, ...(payer ? { payerRef: payer } : {}),
+      }, attempt));
+      if (ok) {
+        setSent({
+          heading: 'Savings deposit recorded',
+          lines: [
+            { label: 'Policy', value: policy },
+            { label: 'Amount', value: formatMoney({ amount, currencyCode: currency }) },
+            { label: 'How it came in', value: `${methodOf(values.method)?.label ?? values.method}, ${values.reference.trim()}` },
+          ],
+          note: 'It goes into the savings account once a second finance person confirms it under Approvals.',
+        });
+      }
+      return;
+    }
+
+    let ok = false;
+    let asked = { amount, currencyCode: currency };
+    if (values.paysFor === 'PREMIUM' && oldestOpen?.invoiceId) {
+      asked = owed(oldestOpen);
+      ok = await send(() => requestPaymentForInvoice(oldestOpen.invoiceId!, { payerRef: payer }, attempt));
+    } else if (values.paysFor === 'LOAN') {
+      ok = await send(() => requestLoanPayment(values.loanId, { payerRef: payer, amount: { amount, currencyCode: currency } }, attempt));
+    } else if (values.paysFor === 'SAVINGS') {
+      ok = await send(() => requestTopUp(policy, { amount, payerRef: payer }, attempt));
+    }
+    if (ok) {
+      setSent({
+        heading: 'Mobile-money request sent',
+        lines: [
+          { label: 'Policy', value: policy },
+          { label: 'For', value: FOR_LABEL[values.paysFor] },
+          { label: 'Asked of', value: payer },
+          { label: 'Amount', value: formatMoney(asked) },
+        ],
+        note: 'The payer approves it on their phone. It counts once the money is confirmed, and waits on the policy until then.',
+      });
+    }
   }
+
+  const error = recording.status === 'error' ? recording.error : sending.status === 'error' ? sending.error : null;
+  const busy = recording.status === 'loading' || sending.status === 'loading';
 
   return (
     <>
       <PageHeader
         breadcrumb={origin.crumbs}
-        title="Record deposit"
-        description="It counts once a second finance person confirms it."
+        title="Deposit"
+        description={mobile
+          ? 'A request goes to the payer’s phone. It counts once they approve it.'
+          : 'Money already received. It counts once a second finance person confirms it.'}
       />
       <FormLayout formId="new-receipt-form" outlineLabel="Deposit sections">
+        {sent ? (
+          <Receipt
+            heading={sent.heading}
+            lines={sent.lines}
+            note={sent.note}
+            onward={
+              <Button asChild size="sm" variant="outline">
+                <Link to={back}>Back to {lookedUp || 'deposits'}</Link>
+              </Button>
+            }
+          />
+        ) : (
         <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
           <RequiredNote />
-          <UnsavedGuard when={isDirty && !isSubmitting} what="This deposit" />
+          <UnsavedGuard when={isDirty && !isSubmitting && !sent} what="This deposit" />
 
           <div data-outline="What it pays" className="space-y-4">
             <div className="flex flex-wrap items-end gap-2">
@@ -183,79 +315,106 @@ export function NewReceiptPage() {
             </div>
             <FormField required label="For" error={errors.paysFor?.message}>
               <Select {...register('paysFor')}>
-                <option value="PREMIUM">Premium</option>
-                <option value="LOAN">Loan repayment</option>
+                {forOptions.map((f) => (
+                  <option key={f} value={f}>
+                    {FOR_LABEL[f]}
+                  </option>
+                ))}
               </Select>
             </FormField>
-            {paysFor === 'LOAN' && loanError && <p className="text-sm text-status-warning-fg">{loanError}</p>}
             {paysFor === 'LOAN' && loans && loans.length > 0 && (
               <FormField required label="Loan it repays" error={errors.loanId?.message}>
                 <Select {...register('loanId')}>
                   {loans.map((l) => (
                     <option key={l.loanId} value={l.loanId}>
-                      {(l.loanId ?? '').slice(0, 8)} · {formatMoney(l.outstandingBalance)} owed
+                      Taken {formatMoney(l.principalAmount)} · {formatMoney(l.outstandingBalance)} owed
                     </option>
                   ))}
                 </Select>
               </FormField>
             )}
-            {paysFor === 'PREMIUM' && invoiceError && <p className="text-sm text-status-warning-fg">{invoiceError}</p>}
+            {forProblem && <p className="text-sm text-status-warning-fg">{forProblem}</p>}
           </div>
 
-          <div data-outline="How it was paid" className="space-y-4">
-            <FormField required label="How the money came in" hint={chosenMethod?.hint} error={errors.method?.message}>
+          <div data-outline="How it is paid" className="space-y-4">
+            <FormField required label="How is it being paid?" hint={mobile ? undefined : chosenMethod?.hint}
+              error={errors.method?.message}>
               <Select {...register('method')}>
-                {RECEIPT_METHODS.map((m) => (
+                {askable && <option value="MOBILE_MONEY">{REQUESTED_MOBILE_MONEY.label} — ask the payer’s phone</option>}
+                {mayRecord && RECEIPT_METHODS.map((m) => (
                   <option key={m.value} value={m.value}>
                     {m.label}
                   </option>
                 ))}
               </Select>
             </FormField>
-            <FormField required label={chosenMethod?.reference ?? 'Reference'} error={errors.reference?.message}>
-              <Input className="font-mono" {...register('reference')} />
-            </FormField>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormField required
-                label={`Amount (${owedNow?.currencyCode ?? 'TZS'})`}
-                hint={owedNow
-                  ? loan
-                    ? `At most ${formatMoney(owedNow)}, what the loan owes.`
-                    : `Owed now ${formatMoney(owedNow)}. It goes onto the policy's balance, which pays what is due oldest first; the rest pays the next premiums.`
-                  : undefined}
-                error={errors.amount?.message}
-              >
-                <Input inputMode="decimal" {...register('amount')} />
-              </FormField>
-              <FormField required label="Received on" error={errors.receivedOn?.message}>
-                <Controller
-                  control={control}
-                  name="receivedOn"
-                  render={({ field }) => <DatePicker value={field.value} onChange={(iso) => field.onChange(iso ?? '')} />}
-                />
-              </FormField>
-            </div>
-            <FormField label="Paid by" hint="The payer's name or number, as the slip shows it." error={errors.payerRef?.message}>
-              <Input {...register('payerRef')} />
-            </FormField>
-            <FormField label="Note" error={errors.note?.message}>
-              <Input {...register('note')} />
-            </FormField>
+            {!mayRecord && (
+              <p className="text-xs text-muted-foreground">
+                Money already received — cash, a bank deposit, a cheque — is recorded by finance.
+              </p>
+            )}
+
+            {mobile ? (
+              <>
+                <FormField required label="Phone number" hint="The mobile-money number the request goes to."
+                  error={errors.payerRef?.message}>
+                  <Input inputMode="tel" {...register('payerRef')} />
+                </FormField>
+                {paysFor === 'PREMIUM' ? (
+                  oldestOpen && (
+                    <p className="text-sm">
+                      Asks for <strong>{formatMoney(owed(oldestOpen))}</strong>, what the premium due{' '}
+                      {oldestOpen.dueDate ?? ''} still owes.
+                    </p>
+                  )
+                ) : (
+                  <FormField required label={`Amount (${currency})`} hint={amountHint} error={errors.amount?.message}>
+                    <Input inputMode="decimal" {...register('amount')} />
+                  </FormField>
+                )}
+              </>
+            ) : (
+              <>
+                <FormField required label={chosenMethod?.reference ?? 'Reference'} error={errors.reference?.message}>
+                  <Input className="font-mono" {...register('reference')} />
+                </FormField>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <FormField required label={`Amount (${currency})`} hint={amountHint} error={errors.amount?.message}>
+                    <Input inputMode="decimal" {...register('amount')} />
+                  </FormField>
+                  <FormField required label="Received on" error={errors.receivedOn?.message}>
+                    <Controller
+                      control={control}
+                      name="receivedOn"
+                      render={({ field }) => <DatePicker value={field.value} onChange={(iso) => field.onChange(iso ?? '')} />}
+                    />
+                  </FormField>
+                </div>
+                <FormField label="Paid by" hint="The payer's name or number, as the slip shows it." error={errors.payerRef?.message}>
+                  <Input {...register('payerRef')} />
+                </FormField>
+                {paysFor !== 'SAVINGS' && (
+                  <FormField label="Note" error={errors.note?.message}>
+                    <Input {...register('note')} />
+                  </FormField>
+                )}
+              </>
+            )}
           </div>
 
-          {recording.status === 'error' && recording.error && (
-            <InlineError lead="Could not record the deposit" error={recording.error} />
-          )}
+          {error && <InlineError lead={mobile ? 'Could not send the request' : 'Could not record the deposit'} error={error} />}
 
           <div className="flex gap-2">
-            <Button type="submit" variant="primary" pending={recording.status === 'loading'}>
-              Record deposit
+            <Button type="submit" variant="primary" pending={busy}
+              disabled={paysFor === 'PREMIUM' && mobile && !oldestOpen}>
+              {mobile ? 'Send request' : 'Record deposit'}
             </Button>
             <Button asChild variant="ghost">
-              <Link to={origin.back}>Cancel</Link>
+              <Link to={back}>Cancel</Link>
             </Button>
           </div>
         </form>
+        )}
       </FormLayout>
     </>
   );

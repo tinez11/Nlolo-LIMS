@@ -20,7 +20,6 @@ import {
   originateLoan,
   approveLoanPayout,
   refuseLoanPayout,
-  requestLoanPayment,
   reinstatePolicy,
   makePaidUp,
   getSurrenderValue,
@@ -48,7 +47,6 @@ import type {
   InvoiceView,
   PolicyBalanceView,
   IssueGroupSchemeRequest,
-  LoanPaymentRequest,
   LoanView,
   ManualIssueRequest,
   OriginateLoanRequest,
@@ -113,9 +111,6 @@ interface PolicyState {
   // Origination is keyed by policyNumber, not by loan id: the loan does not exist
   // yet, and a policy can only have one origination in flight from this screen.
   originatingLoan: Keyed<true>;
-  // A repayment request is keyed by loanId -- it targets an existing loan, and a
-  // failure on one loan must not disturb another's form on the same policy.
-  requestingLoanPayment: Keyed<true>;
   /** Money movement step 4: a loan's payout released or refused by a second person, keyed by loan. */
   decidingLoanPayout: Keyed<true>;
   // Each keyed by policyNumber, separately from `detail` and from each other --
@@ -178,13 +173,6 @@ interface PolicyState {
   resetRequestPaymentForInvoice: (invoiceId: string) => void;
   originateLoan: (policyNumber: string, request: OriginateLoanRequest) => Promise<void>;
   resetOriginateLoan: (policyNumber: string) => void;
-  requestLoanPayment: (
-    policyNumber: string,
-    loanId: string,
-    request: LoanPaymentRequest,
-    attempt: MutationAttempt,
-  ) => Promise<void>;
-  resetRequestLoanPayment: (loanId: string) => void;
   /** Release (reason null) or refuse (with the reason) a loan's payout, then re-read the policy's loans. */
   decideLoanPayout: (policyNumber: string, loanId: string, refuseReason: string | null) => Promise<void>;
   suspendPolicy: (policyNumber: string, request: SuspendPolicyRequest) => Promise<void>;
@@ -226,7 +214,6 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
   waivingInvoice: {},
   requestingPayment: {},
   originatingLoan: {},
-  requestingLoanPayment: {},
   decidingLoanPayout: {},
   suspending: {},
   resuming: {},
@@ -505,20 +492,6 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
       return { originatingLoan: rest };
     }),
 
-  requestLoanPayment: (policyNumber, loanId, request, attempt) =>
-    track(
-      `policy.requestLoanPayment.${loanId}`,
-      getState().requestingLoanPayment[loanId] ?? idle<true>(),
-      (next) => set((s) => ({ requestingLoanPayment: { ...s.requestingLoanPayment, [loanId]: next } })),
-      async (): Promise<true> => {
-        await requestLoanPayment(loanId, request, attempt);
-        // 202 with no body: nothing is repaid until finance confirms the money,
-        // but refetch anyway so a fast confirm already reflected server-side shows.
-        await getState().loadLoans(policyNumber);
-        return true;
-      },
-    ),
-
   decideLoanPayout: (policyNumber, loanId, refuseReason) =>
     track(
       `policy.decideLoanPayout.${loanId}`,
@@ -530,13 +503,6 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
         return true;
       },
     ),
-
-  resetRequestLoanPayment: (loanId) =>
-    set((s) => {
-      if (!(loanId in s.requestingLoanPayment)) return s;
-      const { [loanId]: _discard, ...rest } = s.requestingLoanPayment;
-      return { requestingLoanPayment: rest };
-    }),
 
   // Each of the three below returns the updated PolicyView directly, but `detail`
   // is refreshed from it too -- so a caller reading `detail` (the coverage panel,
@@ -797,8 +763,6 @@ export const selectRequestingPayment = (invoiceId: string) => (s: PolicyState) =
   s.requestingPayment[invoiceId] ?? idle<true>();
 export const selectOriginatingLoan = (policyNumber: string) => (s: PolicyState) =>
   s.originatingLoan[policyNumber] ?? idle<true>();
-export const selectRequestingLoanPayment = (loanId: string) => (s: PolicyState) =>
-  s.requestingLoanPayment[loanId] ?? idle<true>();
 
 export const selectScheme = (policyNumber: string) => (s: PolicyState) =>
   s.scheme[policyNumber] ?? idle<GroupSchemeView>();

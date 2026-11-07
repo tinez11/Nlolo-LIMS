@@ -89,10 +89,10 @@ test.describe('staff policy loans', () => {
     await expect(panel.getByRole('button', { name: 'Record repayment' })).toHaveCount(0);
 
     // Offered exactly for the two statuses the server accepts a repayment on -- none on a fresh policy, since
-    // origination is blocked by cash value; one pair per repayable loan wherever a loan does exist.
+    // origination is blocked by cash value; one per repayable loan wherever a loan does exist.
     const repayable = await panel.getByText(/^(DISBURSED|REPAYING)$/i).count();
-    await expect(panel.getByRole('link', { name: 'Record deposit' })).toHaveCount(repayable);
-    await expect(panel.getByRole('button', { name: 'Request mobile-money payment' })).toHaveCount(repayable);
+    // One Repay per repayable loan, leading to the one Deposit page (2026-11-07).
+    await expect(panel.getByRole('link', { name: 'Repay' })).toHaveCount(repayable);
   });
 
   test('the deposit page takes a loan repayment, and says so when the policy has no loan to repay', async ({ page }) => {
@@ -101,10 +101,10 @@ test.describe('staff policy loans', () => {
     if (!opened) return;
     const policyNumber = decodeURIComponent(new URL(page.url()).pathname.split('/').pop() ?? '');
 
-    // Where the Loans tab's "Record deposit" link leads, opened for a policy with no loan: the honest empty answer,
+    // Where the Loans tab's "Repay" link leads, opened for a policy with no loan: the honest empty answer,
     // rather than a loan list to pick from that does not exist.
     await page.goto(`/staff/receipts/new?for=LOAN&policy=${encodeURIComponent(policyNumber)}&from=policy`);
-    await expect(page.getByRole('heading', { name: 'Record deposit' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Deposit', exact: true })).toBeVisible();
     // Exact: the action bell's "Jobs waiting for you" also contains the word.
     const paysFor = page.getByLabel('For', { exact: true });
     await expect(paysFor).toHaveValue('LOAN');

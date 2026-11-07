@@ -43,7 +43,7 @@ function renderPanel(ui: ReactElement) {
  */
 beforeEach(() => {
   vi.clearAllMocks();
-  usePolicyStore.setState({ loans: {}, originatingLoan: {}, requestingLoanPayment: {}, decidingLoanPayout: {} });
+  usePolicyStore.setState({ loans: {}, originatingLoan: {}, decidingLoanPayout: {} });
 });
 
 afterEach(() => {
@@ -60,20 +60,18 @@ describe('LoansPanel', () => {
     renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange canRecordDeposit canRequestPayment />);
 
     await waitFor(() => expect(screen.getByText(/of .*principal/)).toBeInTheDocument());
-    expect(screen.queryByRole('link', { name: 'Record deposit' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Request mobile-money payment' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Repay' })).not.toBeInTheDocument();
   });
 
-  it('offers a deposit and a mobile-money request on a repayable loan, never a typed repayment', async () => {
+  it('offers Repay on a repayable loan, leading to the one Deposit page -- never a typed repayment', async () => {
     vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([disbursedLoan]);
 
     renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange canRecordDeposit canRequestPayment />);
 
     await waitFor(() => expect(screen.getByText(/of .*principal/)).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Record repayment' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Record deposit' })).toHaveAttribute('href',
+    expect(screen.getByRole('link', { name: 'Repay' })).toHaveAttribute('href',
       `/staff/receipts/new?for=LOAN&loan=${disbursedLoan.loanId}&policy=POL-000001&from=policy`);
-    expect(screen.getByRole('button', { name: 'Request mobile-money payment' })).toBeInTheDocument();
   });
 
   it('shows neither to someone without the collections permissions', async () => {
@@ -83,69 +81,7 @@ describe('LoansPanel', () => {
       canRecordDeposit={false} canRequestPayment={false} />);
 
     await waitFor(() => expect(screen.getByText(/of .*principal/)).toBeInTheDocument());
-    expect(screen.queryByRole('link', { name: 'Record deposit' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Request mobile-money payment' })).not.toBeInTheDocument();
-  });
-
-  it('asks for what the loan owes, as the server stated it, under one attempt key', async () => {
-    const listLoans = vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([disbursedLoan]);
-    const request = vi.spyOn(policiesApi, 'requestLoanPayment').mockResolvedValue(undefined);
-    const user = userEvent.setup();
-
-    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange canRecordDeposit canRequestPayment />);
-    await waitFor(() => expect(listLoans).toHaveBeenCalledTimes(1));
-
-    await user.click(screen.getByRole('button', { name: 'Request mobile-money payment' }));
-    expect(screen.getByLabelText('Amount (TZS)')).toHaveValue('328770.00');
-    await user.type(screen.getByPlaceholderText('The mobile-money number to ask'), '255754000001');
-    await user.click(screen.getByRole('button', { name: 'Request payment' }));
-
-    await waitFor(() =>
-      expect(request).toHaveBeenCalledWith(disbursedLoan.loanId, {
-        payerRef: '255754000001',
-        amount: { amount: '328770.00', currencyCode: 'TZS' },
-      }, expect.anything()),
-    );
-    // Refetched: a fast confirmation already reflected server-side must show.
-    await waitFor(() => expect(listLoans).toHaveBeenCalledTimes(2));
-  });
-
-  it('never sends the amount as a number, and rejects a third decimal before any request', async () => {
-    vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([disbursedLoan]);
-    const request = vi.spyOn(policiesApi, 'requestLoanPayment');
-    const user = userEvent.setup();
-
-    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange canRecordDeposit canRequestPayment />);
-    await waitFor(() => expect(screen.getByText(/of .*principal/)).toBeInTheDocument());
-
-    await user.click(screen.getByRole('button', { name: 'Request mobile-money payment' }));
-    await user.clear(screen.getByLabelText('Amount (TZS)'));
-    await user.type(screen.getByLabelText('Amount (TZS)'), '100.555');
-    await user.type(screen.getByPlaceholderText('The mobile-money number to ask'), '255754000001');
-    await user.click(screen.getByRole('button', { name: 'Request payment' }));
-
-    await waitFor(() => expect(screen.getByText(/up to 2 decimal places/)).toBeInTheDocument());
-    expect(request).not.toHaveBeenCalled();
-  });
-
-  it('surfaces a refusal verbatim and keeps the form open', async () => {
-    vi.spyOn(policiesApi, 'listLoans').mockResolvedValue([disbursedLoan]);
-    vi.spyOn(policiesApi, 'requestLoanPayment').mockRejectedValue({
-      title: 'Conflict',
-      detail: 'Ask for between 0.01 and 328770.00 TZS, what the loan owes now',
-      status: 409,
-    });
-    const user = userEvent.setup();
-
-    renderPanel(<LoansPanel policyNumber="POL-000001" cashValue={TZS('0.00')} canChange canRecordDeposit canRequestPayment />);
-    await waitFor(() => expect(screen.getByText(/of .*principal/)).toBeInTheDocument());
-
-    await user.click(screen.getByRole('button', { name: 'Request mobile-money payment' }));
-    await user.type(screen.getByPlaceholderText('The mobile-money number to ask'), '255754000001');
-    await user.click(screen.getByRole('button', { name: 'Request payment' }));
-
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('what the loan owes now'));
-    expect(screen.getByLabelText('Amount (TZS)')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Repay' })).not.toBeInTheDocument();
   });
 
   it('disables origination while the policy has no cash value, and says why', async () => {
@@ -192,8 +128,7 @@ describe('LoansPanel', () => {
       canRecordDeposit={false} canRequestPayment={false} />);
     await waitFor(() => expect(screen.getByText(/principal/)).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Take a loan' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Record deposit' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Request mobile-money payment' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Repay' })).not.toBeInTheDocument();
   });
 
   // Money movement step 4: a loan's payout waits for a second person.

@@ -506,12 +506,9 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
               <PolicyScheduleDownload policyNumber={policyNumber} />
             </Panel>
             <Panel title="Invoices">
-              {/* The endpoint's rule: a customer or an agent may ask, staff only with collections or servicing. An
-                  underwriter was offered the form and refused on submit. */}
-              <InvoicesPanel
-                policyNumber={policyNumber}
-                canRequestPayment={!isStaff || can('collections.manage') || can('policies.service')}
-              />
+              {/* Staff take every deposit, mobile money included, on the one Deposit page (2026-11-07): Balance or
+                  Account. The agent console keeps the invoice's own request until it has that page. */}
+              <InvoicesPanel policyNumber={policyNumber} canRequestPayment={!isStaff} />
             </Panel>
             <Panel
               title="Payment schedule"

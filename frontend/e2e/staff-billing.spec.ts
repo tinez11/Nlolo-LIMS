@@ -101,22 +101,22 @@ test.describe('staff billing', () => {
     expect(requestFired).toBe(false);
   });
 
-  test('requests payment for a real invoice', async ({ page }) => {
+  // 2026-11-07, the user: one Deposit page, every method; staff no longer ask from an invoice row.
+  test('asks the payer’s phone for the premium owed, from Deposit', async ({ page }) => {
     await issueRealPolicyWithInvoices(page);
 
-    await expect(page.getByRole('button', { name: 'Request payment' }).first()).toBeVisible({
-      timeout: 15_000,
-    });
-    await page.getByRole('button', { name: 'Request payment' }).first().click();
+    await expect(page.getByRole('link', { name: 'Deposit', exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Request payment' })).toHaveCount(0);
+    await page.getByRole('link', { name: 'Deposit', exact: true }).click();
 
-    // 11 other invoice rows still show their own "Request payment" TOGGLE, so
-    // the submit button must be scoped to the one form that actually opened.
-    const form = page.locator('form').filter({ has: page.getByLabel('Payer reference') });
-    await form.getByLabel('Payer reference').fill('255700000000');
-    await form.getByRole('button', { name: 'Request payment' }).click();
+    await expect(page.getByRole('heading', { name: 'Deposit', exact: true })).toBeVisible();
+    await page.getByLabel('How is it being paid?').selectOption('MOBILE_MONEY');
+    // The request asks for what the oldest premium owes; nothing to type but the phone.
+    await expect(page.getByText(/still owes\.$/)).toBeVisible({ timeout: 15_000 });
+    await page.getByLabel('Phone number').fill('255700000000');
+    await page.getByRole('button', { name: 'Send request' }).click();
 
-    // A real 202 -- the form closes on success, same signal used throughout
-    // this console (the request itself succeeding, not the async settlement).
-    await expect(page.getByLabel('Payer reference')).not.toBeVisible({ timeout: 15_000 });
+    // A real 202 -- the page closes into what was sent (the request itself succeeding, not the async settlement).
+    await expect(page.getByText('Mobile-money request sent')).toBeVisible({ timeout: 60_000 });
   });
 });

@@ -13,21 +13,13 @@ import { barredAsOwn } from '@/lib/ownWork';
 import { InlineError } from '@/components/InlineError';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectLoans,
   selectOriginatingLoan,
-  selectRequestingLoanPayment,
   usePolicyStore,
 } from '@/store/policyStore';
-import {
-  blankLoanPaymentForm,
-  loanPaymentFormSchema,
-  toLoanPaymentRequest,
-  type LoanPaymentFormValues,
-} from './loanPaymentForm';
 import {
   blankOriginateLoanForm,
   originateLoanFormSchema,
@@ -170,7 +162,6 @@ function LoanRow({
   canRecordDeposit: boolean;
   canRequestPayment: boolean;
 }) {
-  const [asking, setAsking] = useState(false);
   const loanId = loan.loanId ?? '';
   const repayable = loan.status !== undefined && REPAYABLE.includes(loan.status);
   const depositHref = `/staff/receipts/new?for=LOAN&loan=${encodeURIComponent(loanId)}`
@@ -199,25 +190,14 @@ function LoanRow({
         </p>
       )}
 
-      {/* A repayment is money in like a premium (money movement step 1): recorded on the receipt page and confirmed
-          by a second person, or asked of the payer's phone. Neither repays anything until the money is confirmed. */}
-      {loanId && repayable && !asking && (canRecordDeposit || canRequestPayment) && (
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {canRecordDeposit && (
-            <Button asChild size="sm" variant="ghost" className="-ml-2">
-              <Link to={depositHref}>Record deposit</Link>
-            </Button>
-          )}
-          {canRequestPayment && (
-            <Button size="sm" variant="ghost" className={canRecordDeposit ? undefined : '-ml-2'} onClick={() => setAsking(true)}>
-              Request mobile-money payment
-            </Button>
-          )}
+      {/* A repayment is a deposit For: Loan, taken on the one Deposit page (2026-11-07): mobile money asks the phone,
+          any other method is recorded for a second person. Neither repays anything until the money is confirmed. */}
+      {loanId && repayable && (canRecordDeposit || canRequestPayment) && (
+        <div className="mt-1.5">
+          <Button asChild size="sm" variant="outline">
+            <Link to={depositHref}>Repay</Link>
+          </Button>
         </div>
-      )}
-
-      {asking && loanId && (
-        <LoanPaymentForm policyNumber={policyNumber} loan={loan} onDone={() => setAsking(false)} />
       )}
 
       {loanId && loan.status === 'AWAITING_PAYOUT_APPROVAL' && (
@@ -377,74 +357,3 @@ function OriginateLoanForm({
   );
 }
 
-/** Ask the payer's phone for a repayment, by default what the loan owes as the server stated it. The same shape as the
- *  invoice row's mobile-money request (InvoicesPanel.MobileMoneyRequestForm). */
-function LoanPaymentForm({
-  policyNumber,
-  loan,
-  onDone,
-}: {
-  policyNumber: string;
-  loan: LoanView;
-  onDone: () => void;
-}) {
-  const loanId = loan.loanId ?? '';
-  const currency = loan.outstandingBalance?.currencyCode ?? 'TZS';
-  const requestLoanPayment = usePolicyStore((s) => s.requestLoanPayment);
-  const resetRequestLoanPayment = usePolicyStore((s) => s.resetRequestLoanPayment);
-  const requesting = usePolicyStore(selectRequestingLoanPayment(loanId));
-  // Minted once per mount, reused across retries; reopening the form starts a new attempt.
-  const [attempt] = useState<MutationAttempt>(() => startMutation());
-
-  useEffect(() => {
-    resetRequestLoanPayment(loanId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loanId]);
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoanPaymentFormValues>({
-    ...VALIDATE_ON_TOUCH,
-    resolver: zodResolver(loanPaymentFormSchema),
-    defaultValues: blankLoanPaymentForm(loan.outstandingBalance?.amount ?? ''),
-  });
-
-  async function onSubmit(values: LoanPaymentFormValues) {
-    await requestLoanPayment(policyNumber, loanId, toLoanPaymentRequest(values, currency), attempt);
-    if (usePolicyStore.getState().requestingLoanPayment[loanId]?.status === 'success') onDone();
-  }
-
-  return (
-    <form
-      className="mt-2 space-y-2 rounded-md border border-border p-2.5"
-      onSubmit={(e) => void handleSubmit(onSubmit)(e)}
-    >
-      <FormField required label="Payer reference" error={errors.payerRef?.message}>
-        <Input inputSize="sm" placeholder="The mobile-money number to ask" {...register('payerRef')} />
-      </FormField>
-
-      <FormField required label={`Amount (${currency})`} error={errors.amount?.message}>
-        <Input inputSize="sm" inputMode="decimal" {...register('amount')} />
-      </FormField>
-
-      {requesting.status === 'error' && requesting.error && (
-        <InlineError error={requesting.error} />
-      )}
-
-      <p className="text-xs text-muted-foreground">
-        Nothing is repaid until the money is confirmed. At most what the loan owes now.
-      </p>
-
-      <div className="flex items-center gap-1.5">
-        <Button type="submit" size="sm" pending={requesting.status === 'loading'}>
-          Request payment
-        </Button>
-        <Button type="button" size="sm" variant="ghost" onClick={onDone}>
-          Cancel
-        </Button>
-      </div>
-    </form>
-  );
-}

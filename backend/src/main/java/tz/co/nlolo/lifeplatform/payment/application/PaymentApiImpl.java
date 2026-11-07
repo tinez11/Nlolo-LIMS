@@ -491,10 +491,11 @@ public class PaymentApiImpl implements PaymentApi {
     }
 
     /**
-     * A savings top-up already received by hand (2026-10-28): receipted and confirmed in one step, by the person who
-     * recorded it, and confirmed to accumulation exactly as any collection is -- carrying the method, so the account it
-     * reached is the one debited. A reference already receipted under the same method fails it instead, so one slip is
-     * never credited twice. Empty when the key was already seen.
+     * A savings top-up already received by hand (2026-10-28): recorded as a deposit waiting for a second person
+     * (2026-11-07, the user: every deposit by hand, savings included). {@code Receipts.approve} confirms it to
+     * accumulation exactly as any collection is -- carrying the method, so the account it reached is the one debited --
+     * and {@code Receipts.reject} fails the top-up. A reference already receipted under the same method fails it
+     * instead, so one slip is never credited twice. Empty when the key was already seen.
      */
     @Transactional
     Optional<UUID> recordReceivedTopUp(UUID tenantId, String idempotencyKey, String method, String reference,
@@ -516,18 +517,6 @@ public class PaymentApiImpl implements PaymentApi {
             return Optional.empty();
         }
         paymentTransactionRepository.saveAndFlush(transaction);
-        eventPublisher.publishEvent(DomainEventEnvelope.of("payment.PaymentConfirmed", tenantId,
-            Map.of("paymentRequestId", transaction.getPaymentTransactionId(),
-                   "receiptNumber", receiptNumberOf(transaction.getPaymentTransactionId()),
-                   "idempotencyKey", idempotencyKey,
-                   "sourceRef", topUpId,
-                   "gatewayReference", reference,
-                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency),
-                   "confirmedAt", Instant.now().toString(),
-                   "purpose", transaction.getPurpose(),
-                   "payerRef", payerRef,
-                   "method", method)));
-        receiptNotices.issued(transaction);
         return Optional.of(transaction.getPaymentTransactionId());
     }
 

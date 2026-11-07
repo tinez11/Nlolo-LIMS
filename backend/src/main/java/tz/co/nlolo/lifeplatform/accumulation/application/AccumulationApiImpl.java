@@ -313,8 +313,8 @@ public class AccumulationApiImpl implements AccumulationApi {
         String payer = payerRef == null || payerRef.isBlank() ? "—" : payerRef.trim();
         TopUpRequest request = topUps.save(TopUpRequest.received(TenantContext.get(), policyNumber,
             amount.setScale(2, RoundingMode.UNNECESSARY), account.getCurrency(), method, ref, receivedOn, payer, recordedBy));
-        // Payment receipts it at once, confirmed by the person who recorded it, and its confirmation credits the account
-        // by the same road a mobile-money top-up takes.
+        // Payment receipts it as a deposit a second person confirms (2026-11-07), and its confirmation credits the
+        // account by the same road a mobile-money top-up takes; a refusal fails it.
         events.publishEvent(DomainEventEnvelope.of("accumulation.TopUpRequested", TenantContext.get(), Map.of(
             "topUpId", request.getTopUpId().toString(),
             "idempotencyKey", "topup:" + request.getTopUpId(),

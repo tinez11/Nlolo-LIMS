@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { grantRoles } from '@/test/access';
@@ -6,6 +6,7 @@ import type { AccountView, WithdrawalView } from '@/api/types';
 import { success } from '@/store/createResourceSlice';
 import { useAccumulationStore } from '@/store/accumulationStore';
 import { AccountPanel } from './AccountPanel';
+import { renderScreen as render } from '@/test/renderScreen';
 
 vi.mock('react-oidc-context', () => ({
   useAuth: () => ({ user: { access_token: 'token-for-staff-one' } }),
@@ -76,23 +77,21 @@ beforeEach(() => grantRoles('FINANCE_OFFICER'));
 
 describe('AccountPanel on a term account', () => {
   it('shows the locked rate and maturity, takes money in, and offers no withdrawal', () => {
-    // Both sides of the counter: customer service requests the top-up, finance records a transfer in.
+    // Both sides of the counter, so "no withdrawal" is not merely a permission missing.
     grantRoles('FINANCE_OFFICER', 'CUSTOMER_SERVICE_REP');
     useAccumulationStore.setState({ termAccount: { 'POL-1': success(termAccount('RUNNING')) } });
     render(<AccountPanel policyNumber="POL-1" />);
     expect(screen.getByText('5.25% a year')).toBeInTheDocument();
     expect(screen.getByText(/Nothing can be withdrawn or surrendered until it matures/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Request savings withdrawal' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Request savings deposit' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Record transfer in' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Withdraw' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Deposit' })).toBeInTheDocument();
   });
 
   it('once matured and waiting, offers finance the payee form and takes nothing in', () => {
     useAccumulationStore.setState({ termAccount: { 'POL-1': success(termAccount('AWAITING_PAYEE')) } });
     render(<AccountPanel policyNumber="POL-1" />);
     expect(screen.getByRole('button', { name: 'Record payee and pay' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Request savings deposit' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Record transfer in' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Deposit' })).not.toBeInTheDocument();
   });
 });
 
@@ -154,40 +153,36 @@ describe('AccountPanel', () => {
     expect(past).toHaveTextContent('Mobile money · +255700000009');
   });
 
-  it('records a top-up already received with its reference and day, then closes the form and says it was credited', async () => {
-    // Both sides of the counter: the request (customer service) and the money received (finance, 2026-10-29).
+  // 2026-11-07, the user: one Deposit page, every method -- the Account tab only leads there, For: Savings.
+  it('leads Deposit to the one Deposit page, for this account’s savings', () => {
     grantRoles('CUSTOMER_SERVICE_REP', 'FINANCE_OFFICER');
-    const topUp = vi.fn(async () => ({
-      topUpId: 't-1', policyNumber: 'POL-1', amount: money('25000.00'), payerRef: '—', status: 'COLLECTED' as const,
-      requestedBy: 'staff-one', requestedAt: '2026-10-28T08:00:00Z', method: 'CASH' as const, reference: 'RC-104',
-      receivedOn: '2026-10-28',
-    }));
-    useAccumulationStore.setState({ topUp });
-    const user = userEvent.setup();
     render(<AccountPanel policyNumber="POL-1" />);
-    await user.click(screen.getByRole('button', { name: 'Request savings deposit' }));
-    expect(screen.getByLabelText('Collect from')).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('How is it being paid?'), 'CASH');
-    expect(screen.queryByLabelText('Collect from')).not.toBeInTheDocument();
-    await user.type(screen.getByLabelText('Amount'), '25000');
-    await user.type(screen.getByLabelText('Cash receipt number'), 'RC-104');
-    await user.click(screen.getByRole('button', { name: 'Record savings deposit' }));
-    expect(topUp).toHaveBeenCalledWith(
-      'POL-1',
-      expect.objectContaining({ amount: '25000', method: 'CASH', reference: 'RC-104' }),
-      expect.anything(),
-    );
-    // The form closes and a receipt says what happened (2026-10-28): it used to reset in place, looking like nothing had.
-    const receipt = (await screen.findByText('Savings deposit credited')).closest('section')!;
-    expect(receipt).toHaveTextContent('Cash · RC-104');
-    expect(screen.queryByRole('button', { name: 'Record savings deposit' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Deposit' }))
+      .toHaveAttribute('href', '/staff/receipts/new?for=SAVINGS&policy=POL-1&from=policy');
+  });
+
+  it('says a savings deposit recorded by hand waits for a second finance person', () => {
+    useAccumulationStore.setState({
+      topUps: {
+        'POL-1': success([{
+          topUpId: 't-1', policyNumber: 'POL-1', amount: money('25000.00'), payerRef: '—', status: 'REQUESTED' as const,
+          requestedBy: 'staff-one', requestedAt: '2026-11-07T08:00:00Z', method: 'CASH' as const, reference: 'RC-104',
+          receivedOn: '2026-11-07',
+        }]),
+      },
+    });
+    render(<AccountPanel policyNumber="POL-1" />);
+    expect(screen.getByRole('region', { name: /Waiting/ }))
+      .toHaveTextContent('Cash · RC-104 · recorded by');
+    expect(screen.getByRole('region', { name: /Waiting/ }))
+      .toHaveTextContent('waiting for a second finance person to confirm it under Approvals');
   });
 
   it('asks a bank transfer for the bank, branch, account name and number -- and not a phone number', async () => {
     grantRoles('CUSTOMER_SERVICE_REP');
     const user = userEvent.setup();
     render(<AccountPanel policyNumber="POL-1" />);
-    await user.click(screen.getByRole('button', { name: 'Request savings withdrawal' }));
+    await user.click(screen.getByRole('button', { name: 'Withdraw' }));
     expect(screen.getByLabelText('Mobile-money number')).toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: 'Bank transfer' }));
     expect(screen.queryByLabelText('Mobile-money number')).not.toBeInTheDocument();
@@ -200,27 +195,14 @@ describe('AccountPanel', () => {
     expect(screen.getByText('Give the bank account number')).toBeInTheDocument();
   });
 
-  it('offers finance the transfer in, the adjustment and money received, but not the withdrawal', async () => {
+  it('offers finance the deposit and the adjustment, but not the withdrawal or a transfer in', () => {
     render(<AccountPanel policyNumber="POL-1" />);
-    for (const name of ['Record transfer in', 'Propose adjustment', 'Request savings deposit']) {
-      expect(screen.getByRole('button', { name })).toBeInTheDocument();
-    }
+    expect(screen.getByRole('link', { name: 'Deposit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Propose adjustment' })).toBeInTheDocument();
     // Requesting a withdrawal is customer service's (accounts.transact, 2026-10-26); the server would refuse it.
-    expect(screen.queryByRole('button', { name: 'Request savings withdrawal' })).not.toBeInTheDocument();
-    // Finance records money already received; asking a phone for it is customer service's (2026-10-29).
-    await userEvent.click(screen.getByRole('button', { name: 'Request savings deposit' }));
-    const options = within(screen.getByLabelText('How is it being paid?')).getAllByRole('option').map((o) => o.getAttribute('value'));
-    expect(options).toContain('CASH');
-    expect(options).not.toContain('MOBILE_MONEY');
-  });
-
-  it('lets customer service ask a phone for a top-up, but never say money was received', async () => {
-    grantRoles('CUSTOMER_SERVICE_REP');
-    render(<AccountPanel policyNumber="POL-1" />);
-    await userEvent.click(screen.getByRole('button', { name: 'Request savings deposit' }));
-    const options = within(screen.getByLabelText('How is it being paid?')).getAllByRole('option').map((o) => o.getAttribute('value'));
-    expect(options).toEqual(['MOBILE_MONEY']);
-    expect(screen.getByText(/recorded by finance/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Withdraw' })).not.toBeInTheDocument();
+    // Transfer in is gone from the screens (2026-11-07, the user).
+    expect(screen.queryByRole('button', { name: 'Record transfer in' })).not.toBeInTheDocument();
   });
 
   it('lets finance reject a withdrawal, saying why -- never their own request', async () => {
@@ -240,15 +222,12 @@ describe('AccountPanel', () => {
     expect(reject).toHaveBeenCalledWith('POL-1', 'w-9', 'The customer cancelled it');
   });
 
-  it('offers customer service the withdrawal and top-up, but not the transfer in or the adjustment', () => {
+  it('offers customer service the deposit and the withdrawal, but not the adjustment', () => {
     grantRoles('CUSTOMER_SERVICE_REP');
     render(<AccountPanel policyNumber="POL-1" />);
-    for (const name of ['Request savings withdrawal', 'Request savings deposit']) {
-      expect(screen.getByRole('button', { name })).toBeInTheDocument();
-    }
-    for (const name of ['Record transfer in', 'Propose adjustment']) {
-      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
-    }
+    expect(screen.getByRole('link', { name: 'Deposit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Withdraw' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Propose adjustment' })).not.toBeInTheDocument();
   });
 
   it('on a deposit shows the term and its rate, and offers no money movement but the adjustment', () => {
@@ -290,7 +269,8 @@ describe('AccountPanel', () => {
     expect(early).toHaveTextContent('(maturity)');
     expect(screen.getByRole('button', { name: 'Download the deposit schedule as PDF' })).toBeInTheDocument();
     expect(screen.getByText('No instruction: it will be paid out to +255700000777.')).toBeInTheDocument();
-    for (const name of ['Request savings withdrawal', 'Request savings deposit', 'Record transfer in']) {
+    expect(screen.queryByRole('link', { name: 'Deposit' })).not.toBeInTheDocument();
+    for (const name of ['Withdraw']) {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
     }
     expect(screen.getByRole('button', { name: 'Propose adjustment' })).toBeInTheDocument();
@@ -338,7 +318,7 @@ describe('AccountPanel', () => {
     render(<AccountPanel policyNumber="POL-1" />);
     expect(screen.getByText('Waiting for the deposit')).toBeInTheDocument();
     expect(screen.queryByText('Nothing on the ledger yet')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Request savings deposit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Deposit' })).not.toBeInTheDocument();
   });
 
   it('offers no money movement on a closed account', () => {
@@ -346,6 +326,6 @@ describe('AccountPanel', () => {
       account: { 'POL-1': success({ ...account, status: 'CLOSED', closedReason: 'SURRENDERED', closedOn: '2026-03-01' }) },
     });
     render(<AccountPanel policyNumber="POL-1" />);
-    expect(screen.queryByRole('button', { name: 'Request savings withdrawal' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Withdraw' })).not.toBeInTheDocument();
   });
 });

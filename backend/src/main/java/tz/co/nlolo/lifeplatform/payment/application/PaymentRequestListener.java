@@ -267,8 +267,8 @@ public class PaymentRequestListener {
 
     /**
      * A top-up: a collection that is not a premium, so billing leaves its confirmation alone. Money already received by
-     * hand (a method other than mobile money, 2026-10-28) is receipted and confirmed at once; a mobile-money top-up is
-     * requested from the payer's phone.
+     * hand (a method other than mobile money, 2026-10-28) is receipted and waits for a second person (2026-11-07); a
+     * mobile-money top-up is requested from the payer's phone.
      */
     private void handleTopUpCollection(Map<String, Object> payload) {
         UUID tenantId = TenantContext.get();
