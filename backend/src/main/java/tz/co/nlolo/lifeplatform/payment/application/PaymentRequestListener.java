@@ -258,6 +258,16 @@ public class PaymentRequestListener {
         String topUpId = String.valueOf(payload.get("topUpId"));
         String payerRef = (String) payload.get("payerRef");
         Money money = money(payload);
+        // Money already received by hand into the funds (2026-11-07): receipted for a second finance person to confirm,
+        // as every deposit by hand; a mobile-money top-up is asked of the payer's phone.
+        Object method = payload.get("method");
+        if (method != null && !"MOBILE_MONEY".equals(method)) {
+            requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordReceivedTopUp(tenantId, idempotencyKey,
+                method.toString(), (String) payload.get("reference"), payerRef, money.amount(), money.currency(), topUpId,
+                (String) payload.get("policyNumber"), java.time.LocalDate.parse((String) payload.get("receivedOn")),
+                (String) payload.get("recordedBy"), "UL_TOP_UP"));
+            return;
+        }
         Optional<UUID> transactionId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordCollectionRequest(
             tenantId, idempotencyKey, payerRef, money.amount(), money.currency(), topUpId, "UL_TOP_UP"));
         transactionId.ifPresentOrElse(

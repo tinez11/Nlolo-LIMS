@@ -481,6 +481,31 @@ paths:
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/StateConflict' }
         '422': { $ref: '#/components/responses/Invalid' }
+  /policies/{policyNumber}/top-ups/received:
+    post:
+      summary: Record a top-up already received by hand (2026-11-07)
+      description: >
+        Finance (collections.manage). Cash, a bank deposit, a cheque, a Lipa number or TANQR, with its reference and
+        day; it waits for a second finance person under Approvals, and is allocated once confirmed.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReceivedTopUpRequest' }
+      responses:
+        '201':
+          description: The top-up, waiting for its money to be confirmed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TopUp' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/StateConflict' }
+        '422': { $ref: '#/components/responses/Invalid' }
   /policies/{policyNumber}/statements:
     get:
       summary: Every unit statement filed for the policy, annual and on demand (U2)
@@ -847,6 +872,22 @@ components:
       properties:
         amount: { $ref: '#/components/schemas/Decimal' }
         payerRef: { type: string, minLength: 1, description: "The mobile money number collected from" }
+        split:
+          type: array
+          description: Its own split; empty = the policy's split in force
+          items: { $ref: '#/components/schemas/FundShare' }
+    ReceivedTopUpRequest:
+      description: >
+        2026-11-07: money already received into the funds, by any method but mobile money. Recorded by finance and
+        credited once a second finance person confirms it.
+      type: object
+      required: [amount, method, reference, receivedOn]
+      properties:
+        amount: { $ref: '#/components/schemas/Decimal' }
+        method: { type: string, enum: [CASH, BANK_DEPOSIT, CHEQUE, LIPA_NUMBER, TANQR] }
+        reference: { type: string, minLength: 1, description: "The method's own reference, so one slip is credited once" }
+        receivedOn: { type: string, format: date }
+        payerRef: { type: [string, "null"], description: "Who paid, as the slip shows it" }
         split:
           type: array
           description: Its own split; empty = the policy's split in force

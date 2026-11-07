@@ -26,7 +26,8 @@ class PaymentApprovalSources {
             limit -> ApprovalSource.Pending.of(receipts.awaitingApproval().stream()
                 .map(r -> new ApprovalSource.Item(r.receiptId().toString(), r.policyNumber(),
                     Receipts.words(r.method()) + " " + r.reference() + (r.loanId() != null ? " · loan repayment"
-                        : "ACCOUNT_TOP_UP".equals(r.purpose()) ? " · savings deposit" : ""),
+                        : "ACCOUNT_TOP_UP".equals(r.purpose()) ? " · savings deposit"
+                        : "UL_TOP_UP".equals(r.purpose()) ? " · fund top-up" : ""),
                     r.amount(), r.currency(), r.recordedBy(), r.recordedAt()))
                 .toList(), limit));
     }

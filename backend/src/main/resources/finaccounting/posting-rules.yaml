@@ -1000,7 +1000,7 @@ rules:
     models: [ANY]
     description: A top-up's money in, before it buys units or goes back
     lines:
-      - {dr: "1140", amount: amount}
+      - {dr: "RECEIPT", amount: amount}
       - {cr: "2121", amount: amount, movement: PRM_TOP}
 
   - id: PLAT-UL-ADJ-COLLECTED

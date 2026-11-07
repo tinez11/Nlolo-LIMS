@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState, type FocusEvent } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { getAccount, recordReceivedTopUp, requestTopUp } from '@/api/accumulation';
-import { listInvoices, listLoans, requestLoanPayment, requestPaymentForInvoice } from '@/api/policies';
+import { getPolicy, listInvoices, listLoans, requestLoanPayment, requestPaymentForInvoice } from '@/api/policies';
+import { recordReceivedTopUp as recordReceivedFundsTopUp, requestTopUp as requestFundsTopUp } from '@/api/unitlinked';
 import type { AccountView, InvoiceView, LoanView } from '@/api/types';
 import type { Realm } from '@/auth/realms';
 import { can } from '@/auth/access';
@@ -39,7 +40,12 @@ const OPEN = new Set(['DUE', 'PARTIALLY_PAID', 'IN_GRACE', 'OVERDUE']);
 /** Loans a deposit can still repay -- the two statuses the server accepts a repayment on. */
 const REPAYABLE = new Set(['DISBURSED', 'REPAYING']);
 
-const FOR_LABEL: Record<PaysFor, string> = { PREMIUM: 'Premium', LOAN: 'Loan repayment', SAVINGS: 'Savings' };
+const FOR_LABEL: Record<PaysFor, string> = {
+  PREMIUM: 'Premium', LOAN: 'Loan repayment', SAVINGS: 'Savings', FUNDS: 'Funds (top-up)',
+};
+
+/** A savings account's or a unit-linked policy's own money, rather than a premium or a loan. */
+const isTopUp = (paysFor: PaysFor) => paysFor === 'SAVINGS' || paysFor === 'FUNDS';
 
 /** What is still owed on an invoice, as the server stated it; the charge itself where no balance is stated. */
 function owed(i: InvoiceView) {
@@ -58,7 +64,7 @@ function mayAsk(paysFor: PaysFor, agent = false) {
   // An agent asks a phone for a premium, and only that (2026-11-07): the invoice request is the one its endpoint lets
   // an agent make.
   if (agent) return paysFor === 'PREMIUM';
-  return paysFor === 'SAVINGS'
+  return isTopUp(paysFor)
     ? can('accounts.transact') || can('collections.manage')
     : can('policies.service') || can('collections.manage');
 }
@@ -95,7 +101,8 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
 
   const prefill = useMemo(() => {
     const askedFor = params.get('for');
-    const paysFor: PaysFor = !agent && (askedFor === 'LOAN' || askedFor === 'SAVINGS') ? askedFor : 'PREMIUM';
+    const paysFor: PaysFor = !agent && (askedFor === 'LOAN' || askedFor === 'SAVINGS' || askedFor === 'FUNDS')
+      ? askedFor : 'PREMIUM';
     const named = params.get('method');
     const method = named === 'MOBILE_MONEY' || RECEIPT_METHODS.some((m) => m.value === named)
       ? (named as ReceiptFormValues['method'])
@@ -135,6 +142,8 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
   const [loans, setLoans] = useState<LoanView[] | null>(null);
   const [account, setAccount] = useState<AccountView | null>(null);
+  // A unit-linked policy takes a top-up into its funds (2026-11-07).
+  const [unitLinked, setUnitLinked] = useState<boolean | null>(null);
   useEffect(() => {
     if (!lookedUp) return;
     let cancelled = false;
@@ -170,6 +179,13 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       .catch(() => {
         if (!cancelled) setAccount(null);
       });
+    getPolicy(lookedUp)
+      .then((p) => {
+        if (!cancelled) setUnitLinked(p.productCategory === 'UNIT_LINKED');
+      })
+      .catch(() => {
+        if (!cancelled) setUnitLinked(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -191,6 +207,7 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   const forOptions: PaysFor[] = ['PREMIUM'];
   if ((loans && loans.length > 0) || prefill.paysFor === 'LOAN') forOptions.push('LOAN');
   if (account || prefill.paysFor === 'SAVINGS') forOptions.push('SAVINGS');
+  if (unitLinked || prefill.paysFor === 'FUNDS') forOptions.push('FUNDS');
 
   const dueNow = invoices?.filter((i) => (i.dueDate ?? '') <= todayIso()) ?? null;
   // The oldest premium still owed: what a mobile-money request for a premium asks for.
@@ -205,11 +222,14 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     ? `/staff/policies/${encodeURIComponent(lookedUp)}?tab=loans`
     : paysFor === 'SAVINGS' && lookedUp
       ? `/staff/policies/${encodeURIComponent(lookedUp)}?tab=account`
-      : origin.back;
+      : paysFor === 'FUNDS' && lookedUp
+        ? `/staff/policies/${encodeURIComponent(lookedUp)}?tab=units`
+        : origin.back;
 
   const forProblem =
     paysFor === 'LOAN' && loans && loans.length === 0 ? `No loan on ${lookedUp} has anything to repay.`
       : paysFor === 'SAVINGS' && lookedUp && invoices !== null && !account ? `${lookedUp} has no open savings account.`
+      : paysFor === 'FUNDS' && lookedUp && unitLinked === false ? `${lookedUp} is not a unit-linked policy.`
         : paysFor === 'PREMIUM' && mobile && invoices !== null && !oldestOpen
           ? 'No premium is owed now, so there is nothing to ask the phone for.'
           : paysFor === 'PREMIUM' ? invoiceError : null;
@@ -218,7 +238,9 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     ? `At most ${formatMoney(loan.outstandingBalance)}, what the loan owes.`
     : paysFor === 'SAVINGS'
       ? 'It goes into the savings account, less any charge the product takes on a deposit.'
-      : dueNow && totalOwed(dueNow)
+      : paysFor === 'FUNDS'
+        ? 'It buys units by the policy\'s own split, at the first price after the money is confirmed.'
+        : dueNow && totalOwed(dueNow)
         ? `Owed now ${formatMoney(totalOwed(dueNow))}. It goes onto the policy's balance, which pays what is due oldest first; the rest pays the next premiums.`
         : undefined;
 
@@ -227,26 +249,32 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     const amount = Number(values.amount || '0').toFixed(2);
     const payer = values.payerRef.trim();
 
-    if (values.method !== 'MOBILE_MONEY' && values.paysFor !== 'SAVINGS') {
+    if (values.method !== 'MOBILE_MONEY' && !isTopUp(values.paysFor)) {
       const saved = await record(toApiRequest(values, currency));
       if (saved) navigate(`/staff/receipts/${saved.receiptId}${from ? `?from=${encodeURIComponent(from)}` : ''}`);
       return;
     }
 
     if (values.method !== 'MOBILE_MONEY') {
-      const ok = await send(() => recordReceivedTopUp(policy, {
+      const received = {
         amount, method: values.method as Exclude<ReceiptFormValues['method'], 'MOBILE_MONEY'>,
         reference: values.reference.trim(), receivedOn: values.receivedOn, ...(payer ? { payerRef: payer } : {}),
-      }, attempt));
+      };
+      const funds = values.paysFor === 'FUNDS';
+      const ok = await send(() => funds
+        ? recordReceivedFundsTopUp(policy, received, attempt)
+        : recordReceivedTopUp(policy, received, attempt));
       if (ok) {
         setSent({
-          heading: 'Savings deposit recorded',
+          heading: funds ? 'Fund top-up recorded' : 'Savings deposit recorded',
           lines: [
             { label: 'Policy', value: policy },
             { label: 'Amount', value: formatMoney({ amount, currencyCode: currency }) },
             { label: 'How it came in', value: `${methodOf(values.method)?.label ?? values.method}, ${values.reference.trim()}` },
           ],
-          note: 'It goes into the savings account once a second finance person confirms it under Approvals.',
+          note: funds
+            ? 'It buys units once a second finance person confirms it under Approvals.'
+            : 'It goes into the savings account once a second finance person confirms it under Approvals.',
         });
       }
       return;
@@ -261,6 +289,9 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       ok = await send(() => requestLoanPayment(values.loanId, { payerRef: payer, amount: { amount, currencyCode: currency } }, attempt));
     } else if (values.paysFor === 'SAVINGS') {
       ok = await send(() => requestTopUp(policy, { amount, payerRef: payer }, attempt));
+    } else if (values.paysFor === 'FUNDS') {
+      // The policy's own split: an empty one is the split in force.
+      ok = await send(() => requestFundsTopUp(policy, { amount, payerRef: payer, split: [] }, attempt));
     }
     if (ok) {
       setSent({
@@ -405,7 +436,7 @@ export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 <FormField label="Paid by" hint="The payer's name or number, as the slip shows it." error={errors.payerRef?.message}>
                   <Input {...register('payerRef')} />
                 </FormField>
-                {paysFor !== 'SAVINGS' && (
+                {!isTopUp(paysFor) && (
                   <FormField label="Note" error={errors.note?.message}>
                     <Input {...register('note')} />
                   </FormField>

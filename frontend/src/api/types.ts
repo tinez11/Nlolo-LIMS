@@ -655,6 +655,8 @@ export type SwitchView = UnitLinkedComponents['schemas']['Switch'];
 export type WithdrawalRequestBody = UnitLinkedComponents['schemas']['WithdrawalRequest'];
 export type UnitLinkedWithdrawalView = UnitLinkedComponents['schemas']['Withdrawal'];
 export type UnitLinkedTopUpRequest = UnitLinkedComponents['schemas']['TopUpRequest'];
+/** Money already received into the funds by hand (2026-11-07). */
+export type UnitLinkedReceivedTopUpRequest = UnitLinkedComponents['schemas']['ReceivedTopUpRequest'];
 export type UnitLinkedTopUpView = UnitLinkedComponents['schemas']['TopUp'];
 export type UnitStatementView = UnitLinkedComponents['schemas']['UnitStatement'];
 

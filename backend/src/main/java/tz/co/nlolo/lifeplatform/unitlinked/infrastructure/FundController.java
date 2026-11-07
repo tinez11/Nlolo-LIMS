@@ -202,13 +202,35 @@ public class FundController {
     }
 
     /** A top-up (U2): any staff member; the Idempotency-Key header is required, so a retry never collects twice. */
+    // Finance too (2026-11-07): the one Deposit page offers mobile money to whoever may take a deposit.
     @PostMapping("/policies/{policyNumber}/top-ups")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("@access.can('accounts.transact')")
+    @PreAuthorize("@access.canAny('accounts.transact', 'collections.manage')")
     public tz.co.nlolo.lifeplatform.unitlinked.api.TopUpView requestTopUp(@PathVariable String policyNumber,
             @RequestBody tz.co.nlolo.lifeplatform.unitlinked.api.TopUpInput input,
             @org.springframework.web.bind.annotation.RequestHeader(value = "Idempotency-Key", required = false) String key,
             @AuthenticationPrincipal Jwt jwt) {
+        if (input != null && input.received()) {
+            throw new IllegalArgumentException("Money already received is recorded by finance, who are answerable for it");
+        }
+        return api.requestTopUp(policyNumber, input, jwt.getSubject(), key);
+    }
+
+    /**
+     * Money already received into the funds -- cash, a bank deposit, a cheque, a Lipa number, TANQR (2026-11-07, the
+     * user: every method on the one Deposit page). Recorded by finance and credited once a second person confirms it,
+     * as every deposit by hand.
+     */
+    @PostMapping("/policies/{policyNumber}/top-ups/received")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("@access.can('collections.manage')")
+    public tz.co.nlolo.lifeplatform.unitlinked.api.TopUpView recordReceivedTopUp(@PathVariable String policyNumber,
+            @RequestBody tz.co.nlolo.lifeplatform.unitlinked.api.TopUpInput input,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @AuthenticationPrincipal Jwt jwt) {
+        if (input == null || !input.received()) {
+            throw new IllegalArgumentException("Say how the money came in: cash, bank deposit, cheque, Lipa number or TANQR");
+        }
         return api.requestTopUp(policyNumber, input, jwt.getSubject(), key);
     }
 

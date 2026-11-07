@@ -26,6 +26,7 @@ import tz.co.nlolo.lifeplatform.unitlinked.infrastructure.TopUpRepository;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,7 @@ class TopUps {
     /** Its own disbursement purpose: benefitpayout claims every PREMIUM_RETURN_PAYOUT as one of its instalments. */
     static final String REFUND_PURPOSE = "TOP_UP_REFUND";
     private static final Set<String> IN_FORCE = Set.of("ACTIVE", "REINSTATED");
+    private static final Set<String> RECEIVED_METHODS = Set.of("CASH", "BANK_DEPOSIT", "CHEQUE", "LIPA_NUMBER", "TANQR");
 
     private final TopUpRepository topUps;
     private final ExitStateRepository exits;
@@ -93,19 +95,40 @@ class TopUps {
             throw new IllegalArgumentException("A top-up is at least " + String.format("%,.2f", plan.options().minimumTopUp())
                 + " " + policy.premiumCurrency());
         }
-        if (input.payerRef() == null || input.payerRef().isBlank()) {
+        // Money already received by hand (2026-11-07): its method's reference and day, as every deposit by hand; the
+        // payer is then optional. Asked of a phone, the phone is the payer.
+        if (input.received()) {
+            if (!RECEIVED_METHODS.contains(input.method())) {
+                throw new IllegalArgumentException("Say how the money came in: cash, bank deposit, cheque, Lipa number or TANQR");
+            }
+            if (input.reference() == null || input.reference().isBlank()) {
+                throw new IllegalArgumentException("A top-up received by hand needs its reference, so the same money cannot "
+                    + "be credited twice");
+            }
+            if (input.receivedOn() == null || input.receivedOn().isAfter(LocalDate.now(clock))) {
+                throw new IllegalArgumentException("Say the day the money was received; it cannot be later than today");
+            }
+        } else if (input.payerRef() == null || input.payerRef().isBlank()) {
             throw new IllegalArgumentException("A top-up needs the payer to collect it from");
         }
         List<PremiumSplit.Share> split = input.split() == null || input.split().isEmpty()
             ? List.of() : SplitRules.resolve(input.split(), plan, funds);
+        String payer = input.payerRef() == null || input.payerRef().isBlank() ? "—" : input.payerRef().trim();
         TopUp saved = topUps.save(new TopUp(tenantId, policyNumber, input.amount(), policy.premiumCurrency(),
-            input.payerRef().trim(), split, by, clock.instant()));
+            payer, split, by, clock.instant()));
         Map<String, Object> payload = new HashMap<>();
         payload.put("topUpId", saved.getTopUpId().toString());
         payload.put("idempotencyKey", "ul-topup:" + saved.getTopUpId());
         payload.put("policyNumber", policyNumber);
         payload.put("payerRef", saved.getPayerRef());
         payload.put("amount", Map.of("amount", saved.getAmount().toPlainString(), "currencyCode", saved.getCurrency()));
+        if (input.received()) {
+            // Payment receipts it for a second person to confirm, as every deposit by hand (2026-11-07).
+            payload.put("method", input.method());
+            payload.put("reference", input.reference().trim());
+            payload.put("receivedOn", input.receivedOn().toString());
+            payload.put("recordedBy", by);
+        }
         events.publishEvent(DomainEventEnvelope.of("unitlinked.TopUpRequested", tenantId, payload));
         return view(saved);
     }
@@ -113,6 +136,12 @@ class TopUps {
     /** payment confirmed the money (purpose UL_TOP_UP): allocate it, or carry it back if the policy is leaving. */
     @Transactional
     void onConfirmed(UUID topUpId, Instant confirmedAt) {
+        onConfirmed(topUpId, confirmedAt, null);
+    }
+
+    /** As above, with how the money came in (2026-11-07): the ledger posts it to the account it reached. */
+    @Transactional
+    void onConfirmed(UUID topUpId, Instant confirmedAt, String receiptMethod) {
         UUID tenantId = TenantContext.get();
         TopUp topUp = topUps.findByTenantIdAndTopUpId(tenantId, topUpId).orElse(null);
         if (topUp == null || !topUp.awaitingMoney()) {
@@ -120,9 +149,12 @@ class TopUps {
         }
         String ref = SOURCE + ":" + topUpId;
         // The cash is in: DR cash / CR 2140, where a collected premium sits before it buys units.
-        events.publishEvent(DomainEventEnvelope.of("unitlinked.TopUpReceived", tenantId, Map.of(
+        Map<String, Object> received = new HashMap<>(Map.of(
             "topUpId", topUpId.toString(), "policyNumber", topUp.getPolicyNumber(), "sourceRef", ref,
-            "amount", topUp.getAmount().toPlainString(), "currencyCode", topUp.getCurrency())));
+            "amount", topUp.getAmount().toPlainString(), "currencyCode", topUp.getCurrency()));
+        // The account it reached (2026-11-07): mobile money unless it was received some other way.
+        if (receiptMethod != null) received.put("receiptMethod", receiptMethod);
+        events.publishEvent(DomainEventEnvelope.of("unitlinked.TopUpReceived", tenantId, received));
         PolicyView policy = policyApi.getPolicy(topUp.getPolicyNumber());
         if (IN_FORCE.contains(policy.status().name()) && !ledger.isFrozen(topUp.getPolicyNumber())) {
             topUp.received(confirmedAt);

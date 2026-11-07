@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as accumulationApi from '@/api/accumulation';
 import * as policiesApi from '@/api/policies';
+import * as unitLinkedApi from '@/api/unitlinked';
 import type { AccountView, InvoiceView } from '@/api/types';
 import { grantAccess, grantRoles } from '@/test/access';
 import { renderScreen } from '@/test/renderScreen';
@@ -12,6 +13,7 @@ import { NewReceiptPage } from './NewReceiptPage';
 
 vi.mock('@/api/policies');
 vi.mock('@/api/accumulation');
+vi.mock('@/api/unitlinked');
 vi.mock('@/api/receipts');
 vi.mock('@/api/access');
 
@@ -39,6 +41,7 @@ beforeEach(() => {
   ]);
   vi.mocked(policiesApi.listLoans).mockResolvedValue([]);
   vi.mocked(accumulationApi.getAccount).mockResolvedValue(null);
+  vi.mocked(policiesApi.getPolicy).mockResolvedValue({ policyNumber: 'POL-1', productCategory: 'ENDOWMENT' } as never);
 });
 
 /** 2026-11-07, the user: one place, every method, and the method chosen decides what happens behind. */
@@ -134,6 +137,25 @@ describe('Deposit page', () => {
     await user.type(screen.getByLabelText('Phone number'), '+255700000002');
     await user.click(screen.getByRole('button', { name: 'Send request' }));
     expect(policiesApi.requestPaymentForInvoice).toHaveBeenCalledWith('inv-old', { payerRef: '+255700000002' }, expect.anything());
+  });
+
+  // 2026-11-07: a unit-linked policy's top-up is a deposit For: Funds, by any method.
+  it('offers Funds on a unit-linked policy, and records cash into them for a second person', async () => {
+    grantRoles('FINANCE_OFFICER');
+    vi.mocked(policiesApi.getPolicy).mockResolvedValue({ policyNumber: 'POL-1', productCategory: 'UNIT_LINKED' } as never);
+    vi.mocked(unitLinkedApi.recordReceivedTopUp).mockResolvedValue({} as never);
+    const user = userEvent.setup();
+    renderPage('for=FUNDS&policy=POL-1');
+    await vi.waitFor(() => expect(optionsOf('For')).toEqual(['PREMIUM', 'FUNDS']));
+
+    await user.selectOptions(screen.getByLabelText('How is it being paid?'), 'CHEQUE');
+    await user.type(screen.getByLabelText('Cheque number'), 'CHQ-9');
+    await user.type(screen.getByLabelText(/^Amount/), '250000');
+    await user.click(screen.getByRole('button', { name: 'Record deposit' }));
+
+    expect(unitLinkedApi.recordReceivedTopUp).toHaveBeenCalledWith('POL-1',
+      expect.objectContaining({ amount: '250000.00', method: 'CHEQUE', reference: 'CHQ-9' }), expect.anything());
+    expect(await screen.findByRole('status')).toHaveTextContent('It buys units once a second finance person confirms it');
   });
 
   it('asks a phone for a savings deposit of the amount typed', async () => {

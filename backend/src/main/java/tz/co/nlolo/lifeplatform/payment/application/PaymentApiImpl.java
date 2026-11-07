@@ -501,8 +501,18 @@ public class PaymentApiImpl implements PaymentApi {
     Optional<UUID> recordReceivedTopUp(UUID tenantId, String idempotencyKey, String method, String reference,
                                        String payerRef, BigDecimal amount, String currency, String topUpId,
                                        String policyNumber, java.time.LocalDate receivedOn, String recordedBy) {
+        return recordReceivedTopUp(tenantId, idempotencyKey, method, reference, payerRef, amount, currency, topUpId,
+            policyNumber, receivedOn, recordedBy, "ACCOUNT_TOP_UP");
+    }
+
+    /** As above, under the top-up's own purpose: a savings account's, or a unit-linked policy's funds (2026-11-07). */
+    @Transactional
+    Optional<UUID> recordReceivedTopUp(UUID tenantId, String idempotencyKey, String method, String reference,
+                                       String payerRef, BigDecimal amount, String currency, String topUpId,
+                                       String policyNumber, java.time.LocalDate receivedOn, String recordedBy,
+                                       String purpose) {
         PaymentTransaction transaction = PaymentTransaction.receivedTopUp(tenantId, idempotencyKey, method, reference,
-            payerRef, amount, currency, topUpId, policyNumber, receivedOn, recordedBy);
+            payerRef, amount, currency, topUpId, policyNumber, receivedOn, recordedBy, purpose);
         if (paymentIdempotencyRepository.claimKey(tenantId, idempotencyKey, transaction.getPaymentTransactionId()) == 0) {
             return Optional.empty();
         }
