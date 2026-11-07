@@ -1,10 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import {
+  accountMaturityRow,
   blankBaseRateBand,
   blankPublishVersionForm,
+  maturityRow as blankMaturityRow,
+  payoutRowsFor,
   publishVersionFormSchema,
   toApiRequest,
 } from './publishVersionSchema';
+
+/** 2026-11-07: an endowment's maturity was hidden behind "Add a payout"; the form now puts it there itself. */
+describe('payoutRowsFor', () => {
+  const survival = { ...blankMaturityRow(), kind: 'SURVIVAL', fromPolicyYear: '5', toPolicyYear: '9', amountBasis: 'PERCENT_OF_SA', amountValue: '10', frequency: 'ANNUAL' };
+
+  it('a savings account pays its whole account at maturity, and nothing else', () => {
+    expect(payoutRowsFor('ACCOUNT', [])).toEqual([accountMaturityRow()]);
+    expect(payoutRowsFor('ACCOUNT', [survival])).toEqual([accountMaturityRow()]);
+    expect(accountMaturityRow()).toMatchObject({ kind: 'MATURITY', amountBasis: 'ACCOUNT_VALUE', amountValue: '100' });
+  });
+
+  it('a scale endowment starts with its maturity row in place, keeping what was already chosen', () => {
+    expect(payoutRowsFor('SCALE', [])).toEqual([blankMaturityRow()]);
+    expect(payoutRowsFor('SCALE', [survival])).toEqual([blankMaturityRow(), survival]);
+    const filled = { ...blankMaturityRow(), amountBasis: 'PERCENT_OF_SA', amountValue: '100' };
+    expect(payoutRowsFor('SCALE', [filled])).toBeNull(); // nothing to change
+  });
+
+  it('leaving a savings account drops its account-value row, which only an account may pay', () => {
+    expect(payoutRowsFor('SCALE', [accountMaturityRow()])).toEqual([blankMaturityRow()]);
+  });
+});
 
 // AGE rows carry a real range as of product V5: age is resolved by range, not by matching
 // the band text, so an AGE row without one would match nobody and silently rate neutral.

@@ -229,11 +229,58 @@ describe('PublishVersionForm payout schedule', () => {
     expect(screen.queryByRole('button', { name: 'Add a payout' })).not.toBeInTheDocument();
   });
 
-  it('refuses an endowment with no maturity row, in the server wording', async () => {
+  // 2026-11-07, the user: the required maturity was hidden behind "Add a payout". An endowment can no longer reach the
+  // server without one, so what is tested is that the form puts it there and keeps it.
+  it('starts an endowment with its maturity row in place, which cannot be removed', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await step(user, 'What it pays');
+    expect(screen.getByLabelText('Payout 1 kind')).toHaveValue('MATURITY');
+    expect(screen.queryByRole('button', { name: 'Remove payout row' })).not.toBeInTheDocument();
+  });
+
+  it('asks for the maturity amount, not for a row, when it is left empty', async () => {
     const user = userEvent.setup();
     renderForm();
     await publish(user);
-    expect(await screen.findByText('An ENDOWMENT product must carry exactly one MATURITY row')).toBeInTheDocument();
+    expect(screen.queryByText('An ENDOWMENT product must carry exactly one MATURITY row')).not.toBeInTheDocument();
+  });
+
+  // 2026-11-07: the savings share (IFRS 17 investment component) is used only by survival and income payments.
+  it('asks for the savings share of a payment only once a survival or income payout exists', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    const label = 'Savings share of each survival or income payment (%)';
+    expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
+    await step(user, 'What it pays');
+    expect(screen.queryByLabelText(label)).not.toBeInTheDocument(); // the maturity alone does not use it
+    await user.click(screen.getByRole('button', { name: 'Add a payout' }));
+    await user.selectOptions(screen.getByLabelText('Payout 2 kind'), 'SURVIVAL');
+    expect(screen.getByLabelText(label)).toBeInTheDocument();
+    await user.type(screen.getByLabelText(label), '80');
+    await user.selectOptions(screen.getByLabelText('Payout 2 kind'), 'MATURITY');
+    expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
+  });
+
+  it('never asks an annuity for it: an annuity payment is no savings by rule', async () => {
+    const user = userEvent.setup();
+    renderForm('ANNUITY');
+    for (const name of ['Basics', 'What it pays']) {
+      const button = screen.queryByRole('button', { name });
+      if (button) await user.click(button);
+      expect(screen.queryByLabelText('Savings share of each survival or income payment (%)')).not.toBeInTheDocument();
+    }
+  });
+
+  it('shows a savings account its maturity as fixed: the whole account value, nothing to choose', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.click(screen.getByRole('radio', { name: /Savings account/ }));
+    await step(user, 'What it pays');
+    expect(screen.getByText('At maturity')).toBeInTheDocument();
+    expect(screen.getByText('The whole account value')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add a payout' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Payout 1 kind')).not.toBeInTheDocument();
   });
 
   it('asks how survival benefits affect the death benefit only once a survival row exists', async () => {
