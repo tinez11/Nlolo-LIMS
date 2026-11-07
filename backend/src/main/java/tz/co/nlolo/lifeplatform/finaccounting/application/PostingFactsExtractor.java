@@ -185,8 +185,10 @@ final class PostingFactsExtractor {
                 p.get("paidAmount") != null ? p.get("paidAmount") : p.get("settledAmount"), today,
                 paid("CLAIM", p.get("claimId"))));
             // A surrender value is all investment component (C-05): it is the payable as it stands.
+            // The whole value is payable (grossAmount, 2026-11-07); "amount" is what goes to the rail once the policy's
+            // loans are repaid from it (E-03-SURRENDER clears their part).
             case "policy.SurrenderPayoutRequested" -> List.of(money(type, string(p.get("surrenderRequestId")), policy,
-                p.get("amount"), today, Map.of("refType", "SURRENDER")));
+                p.get("grossAmount") != null ? p.get("grossAmount") : p.get("amount"), today, Map.of("refType", "SURRENDER")));
             case "policy.SurrenderPaid" -> List.of(money(type, string(p.get("surrenderRequestId")), policy,
                 p.get("paidAmount"), today, paid("SURRENDER", p.get("surrenderRequestId"))));
             case "benefitpayout.PayoutRequested" -> List.of(payoutDue(type, p, policy, today));

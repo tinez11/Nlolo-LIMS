@@ -30,4 +30,7 @@ public interface LoanNetting {
 
     /** What the policy's loans owe now, principal and interest: what a payout would repay first. */
     BigDecimal owedOn(String policyNumber);
+
+    /** What this payout already repaid, zero if nothing: a read, for the payout's paid event, that takes nothing. */
+    BigDecimal nettedFor(Payout payout, String payoutRef);
 }

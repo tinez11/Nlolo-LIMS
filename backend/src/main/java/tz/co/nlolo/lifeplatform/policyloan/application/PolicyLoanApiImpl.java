@@ -647,6 +647,14 @@ public class PolicyLoanApiImpl implements PolicyLoanApi, tz.co.nlolo.lifeplatfor
 
     @Override
     @Transactional(readOnly = true)
+    public BigDecimal nettedFor(Payout payout, String payoutRef) {
+        return loanTransactionRepository.findByTenantIdAndTransactionTypeAndReference(TenantContext.get(), "SETTLEMENT",
+                payout.name() + ":" + payoutRef).stream()
+            .map(LoanTransaction::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public BigDecimal owedOn(String policyNumber) {
         UUID tenantId = TenantContext.get();
         return policyLoanRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId).stream()

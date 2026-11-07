@@ -86,6 +86,22 @@ public class PolicyApiImpl implements PolicyApi {
     private final PartyApi partyApi;
     /** Approving a surrender one requested, for a company with one person (2026-11-04). */
     private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
+
+    /**
+     * Repays the policy's loans out of a surrender (2026-11-07, decision E7). Implemented by policyloan, which itself
+     * depends on this class -- so it is looked up when first needed, never at construction, or the two would wait on
+     * each other at startup. Absent (a slice without policyloan), nothing is netted.
+     */
+    private org.springframework.beans.factory.ObjectProvider<LoanNetting> loanNettingProvider;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setLoanNettingProvider(org.springframework.beans.factory.ObjectProvider<LoanNetting> provider) {
+        this.loanNettingProvider = provider;
+    }
+
+    private LoanNetting loanNetting() {
+        return loanNettingProvider == null ? null : loanNettingProvider.getIfAvailable();
+    }
     private final ProductApi productApi;
     private final ReferenceDataApi referenceDataApi;
     private final DistributionApi distributionApi;
@@ -1518,11 +1534,13 @@ public class PolicyApiImpl implements PolicyApi {
         PolicyAccount account = policyAccountRepository.findById(policyNumber)
             .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
 
-        // No outstanding loan (user decision Q1): the loan must be repaid first. The encumbrance on
-        // the account is the outstanding-loan marker policy can see without reaching into policyloan.
-        if (account.getLoanEncumbranceAmount().signum() > 0) {
+        // A loan no longer stops a surrender (2026-11-07, decision E7, replacing Q1's "repay it first"): the surrender
+        // repays it, and only the rest is paid -- see approveSurrender. Checked against the quote below. Not yet on an
+        // account, whose surrender accumulation pays and does not yet net: there the loan is still repaid first.
+        if (account.getLoanEncumbranceAmount().signum() > 0
+                && productApi.resolveAccumulationPlan(policy.getProductVersionId()).isAccount()) {
             throw new InvalidPolicyStateException("Policy " + policyNumber + " has an outstanding loan of "
-                + account.getLoanEncumbranceAmount() + "; it must be repaid before the policy can be surrendered");
+                + account.getLoanEncumbranceAmount() + "; it must be repaid before the account can be surrendered");
         }
         if (loanValueReservationRepository.sumReservedAmountForPolicy(policyNumber, tenantId).signum() > 0) {
             throw new InvalidPolicyStateException("A loan reservation is in flight on policy " + policyNumber
@@ -1574,6 +1592,16 @@ public class PolicyApiImpl implements PolicyApi {
         BigDecimal quoted = account.getCashValueAmount().subtract(charge).add(bonusValue);
         if (quoted.signum() <= 0) {
             throw new InvalidPolicyStateException("Policy " + policyNumber + " has no positive surrender value after charges");
+        }
+        // The loans are repaid from the value first (E7). Where they take it all, nothing would be paid: said here,
+        // rather than approving a surrender that asks the rail for nothing.
+        LoanNetting netting = loanNetting();
+        BigDecimal owed = netting != null && account.getLoanEncumbranceAmount().signum() > 0
+            ? netting.owedOn(policyNumber) : BigDecimal.ZERO;
+        if (owed.compareTo(quoted) >= 0) {
+            throw new InvalidPolicyStateException("The loans on policy " + policyNumber + " owe " + owed.toPlainString()
+                + " " + account.getCashValueCurrency() + ", as much as its surrender value of " + quoted.toPlainString()
+                + ": a surrender would pay nothing. Repay part of the loan first");
         }
 
         SurrenderRequest request = new SurrenderRequest(tenantId, policyNumber, quoted,
@@ -1628,6 +1656,16 @@ public class PolicyApiImpl implements PolicyApi {
                        "approvedBy", approvedBy,
                        "approvedAt", Instant.now().toString()))));
         } else {
+            // The surrender repays the policy's loans first (2026-11-07, decision E7): the payable is the whole value
+            // (grossAmount, C-05), the loans' part clears it (E-03-SURRENDER), and only the rest goes to the rail.
+            // Asked only when something is pledged: a surrender is approved once, so there is no retry to answer.
+            LoanNetting netting = loanNetting();
+            boolean pledged = policyAccountRepository.findById(request.getPolicyNumber())
+                .map(a -> a.getLoanEncumbranceAmount().signum() > 0).orElse(false);
+            BigDecimal netted = netting == null || !pledged ? BigDecimal.ZERO
+                : netting.settleFromPayout(request.getPolicyNumber(), request.getQuotedValueAmount(),
+                    request.getQuotedValueCurrency(), LoanNetting.Payout.SURRENDER, surrenderRequestId.toString(),
+                    approvedBy).total();
             // The payout, through the disbursement rail. The surrender request id is both the source
             // reference and the idempotency key -- one payout per approval. Every scale-valued
             // surrender, which is every one before product step 3.
@@ -1635,7 +1673,9 @@ public class PolicyApiImpl implements PolicyApi {
                 routed(request, Map.of("surrenderRequestId", surrenderRequestId.toString(),
                        "idempotencyKey", surrenderRequestId.toString(),
                        "policyNumber", request.getPolicyNumber(),
-                       "amount", Map.of("amount", request.getQuotedValueAmount().toPlainString(),
+                       "amount", Map.of("amount", request.getQuotedValueAmount().subtract(netted).toPlainString(),
+                            "currencyCode", request.getQuotedValueCurrency()),
+                       "grossAmount", Map.of("amount", request.getQuotedValueAmount().toPlainString(),
                             "currencyCode", request.getQuotedValueCurrency())))));
         }
         return toSurrenderView(request);
@@ -1677,7 +1717,7 @@ public class PolicyApiImpl implements PolicyApi {
     /** The payout succeeded. Marks the request PAID. Idempotent: only an APPROVED request advances. */
     @Override
     @Transactional
-    public void markSurrenderPaid(UUID surrenderRequestId, UUID disbursementId) {
+    public void markSurrenderPaid(UUID surrenderRequestId, UUID disbursementId, BigDecimal paidAmount) {
         UUID tenantId = TenantContext.get();
         surrenderRequestRepository.findBySurrenderRequestIdAndTenantId(surrenderRequestId, tenantId)
             .filter(r -> "APPROVED".equals(r.getStatus()))
@@ -1691,10 +1731,12 @@ public class PolicyApiImpl implements PolicyApi {
                 }
                 // Published only on the real APPROVED -> PAID transition, so a redelivered payment
                 // event cannot post the payout to the ledger twice. finaccounting books it.
+                // What left the bank, as the rail reported it: the value less any loan it repaid (E7).
+                BigDecimal paid = paidAmount != null ? paidAmount : r.getQuotedValueAmount();
                 eventPublisher.publishEvent(DomainEventEnvelope.of("policy.SurrenderPaid", tenantId,
                     Map.of("surrenderRequestId", surrenderRequestId.toString(),
                            "policyNumber", r.getPolicyNumber(),
-                           "paidAmount", Map.of("amount", r.getQuotedValueAmount().toPlainString(),
+                           "paidAmount", Map.of("amount", paid.toPlainString(),
                                 "currencyCode", r.getQuotedValueCurrency()))));
             });
     }

@@ -896,8 +896,11 @@ public interface PolicyApi {
      */
     void cancelForFreeLook(String policyNumber, String cancelledBy);
 
-    /** The surrender payout succeeded; mark the request PAID. Idempotent. Called by the payment listener. */
-    void markSurrenderPaid(java.util.UUID surrenderRequestId, java.util.UUID disbursementId);
+    /**
+     * The surrender payout succeeded; mark the request PAID. Idempotent. Called by the payment listener with what the
+     * rail paid -- the value less any loan it repaid (2026-11-07, E7); null means the whole quoted value.
+     */
+    void markSurrenderPaid(java.util.UUID surrenderRequestId, java.util.UUID disbursementId, BigDecimal paidAmount);
 
     /** The surrender payout failed; mark the request FAILED. Cover stays stopped. Called by the payment listener. */
     void markSurrenderFailed(java.util.UUID surrenderRequestId);
