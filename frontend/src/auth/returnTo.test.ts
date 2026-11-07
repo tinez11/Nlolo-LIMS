@@ -1,6 +1,6 @@
 import type { User } from 'oidc-client-ts';
 import { afterEach, describe, expect, it } from 'vitest';
-import { readReturnRouterState, readReturnTo, returnToState } from './returnTo';
+import { readReturnRouterState, readReturnTo, returnsToEntrance, returnToState } from './returnTo';
 
 const userWith = (state: unknown) => ({ state }) as unknown as User;
 
@@ -26,5 +26,13 @@ describe('returnTo', () => {
 
   it('still refuses a return address off the console', () => {
     expect(readReturnTo(userWith({ returnTo: '//evil.example' }))).toBeNull();
+  });
+
+  it('knows when a sign-in came back to the entrance, so the entrance picks the workspace in place', () => {
+    expect(returnsToEntrance(null)).toBe(true);
+    expect(returnsToEntrance('/')).toBe(true);
+    expect(returnsToEntrance('/?lang=sw')).toBe(true);
+    expect(returnsToEntrance('/staff')).toBe(false);
+    expect(returnsToEntrance('/customers/policies')).toBe(false);
   });
 });

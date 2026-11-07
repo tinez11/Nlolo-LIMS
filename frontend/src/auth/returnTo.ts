@@ -39,6 +39,15 @@ export function readReturnRouterState(user: User | null | undefined): unknown {
  * open redirect: `//evil.example` is a protocol-relative ABSOLUTE url that a router
  * would happily follow off-site.
  */
+/**
+ * Whether the sign-in came back to where it started: the entrance, "/" (2026-11-07). Then there is nowhere to go back
+ * to -- the entrance itself picks the workspace -- and navigating to "/" first only drew a blank frame between the
+ * sign-in splash and the console.
+ */
+export function returnsToEntrance(returnTo: string | null): boolean {
+  return returnTo === null || returnTo === '/' || returnTo.startsWith('/?');
+}
+
 export function readReturnTo(user: User | null | undefined): string | null {
   const state = user && typeof user === 'object' ? (user as { state?: unknown }).state : undefined;
   if (typeof state !== 'object' || state === null) return null;

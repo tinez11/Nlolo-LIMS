@@ -4,6 +4,7 @@ import { Link, Navigate } from 'react-router-dom';
 import { readIdentity } from '@/auth/claims';
 import { REALM_CONFIG } from '@/auth/realms';
 import { availableWorkspaces } from '@/auth/workspaces';
+import { SessionSplash } from '@/components/SessionSplash';
 import { Button } from '@/components/ui/button';
 
 /**
@@ -14,7 +15,16 @@ export function WorkspaceHome() {
   const auth = useAuth();
   const workspaces = availableWorkspaces(readIdentity(auth.user?.access_token).roles);
 
-  if (workspaces.length === 1) return <Navigate to={`/${REALM_CONFIG[workspaces[0]].slug}`} replace />;
+  if (workspaces.length === 1) {
+    // The splash stays up while the redirect lands: a bare Navigate draws nothing, a blank frame between the sign-in
+    // splash and the console (2026-11-07).
+    return (
+      <>
+        <SessionSplash label="Signing you in" />
+        <Navigate to={`/${REALM_CONFIG[workspaces[0]].slug}`} replace />
+      </>
+    );
+  }
 
   return (
     <div className="grid min-h-full place-items-center px-6 py-16">

@@ -3,7 +3,7 @@ import { useAuth } from 'react-oidc-context';
 import { Navigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { SessionSplash } from '@/components/SessionSplash';
-import { readReturnRouterState, readReturnTo, returnToState } from './returnTo';
+import { readReturnRouterState, readReturnTo, returnsToEntrance, returnToState } from './returnTo';
 
 /**
  * Gate for every signed-in route (one realm for everyone since 2026-11-06).
@@ -111,6 +111,13 @@ function RestoreLocation({ children }: { children: ReactNode }) {
 
   const params = new URLSearchParams(location.search);
   const isOidcCallback = params.has('code') && params.has('state');
+
+  // Back at the entrance it started from: the entrance (WorkspaceHome) opens the workspace in place. Navigating to "/"
+  // first only drew a blank frame between the sign-in splash and the console (2026-11-07); WorkspaceHome's own
+  // redirect then leaves the callback URL.
+  if (isOidcCallback && returnsToEntrance(readReturnTo(auth.user))) {
+    return <>{children}</>;
+  }
 
   if (isOidcCallback) {
     // The callback URL is never a real destination, so always leave it.
