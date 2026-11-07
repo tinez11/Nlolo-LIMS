@@ -31,6 +31,7 @@ import {
   FREE_LOOK_CATEGORIES,
   SCHEDULED_CATEGORIES,
   blankPayoutRow,
+  payoutRowsFor,
   blankRatingFactorRow,
   doubleCountedFactorMessage,
   isBaseRateRowPriced,
@@ -102,7 +103,7 @@ const STEP_OF_FIELD: Partial<Record<string, StepId>> = {
   tiraApprovalDate: 'basics',
   expectedProfitabilityBucket: 'basics',
   measurementModelOverride: 'basics',
-  survivalInvestmentComponentPercent: 'basics',
+  survivalInvestmentComponentPercent: 'pays',
   description: 'basics',
   minEntryAge: 'eligibility',
   maxEntryAge: 'eligibility',
@@ -305,6 +306,36 @@ export function PublishVersionForm({
     if (!priced && !rows.some((r) => r.factorType === 'AGE')) ratingTable.prepend(neutralRatingRows()[0]!);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [priced, rated]);
+
+  /*
+    An endowment or education plan must carry exactly one maturity payout, and the form used to start with none -- the
+    maturity hid behind "Add a payout" (2026-11-07). Now the rows follow the kind: a savings account's one acceptable
+    maturity (the whole account) is set for it; another kind starts with its maturity row in place; a deposit or term
+    account, which matures through its account, carries none.
+  */
+  const accountMaturity = pays.payouts && valueBasis === 'ACCOUNT';
+
+  /*
+    The savings share (IFRS 17's investment component) of a survival or income payment is the only thing the field
+    below is used for, so it is asked only once such a row exists, and dropped when the last one goes -- no hidden value
+    left to be stored (2026-11-07).
+  */
+  const paysWhileAlive = pays.payouts && (watchedPayoutKinds?.some((k) => k === 'SURVIVAL' || k === 'INCOME') ?? false);
+  useEffect(() => {
+    if (!paysWhileAlive && getValues('survivalInvestmentComponentPercent') !== '') {
+      setValue('survivalInvestmentComponentPercent', '');
+    }
+  }, [paysWhileAlive, getValues, setValue]);
+  useEffect(() => {
+    if (!SCHEDULED_CATEGORIES.includes(category)) return;
+    if (!pays.payouts) {
+      if (getValues('payoutRows').length > 0) payoutRows.replace([]);
+      return;
+    }
+    const next = payoutRowsFor(valueBasis, getValues('payoutRows'));
+    if (next) payoutRows.replace(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, pays.payouts, valueBasis]);
 
   const steps = stepsFor(category, kind, hasAccount);
   const [stepId, setStepId] = useState<StepId>(steps[0]!.id);
@@ -538,16 +569,6 @@ export function PublishVersionForm({
                 ))}
               </Select>
             </FormField>
-            {/* Only a version paying survival benefits or income instalments uses it. */}
-            {(SCHEDULED_CATEGORIES.includes(category) || category === 'ANNUITY') && (
-              <FormField
-                label="Survival benefit investment component (%)"
-                hint="Blank for none."
-                error={errors.survivalInvestmentComponentPercent?.message}
-              >
-                <Input inputMode="decimal" placeholder="e.g. 80" {...register('survivalInvestmentComponentPercent')} />
-              </FormField>
-            )}
           </div>
         </Section>
       </>
@@ -569,16 +590,16 @@ export function PublishVersionForm({
         <div className="grid grid-cols-2 gap-3">
           {/* A priced version must say whom it sells to; a term account, for how long. */}
           <FormField required={priced || category === 'ANNUITY'} label="Minimum entry age" error={errors.minEntryAge?.message}>
-            <Input inputMode="numeric" placeholder="18" {...register('minEntryAge')} />
+            <Input inputMode="numeric" {...register('minEntryAge')} />
           </FormField>
           <FormField required={priced || category === 'ANNUITY'} label="Maximum entry age" error={errors.maxEntryAge?.message}>
-            <Input inputMode="numeric" placeholder="65" {...register('maxEntryAge')} />
+            <Input inputMode="numeric" {...register('maxEntryAge')} />
           </FormField>
           <FormField required={valueBasis === 'TERM_ACCOUNT'} label="Minimum term (months)" error={errors.minTermMonths?.message}>
-            <Input inputMode="numeric" placeholder="60" {...register('minTermMonths')} />
+            <Input inputMode="numeric" {...register('minTermMonths')} />
           </FormField>
           <FormField required={valueBasis === 'TERM_ACCOUNT'} label="Maximum term (months)" error={errors.maxTermMonths?.message}>
-            <Input inputMode="numeric" placeholder="360" {...register('maxTermMonths')} />
+            <Input inputMode="numeric" {...register('maxTermMonths')} />
           </FormField>
           {kind !== 'CREDIT_LIFE' && (
             <>
@@ -817,21 +838,23 @@ export function PublishVersionForm({
         <div className="grid grid-cols-2 gap-3">
           {valueBasis === 'TERM_ACCOUNT' && (
             <>
+              {/* No example numbers in these (2026-11-07): a grey "3" read as a rate already entered. */}
               <FormField required label="Minimum rate (% a year)" error={errors.minRatePercent?.message}>
-                <Input inputMode="decimal" placeholder="3" {...register('minRatePercent')} />
+                <Input inputMode="decimal" {...register('minRatePercent')} />
               </FormField>
               <FormField required label="Maximum rate (% a year)" error={errors.maxRatePercent?.message}>
-                <Input inputMode="decimal" placeholder="7" {...register('maxRatePercent')} />
+                <Input inputMode="decimal" {...register('maxRatePercent')} />
               </FormField>
             </>
           )}
           {valueBasis === 'ACCOUNT' && (
             <FormField required label="Guaranteed interest rate (% a year)" error={errors.guaranteedRatePercent?.message}>
-              <Input inputMode="decimal" placeholder="3" {...register('guaranteedRatePercent')} />
+              <Input inputMode="decimal" {...register('guaranteedRatePercent')} />
             </FormField>
           )}
-          <FormField required label="Minimum balance after a withdrawal" error={errors.minimumBalance?.message}>
-            <Input inputMode="decimal" placeholder="50000" {...register('minimumBalance')} />
+          <FormField required label="Minimum balance after a withdrawal" hint="Enter 0 for no minimum."
+            error={errors.minimumBalance?.message}>
+            <Input inputMode="decimal" {...register('minimumBalance')} />
           </FormField>
         </div>
       </Section>
@@ -916,17 +939,31 @@ export function PublishVersionForm({
     return (
       <Section
         title={pays.payouts ? 'Payouts and free-look' : 'Free-look'}
-        hint={pays.payouts ? 'What it pays while the life assured is alive. An endowment needs a maturity payout.' : 'Days the customer may cancel and get premiums back.'}
+        hint={
+          accountMaturity ? 'Days the customer may cancel, and what a savings account pays when it matures.'
+            : pays.payouts ? 'What it pays while the life assured is alive. The maturity payout is required: choose its amount.'
+              : 'Days the customer may cancel and get premiums back.'
+        }
       >
         <div className="grid grid-cols-2 gap-3">
           <FormField required={FREE_LOOK_CATEGORIES.includes(category)} label="Free-look days" error={errors.freeLookDays?.message}>
-            <Input type="number" min={1} max={365} placeholder="15" {...register('freeLookDays')} />
+            <Input type="number" min={1} max={365} {...register('freeLookDays')} />
           </FormField>
           <FormField label="Death benefit at least this % of premiums" error={errors.deathBenefitPremiumPercent?.message}>
             <Input type="number" min={0} step="0.01" placeholder="Optional" {...register('deathBenefitPremiumPercent')} />
           </FormField>
         </div>
-        {pays.payouts && (
+        {accountMaturity && (
+          // Shown, not chosen (2026-11-07): an account-based version accepts exactly this one payout, and the form
+          // carries it for you -- as credit life shows its benefits.
+          <dl className="divide-y divide-border rounded-lg border border-border">
+            <div className="flex justify-between gap-4 px-3 py-2 text-sm">
+              <dt>At maturity</dt>
+              <dd className="text-muted-foreground">The whole account value</dd>
+            </div>
+          </dl>
+        )}
+        {pays.payouts && !accountMaturity && (
           <>
             <div className="space-y-2">
               {payoutRows.fields.map((field, index) => {
@@ -970,10 +1007,15 @@ export function PublishVersionForm({
                         <option value="QUARTERLY">Quarterly</option>
                         <option value="MONTHLY">Monthly</option>
                       </Select>
-                      <Button type="button" size="icon" variant="ghost" className="shrink-0" aria-label="Remove payout row"
-                        onClick={() => payoutRows.remove(index)}>
-                        <X />
-                      </Button>
+                      {/* The one maturity row stays: an endowment must carry exactly one (2026-11-07). */}
+                      {endOfTerm && watchedPayoutKinds?.filter((k) => k === 'MATURITY').length === 1 ? (
+                        <span className="size-8 shrink-0" aria-hidden />
+                      ) : (
+                        <Button type="button" size="icon" variant="ghost" className="shrink-0" aria-label="Remove payout row"
+                          onClick={() => payoutRows.remove(index)}>
+                          <X />
+                        </Button>
+                      )}
                     </div>
                     {rowMessage && <p role="alert" className="mt-1 px-1 text-xs text-status-danger-fg">{rowMessage}</p>}
                   </div>
@@ -997,7 +1039,18 @@ export function PublishVersionForm({
               )}
               {watchedPayoutKinds?.includes('INCOME') && (
                 <FormField required label="Proof of life every (months)" error={errors.proofOfLifeIntervalMonths?.message}>
-                  <Input type="number" min={1} max={60} placeholder="12" {...register('proofOfLifeIntervalMonths')} />
+                  <Input type="number" min={1} max={60} {...register('proofOfLifeIntervalMonths')} />
+                </FormField>
+              )}
+              {/* IFRS 17 only, and only for these two payouts (2026-11-07): it changes no amount paid. A maturity is
+                  all savings and a life annuity none by rule, so this was asked of products that could never use it. */}
+              {paysWhileAlive && (
+                <FormField
+                  label="Savings share of each survival or income payment (%)"
+                  hint="The part that is the customer's own savings coming back, set by the actuary. Blank counts the whole payment as a claim."
+                  error={errors.survivalInvestmentComponentPercent?.message}
+                >
+                  <Input inputMode="decimal" {...register('survivalInvestmentComponentPercent')} />
                 </FormField>
               )}
             </div>

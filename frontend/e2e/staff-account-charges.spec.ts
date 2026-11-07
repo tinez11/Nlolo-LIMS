@@ -43,10 +43,8 @@ test.describe('account charges', () => {
     await page.getByLabel('Minimum balance after a withdrawal').fill('0');
     await step(page, 'What it pays');
     await page.getByLabel('Free-look days').fill('15');
-    await page.getByRole('button', { name: 'Add a payout' }).click();
-    await page.getByLabel('Payout 1 kind').selectOption('MATURITY');
-    await page.getByLabel('Payout 1 basis').selectOption('ACCOUNT_VALUE');
-    await page.getByLabel('Payout 1 amount').fill('100');
+    // A savings account's maturity is fixed -- the whole account value -- and the form carries it (2026-11-07).
+    await expect(page.getByText('The whole account value', { exact: true })).toBeVisible();
 
     // ---- Its charges, added from the list rather than typed.
     await step(page, 'Charges');

@@ -454,6 +454,33 @@ export function blankPayoutRow(): PayoutRowValues {
   return { kind: '', fromPolicyYear: '', toPolicyYear: '', amountBasis: '', amountValue: '', frequency: '' };
 }
 
+/** A maturity payout with its amount still to choose: the row an endowment starts with. */
+export function maturityRow(): PayoutRowValues {
+  return { ...blankPayoutRow(), kind: 'MATURITY' };
+}
+
+/** The one maturity an account-based version may carry: the whole account value. */
+export function accountMaturityRow(): PayoutRowValues {
+  return { ...blankPayoutRow(), kind: 'MATURITY', amountBasis: 'ACCOUNT_VALUE', amountValue: '100' };
+}
+
+/**
+ * The payout rows an endowment or education plan should hold for its value basis, or null when they are already right
+ * (2026-11-07, the user: the required maturity was hidden behind "Add a payout"). An account-based version has exactly
+ * one acceptable schedule -- the whole account at maturity -- so it is set, not asked; any other version keeps what was
+ * chosen, gains a maturity row when it has none, and loses an account-value row, which only an account may pay.
+ */
+export function payoutRowsFor(valueBasis: string, rows: readonly PayoutRowValues[]): PayoutRowValues[] | null {
+  if (valueBasis === 'ACCOUNT') {
+    const right = rows.length === 1 && JSON.stringify(rows[0]) === JSON.stringify(accountMaturityRow());
+    return right ? null : [accountMaturityRow()];
+  }
+  const kept = rows.filter((r) => r.amountBasis !== 'ACCOUNT_VALUE');
+  if (!kept.some((r) => r.kind === 'MATURITY')) kept.unshift(maturityRow());
+  const same = kept.length === rows.length && kept.every((r, i) => r === rows[i]);
+  return same ? null : kept;
+}
+
 const rowsOf = (v: PayoutFields, kind: string) => v.payoutRows.filter((r) => r.kind === kind);
 
 /**

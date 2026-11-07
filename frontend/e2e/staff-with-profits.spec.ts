@@ -40,8 +40,8 @@ test.describe('a with-profits policy', () => {
     await step(page, 'What it pays');
     await page.getByLabel('Free-look days').fill('15');
 
-    await page.getByRole('button', { name: 'Add a payout' }).click();
-    await page.getByLabel('Payout 1 kind').selectOption('MATURITY');
+    // The maturity row is already there (2026-11-07): only its amount is chosen.
+    await expect(page.getByLabel('Payout 1 kind')).toHaveValue('MATURITY');
     await page.getByLabel('Payout 1 basis').selectOption('PERCENT_OF_SA');
     await page.getByLabel('Payout 1 amount').fill('100');
 
