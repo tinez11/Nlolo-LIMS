@@ -118,6 +118,24 @@ describe('Deposit page', () => {
     );
   });
 
+  // 2026-11-07: the agent console takes its deposits here too -- asking the payer's phone for a premium, nothing else.
+  it('offers an agent the premium by mobile money only, and leads back to the agent console', async () => {
+    grantAccess();
+    vi.mocked(policiesApi.requestPaymentForInvoice).mockResolvedValue();
+    renderScreen(<NewReceiptPage realm="agents" />, { route: '/agents/deposit?policy=POL-1' });
+
+    expect(optionsOf('How is it being paid?')).toEqual(['MOBILE_MONEY']);
+    expect(optionsOf('For')).toEqual(['PREMIUM']);
+    expect(policiesApi.listLoans).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Cancel' })).toHaveAttribute('href', '/agents/policies/POL-1?tab=billing');
+
+    const user = userEvent.setup();
+    await screen.findByText(/what the premium due 2026-11-01 still owes/);
+    await user.type(screen.getByLabelText('Phone number'), '+255700000002');
+    await user.click(screen.getByRole('button', { name: 'Send request' }));
+    expect(policiesApi.requestPaymentForInvoice).toHaveBeenCalledWith('inv-old', { payerRef: '+255700000002' }, expect.anything());
+  });
+
   it('asks a phone for a savings deposit of the amount typed', async () => {
     grantRoles('CUSTOMER_SERVICE_REP');
     vi.mocked(accumulationApi.getAccount).mockResolvedValue(savings);

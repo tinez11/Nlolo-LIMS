@@ -27,7 +27,6 @@ import {
   requestSurrender,
   approveSurrender,
   replaceBeneficiaries,
-  requestPaymentForInvoice,
   resumePolicy,
   searchMaturing,
   searchPolicies,
@@ -51,7 +50,6 @@ import type {
   ManualIssueRequest,
   OriginateLoanRequest,
   Page,
-  PaymentRequest,
   PolicyMemberView,
   PolicyView,
   SurrenderQuote,
@@ -59,7 +57,6 @@ import type {
   SuspendPolicyRequest,
   WaiverRequest,
 } from '@/api/types';
-import type { MutationAttempt } from '@/lib/idempotency';
 import { idle, success, track, type Resource } from './createResourceSlice';
 
 /**
@@ -107,7 +104,6 @@ interface PolicyState {
   // Both keyed by invoiceId: each targets an EXISTING invoice, and a failed
   // action on one must not corrupt another's state.
   waivingInvoice: Keyed<true>;
-  requestingPayment: Keyed<true>;
   // Origination is keyed by policyNumber, not by loan id: the loan does not exist
   // yet, and a policy can only have one origination in flight from this screen.
   originatingLoan: Keyed<true>;
@@ -164,13 +160,6 @@ interface PolicyState {
   resetIssuePolicy: () => void;
   waiveInvoice: (policyNumber: string, invoiceId: string, request: WaiverRequest) => Promise<void>;
   resetWaiveInvoice: (invoiceId: string) => void;
-  requestPaymentForInvoice: (
-    policyNumber: string,
-    invoiceId: string,
-    request: PaymentRequest,
-    attempt: MutationAttempt,
-  ) => Promise<void>;
-  resetRequestPaymentForInvoice: (invoiceId: string) => void;
   originateLoan: (policyNumber: string, request: OriginateLoanRequest) => Promise<void>;
   resetOriginateLoan: (policyNumber: string) => void;
   /** Release (reason null) or refuse (with the reason) a loan's payout, then re-read the policy's loans. */
@@ -212,7 +201,6 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
   savingBeneficiaries: {},
   issuing: idle(),
   waivingInvoice: {},
-  requestingPayment: {},
   originatingLoan: {},
   decidingLoanPayout: {},
   suspending: {},
@@ -446,27 +434,6 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
       if (!(invoiceId in s.waivingInvoice)) return s;
       const { [invoiceId]: _discard, ...rest } = s.waivingInvoice;
       return { waivingInvoice: rest };
-    }),
-
-  requestPaymentForInvoice: (policyNumber, invoiceId, request, attempt) =>
-    track(
-      `policy.requestPayment.${invoiceId}`,
-      getState().requestingPayment[invoiceId] ?? idle<true>(),
-      (next) => set((s) => ({ requestingPayment: { ...s.requestingPayment, [invoiceId]: next } })),
-      async (): Promise<true> => {
-        await requestPaymentForInvoice(invoiceId, request, attempt);
-        // 202 with no body -- collection itself completes asynchronously, but
-        // refetch anyway so a fast confirm already reflected server-side shows.
-        await getState().loadInvoices(policyNumber);
-        return true;
-      },
-    ),
-
-  resetRequestPaymentForInvoice: (invoiceId) =>
-    set((s) => {
-      if (!(invoiceId in s.requestingPayment)) return s;
-      const { [invoiceId]: _discard, ...rest } = s.requestingPayment;
-      return { requestingPayment: rest };
     }),
 
   originateLoan: (policyNumber, request) =>
@@ -759,8 +726,6 @@ export const selectApprovingSurrender = (policyNumber: string) => (s: PolicyStat
   s.approvingSurrender[policyNumber] ?? idle<SurrenderRequestView>();
 export const selectWaivingInvoice = (invoiceId: string) => (s: PolicyState) =>
   s.waivingInvoice[invoiceId] ?? idle<true>();
-export const selectRequestingPayment = (invoiceId: string) => (s: PolicyState) =>
-  s.requestingPayment[invoiceId] ?? idle<true>();
 export const selectOriginatingLoan = (policyNumber: string) => (s: PolicyState) =>
   s.originatingLoan[policyNumber] ?? idle<true>();
 

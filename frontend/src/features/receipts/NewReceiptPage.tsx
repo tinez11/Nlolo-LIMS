@@ -5,6 +5,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { getAccount, recordReceivedTopUp, requestTopUp } from '@/api/accumulation';
 import { listInvoices, listLoans, requestLoanPayment, requestPaymentForInvoice } from '@/api/policies';
 import type { AccountView, InvoiceView, LoanView } from '@/api/types';
+import type { Realm } from '@/auth/realms';
 import { can } from '@/auth/access';
 import { DatePicker } from '@/components/DatePicker';
 import { FormField, RequiredNote } from '@/components/FormField';
@@ -53,7 +54,10 @@ function totalOwed(due: InvoiceView[]) {
 }
 
 /** Who may take a deposit which way (2026-11-07): finance records money received; a phone may be asked by servicing. */
-function mayAsk(paysFor: PaysFor) {
+function mayAsk(paysFor: PaysFor, agent = false) {
+  // An agent asks a phone for a premium, and only that (2026-11-07): the invoice request is the one its endpoint lets
+  // an agent make.
+  if (agent) return paysFor === 'PREMIUM';
   return paysFor === 'SAVINGS'
     ? can('accounts.transact') || can('collections.manage')
     : can('policies.service') || can('collections.manage');
@@ -70,7 +74,9 @@ type Sent = { heading: string; lines: ReceiptLine[]; note: string };
  * person confirms it. A premium or loan deposit recorded by hand opens its own page; anything else closes into a
  * receipt here. Opened bare from Deposits, from a policy (Balance, Account or Loans), or from an agent's cash receipt.
  */
-export function NewReceiptPage() {
+export function NewReceiptPage({ realm = 'staff' }: { realm?: Realm } = {}) {
+  // The agent console's Deposit (2026-11-07): the same page, asking a phone for a premium only.
+  const agent = realm === 'agents';
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const record = useReceiptStore((s) => s.record);
@@ -78,7 +84,7 @@ export function NewReceiptPage() {
   const send = useReceiptStore((s) => s.send);
   const sending = useReceiptStore((s) => s.sending);
   const resetSending = useReceiptStore((s) => s.resetSending);
-  const mayRecord = can('collections.manage');
+  const mayRecord = !agent && can('collections.manage');
   const [sent, setSent] = useState<Sent | null>(null);
   // One attempt per page visit, reused across retries so a double click is one request.
   const [attempt] = useState(() => startMutation());
@@ -89,12 +95,12 @@ export function NewReceiptPage() {
 
   const prefill = useMemo(() => {
     const askedFor = params.get('for');
-    const paysFor: PaysFor = askedFor === 'LOAN' || askedFor === 'SAVINGS' ? askedFor : 'PREMIUM';
+    const paysFor: PaysFor = !agent && (askedFor === 'LOAN' || askedFor === 'SAVINGS') ? askedFor : 'PREMIUM';
     const named = params.get('method');
     const method = named === 'MOBILE_MONEY' || RECEIPT_METHODS.some((m) => m.value === named)
       ? (named as ReceiptFormValues['method'])
       // Mobile money first where it may be asked; finance alone opens on a received method.
-      : mayAsk(paysFor) ? 'MOBILE_MONEY' : 'BANK_DEPOSIT';
+      : mayAsk(paysFor, agent) ? 'MOBILE_MONEY' : 'BANK_DEPOSIT';
     return blankReceiptForm({
       policyNumber: params.get('policy') ?? '',
       paysFor,
@@ -104,7 +110,7 @@ export function NewReceiptPage() {
       fieldReceiptId: params.get('fieldReceipt') ?? '',
       method,
     });
-  }, [params]);
+  }, [params, agent]);
 
   const {
     register,
@@ -120,7 +126,7 @@ export function NewReceiptPage() {
   const loanId = useWatch({ control, name: 'loanId' });
   const mobile = method === 'MOBILE_MONEY';
   const chosenMethod = methodOf(method);
-  const askable = mayAsk(paysFor);
+  const askable = mayAsk(paysFor, agent);
 
   // What the policy has, read once its number is in: its open invoices (what a premium owes now, and the one a
   // mobile-money request asks for), its loans that can take a repayment, and its savings account.
@@ -144,6 +150,12 @@ export function NewReceiptPage() {
           setInvoiceError(`No policy ${lookedUp} could be read.`);
         }
       });
+    // An agent takes a premium only: no loans or accounts to read.
+    if (agent) {
+      return () => {
+        cancelled = true;
+      };
+    }
     listLoans(lookedUp)
       .then((all) => {
         if (!cancelled) setLoans(all.filter((l) => REPAYABLE.has(l.status ?? '')));
@@ -161,7 +173,7 @@ export function NewReceiptPage() {
     return () => {
       cancelled = true;
     };
-  }, [lookedUp]);
+  }, [lookedUp, agent]);
 
   // A loan chosen by the link stays chosen; otherwise the first loan that can take a repayment.
   useEffect(() => {
@@ -188,8 +200,8 @@ export function NewReceiptPage() {
   const loan = paysFor === 'LOAN' ? (loans?.find((l) => l.loanId === loanId) ?? null) : null;
   const currency = loan?.outstandingBalance?.currencyCode ?? account?.balance.currencyCode ?? oldestOpen?.amount?.currencyCode ?? 'TZS';
   const from = params.get('from');
-  const origin = receiptOrigin(from, prefill.policyNumber || null);
-  const back = paysFor === 'LOAN' && lookedUp
+  const origin = agent ? agentOrigin(prefill.policyNumber) : receiptOrigin(from, prefill.policyNumber || null);
+  const back = agent ? origin.back : paysFor === 'LOAN' && lookedUp
     ? `/staff/policies/${encodeURIComponent(lookedUp)}?tab=loans`
     : paysFor === 'SAVINGS' && lookedUp
       ? `/staff/policies/${encodeURIComponent(lookedUp)}?tab=account`
@@ -418,4 +430,11 @@ export function NewReceiptPage() {
       </FormLayout>
     </>
   );
+}
+
+/** The agent console's way back: its own policy page, never the staff console (2026-11-07). */
+function agentOrigin(policyNumber: string) {
+  if (!policyNumber) return { crumbs: [{ label: 'Policies', to: '/agents/policies' }], back: '/agents/policies' };
+  const policy = `/agents/policies/${encodeURIComponent(policyNumber)}?tab=billing`;
+  return { crumbs: [{ label: 'Policies', to: '/agents/policies' }, { label: policyNumber, to: policy }], back: policy };
 }
