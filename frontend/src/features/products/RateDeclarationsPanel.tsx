@@ -144,8 +144,10 @@ function ProposeForm({ productId }: { productId: string }) {
       <p className="text-xs font-medium">Declare a rate</p>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
       <div className="grid grid-cols-2 gap-3">
-        <FormField required label="Rate (% a year)" error={form.formState.errors.ratePercent?.message}>
-          <Input inputMode="decimal" placeholder="6.5" {...form.register('ratePercent')} />
+        {/* No grey example (2026-11-07): "6.5" read as a rate already typed. The hint says how it is used instead. */}
+        <FormField required label="Rate (% a year)" hint="Accounts earn this or their own guaranteed rate, whichever is higher."
+          error={form.formState.errors.ratePercent?.message}>
+          <Input inputMode="decimal" {...form.register('ratePercent')} />
         </FormField>
         <FormField required label="Effective from" error={form.formState.errors.effectiveFrom?.message}>
           <Controller

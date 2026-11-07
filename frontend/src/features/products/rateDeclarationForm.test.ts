@@ -20,6 +20,16 @@ describe('rateDeclarationSchema', () => {
     );
   });
 
+  // 2026-11-07: an empty field was told about four decimals, beside a grey "6.5" that read as a rate already typed.
+  it('asks for the rate when it is empty, and keeps the format message for a badly typed one', () => {
+    expect(messages(rateDeclarationSchema.safeParse({ ratePercent: '', effectiveFrom: '2026-11-01' }))).toEqual([
+      'Enter the rate (% a year)',
+    ]);
+    expect(messages(rateDeclarationSchema.safeParse({ ratePercent: '6,5', effectiveFrom: '2026-11-01' }))).toContain(
+      'A rate with at most four decimals, for example 6.5',
+    );
+  });
+
   it('needs an effective date', () => {
     expect(messages(rateDeclarationSchema.safeParse({ ratePercent: '5', effectiveFrom: '' }))).toContain(
       'When does it take effect?',
