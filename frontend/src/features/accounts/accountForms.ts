@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { todayIso } from '@/lib/dates';
 import { payoutRouteFields, refineRoute } from '@/features/payments/payoutRoute';
 
 /**
@@ -27,40 +26,6 @@ export const withdrawalSchema = z
   .object({ amount: positiveAmount, ...payoutRouteFields })
   .superRefine(refineRoute);
 export type WithdrawalValues = z.infer<typeof withdrawalSchema>;
-
-/**
- * A top-up (2026-10-28): asked of the payer's phone by mobile money, or already received -- cash, a bank deposit, a
- * cheque, a Lipa number or TANQR -- with the method's own reference and the day it came. One person records it.
- */
-export const topUpSchema = z
-  .object({
-    amount: positiveAmount,
-    method: z.enum(['MOBILE_MONEY', 'CASH', 'BANK_DEPOSIT', 'CHEQUE', 'LIPA_NUMBER', 'TANQR']),
-    payerRef: z.string().trim().max(200),
-    reference: z.string().trim().max(100),
-    receivedOn: z.string(),
-  })
-  .superRefine((v, ctx) => {
-    if (v.method === 'MOBILE_MONEY') {
-      if (!v.payerRef) ctx.addIssue({ code: 'custom', path: ['payerRef'], message: 'Who is the money collected from?' });
-      return;
-    }
-    if (!v.reference) {
-      ctx.addIssue({ code: 'custom', path: ['reference'], message: 'Enter the reference, so the same money cannot be credited twice' });
-    }
-    if (!v.receivedOn) ctx.addIssue({ code: 'custom', path: ['receivedOn'], message: 'The day the money was received' });
-    else if (v.receivedOn > todayIso()) {
-      ctx.addIssue({ code: 'custom', path: ['receivedOn'], message: 'It cannot be later than today' });
-    }
-  });
-export type TopUpValues = z.infer<typeof topUpSchema>;
-
-export const transferInSchema = z.object({
-  amount: positiveAmount,
-  sourceScheme: z.string().trim().min(1, 'Name the scheme the money came from').max(200),
-  documentRef: z.string().trim().max(200),
-});
-export type TransferInValues = z.infer<typeof transferInSchema>;
 
 export const adjustmentSchema = z.object({
   amount: z

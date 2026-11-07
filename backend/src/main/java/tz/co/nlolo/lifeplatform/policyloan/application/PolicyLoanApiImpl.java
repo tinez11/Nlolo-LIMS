@@ -29,7 +29,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
-public class PolicyLoanApiImpl implements PolicyLoanApi {
+public class PolicyLoanApiImpl implements PolicyLoanApi, tz.co.nlolo.lifeplatform.policy.api.LoanNetting {
 
     private static final Logger log = LoggerFactory.getLogger(PolicyLoanApiImpl.class);
 
@@ -74,6 +74,10 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         if ("UNIT_LINKED".equals(policyApi.productCategoryOf(policyNumber))) {
             throw new LoanNotEligibleException("A unit-linked policy has no paid-up or loan value in U1; its value is its units");
         }
+        // The interest already owed counts against the limit too (2026-11-07). Read from this module's own loans only:
+        // the policy's account must not be loaded before reserveLoanValue locks it (see productCategoryOf above), so
+        // the product's maximum and the interest are both checked inside that lock.
+        BigDecimal interestOwed = interestOwedOn(policyNumber, tenantId);
 
         // Module-Architecture-B1's reserve/persist/confirm sequence below runs in ONE physical
         // DB transaction spanning policy and policyloan, DELIBERATELY -- per this plan's own
@@ -98,7 +102,7 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         // propagates as-is -- policy.infrastructure.PolicyExceptionHandler maps it to 409
         // application-wide, so policyloan does not need its own duplicate mapping for a
         // policy-owned exception type.
-        UUID reservationId = policyApi.reserveLoanValue(policyNumber, requestedAmount, currency, RESERVATION_TTL);
+        UUID reservationId = policyApi.reserveLoanValue(policyNumber, requestedAmount, currency, RESERVATION_TTL, interestOwed);
         BigDecimal rate = new BigDecimal(referenceDataApi.getValue("TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE", "TZ"));
         PolicyLoan loan = new PolicyLoan(tenantId, policyNumber, requestedAmount, currency, originatedBy);
         // M5: persisted for FORENSICS, not for any code path.
@@ -244,6 +248,55 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         return policyLoanRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId).stream().map(this::toView).toList();
     }
 
+    /** Statuses whose principal is pledged but not yet paid out: still borrowed, with no interest yet. */
+    private static final java.util.Set<String> BEING_TAKEN = java.util.Set.of(
+        "RESERVED_PENDING_ORIGINATION", "ORIGINATED", "AWAITING_PAYOUT_APPROVAL", "DISBURSEMENT_REQUESTED");
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<LoanHistoryLine> history(UUID loanId) {
+        PolicyLoan loan = findLoanOrThrow(loanId, TenantContext.get());
+        return loanTransactionRepository.findByLoanIdOrderByOccurredAt(loan.getLoanId()).stream()
+            .map(t -> new LoanHistoryLine(t.getTransactionType(), t.getAmount(), t.getCurrency(), t.getOccurredAt(),
+                t.getReference()))
+            .toList();
+    }
+
+    /** The interest accrued and not yet repaid on the policy's loans being repaid. */
+    private BigDecimal interestOwedOn(String policyNumber, UUID tenantId) {
+        BigDecimal interest = BigDecimal.ZERO;
+        for (PolicyLoan loan : policyLoanRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId)) {
+            if ("DISBURSED".equals(loan.getStatus()) || "REPAYING".equals(loan.getStatus())) {
+                interest = interest.add(position(loan).interestOutstanding().max(BigDecimal.ZERO));
+            }
+        }
+        return interest;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public LoanLimitView loanLimit(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        tz.co.nlolo.lifeplatform.policy.api.LoanValueView value = policyApi.getLoanValue(policyNumber);
+        BigDecimal borrowed = BigDecimal.ZERO;
+        BigDecimal interest = BigDecimal.ZERO;
+        for (PolicyLoan loan : policyLoanRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId)) {
+            if ("DISBURSED".equals(loan.getStatus()) || "REPAYING".equals(loan.getStatus())) {
+                LoanPosition p = position(loan);
+                borrowed = borrowed.add(p.principalOutstanding().max(BigDecimal.ZERO));
+                interest = interest.add(p.interestOutstanding().max(BigDecimal.ZERO));
+            } else if (BEING_TAKEN.contains(loan.getStatus())) {
+                borrowed = borrowed.add(loan.getPrincipalAmount());
+            }
+        }
+        // The interest owed comes off what may still be borrowed (2026-11-07): the limit is on what the policy owes, not
+        // only on what it was lent. The policy's own figure is the one reserveLoanValue checks, so the two never disagree.
+        BigDecimal canBorrow = value.lends() ? value.available().subtract(interest).max(BigDecimal.ZERO) : BigDecimal.ZERO;
+        return new LoanLimitView(policyNumber, value.currency(), value.lends(), value.value(),
+            value.maxLoanToValuePercent(), value.limit(), borrowed, interest, canBorrow.setScale(2, java.math.RoundingMode.DOWN),
+            new BigDecimal(referenceDataApi.getValue("TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE", "TZ")));
+    }
+
     @Override
     @Transactional
     public LoanView applyConfirmedRepayment(UUID loanId, BigDecimal amount, String currency, String paymentReference,
@@ -274,6 +327,13 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
                 loan.markSettled();
             }
             policyLoanRepository.save(loan);
+            // The principal this repays stops being pledged against the policy's value (2026-11-07). Before this only a
+            // reversed or failed loan released it, so a loan repaid in full still blocked surrender, held back savings
+            // withdrawals and refused the next loan.
+            BigDecimal principalPart = applied.subtract(interestPart);
+            if (principalPart.signum() > 0) {
+                policyApi.releaseEncumbrance(loan.getPolicyNumber(), principalPart, currency);
+            }
             // Published on every repayment, partial ones included: each is cash arriving. loanTransactionId is the
             // posting's idempotency key -- unique per repayment, stable across a redelivery (M9: keyed on loanId, the
             // second partial repayment was dropped as a false redelivery and the loan receivable never cleared).
@@ -530,6 +590,89 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         return balance;
     }
 
+    // ---- Loan netting (2026-11-07, decision E7): a payout repays the policy's loans before anything is paid out ----
+
+    @Override
+    @Transactional
+    public Netted settleFromPayout(String policyNumber, BigDecimal gross, String currency, Payout payout,
+                                   String payoutRef, String by) {
+        UUID tenantId = TenantContext.get();
+        String reference = payout.name() + ":" + payoutRef;
+        // Asked again for the same payout (a retried approval, a redelivered event): what it took the first time.
+        List<LoanTransaction> earlier = loanTransactionRepository.findByTenantIdAndTransactionTypeAndReference(
+            tenantId, "SETTLEMENT", reference);
+        if (!earlier.isEmpty()) {
+            BigDecimal total = earlier.stream().map(LoanTransaction::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+            return new Netted(total, BigDecimal.ZERO, total);
+        }
+        if (gross == null || gross.signum() <= 0) return Netted.NONE;
+
+        BigDecimal remaining = gross;
+        BigDecimal interestTotal = BigDecimal.ZERO;
+        BigDecimal principalTotal = BigDecimal.ZERO;
+        List<PolicyLoan> open = policyLoanRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId).stream()
+            .filter(l -> "DISBURSED".equals(l.getStatus()) || "REPAYING".equals(l.getStatus()))
+            .sorted(java.util.Comparator.comparing(PolicyLoan::getOriginatedAt,
+                java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())))
+            .toList();
+        for (PolicyLoan loan : open) {
+            if (remaining.signum() <= 0) break;
+            LoanPosition before = position(loan);
+            BigDecimal owed = before.principalOutstanding().add(before.interestOutstanding()).max(BigDecimal.ZERO);
+            BigDecimal take = owed.min(remaining);
+            if (take.signum() <= 0) continue;
+            BigDecimal interestPart = before.interestPartOf(take);
+            BigDecimal principalPart = take.subtract(interestPart);
+            // SETTLEMENT: counted as a repayment by LoanPosition and the outstanding balance alike.
+            LoanTransaction settlement = loanTransactionRepository.save(
+                new LoanTransaction(tenantId, loan.getLoanId(), "SETTLEMENT", take, currency, reference));
+            loan.markRepaying();
+            BigDecimal outstanding = computeOutstandingBalance(loan);
+            if (outstanding.signum() <= 0) loan.markSettled();
+            policyLoanRepository.save(loan);
+            if (principalPart.signum() > 0) {
+                policyApi.releaseEncumbrance(policyNumber, principalPart, currency);
+            }
+            // The same LoanRepaid every repayment publishes, its "method" naming the payout it came out of: the ledger
+            // clears that payout's payable (2211 claim, 2212 maturity, 2213 surrender, 2340 account) rather than cash.
+            eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanRepaid", tenantId,
+                Map.of("loanId", loan.getLoanId(), "loanTransactionId", settlement.getLoanTransactionId(),
+                       "policyNumber", policyNumber,
+                       "interestAmount", interestPart.toPlainString(),
+                       "principalAmount", principalPart.toPlainString(),
+                       "amount", Map.of("amount", take.toPlainString(), "currencyCode", currency),
+                       "repaidAt", Instant.now().toString(),
+                       "receiptMethod", payout.name() + "_OFFSET",
+                       "payoutRef", payoutRef,
+                       "outstandingBalance", Map.of("amount", outstanding.max(BigDecimal.ZERO).toPlainString(),
+                                                    "currencyCode", currency))));
+            remaining = remaining.subtract(take);
+            interestTotal = interestTotal.add(interestPart);
+            principalTotal = principalTotal.add(principalPart);
+        }
+        log.info("Payout {} on {} repaid {} of the policy's loans (by {})", reference, policyNumber,
+            gross.subtract(remaining), by);
+        return new Netted(gross.subtract(remaining), interestTotal, principalTotal);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal nettedFor(Payout payout, String payoutRef) {
+        return loanTransactionRepository.findByTenantIdAndTransactionTypeAndReference(TenantContext.get(), "SETTLEMENT",
+                payout.name() + ":" + payoutRef).stream()
+            .map(LoanTransaction::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal owedOn(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        return policyLoanRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId).stream()
+            .filter(l -> "DISBURSED".equals(l.getStatus()) || "REPAYING".equals(l.getStatus()))
+            .map(l -> computeOutstandingBalance(l).max(BigDecimal.ZERO))
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
     private LoanPosition position(PolicyLoan loan) {
         return LoanPosition.of(loan.getPrincipalAmount(), loanTransactionRepository.findByLoanIdOrderByOccurredAt(loan.getLoanId()));
     }
@@ -542,8 +685,14 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         BigDecimal outstanding = computeOutstandingBalance(loan).max(BigDecimal.ZERO);
         BigDecimal currentRate = loanInterestTermRepository.findByLoanIdOrderByEffectiveFromDesc(loan.getLoanId()).stream()
             .findFirst().map(LoanInterestTerm::getRate).orElse(BigDecimal.ZERO);
+        // Only a loan paid out owes anything; before that its principal is borrowed but not yet lent.
+        boolean lent = "DISBURSED".equals(loan.getStatus()) || "REPAYING".equals(loan.getStatus());
+        LoanPosition position = lent ? position(loan) : null;
         return new LoanView(loan.getLoanId(), loan.getPolicyNumber(), loan.getPrincipalAmount(), loan.getPrincipalCurrency(),
             outstanding, loan.getPrincipalCurrency(), currentRate, LoanStatus.valueOf(loan.getStatus()), loan.getPayeeRef(),
-            loan.getCreatedBy(), loan.getPayoutDecidedBy(), loan.getPayoutRefusalReason());
+            loan.getCreatedBy(), loan.getPayoutDecidedBy(), loan.getPayoutRefusalReason(),
+            loan.getOriginatedAt(),
+            position == null ? BigDecimal.ZERO : position.principalOutstanding().max(BigDecimal.ZERO),
+            position == null ? BigDecimal.ZERO : position.interestOutstanding().max(BigDecimal.ZERO));
     }
 }

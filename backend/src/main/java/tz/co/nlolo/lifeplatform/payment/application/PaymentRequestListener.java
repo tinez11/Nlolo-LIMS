@@ -267,8 +267,8 @@ public class PaymentRequestListener {
 
     /**
      * A top-up: a collection that is not a premium, so billing leaves its confirmation alone. Money already received by
-     * hand (a method other than mobile money, 2026-10-28) is receipted and confirmed at once; a mobile-money top-up is
-     * requested from the payer's phone.
+     * hand (a method other than mobile money, 2026-10-28) is receipted and waits for a second person (2026-11-07); a
+     * mobile-money top-up is requested from the payer's phone.
      */
     private void handleTopUpCollection(Map<String, Object> payload) {
         UUID tenantId = TenantContext.get();
@@ -425,6 +425,12 @@ public class PaymentRequestListener {
                         String sourceRef, String what) {
         tz.co.nlolo.lifeplatform.PayoutRoute route = tz.co.nlolo.lifeplatform.PayoutRoute.fromPayload(payload);
         Money money = money(payload);
+        // Nothing left to pay (2026-11-07): a payout the policy's loans took whole (E7) is still announced, for its
+        // ledger, and settled by its own module. Asking the rail for zero would only fail.
+        if (money.amount().signum() <= 0) {
+            log.info("{} {} has nothing left to pay; no disbursement is requested", what, sourceRef);
+            return;
+        }
         Optional<UUID> disbursementId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordDisbursementRequest(
             tenantId, idempotencyKey, route, money.amount(), money.currency(), purpose, sourceRef));
         disbursementId.ifPresentOrElse(

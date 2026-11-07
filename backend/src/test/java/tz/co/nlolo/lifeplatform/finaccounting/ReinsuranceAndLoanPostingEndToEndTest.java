@@ -719,6 +719,96 @@ class ReinsuranceAndLoanPostingEndToEndTest {
         wireMock.verify(exactly(2), postRequestedFor(urlPathEqualTo("/disburse")));
     }
 
+    /**
+     * 2026-11-07, decision E7 (docs 05 §6 "loan netting"): a death claim repays the policy's loan first. The rail is
+     * asked for only what is left; the loan settles; the ledger clears the claim payable 2211 by both -- the loan's part
+     * against the loan receivable (E-03-CLAIM, no cash), the rest against the bank (B-04 on the paid amount).
+     */
+    @Test
+    void aDeathClaimRepaysThePolicyLoanFirstAndOnlyTheRestIsPaid() throws Exception {
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
+            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-LOAN-NETTING\"}")));
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "LOAN-NETTING-CLAIM");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement statement = connection.prepareStatement(
+                 "UPDATE policy.policy_account SET cash_value_amount = 1000000 WHERE policy_number = ?")) {
+            statement.setString(1, policyNumber);
+            assertThat(statement.executeUpdate()).isEqualTo(1);
+        }
+        TenantContext.set(tenantId);
+        LoanView loan = policyLoanApi.originateLoan(policyNumber, new BigDecimal("300000"), CURRENCY, "MPESA-0716000003", "test-agent");
+        policyLoanApi.approvePayout(loan.loanId(), "approver");
+        TenantContext.set(tenantId);
+        assertThat(policyLoanApi.getLoan(loan.loanId()).status()).isEqualTo(LoanStatus.DISBURSED);
+
+        UUID claimId = registerAndAssessDeathClaim(tenantId, fixture, policyNumber, "loan-netting-reg-01", "assessor-netting-01");
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), CURRENCY, null,
+            "MPESA-0716000009", "loan-netting-settle-" + claimId, "manager-netting-01");
+
+        TenantContext.set(tenantId);
+        assertThat(policyLoanApi.getLoan(loan.loanId()).status()).as("the claim repaid the loan").isEqualTo(LoanStatus.SETTLED);
+        // Only what is left is asked of the rail: 2,000,000 less the 300,000 the loan owed.
+        wireMock.verify(postRequestedFor(urlPathEqualTo("/disburse"))
+            .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.containing("1700000")));
+
+        String settlementId = loanTransactionRepository.findByLoanIdOrderByOccurredAt(loan.loanId()).stream()
+            .filter(t -> "SETTLEMENT".equals(t.getTransactionType())).findFirst()
+            .orElseThrow(() -> new AssertionError("Expected the loan's SETTLEMENT row")).getLoanTransactionId().toString();
+        List<GlPosting> offsetLegs = legsFor(tenantId, singleEntryFor(tenantId, "policyloan.LoanRepaid", settlementId));
+        assertThat(offsetLegs).extracting(GlPosting::getAccountCode).as("no cash: the claim payable repays the loan")
+            .doesNotContain("1120", "1140");
+        assertThat(netFor(offsetLegs, "2211")).isEqualByComparingTo("300000.00");
+        assertThat(netFor(offsetLegs, "2125")).isEqualByComparingTo("-300000.00");
+
+        List<GlPosting> paidLegs = legsFor(tenantId, singleEntryFor(tenantId, "claims.ClaimSettled", claimId.toString()));
+        assertThat(netFor(paidLegs, "2211")).as("the rest is paid from the bank").isEqualByComparingTo("1700000.00");
+        assertThat(netFor(everyLeg(tenantId), "2211")).as("the claim payable is cleared exactly").isEqualByComparingTo("0.00");
+        assertThat(netFor(everyLeg(tenantId), "2125")).as("the loan receivable is cleared exactly").isEqualByComparingTo("0.00");
+    }
+
+    /**
+     * 2026-11-07, decision E7, replacing Q1's "repay the loan before surrendering": a surrender repays the policy's loan
+     * first. The payable is the whole value (C-05 on grossAmount); the loan's part clears it (E-03-SURRENDER), the rest is
+     * paid (C-06 on what the rail paid).
+     */
+    @Test
+    void aSurrenderRepaysThePolicyLoanFirstAndOnlyTheRestIsPaid() throws Exception {
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
+            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-LOAN-NETTING-SUR\"}")));
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "LOAN-NETTING-SURRENDER");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement statement = connection.prepareStatement(
+                 "UPDATE policy.policy_account SET cash_value_amount = 1000000 WHERE policy_number = ?")) {
+            statement.setString(1, policyNumber);
+            assertThat(statement.executeUpdate()).isEqualTo(1);
+        }
+        TenantContext.set(tenantId);
+        LoanView loan = policyLoanApi.originateLoan(policyNumber, new BigDecimal("300000"), CURRENCY, "MPESA-0716000004", "test-agent");
+        policyLoanApi.approvePayout(loan.loanId(), "approver");
+
+        TenantContext.set(tenantId);
+        UUID requestId = policyApi.requestSurrender(policyNumber, "MPESA-0716000010", "service-1").surrenderRequestId();
+        policyApi.approveSurrender(requestId, "finance-2");
+
+        TenantContext.set(tenantId);
+        assertThat(policyLoanApi.getLoan(loan.loanId()).status()).as("the surrender repaid the loan").isEqualTo(LoanStatus.SETTLED);
+        wireMock.verify(postRequestedFor(urlPathEqualTo("/disburse"))
+            .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.containing("700000")));
+        String settlementId = loanTransactionRepository.findByLoanIdOrderByOccurredAt(loan.loanId()).stream()
+            .filter(t -> "SETTLEMENT".equals(t.getTransactionType())).findFirst()
+            .orElseThrow(() -> new AssertionError("Expected the loan's SETTLEMENT row")).getLoanTransactionId().toString();
+        assertThat(netFor(legsFor(tenantId, singleEntryFor(tenantId, "policyloan.LoanRepaid", settlementId)), "2213"))
+            .isEqualByComparingTo("300000.00");
+        assertThat(netFor(legsFor(tenantId, singleEntryFor(tenantId, "policy.SurrenderPaid", requestId.toString())), "2213"))
+            .as("the rest is paid from the bank").isEqualByComparingTo("700000.00");
+        assertThat(netFor(everyLeg(tenantId), "2213")).as("the surrender payable is cleared exactly").isEqualByComparingTo("0.00");
+        assertThat(netFor(everyLeg(tenantId), "2125")).as("the loan receivable is cleared exactly").isEqualByComparingTo("0.00");
+    }
+
     /** Every {@code policyloan.LoanRepaid} journal entry in this tenant. The tenant id is freshly
      * random per test and exactly one loan is repaid in it, so this is "the entries for that loan"
      * -- and it deliberately does NOT filter on a sourceRef, since the whole point of the fix under

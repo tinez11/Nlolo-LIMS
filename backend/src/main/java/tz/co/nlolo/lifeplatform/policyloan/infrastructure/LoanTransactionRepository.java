@@ -8,4 +8,7 @@ import java.util.UUID;
 
 public interface LoanTransactionRepository extends JpaRepository<LoanTransaction, LoanTransaction.LoanTransactionId> {
     List<LoanTransaction> findByLoanIdOrderByOccurredAt(UUID loanId);
+
+    /** A payout's earlier netting, by its reference ("CLAIM:&lt;claimId&gt;"), so asking twice takes once (2026-11-07). */
+    List<LoanTransaction> findByTenantIdAndTransactionTypeAndReference(UUID tenantId, String transactionType, String reference);
 }

@@ -138,17 +138,6 @@ export function requestTopUp(policyNumber: string, body: TopUpBody, attempt: Mut
 export function recordReceivedTopUp(policyNumber: string, body: TopUpBody, attempt: MutationAttempt): Promise<TopUpView> {
   return post<TopUpView>(`${account(policyNumber)}/top-ups/received`, body, { headers: attempt.headers() });
 }
-
-export interface TransferInBody {
-  amount: string;
-  sourceScheme: string;
-  documentRef?: string;
-}
-
-export function recordTransferIn(policyNumber: string, body: TransferInBody, attempt: MutationAttempt): Promise<TransferInView> {
-  return post<TransferInView>(`${account(policyNumber)}/transfers-in`, body, { headers: attempt.headers() });
-}
-
 export interface AdjustmentBody {
   /** Signed: a correction may take money out as well as put it in. */
   amount: string;

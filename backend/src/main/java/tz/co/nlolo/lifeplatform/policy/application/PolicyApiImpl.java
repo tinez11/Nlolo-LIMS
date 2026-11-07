@@ -86,6 +86,22 @@ public class PolicyApiImpl implements PolicyApi {
     private final PartyApi partyApi;
     /** Approving a surrender one requested, for a company with one person (2026-11-04). */
     private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
+
+    /**
+     * Repays the policy's loans out of a surrender (2026-11-07, decision E7). Implemented by policyloan, which itself
+     * depends on this class -- so it is looked up when first needed, never at construction, or the two would wait on
+     * each other at startup. Absent (a slice without policyloan), nothing is netted.
+     */
+    private org.springframework.beans.factory.ObjectProvider<LoanNetting> loanNettingProvider;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setLoanNettingProvider(org.springframework.beans.factory.ObjectProvider<LoanNetting> provider) {
+        this.loanNettingProvider = provider;
+    }
+
+    private LoanNetting loanNetting() {
+        return loanNettingProvider == null ? null : loanNettingProvider.getIfAvailable();
+    }
     private final ProductApi productApi;
     private final ReferenceDataApi referenceDataApi;
     private final DistributionApi distributionApi;
@@ -851,6 +867,22 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public LoanValueView getLoanValue(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        PolicyAccount account = policyAccountRepository.findById(policyNumber)
+            .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
+        BigDecimal percent = productApi.getSnapshotByVersionId(policy.getProductVersionId()).maxLoanToValuePercent();
+        BigDecimal reserved = loanValueReservationRepository.sumReservedAmountForPolicy(policyNumber, tenantId);
+        // The same sum reserveLoanValue checks against, so what is shown is what a loan is refused or granted on.
+        BigDecimal available = account.availableLoanValue(reserved, percent).max(BigDecimal.ZERO);
+        BigDecimal limit = account.loanLimit(percent);
+        return new LoanValueView(policyNumber, account.getCashValueCurrency(), account.getCashValueAmount(), percent,
+            limit, account.getLoanEncumbranceAmount(), reserved, available);
+    }
+
+    @Override
     public SurrenderQuoteView quoteSurrenderValue(String policyNumber) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
@@ -1087,6 +1119,16 @@ public class PolicyApiImpl implements PolicyApi {
     @Override
     @Transactional
     public UUID reserveLoanValue(String policyNumber, BigDecimal amount, String currency, Duration ttl) {
+        return reserve(policyNumber, amount, currency, ttl, BigDecimal.ZERO);
+    }
+
+    @Override
+    @Transactional
+    public UUID reserveLoanValue(String policyNumber, BigDecimal amount, String currency, Duration ttl, BigDecimal interestOwed) {
+        return reserve(policyNumber, amount, currency, ttl, interestOwed == null ? BigDecimal.ZERO : interestOwed);
+    }
+
+    private UUID reserve(String policyNumber, BigDecimal amount, String currency, Duration ttl, BigDecimal interestOwed) {
         // M3 final review, I3. Task 7's Critical (a negative requestedAmount reaching
         // PolicyAccount.increaseEncumbrance, DECREASING loan_encumbrance_amount and thereby
         // RAISING the customer's own available loan value) was closed only at the HTTP
@@ -1122,10 +1164,18 @@ public class PolicyApiImpl implements PolicyApi {
         // OWN version (step 1 -- the M3 simplification that ignored it is closed). A null percent
         // means the whole cash value is borrowable.
         BigDecimal ltvPercent = productApi.getSnapshotByVersionId(policy.getProductVersionId()).maxLoanToValuePercent();
-        BigDecimal available = account.availableLoanValue(currentlyReserved, ltvPercent);
+        // 0 lends nothing (2026-11-07, the user: each product says how much may be lent).
+        if (ltvPercent != null && ltvPercent.signum() == 0) {
+            throw new InsufficientLoanValueException("This product does not lend against its value: its maximum loan is 0%");
+        }
+        // The interest owed on the policy's loans counts too (2026-11-07): the limit is on what the policy owes, and
+        // only policyloan knows the interest, so it is handed in and taken off here, under the same lock.
+        BigDecimal available = account.availableLoanValue(currentlyReserved, ltvPercent).subtract(interestOwed)
+            .max(BigDecimal.ZERO);
         if (amount.compareTo(available) > 0) {
-            throw new InsufficientLoanValueException(
-                "Requested " + amount + " " + currency + " exceeds available loan value " + available + " for policy " + policyNumber);
+            throw new InsufficientLoanValueException("This policy can borrow at most " + available.toPlainString() + " "
+                + currency + " now: " + (ltvPercent == null ? "its whole value"
+                : ltvPercent.stripTrailingZeros().toPlainString() + "% of its value") + ", less what it already owes");
         }
 
         LoanValueReservation reservation = new LoanValueReservation(tenantId, policyNumber, amount, currency, Instant.now().plus(ttl));
@@ -1172,11 +1222,8 @@ public class PolicyApiImpl implements PolicyApi {
     @Override
     @Transactional
     public void releaseEncumbrance(String policyNumber, BigDecimal amount, String currency) {
-        // M4's ledger note ("loan_encumbrance_amount only ever increases in M3 -- no
-        // repayment-side consumption path") is now partially closed here, for the FAILURE
-        // direction only: a disbursement that never actually paid out must not permanently
-        // consume the policyholder's loan value. Full repayment-side consumption (decrementing
-        // encumbrance as the loan is repaid) remains out of scope for M5.
+        // Called when a disbursement never paid out (M5), and since 2026-11-07 for the principal each
+        // repayment pays off: a repaid loan no longer keeps the policy's value pledged.
         UUID tenantId = TenantContext.get();
         // Same lockByPolicyNumber PESSIMISTIC_WRITE discipline confirmReservation uses -- the
         // caller (policyloan.PolicyLoanApiImpl.markDisbursementFailed) already announces its own
@@ -1487,12 +1534,9 @@ public class PolicyApiImpl implements PolicyApi {
         PolicyAccount account = policyAccountRepository.findById(policyNumber)
             .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
 
-        // No outstanding loan (user decision Q1): the loan must be repaid first. The encumbrance on
-        // the account is the outstanding-loan marker policy can see without reaching into policyloan.
-        if (account.getLoanEncumbranceAmount().signum() > 0) {
-            throw new InvalidPolicyStateException("Policy " + policyNumber + " has an outstanding loan of "
-                + account.getLoanEncumbranceAmount() + "; it must be repaid before the policy can be surrendered");
-        }
+        // A loan no longer stops a surrender (2026-11-07, decision E7, replacing Q1's "repay it first"): the surrender
+        // repays it, and only the rest is paid -- here at approval, or by accumulation for an account. Checked against
+        // the quote below.
         if (loanValueReservationRepository.sumReservedAmountForPolicy(policyNumber, tenantId).signum() > 0) {
             throw new InvalidPolicyStateException("A loan reservation is in flight on policy " + policyNumber
                 + "; it must resolve before the policy can be surrendered");
@@ -1543,6 +1587,16 @@ public class PolicyApiImpl implements PolicyApi {
         BigDecimal quoted = account.getCashValueAmount().subtract(charge).add(bonusValue);
         if (quoted.signum() <= 0) {
             throw new InvalidPolicyStateException("Policy " + policyNumber + " has no positive surrender value after charges");
+        }
+        // The loans are repaid from the value first (E7). Where they take it all, nothing would be paid: said here,
+        // rather than approving a surrender that asks the rail for nothing.
+        LoanNetting netting = loanNetting();
+        BigDecimal owed = netting != null && account.getLoanEncumbranceAmount().signum() > 0
+            ? netting.owedOn(policyNumber) : BigDecimal.ZERO;
+        if (owed.compareTo(quoted) >= 0) {
+            throw new InvalidPolicyStateException("The loans on policy " + policyNumber + " owe " + owed.toPlainString()
+                + " " + account.getCashValueCurrency() + ", as much as its surrender value of " + quoted.toPlainString()
+                + ": a surrender would pay nothing. Repay part of the loan first");
         }
 
         SurrenderRequest request = new SurrenderRequest(tenantId, policyNumber, quoted,
@@ -1597,6 +1651,16 @@ public class PolicyApiImpl implements PolicyApi {
                        "approvedBy", approvedBy,
                        "approvedAt", Instant.now().toString()))));
         } else {
+            // The surrender repays the policy's loans first (2026-11-07, decision E7): the payable is the whole value
+            // (grossAmount, C-05), the loans' part clears it (E-03-SURRENDER), and only the rest goes to the rail.
+            // Asked only when something is pledged: a surrender is approved once, so there is no retry to answer.
+            LoanNetting netting = loanNetting();
+            boolean pledged = policyAccountRepository.findById(request.getPolicyNumber())
+                .map(a -> a.getLoanEncumbranceAmount().signum() > 0).orElse(false);
+            BigDecimal netted = netting == null || !pledged ? BigDecimal.ZERO
+                : netting.settleFromPayout(request.getPolicyNumber(), request.getQuotedValueAmount(),
+                    request.getQuotedValueCurrency(), LoanNetting.Payout.SURRENDER, surrenderRequestId.toString(),
+                    approvedBy).total();
             // The payout, through the disbursement rail. The surrender request id is both the source
             // reference and the idempotency key -- one payout per approval. Every scale-valued
             // surrender, which is every one before product step 3.
@@ -1604,7 +1668,9 @@ public class PolicyApiImpl implements PolicyApi {
                 routed(request, Map.of("surrenderRequestId", surrenderRequestId.toString(),
                        "idempotencyKey", surrenderRequestId.toString(),
                        "policyNumber", request.getPolicyNumber(),
-                       "amount", Map.of("amount", request.getQuotedValueAmount().toPlainString(),
+                       "amount", Map.of("amount", request.getQuotedValueAmount().subtract(netted).toPlainString(),
+                            "currencyCode", request.getQuotedValueCurrency()),
+                       "grossAmount", Map.of("amount", request.getQuotedValueAmount().toPlainString(),
                             "currencyCode", request.getQuotedValueCurrency())))));
         }
         return toSurrenderView(request);
@@ -1646,7 +1712,7 @@ public class PolicyApiImpl implements PolicyApi {
     /** The payout succeeded. Marks the request PAID. Idempotent: only an APPROVED request advances. */
     @Override
     @Transactional
-    public void markSurrenderPaid(UUID surrenderRequestId, UUID disbursementId) {
+    public void markSurrenderPaid(UUID surrenderRequestId, UUID disbursementId, BigDecimal paidAmount) {
         UUID tenantId = TenantContext.get();
         surrenderRequestRepository.findBySurrenderRequestIdAndTenantId(surrenderRequestId, tenantId)
             .filter(r -> "APPROVED".equals(r.getStatus()))
@@ -1660,10 +1726,12 @@ public class PolicyApiImpl implements PolicyApi {
                 }
                 // Published only on the real APPROVED -> PAID transition, so a redelivered payment
                 // event cannot post the payout to the ledger twice. finaccounting books it.
+                // What left the bank, as the rail reported it: the value less any loan it repaid (E7).
+                BigDecimal paid = paidAmount != null ? paidAmount : r.getQuotedValueAmount();
                 eventPublisher.publishEvent(DomainEventEnvelope.of("policy.SurrenderPaid", tenantId,
                     Map.of("surrenderRequestId", surrenderRequestId.toString(),
                            "policyNumber", r.getPolicyNumber(),
-                           "paidAmount", Map.of("amount", r.getQuotedValueAmount().toPlainString(),
+                           "paidAmount", Map.of("amount", paid.toPlainString(),
                                 "currencyCode", r.getQuotedValueCurrency()))));
             });
     }

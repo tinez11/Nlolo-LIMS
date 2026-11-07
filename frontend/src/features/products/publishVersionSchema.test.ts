@@ -56,6 +56,8 @@ const deathBenefit = {
 // Built on the blank form so the fixture always carries every key a real submission has.
 const valid = () => ({
   ...blankPublishVersionForm(),
+  // Required on a product a loan can be taken on (2026-11-07); ignored on every other.
+  maxLoanPercent: '80',
   expectedProfitabilityBucket: 'REMAINING' as const,
   measurementModelOverride: '' as const,
   effectiveDate: '2026-01-01',
@@ -1237,5 +1239,29 @@ describe('term account value basis', () => {
     }));
     expect(result.success).toBe(true);
     expect(toApiRequest(result.data!).accumulation).not.toHaveProperty('minRatePercent');
+  });
+});
+
+// 2026-11-07, the user: every product a loan can be taken on says how much of the value may be lent; 0 lends nothing.
+describe('maximum loan', () => {
+  const issues = (category: Parameters<typeof publishVersionFormSchema>[0], maxLoanPercent: string) =>
+    (publishVersionFormSchema(category).safeParse({ ...valid(), payoutRows: [maturityRow], maxLoanPercent }).error?.issues ?? [])
+      .filter((i) => i.path[0] === 'maxLoanPercent').map((i) => i.message);
+
+  it('is required where a loan can be taken, 0 to 100, and not asked anywhere else', () => {
+    expect(issues('ENDOWMENT', '')).toEqual(['Enter the maximum loan, 0 for no loans']);
+    expect(issues('ENDOWMENT', '101')).toEqual(['A percentage from 0 to 100']);
+    expect(issues('ENDOWMENT', '0')).toEqual([]);
+    expect(issues('ENDOWMENT', '80')).toEqual([]);
+    expect(issues('TERM_LIFE', '')).toEqual([]);
+  });
+
+  it('is sent as a number on a lending product, and never on any other', () => {
+    const endowment = publishVersionFormSchema('ENDOWMENT').safeParse({ ...valid(), payoutRows: [maturityRow], maxLoanPercent: '0' });
+    expect(endowment.success).toBe(true);
+    expect(toApiRequest(endowment.data!, 'ENDOWMENT').maxLoanToValuePercent).toBe(0);
+    const term = publishVersionFormSchema('TERM_LIFE').safeParse(valid());
+    expect(term.success).toBe(true);
+    expect(toApiRequest(term.data!, 'TERM_LIFE')).not.toHaveProperty('maxLoanToValuePercent');
   });
 });

@@ -46,6 +46,20 @@ describe('receipt form', () => {
     expect(parsed.error?.issues.map((i) => i.path[0])).toEqual(['loanId']);
   });
 
+  // 2026-11-07, the user: one Deposit page; the method decides what is asked.
+  it('mobile money asks only for the phone -- and, but for a premium, the amount -- never a reference or a day', () => {
+    const mobile = { ...valid, method: 'MOBILE_MONEY' as const, reference: '', receivedOn: '', amount: '' };
+    const paths = (v: typeof mobile) => receiptFormSchema.safeParse(v).error?.issues.map((i) => i.path[0]) ?? [];
+    expect(paths(mobile)).toEqual(['payerRef']);
+    expect(receiptFormSchema.safeParse({ ...mobile, payerRef: '+255700000002' }).success).toBe(true);
+    expect(paths({ ...mobile, paysFor: 'SAVINGS', payerRef: '+255700000002' })).toEqual(['amount']);
+  });
+
+  it('money received still needs its reference and day, savings included', () => {
+    const parsed = receiptFormSchema.safeParse({ ...valid, paysFor: 'SAVINGS', reference: '', receivedOn: '' });
+    expect(parsed.error?.issues.map((i) => i.path[0])).toEqual(['reference', 'receivedOn']);
+  });
+
   it('a loan deposit goes out with loanId and no policy balance', () => {
     const body = toApiRequest({ ...valid, paysFor: 'LOAN', loanId: 'loan-1' }, 'TZS');
     expect(body.loanId).toBe('loan-1');

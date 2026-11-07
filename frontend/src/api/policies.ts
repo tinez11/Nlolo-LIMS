@@ -15,6 +15,8 @@ import type {
   MemberStatus,
   PolicyMemberView,
   LoanPaymentRequest,
+  LoanHistoryLine,
+  LoanLimit,
   LoanView,
   ManualIssueRequest,
   OriginateLoanRequest,
@@ -214,6 +216,16 @@ export function changeSchemeAgentOfRecord(
  */
 export function listPolicyCredits(policyNumber: string): Promise<PremiumCreditView[]> {
   return get<PremiumCreditView[]>(`/policies/${encodeURIComponent(policyNumber)}/credits`);
+}
+
+/** `GET /policies/{n}/loan-limit` (2026-11-07): value, maximum, borrowed, interest owed, and what can be borrowed now. */
+export function getLoanLimit(policyNumber: string): Promise<LoanLimit> {
+  return get<LoanLimit>(`/policies/${encodeURIComponent(policyNumber)}/loan-limit`);
+}
+
+/** `GET /loans/{id}/history` (2026-11-07): paid out, interest added, repaid, repaid out of a payout -- oldest first. */
+export function getLoanHistory(loanId: string): Promise<LoanHistoryLine[]> {
+  return get<LoanHistoryLine[]>(`/loans/${encodeURIComponent(loanId)}/history`);
 }
 
 /** `GET /policies/{n}/loans` -- also a bare unpaged array. */

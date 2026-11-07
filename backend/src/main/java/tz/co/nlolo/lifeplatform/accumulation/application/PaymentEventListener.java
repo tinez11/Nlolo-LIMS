@@ -30,12 +30,15 @@ public class PaymentEventListener {
         switch (envelope.eventType()) {
             case "payment.DisbursementCompleted", "payment.DisbursementFailed" -> runner.run(envelope, p -> {
                 boolean paid = "payment.DisbursementCompleted".equals(envelope.eventType());
+                // What the rail paid: a maturity less any loan it repaid (2026-11-07, E7). Absent on a failure.
+                Object railAmount = p.get("amount") instanceof Map<?, ?> m ? m.get("amount") : null;
+                java.math.BigDecimal railPaid = paid && railAmount != null ? new java.math.BigDecimal(railAmount.toString()) : null;
                 if ("DEPOSIT_MATURITY_PAYOUT".equals(p.get("purpose"))) {
-                    deposits.settlePayout((String) p.get("sourceRef"), paid);
+                    deposits.settlePayout((String) p.get("sourceRef"), paid, railPaid);
                     return;
                 }
                 if ("TERM_ACCOUNT_MATURITY_PAYOUT".equals(p.get("purpose"))) {
-                    api.settleTermAccountPayout((String) p.get("sourceRef"), paid);
+                    api.settleTermAccountPayout((String) p.get("sourceRef"), paid, railPaid);
                     return;
                 }
                 if (!"WITHDRAWAL_PAYOUT".equals(p.get("purpose"))) return;

@@ -59,11 +59,15 @@ test.describe('a savings account', () => {
     await expect(page.getByText('Nothing on the ledger yet')).toBeVisible({ timeout: 20_000 });
 
     // Money in: a top-up, collected by the mock rail and credited on confirmation.
-    await page.getByRole('button', { name: 'Request savings deposit' }).click();
-    await page.getByLabel('Amount').fill('100000.00');
-    await page.getByLabel('Collect from').fill('+255700000002');
-    await page.getByRole('button', { name: 'Request savings deposit', exact: true }).last().click();
-    await expect(page.getByText(/A request was sent to the payer/)).toBeVisible({ timeout: 20_000 });
+    // On the one Deposit page (2026-11-07), For: Savings, by mobile money.
+    await page.locator('section').filter({ has: page.getByRole('heading', { name: 'Account', exact: true }) }).getByRole('link', { name: 'Deposit', exact: true }).click();
+    await expect(page.getByLabel('For', { exact: true })).toHaveValue('SAVINGS');
+    await page.getByLabel('How is it being paid?').selectOption('MOBILE_MONEY');
+    await page.getByLabel('Phone number').fill('+255700000002');
+    await page.getByLabel(/^Amount/).fill('100000.00');
+    await page.getByRole('button', { name: 'Send request' }).click();
+    await expect(page.getByText('Mobile-money request sent')).toBeVisible({ timeout: 60_000 });
+    await page.goto(`/staff/policies/${policyNumber}`);
     // Credited once a second finance person confirms the money came (2026-10-27).
     await confirmRequestedPayments(browser, policyNumber);
 
@@ -87,7 +91,7 @@ test.describe('a savings account', () => {
     }
 
     // Money out: requested by customer service, approved by someone else.
-    await page.getByRole('button', { name: 'Request savings withdrawal' }).click();
+    await page.getByRole('button', { name: 'Withdraw', exact: true }).click();
     await page.getByLabel('Amount').fill('10000.00');
     await page.getByLabel('Mobile-money number').fill('+255700000009');
     await page.getByRole('button', { name: 'Continue' }).click();
@@ -141,7 +145,7 @@ test.describe('customer service on a savings account', () => {
     const policyNumber = await savingsPolicy(browser);
     await page.goto(`/staff/policies/${policyNumber}`);
     await page.getByRole('tab', { name: 'Account' }).click();
-    await expect(page.getByRole('button', { name: 'Request savings withdrawal' })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('button', { name: 'Withdraw', exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole('button', { name: 'Record transfer in' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Propose adjustment' })).toHaveCount(0);
   });

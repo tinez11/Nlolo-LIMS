@@ -542,6 +542,10 @@ const WORDS: Record<string, string> = {
   DISBURSEMENT_REQUESTED: 'Payout requested',
   DISBURSED: 'Paid out',
   DISBURSEMENT_FAILED: 'Payout failed',
+  // A loan's own steps (2026-11-07, the user: the Loans page in plain words).
+  RESERVED_PENDING_ORIGINATION: 'Being taken',
+  AWAITING_PAYOUT_APPROVAL: 'Waiting for a second person',
+  FORCED_LAPSE_TRIGGERED: 'Lapsed: loan above the value',
 };
 
 /** Turn `IN_GRACE` into `In grace` for display. */

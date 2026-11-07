@@ -233,12 +233,15 @@ public class PaymentEventListener {
                 // (triggering recovery from claims.ClaimApproved, which does carry them) was
                 // rejected because approval precedes the rail and a settlement can still fail,
                 // and a recoverable booked against money that never moved overstates assets.
-                eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimSettled", tenantId,
-                    Map.of("claimId", claimId,
-                           "policyNumber", claim.getPolicyNumber(),
-                           "settledAmount", Map.of("amount", claim.getApprovedAmount().toPlainString(),
-                                                    "currencyCode", claim.getApprovedCurrency()),
-                           "settledAt", Instant.now().toString())));
+                // paidAmount (2026-11-07): what the rail paid -- the claim less any loan it repaid (E7). The ledger
+                // pays out of it; settledAmount stays the claim's gross for reinsurance and returns.
+                Map<String, Object> settled = new java.util.HashMap<>(Map.of("claimId", claimId,
+                    "policyNumber", claim.getPolicyNumber(),
+                    "settledAmount", Map.of("amount", claim.getApprovedAmount().toPlainString(),
+                                            "currencyCode", claim.getApprovedCurrency()),
+                    "settledAt", Instant.now().toString()));
+                if (payload.get("amount") != null) settled.put("paidAmount", payload.get("amount"));
+                eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimSettled", tenantId, settled));
             }
             return new SettledClaimFacts(alreadySettled, claim.getClaimType(), claim.getPolicyNumber(),
                 claim.getPolicyMemberId(), claim.getDateOfEvent());

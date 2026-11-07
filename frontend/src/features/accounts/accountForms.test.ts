@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BLANK_ROUTE } from '@/features/payments/payoutRoute';
-import { adjustmentSchema, topUpSchema, transferInSchema, withdrawalSchema } from './accountForms';
+import { adjustmentSchema, withdrawalSchema } from './accountForms';
 
 const issues = (result: { success: boolean; error?: { issues: { message: string }[] } }) =>
   result.success ? [] : result.error!.issues.map((i) => i.message);
@@ -39,22 +39,6 @@ describe('withdrawalSchema', () => {
       withdrawalSchema.safeParse({ ...eft, payeeBank: 'CRDB Bank', payeeAccountName: 'Amina Owner', payeeAccountNumber: '0150123' })
         .success,
     ).toBe(true);
-  });
-});
-
-describe('topUpSchema and transferInSchema', () => {
-  it('need a payer and a source scheme respectively', () => {
-    const topUp = { amount: '1.00', method: 'MOBILE_MONEY' as const, payerRef: '', reference: '', receivedOn: '' };
-    expect(issues(topUpSchema.safeParse(topUp))).toContain('Who is the money collected from?');
-    // Money already received names its reference and its day instead of a phone.
-    expect(issues(topUpSchema.safeParse({ ...topUp, method: 'CASH' }))).toEqual([
-      'Enter the reference, so the same money cannot be credited twice',
-      'The day the money was received',
-    ]);
-    expect(topUpSchema.safeParse({ ...topUp, method: 'CASH', reference: 'RC-1', receivedOn: '2026-10-01' }).success).toBe(true);
-    expect(issues(transferInSchema.safeParse({ amount: '1.00', sourceScheme: '', documentRef: '' }))).toContain(
-      'Name the scheme the money came from',
-    );
   });
 });
 

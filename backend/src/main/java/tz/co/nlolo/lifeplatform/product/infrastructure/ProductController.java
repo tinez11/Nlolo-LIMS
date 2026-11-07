@@ -162,6 +162,7 @@ public class ProductController {
             jwt.getSubject());
         // The description this version was published with: the product's from now on, and the version's own history.
         productApi.describeNewestVersion(productId, request.description());
+        productApi.limitNewestVersionLoans(productId, request.maxLoanToValuePercent());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 

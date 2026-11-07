@@ -1,4 +1,4 @@
-import { expect, type Browser } from '@playwright/test';
+import { expect, type Browser, type Page } from '@playwright/test';
 import { approverPage } from './approverSession';
 
 /**
@@ -32,4 +32,22 @@ export async function confirmRequestedPayments(browser: Browser, policyNumber: s
   } finally {
     await context.close();
   }
+}
+
+/**
+ * Ask the payer's phone for the policy's oldest premium owed, the way staff do it (2026-11-07): the one Deposit page,
+ * Mobile money. Called from the policy's page; returns to that page once the request has gone, so a spec reads on as
+ * before. The request answers only after the whole AFTER_COMMIT chain -- payment and the rail's acceptance -- has run
+ * on its thread, hence 60s.
+ */
+export async function askPhoneForPremium(page: Page, phone: string): Promise<void> {
+  const from = page.url();
+  const policyNumber = new URL(from).pathname.split('/').pop()!;
+  await page.goto(`/staff/receipts/new?policy=${encodeURIComponent(policyNumber)}&from=policy`);
+  await page.getByLabel('How is it being paid?').selectOption('MOBILE_MONEY');
+  await expect(page.getByText(/still owes\.$/)).toBeVisible({ timeout: 20_000 });
+  await page.getByLabel('Phone number').fill(phone);
+  await page.getByRole('button', { name: 'Send request' }).click();
+  await expect(page.getByText('Mobile-money request sent')).toBeVisible({ timeout: 60_000 });
+  await page.goto(from);
 }

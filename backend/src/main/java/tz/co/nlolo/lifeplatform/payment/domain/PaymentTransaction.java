@@ -240,13 +240,18 @@ public class PaymentTransaction {
         t.policyNumber = policyNumber;
         t.receivedOn = receivedOn;
         t.recordedBy = recordedBy;
-        t.status = "CONFIRMED";
-        t.decidedBy = recordedBy;
-        t.decidedAt = Instant.now();
+        // A second person confirms it, as every deposit recorded by hand (2026-11-07, the user; it was one person since
+        // 2026-10-28). Its confirmation credits the account; a refusal fails the top-up.
+        t.status = "AWAITING_APPROVAL";
         return t;
     }
 
     private static final String TOP_UP = "ACCOUNT_TOP_UP";
+
+    /** A savings deposit recorded by hand: refusing it must fail the top-up waiting on it, as a refused request does. */
+    public boolean isSavingsDeposit() {
+        return TOP_UP.equals(purpose);
+    }
 
     /** The second person confirms it: the money now counts, and the invoice is paid from it. */
     public void approveReceipt(String by) {

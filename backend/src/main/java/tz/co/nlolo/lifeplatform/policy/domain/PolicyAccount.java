@@ -76,12 +76,16 @@ public class PolicyAccount {
      * is closed: the percent is read from the policy's own product version and passed here.
      */
     public BigDecimal availableLoanValue(BigDecimal currentlyReserved, BigDecimal maxLoanToValuePercent) {
-        BigDecimal base = cashValueAmount;
+        return loanLimit(maxLoanToValuePercent).subtract(loanEncumbranceAmount).subtract(currentlyReserved);
+    }
+
+    /** Cash value × the loan-to-value percent: the most all loans on the policy may come to (null = the whole value). */
+    public BigDecimal loanLimit(BigDecimal maxLoanToValuePercent) {
         if (maxLoanToValuePercent != null && maxLoanToValuePercent.compareTo(new BigDecimal("100")) < 0) {
-            base = cashValueAmount.multiply(maxLoanToValuePercent)
+            return cashValueAmount.multiply(maxLoanToValuePercent)
                 .divide(new BigDecimal("100"), 2, java.math.RoundingMode.DOWN);
         }
-        return base.subtract(loanEncumbranceAmount).subtract(currentlyReserved);
+        return cashValueAmount;
     }
 
     /**

@@ -9,6 +9,15 @@ public interface PolicyLoanApi {
     LoanView originateLoan(String policyNumber, BigDecimal requestedAmount, String currency, String payeeRef, String originatedBy);
     LoanView getLoan(UUID loanId);
     List<LoanView> listLoansForPolicy(String policyNumber);
+
+    /**
+     * How much the policy can borrow now (2026-11-07): its value × the product's maximum loan, less what is borrowed
+     * and the interest owed on it. Origination is refused above {@link LoanLimitView#canBorrowNow()}.
+     */
+    LoanLimitView loanLimit(String policyNumber);
+
+    /** The loan's history, oldest first (2026-11-07): what was paid out, the interest added, every repayment. */
+    List<LoanHistoryLine> history(java.util.UUID loanId);
     /**
      * Money confirmed for this loan (money movement step 1, 2026-11-04): a deposit For: Loan a second person approved,
      * or a mobile-money request the rail confirmed. Applies at most what the loan owes, interest first; anything above

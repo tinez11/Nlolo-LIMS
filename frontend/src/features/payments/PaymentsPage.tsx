@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { can } from '@/auth/access';
+import { canAny } from '@/auth/access';
 import { DEFAULT_PAGE_SIZE } from '@/api/billing';
 import type { PaymentDirection, PaymentRecord, RegisterState } from '@/api/payments';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
@@ -215,9 +215,9 @@ export function PaymentsPage({ direction }: { direction: PaymentDirection }) {
         description={words.description}
         count={<CountLine {...count} />}
         actions={
-          direction === 'IN' && can('collections.manage') ? (
+          direction === 'IN' && canAny('collections.manage', 'policies.service', 'accounts.transact') ? (
             <Button asChild variant="primary">
-              <Link to="/staff/receipts/new?from=payments">Record deposit</Link>
+              <Link to="/staff/receipts/new?from=payments">Deposit</Link>
             </Button>
           ) : undefined
         }

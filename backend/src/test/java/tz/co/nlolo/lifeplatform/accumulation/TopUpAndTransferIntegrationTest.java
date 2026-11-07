@@ -238,15 +238,23 @@ class TopUpAndTransferIntegrationTest {
     }
 
     /**
-     * 2026-10-28, user decision: a top-up needs no second person. Money already received by hand is credited as soon as
-     * the person recording it has -- receipted by payment under its method and reference, confirmed by that same person.
+     * 2026-11-07, user decision (replacing 2026-10-28's one person): money already received by hand waits for a second
+     * person, as every deposit by hand does -- receipted by payment under its method and reference, credited when
+     * someone else confirms it.
      */
     @Test
-    void aCashTopUpIsCreditedAtOnceByThePersonWhoRecordsIt() {
+    void aCashTopUpIsCreditedOnlyOnceASecondPersonConfirmsIt() {
         var issued = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, LocalDate.now());
         String reference = "RC-" + UUID.randomUUID();
         var topUp = asTenant(() -> impl.recordTopUp(issued.policyNumber(), new BigDecimal("20000.00"), "CASH", reference,
             LocalDate.now(), "Amina Owner", "staff-one"));
+        // Recorded is not credited.
+        assertThat(asTenant(() -> api.entries(issued.policyNumber()))).isEmpty();
+        var waiting = asTenant(() -> receipts.awaitingApproval()).stream()
+            .filter(r -> reference.equals(r.reference())).toList();
+        assertThat(waiting).singleElement().satisfies(r -> assertThat(r.purpose()).isEqualTo("ACCOUNT_TOP_UP"));
+        asTenant(() -> receipts.approve(waiting.get(0).receiptId(), "finance-two"));
+
         assertThat(asTenant(() -> api.entries(issued.policyNumber())))
             .extracting(LedgerEntryView::type, e -> e.amount().toPlainString())
             .containsExactly(tuple(EntryType.TOP_UP, "20000.00"), tuple(EntryType.ALLOCATION_CHARGE, "-1000.00"));
@@ -261,9 +269,26 @@ class TopUpAndTransferIntegrationTest {
             });
         assertThat(ownerQuery("SELECT status || ' ' || method || ' ' || recorded_by || ' ' || decided_by "
             + "FROM payment.payment_transaction WHERE source_ref = ?", topUp.topUpId().toString()))
-            .isEqualTo("CONFIRMED CASH staff-one staff-one");
-        // Nothing waits for a signature.
+            .isEqualTo("CONFIRMED CASH staff-one finance-two");
         assertThat(asTenant(() -> receipts.awaitingApproval())).noneMatch(r -> reference.equals(r.reference()));
+    }
+
+    /** Refused, the top-up fails and nothing is credited; the slip's reference may then be recorded again, correctly. */
+    @Test
+    void aRefusedCashTopUpFailsAndFreesItsReference() {
+        var issued = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, LocalDate.now());
+        String reference = "RC-" + UUID.randomUUID();
+        asTenant(() -> impl.recordTopUp(issued.policyNumber(), new BigDecimal("20000.00"), "CASH", reference,
+            LocalDate.now(), null, "staff-one"));
+        var receipt = asTenant(() -> receipts.awaitingApproval()).stream()
+            .filter(r -> reference.equals(r.reference())).findFirst().orElseThrow();
+        asTenant(() -> receipts.reject(receipt.receiptId(), "finance-two", "The slip says 2,000"));
+
+        assertThat(asTenant(() -> api.entries(issued.policyNumber()))).isEmpty();
+        assertThat(asTenant(() -> api.listTopUps(issued.policyNumber()))).first()
+            .extracting(TopUpView::status).isEqualTo("FAILED");
+        asTenant(() -> impl.recordTopUp(issued.policyNumber(), new BigDecimal("2000.00"), "CASH", reference,
+            LocalDate.now(), null, "staff-one"));
     }
 
     @Test

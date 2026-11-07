@@ -384,7 +384,8 @@ export const STAFF_PERMISSION: Record<string, readonly string[]> = {
   'underwriting/:caseId': ['underwriting.view'],
   agents: ['agents.view'], 'agents/new': ['agents.manage'], 'agents/:agentId': ['agents.view'],
   payments: ['collections.view'],
-  'receipts/new': ['collections.manage'], 'receipts/:receiptId': ['collections.view', 'collections.manage'],
+  // The one Deposit page (2026-11-07): finance records money received; servicing may ask a phone for it.
+  'receipts/new': ['collections.manage', 'policies.service', 'accounts.transact'], 'receipts/:receiptId': ['collections.view', 'collections.manage'],
   'receipt-numbers/:receiptNumber': ['collections.view', 'collections.manage'],
   'receipts/:receiptId/reverse': ['collections.manage'],
   arrears: ['collections.view'], 'field-receipts': ['collections.view'], 'bank-transfers': ['payouts.view'],

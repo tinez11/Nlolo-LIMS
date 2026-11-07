@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { confirmRequestedPayments } from './payments';
+import { askPhoneForPremium, confirmRequestedPayments } from './payments';
 import { asAdmin } from './admin';
 import { dmy } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
@@ -39,6 +39,8 @@ test.describe('a fixed-term deposit', () => {
     await expect(page.getByRole('radio', { name: /Fixed deposit/ })).toBeChecked();
     await fillBasics(page, 'TIRA/E2E/FTD');
     await step(page, 'What it pays');
+    // Every product a loan can be taken on says how much of the value may be lent (2026-11-07).
+    await page.getByLabel(/Maximum loan/).fill('80');
     await page.getByLabel('Free-look days').fill('15');
 
     await step(page, 'Rates');
@@ -85,13 +87,7 @@ test.describe('a fixed-term deposit', () => {
     // ---- The single premium, collected through the mock rail from a number.
     await page.goto(`/staff/policies/${policyNumber}`);
     await page.getByRole('tab', { name: 'Billing' }).click();
-    await page.getByRole('button', { name: 'Request payment' }).first().click({ timeout: 20_000 });
-    const pay = page.locator('form').filter({ has: page.getByLabel('Payer reference') });
-    await pay.getByLabel('Payer reference').fill('+255700000777');
-    await pay.getByRole('button', { name: 'Request payment' }).click();
-    // 60s, as issuance gets: the request answers only after the whole AFTER_COMMIT chain -- payment,
-    // the mock rail's confirmation, billing, and the deposit's credit -- has run on its thread.
-    await expect(page.getByLabel('Payer reference')).not.toBeVisible({ timeout: 60_000 });
+    await askPhoneForPremium(page, '+255700000777');
     // Paid once a second finance person confirms the money came (2026-10-27).
     await confirmRequestedPayments(browser, policyNumber);
 
@@ -103,8 +99,8 @@ test.describe('a fixed-term deposit', () => {
     }).toPass({ timeout: 90_000 });
     // Paid back to the number it came from, unless told otherwise; nothing in or out meanwhile.
     await expect(page.getByText('No instruction: it will be paid out to +255700000777.')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Request savings deposit' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Request savings withdrawal' })).toHaveCount(0);
+    await expect(page.locator('section').filter({ has: page.getByRole('heading', { name: 'Account', exact: true }) }).getByRole('link', { name: 'Deposit', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Withdraw', exact: true })).toHaveCount(0);
 
     // ---- The client's choice: reinvest the deposit and its interest for six months.
     const atMaturity = page.getByRole('form', { name: 'At maturity' });

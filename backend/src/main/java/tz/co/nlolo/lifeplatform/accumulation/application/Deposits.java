@@ -47,6 +47,14 @@ public class Deposits {
     private final ProductApi productApi;
     private final ApplicationEventPublisher events;
 
+    /** A maturity repays the policy's loans first (2026-11-07, E7). */
+    private AccountLoanNetting loanNetting;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setLoanNetting(AccountLoanNetting loanNetting) {
+        this.loanNetting = loanNetting;
+    }
+
     public Deposits(AccountRepository accounts, DepositPeriodRepository periods, MaturityInstructionRepository instructions,
                     PostingRepository postings, LedgerEntryRepository entries, LedgerService ledger, PolicyApi policyApi,
                     ProductApi productApi, ApplicationEventPublisher events) {
@@ -318,6 +326,9 @@ public class Deposits {
         periods.save(period);
         String ref = period.getPeriodId() + ":" + attempt;
         BigDecimal value = account.getBalance();
+        // The policy's loans first (E7), before the account is emptied; keyed on the period, so a retry pays the rest.
+        BigDecimal loanRepaid = loanNetting.repay(account.getPolicyNumber(), value, account.getCurrency(),
+            tz.co.nlolo.lifeplatform.policy.api.LoanNetting.Payout.ACCOUNT, period.getPeriodId().toString(), by);
         ledger.post(account.getPolicyNumber(), new LedgerService.Source("deposit-maturity", "deposit-maturity:" + ref),
             List.of(LedgerService.Line.of(EntryType.MATURITY, value.negate(), on,
                 note != null ? note : "Matured; paid to " + payee.describe())), by, null);
@@ -329,7 +340,8 @@ public class Deposits {
             "sourceRef", ref,
             "idempotencyKey", "deposit-maturity:" + ref,
             "policyNumber", account.getPolicyNumber(),
-            "amount", Map.of("amount", value.toPlainString(), "currencyCode", account.getCurrency())));
+            // What is left after the loans; payment asks the rail for nothing where they took it all.
+            "amount", Map.of("amount", value.subtract(loanRepaid).toPlainString(), "currencyCode", account.getCurrency())));
         events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutRequested", TenantContext.get(), payout));
         policyApi.markMatured(account.getPolicyNumber(), "system:accumulation");
     }
@@ -373,6 +385,12 @@ public class Deposits {
      */
     @Transactional
     public void settlePayout(String sourceRef, boolean paid) {
+        settlePayout(sourceRef, paid, null);
+    }
+
+    /** As above, with what the rail paid -- the maturity less the loans it repaid (E7); null is the whole maturity. */
+    @Transactional
+    public void settlePayout(String sourceRef, boolean paid, BigDecimal railPaid) {
         if (paid) {
             // IFRS 17 I3b: the maturity left the bank; the ledger clears what the MATURITY entry made payable (2340).
             postings.findByTenantIdAndSourceTypeAndSourceRef(TenantContext.get(), "deposit-maturity",
@@ -381,7 +399,7 @@ public class Deposits {
                 .ifPresent(e -> events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutPaid", TenantContext.get(),
                     Map.of("payoutRef", "deposit-maturity:" + sourceRef, "paymentRef", sourceRef,
                            "policyNumber", e.getPolicyNumber(),
-                           "amount", Map.of("amount", e.getAmount().abs().toPlainString(),
+                           "amount", Map.of("amount", (railPaid != null ? railPaid : e.getAmount().abs()).toPlainString(),
                                "currencyCode", accounts.findById(e.getPolicyNumber()).orElseThrow().getCurrency())))));
             return;
         }

@@ -3,31 +3,27 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from 'react-oidc-context';
 import { Link } from 'react-router-dom';
-import type { LoanView, Money } from '@/api/types';
+import { getLoanHistory, getLoanLimit } from '@/api/policies';
+import type { LoanHistoryLine, LoanLimit, LoanView } from '@/api/types';
 import { can } from '@/auth/access';
 import { readIdentity } from '@/auth/claims';
 import { ConfirmAct } from '@/components/ConfirmAct';
+import { DataTable, type Column } from '@/components/DataTable';
+import { Field } from '@/components/Field';
 import { StaffName } from '@/components/StaffName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { barredAsOwn } from '@/lib/ownWork';
 import { InlineError } from '@/components/InlineError';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { startMutation, type MutationAttempt } from '@/lib/idempotency';
+import { formatInstantDay } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectLoans,
   selectOriginatingLoan,
-  selectRequestingLoanPayment,
   usePolicyStore,
 } from '@/store/policyStore';
-import {
-  blankLoanPaymentForm,
-  loanPaymentFormSchema,
-  toLoanPaymentRequest,
-  type LoanPaymentFormValues,
-} from './loanPaymentForm';
 import {
   blankOriginateLoanForm,
   originateLoanFormSchema,
@@ -44,32 +40,19 @@ import { VALIDATE_ON_TOUCH } from '@/lib/formTiming';
  *  than offered and then rejected. */
 const REPAYABLE: readonly string[] = ['DISBURSED', 'REPAYING'];
 
+/** A decimal string the server gave, compared with zero -- a test, never arithmetic. */
+const isZero = (amount: string | undefined) => Number(amount ?? '0') === 0;
+
 /**
- * The loans panel: reads the policy's loans and lets staff act on them --
- * `POST /policies/{n}/loans` to originate, and for a repayment (money movement step 1,
- * 2026-11-04) either a deposit For: Loan on the receipt page or
- * `POST /loans/{loanId}/payment-request` to ask the payer's phone. Neither repays anything
- * until the money is confirmed; a repayment can no longer be booked by typing it in.
+ * The Loans page (2026-11-07, the user: show everything a loan needs, clearly). First how much the policy can borrow
+ * and how that is reached -- its value, the product's maximum, what is borrowed and the interest owed, all the
+ * server's figures (`GET /policies/{n}/loan-limit`); then each loan with when it was taken, by whom, where it was paid,
+ * what it owes split into borrowed and interest, Repay (the one Deposit page, For: Loan) and its history.
  *
- * The NO-PAGER shape is inherited: `GET /policies/{n}/loans` returns a bare unpaged
- * array, so the whole set is on screen and there is nothing to page through.
- *
- * **Origination is gated on cash value, and today that gate is always shut.** A loan is
- * capped at the policy's available loan value, which is cash value net of encumbrance
- * and live reservations -- and nothing on this platform ever CREDITS cash value:
- * `PolicyApiImpl.issuePolicy` opens every `PolicyAccount` at `BigDecimal.ZERO` and no
- * code path or migration writes it again. So origination against real data always comes
- * back 409 "exceeds available loan value 0". Crediting cash value is an actuarial
- * accumulation model, not an oversight this panel can route around.
- *
- * The action is therefore rendered DISABLED with the reason on it, rather than as a live
- * button that can only ever produce an error -- the same discipline `PolicyDetailPage`
- * already applies to the deferred Surrender action. The check is on the live value, not
- * hardcoded, so the moment cash value is credited the button works with no change here.
+ * Origination is offered only while the policy can borrow; the reason is rendered when it cannot.
  */
 export function LoansPanel({
   policyNumber,
-  cashValue,
   canChange,
   canRecordDeposit,
   canRequestPayment,
@@ -81,45 +64,61 @@ export function LoansPanel({
   canRecordDeposit: boolean;
   /** May ask the payer's phone for a repayment -- `collections.manage` or `policies.service`, as for an invoice. */
   canRequestPayment: boolean;
-  // `| undefined` explicitly, not just optional: this project runs
-  // exactOptionalPropertyTypes, so an optional prop does not accept an
-  // explicitly-undefined value -- and the caller passes `policy?.cashValue`.
-  cashValue?: Money | undefined;
 }) {
   const loadLoans = usePolicyStore((s) => s.loadLoans);
   const loans = usePolicyStore(selectLoans(policyNumber));
   const [originating, setOriginating] = useState(false);
-  // Number() is safe for a strictly-greater-than-zero test on a decimal string, and only
-  // for that -- the amount itself is never parsed to a number anywhere on the way to the
-  // wire (see originateLoanForm's own note on why).
-  const hasCashValue = Number(cashValue?.amount ?? '0') > 0;
+  const [limit, setLimit] = useState<LoanLimit | null>(null);
+  const loanRows = loans.data;
 
   useEffect(() => {
     void loadLoans(policyNumber);
   }, [policyNumber, loadLoans]);
+
+  // Read again whenever the loans are, so what can be borrowed follows a loan taken, refused or repaid.
+  useEffect(() => {
+    let cancelled = false;
+    getLoanLimit(policyNumber)
+      .then((l) => {
+        if (!cancelled) setLimit(l);
+      })
+      .catch(() => {
+        if (!cancelled) setLimit(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [policyNumber, loanRows]);
 
   if (isInitialLoad(loans)) return <LoadingBlock />;
   if (loans.status === 'error' && loans.error && loans.data === null) {
     return <ErrorPanel error={loans.error} onRetry={() => void loadLoans(policyNumber)} />;
   }
   const rows = loans.data ?? [];
+  const mayBorrow = limit !== null && limit.lends && !isZero(limit.canBorrowNow.amount);
+  const whyNot = limit === null ? null
+    : !limit.lends ? 'This product gives no loans.'
+      : isZero(limit.value.amount) ? `No loan available: the cash value is ${limit.value.amount}.`
+        : isZero(limit.canBorrowNow.amount) ? 'No loan available: what the loans owe has reached the limit.'
+          : null;
 
   return (
     <div>
+      {limit && <LoanSummary limit={limit} />}
+
       {rows.length === 0 ? (
         <EmptyState
           title="No loans"
           description="No policy loan has been taken against this policy."
         />
       ) : (
-        <div className="divide-y divide-border">
+        <div className="divide-y divide-border border-t border-border">
           {rows.map((loan) => (
-            <LoanRow
+            <LoanCard
               key={loan.loanId ?? JSON.stringify(loan)}
               policyNumber={policyNumber}
               loan={loan}
-              canRecordDeposit={canRecordDeposit}
-              canRequestPayment={canRequestPayment}
+              canRepay={canRecordDeposit || canRequestPayment}
             />
           ))}
         </div>
@@ -127,31 +126,19 @@ export function LoansPanel({
 
       {canChange && (
       <div className="border-t border-border px-4 py-3">
-        {/* Hidden while the form is open, for the same reason the invoice actions are:
-            "Take a loan" would otherwise label both this toggle and the open form's
-            submit button, which is ambiguous on screen and for any test querying by
-            accessible name. */}
+        {/* Hidden while the form is open: "Take a loan" would otherwise label both this toggle and the form's
+            submit button, ambiguous on screen and for any test querying by accessible name. */}
         {!originating && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="-ml-2"
-            disabled={!hasCashValue}
-            onClick={() => setOriginating(true)}
-          >
+          <Button size="sm" variant="outline" disabled={!mayBorrow} onClick={() => setOriginating(true)}>
             Take a loan
           </Button>
         )}
         {/* The reason is rendered, not hidden in a `title`: a tooltip is unreachable by keyboard
-            and invisible to a screen reader, so the disabled button said nothing to anyone who
-            could not hover it. */}
-        {!originating && !hasCashValue && (
-          <p className="mt-1 text-xs text-muted-foreground">
-            No loan available: the cash value is 0.00.
-          </p>
-        )}
-        {originating && (
-          <OriginateLoanForm policyNumber={policyNumber} onDone={() => setOriginating(false)} />
+            and invisible to a screen reader. */}
+        {!originating && whyNot && <p className="mt-1 text-xs text-muted-foreground">{whyNot}</p>}
+        {originating && limit && (
+          <OriginateLoanForm policyNumber={policyNumber} canBorrowNow={limit.canBorrowNow}
+            onDone={() => setOriginating(false)} />
         )}
       </div>
       )}
@@ -159,72 +146,143 @@ export function LoansPanel({
   );
 }
 
-function LoanRow({
+/** How much the policy can borrow, and how that is reached: every figure the server's. */
+function LoanSummary({ limit }: { limit: LoanLimit }) {
+  if (!limit.lends) {
+    return <p className="px-4 py-3 text-sm text-muted-foreground">This product gives no loans: its maximum loan is 0%.</p>;
+  }
+  return (
+    <dl className="grid grid-cols-2 gap-x-6 px-4 py-3 sm:grid-cols-3">
+      <Field label="Policy value" value={formatMoney(limit.value)} />
+      <Field label="Maximum loan"
+        value={limit.maxLoanToValuePercent == null
+          ? `The whole value, ${formatMoney(limit.limit)}`
+          : `${limit.maxLoanToValuePercent}% of the value, ${formatMoney(limit.limit)}`} />
+      <Field label="Interest rate" value={`${limit.annualInterestRate}% a year`} />
+      <Field label="Borrowed" value={formatMoney(limit.borrowed)} />
+      <Field label="Interest owed" value={formatMoney(limit.interestOwed)} />
+      <Field label="Can borrow now" value={formatMoney(limit.canBorrowNow)} emphasis />
+    </dl>
+  );
+}
+
+/** What each line of a loan's history is, in plain words; a payout's repayment says which payout. */
+function historyWords(line: LoanHistoryLine): string {
+  switch (line.kind) {
+    case 'DISBURSEMENT':
+      return 'Paid out';
+    case 'INTEREST_ACCRUAL':
+      return 'Interest added';
+    case 'REPAYMENT':
+      return 'Repaid';
+    case 'REVERSAL':
+      return 'Reversed';
+    case 'SETTLEMENT': {
+      const payout = (line.reference ?? '').split(':')[0];
+      const from: Record<string, string> = {
+        CLAIM: 'the claim', MATURITY: 'the maturity', SURRENDER: 'the surrender', ACCOUNT: 'the account payout',
+      };
+      return `Repaid from ${from[payout] ?? 'a payout'}`;
+    }
+    default:
+      return line.kind;
+  }
+}
+
+function LoanHistory({ loanId }: { loanId: string }) {
+  const [lines, setLines] = useState<LoanHistoryLine[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    getLoanHistory(loanId)
+      .then((l) => {
+        if (!cancelled) setLines(l);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loanId]);
+
+  if (failed) return <p className="text-xs text-status-danger-fg">The history could not be read.</p>;
+  if (lines === null) return <LoadingBlock />;
+  if (lines.length === 0) return <p className="text-xs text-muted-foreground">Nothing has happened on this loan yet.</p>;
+  const columns: Column<LoanHistoryLine>[] = [
+    { key: 'date', header: 'Date', nowrap: true, render: (l) => formatInstantDay(l.at) },
+    { key: 'what', header: 'What', render: (l) => historyWords(l) },
+    { key: 'amount', header: 'Amount', align: 'right', render: (l) => formatMoney(l.amount) },
+  ];
+  return (
+    <div className="overflow-hidden rounded-lg border border-border">
+      <DataTable caption="Loan history" columns={columns} rows={lines}
+        rowKey={(l) => `${l.kind}:${l.at}:${l.amount.amount}`} />
+    </div>
+  );
+}
+
+function LoanCard({
   policyNumber,
   loan,
-  canRecordDeposit,
-  canRequestPayment,
+  canRepay,
 }: {
   policyNumber: string;
   loan: LoanView;
-  canRecordDeposit: boolean;
-  canRequestPayment: boolean;
+  canRepay: boolean;
 }) {
-  const [asking, setAsking] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const loanId = loan.loanId ?? '';
   const repayable = loan.status !== undefined && REPAYABLE.includes(loan.status);
   const depositHref = `/staff/receipts/new?for=LOAN&loan=${encodeURIComponent(loanId)}`
     + `&policy=${encodeURIComponent(policyNumber)}&from=policy`;
 
   return (
-    <div className="px-4 py-3">
-      <div className="flex items-center justify-between gap-2">
+    <div className="space-y-2 px-4 py-3">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <span className="font-mono text-xs">{loanId ? loanId.slice(0, 8) : '—'}</span>
-          <span className="ml-2">
-            {loan.status && <StatusBadge kind="loan" value={loan.status} />}
-          </span>
-        </div>
-        <div className="shrink-0 text-right">
-          <span className="text-sm font-medium">{formatMoney(loan.outstandingBalance)}</span>
+          <p className="text-sm font-medium">Loan of {formatMoney(loan.principalAmount)}</p>
           <p className="text-xs text-muted-foreground">
-            of {formatMoney(loan.principalAmount)} principal
+            {loan.takenAt ? `Taken ${formatInstantDay(loan.takenAt)}` : 'Being taken'}
+            {loan.takenBy && <> by <StaffName subject={loan.takenBy} /></>}
+            {loan.payeeRef && <> · paid to {loan.payeeRef}</>}
           </p>
         </div>
+        {loan.status && <StatusBadge kind="loan" value={loan.status} />}
       </div>
 
-      {typeof loan.currentInterestRate === 'number' && (
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {loan.currentInterestRate}% a year, accrued daily
-        </p>
+      {repayable && (
+        <dl className="grid grid-cols-2 gap-x-6 sm:grid-cols-4">
+          <Field label="Borrowed, still owed" value={formatMoney(loan.principalOutstanding)} />
+          <Field label="Interest owed" value={formatMoney(loan.interestOutstanding)} />
+          <Field label="Owed now" value={formatMoney(loan.outstandingBalance)} emphasis />
+          {typeof loan.currentInterestRate === 'number' && (
+            <Field label="Interest rate" value={`${loan.currentInterestRate}% a year`} />
+          )}
+        </dl>
       )}
 
-      {/* A repayment is money in like a premium (money movement step 1): recorded on the receipt page and confirmed
-          by a second person, or asked of the payer's phone. Neither repays anything until the money is confirmed. */}
-      {loanId && repayable && !asking && (canRecordDeposit || canRequestPayment) && (
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {canRecordDeposit && (
-            <Button asChild size="sm" variant="ghost" className="-ml-2">
-              <Link to={depositHref}>Record deposit</Link>
-            </Button>
-          )}
-          {canRequestPayment && (
-            <Button size="sm" variant="ghost" className={canRecordDeposit ? undefined : '-ml-2'} onClick={() => setAsking(true)}>
-              Request mobile-money payment
-            </Button>
-          )}
-        </div>
-      )}
-
-      {asking && loanId && (
-        <LoanPaymentForm policyNumber={policyNumber} loan={loan} onDone={() => setAsking(false)} />
-      )}
+      <div className="flex flex-wrap gap-1.5">
+        {/* A repayment is a deposit For: Loan, taken on the one Deposit page (2026-11-07): mobile money asks the phone,
+            any other method is recorded for a second person. Neither repays anything until the money is confirmed. */}
+        {loanId && repayable && canRepay && (
+          <Button asChild size="sm" variant="outline">
+            <Link to={depositHref}>Repay</Link>
+          </Button>
+        )}
+        {loanId && (
+          <Button size="sm" variant="ghost" aria-expanded={showHistory} onClick={() => setShowHistory((v) => !v)}>
+            {showHistory ? 'Hide history' : 'History'}
+          </Button>
+        )}
+      </div>
+      {showHistory && loanId && <LoanHistory loanId={loanId} />}
 
       {loanId && loan.status === 'AWAITING_PAYOUT_APPROVAL' && (
         <PayoutDecision policyNumber={policyNumber} loan={loan} loanId={loanId} />
       )}
       {loan.status === 'PAYOUT_REFUSED' && (
-        <p className="mt-0.5 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Payout refused{loan.payoutDecidedBy && <> by <StaffName subject={loan.payoutDecidedBy} /></>}
           {loan.payoutRefusalReason ? `: ${loan.payoutRefusalReason}` : ''}. Nothing was paid, and the loan value is free again.
         </p>
@@ -310,11 +368,14 @@ function PayoutDecision({ policyNumber, loan, loanId }: { policyNumber: string; 
   );
 }
 
+/** Take a loan: the most that may be borrowed is said before anything is typed (2026-11-07). */
 function OriginateLoanForm({
   policyNumber,
+  canBorrowNow,
   onDone,
 }: {
   policyNumber: string;
+  canBorrowNow: LoanLimit['canBorrowNow'];
   onDone: () => void;
 }) {
   const originateLoan = usePolicyStore((s) => s.originateLoan);
@@ -346,100 +407,27 @@ function OriginateLoanForm({
       className="space-y-2 rounded-md border border-border p-2.5"
       onSubmit={(e) => void handleSubmit(onSubmit)(e)}
     >
-      <FormField required label="Loan amount (TZS)" error={errors.amount?.message}>
-        <Input inputSize="sm" placeholder="500000" inputMode="decimal" {...register('amount')} />
+      <FormField required label="Loan amount (TZS)" hint={`Up to ${formatMoney(canBorrowNow)}.`}
+        error={errors.amount?.message}>
+        <Input inputSize="sm" inputMode="decimal" {...register('amount')} />
       </FormField>
 
-      <FormField required label="Payee reference" error={errors.payeeRef?.message}>
-        <Input inputSize="sm" placeholder="Mobile-money destination" {...register('payeeRef')} />
+      <FormField required label="Pay the loan to" hint="The mobile-money number the loan is paid to."
+        error={errors.payeeRef?.message}>
+        <Input inputSize="sm" inputMode="tel" {...register('payeeRef')} />
       </FormField>
 
-      {/* Shown verbatim rather than reworded: a 409 here names the policy's actual
-          available loan value, or says the policy is not in force. Both are more
-          useful than anything this form could say on its own. */}
+      {/* Shown verbatim rather than reworded: a refusal names the most the policy can borrow, or says it is not in
+          force. Both are more useful than anything this form could say on its own. */}
       {originating.status === 'error' && originating.error && (
         <InlineError error={originating.error} />
       )}
 
-      <p className="text-xs text-muted-foreground">
-        Up to the available cash value. A second person releases the payout.
-      </p>
+      <p className="text-xs text-muted-foreground">A second person releases the payout.</p>
 
       <div className="flex items-center gap-1.5">
-        <Button type="submit" size="sm" pending={originating.status === 'loading'}>
+        <Button type="submit" size="sm" variant="primary" pending={originating.status === 'loading'}>
           Take a loan
-        </Button>
-        <Button type="button" size="sm" variant="ghost" onClick={onDone}>
-          Cancel
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-/** Ask the payer's phone for a repayment, by default what the loan owes as the server stated it. The same shape as the
- *  invoice row's mobile-money request (InvoicesPanel.MobileMoneyRequestForm). */
-function LoanPaymentForm({
-  policyNumber,
-  loan,
-  onDone,
-}: {
-  policyNumber: string;
-  loan: LoanView;
-  onDone: () => void;
-}) {
-  const loanId = loan.loanId ?? '';
-  const currency = loan.outstandingBalance?.currencyCode ?? 'TZS';
-  const requestLoanPayment = usePolicyStore((s) => s.requestLoanPayment);
-  const resetRequestLoanPayment = usePolicyStore((s) => s.resetRequestLoanPayment);
-  const requesting = usePolicyStore(selectRequestingLoanPayment(loanId));
-  // Minted once per mount, reused across retries; reopening the form starts a new attempt.
-  const [attempt] = useState<MutationAttempt>(() => startMutation());
-
-  useEffect(() => {
-    resetRequestLoanPayment(loanId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loanId]);
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoanPaymentFormValues>({
-    ...VALIDATE_ON_TOUCH,
-    resolver: zodResolver(loanPaymentFormSchema),
-    defaultValues: blankLoanPaymentForm(loan.outstandingBalance?.amount ?? ''),
-  });
-
-  async function onSubmit(values: LoanPaymentFormValues) {
-    await requestLoanPayment(policyNumber, loanId, toLoanPaymentRequest(values, currency), attempt);
-    if (usePolicyStore.getState().requestingLoanPayment[loanId]?.status === 'success') onDone();
-  }
-
-  return (
-    <form
-      className="mt-2 space-y-2 rounded-md border border-border p-2.5"
-      onSubmit={(e) => void handleSubmit(onSubmit)(e)}
-    >
-      <FormField required label="Payer reference" error={errors.payerRef?.message}>
-        <Input inputSize="sm" placeholder="The mobile-money number to ask" {...register('payerRef')} />
-      </FormField>
-
-      <FormField required label={`Amount (${currency})`} error={errors.amount?.message}>
-        <Input inputSize="sm" inputMode="decimal" {...register('amount')} />
-      </FormField>
-
-      {requesting.status === 'error' && requesting.error && (
-        <InlineError error={requesting.error} />
-      )}
-
-      <p className="text-xs text-muted-foreground">
-        Nothing is repaid until the money is confirmed. At most what the loan owes now.
-      </p>
-
-      <div className="flex items-center gap-1.5">
-        <Button type="submit" size="sm" pending={requesting.status === 'loading'}>
-          Request payment
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onDone}>
           Cancel

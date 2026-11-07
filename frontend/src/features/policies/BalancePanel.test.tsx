@@ -47,7 +47,7 @@ afterEach(() => {
 });
 
 describe('BalancePanel', () => {
-  it('shows the server’s balance and how far ahead it pays, and links to Record deposit', async () => {
+  it('shows the server’s balance and how far ahead it pays, and links to Deposit', async () => {
     grantAccess('collections.manage');
     vi.mocked(policiesApi.getPolicyBalance).mockResolvedValue({
       policyNumber: 'POL-000001', balance: TZS('25000.00'), coversPremiumsTo: '2026-12-04',
@@ -56,7 +56,7 @@ describe('BalancePanel', () => {
 
     expect(await screen.findByText('TZS 25,000.00')).toBeInTheDocument();
     expect(screen.getByText(formatDate('2026-12-04'))).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Record deposit' }))
+    expect(screen.getByRole('link', { name: 'Deposit' }))
       .toHaveAttribute('href', '/staff/receipts/new?policy=POL-000001&from=policy');
   });
 
@@ -88,7 +88,7 @@ describe('BalancePanel', () => {
     renderPanel(<BalancePanel policyNumber="POL-000001" />);
 
     expect(await screen.findByText('No premium ahead')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Record deposit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Deposit' })).not.toBeInTheDocument();
   });
 });
 

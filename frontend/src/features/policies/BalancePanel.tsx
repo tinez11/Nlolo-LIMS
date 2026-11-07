@@ -50,6 +50,7 @@ export function BalancePanel({ policyNumber }: { policyNumber: string }) {
   if (!balance.data) return null;
   const covers = balance.data.coversPremiumsTo;
   const depositHref = `/staff/receipts/new?policy=${encodeURIComponent(policyNumber)}&from=policy`;
+  const mayDeposit = can('collections.manage') || can('policies.service');
 
   return (
     <div className="space-y-3 px-4 py-3">
@@ -67,11 +68,12 @@ export function BalancePanel({ policyNumber }: { policyNumber: string }) {
           lands="It goes onto the balance, and pays the premiums due, once a second finance person confirms it under Approvals."
         />
       )}
-      {(can('collections.manage') || can('payouts.manage')) && (
+      {(mayDeposit || can('payouts.manage')) && (
         <div className="flex flex-wrap gap-1.5">
-          {can('collections.manage') && (
+          {/* The one Deposit page (2026-11-07): mobile money asks the phone, any other method is recorded. */}
+          {mayDeposit && (
             <Button asChild size="sm" variant="primary">
-              <Link to={depositHref}>Record deposit</Link>
+              <Link to={depositHref}>Deposit</Link>
             </Button>
           )}
           {can('payouts.manage') && (

@@ -1,10 +1,11 @@
 import { barredAsOwn } from '@/lib/ownWork';
 import { can } from '@/auth/access';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, PencilLine, RefreshCw } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, PencilLine, RefreshCw } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Controller, useForm, useWatch, type FieldValues, type UseFormReturn } from 'react-hook-form';
+import { useForm, type FieldValues, type UseFormReturn } from 'react-hook-form';
 import { useAuth } from 'react-oidc-context';
+import { Link } from 'react-router-dom';
 import type {
   AccountView,
   AdjustmentView,
@@ -24,9 +25,7 @@ import { InlineError } from '@/components/InlineError';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { Input, Select } from '@/components/ui/input';
-import { DatePicker } from '@/components/DatePicker';
-import { RECEIPT_METHODS } from '@/features/receipts/receiptForm';
+import { Input } from '@/components/ui/input';
 import { PayoutRouteFields } from '@/features/payments/PayoutRouteFields';
 import { BLANK_ROUTE, describeRoute, routeBody } from '@/features/payments/payoutRoute';
 import { methodWords } from '@/features/payments/paymentWords';
@@ -35,19 +34,15 @@ import {
   decideAdjustmentGates,
   requestWithdrawalGates,
 } from '@/gates/accumulationGates';
-import { formatDate, formatInstantDay, todayIso } from '@/lib/dates';
+import { formatDate, formatInstantDay } from '@/lib/dates';
 import { startMutation } from '@/lib/idempotency';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useAccumulationStore } from '@/store/accumulationStore';
 import {
   adjustmentSchema,
-  topUpSchema,
-  transferInSchema,
   withdrawalSchema,
   type AdjustmentValues,
-  type TopUpValues,
-  type TransferInValues,
   type WithdrawalValues,
 } from './accountForms';
 import { DepositSection } from './DepositSection';
@@ -241,7 +236,7 @@ function Ledger({ entries }: { entries: LedgerEntryView[] }) {
   );
 }
 
-type Action = 'withdraw' | 'topup' | 'transfer' | 'adjust' | null;
+type Action = 'withdraw' | 'adjust' | null;
 
 /**
  * What can be done, then what is waiting.
@@ -275,7 +270,7 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
   const [action, setAction] = useState<Action>(null);
   // What the last top-up or withdrawal did, shown until the next action is chosen (2026-10-28). The form used to reset
   // in place with one grey line, and a recorded top-up read as if nothing had happened.
-  const [done, setDone] = useState<{ kind: 'topup'; topUp: TopUpView } | { kind: 'withdraw'; withdrawal: WithdrawalView } | null>(null);
+  const [done, setDone] = useState<{ kind: 'withdraw'; withdrawal: WithdrawalView } | null>(null);
   const open = account.status === 'OPEN';
   const close = () => setAction(null);
   const choose = (next: Action) => {
@@ -295,37 +290,22 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
     <div className="space-y-4">
       {open && (
         <div className="flex flex-wrap gap-2">
-          {canTransact && moneyOut && actionButton('withdraw', 'Request savings withdrawal', <ArrowUpRight aria-hidden className="size-4" />)}
-          {(canTransact || canReceive) && moneyIn && actionButton('topup', 'Request savings deposit', <ArrowDownLeft aria-hidden className="size-4" />)}
-          {/* Finance's: recording a transfer puts money on the account, and an adjustment is a
-              correction a second finance user signs. Not offered at all to anyone else, rather than
-              a button that would 403. */}
-          {isFinance && moneyIn && actionButton('transfer', 'Record transfer in', <ArrowRightLeft aria-hidden className="size-4" />)}
+          {/* Deposit and Withdraw (2026-11-07, the user): a deposit, any method, is taken on the one Deposit page. */}
+          {(canTransact || canReceive) && moneyIn && (
+            <Button asChild size="sm" variant="outline">
+              <Link to={`/staff/receipts/new?for=SAVINGS&policy=${encodeURIComponent(policyNumber)}&from=policy`}>
+                <ArrowDownLeft aria-hidden className="size-4" />
+                Deposit
+              </Link>
+            </Button>
+          )}
+          {canTransact && moneyOut && actionButton('withdraw', 'Withdraw', <ArrowUpRight aria-hidden className="size-4" />)}
+          {/* Finance's: an adjustment is a correction a second finance user signs. Not offered at all to anyone else,
+              rather than a button that would 403. */}
           {isFinance && actionButton('adjust', 'Propose adjustment', <PencilLine aria-hidden className="size-4" />)}
         </div>
       )}
 
-      {done?.kind === 'topup' && (
-        <Receipt
-          heading={done.topUp.status === 'COLLECTED' ? 'Savings deposit credited' : 'Savings deposit requested'}
-          lines={[
-            { label: 'Amount', value: formatMoney(done.topUp.amount) },
-            { label: 'How it came in', value: topUpHow(done.topUp) },
-            ...(done.topUp.receivedOn ? [{ label: 'Received on', value: formatDate(done.topUp.receivedOn) }] : []),
-            { label: 'Balance now', value: formatMoney(account.balance) },
-          ]}
-          note={
-            done.topUp.status === 'COLLECTED'
-              ? 'It is on the ledger below, less any allocation charge, and in the account value on the Overview.'
-              : 'A request was sent to the payer’s phone. It is credited once finance confirms the money came, and waits below until then.'
-          }
-          onward={
-            <Button size="sm" variant="ghost" onClick={() => setDone(null)}>
-              Done
-            </Button>
-          }
-        />
-      )}
       {done?.kind === 'withdraw' && (
         <Receipt
           heading="Savings withdrawal requested"
@@ -353,17 +333,6 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
           }}
         />
       )}
-      {action === 'topup' && (
-        <TopUpForm
-          policyNumber={policyNumber}
-          onDone={close}
-          onRecorded={(topUp) => {
-            setAction(null);
-            setDone({ kind: 'topup', topUp });
-          }}
-        />
-      )}
-      {action === 'transfer' && <TransferInForm policyNumber={policyNumber} onDone={close} />}
       {action === 'adjust' && <AdjustmentForm policyNumber={policyNumber} onDone={close} />}
 
       {waiting.count > 0 && (
@@ -387,7 +356,9 @@ function Movements({ account, deposit, termAccount }: { account: AccountView; de
                 what="Savings deposit"
                 amount={formatMoney(t.amount)}
                 status={<StatusBadge kind="accountTopUp" value={t.status} />}
-                detail={<>{topUpHow(t)} · requested by <StaffName subject={t.requestedBy} /> · waiting for the money to arrive</>}
+                detail={t.method === 'MOBILE_MONEY'
+                  ? <>{topUpHow(t)} · requested by <StaffName subject={t.requestedBy} /> · waiting for the money to arrive</>
+                  : <>{topUpHow(t)} · recorded by <StaffName subject={t.requestedBy} /> · waiting for a second finance person to confirm it under Approvals</>}
               />
             ))}
             {waiting.adjustments.map((a) => (
@@ -593,150 +564,6 @@ function WithdrawalForm({
         <PayoutRouteFields form={form} />
         <Button type="submit" size="sm" variant="primary" disabled={refused}>
           Continue
-        </Button>
-      </form>
-    </ActionBox>
-  );
-}
-
-/**
- * A top-up (2026-10-28): asked of the payer's phone now, or recorded as already received by any of the five ways money
- * reaches the insurer by hand -- the same chooser the Billing tab's invoices use. One person records it: a received
- * top-up is credited as soon as payment receipts it, with no second signature.
- */
-function TopUpForm({
-  policyNumber,
-  onDone,
-  onRecorded,
-}: {
-  policyNumber: string;
-  onDone: () => void;
-  onRecorded: (topUp: TopUpView) => void;
-}) {
-  // Asking a phone for money is customer service's; saying money was received is finance's alone (2026-10-29).
-  const canRequest = can('accounts.transact');
-  const canReceive = can('collections.manage');
-  const topUp = useAccumulationStore((s) => s.topUp);
-  const acting = useAccumulationStore((s) => s.acting[`topup.${policyNumber}`]);
-  const form = useForm<TopUpValues>({
-    ...VALIDATE_ON_TOUCH,
-    resolver: zodResolver(topUpSchema),
-    // Finance without the right to request opens on a received method; everyone else on the request.
-    defaultValues: {
-      amount: '',
-      method: canRequest ? 'MOBILE_MONEY' : 'BANK_DEPOSIT',
-      payerRef: '',
-      reference: '',
-      receivedOn: todayIso(),
-    },
-  });
-  const method = useWatch({ control: form.control, name: 'method' });
-  const received = method !== 'MOBILE_MONEY' ? RECEIPT_METHODS.find((m) => m.value === method) : undefined;
-  const errors = form.formState.errors;
-
-  return (
-    <ActionBox title="Savings deposit" onClose={onDone}>
-      {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
-      <form
-        onSubmit={form.handleSubmit((v) => {
-          const body =
-            v.method === 'MOBILE_MONEY'
-              ? { amount: v.amount, payerRef: v.payerRef.trim() }
-              : {
-                  amount: v.amount,
-                  method: v.method,
-                  reference: v.reference.trim(),
-                  receivedOn: v.receivedOn,
-                  ...(v.payerRef.trim() ? { payerRef: v.payerRef.trim() } : {}),
-                };
-          void topUp(policyNumber, body, startMutation()).then((recorded) => {
-            if (recorded) onRecorded(recorded);
-          });
-        })}
-        className="space-y-3"
-      >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <FormField required label="How is it being paid?" hint={received?.hint} error={errors.method?.message}>
-            <Select {...form.register('method')}>
-              {canRequest && (
-                <optgroup label="Ask for it now">
-                  <option value="MOBILE_MONEY">Mobile money — send a request to the payer’s phone</option>
-                </optgroup>
-              )}
-              {canReceive && (
-                <optgroup label="Already received — finance records it">
-                  {RECEIPT_METHODS.map((m) => (
-                    <option key={m.value} value={m.value}>
-                      {m.label}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </Select>
-          </FormField>
-          <TextField required form={form} name="amount" label="Amount" placeholder="20000.00" inputMode="decimal" />
-          {!canReceive && (
-            <p className="text-xs text-muted-foreground sm:col-span-2">
-              Money already received — cash, a bank deposit, a cheque — is recorded by finance.
-            </p>
-          )}
-          {received ? (
-            <>
-              <FormField required label={received.reference} error={errors.reference?.message}>
-                <Input className="font-mono" {...form.register('reference')} />
-              </FormField>
-              <FormField required label="Received on" error={errors.receivedOn?.message}>
-                <Controller
-                  control={form.control}
-                  name="receivedOn"
-                  render={({ field }) => <DatePicker value={field.value} onChange={(iso) => field.onChange(iso ?? '')} />}
-                />
-              </FormField>
-              <TextField form={form} name="payerRef" label="Paid by" placeholder="As the slip shows it" />
-            </>
-          ) : (
-            <TextField required form={form} name="payerRef" label="Collect from" placeholder="Mobile money number" />
-          )}
-        </div>
-        <Button type="submit" size="sm" variant="primary" disabled={acting?.status === 'loading'}>
-          {received ? 'Record savings deposit' : 'Request savings deposit'}
-        </Button>
-      </form>
-    </ActionBox>
-  );
-}
-
-function TransferInForm({ policyNumber, onDone }: { policyNumber: string; onDone: () => void }) {
-  const transferIn = useAccumulationStore((s) => s.transferIn);
-  const acting = useAccumulationStore((s) => s.acting[`transfer.${policyNumber}`]);
-  const form = useForm<TransferInValues>({
-    ...VALIDATE_ON_TOUCH,
-    resolver: zodResolver(transferInSchema),
-    defaultValues: { amount: '', sourceScheme: '', documentRef: '' },
-  });
-
-  return (
-    <ActionBox title="Record a transfer in" onClose={onDone}>
-      {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
-      <form
-        onSubmit={form.handleSubmit((v) =>
-          void transferIn(
-            policyNumber,
-            { amount: v.amount, sourceScheme: v.sourceScheme.trim(), ...(v.documentRef ? { documentRef: v.documentRef } : {}) },
-            startMutation(),
-          ).then(() => {
-            if (useAccumulationStore.getState().acting[`transfer.${policyNumber}`]?.status === 'success') onDone();
-          }),
-        )}
-        className="space-y-3"
-      >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <TextField required form={form} name="amount" label="Amount received" placeholder="300000.00" inputMode="decimal" />
-          <TextField required form={form} name="sourceScheme" label="From scheme" placeholder="NSSF member 1234" />
-          <TextField form={form} name="documentRef" label="Document reference" />
-        </div>
-        <Button type="submit" size="sm" variant="primary" disabled={acting?.status === 'loading'}>
-          Record transfer in
         </Button>
       </form>
     </ActionBox>

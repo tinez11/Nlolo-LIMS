@@ -377,6 +377,42 @@ class DepositLifecycleIntegrationTest {
         assertThat((String) disbursementFor(policy).get("source_ref")).endsWith(":2");
     }
 
+    @Autowired private tz.co.nlolo.lifeplatform.policyloan.api.PolicyLoanApi policyLoanApi;
+
+    /**
+     * 2026-11-07, the user: fixed deposits may lend, and a maturity repays the loan first (E7). Only the rest is paid --
+     * and a retry after a failed payment pays the rest again, never the whole deposit: the netting is keyed on the
+     * period, not the attempt.
+     */
+    @Test
+    void aMaturityRepaysTheLoanFirstAndARetryPaysOnlyTheRest() {
+        // Maturing tomorrow, so it is in force today and can be lent against.
+        String policy = paidDeposit(MILLION, 3, LocalDate.now().plusDays(1).minusMonths(3), "+255700000777");
+        var loanId = asTenant(() -> {
+            var loan = policyLoanApi.originateLoan(policy, new BigDecimal("400000"), "TZS", "+255700000555", "service-1");
+            policyLoanApi.approvePayout(loan.loanId(), "finance-2");
+            return loan.loanId();
+        });
+        assertThat(asTenant(() -> policyLoanApi.getLoan(loanId)).status())
+            .isEqualTo(tz.co.nlolo.lifeplatform.policyloan.api.LoanStatus.DISBURSED);
+
+        forceTheGatewayToDecline();
+        asTenant(() -> { deposits.mature(policy, LocalDate.now().plusDays(1)); return null; });
+        // The loan is repaid out of the maturity, even though this first payment failed.
+        assertThat(asTenant(() -> policyLoanApi.getLoan(loanId)).status())
+            .isEqualTo(tz.co.nlolo.lifeplatform.policyloan.api.LoanStatus.SETTLED);
+        BigDecimal firstAsked = (BigDecimal) disbursementFor(policy).get("amount");
+
+        gatewayAccepts();
+        asTenant(() -> api.payOutMaturedDeposit(policy, "+255700000999", "finance-one", key()));
+        Map<String, Object> retry = disbursementFor(policy);
+        assertThat((String) retry.get("source_ref")).endsWith(":2");
+        assertThat((BigDecimal) retry.get("amount")).as("the retry pays the rest again, not the whole deposit")
+            .isEqualByComparingTo(firstAsked);
+        // The deposit with its interest, less the 400,000 the loan owed.
+        assertThat(firstAsked).isEqualByComparingTo("630000.00");
+    }
+
     @Test
     void anInstructionCanBeChangedUntilMaturityAndTheHistoryIsKept() {
         String policy = paidDeposit(MILLION, 3, LocalDate.now(), "+255700000777");

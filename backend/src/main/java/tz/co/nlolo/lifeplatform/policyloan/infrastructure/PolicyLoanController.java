@@ -68,6 +68,16 @@ public class PolicyLoanController {
         return ResponseEntity.ok(policyLoanApi.listLoansForPolicy(policyNumber).stream().map(LoanResponseDto::from).toList());
     }
 
+    /** How much the policy can borrow now, and how that is reached (2026-11-07): the Loans page's summary. */
+    @GetMapping("/policies/{policyNumber}/loan-limit")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('accounts.view')")
+    public ResponseEntity<LoanLimitResponseDto> loanLimit(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt,
+                                                          Authentication authentication) {
+        enforceCustomerOwnPolicyOnly(policyNumber, jwt, authentication);
+        AgentBook.require(policyApi, policyNumber, jwt, authentication);
+        return ResponseEntity.ok(LoanLimitResponseDto.from(policyLoanApi.loanLimit(policyNumber)));
+    }
+
     /**
      * The forced-lapse review queue the interest-accrual sweep fills. STAFF only, and
      * deliberately not exposed to customers or agents: it is an operational worklist across the
@@ -96,6 +106,17 @@ public class PolicyLoanController {
     @PreAuthorize("@access.can('loans.manage')")
     public ResponseEntity<LoanResponseDto> evaluateForcedLapse(@PathVariable UUID loanId) {
         return ResponseEntity.ok(LoanResponseDto.from(policyLoanApi.evaluateForcedLapse(loanId)));
+    }
+
+    /** A loan's history, oldest first (2026-11-07): paid out, interest added, repaid, repaid out of a payout. */
+    @GetMapping("/loans/{loanId}/history")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or @access.can('accounts.view')")
+    public ResponseEntity<List<LoanHistoryLineDto>> history(@PathVariable UUID loanId, @AuthenticationPrincipal Jwt jwt,
+                                                            Authentication authentication) {
+        LoanView loan = policyLoanApi.getLoan(loanId);
+        enforceCustomerOwnPolicyOnly(loan.policyNumber(), jwt, authentication);
+        AgentBook.require(policyApi, loan.policyNumber(), jwt, authentication);
+        return ResponseEntity.ok(policyLoanApi.history(loanId).stream().map(LoanHistoryLineDto::from).toList());
     }
 
     @GetMapping("/loans/{loanId}")

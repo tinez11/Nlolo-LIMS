@@ -68,7 +68,8 @@ final class PostingFactsExtractor {
         Map.entry("distribution.CommissionAccrued", amount("direction", "channel", "movement")),
         Map.entry("distribution.CommissionPaid", new EventShape(Set.of("gross", "paid", "withheld"), Set.of("channel"))),
         Map.entry("policyloan.LoanDisbursed", amount()),
-        Map.entry("policyloan.LoanRepaid", new EventShape(Set.of(AMOUNT, "interest", "principal"), Set.of())),
+        // receiptMethod names the payout a loan was repaid out of (CLAIM_OFFSET...), 2026-11-07: its rules test it.
+        Map.entry("policyloan.LoanRepaid", new EventShape(Set.of(AMOUNT, "interest", "principal"), Set.of("receiptMethod"))),
         // Money above what a loan owed (money movement step 1): its method rides as receiptMethod, as on LoanRepaid.
         Map.entry("policyloan.LoanOverpaid", amount()),
         Map.entry("policyloan.LoanInterestAccrued", amount()),
@@ -178,11 +179,16 @@ final class PostingFactsExtractor {
             }
             case "claims.ClaimApproved" -> List.of(split(type, string(p.get("claimId")), policy, p.get("approvedAmount"),
                 decimal(p.get("investmentComponent")), today, Map.of("refType", "CLAIM")));
-            case "claims.ClaimSettled" -> List.of(money(type, string(p.get("claimId")), policy, p.get("settledAmount"), today,
+            // What left the bank: the settled amount less any loan it repaid (2026-11-07), which cleared its own part of
+            // the payable (E-03-CLAIM). settledAmount stays the claim's gross, for reinsurance and returns.
+            case "claims.ClaimSettled" -> List.of(money(type, string(p.get("claimId")), policy,
+                p.get("paidAmount") != null ? p.get("paidAmount") : p.get("settledAmount"), today,
                 paid("CLAIM", p.get("claimId"))));
             // A surrender value is all investment component (C-05): it is the payable as it stands.
+            // The whole value is payable (grossAmount, 2026-11-07); "amount" is what goes to the rail once the policy's
+            // loans are repaid from it (E-03-SURRENDER clears their part).
             case "policy.SurrenderPayoutRequested" -> List.of(money(type, string(p.get("surrenderRequestId")), policy,
-                p.get("amount"), today, Map.of("refType", "SURRENDER")));
+                p.get("grossAmount") != null ? p.get("grossAmount") : p.get("amount"), today, Map.of("refType", "SURRENDER")));
             case "policy.SurrenderPaid" -> List.of(money(type, string(p.get("surrenderRequestId")), policy,
                 p.get("paidAmount"), today, paid("SURRENDER", p.get("surrenderRequestId"))));
             case "benefitpayout.PayoutRequested" -> List.of(payoutDue(type, p, policy, today));
@@ -381,7 +387,11 @@ final class PostingFactsExtractor {
         }
         PostingFacts paidOut = money(type, string(p.get("sourceRef")), policy, p.get("amount"), today, Map.of());
         PostingFacts gross = money(type, string(p.get("sourceRef")), policy, p.get("grossAmount"), today, Map.of());
-        BigDecimal charge = gross.amount(AMOUNT).subtract(paidOut.amount(AMOUNT)).max(BigDecimal.ZERO);
+        // The loans a surrender repaid (2026-11-07, E7) are not charge: E-03-SURRENDER clears them from the payable.
+        BigDecimal loanRepaid = p.get("loanRepaidAmount") != null
+            ? money(type, string(p.get("sourceRef")), policy, p.get("loanRepaidAmount"), today, Map.of()).amount(AMOUNT)
+            : BigDecimal.ZERO;
+        BigDecimal charge = gross.amount(AMOUNT).subtract(paidOut.amount(AMOUNT)).subtract(loanRepaid).max(BigDecimal.ZERO);
         return List.of(new PostingFacts(type, paidOut.sourceRef(), policy, paidOut.currency(), today,
             Map.of("charge", charge), Map.of("refType", "ACCOUNT")));
     }

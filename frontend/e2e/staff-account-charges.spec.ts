@@ -42,6 +42,8 @@ test.describe('account charges', () => {
     await page.getByLabel('Guaranteed interest rate (% a year)').fill('3');
     await page.getByLabel('Minimum balance after a withdrawal').fill('0');
     await step(page, 'What it pays');
+    // Every product a loan can be taken on says how much of the value may be lent (2026-11-07).
+    await page.getByLabel(/Maximum loan/).fill('80');
     await page.getByLabel('Free-look days').fill('15');
     // A savings account's maturity is fixed -- the whole account value -- and the form carries it (2026-11-07).
     await expect(page.getByText('The whole account value', { exact: true })).toBeVisible();

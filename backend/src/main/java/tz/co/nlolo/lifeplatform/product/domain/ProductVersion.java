@@ -192,6 +192,18 @@ public class ProductVersion {
     public String getMeasurementModelOverride() { return measurementModelOverride; }
     public BigDecimal getSurvivalInvestmentComponentPercent() { return survivalInvestmentComponentPercent; }
 
+    /**
+     * The most a policy loan may be, as a share of the policy's value (2026-11-07, the user): 0 lends nothing, 100 the
+     * whole value. Set once, as the version is published; null (every version before this) lends the whole value.
+     */
+    public void limitLoans(BigDecimal maxLoanToValuePercent) {
+        if (maxLoanToValuePercent != null && (maxLoanToValuePercent.signum() < 0
+                || maxLoanToValuePercent.compareTo(BigDecimal.valueOf(100)) > 0)) {
+            throw new IllegalArgumentException("The maximum loan is a share of the value, from 0 to 100 percent");
+        }
+        this.maxLoanToValuePercent = maxLoanToValuePercent;
+    }
+
     /** Set once, at publish, before the version is saved. */
     public void applyIfrs17Terms(String expectedProfitabilityBucket, String measurementModelOverride,
                                  BigDecimal survivalInvestmentComponentPercent) {

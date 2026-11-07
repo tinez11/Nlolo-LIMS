@@ -32,6 +32,11 @@ interface ReceiptState {
   requestReversal: (receiptId: string, reason: string) => Promise<boolean>;
   decideReversal: (receiptId: string, reversalId: string, rejectReason: string | null) => Promise<void>;
   record: (body: RecordReceipt) => Promise<Receipt | null>;
+  /** The Deposit page's other roads (2026-11-07): a mobile-money request, or a savings deposit received by hand. */
+  sending: Resource<true>;
+  /** Resolves true when it went; the error is on `sending` otherwise. */
+  send: (act: () => Promise<unknown>) => Promise<boolean>;
+  resetSending: () => void;
   loadWaiting: (invoiceId: string) => Promise<void>;
   loadWaitingOnPolicy: (policyNumber: string) => Promise<void>;
   load: (receiptId: string) => Promise<void>;
@@ -41,6 +46,7 @@ interface ReceiptState {
 
 export const useReceiptStore = create<ReceiptState>((set, getState) => ({
   recording: idle(),
+  sending: idle(),
   receipt: {},
   deciding: {},
   waiting: {},
@@ -57,6 +63,16 @@ export const useReceiptStore = create<ReceiptState>((set, getState) => ({
     if (result.status === 'success' && body.policyNumber) await getState().loadWaitingOnPolicy(body.policyNumber);
     return result.status === 'success' ? result.data : null;
   },
+
+  send: async (act) => {
+    await track('receipt.send', getState().sending, (next) => set({ sending: next }), async (): Promise<true> => {
+      await act();
+      return true;
+    });
+    return getState().sending.status === 'success';
+  },
+
+  resetSending: () => set({ sending: idle() }),
 
   loadWaiting: (invoiceId) =>
     track(

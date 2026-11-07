@@ -329,6 +329,12 @@ const cashValueRowSchema = z.object({
 /** The savings products that carry a cash value -- CashValuePlanValidator.CASH_VALUE_CATEGORIES. */
 export const CASH_VALUE_CATEGORIES: readonly ProductCategory[] = ['ENDOWMENT', 'WHOLE_LIFE', 'EDUCATION_SAVINGS'];
 
+/**
+ * The products a policy loan may be taken on (2026-11-07): the policy page's Loans tab shows on these, and every kind
+ * of them has a value -- a cash value, a savings account, a term account or a fixed deposit (the user: deposits lend).
+ */
+export const LENDING_CATEGORIES: readonly ProductCategory[] = CASH_VALUE_CATEGORIES;
+
 interface CashValueFields {
   cashValueBasisReference: string;
   cashValueBasisDate: string;
@@ -935,6 +941,9 @@ export function publishVersionFormSchema(category: ProductCategory) {
       .refine((v) => v === '' || (/^\d{1,3}(\.\d{1,4})?$/.test(v) && Number(v) <= 100), {
         message: 'A percentage from 0 to 100, or blank for none',
       }),
+    // 2026-11-07, the user: the most a policy loan may be, as a share of the value. Asked only on a product that has a
+    // value to lend against (LENDING_CATEGORIES), where it is required; 0 lends nothing.
+    maxLoanPercent: z.string().trim(),
     // Optional (2026-10-26): what staff read when choosing the product. Starts as the product's current one; a
     // version that changes it changes the product's, and keeps its own copy.
     description: z.string().max(2000, 'Keep it under 2,000 characters'),
@@ -1149,6 +1158,14 @@ export function publishVersionFormSchema(category: ProductCategory) {
         message: '"Stop selling on" must be after the effective date. Leave it blank to keep selling.',
       });
     }
+    if (LENDING_CATEGORIES.includes(category)) {
+      const v = values.maxLoanPercent;
+      if (v === '') {
+        ctx.addIssue({ code: 'custom', path: ['maxLoanPercent'], message: 'Enter the maximum loan, 0 for no loans' });
+      } else if (!/^\d{1,3}(\.\d{1,2})?$/.test(v) || Number(v) > 100) {
+        ctx.addIssue({ code: 'custom', path: ['maxLoanPercent'], message: 'A percentage from 0 to 100' });
+      }
+    }
     validateFuneral(category, values, ctx);
     validateUnitLinked(category, values, ctx);
     validateCashValue(category, values, ctx);
@@ -1283,6 +1300,7 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
     expectedProfitabilityBucket: 'REMAINING',
     measurementModelOverride: '',
     survivalInvestmentComponentPercent: '',
+    maxLoanPercent: '',
     description: '',
     effectiveDate: '',
     retirementDate: '',
@@ -1390,6 +1408,9 @@ export function toApiRequest(values: PublishVersionFormValues, category?: Produc
     measurementModelOverride: values.measurementModelOverride === '' ? null : values.measurementModelOverride,
     survivalInvestmentComponentPercent:
       values.survivalInvestmentComponentPercent === '' ? null : Number(values.survivalInvestmentComponentPercent),
+    // Only where a policy has a value to lend against; every other product has no Loans tab.
+    ...(category && LENDING_CATEGORIES.includes(category) && values.maxLoanPercent !== ''
+      && { maxLoanToValuePercent: Number(values.maxLoanPercent) }),
     ...(values.description !== undefined && { description: values.description.trim() }),
     effectiveDate: values.effectiveDate,
     retirementDate: values.retirementDate === '' ? null : values.retirementDate,

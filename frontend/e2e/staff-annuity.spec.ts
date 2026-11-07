@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { confirmRequestedPayments } from './payments';
+import { askPhoneForPremium, confirmRequestedPayments } from './payments';
 import { dmy, todayIso } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
 import { asSeniorOnSameCase } from './underwriting';
@@ -167,13 +167,7 @@ test.describe('an immediate annuity', () => {
 
       // ---- The single premium, collected through the mock rail.
       await page.getByRole('tab', { name: 'Billing' }).click();
-      await page.getByRole('button', { name: 'Request payment' }).first().click({ timeout: 20_000 });
-      const pay = page.locator('form').filter({ has: page.getByLabel('Payer reference') });
-      await pay.getByLabel('Payer reference').fill('+255700000777');
-      await pay.getByRole('button', { name: 'Request payment' }).click();
-      // 60s: the request answers only after the whole AFTER_COMMIT chain -- payment, the rail's
-      // confirmation, billing, and the annuity's lock -- has run on its thread.
-      await expect(page.getByLabel('Payer reference')).not.toBeVisible({ timeout: 60_000 });
+      await askPhoneForPremium(page, '+255700000777');
       // Paid once a second finance person confirms the money came (2026-10-27).
       await confirmRequestedPayments(browser, policyUrl.split('/').pop()!);
 

@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { confirmRequestedPayments } from './payments';
+import { askPhoneForPremium, confirmRequestedPayments } from './payments';
 import { asAdmin } from './admin';
 import { dmy, todayIso } from './dates';
 import { fillBasics, publishVersion, step } from './publishForm';
@@ -165,11 +165,7 @@ test.describe('unit-linked U2', () => {
     await asAdmin(browser, async (admin) => {
       await admin.goto(policyUrl);
       await admin.getByRole('tab', { name: 'Billing' }).click();
-      await admin.getByRole('button', { name: 'Request payment' }).first().click({ timeout: 20_000 });
-      const pay = admin.locator('form').filter({ has: admin.getByLabel('Payer reference') });
-      await pay.getByLabel('Payer reference').fill('+255700000782');
-      await pay.getByRole('button', { name: 'Request payment' }).click();
-      await expect(admin.getByLabel('Payer reference')).not.toBeVisible({ timeout: 60_000 });
+      await askPhoneForPremium(admin, '+255700000782');
     });
     // Paid once a second finance person confirms the money came (2026-10-27).
     await confirmRequestedPayments(browser, policyUrl.split('/').pop()!);

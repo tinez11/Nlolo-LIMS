@@ -45,6 +45,14 @@ public class AccumulationApiImpl implements AccumulationApi {
     private static final Logger log = LoggerFactory.getLogger(AccumulationApiImpl.class);
     private static final BigDecimal HUNDRED = new BigDecimal("100");
 
+    /** A surrender or a term account's maturity repays the policy's loans first (2026-11-07, E7). */
+    private AccountLoanNetting loanNetting;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setLoanNetting(AccountLoanNetting loanNetting) {
+        this.loanNetting = loanNetting;
+    }
+
     final AccountRepository accounts;
     final PostingRepository postings;
     final LedgerEntryRepository entries;
@@ -313,8 +321,8 @@ public class AccumulationApiImpl implements AccumulationApi {
         String payer = payerRef == null || payerRef.isBlank() ? "—" : payerRef.trim();
         TopUpRequest request = topUps.save(TopUpRequest.received(TenantContext.get(), policyNumber,
             amount.setScale(2, RoundingMode.UNNECESSARY), account.getCurrency(), method, ref, receivedOn, payer, recordedBy));
-        // Payment receipts it at once, confirmed by the person who recorded it, and its confirmation credits the account
-        // by the same road a mobile-money top-up takes.
+        // Payment receipts it as a deposit a second person confirms (2026-11-07), and its confirmation credits the
+        // account by the same road a mobile-money top-up takes; a refusal fails it.
         events.publishEvent(DomainEventEnvelope.of("accumulation.TopUpRequested", TenantContext.get(), Map.of(
             "topUpId", request.getTopUpId().toString(),
             "idempotencyKey", "topup:" + request.getTopUpId(),
@@ -755,6 +763,10 @@ public class AccumulationApiImpl implements AccumulationApi {
             lines.addAll(charges);
             paid = value.subtract(ChosenCharges.total(charges));
         }
+        // The policy's loans first (E7), while the account still shows its value; keyed on the term, not the attempt,
+        // so a retry after a failed payment is answered with what was taken and pays only the rest.
+        BigDecimal loanRepaid = loanNetting.repay(policyNumber, paid, account.getCurrency(),
+            tz.co.nlolo.lifeplatform.policy.api.LoanNetting.Payout.ACCOUNT, policyNumber + ":term-maturity", by);
         if (paid.signum() > 0) {
             lines.add(LedgerService.Line.of(EntryType.MATURITY, paid.negate(), on, "Matured; paid to " + payee.describe()));
         }
@@ -773,7 +785,8 @@ public class AccumulationApiImpl implements AccumulationApi {
                 "sourceRef", ref,
                 "idempotencyKey", "term-account-maturity:" + ref,
                 "policyNumber", policyNumber,
-                "amount", Map.of("amount", paid.toPlainString(), "currencyCode", account.getCurrency())));
+                // What is left after the loans; payment asks the rail for nothing where they took it all.
+                "amount", Map.of("amount", paid.subtract(loanRepaid).toPlainString(), "currencyCode", account.getCurrency())));
             events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutRequested", TenantContext.get(), payout));
         }
         policyApi.markMatured(policyNumber, "system:accumulation");
@@ -808,6 +821,12 @@ public class AccumulationApiImpl implements AccumulationApi {
      */
     @Transactional
     public void settleTermAccountPayout(String sourceRef, boolean paid) {
+        settleTermAccountPayout(sourceRef, paid, null);
+    }
+
+    /** As above, with what the rail paid -- the maturity less the loans it repaid (E7); null is the whole maturity. */
+    @Transactional
+    public void settleTermAccountPayout(String sourceRef, boolean paid, BigDecimal railPaid) {
         Posting posting = postings.findByTenantIdAndSourceTypeAndSourceRef(TenantContext.get(), "term-account-maturity",
             "term-account-maturity:" + sourceRef).orElse(null);
         if (posting == null) {
@@ -823,7 +842,7 @@ public class AccumulationApiImpl implements AccumulationApi {
             events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutPaid", TenantContext.get(), Map.of(
                 "payoutRef", "term-account-maturity:" + sourceRef, "paymentRef", sourceRef,
                 "policyNumber", maturity.getPolicyNumber(),
-                "amount", Map.of("amount", maturity.getAmount().abs().toPlainString(),
+                "amount", Map.of("amount", (railPaid != null ? railPaid : maturity.getAmount().abs()).toPlainString(),
                     "currencyCode", accounts.findById(maturity.getPolicyNumber()).orElseThrow().getCurrency()))));
             return;
         }
@@ -1002,6 +1021,10 @@ public class AccumulationApiImpl implements AccumulationApi {
                 surrenderRequestId, policyNumber, chargePercent);
             return;
         }
+        // The policy's loans are repaid from what the surrender pays (2026-11-07, E7); only the rest goes to the rail.
+        // Once per surrender: a redelivery finds the account closed above.
+        BigDecimal loanRepaid = loanNetting.repay(policyNumber, paid, account.getCurrency(),
+            tz.co.nlolo.lifeplatform.policy.api.LoanNetting.Payout.SURRENDER, surrenderRequestId.toString(), approvedBy);
         // Paid by the route the surrender was requested with (2026-10-28): mobile money, a bank transfer or a cheque.
         Map<String, Object> payout = new java.util.LinkedHashMap<>(route.toPayload());
         payout.putAll(Map.of(
@@ -1011,9 +1034,11 @@ public class AccumulationApiImpl implements AccumulationApi {
             // pays one request once whichever path published it.
             "idempotencyKey", surrenderRequestId.toString(),
             "policyNumber", policyNumber,
-            "amount", Map.of("amount", paid.toPlainString(), "currencyCode", account.getCurrency()),
+            "amount", Map.of("amount", paid.subtract(loanRepaid).toPlainString(), "currencyCode", account.getCurrency()),
             // IFRS 17 I3b: the value before the surrender charge, so the ledger can earn the charge (7310).
-            "grossAmount", Map.of("amount", value.toPlainString(), "currencyCode", account.getCurrency())));
+            "grossAmount", Map.of("amount", value.toPlainString(), "currencyCode", account.getCurrency()),
+            // What repaid the policy's loans, so the ledger does not take it for charge (E-03-SURRENDER clears it).
+            "loanRepaidAmount", Map.of("amount", loanRepaid.toPlainString(), "currencyCode", account.getCurrency())));
         events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutRequested", TenantContext.get(), payout));
     }
 

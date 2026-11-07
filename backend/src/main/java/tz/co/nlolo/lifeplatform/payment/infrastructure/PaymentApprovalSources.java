@@ -25,7 +25,8 @@ class PaymentApprovalSources {
         return ApprovalSource.of("receipt", "Deposits to confirm", "Confirm", "collections.approve",
             limit -> ApprovalSource.Pending.of(receipts.awaitingApproval().stream()
                 .map(r -> new ApprovalSource.Item(r.receiptId().toString(), r.policyNumber(),
-                    Receipts.words(r.method()) + " " + r.reference() + (r.loanId() != null ? " · loan repayment" : ""),
+                    Receipts.words(r.method()) + " " + r.reference() + (r.loanId() != null ? " · loan repayment"
+                        : "ACCOUNT_TOP_UP".equals(r.purpose()) ? " · savings deposit" : ""),
                     r.amount(), r.currency(), r.recordedBy(), r.recordedAt()))
                 .toList(), limit));
     }

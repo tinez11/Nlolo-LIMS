@@ -35,6 +35,7 @@ import tz.co.nlolo.lifeplatform.benefitpayout.api.BenefitPayoutApi;
 import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.ClaimableCoverView;
+import tz.co.nlolo.lifeplatform.policy.api.LoanNetting;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
@@ -92,6 +93,27 @@ public class ClaimsApiImpl implements ClaimsApi {
     private final TransactionTemplate requiresNewTransactionTemplate;
     /** Acting alone on a claim one assessed, for a company with one claims person (2026-11-04). */
     private final tz.co.nlolo.lifeplatform.approvals.api.OwnWork ownWork;
+
+    /**
+     * Repays the policy's loans out of a claim (2026-11-07, decision E7). Implemented by policyloan; a setter, and
+     * optional, so a slice of the application without that module still starts and simply nets nothing.
+     */
+    private LoanNetting loanNetting;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setLoanNetting(LoanNetting loanNetting) {
+        this.loanNetting = loanNetting;
+    }
+
+    /** A settled claim discharges the cover, as PaymentEventListener closes it once the rail confirms a payment. */
+    private void closePolicyForSettledClaim(Claim claim) {
+        if (claim.getClaimType() == ClaimType.MATURITY) {
+            policyApi.markMatured(claim.getPolicyNumber(), "claims:" + claim.getClaimId());
+        } else {
+            policyApi.dischargeForSettledClaim(claim.getPolicyNumber(), claim.getPolicyMemberId(), null,
+                claim.getDateOfEvent(), claim.getClaimId(), "claims:" + claim.getClaimId());
+        }
+    }
 
     public ClaimsApiImpl(ClaimRepository claimRepository, ClaimAssessmentRepository claimAssessmentRepository,
                           SettlementDecisionRepository settlementDecisionRepository,
@@ -901,6 +923,37 @@ public class ClaimsApiImpl implements ClaimsApi {
             }
             eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimApproved", tenantId, approvedPayload));
 
+            // The claim repays the policy's loans first (2026-11-07, decision E7): the payable is booked gross above,
+            // the loans' part clears it (E-03-CLAIM), and only the rest is asked of the rail. Never on credit life,
+            // whose claim repays the lender's loan, not a policy loan. Idempotent on the claim, so a retried
+            // settlement nets nothing twice.
+            BigDecimal payable = approvedAmount;
+            // Only a policy with a value can have been lent against: a protection policy never asks policyloan at all.
+            // Not "has a loan now" -- after the first netting none is pledged, and a retried settlement must still be
+            // answered with what was taken, not paid in full.
+            tz.co.nlolo.lifeplatform.policy.api.CashValueView value = !creditLife && !nothingToPay && loanNetting != null
+                ? policyApi.getCashValue(claim.getPolicyNumber()) : null;
+            boolean mayHaveLoans = value != null
+                && (value.cashValueAmount().signum() > 0 || value.loanEncumbranceAmount().signum() > 0);
+            if (mayHaveLoans && approvedAmount != null) {
+                LoanNetting.Netted netted = loanNetting.settleFromPayout(claim.getPolicyNumber(), approvedAmount,
+                    approvedCurrency, LoanNetting.Payout.CLAIM, claimId.toString(), decidedBy);
+                payable = approvedAmount.subtract(netted.total());
+                if (netted.total().signum() > 0 && payable.signum() == 0) {
+                    // The loans took it all. Nothing goes to the rail; the claim is settled now, and the policy
+                    // closed, exactly as a payment's confirmation would close it.
+                    claim.settleWithNothingToPay();
+                    claimRepository.save(claim);
+                    eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimSettled", tenantId,
+                        Map.of("claimId", claimId, "policyNumber", claim.getPolicyNumber(),
+                               "settledAmount", Map.of("amount", approvedAmount.toPlainString(), "currencyCode", approvedCurrency),
+                               "paidAmount", Map.of("amount", "0.00", "currencyCode", approvedCurrency),
+                               "settledAt", Instant.now().toString())));
+                    closePolicyForSettledClaim(claim);
+                    return;
+                }
+            }
+
             if (nothingToPay) {
                 // Settled now: nothing is owed by the rail. The same ClaimSettled every settlement
                 // publishes, at zero -- finaccounting posts nothing for a non-positive amount.
@@ -921,7 +974,8 @@ public class ClaimsApiImpl implements ClaimsApi {
                 ? Map.of("payeeRef", payeeRef) : route.toPayload());
             requested.putAll(
                 Map.of("claimId", claimId, "policyNumber", claim.getPolicyNumber(),
-                       "amount", Map.of("amount", approvedAmount.toPlainString(), "currencyCode", approvedCurrency),
+                       // What is left after the policy's loans (E7); the whole claim where there were none.
+                       "amount", Map.of("amount", payable.toPlainString(), "currencyCode", approvedCurrency),
                        // A credit-life payout goes to a LENDER and extinguishes a debt. It must
                        // not go near the mobile-money rail, which in this environment is a mock
                        // with no authentication (spec §2.9).

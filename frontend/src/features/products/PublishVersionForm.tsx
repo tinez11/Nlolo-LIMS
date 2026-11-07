@@ -29,6 +29,7 @@ import {
   blankDepositBand,
   blankCashValueRow,
   FREE_LOOK_CATEGORIES,
+  LENDING_CATEGORIES,
   SCHEDULED_CATEGORIES,
   blankPayoutRow,
   payoutRowsFor,
@@ -104,6 +105,7 @@ const STEP_OF_FIELD: Partial<Record<string, StepId>> = {
   expectedProfitabilityBucket: 'basics',
   measurementModelOverride: 'basics',
   survivalInvestmentComponentPercent: 'pays',
+  maxLoanPercent: 'pays',
   description: 'basics',
   minEntryAge: 'eligibility',
   maxEntryAge: 'eligibility',
@@ -195,6 +197,7 @@ export function PublishVersionForm({
       expectedProfitabilityBucket: 'REMAINING',
       measurementModelOverride: '',
       survivalInvestmentComponentPercent: '',
+      maxLoanPercent: '',
       description: description ?? '',
       effectiveDate: '',
       retirementDate: '',
@@ -931,7 +934,22 @@ export function PublishVersionForm({
         {(FREE_LOOK_CATEGORIES.includes(category) || SCHEDULED_CATEGORIES.includes(category)) && renderPayouts()}
         {pays.cashValue && renderCashValue()}
         {pays.withProfits && renderWithProfits()}
+        {LENDING_CATEGORIES.includes(category) && renderLoans()}
       </>
+    );
+  }
+
+  /** 2026-11-07, the user: each product says how much of a policy's value may be lent; 0 lends nothing. */
+  function renderLoans() {
+    return (
+      <Section title="Loans">
+        <div className="grid grid-cols-2 gap-3">
+          <FormField required label="Maximum loan (% of the policy's value)"
+            hint="Enter 0 if this product gives no loans." error={errors.maxLoanPercent?.message}>
+            <Input inputMode="decimal" {...register('maxLoanPercent')} />
+          </FormField>
+        </div>
+      </Section>
     );
   }
 
@@ -1321,6 +1339,9 @@ function ReviewSummary({ control, kind, category }: { control: Control<PublishVe
     : `${(v.benefitSchedule ?? []).length}`]);
   if ((FREE_LOOK_CATEGORIES.includes(category) || SCHEDULED_CATEGORIES.includes(category)) && v.freeLookDays) {
     rows.push(['Free-look', `${v.freeLookDays} days`]);
+  }
+  if (LENDING_CATEGORIES.includes(category) && v.maxLoanPercent !== '') {
+    rows.push(['Maximum loan', Number(v.maxLoanPercent) === 0 ? 'No loans' : `${v.maxLoanPercent}% of the value`]);
   }
   if ((v.accountChargeIds ?? []).length) rows.push(['Charges', `${(v.accountChargeIds ?? []).length} from Account charges`]);
   return (

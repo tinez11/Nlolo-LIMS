@@ -62,7 +62,10 @@ public class SurrenderPaymentListener {
                 if (paid) {
                     Object idObj = payload.get("disbursementId");
                     UUID disbursementId = idObj instanceof UUID u ? u : UUID.fromString((String) idObj);
-                    policyApi.markSurrenderPaid(surrenderRequestId, disbursementId);
+                    // What the rail paid: the surrender value less any loan it repaid (2026-11-07, E7).
+                    Object amount = payload.get("amount") instanceof java.util.Map<?, ?> m ? m.get("amount") : null;
+                    policyApi.markSurrenderPaid(surrenderRequestId, disbursementId,
+                        amount == null ? null : new java.math.BigDecimal(amount.toString()));
                 } else {
                     policyApi.markSurrenderFailed(surrenderRequestId);
                 }

@@ -266,9 +266,9 @@ public class Receipts {
         receipt.rejectReceipt(by, reason.trim());
         recordIfAlone(receipt, "refused", by);
         transactions.save(receipt);
-        if (receipt.isRequested()) {
-            // A request the platform made, not a slip someone typed: whoever asked for the money hears it never came,
-            // exactly as a declined request -- a loan repayment or a top-up unwinds on it.
+        if (receipt.isRequested() || receipt.isSavingsDeposit()) {
+            // A request the platform made, or a savings deposit waiting in accumulation (2026-11-07): whoever asked for
+            // the money hears it never came, exactly as a declined request -- a loan repayment or a top-up unwinds on it.
             events.publishEvent(DomainEventEnvelope.of("payment.PaymentFailed", TenantContext.get(),
                 Map.of("paymentRequestId", receipt.getPaymentTransactionId(),
                        "idempotencyKey", receipt.getIdempotencyKey(),

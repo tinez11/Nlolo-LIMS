@@ -173,7 +173,8 @@ public class AccumulationController {
      * money came. Money already received is not recorded here -- see {@link #recordReceivedTopUp}.
      */
     @PostMapping("/policies/{policyNumber}/account/top-ups")
-    @PreAuthorize("@access.can('accounts.transact')")
+    // Finance too (2026-11-07): the one Deposit page offers mobile money to whoever may take a deposit.
+    @PreAuthorize("@access.canAny('accounts.transact', 'collections.manage')")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public TopUpResponse requestTopUp(@PathVariable String policyNumber, @Valid @RequestBody AccountRequestBodies.TopUp body,
                                       @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
@@ -186,8 +187,9 @@ public class AccumulationController {
     }
 
     /**
-     * 201: money already received -- cash, a bank deposit, a cheque, a Lipa number, TANQR -- recorded and credited by
-     * finance alone (2026-10-29, the user: only the finance officer is answerable for money). Customer service, who may
+     * 201: money already received -- cash, a bank deposit, a cheque, a Lipa number, TANQR -- recorded by finance
+     * (2026-10-29, the user: only the finance officer is answerable for money) and credited once a second person confirms
+     * it (2026-11-07), or the same person holding collections.approve-own. Customer service, who may
      * request a mobile-money top-up, cannot say money was received: whoever holds the cash is not who credits it.
      */
     @PostMapping("/policies/{policyNumber}/account/top-ups/received")

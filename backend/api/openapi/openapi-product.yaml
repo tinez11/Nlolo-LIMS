@@ -818,8 +818,10 @@ components:
       type: object
       additionalProperties: false
       required: [productVersionId, effectiveDate, retirementDate, current, publishedAt, publishedBy, gracePeriodDays,
-                 expectedProfitabilityBucket, measurementModelOverride, survivalInvestmentComponentPercent, description]
+                 expectedProfitabilityBucket, measurementModelOverride, survivalInvestmentComponentPercent, description,
+                 maxLoanToValuePercent]
       properties:
+        maxLoanToValuePercent: { type: [number, "null"], description: "The most a policy loan may be, as a share (%) of the value; 0 lends nothing; null the whole value" }
         survivalInvestmentComponentPercent: { type: [number, "null"], description: "IFRS 17 I3b: the investment share (%) of a survival or income instalment" }
         description: { type: [string, "null"], description: "What the product was described as when this version was published (V35)" }
         productVersionId: { type: string, format: uuid }
@@ -916,6 +918,13 @@ components:
           description: >-
             IFRS 17 I3b: the share (%) of each survival benefit or income instalment that is an investment component
             (paid in all circumstances). Omitted: none -- the whole instalment is an insurance service expense.
+          type: [number, "null"]
+          minimum: 0
+          maximum: 100
+        maxLoanToValuePercent:
+          description: >-
+            The most a policy loan may be, as a share (%) of the policy's value (2026-11-07). 0 lends nothing.
+            Omitted: the whole value, as every version published before it.
           type: [number, "null"]
           minimum: 0
           maximum: 100

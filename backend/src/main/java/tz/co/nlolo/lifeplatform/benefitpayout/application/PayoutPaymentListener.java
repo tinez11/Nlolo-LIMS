@@ -61,7 +61,9 @@ public class PayoutPaymentListener {
                 if (freeLook) {
                     api.markFreeLookRefunded(sourceRef, disbursementId);
                 } else {
-                    api.markPaid(sourceRef, disbursementId);
+                    // What the rail paid: a maturity less any loan it repaid (2026-11-07, E7).
+                    Object amount = p.get("amount") instanceof java.util.Map<?, ?> m ? m.get("amount") : null;
+                    api.markPaid(sourceRef, disbursementId, amount == null ? null : new java.math.BigDecimal(amount.toString()));
                 }
             } else if (freeLook) {
                 api.markFreeLookRefundFailed(sourceRef);
