@@ -176,10 +176,13 @@ public class AgentLoginService {
         }
     }
 
-    /** The portal's routing: the identity provider's link where there is email, a texted password, or a handover. */
+    /**
+     * SMS first (2026-11-08, the user: agents read texts, not email): a texted password wherever there is a phone, the
+     * identity provider's emailed link only where there is no phone, and a password handed over where there is neither.
+     */
     static AgentLogin.Delivery deliveryFor(String email, String phone, boolean emailEnabled) {
-        if (email != null && emailEnabled) return AgentLogin.Delivery.EMAIL_LINK;
-        return phone != null ? AgentLogin.Delivery.SMS_PASSWORD : AgentLogin.Delivery.TEMPORARY_PASSWORD;
+        if (phone != null) return AgentLogin.Delivery.SMS_PASSWORD;
+        return email != null && emailEnabled ? AgentLogin.Delivery.EMAIL_LINK : AgentLogin.Delivery.TEMPORARY_PASSWORD;
     }
 
     private AgentLoginIssued firstPassword(AgentLogin login, PartyDetailView party, AgentLogin.Delivery delivery) {
@@ -196,7 +199,8 @@ public class AgentLoginService {
         String phone = blankToNull(party.phoneNumber());
         String failure = phone == null ? "no phone number on file"
             : notifications.sendUnloggedSms(login.getPartyId(), phone, "AGENT_LOGIN",
-                loginText(login.getUsername(), password), loginText(login.getUsername(), MASK));
+                loginText(login.getUsername(), password, party.preferredLanguage()),
+                loginText(login.getUsername(), MASK, party.preferredLanguage()));
         if (failure == null) {
             return new AgentLoginIssued(view(login), null, phone, null);
         }
@@ -205,9 +209,13 @@ public class AgentLoginService {
             "The text was not sent (" + failure + "). Give the agent this password yourself.");
     }
 
-    private String loginText(String username, String password) {
-        return "Your agent login: username " + username + ", one-time password " + password + ". Sign in at "
-            + consoleUrl + " - you will choose your own password first.";
+    /** In the agent's own language (2026-11-08): Swahili unless their record says English. */
+    private String loginText(String username, String password, String language) {
+        return "en".equals(language)
+            ? "Your agent login: username " + username + ", one-time password " + password + ". Sign in at "
+                + consoleUrl + " - you will choose your own password first."
+            : "Akaunti yako ya wakala: jina la mtumiaji " + username + ", nenosiri la mara moja " + password
+                + ". Ingia kupitia " + consoleUrl + " - utaweka nenosiri lako mwenyewe kwanza.";
     }
 
     private AgentLogin existing(UUID agentId) {

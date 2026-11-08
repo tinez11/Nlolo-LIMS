@@ -137,15 +137,15 @@ public class PortalAccessService {
     }
 
     /**
-     * How this client's first password reaches them (the deployment pilot design §6): the identity provider's own
-     * email link where email is switched on and the client has an address, otherwise a one-time password by SMS, and
-     * only where neither is possible does a staff member have to hand it over.
+     * How this client's first password reaches them. SMS first (2026-11-08, the user: customers read texts, not email):
+     * a one-time password by SMS wherever there is a phone, the identity provider's own email link only where there is
+     * no phone and email is switched on, and only where neither is possible does a staff member hand it over.
      */
     static PortalAccess.Delivery deliveryFor(String email, String phone, boolean emailEnabled) {
-        if (email != null && emailEnabled) {
-            return PortalAccess.Delivery.EMAIL_LINK;
+        if (phone != null) {
+            return PortalAccess.Delivery.SMS_PASSWORD;
         }
-        return phone != null ? PortalAccess.Delivery.SMS_PASSWORD : PortalAccess.Delivery.TEMPORARY_PASSWORD;
+        return email != null && emailEnabled ? PortalAccess.Delivery.EMAIL_LINK : PortalAccess.Delivery.TEMPORARY_PASSWORD;
     }
 
     private PortalInvite firstPassword(PortalAccess access, PartyDetailView party) {
@@ -164,7 +164,8 @@ public class PortalAccessService {
         String phone = blankToNull(party.phoneNumber());
         String failure = phone == null ? "no phone number on file"
             : notifications.sendUnloggedSms(access.getPartyId(), phone, "PORTAL_INVITE",
-                inviteText(access.getUsername(), password), inviteText(access.getUsername(), MASK));
+                inviteText(access.getUsername(), password, party.preferredLanguage()),
+                inviteText(access.getUsername(), MASK, party.preferredLanguage()));
         if (failure == null) {
             return new PortalInvite(view(access), null, phone, null);
         }
@@ -174,9 +175,13 @@ public class PortalAccessService {
             "The SMS was not sent (" + failure + "). Give the client this password yourself.");
     }
 
-    private String inviteText(String username, String password) {
-        return "Your portal login: username " + username + ", one-time password " + password + ". Sign in at "
-            + portalUrl + " - you will set your own password first.";
+    /** In the client's own language (2026-11-08): Swahili unless their record says English. */
+    private String inviteText(String username, String password, String language) {
+        return "en".equals(language)
+            ? "Your portal login: username " + username + ", one-time password " + password + ". Sign in at "
+                + portalUrl + " - you will set your own password first."
+            : "Akaunti yako ya huduma kwa wateja: jina la mtumiaji " + username + ", nenosiri la mara moja " + password
+                + ". Ingia kupitia " + portalUrl + " - utaweka nenosiri lako mwenyewe kwanza.";
     }
 
     private PortalAccess existing(UUID partyId) {
