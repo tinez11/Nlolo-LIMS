@@ -249,7 +249,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql",
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql",
             // M9 (Task 9) additions. finaccounting/V1 enabled RLS on NONE of its five original
             // tables and granted app_role nothing at all (worse: it REVOKEs UPDATE/DELETE on
             // gl_posting from a role that never held anything); V2 is what adds both RLS and the

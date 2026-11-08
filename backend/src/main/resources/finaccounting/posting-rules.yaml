@@ -821,6 +821,11 @@ rules:
       - {cr: "1430", amount: premium}
       - {dr: "1431", amount: commission}
       - {cr: "1436", amount: commission}
+      # 2026-11-08: what earlier bordereaux charged a policy since cancelled in free-look, taken back -- the mirror.
+      - {dr: "1430", amount: premiumReversed}
+      - {cr: "1436", amount: premiumReversed}
+      - {dr: "1436", amount: commissionReversed}
+      - {cr: "1431", amount: commissionReversed}
 
   - id: B-05
     event: reinsurance.RecoveryCalculated

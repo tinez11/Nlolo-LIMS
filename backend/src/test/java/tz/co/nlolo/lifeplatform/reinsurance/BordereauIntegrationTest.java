@@ -88,7 +88,7 @@ class BordereauIntegrationTest {
             "db-migrations/reinsurance/V5__bordereau.sql",
             "db-migrations/reinsurance/V6__scheme_may_open_empty.sql",
             "db-migrations/reinsurance/V7__statement.sql",
-            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql");
+            "db-migrations/reinsurance/V8__projection_portfolio.sql", "db-migrations/reinsurance/V9__scheme_premium_may_be_nil.sql", "db-migrations/reinsurance/V10__acted_alone.sql", "db-migrations/reinsurance/V11__settlement.sql", "db-migrations/reinsurance/V12__free_look_reversal.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -246,6 +246,36 @@ class BordereauIntegrationTest {
 
         assertThat(premiumsByMonth(tenantId, treaty.treatyId()).get("2026-02")).isZero();
         assertThat(eventRecorder.bordereauxOf(tenantId)).isEmpty();
+    }
+
+    /**
+     * 2026-11-08: a free-look cancellation AFTER a month's bordereau posted. The contract was never on risk, so the next
+     * bordereau takes back what it was charged -- premium and commission -- once, and the event carries it for the
+     * ledger's mirror of K-01/K-02.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void aFreeLookCancellationAfterABordereauIsTakenBackOnTheNextOnceOnly() {
+        UUID tenantId = UUID.randomUUID();
+        TreatyView treaty = quotaShare(tenantId, "50.00", "20.00");
+        String policy = activate(tenantId, "TERM_LIFE", "MONTHLY", "100000.00", LocalDate.of(2026, 1, 25));
+        bordereauJob.drain(LocalDate.of(2026, 2, 1));     // January charged: 50,000, commission 10,000
+
+        publish(tenantId, "policy.PolicyCancelledFreeLook", Map.of("policyNumber", policy,
+            "cancelledAt", "2026-02-05T10:00:00Z", "cancelledBy", "staff"));
+        bordereauJob.drain(LocalDate.of(2026, 4, 1));     // February and March
+
+        // January charged it; February takes it back; March, with nothing to charge or take back, posts nothing -- so a
+        // second reversal would show here as a third bordereau.
+        assertThat(eventRecorder.bordereauxOf(tenantId)).as("taken back once, not again in March").hasSize(2)
+            .last().satisfies(e -> {
+                Map<String, Object> p = (Map<String, Object>) e.payload();
+                assertThat(p.get("period")).isEqualTo("2026-02");
+                assertThat(new BigDecimal((String) ((Map<String, Object>) p.get("premium")).get("amount"))).isZero();
+                assertThat(p.get("premiumReversed")).isEqualTo(Map.of("amount", "50000.00", "currencyCode", "TZS"));
+                assertThat(p.get("commissionReversed")).isEqualTo(Map.of("amount", "10000.00", "currencyCode", "TZS"));
+            });
+        assertThat(premiumsByMonth(tenantId, treaty.treatyId())).containsKey("2026-02");
     }
 
     /** A scheme is never ceded (client 2026-09-22), so no bordereau charges it. */

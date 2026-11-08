@@ -841,7 +841,7 @@ components:
       type: object
       required: [type, premium, commission, recovery]
       properties:
-        type: { type: string, enum: [PREMIUM, XOL_PREMIUM, RECOVERY] }
+        type: { type: string, enum: [PREMIUM, XOL_PREMIUM, RECOVERY, FREE_LOOK_REVERSAL], description: "FREE_LOOK_REVERSAL: what an earlier month charged a policy since cancelled in free-look, taken back (its amounts are what is taken back)." }
         policyNumber: { type: [string, "null"] }
         claimId: { type: [string, "null"], format: uuid }
         premiumShare: { type: [string, "null"], description: "The cession's share of the policy's premium, 0 < share <= 1." }

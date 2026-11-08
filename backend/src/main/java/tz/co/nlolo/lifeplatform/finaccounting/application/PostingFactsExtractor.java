@@ -80,7 +80,8 @@ final class PostingFactsExtractor {
         Map.entry("accumulation.PayoutRequested", new EventShape(Set.of("charge"), Set.of())),
         Map.entry("accumulation.PayoutPaid", amount()),
         // IFRS 17 I3c: reinsurance held from the monthly bordereau (K-01/K-02) and a recovery at claim approval (B-05).
-        Map.entry("reinsurance.BordereauPosted", new EventShape(Set.of("premium", "commission"), Set.of())),
+        Map.entry("reinsurance.BordereauPosted", new EventShape(Set.of("premium", "commission", "premiumReversed",
+            "commissionReversed"), Set.of())),
         Map.entry("reinsurance.RecoveryCalculated", amount()),
         // IFRS 17 I3d: the quarterly statement (R-01, R-03, R-04). premiumNet is the premium less what is withheld.
         Map.entry("reinsurance.StatementApproved", new EventShape(Set.of("premiumNet", "withheld", "commission",
@@ -228,7 +229,10 @@ final class PostingFactsExtractor {
                 java.time.YearMonth month = java.time.YearMonth.parse(string(p.get("period")));
                 yield List.of(facts(type, string(p.get("bordereauId")), null, currencyOf(p.get("premium")),
                     month.atEndOfMonth(), Map.of("premium", amountOf(p.get("premium")), "commission",
-                        amountOf(p.get("commission"))), Map.of("refType", "BORDEREAU")));
+                        amountOf(p.get("commission")),
+                        // 2026-11-08: taken back for a policy cancelled in free-look; zero on a bordereau before then.
+                        "premiumReversed", amountOf(p.get("premiumReversed")),
+                        "commissionReversed", amountOf(p.get("commissionReversed"))), Map.of("refType", "BORDEREAU")));
             }
             case "reinsurance.RecoveryCalculated" ->
                 List.of(money(type, string(p.get("recoveryId")), policy, p.get("recoverableAmount"), today,

@@ -47,6 +47,21 @@ class BordereauCalculatorTest {
         assertThat(r.policyCount()).isEqualTo(1);
     }
 
+    // 2026-11-08: a policy cancelled in free-look after an earlier month charged it -- taken back beside this month's charge.
+    @Test
+    void whatAFreeLookCancellationWasChargedComesBackBesideTheMonthsOwnCharge() {
+        Result r = BordereauCalculator.calculate(OCTOBER, QUOTA_20,
+            List.of(policy("POL-1", "MONTHLY", "100000.00", null, open("2026-09-15"))), List.of(),
+            List.of(new BordereauCalculator.Reversal("POL-FL", new BigDecimal("50000.00"), new BigDecimal("10000.00"))));
+
+        assertThat(r.premium()).as("this month's charge alone").isEqualByComparingTo("50000.00");
+        assertThat(r.premiumReversed()).isEqualByComparingTo("50000.00");
+        assertThat(r.commissionReversed()).isEqualByComparingTo("10000.00");
+        assertThat(r.policyCount()).as("a reversal is not a policy on risk").isEqualTo(1);
+        assertThat(r.lines()).extracting(BordereauCalculator.Line::type)
+            .containsExactly(BordereauCalculator.LineType.PREMIUM, BordereauCalculator.LineType.FREE_LOOK_REVERSAL);
+    }
+
     @Test
     void quarterlyAndAnnualPremiumsAreTurnedIntoAMonthlyAmount() {
         Result r = BordereauCalculator.calculate(OCTOBER, new Treaty("TZS", BigDecimal.ZERO, null), List.of(

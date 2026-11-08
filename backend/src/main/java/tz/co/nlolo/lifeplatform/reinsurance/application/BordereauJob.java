@@ -91,7 +91,8 @@ public class BordereauJob {
             log.info("Bordereau {} of treaty {} ({}): {} policies, premium {}, commission {}, recoveries {}", month,
                 treatyId, treaty.getReinsurerName(), result.policyCount(), result.premium(), result.commission(),
                 result.recoveries());
-            if (result.premium().signum() > 0 || result.commission().signum() > 0) {
+            if (result.premium().signum() > 0 || result.commission().signum() > 0
+                    || result.premiumReversed().signum() > 0 || result.commissionReversed().signum() > 0) {
                 String currency = treaty.getRetentionLimitCurrency();
                 events.publishEvent(DomainEventEnvelope.of(EVENT, tenantId, Map.of(
                     "bordereauId", id.toString(),
@@ -103,7 +104,11 @@ public class BordereauJob {
                     "period", month.toString(),
                     "policyCount", result.policyCount(),
                     "premium", Map.of("amount", result.premium().toPlainString(), "currencyCode", currency),
-                    "commission", Map.of("amount", result.commission().toPlainString(), "currencyCode", currency))));
+                    "commission", Map.of("amount", result.commission().toPlainString(), "currencyCode", currency),
+                    // 2026-11-08: taken back for policies cancelled in free-look after an earlier month charged them.
+                    "premiumReversed", Map.of("amount", result.premiumReversed().toPlainString(), "currencyCode", currency),
+                    "commissionReversed", Map.of("amount", result.commissionReversed().toPlainString(),
+                        "currencyCode", currency))));
             }
         });
         return written;
@@ -127,6 +132,7 @@ public class BordereauJob {
         BordereauCalculator.Treaty terms = new BordereauCalculator.Treaty(treaty.getRetentionLimitCurrency(),
             treaty.getCommissionPercent(), treaty.getXolAnnualPremium());
         return BordereauCalculator.calculate(month, terms, bordereaux.cededTo(tenantId, treaty.getTreatyId()),
-            bordereaux.recoveriesIn(tenantId, treaty.getTreatyId(), month));
+            bordereaux.recoveriesIn(tenantId, treaty.getTreatyId(), month),
+            bordereaux.reversals(tenantId, treaty.getTreatyId()));
     }
 }

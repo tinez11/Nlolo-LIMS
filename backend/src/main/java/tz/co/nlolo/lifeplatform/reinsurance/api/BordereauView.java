@@ -16,7 +16,8 @@ public record BordereauView(UUID bordereauId, UUID treatyId, String period, Stri
                             BigDecimal premium, BigDecimal commission, BigDecimal recoveries, Instant createdAt,
                             List<Line> lines) {
 
-    /** {@code type}: PREMIUM (one ceded policy), XOL_PREMIUM (the treaty's monthly twelfth), RECOVERY (matched). */
+    /** {@code type}: PREMIUM (one ceded policy), XOL_PREMIUM (the treaty's monthly twelfth), RECOVERY (matched), and
+     *  FREE_LOOK_REVERSAL (2026-11-08: an earlier charge taken back for a policy cancelled in free-look). */
     public record Line(String type, String policyNumber, UUID claimId, BigDecimal premiumShare,
                        BigDecimal policyPremium, BigDecimal premium, BigDecimal commission, BigDecimal recovery) {}
 }
