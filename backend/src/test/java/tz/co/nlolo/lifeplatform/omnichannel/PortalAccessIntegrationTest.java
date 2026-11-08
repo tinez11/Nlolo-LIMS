@@ -151,11 +151,13 @@ class PortalAccessIntegrationTest {
 
     /** Only the portal invites among everything the fixture's policy also texted. */
     private List<String> invites() {
-        return sms.sent.stream().filter(m -> m.contains("Your portal login")).toList();
+        // In the client's language (2026-11-08): Swahili unless their record says English.
+        return sms.sent.stream().filter(m -> m.contains("Your portal login") || m.contains("Akaunti yako ya huduma kwa wateja"))
+            .toList();
     }
 
     private static String passwordIn(String invite) {
-        return invite.replaceAll(".*one-time password (\\S{12})\\..*", "$1");
+        return invite.replaceAll(".*(?:one-time password|nenosiri la mara moja) (\\S{12})\\..*", "$1");
     }
 
     /** A policyholder with a phone number and no email -- the savings fixture's client. */
@@ -224,9 +226,10 @@ class PortalAccessIntegrationTest {
     }
 
     @Test
-    void aPolicyholderWithAnEmailIsSentTheSetPasswordLinkAndNoPasswordIsReturned() throws Exception {
+    void aPolicyholderWithOnlyAnEmailIsSentTheSetPasswordLinkAndNoPasswordIsReturned() throws Exception {
         UUID partyId = policyholder();
-        jdbc.update("UPDATE party.party SET email = 'Amina.Juma@Example.tz' WHERE party_id = ?", partyId);
+        // SMS first wherever there is a phone (2026-11-08): the emailed link is for a client with no phone.
+        jdbc.update("UPDATE party.party SET email = 'Amina.Juma@Example.tz', phone_number = NULL WHERE party_id = ?", partyId);
 
         mockMvc.perform(staff(post("/parties/" + partyId + "/portal-access"), "CUSTOMER_SERVICE_REP"))
             .andExpect(status().isCreated())

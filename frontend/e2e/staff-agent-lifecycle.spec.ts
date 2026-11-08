@@ -48,7 +48,8 @@ test.describe('staff agent lifecycle', () => {
     await expect(page.getByText('No login yet — this agent cannot sign in')).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole('button', { name: 'Give a login' }).click();
-    await expect(page.getByText('A set-your-password link is on its way to the agent’s email.')).toBeVisible({
+    // SMS first wherever there is a phone (2026-11-08): texted, or -- when the text cannot go -- shown once to hand over.
+    await expect(login.getByText(/One-time password sent by text to|One-time password — shown once/).first()).toBeVisible({
       timeout: 15_000,
     });
     await expect(page.getByText('Can sign in to the agent console')).toBeVisible();

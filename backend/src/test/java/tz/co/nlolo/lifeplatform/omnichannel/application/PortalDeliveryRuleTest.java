@@ -5,12 +5,12 @@ import tz.co.nlolo.lifeplatform.omnichannel.domain.PortalAccess.Delivery;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** The channel table of the deployment pilot design §6, row by row. */
+/** The channel table, row by row: SMS first wherever there is a phone (2026-11-08, the user). */
 class PortalDeliveryRuleTest {
 
     @Test
     void emailOn() {
-        assertThat(PortalAccessService.deliveryFor("a@b.tz", "+255700000001", true)).isEqualTo(Delivery.EMAIL_LINK);
+        assertThat(PortalAccessService.deliveryFor("a@b.tz", "+255700000001", true)).isEqualTo(Delivery.SMS_PASSWORD);
         assertThat(PortalAccessService.deliveryFor("a@b.tz", null, true)).isEqualTo(Delivery.EMAIL_LINK);
         assertThat(PortalAccessService.deliveryFor(null, "+255700000001", true)).isEqualTo(Delivery.SMS_PASSWORD);
     }
