@@ -376,7 +376,9 @@ public class NotificationApiImpl implements NotificationApi {
         List<DispatchSummary.Reason> reasons = dispatchRepository.reasonsSince(tenantId, since).stream()
             .map(r -> new DispatchSummary.Reason((String) r[0], (String) r[1], (String) r[2], ((Number) r[3]).longValue()))
             .toList();
-        return new DispatchSummary(days, counts, reasons);
+        List<DispatchSummary.ByMessage> byMessage = dispatchRepository.countByMessageSince(tenantId, since).stream()
+            .map(r -> new DispatchSummary.ByMessage((String) r[0], ((Number) r[1]).longValue())).toList();
+        return new DispatchSummary(days, counts, reasons, byMessage);
     }
 
     @Override

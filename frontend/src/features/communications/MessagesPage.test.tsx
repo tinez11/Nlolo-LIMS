@@ -25,6 +25,7 @@ describe('MessagesPage', () => {
       sinceDays: 7,
       counts: [{ channel: 'SMS', status: 'SENT', count: 1240 }, { channel: 'SMS', status: 'FAILED', count: 12 }],
       reasons: [{ channel: 'SMS', status: 'FAILED', reason: 'SMS gateway refused the message: REJECTED', count: 12 }],
+      byMessage: [{ templateKey: 'PAYMENT_RECEIVED', count: 1100 }, { templateKey: 'COVER_STARTED', count: 152 }],
     });
     vi.mocked(api.searchDispatches).mockResolvedValue([failed]);
   });

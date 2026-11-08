@@ -1,6 +1,6 @@
 import { can } from '@/auth/access';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { sendTestMessage } from '@/api/communications';
+import { getDispatchSummary, sendTestMessage } from '@/api/communications';
 import type { NotificationTemplateView, TestSendResult } from '@/api/types';
 import { FilterChip } from '@/components/FilterChip';
 import { InlineError } from '@/components/InlineError';
@@ -15,6 +15,7 @@ import { useCommunicationsStore } from '@/store/communicationsStore';
 import { ChannelStatusBar } from './ChannelStatusBar';
 import {
   TOPICS,
+  journeyOrder,
   messageName,
   messageTopic,
   placeholdersIn,
@@ -44,6 +45,14 @@ export function TemplatesPage() {
   const loadTemplates = useCommunicationsStore((s) => s.loadTemplates);
   const [query, setQuery] = useState('');
   const [topic, setTopic] = useState<string | null>(null);
+  // How often each message went out in the last 30 days (2026-11-08): the screen's own report.
+  const [sent, setSent] = useState<Record<string, number>>({});
+  useEffect(() => {
+    getDispatchSummary(30).then(
+      (s) => setSent(Object.fromEntries((s.byMessage ?? []).map((m) => [m.templateKey, m.count]))),
+      () => setSent({}),
+    );
+  }, []);
 
   useEffect(() => {
     void loadTemplates();
@@ -75,7 +84,7 @@ export function TemplatesPage() {
   }
 
   const q = query.trim().toLowerCase();
-  const keys = [...byKey.keys()].filter((key) => {
+  const keys = [...byKey.keys()].sort(journeyOrder).filter((key) => {
     if (topic && messageTopic(key) !== topic) return false;
     if (!q) return true;
     const texts = (byKey.get(key) ?? []).map((t) => t.bodyTemplate ?? '').join(' ');
@@ -103,19 +112,36 @@ export function TemplatesPage() {
         {keys.length === 0 ? (
           <EmptyState title="No message matches" description="Try another word, or clear the topic." />
         ) : (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {keys.map((key) => <MessageCard key={key} templateKey={key} variants={byKey.get(key) ?? []} canEdit={isAdmin} />)}
-          </div>
+          // One section per stage of the customer's journey, in order; within it, the most frequent first.
+          [...TOPICS, 'Other' as const].filter((t) => keys.some((k) => messageTopic(k) === t)).map((t) => {
+            const inStage = keys.filter((k) => messageTopic(k) === t);
+            const total = inStage.reduce((n, k) => n + (sent[k] ?? 0), 0);
+            return (
+              <section key={t} aria-label={t} className="space-y-3">
+                <div className="flex items-baseline justify-between gap-3 border-b border-border pb-1">
+                  <h2 className="text-lg font-semibold">{t}</h2>
+                  <span className="text-xs text-muted-foreground">{total.toLocaleString('en-US')} sent in the last 30 days</span>
+                </div>
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  {inStage.map((key) => (
+                    <MessageCard key={key} templateKey={key} variants={byKey.get(key) ?? []} canEdit={isAdmin} sent={sent[key] ?? 0} />
+                  ))}
+                </div>
+              </section>
+            );
+          })
         )}
       </div>
     </>
   );
 }
 
-function MessageCard({ templateKey, variants, canEdit }: {
+function MessageCard({ templateKey, variants, canEdit, sent }: {
   templateKey: string;
   variants: NotificationTemplateView[];
   canEdit: boolean;
+  /** How many went out in the last 30 days. */
+  sent: number;
 }) {
   const [language, setLanguage] = useState<Language>('sw');
   const inLanguage = variants.filter((v) => v.language === language)
@@ -127,6 +153,7 @@ function MessageCard({ templateKey, variants, canEdit }: {
         <div className="min-w-0">
           <h2 className="text-base font-semibold">{messageName(templateKey)}</h2>
           {when && <p className="mt-0.5 text-sm text-muted-foreground">Sent {when.charAt(0).toLowerCase()}{when.slice(1)}</p>}
+          <p className="mt-1 text-xs font-medium text-label">{sent === 0 ? 'None sent in the last 30 days' : `${sent.toLocaleString('en-US')} sent in the last 30 days`}</p>
         </div>
         <div className="flex rounded-lg border border-border p-0.5" role="tablist" aria-label="Language">
           {(['sw', 'en'] as const).map((l) => (

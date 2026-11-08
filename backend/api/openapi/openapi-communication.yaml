@@ -216,7 +216,7 @@ components:
   schemas:
     DispatchSummary:
       type: object
-      required: [sinceDays, counts, reasons]
+      required: [sinceDays, counts, reasons, byMessage]
       properties:
         sinceDays: { type: integer }
         counts:
@@ -237,6 +237,15 @@ components:
               channel: { type: string }
               status: { type: string }
               reason: { type: [string, "null"] }
+              count: { type: integer, format: int64 }
+        byMessage:
+          description: How many of each message went out in the period, every status, most first (2026-11-08).
+          type: array
+          items:
+            type: object
+            required: [templateKey, count]
+            properties:
+              templateKey: { type: string }
               count: { type: integer, format: int64 }
     ChannelStatus:
       type: object

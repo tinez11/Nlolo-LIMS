@@ -26,6 +26,8 @@ describe('TemplatesPage', () => {
     useCommunicationsStore.setState({ templates: idle(), rewording: idle() });
     vi.mocked(api.listTemplates).mockResolvedValue([template('SMS', 'sw', SW_SMS), template('SMS', 'en', EN_SMS)]);
     vi.mocked(api.getChannels).mockResolvedValue([{ channel: 'SMS', mode: 'OFF' }, { channel: 'EMAIL', mode: 'TEST' }]);
+    vi.mocked(api.getDispatchSummary).mockResolvedValue({ sinceDays: 30, counts: [], reasons: [],
+      byMessage: [{ templateKey: 'ACCOUNT_STATEMENT', count: 1240 }] });
   });
 
   it('says plainly whether customers are reached, and reads each message as the customer will', async () => {
@@ -35,6 +37,9 @@ describe('TemplatesPage', () => {
     expect(await screen.findByText(/off — not reaching customers/)).toBeInTheDocument();
     const card = await screen.findByRole('region', { name: 'Yearly savings statement' });
     expect(within(card).getByText(/once a year, after interest is credited/)).toBeInTheDocument();
+    // 2026-11-08: in the journey's order, under its stage, with how often it went out.
+    expect(screen.getByRole('region', { name: 'Savings & investments' })).toContainElement(card);
+    expect(await within(card).findByText('1,240 sent in the last 30 days')).toBeInTheDocument();
     expect(within(card).getByLabelText('Preview')).toHaveTextContent('Bima POL-3E440FE9: salio la akiba tarehe 31/12/2026 ni TZS 2,005,000.00');
     expect(within(card).getByText(/1 SMS/)).toBeInTheDocument();
 
