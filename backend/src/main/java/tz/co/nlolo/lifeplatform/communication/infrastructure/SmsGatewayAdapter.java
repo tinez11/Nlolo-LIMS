@@ -71,6 +71,7 @@ public class SmsGatewayAdapter implements NotificationSender {
     private final String senderName;
     private final boolean live;
     private final List<String> allowedRecipients;
+    private final String baseUrl;
 
     public SmsGatewayAdapter(MeterRegistry meterRegistry,
                               @Value("${communication.sms-gateway-url}") String baseUrl,
@@ -83,6 +84,7 @@ public class SmsGatewayAdapter implements NotificationSender {
         this.meterRegistry = meterRegistry;
         this.senderName = senderName;
         this.live = live;
+        this.baseUrl = baseUrl;
         this.allowedRecipients = allowedRecipients.isBlank()
             ? List.of()
             : List.of(allowedRecipients.split("\\s*,\\s*"));
@@ -111,6 +113,14 @@ public class SmsGatewayAdapter implements NotificationSender {
         return channel == NotificationChannel.SMS;
     }
 
+    /** Off unless live; live to an allowlist is LIMITED; live against the local mock is TEST (2026-11-08). */
+    @Override
+    public Mode mode() {
+        if (!live) return Mode.OFF;
+        if (baseUrl.contains("localhost") || baseUrl.contains("127.0.0.1") || baseUrl.contains("mock")) return Mode.TEST;
+        return allowedRecipients.isEmpty() ? Mode.LIVE : Mode.LIMITED;
+    }
+
     @Override
     public SendResult send(String destination, String body) {
         String msisdn = toMsisdn(destination);
@@ -120,14 +130,14 @@ public class SmsGatewayAdapter implements NotificationSender {
             // row can never claim a customer was contacted when nothing left the building.
             meterRegistry.counter(COUNTER, "status", "SUPPRESSED").increment();
             log.info("SMS suppressed (communication.sms-gateway.live=false) for {}", msisdn);
-            return SendResult.failed("SMS sending is switched off (communication.sms-gateway.live=false)");
+            return SendResult.notSent("SMS sending is switched off");
         }
         if (!allowedRecipients.isEmpty() && !allowedRecipients.contains(msisdn)) {
             // The seeded dev database carries real-looking numbers on real-looking people. This
             // is what stops a live run against it texting strangers.
             meterRegistry.counter(COUNTER, "status", "SUPPRESSED").increment();
             log.warn("SMS to {} suppressed: not in communication.sms-gateway.allowed-recipients", msisdn);
-            return SendResult.failed("Recipient " + msisdn + " is not on the SMS testing allowlist");
+            return SendResult.notSent("Recipient " + msisdn + " is not on the SMS testing allowlist");
         }
 
         try {

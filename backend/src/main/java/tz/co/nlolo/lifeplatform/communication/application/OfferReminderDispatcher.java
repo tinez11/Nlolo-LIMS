@@ -188,11 +188,7 @@ public class OfferReminderDispatcher {
             .map(sender -> sender.send(destination, body))
             .orElseGet(() -> NotificationSender.SendResult.failed("No sender configured for " + channel));
 
-        if (result.sent()) {
-            dispatch.markSent();
-        } else {
-            dispatch.markFailed(result.detail());
-        }
+        dispatch.markOutcome(result.sent(), result.notSent(), result.detail());
     }
 
     /**

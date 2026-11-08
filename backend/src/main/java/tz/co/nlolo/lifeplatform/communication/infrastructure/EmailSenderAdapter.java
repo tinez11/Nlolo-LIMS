@@ -38,19 +38,29 @@ public class EmailSenderAdapter implements NotificationSender {
     private final MeterRegistry meterRegistry;
     private final String fromAddress;
     private final boolean enabled;
+    private final String host;
 
     public EmailSenderAdapter(JavaMailSender mailSender, MeterRegistry meterRegistry,
                                @Value("${communication.from-address}") String fromAddress,
-                               @Value("${communication.email.enabled:true}") boolean enabled) {
+                               @Value("${communication.email.enabled:true}") boolean enabled,
+                               @Value("${spring.mail.host:localhost}") String host) {
         this.mailSender = mailSender;
         this.meterRegistry = meterRegistry;
         this.fromAddress = fromAddress;
         this.enabled = enabled;
+        this.host = host;
     }
 
     @Override
     public boolean supports(NotificationChannel channel) {
         return channel == NotificationChannel.EMAIL;
+    }
+
+    /** Off unless enabled; a local mail catcher (Mailpit on dev) is TEST -- nothing leaves the machine (2026-11-08). */
+    @Override
+    public Mode mode() {
+        if (!enabled) return Mode.OFF;
+        return host.equals("localhost") || host.equals("127.0.0.1") || host.contains("mailpit") ? Mode.TEST : Mode.LIVE;
     }
 
     @Override
@@ -59,7 +69,7 @@ public class EmailSenderAdapter implements NotificationSender {
             // Mirrors SmsGatewayAdapter's live=false: recorded as a real outcome, so the outbox never claims a
             // customer was emailed while no mail server is configured (2026-10-13, deployment pilot).
             meterRegistry.counter(COUNTER, "status", "SUPPRESSED").increment();
-            return SendResult.failed("Email is switched off (communication.email.enabled=false)");
+            return SendResult.notSent("Email is not in use");
         }
         try {
             SimpleMailMessage message = new SimpleMailMessage();

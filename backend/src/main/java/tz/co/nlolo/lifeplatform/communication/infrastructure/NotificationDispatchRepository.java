@@ -10,7 +10,20 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.UUID;
 
-public interface NotificationDispatchRepository extends JpaRepository<NotificationDispatch, UUID> {
+public interface NotificationDispatchRepository extends JpaRepository<NotificationDispatch, UUID>,
+        org.springframework.data.jpa.repository.JpaSpecificationExecutor<NotificationDispatch> {
+
+    /** Messages since a time, by channel and status (2026-11-08): the register's summary, counted in the database. */
+    @Query(value = "SELECT channel, status, count(*) FROM communication.notification_dispatch"
+        + " WHERE tenant_id = :tenantId AND created_at >= :since GROUP BY channel, status ORDER BY channel, status",
+        nativeQuery = true)
+    List<Object[]> countSince(@Param("tenantId") UUID tenantId, @Param("since") java.time.Instant since);
+
+    /** Why the ones not sent were not, most common first. */
+    @Query(value = "SELECT channel, status, failure_reason, count(*) FROM communication.notification_dispatch"
+        + " WHERE tenant_id = :tenantId AND created_at >= :since AND status IN ('FAILED', 'NOT_SENT')"
+        + " GROUP BY channel, status, failure_reason ORDER BY count(*) DESC LIMIT 20", nativeQuery = true)
+    List<Object[]> reasonsSince(@Param("tenantId") UUID tenantId, @Param("since") java.time.Instant since);
 
     /**
      * The reminder queue, oldest first, across every tenant.

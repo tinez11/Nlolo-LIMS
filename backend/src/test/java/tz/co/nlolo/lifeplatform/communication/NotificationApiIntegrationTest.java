@@ -31,11 +31,13 @@ import java.util.Map;
 import java.util.UUID;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
+import tz.co.nlolo.lifeplatform.communication.api.NotificationDispatchView;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static tz.co.nlolo.lifeplatform.communication.NextSmsStubs.NEXTSMS_ACCEPTED;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The send path end to end against real Postgres and a real HTTP aggregator: resolve a party's
@@ -146,6 +148,49 @@ class NotificationApiIntegrationTest {
         assertThat(rows.get(0).getTemplateKey()).isEqualTo("OFFER_MADE");
         assertThat(rows.get(0).getPolicyNumber()).isEqualTo("POL-NOTIFY01");
         assertThat(rows.get(0).getFailureReason()).isNull();
+    }
+
+    // 2026-11-08: the desk's view at any volume -- filtered in the database, summarised, and a failed one sent again.
+    @Test
+    void aFailedMessageIsFoundSummarisedAndSentAgainAsWordedThen() {
+        UUID partyId = registerParty("RESEND", "+255713000188", null);
+        smsGateway.resetAll();
+        smsGateway.stubFor(post(urlPathEqualTo("/api/sms/v1/text/single")).willReturn(okJson(
+            "{\"messages\":[{\"status\":{\"groupName\":\"REJECTED\",\"name\":\"REJECTED_NOT_ENOUGH_CREDITS\"}}]}")));
+        notificationApi.notify(UUID.randomUUID(), partyId, "POL-RESEND1", "OFFER_MADE", offerValues());
+
+        var failed = notificationApi.searchDispatches(new NotificationApi.DispatchQuery(null, "pol-resend1", "FAILED",
+            "SMS", "OFFER_MADE", 1, 10));
+        assertThat(failed).singleElement().satisfies(d -> assertThat(d.body()).contains("POL-NOTIFY01"));
+        assertThat(notificationApi.summarise(1).reasons())
+            .anySatisfy(r -> assertThat(r.reason()).contains("REJECTED"));
+
+        smsGateway.resetAll();
+        smsGateway.stubFor(post(urlPathEqualTo("/api/sms/v1/text/single")).willReturn(okJson(NEXTSMS_ACCEPTED)));
+        var again = notificationApi.resend(failed.get(0).dispatchId());
+        assertThat(again.status()).isEqualTo("SENT");
+        assertThat(again.body()).isEqualTo(failed.get(0).body());
+        assertThat(notificationApi.searchDispatches(new NotificationApi.DispatchQuery(partyId, null, null, null, null,
+            1, 10))).extracting(NotificationDispatchView::status).containsExactlyInAnyOrder("SENT", "FAILED");
+        // A message already sent is not sent twice.
+        assertThatThrownBy(() -> notificationApi.resend(again.dispatchId())).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void aTestSendGoesToTheNumberGivenWithTheSampleValuesAndLeavesTheOutboxAlone() {
+        TenantContext.set(SEEDED_TENANT);
+        UUID smsSw = notificationApi.listTemplates().stream()
+            .filter(t -> "OFFER_MADE".equals(t.templateKey()) && "SMS".equals(t.channel()) && "sw".equals(t.language()))
+            .findFirst().orElseThrow().templateId();
+        long before = dispatchRepository.count();
+
+        var result = notificationApi.sendTest(smsSw, "+255713000199", offerValues());
+
+        assertThat(result.outcome()).isEqualTo("SENT");
+        assertThat(result.body()).contains("POL-NOTIFY01").doesNotContain("{{");
+        assertThat(dispatchRepository.count()).isEqualTo(before);
+        assertThatThrownBy(() -> notificationApi.sendTest(smsSw, "+255713000199", Map.of()))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Give every value");
     }
 
     @Test

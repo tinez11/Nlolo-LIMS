@@ -20,4 +20,6 @@ public record NotificationDispatchView(
     String status,
     String failureReason,
     Instant dispatchedAt,
-    Instant createdAt) {}
+    Instant createdAt,
+    /** The exact text sent, as worded then (2026-11-08); null on rows from before the text was kept. */
+    String body) {}
