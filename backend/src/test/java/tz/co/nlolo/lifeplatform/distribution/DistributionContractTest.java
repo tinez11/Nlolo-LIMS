@@ -694,6 +694,25 @@ class DistributionContractTest {
             .andExpect(jsonPath("$[0].hierarchyParentId").value(supervisor.agentId().toString()));
     }
 
+    /** 2026-11-08: the profile showed the supervisor as a raw id. Name, licence and phone; none at the top. */
+    @Test
+    void anAgentSeesWhoTheyReportToAndTheTopOfTheHierarchyReportsToNoOne() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Agent supervisor = onboardAgent(tenantId, "SUPV-TOP", null);
+        Agent agent = onboardAgent(tenantId, "SUPV-BELOW", supervisor.agentId());
+
+        mockMvc.perform(get("/agents/me/supervisor").with(agentOf(tenantId, agent.partyId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.agentId").value(supervisor.agentId().toString()))
+            .andExpect(jsonPath("$.displayName").value("Distribution Contract SUPV-TOP"))
+            .andExpect(jsonPath("$.licenseNumber").value(org.hamcrest.Matchers.startsWith("LIC-SUPV-TOP-")))
+            .andExpect(jsonPath("$.phoneNumber").isNotEmpty());
+
+        mockMvc.perform(get("/agents/me/supervisor").with(agentOf(tenantId, supervisor.partyId())))
+            .andExpect(status().isNoContent());
+    }
+
     @Test
     void getOwnTeamReturns404WhenThePartyIsNotAnAgent() throws Exception {
         UUID tenantId = UUID.randomUUID();

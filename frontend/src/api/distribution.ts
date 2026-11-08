@@ -109,6 +109,14 @@ export function getOwnTeam(): Promise<AgentTeamMember[]> {
   return get<AgentTeamMember[]>('/agents/me/team');
 }
 
+export type AgentSupervisor = DistributionComponents['schemas']['AgentSupervisor'];
+
+/** `GET /agents/me/supervisor` -- agents-realm only: who the caller reports to. Null at the top (204). */
+export async function getOwnSupervisor(): Promise<AgentSupervisor | null> {
+  const supervisor = await get<AgentSupervisor | ''>('/agents/me/supervisor');
+  return supervisor || null;
+}
+
 /**
  * `POST /agents/{n}/suspend` -- staff FINANCE_OFFICER/ADMIN only.
  * `AgentProfile.setLicenseStatus` existed with no caller anywhere on the
